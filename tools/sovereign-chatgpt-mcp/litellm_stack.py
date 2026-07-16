@@ -17,8 +17,9 @@ DB_CONTAINER = "sovereign-litellm-db-1"
 LITELLM_IMAGE = "docker.litellm.ai/berriai/litellm:v1.89.4"
 DB_IMAGE = "postgres:16-alpine"
 OWNER_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
-OPENAI_KEY_PATH = OWNER_SECRET_ROOT / "openai_api_key.txt"
-BACKEND_MASTER_KEY_PATH = OWNER_SECRET_ROOT / "litellm_master_key.txt"
+PROVIDER_INPUT_PATH = OWNER_SECRET_ROOT / "openai_api_key.txt"
+BACKEND_SERVICE_KEY_PATH = OWNER_SECRET_ROOT / "litellm_master_key.txt"
+ALIAS_SELECTION_FILENAME = "model-aliases.json"
 EXPECTED_MODEL_IDS = ("sovereign-fast", "sovereign-balanced")
 REQUIRED_SECRET_NAMES = (
     "POSTGRES_PASSWORD",
@@ -27,6 +28,7 @@ REQUIRED_SECRET_NAMES = (
 )
 _SAFE_DB_PASSWORD = re.compile(r"^[A-Za-z0-9._~-]{16,256}$")
 _SAFE_KEY_SECRET = re.compile(r"^[A-Za-z0-9._~!@%+=:,/-]{16,512}$")
+_SAFE_PROVIDER_MODEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$")
 
 
 def _sha256(data: bytes) -> str:
@@ -129,6 +131,7 @@ class LiteLLMStackRuntime:
     def plan(self) -> dict[str, Any]:
         compose, compose_sha = self._template("docker-compose.yml")
         config, config_sha = self._template("config.yaml")
+        entrypoint, entrypoint_sha = self._template("sovereign-entrypoint.py")
         return {
             "ok": True,
             "status": "PLAN_READY",
@@ -138,43 +141,200 @@ class LiteLLMStackRuntime:
             "templates": {
                 "docker-compose.yml": {"sha256": compose_sha, "bytes": len(compose)},
                 "config.yaml": {"sha256": config_sha, "bytes": len(config)},
+                "sovereign-entrypoint.py": {"sha256": entrypoint_sha, "bytes": len(entrypoint)},
             },
             "composeWriteEnabled": (
                 os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
                 and os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() == "1"
             ),
+            "aliasSelectionPresent": self._alias_selection_path().is_file()
+            and not self._alias_selection_path().is_symlink(),
             "containers": {
                 "litellm": self._container_state(LITELLM_CONTAINER),
                 "db": self._container_state(DB_CONTAINER),
             },
-            "acceptedInputs": ["confirmation_compose_sha256", "confirmation_config_sha256"],
+            "acceptedInputs": [
+                "confirmation_compose_sha256",
+                "confirmation_config_sha256",
+                "confirmation_entrypoint_sha256",
+            ],
             "arbitraryYamlAccepted": False,
             "arbitraryCommandAccepted": False,
             "secretValuesAccepted": False,
         }
 
-    def _read_owner_provider_key(self) -> str:
+    def _validate_owner_provider_input(self) -> None:
         root = OWNER_SECRET_ROOT
-        path = OPENAI_KEY_PATH
+        path = PROVIDER_INPUT_PATH
         if root.is_symlink() or path.is_symlink() or not path.is_file():
-            raise RuntimeError("Geschützter OpenAI-Provider-Key fehlt im Owner-Speicher")
-        size = path.stat().st_size
+            raise RuntimeError("Geschützter Provider-Zugang fehlt im Owner-Speicher")
+        metadata = path.stat()
+        size = metadata.st_size
         if size < 16 or size > 8192:
-            raise RuntimeError("Geschützter OpenAI-Provider-Key hat eine ungültige Größe")
-        value = path.read_text("utf-8").strip()
-        if not _SAFE_KEY_SECRET.fullmatch(value):
-            raise RuntimeError("Geschützter OpenAI-Provider-Key hat ein ungültiges Format")
-        return value
+            raise RuntimeError("Geschützter Provider-Zugang hat eine ungültige Größe")
+        if metadata.st_mode & 0o077:
+            raise RuntimeError("Geschützter Provider-Zugang besitzt unsichere Dateirechte")
 
-    def _write_backend_master_key(self, value: str) -> None:
+    def provider_model_inventory(self) -> dict[str, Any]:
+        """Read only OpenAI model ids in an ephemeral, portless LiteLLM image."""
+        self._validate_owner_provider_input()
+        script = """
+import json
+import pathlib
+import urllib.request
+
+path = pathlib.Path('/run/secrets/openai_api_key')
+if path.is_symlink() or not path.is_file():
+    raise SystemExit(21)
+value = path.read_text('utf-8').strip()
+if len(value) < 16 or '\\x00' in value or '\\n' in value or '\\r' in value:
+    raise SystemExit(22)
+request = urllib.request.Request(
+    'https://api.openai.com/v1/models',
+    headers={'Authorization': 'Bearer ' + value},
+)
+with urllib.request.urlopen(request, timeout=30) as response:
+    payload = json.loads(response.read().decode('utf-8'))
+model_ids = sorted({
+    str(item.get('id') or '').strip()
+    for item in payload.get('data', [])
+    if isinstance(item, dict) and str(item.get('id') or '').strip()
+})
+print(json.dumps({'httpStatus': response.status, 'modelIds': model_ids}, separators=(',', ':')))
+"""
+        result = self._run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges:true",
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,size=16m",
+                "--mount",
+                f"type=bind,src={PROVIDER_INPUT_PATH},dst=/run/secrets/openai_api_key,readonly",
+                "--entrypoint",
+                "python",
+                LITELLM_IMAGE,
+                "-c",
+                script,
+            ],
+            timeout=60,
+        )
+        if not result["ok"]:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "OpenAI-Modellinventar konnte im isolierten LiteLLM-Image nicht gelesen werden",
+                "exitCode": result["exit_code"],
+                "secretValuesExposed": False,
+            }
+        try:
+            payload = json.loads(result["stdout"].strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "OpenAI-Modellinventar lieferte keine gültige Metadatenantwort",
+                "secretValuesExposed": False,
+            }
+        model_ids = sorted({
+            str(model_id or "").strip()
+            for model_id in payload.get("modelIds", [])
+            if _SAFE_PROVIDER_MODEL.fullmatch(str(model_id or "").strip())
+        })
+        inventory_sha = _sha256(("\n".join(model_ids) + "\n").encode("utf-8"))
+        return {
+            "ok": payload.get("httpStatus") == 200 and bool(model_ids),
+            "status": "PROVIDER_MODEL_INVENTORY",
+            "httpStatus": payload.get("httpStatus"),
+            "modelCount": len(model_ids),
+            "modelIds": model_ids[:200],
+            "inventorySha256": inventory_sha,
+            "truncated": len(model_ids) > 200,
+            "providerKeyPresent": True,
+            "providerKeyValueReturned": False,
+            "secretValuesExposed": False,
+            "publicPortOpened": False,
+        }
+
+    def _alias_selection_path(self) -> Path:
+        return self.deploy_root / ALIAS_SELECTION_FILENAME
+
+    def _load_alias_selection(self) -> dict[str, str] | None:
+        path = self._alias_selection_path()
+        if path.is_symlink():
+            raise RuntimeError("LiteLLM-Alias-Auswahl darf kein Symlink sein")
+        if not path.exists():
+            return None
+        if not path.is_file() or path.stat().st_size > 8192:
+            raise RuntimeError("LiteLLM-Alias-Auswahl ist ungültig")
+        try:
+            payload = json.loads(path.read_text("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("LiteLLM-Alias-Auswahl ist kein gültiges JSON") from exc
+        if not isinstance(payload, dict) or set(payload) != {
+            "inventorySha256",
+            "sovereign-fast",
+            "sovereign-balanced",
+        }:
+            raise RuntimeError("LiteLLM-Alias-Auswahl besitzt ein ungültiges Schema")
+        normalized = {key: str(value or "").strip() for key, value in payload.items()}
+        if not re.fullmatch(r"[0-9a-f]{64}", normalized["inventorySha256"]):
+            raise RuntimeError("LiteLLM-Inventar-Bindung ist ungültig")
+        if not all(_SAFE_PROVIDER_MODEL.fullmatch(normalized[key]) for key in EXPECTED_MODEL_IDS):
+            raise RuntimeError("LiteLLM-Provider-Modellauswahl ist ungültig")
+        return normalized
+
+    @staticmethod
+    def _alias_config(selection: dict[str, str]) -> bytes:
+        fast_model = json.dumps("openai/" + selection["sovereign-fast"])
+        balanced_model = json.dumps("openai/" + selection["sovereign-balanced"])
+        return (
+            "# Generated only from a confirmed provider inventory.\n"
+            "model_list:\n"
+            "  - model_name: sovereign-fast\n"
+            "    litellm_params:\n"
+            f"      model: {fast_model}\n"
+            "      api_key: os.environ/OPENAI_API_KEY\n"
+            "  - model_name: sovereign-balanced\n"
+            "    litellm_params:\n"
+            f"      model: {balanced_model}\n"
+            "      api_key: os.environ/OPENAI_API_KEY\n"
+            "\nlitellm_settings:\n"
+            "  drop_params: true\n"
+        ).encode("utf-8")
+
+    def _resolved_config(self, template_config: bytes) -> tuple[bytes, dict[str, Any] | None]:
+        selection = self._load_alias_selection()
+        if selection is None:
+            return template_config, None
+        inventory = self.provider_model_inventory()
+        if not inventory.get("ok"):
+            raise RuntimeError("Provider-Modellinventar ist für die Alias-Auswahl nicht verfügbar")
+        if inventory.get("inventorySha256") != selection["inventorySha256"]:
+            raise RuntimeError("Provider-Modellinventar hat sich seit der Alias-Bestätigung geändert")
+        available = set(inventory.get("modelIds") or [])
+        missing = [selection[key] for key in EXPECTED_MODEL_IDS if selection[key] not in available]
+        if missing:
+            raise RuntimeError("Bestätigte Provider-Modelle sind im aktuellen Inventar nicht verfügbar")
+        return self._alias_config(selection), {
+            "inventorySha256": selection["inventorySha256"],
+            "aliases": {key: selection[key] for key in EXPECTED_MODEL_IDS},
+        }
+
+    def _write_backend_service_key(self, value: str) -> None:
         root = OWNER_SECRET_ROOT
         if root.is_symlink():
             raise RuntimeError("Owner-Secret-Root darf kein Symlink sein")
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(root, 0o700)
-        if BACKEND_MASTER_KEY_PATH.is_symlink():
-            raise RuntimeError("Backend-LiteLLM-Key-Ziel darf kein Symlink sein")
-        self._write_atomic(BACKEND_MASTER_KEY_PATH, (value + "\n").encode("utf-8"), 0o600)
+        if BACKEND_SERVICE_KEY_PATH.is_symlink():
+            raise RuntimeError("Backend-Service-Key-Ziel darf kein Symlink sein")
+        self._write_atomic(BACKEND_SERVICE_KEY_PATH, (value + "\n").encode("utf-8"), 0o600)
 
     def _existing_secret_values(self) -> dict[str, str]:
         values: dict[str, str] = {}
@@ -239,14 +399,22 @@ class LiteLLMStackRuntime:
         self.deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
         os.chmod(self.deploy_root, 0o750)
 
-    def _validate_candidate(self, compose: bytes, config: bytes, env_payload: bytes) -> dict[str, Any]:
+    def _validate_candidate(
+        self,
+        compose: bytes,
+        config: bytes,
+        entrypoint: bytes,
+        env_payload: bytes,
+    ) -> dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="sovereign-litellm-") as directory:
             root = Path(directory)
             compose_path = root / "docker-compose.yml"
             config_path = root / "config.yaml"
+            entrypoint_path = root / "sovereign-entrypoint.py"
             env_path = root / ".env"
             compose_path.write_bytes(compose)
             config_path.write_bytes(config)
+            entrypoint_path.write_bytes(entrypoint)
             env_path.write_bytes(env_payload)
             rendered = self._run(
                 [
@@ -297,7 +465,7 @@ class LiteLLMStackRuntime:
                     return {"ok": False, "error": f"forbidden privileges: {service_name}"}
                 if service.get("network_mode") == "host" or service.get("pid") == "host" or service.get("ipc") == "host":
                     return {"ok": False, "error": f"forbidden host namespace: {service_name}"}
-                if service.get("entrypoint") or service.get("build") or service.get("extra_hosts"):
+                if service.get("build") or service.get("extra_hosts"):
                     return {"ok": False, "error": f"forbidden execution override: {service_name}"}
                 if service.get("ports"):
                     return {"ok": False, "error": f"published ports are forbidden: {service_name}"}
@@ -308,6 +476,10 @@ class LiteLLMStackRuntime:
 
             if services["db"].get("command") not in (None, [], ""):
                 return {"ok": False, "error": "unexpected database command"}
+            if services["db"].get("entrypoint") not in (None, [], ""):
+                return {"ok": False, "error": "unexpected database entrypoint"}
+            if services["litellm"].get("entrypoint") != ["python", "/app/sovereign-entrypoint.py"]:
+                return {"ok": False, "error": "unexpected LiteLLM entrypoint"}
             if services["litellm"].get("command") != ["--config=/app/config.yaml", "--port", "4000"]:
                 return {"ok": False, "error": "unexpected LiteLLM command"}
             db_environment = services["db"].get("environment") if isinstance(services["db"].get("environment"), dict) else {}
@@ -316,7 +488,7 @@ class LiteLLMStackRuntime:
             if db_environment.get("POSTGRES_DB") != "litellm" or db_environment.get("POSTGRES_USER") != "litellm":
                 return {"ok": False, "error": "unexpected database identity"}
             litellm_environment = services["litellm"].get("environment") if isinstance(services["litellm"].get("environment"), dict) else {}
-            if set(litellm_environment) != {"DATABASE_URL", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY", "OPENAI_API_KEY"}:
+            if set(litellm_environment) != {"DATABASE_URL", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY"}:
                 return {"ok": False, "error": "unexpected LiteLLM environment"}
             database_url = str(litellm_environment.get("DATABASE_URL") or "")
             if not database_url.startswith("postgresql://litellm:") or not database_url.endswith("@db:5432/litellm"):
@@ -330,16 +502,34 @@ class LiteLLMStackRuntime:
                 return {"ok": False, "error": "unexpected database volume"}
 
             litellm_volumes = services["litellm"].get("volumes") if isinstance(services["litellm"].get("volumes"), list) else []
-            if len(litellm_volumes) != 1:
+            if len(litellm_volumes) != 3:
                 return {"ok": False, "error": "unexpected LiteLLM volume count"}
-            litellm_volume = litellm_volumes[0] if isinstance(litellm_volumes[0], dict) else {}
+            mounts = {
+                str(volume.get("target") or ""): volume
+                for volume in litellm_volumes
+                if isinstance(volume, dict)
+            }
+            config_mount = mounts.get("/app/config.yaml", {})
             if (
-                litellm_volume.get("type") != "bind"
-                or Path(str(litellm_volume.get("source") or "")).resolve() != config_path.resolve()
-                or litellm_volume.get("target") != "/app/config.yaml"
-                or not bool(litellm_volume.get("read_only"))
+                config_mount.get("type") != "bind"
+                or Path(str(config_mount.get("source") or "")).resolve() != config_path.resolve()
+                or not bool(config_mount.get("read_only"))
             ):
                 return {"ok": False, "error": "unexpected LiteLLM config mount"}
+            entrypoint_mount = mounts.get("/app/sovereign-entrypoint.py", {})
+            if (
+                entrypoint_mount.get("type") != "bind"
+                or Path(str(entrypoint_mount.get("source") or "")).resolve() != entrypoint_path.resolve()
+                or not bool(entrypoint_mount.get("read_only"))
+            ):
+                return {"ok": False, "error": "unexpected LiteLLM entrypoint mount"}
+            provider_mount = mounts.get("/run/secrets/openai_api_key", {})
+            if (
+                provider_mount.get("type") != "bind"
+                or Path(str(provider_mount.get("source") or "")).resolve() != PROVIDER_INPUT_PATH.resolve()
+                or not bool(provider_mount.get("read_only"))
+            ):
+                return {"ok": False, "error": "unexpected LiteLLM provider mount"}
             return {"ok": True, "status": "VALIDATED"}
 
     def _wait_for_runtime(self) -> dict[str, Any]:
@@ -390,8 +580,14 @@ class LiteLLMStackRuntime:
         except (IndexError, json.JSONDecodeError):
             return {"ok": False, "error": "Modell-Antwort ist kein gültiges JSON"}
         model_ids = payload.get("modelIds") if isinstance(payload.get("modelIds"), list) else []
-        normalized_model_ids = sorted({str(model_id or "").strip() for model_id in model_ids if str(model_id or "").strip()})
-        expected_models_present = all(model_id in normalized_model_ids for model_id in EXPECTED_MODEL_IDS)
+        normalized_model_ids = sorted({
+            str(model_id or "").strip()
+            for model_id in model_ids
+            if str(model_id or "").strip()
+        })
+        expected_models_present = all(
+            model_id in normalized_model_ids for model_id in EXPECTED_MODEL_IDS
+        )
         return {
             "ok": payload.get("httpStatus") == 200 and expected_models_present,
             "httpStatus": payload.get("httpStatus"),
@@ -401,11 +597,66 @@ class LiteLLMStackRuntime:
             "expectedModelsPresent": expected_models_present,
         }
 
+    def _completion_canary(self, model_id: str) -> dict[str, Any]:
+        script = (
+            "import json,os,sys,urllib.request;"
+            "model=sys.argv[1];"
+            "body=json.dumps({'model':model,'messages':[{'role':'user','content':'Reply with OK.'}],'max_tokens':8,'stream':False},separators=(',',':')).encode('utf-8');"
+            "q=urllib.request.Request('http://127.0.0.1:4000/v1/chat/completions',data=body,headers={'Authorization':'Bearer '+os.environ['LITELLM_MASTER_KEY'],'Content-Type':'application/json'},method='POST');"
+            "r=urllib.request.urlopen(q,timeout=45);"
+            "d=json.loads(r.read().decode());"
+            "u=d.get('usage') if isinstance(d.get('usage'),dict) else {};"
+            "rid=r.headers.get('x-litellm-call-id') or r.headers.get('x-request-id') or d.get('id') or '';"
+            "print(json.dumps({'httpStatus':r.status,'requestIdPresent':bool(str(rid).strip()),'resolvedModel':str(d.get('model') or ''),'promptTokens':int(u.get('prompt_tokens') or 0),'completionTokens':int(u.get('completion_tokens') or 0),'totalTokens':int(u.get('total_tokens') or 0)}))"
+        )
+        result = self._run(
+            ["docker", "exec", LITELLM_CONTAINER, "python", "-c", script, model_id],
+            timeout=60,
+        )
+        if not result["ok"]:
+            return {
+                "ok": False,
+                "requestedModel": model_id,
+                "error": "LiteLLM completion canary failed",
+                "exit_code": result["exit_code"],
+            }
+        try:
+            payload = json.loads(result["stdout"].strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            return {
+                "ok": False,
+                "requestedModel": model_id,
+                "error": "Completion-Canary-Antwort ist kein gültiges JSON",
+            }
+        total_tokens = max(0, int(payload.get("totalTokens") or 0))
+        request_id_present = bool(payload.get("requestIdPresent"))
+        resolved_model = str(payload.get("resolvedModel") or "").strip()[:160]
+        return {
+            "ok": (
+                payload.get("httpStatus") == 200
+                and request_id_present
+                and total_tokens > 0
+                and bool(resolved_model)
+            ),
+            "requestedModel": model_id,
+            "resolvedModel": resolved_model,
+            "httpStatus": payload.get("httpStatus"),
+            "requestIdPresent": request_id_present,
+            "usage": {
+                "promptTokens": max(0, int(payload.get("promptTokens") or 0)),
+                "completionTokens": max(0, int(payload.get("completionTokens") or 0)),
+                "totalTokens": total_tokens,
+            },
+            "responseContentExposed": False,
+            "secretValuesExposed": False,
+        }
+
     def deploy(
         self,
         *,
         confirmation_compose_sha256: str,
         confirmation_config_sha256: str,
+        confirmation_entrypoint_sha256: str,
     ) -> dict[str, Any]:
         if os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() != "1":
             return {"ok": False, "status": "BLOCKED", "blocker": "Private Owner Mode ist nicht aktiv"}
@@ -413,22 +664,31 @@ class LiteLLMStackRuntime:
             return {"ok": False, "status": "BLOCKED", "blocker": "Allowlistete Compose-Writes sind nicht aktiviert"}
 
         compose, compose_sha = self._template("docker-compose.yml")
-        config, config_sha = self._template("config.yaml")
-        if confirmation_compose_sha256 != compose_sha or confirmation_config_sha256 != config_sha:
+        template_config, config_sha = self._template("config.yaml")
+        entrypoint, entrypoint_sha = self._template("sovereign-entrypoint.py")
+        if (
+            confirmation_compose_sha256 != compose_sha
+            or confirmation_config_sha256 != config_sha
+            or confirmation_entrypoint_sha256 != entrypoint_sha
+        ):
             return {
                 "ok": False,
                 "status": "BLOCKED",
                 "blocker": "Bestätigte Template-Hashes stimmen nicht mit den installierten Templates überein",
-                "expected": {"compose": compose_sha, "config": config_sha},
+                "expected": {
+                    "compose": compose_sha,
+                    "config": config_sha,
+                    "entrypoint": entrypoint_sha,
+                },
             }
 
+        config, alias_selection = self._resolved_config(template_config)
         secret_values = self._existing_secret_values()
-        provider_key = self._read_owner_provider_key()
+        self._validate_owner_provider_input()
         env_payload = (
-            "\n".join(f"{name}={secret_values[name]}" for name in REQUIRED_SECRET_NAMES)
-            + f"\nOPENAI_API_KEY={provider_key}\n"
+            "\n".join(f"{name}={secret_values[name]}" for name in REQUIRED_SECRET_NAMES) + "\n"
         ).encode("utf-8")
-        validation = self._validate_candidate(compose, config, env_payload)
+        validation = self._validate_candidate(compose, config, entrypoint, env_payload)
         if not validation["ok"]:
             return {
                 "ok": False,
@@ -453,8 +713,9 @@ class LiteLLMStackRuntime:
         self._prepare_root()
         self._write_atomic(self.deploy_root / "docker-compose.yml", compose, 0o640)
         self._write_atomic(self.deploy_root / "config.yaml", config, 0o640)
+        self._write_atomic(self.deploy_root / "sovereign-entrypoint.py", entrypoint, 0o640)
         self._write_atomic(self.deploy_root / ".env", env_payload, 0o600)
-        self._write_backend_master_key(secret_values["LITELLM_MASTER_KEY"])
+        self._write_backend_service_key(secret_values["LITELLM_MASTER_KEY"])
 
         deployed = self._run(
             [
@@ -486,6 +747,24 @@ class LiteLLMStackRuntime:
         runtime = self._wait_for_runtime()
         readiness = self._readiness()
         models = self._models()
+        completion_canaries = (
+            {
+                model_id: self._completion_canary(model_id)
+                for model_id in EXPECTED_MODEL_IDS
+            }
+            if models.get("ok")
+            else {
+                model_id: {
+                    "ok": False,
+                    "requestedModel": model_id,
+                    "error": "model_inventory_not_verified",
+                }
+                for model_id in EXPECTED_MODEL_IDS
+            }
+        )
+        completion_canaries_ok = all(
+            canary.get("ok") is True for canary in completion_canaries.values()
+        )
         litellm = runtime["litellm"]
         db = runtime["db"]
         runtime_ok = bool(
@@ -498,6 +777,7 @@ class LiteLLMStackRuntime:
             and not litellm.get("publishedPorts")
             and readiness.get("ok")
             and models.get("ok")
+            and completion_canaries_ok
         )
         return {
             "ok": runtime_ok,
@@ -505,11 +785,135 @@ class LiteLLMStackRuntime:
             "project": PROJECT_NAME,
             "network": NETWORK_NAME,
             "networkCreated": network_created,
-            "templates": {"composeSha256": compose_sha, "configSha256": config_sha},
-            "secretsPresent": [*REQUIRED_SECRET_NAMES, "OPENAI_API_KEY"],
-            "backendMasterKeyFileReady": BACKEND_MASTER_KEY_PATH.is_file() and not BACKEND_MASTER_KEY_PATH.is_symlink(),
+            "templates": {
+                "composeSha256": compose_sha,
+                "configSha256": config_sha,
+                "entrypointSha256": entrypoint_sha,
+            },
+            "secretsPresent": list(REQUIRED_SECRET_NAMES),
+            "providerInputFileReady": PROVIDER_INPUT_PATH.is_file() and not PROVIDER_INPUT_PATH.is_symlink(),
+            "backendServiceKeyFileReady": BACKEND_SERVICE_KEY_PATH.is_file() and not BACKEND_SERVICE_KEY_PATH.is_symlink(),
+            "activeConfigSha256": _sha256(config),
+            "aliasSelection": alias_selection,
             "secretValuesExposed": False,
             "runtime": runtime,
             "readiness": readiness,
             "models": models,
+            "completionCanaries": completion_canaries,
+            "completionCanariesPassed": completion_canaries_ok,
+        }
+
+
+    def activate_model_aliases(
+        self,
+        *,
+        fast_provider_model: str,
+        balanced_provider_model: str,
+        confirmation_inventory_sha256: str,
+    ) -> dict[str, Any]:
+        """Persist two fixed aliases only when bound to the current provider inventory."""
+        if os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() != "1":
+            return {"ok": False, "status": "BLOCKED", "blocker": "Private Owner Mode ist nicht aktiv"}
+        if os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() != "1":
+            return {"ok": False, "status": "BLOCKED", "blocker": "Allowlistete Compose-Writes sind nicht aktiviert"}
+
+        requested = {
+            "sovereign-fast": str(fast_provider_model or "").strip(),
+            "sovereign-balanced": str(balanced_provider_model or "").strip(),
+        }
+        if not all(_SAFE_PROVIDER_MODEL.fullmatch(value) for value in requested.values()):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Provider-Modellauswahl ist ungültig"}
+        if not re.fullmatch(r"[0-9a-f]{64}", str(confirmation_inventory_sha256 or "")):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Inventar-Bestätigung ist ungültig"}
+
+        inventory = self.provider_model_inventory()
+        if not inventory.get("ok"):
+            return inventory
+        if inventory.get("inventorySha256") != confirmation_inventory_sha256:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Bestätigter Inventar-Hash ist nicht mehr aktuell",
+                "currentInventorySha256": inventory.get("inventorySha256"),
+                "secretValuesExposed": False,
+            }
+        available = set(inventory.get("modelIds") or [])
+        if any(value not in available for value in requested.values()):
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Mindestens ein Provider-Modell ist nicht im bestätigten Inventar enthalten",
+                "secretValuesExposed": False,
+            }
+
+        plan = self.plan()
+        templates = plan.get("templates") if isinstance(plan.get("templates"), dict) else {}
+        compose_sha = str((templates.get("docker-compose.yml") or {}).get("sha256") or "")
+        config_sha = str((templates.get("config.yaml") or {}).get("sha256") or "")
+        entrypoint_sha = str((templates.get("sovereign-entrypoint.py") or {}).get("sha256") or "")
+        if not all((compose_sha, config_sha, entrypoint_sha)):
+            return {"ok": False, "status": "BLOCKED", "blocker": "LiteLLM-Template-Bundle ist unvollständig"}
+
+        path = self._alias_selection_path()
+        if path.is_symlink():
+            return {"ok": False, "status": "BLOCKED", "blocker": "LiteLLM-Alias-Auswahl darf kein Symlink sein"}
+        try:
+            self._load_alias_selection()
+        except RuntimeError as exc:
+            return {"ok": False, "status": "BLOCKED", "blocker": str(exc)}
+        previous: bytes | None = None
+        if path.is_file():
+            if path.stat().st_size > 8192:
+                return {"ok": False, "status": "BLOCKED", "blocker": "Bestehende Alias-Auswahl ist ungültig"}
+            previous = path.read_bytes()
+        selection = {
+            "inventorySha256": confirmation_inventory_sha256,
+            **requested,
+        }
+        selection_payload = (
+            json.dumps(selection, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        self._prepare_root()
+        self._write_atomic(path, selection_payload, 0o640)
+        try:
+            deployed = self.deploy(
+                confirmation_compose_sha256=compose_sha,
+                confirmation_config_sha256=config_sha,
+                confirmation_entrypoint_sha256=entrypoint_sha,
+            )
+        except (ValueError, FileNotFoundError, RuntimeError, subprocess.TimeoutExpired):
+            deployed = {
+                "ok": False,
+                "status": "FAILED",
+                "blocker": "Alias-Aktivierung wurde vor vollständiger Runtime-Evidence abgebrochen",
+            }
+        if deployed.get("ok"):
+            return {
+                **deployed,
+                "status": "ALIASES_ACTIVATED_VERIFIED",
+                "inventorySha256": confirmation_inventory_sha256,
+                "providerModels": requested,
+                "secretValuesExposed": False,
+            }
+
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            self._write_atomic(path, previous, 0o640)
+        try:
+            rollback = self.deploy(
+                confirmation_compose_sha256=compose_sha,
+                confirmation_config_sha256=config_sha,
+                confirmation_entrypoint_sha256=entrypoint_sha,
+            )
+        except (ValueError, FileNotFoundError, RuntimeError, subprocess.TimeoutExpired):
+            rollback = {"ok": False, "status": "ROLLBACK_FAILED"}
+        return {
+            "ok": False,
+            "status": "ALIAS_ACTIVATION_FAILED",
+            "blocker": "Alias-Aktivierung bestand die Runtime-Canaries nicht",
+            "activation": deployed,
+            "rollbackAttempted": True,
+            "rollbackStatus": rollback.get("status"),
+            "secretValuesExposed": False,
         }

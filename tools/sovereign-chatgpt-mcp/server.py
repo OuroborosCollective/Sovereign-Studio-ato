@@ -509,13 +509,13 @@ def owner_approval_request_status(request_id: str) -> dict[str, Any]:
     structured_output=True,
 )
 def owner_approval_widget_open(request_id: str) -> types.CallToolResult:
-    """Render one existing owner request in the protected chat widget without reading its value."""
+    """Render the protected owner widget for one existing metadata-only request."""
     payload = owner_input.status(request_id)
     return types.CallToolResult(
         content=[
             types.TextContent(
                 type="text",
-                text="Geschützte Owner-Eingabe ist geöffnet.",
+                text="Geschützte Owner-Eingabe wurde geöffnet.",
             )
         ],
         structuredContent=payload,
@@ -523,6 +523,7 @@ def owner_approval_widget_open(request_id: str) -> types.CallToolResult:
             "widget": "sovereign-owner-input",
             "sensitiveValuesIncluded": False,
             "protectedValueTransport": "direct_backend_https_only",
+            "requestIdAcceptedAsMetadataOnly": True,
         },
     )
 
@@ -567,6 +568,30 @@ def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) ->
 def managed_compose_stack_plan(stack_id: str) -> dict[str, Any]:
     """Read template hashes and runtime evidence for one allowlisted managed Compose stack."""
     return broker.call("managed_compose_stack_plan", {"stack_id": stack_id}, timeout=60)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def litellm_provider_model_inventory() -> dict[str, Any]:
+    """Return bounded model-id metadata from the protected OpenAI project without returning its key."""
+    return broker.call("litellm_provider_model_inventory", {}, timeout=90)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def litellm_model_aliases_activate(
+    fast_provider_model: str,
+    balanced_provider_model: str,
+    confirmation_inventory_sha256: str,
+) -> dict[str, Any]:
+    """Activate two fixed Sovereign aliases only against one confirmed current provider inventory."""
+    return broker.call(
+        "litellm_model_aliases_activate",
+        {
+            "fast_provider_model": fast_provider_model,
+            "balanced_provider_model": balanced_provider_model,
+            "confirmation_inventory_sha256": confirmation_inventory_sha256,
+        },
+        timeout=900,
+    )
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)

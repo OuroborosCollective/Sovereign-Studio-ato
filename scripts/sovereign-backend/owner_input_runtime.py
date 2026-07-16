@@ -25,7 +25,7 @@ MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
     "openai_api_key": {
-        "label": "OpenAI Agents SDK",
+        "label": "OpenAI Provider für LiteLLM",
         "fieldLabel": "OpenAI API-Key",
         "path": "/opt/sovereign-owner-managed/openai_api_key.txt",
         "maxBytes": 8192,
@@ -251,12 +251,19 @@ def register_owner_input_routes(
         try:
             with conn.cursor() as cur:
                 cur.execute(
+                    """UPDATE owner_input_requests
+                       SET status='expired', resolved_at=NOW(), result_code='expired'
+                       WHERE id=%s::uuid AND status='pending' AND expires_at <= NOW()""",
+                    (request_id,),
+                )
+                cur.execute(
                     """SELECT id::text, target_id, title, reason, field_label, status,
                               requested_at, expires_at, resolved_at, owner_comment, result_code
                        FROM owner_input_requests WHERE id=%s::uuid LIMIT 1""",
                     (request_id,),
                 )
                 row = cur.fetchone()
+            conn.commit()
             if not row:
                 return _no_store(jsonify({"error": "Anfrage nicht gefunden"})), 404
             return _no_store(jsonify({"ok": True, "request": _request_api(dict(row), _target_map())}))
@@ -372,6 +379,12 @@ def register_owner_input_routes(
     def owner_input_page():
         response = make_response(_OWNER_PAGE)
         response.headers["Content-Type"] = "text/html; charset=utf-8"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+            "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        )
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return _no_store(response)
 
 
@@ -386,10 +399,10 @@ _OWNER_PAGE = r"""<!doctype html>
 <section id="requestCard" class="card" hidden><h2 id="requestTitle"></h2><p id="requestReason"></p><p class="muted" id="requestMeta"></p><label for="comment">Optionaler Kommentar ohne sensible Daten</label><textarea id="comment" maxlength="1000"></textarea><label for="protectedValue" id="valueLabel"></label><input id="protectedValue" type="password" autocomplete="new-password" spellcheck="false"><div class="row"><button class="yes" id="yesButton">Ja – sicher eintragen</button><button class="no" id="noButton">Nein</button><button class="ghost" id="reloadButton">Neu laden</button></div><p id="result"></p></section>
 <section id="empty" class="card" hidden><p>Keine offene Anfrage.</p><button class="ghost" id="emptyReload">Neu laden</button></section></main>
 <script>
-let adminKey='';let current=null;const byId=id=>document.getElementById(id);
-function headers(){return {'Authorization':'Bearer '+adminKey,'Content-Type':'application/json'};}
-async function load(){const response=await fetch('/api/admin/owner-input/requests',{headers:headers(),cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Anfrage fehlgeschlagen');current=(data.requests||[])[0]||null;render();}
+let adminKey='';let current=null;const byId=id=>document.getElementById(id);const requestedId=new URLSearchParams(window.location.search).get('request_id')||'';
+function headers(){return {'Authorization':'Bearer '+adminKey};}
+async function load(){const response=await fetch('/api/admin/owner-input/requests',{headers:headers(),cache:'no-store',credentials:'same-origin',mode:'same-origin',redirect:'error'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Anfrage fehlgeschlagen');const requests=data.requests||[];current=requestedId?(requests.find(item=>item.id===requestedId)||null):(requests[0]||null);render();}
 function render(){byId('login').hidden=Boolean(adminKey);byId('requestCard').hidden=!current;byId('empty').hidden=Boolean(current)||!adminKey;if(!current)return;byId('requestTitle').textContent=current.title;byId('requestReason').textContent=current.reason;byId('requestMeta').textContent=current.targetLabel+' · gültig bis '+current.expiresAt;byId('valueLabel').textContent=current.fieldLabel;byId('protectedValue').value='';byId('comment').value='';byId('result').textContent='';}
-async function resolve(decision){if(!current)return;const encoded=decision==='yes'?new TextEncoder().encode(byId('protectedValue').value):new Uint8Array();const url='/api/admin/owner-input/requests/'+encodeURIComponent(current.id)+'/resolve?decision='+encodeURIComponent(decision)+'&comment='+encodeURIComponent(byId('comment').value);try{const response=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+adminKey,'Content-Type':'application/octet-stream'},cache:'no-store',body:encoded});encoded.fill(0);byId('protectedValue').value='';const data=await response.json();if(!response.ok)throw new Error(data.error||'Entscheidung fehlgeschlagen');byId('result').className='ok';byId('result').textContent=decision==='yes'?'Sicher eingetragen und Transportfeld geleert.':'Abgelehnt.';current=null;setTimeout(load,700);}catch(error){encoded.fill(0);byId('protectedValue').value='';byId('result').className='error';byId('result').textContent=error.message;}}
+async function resolve(decision){if(!current)return;const encoded=decision==='yes'?new TextEncoder().encode(byId('protectedValue').value):new Uint8Array();const url='/api/admin/owner-input/requests/'+encodeURIComponent(current.id)+'/resolve?decision='+encodeURIComponent(decision)+'&comment='+encodeURIComponent(byId('comment').value);try{const response=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+adminKey,'Content-Type':'application/octet-stream'},cache:'no-store',credentials:'same-origin',mode:'same-origin',redirect:'error',body:encoded});encoded.fill(0);byId('protectedValue').value='';const data=await response.json();if(!response.ok)throw new Error(data.error||'Entscheidung fehlgeschlagen');byId('result').className='ok';byId('result').textContent=decision==='yes'?'Sicher eingetragen und Transportfeld geleert.':'Abgelehnt.';current=null;setTimeout(load,700);}catch(error){encoded.fill(0);byId('protectedValue').value='';byId('result').className='error';byId('result').textContent=error instanceof TypeError?'HTTPS-Übertragung nicht bestätigt. Bitte nicht erneut eingeben und die Verbindung prüfen.':error.message;}}
 byId('loginButton').onclick=async()=>{adminKey=byId('adminKey').value.trim();byId('adminKey').value='';try{await load();}catch(error){adminKey='';byId('loginMessage').textContent=error.message;render();}};byId('yesButton').onclick=()=>resolve('yes');byId('noButton').onclick=()=>resolve('no');byId('reloadButton').onclick=load;byId('emptyReload').onclick=load;
 </script></body></html>"""

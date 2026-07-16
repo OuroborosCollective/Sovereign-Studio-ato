@@ -24,7 +24,10 @@ from .cognitive_swarm_manifest import (
 )
 
 
-DEFAULT_MODEL: Final[str] = "gpt-5.4-mini"
+DEFAULT_MODEL: Final[str] = "sovereign-balanced"
+ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset(
+    {"sovereign-fast", "sovereign-balanced"}
+)
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 RELEASE_HUNT_SKILL_PATH: Final[Path] = (
     Path(__file__).parent
@@ -35,9 +38,12 @@ RELEASE_HUNT_SKILL_PATH: Final[Path] = (
 
 _AGENT_CLASS: Any | None = None
 _RUNNER_CLASS: Any | None = None
+_RUN_CONFIG: Any | None = None
+_RUN_CONFIG_ERROR = ""
 _AGENTS_SDK_ERROR = ""
-_OPENAI_KEY_FILENAME: Final[str] = "openai_api_key.txt"
-_OPENAI_KEY_MAX_BYTES: Final[int] = 8192
+_LITELLM_SERVICE_KEY_FILENAME: Final[str] = "litellm_master_key.txt"
+_LITELLM_SERVICE_KEY_MAX_BYTES: Final[int] = 8192
+_DEFAULT_LITELLM_BASE_URL: Final[str] = "http://litellm:4000"
 
 StageObserver = Callable[[dict[str, object]], None]
 
@@ -67,16 +73,28 @@ def _emit_stage(
 
 
 def ensure_openai_runtime_key() -> bool:
-    """Load the owner-managed OpenAI key into this backend process without logging it."""
+    """Build a per-run Agents SDK provider that can reach only internal LiteLLM."""
 
-    if os.getenv("OPENAI_API_KEY", "").strip():
-        return True
-    root = Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")).resolve()
-    candidate_path = root / _OPENAI_KEY_FILENAME
+    global _RUN_CONFIG, _RUN_CONFIG_ERROR
+    _RUN_CONFIG = None
+    _RUN_CONFIG_ERROR = ""
+    os.environ.pop("OPENAI_API_KEY", None)
+    os.environ.pop("OPENAI_BASE_URL", None)
+    base_url = os.getenv("LITELLM_BASE_URL", _DEFAULT_LITELLM_BASE_URL).strip().rstrip("/")
+    if base_url != _DEFAULT_LITELLM_BASE_URL:
+        return False
+    expected_root = Path(
+        os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")
+    ).resolve()
+    configured_key_file = os.getenv(
+        "LITELLM_MASTER_KEY_FILE",
+        str(expected_root / _LITELLM_SERVICE_KEY_FILENAME),
+    ).strip()
+    candidate_path = Path(configured_key_file)
     if candidate_path.is_symlink():
         return False
     candidate = candidate_path.resolve()
-    if candidate.parent != root or not candidate.is_file():
+    if candidate.parent != expected_root or candidate.name != _LITELLM_SERVICE_KEY_FILENAME or not candidate.is_file():
         return False
     try:
         if candidate.stat().st_mode & 0o077:
@@ -84,16 +102,52 @@ def ensure_openai_runtime_key() -> bool:
         raw = candidate.read_bytes()
     except OSError:
         return False
-    if not raw or len(raw) > _OPENAI_KEY_MAX_BYTES:
+    if not raw or len(raw) > _LITELLM_SERVICE_KEY_MAX_BYTES:
         return False
     try:
         value = raw.decode("utf-8").strip()
     except UnicodeDecodeError:
         return False
-    if not value:
+    if len(value) < 16 or "\x00" in value or "\n" in value or "\r" in value:
         return False
-    os.environ["OPENAI_API_KEY"] = value
+    try:
+        provider_module = importlib.import_module("agents.models.openai_provider")
+        provider_class = getattr(provider_module, "OpenAIProvider")
+    except (AttributeError, ImportError):
+        _RUN_CONFIG_ERROR = "SDK_OPENAI_PROVIDER_API_UNAVAILABLE"
+        return False
+    try:
+        run_config_module = importlib.import_module("agents.run_config")
+        run_config_class = getattr(run_config_module, "RunConfig")
+    except (AttributeError, ImportError):
+        _RUN_CONFIG_ERROR = "SDK_RUN_CONFIG_API_UNAVAILABLE"
+        return False
+    try:
+        provider = provider_class(
+            api_key=value,
+            base_url=f"{base_url}/v1",
+            use_responses=False,
+        )
+    except (TypeError, ValueError):
+        _RUN_CONFIG_ERROR = "SDK_PROVIDER_CONFIGURATION_REJECTED"
+        return False
+    try:
+        _RUN_CONFIG = run_config_class(
+            model_provider=provider,
+            tracing_disabled=True,
+            trace_include_sensitive_data=False,
+        )
+    except (TypeError, ValueError):
+        _RUN_CONFIG = None
+        _RUN_CONFIG_ERROR = "SDK_RUN_CONFIG_REJECTED"
+        return False
     return True
+
+
+def _require_litellm_run_config() -> Any:
+    if _RUN_CONFIG is None:
+        raise RuntimeError("The internal LiteLLM Agents SDK RunConfig is unavailable.")
+    return _RUN_CONFIG
 
 
 class SwarmExecutionError(RuntimeError):
@@ -161,25 +215,25 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
     if isinstance(exc, FileNotFoundError):
         family, next_action, retryable = "AGENTS_RUNTIME_ASSET_MISSING", "VERIFY_PRODUCTION_RUNTIME_ASSETS", False
     elif status == 401 or "authentication" in lowered:
-        family, next_action, retryable = "OPENAI_AUTHENTICATION_FAILED", "VERIFY_OPENAI_PROJECT_KEY", False
+        family, next_action, retryable = "LITELLM_AUTHENTICATION_FAILED", "VERIFY_LITELLM_SERVICE_KEY", False
     elif status == 403 or "permission" in lowered:
-        family, next_action, retryable = "OPENAI_PERMISSION_DENIED", "VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS", False
+        family, next_action, retryable = "LITELLM_OR_PROVIDER_PERMISSION_DENIED", "VERIFY_LITELLM_ALIAS_AND_PROVIDER_ACCESS", False
     elif status == 404 or "notfound" in lowered or "not_found" in lowered:
-        family, next_action, retryable = "OPENAI_MODEL_OR_ENDPOINT_NOT_FOUND", "VERIFY_ALLOWLISTED_MODEL_ACCESS", False
+        family, next_action, retryable = "LITELLM_MODEL_OR_ENDPOINT_NOT_FOUND", "VERIFY_PROVISIONED_SOVEREIGN_ALIAS", False
     elif status == 429 or "ratelimit" in lowered or "rate_limit" in lowered:
-        family, next_action, retryable = "OPENAI_RATE_LIMITED", "RETRY_AFTER_PROVIDER_BACKOFF", True
+        family, next_action, retryable = "LITELLM_OR_PROVIDER_RATE_LIMITED", "RETRY_AFTER_PROVIDER_BACKOFF", True
     elif status in {408, 504} or "timeout" in lowered:
-        family, next_action, retryable = "OPENAI_TIMEOUT", "RETRY_FROM_PERSISTED_RUN_STATE", True
+        family, next_action, retryable = "LITELLM_TIMEOUT", "RETRY_FROM_PERSISTED_RUN_STATE", True
     elif status is not None and status >= 500:
-        family, next_action, retryable = "OPENAI_PROVIDER_UNAVAILABLE", "RETRY_FROM_PERSISTED_RUN_STATE", True
+        family, next_action, retryable = "LITELLM_OR_PROVIDER_UNAVAILABLE", "RETRY_FROM_PERSISTED_RUN_STATE", True
     elif status == 400 or "badrequest" in lowered or "bad_request" in lowered:
-        family, next_action, retryable = "OPENAI_REQUEST_REJECTED", "REVIEW_MODEL_AND_STRUCTURED_OUTPUT_CONTRACT", False
+        family, next_action, retryable = "LITELLM_REQUEST_REJECTED", "REVIEW_ALIAS_AND_STRUCTURED_OUTPUT_CONTRACT", False
     elif any(marker in lowered for marker in ("modelbehavior", "output", "validation")):
         family, next_action, retryable = "AGENTS_STRUCTURED_OUTPUT_INVALID", "RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS", True
     elif "maxturn" in lowered or "max_turn" in lowered:
         family, next_action, retryable = "AGENTS_TURN_LIMIT_EXHAUSTED", "REVIEW_AGENT_TURN_BUDGET", False
     elif "connection" in lowered or "network" in lowered:
-        family, next_action, retryable = "OPENAI_CONNECTION_FAILED", "RETRY_FROM_PERSISTED_RUN_STATE", True
+        family, next_action, retryable = "LITELLM_CONNECTION_FAILED", "RETRY_FROM_PERSISTED_RUN_STATE", True
     else:
         family, next_action, retryable = "AGENTS_SDK_EXECUTION_FAILED", "INSPECT_BOUNDED_SDK_FAILURE_EVIDENCE", True
     return SwarmExecutionError(
@@ -195,7 +249,11 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
 
 async def _run_stage(runner_class: Any, agent: Any, prompt: str, *, stage: str) -> Any:
     try:
-        return await runner_class.run(agent, prompt)
+        return await runner_class.run(
+            agent,
+            prompt,
+            run_config=_require_litellm_run_config(),
+        )
     except SwarmExecutionError:
         raise
     except Exception as exc:
@@ -329,10 +387,12 @@ def _base_instructions(skill: str) -> str:
 
 
 def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
-    agent_class, _ = _require_agents_sdk()
     selected_model = (model or os.getenv("SOVEREIGN_AGENTS_MODEL") or DEFAULT_MODEL).strip()
     if not selected_model:
         raise ValueError("A model identifier is required.")
+    if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
+        raise ValueError("A Sovereign LiteLLM model alias is required.")
+    agent_class, _ = _require_agents_sdk()
 
     skill = _load_skill_instructions()
     base = _base_instructions(skill)
@@ -356,6 +416,7 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
             specialist.as_tool(
                 tool_name=f"specialist_{role}",
                 tool_description=f"Analyze one bounded {role} work package and return evidence-backed findings.",
+                run_config=_require_litellm_run_config(),
                 max_turns=6,
             )
         )
@@ -469,7 +530,7 @@ async def run_cognitive_swarm(
         return {
             "ok": False,
             "status": "BLOCKED",
-            "blocker": "OPENAI_API_KEY is not configured in the protected backend environment.",
+            "blocker": "LiteLLM internal service key or internal base URL is not configured.",
             "manifest": manifest_payload(),
         }
 

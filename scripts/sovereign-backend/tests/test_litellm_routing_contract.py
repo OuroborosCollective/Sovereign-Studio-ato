@@ -25,20 +25,10 @@ def _load_litellm_runtime():
 
 def test_litellm_usage_parser_prefers_real_total_and_bounds_values() -> None:
     runtime = _load_litellm_runtime()
-
     evidence = runtime.extract_litellm_usage({
-        "usage": {
-            "prompt_tokens": 120,
-            "completion_tokens": 30,
-            "total_tokens": 155,
-        }
+        "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 155}
     })
-    assert evidence == {
-        "promptTokens": 120,
-        "completionTokens": 30,
-        "totalTokens": 155,
-    }
-
+    assert evidence == {"promptTokens": 120, "completionTokens": 30, "totalTokens": 155}
     fallback_total = runtime.extract_litellm_usage({
         "usage": {"prompt_tokens": 20, "completion_tokens": 5}
     })
@@ -70,10 +60,7 @@ def test_backend_routes_reserve_then_settle_from_runtime_usage() -> None:
 
 
 def test_migration_adds_two_litellm_routes_and_settlement_evidence() -> None:
-    migration = (
-        SCRIPT_BACKEND / "migrations" / "012_litellm_usage_settlements.sql"
-    ).read_text("utf-8")
-
+    migration = (SCRIPT_BACKEND / "migrations" / "012_litellm_usage_settlements.sql").read_text("utf-8")
     assert "CREATE TABLE IF NOT EXISTS llm_usage_settlements" in migration
     assert "request_id UUID PRIMARY KEY" in migration
     assert "reserved_credits" in migration
@@ -86,10 +73,13 @@ def test_migration_adds_two_litellm_routes_and_settlement_evidence() -> None:
     assert "'litellm'" in migration
     assert "http://litellm:4000" in migration
     assert "ON CONFLICT (model_id) DO UPDATE" in migration
+    assert "id = EXCLUDED.id" in migration
+    assert "disabled = true" in migration
+    assert "disabled = llm_routes.disabled" not in migration
     assert "DELETE FROM" not in migration.upper()
 
 
-def test_litellm_templates_use_only_owner_supplied_provider_key() -> None:
+def test_litellm_templates_stage_models_only_after_verified_provider_inventory() -> None:
     configs = (
         ROOT / "deploy" / "sovereign-litellm" / "config.yaml",
         ROOT / "tools" / "sovereign-chatgpt-mcp" / "templates" / "sovereign-litellm" / "config.yaml",
@@ -98,20 +88,22 @@ def test_litellm_templates_use_only_owner_supplied_provider_key() -> None:
         ROOT / "deploy" / "sovereign-litellm" / "docker-compose.yml",
         ROOT / "tools" / "sovereign-chatgpt-mcp" / "templates" / "sovereign-litellm" / "docker-compose.yml",
     )
-
-    for path in configs:
-        source = path.read_text("utf-8")
-        assert "model_name: sovereign-fast" in source
-        assert "model: openai/gpt-5.6-luna" in source
-        assert "model_name: sovereign-balanced" in source
-        assert "model: openai/gpt-5.6-terra" in source
-        assert source.count("api_key: os.environ/OPENAI_API_KEY") == 2
+    config_sources = [path.read_text("utf-8") for path in configs]
+    assert config_sources[0] == config_sources[1]
+    for source in config_sources:
+        assert "model_list: []" in source
+        assert "openai/gpt-5.6-luna" not in source
+        assert "openai/gpt-5.6-terra" not in source
+        assert "api_key:" not in source
         assert "model_name: '*'" not in source
         assert "model_name: \"*\"" not in source
 
-    for path in composes:
-        source = path.read_text("utf-8")
-        assert "OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}" in source
+    compose_sources = [path.read_text("utf-8") for path in composes]
+    assert compose_sources[0] == compose_sources[1]
+    for source in compose_sources:
+        assert "./sovereign-entrypoint.py:/app/sovereign-entrypoint.py:ro" in source
+        assert "/opt/sovereign-owner-managed/openai_api_key.txt:/run/secrets/openai_api_key:ro" in source
+        assert "OPENAI_API_KEY:" not in source
         assert "ports:" not in source
         assert source.count("sovereign-private") >= 3
         assert "supabase_default" not in source
@@ -119,16 +111,9 @@ def test_litellm_templates_use_only_owner_supplied_provider_key() -> None:
 
 
 def test_backend_deploy_contract_connects_only_internal_litellm_network() -> None:
-    deploy = (
-        ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend"
-    ).read_text("utf-8")
-    rollback = (
-        ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "rollback-sovereign-backend"
-    ).read_text("utf-8")
-    installer = (
-        ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "install-on-vps.sh"
-    ).read_text("utf-8")
-
+    deploy = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    rollback = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
+    installer = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "install-on-vps.sh").read_text("utf-8")
     assert "docker network connect sovereign-private" in deploy
     assert "docker network connect sovereign-private" in rollback
     assert "LITELLM_BASE_URL=http://litellm:4000" in installer

@@ -14,6 +14,7 @@ MUTATING_ACTIONS = frozenset(
         "deploy_verified_release",
         "rollback_release",
         "deploy_managed_compose_stack",
+        "litellm_model_aliases_activate",
     }
 )
 

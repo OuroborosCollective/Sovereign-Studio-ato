@@ -13,6 +13,8 @@ WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
+LITELLM_BASE_URL=http://litellm:4000
+LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt
 ENV_FILE="$INSTALL_ROOT/.env"
 MANAGED_ENV="$INSTALL_ROOT/runtime.env"
 BACKEND_MANAGED_ENV="$INSTALL_ROOT/backend-runtime.env"
@@ -291,6 +293,7 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -S /var/run/docker.sock ]] || fail "docker socket is missing"
 [[ -f "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "sovereign-litellm compose template is missing"
 [[ -f "$LITELLM_TEMPLATE_SOURCE/config.yaml" ]] || fail "sovereign-litellm config template is missing"
+[[ -f "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" ]] || fail "sovereign-litellm entrypoint template is missing"
 bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
   || fail "source self-update wrapper has invalid bash syntax"
 
@@ -350,6 +353,7 @@ for file in broker.py command_contract.py command_queue.py command_worker.py ope
 done
 backup_control_plane_file "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$LITELLM_TEMPLATE_DIR/config.yaml"
+backup_control_plane_file "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report; do
   backup_control_plane_file "$BIN_DIR/$file"
 done
@@ -377,6 +381,7 @@ install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"
 install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"
 install -m 0640 "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$LITELLM_TEMPLATE_SOURCE/config.yaml" "$LITELLM_TEMPLATE_DIR/config.yaml"
+install -m 0640 "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
 install -m 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database"
@@ -472,6 +477,8 @@ set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_ENV_FILE "$BACKEND_ENV_PATH"
 set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_MANAGED_ENV_FILE "$BACKEND_MANAGED_ENV"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"
+set_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL "$LITELLM_BASE_URL"
+set_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE "$LITELLM_MASTER_KEY_FILE"
 OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
 OWNER_ADMIN_ID="$(read_backend_value SOVEREIGN_OWNER_ADMIN_ID)"
 OWNER_ADMIN_EMAIL="$(read_backend_value SOVEREIGN_OWNER_ADMIN_EMAIL)"
@@ -571,8 +578,6 @@ INSTALL_STAGE="write_broker_environment"
   printf 'SOVEREIGN_LITELLM_TEMPLATE_ROOT=%s\n' "$LITELLM_TEMPLATE_DIR"
   printf 'SOVEREIGN_LITELLM_DEPLOY_ROOT=/opt/sovereign-litellm\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
-  printf 'LITELLM_BASE_URL=http://litellm:4000\n'
-  printf 'LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
 } > "$BROKER_ENV"
 chmod 0600 "$BROKER_ENV"

@@ -43,11 +43,29 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     assert "content_length > int(target[\"maxBytes\"])" in owner_runtime
     assert "def ensure_openai_runtime_key()" in swarm_agents
     assert 'os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")' in swarm_agents
+    assert '_LITELLM_SERVICE_KEY_FILENAME: Final[str] = "litellm_master_key.txt"' in swarm_agents
+    assert '_DEFAULT_LITELLM_BASE_URL: Final[str] = "http://litellm:4000"' in swarm_agents
+    assert 'provider_module = importlib.import_module("agents.models.openai_provider")' in swarm_agents
+    assert 'run_config_module = importlib.import_module("agents.run_config")' in swarm_agents
+    assert 'provider_class = getattr(provider_module, "OpenAIProvider")' in swarm_agents
+    assert 'run_config_class = getattr(run_config_module, "RunConfig")' in swarm_agents
+    assert 'base_url=f"{base_url}/v1"' in swarm_agents
+    assert "use_responses=False" in swarm_agents
+    assert "tracing_disabled=True" in swarm_agents
+    assert "trace_include_sensitive_data=False" in swarm_agents
+    assert "run_config=_require_litellm_run_config()" in swarm_agents
+    assert "set_default_openai_api" not in swarm_agents
+    assert "set_tracing_disabled" not in swarm_agents
+    assert 'os.environ["OPENAI_API_KEY"]' not in swarm_agents
+    assert 'os.environ["OPENAI_BASE_URL"]' not in swarm_agents
+    assert 'candidate.name != _LITELLM_SERVICE_KEY_FILENAME' in swarm_agents
+    assert 'openai_api_key.txt' not in swarm_agents
+    assert 'https://api.openai.com' not in swarm_agents
     assert 'if not ensure_openai_runtime_key()' in swarm_agents
     assert '"configured": ensure_openai_runtime_key()' in swarm_routes
 
 
-def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdir_writable() -> None:
+def test_broker_deploy_keeps_secure_mounts_bounded_and_ci_stays_queue_only() -> None:
     repository_root = ROOT.parent.parent
     deploy = (repository_root / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
     workflow = (repository_root / ".github" / "workflows" / "sovereign-agent-backend.yml").read_text("utf-8")
@@ -63,9 +81,9 @@ def test_backend_deploy_keeps_global_secure_mount_read_only_and_only_owner_subdi
     assert deploy.count('--volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw"') == 2
     assert ':/opt/secure/owner-managed:rw' not in deploy
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
-    assert 'OWNER_INPUT_ROOT="/opt/sovereign-owner-managed"' in workflow
-    assert 'if [ ! -d "$OWNER_INPUT_ROOT" ] || [ -L "$OWNER_INPUT_ROOT" ]; then' in workflow
-    assert workflow.count('--volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw"') == 2
-    assert workflow.count("--volume /opt/secure:/opt/secure:ro") == 2
-    assert "openhands-enterprise_default" not in workflow
     assert "openhands-enterprise_default" not in deploy
+    assert "release-policy-gate:" in workflow
+    assert "appleboy/" not in workflow
+    assert "VPS_PASSWORD" not in workflow
+    assert "docker build" not in workflow
+    assert "docker run" not in workflow

@@ -221,7 +221,12 @@ class ManagedComposeRuntime:
             special = self.litellm.plan()
             compose_sha = str(special.get("templates", {}).get("docker-compose.yml", {}).get("sha256") or "")
             config_sha = str(special.get("templates", {}).get("config.yaml", {}).get("sha256") or "")
-            bundle_sha = _sha256(f"{compose_sha}:{config_sha}".encode("ascii")) if compose_sha and config_sha else ""
+            entrypoint_sha = str(special.get("templates", {}).get("sovereign-entrypoint.py", {}).get("sha256") or "")
+            bundle_sha = (
+                _sha256(f"{compose_sha}:{config_sha}:{entrypoint_sha}".encode("ascii"))
+                if compose_sha and config_sha and entrypoint_sha
+                else ""
+            )
             return {
                 **special,
                 "stackId": stack.stack_id,
@@ -400,6 +405,22 @@ class ManagedComposeRuntime:
             time.sleep(2)
         return states
 
+    def litellm_provider_model_inventory(self) -> dict[str, Any]:
+        return self.litellm.provider_model_inventory()
+
+    def activate_litellm_model_aliases(
+        self,
+        *,
+        fast_provider_model: str,
+        balanced_provider_model: str,
+        confirmation_inventory_sha256: str,
+    ) -> dict[str, Any]:
+        return self.litellm.activate_model_aliases(
+            fast_provider_model=fast_provider_model,
+            balanced_provider_model=balanced_provider_model,
+            confirmation_inventory_sha256=confirmation_inventory_sha256,
+        )
+
     def deploy(self, stack_id: str, confirmation_sha256: str) -> dict[str, Any]:
         stack = self._stack(stack_id)
         if os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() != "1":
@@ -410,12 +431,18 @@ class ManagedComposeRuntime:
             special = self.litellm.plan()
             compose_sha = str(special.get("templates", {}).get("docker-compose.yml", {}).get("sha256") or "")
             config_sha = str(special.get("templates", {}).get("config.yaml", {}).get("sha256") or "")
-            bundle_sha = _sha256(f"{compose_sha}:{config_sha}".encode("ascii")) if compose_sha and config_sha else ""
+            entrypoint_sha = str(special.get("templates", {}).get("sovereign-entrypoint.py", {}).get("sha256") or "")
+            bundle_sha = (
+                _sha256(f"{compose_sha}:{config_sha}:{entrypoint_sha}".encode("ascii"))
+                if compose_sha and config_sha and entrypoint_sha
+                else ""
+            )
             if confirmation_sha256 != bundle_sha:
                 return {"ok": False, "status": "BLOCKED", "blocker": "Template-Bundle-Hash stimmt nicht", "expected": bundle_sha}
             return self.litellm.deploy(
                 confirmation_compose_sha256=compose_sha,
                 confirmation_config_sha256=config_sha,
+                confirmation_entrypoint_sha256=entrypoint_sha,
             )
 
         files, bundle_sha = self._template_files(stack)

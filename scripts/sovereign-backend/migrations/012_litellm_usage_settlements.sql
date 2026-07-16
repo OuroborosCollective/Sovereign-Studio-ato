@@ -58,32 +58,33 @@ INSERT INTO llm_routes (
 )
 VALUES
     (
-        gen_random_uuid(),
+        'litellm-sovereign-fast',
         'sovereign-fast',
         'Sovereign Fast',
         'litellm',
         'http://litellm:4000',
         1,
-        false,
+        true,
         10,
         'litellm',
         'fast',
         '{"alias":"sovereign-fast","fallback":"cloudflare"}'::jsonb
     ),
     (
-        gen_random_uuid(),
+        'litellm-sovereign-balanced',
         'sovereign-balanced',
         'Sovereign Balanced',
         'litellm',
         'http://litellm:4000',
         2,
-        false,
+        true,
         30,
         'litellm',
         'balanced',
         '{"alias":"sovereign-balanced","fallback":"cloudflare"}'::jsonb
     )
 ON CONFLICT (model_id) DO UPDATE SET
+    id = EXCLUDED.id,
     model_name = EXCLUDED.model_name,
     provider = EXCLUDED.provider,
     base_url = EXCLUDED.base_url,
@@ -91,7 +92,7 @@ ON CONFLICT (model_id) DO UPDATE SET
     runtime_kind = EXCLUDED.runtime_kind,
     tier = EXCLUDED.tier,
     config = COALESCE(llm_routes.config, '{}'::jsonb) || EXCLUDED.config,
-    disabled = false,
+    disabled = true,
     updated_at = NOW();
 
 COMMIT;

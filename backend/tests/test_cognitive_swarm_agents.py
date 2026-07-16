@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ sys.path.insert(0, str(BACKEND))
 
 import agent_runtime.cognitive_swarm_agents as swarm_module
 from agent_runtime.cognitive_swarm_agents import (
+    ALLOWED_LITELLM_MODEL_ALIASES,
     CognitiveSwarm,
     DEFAULT_MODEL,
     DispatchPlan,
@@ -26,27 +28,52 @@ from agent_runtime.cognitive_swarm_agents import (
 )
 
 
-def test_default_model_uses_the_agents_sdk_low_latency_baseline() -> None:
-    assert DEFAULT_MODEL == "gpt-5.4-mini"
+def _configure_internal_litellm(monkeypatch, tmp_path: Path) -> None:
+    owner_root = tmp_path / "owner-secrets"
+    owner_root.mkdir(mode=0o700)
+    key_path = owner_root / "litellm_master_key.txt"
+    key_path.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    key_path.chmod(0o600)
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(owner_root))
+    monkeypatch.setenv("LITELLM_MASTER_KEY_FILE", str(key_path))
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
+    assert swarm_module.ensure_openai_runtime_key() is True
+
+
+def test_default_model_uses_the_internal_litellm_alias() -> None:
+    assert DEFAULT_MODEL == "sovereign-balanced"
+    assert ALLOWED_LITELLM_MODEL_ALIASES == frozenset(
+        {"sovereign-fast", "sovereign-balanced"}
+    )
     production_agents = (
         PRODUCTION_BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
     ).read_text("utf-8")
-    assert 'DEFAULT_MODEL: Final[str] = "gpt-5.4-mini"' in production_agents
+    assert 'DEFAULT_MODEL: Final[str] = "sovereign-balanced"' in production_agents
+    assert "ALLOWED_LITELLM_MODEL_ALIASES" in production_agents
 
 
-def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists_or_fails_closed() -> None:
+def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists_or_fails_closed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     status = agents_sdk_status()
     if status["available"] is False:
         with pytest.raises(RuntimeError, match="openai-agents"):
-            build_cognitive_swarm(model="gpt-5.6")
+            build_cognitive_swarm(model=DEFAULT_MODEL)
         return
 
-    swarm = build_cognitive_swarm(model="gpt-5.6")
+    _configure_internal_litellm(monkeypatch, tmp_path)
+    swarm = build_cognitive_swarm(model=DEFAULT_MODEL)
     assert swarm.agent_count == 12
     assert swarm.dispatcher.name == "The Dispatcher"
     assert len(swarm.workers) == 6
     assert len(swarm.specialists) == 4
     assert swarm.judge.name == "The Judge"
+
+
+def test_swarm_build_rejects_direct_provider_model_identifiers() -> None:
+    with pytest.raises(ValueError, match="LiteLLM model alias"):
+        build_cognitive_swarm(model="direct-provider-model")
 
 
 def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> None:
@@ -202,7 +229,7 @@ def test_provider_failures_are_classified_without_raw_error_text() -> None:
     )
 
     assert isinstance(failure, SwarmExecutionError)
-    assert failure.family == "OPENAI_RATE_LIMITED"
+    assert failure.family == "LITELLM_OR_PROVIDER_RATE_LIMITED"
     assert failure.stage == "dispatcher"
     assert failure.retryable is True
     assert failure.http_status == 429
@@ -332,12 +359,21 @@ def test_production_image_source_contains_the_same_cognitive_skill_bundle() -> N
     assert production_release_hunt_skill.read_bytes() == RELEASE_HUNT_SKILL_PATH.read_bytes()
 
 
-def test_swarm_fails_closed_without_openai_api_key(monkeypatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_swarm_fails_closed_without_litellm_service_key(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    owner_root = tmp_path / "missing-owner-secrets"
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(owner_root))
+    monkeypatch.setenv(
+        "LITELLM_MASTER_KEY_FILE",
+        str(owner_root / "litellm_master_key.txt"),
+    )
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
     result = asyncio.run(run_cognitive_swarm("Inspect the current runtime evidence."))
     assert result["ok"] is False
     assert result["status"] == "BLOCKED"
-    assert "OPENAI_API_KEY" in result["blocker"]
+    assert "LiteLLM internal service key" in result["blocker"]
     assert result["manifest"]["agentCount"] == 20
     assert result["manifest"]["coreAgentCount"] == 8
     assert result["manifest"]["maxActiveSpecialists"] == 4

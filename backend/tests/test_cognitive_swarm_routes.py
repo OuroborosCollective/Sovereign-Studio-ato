@@ -4,6 +4,7 @@ import sys
 from typing import Any
 
 from flask import Flask, request
+import pytest
 
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
@@ -14,6 +15,17 @@ from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+@pytest.fixture(autouse=True)
+def isolate_internal_litellm_configuration(monkeypatch, tmp_path: Path) -> None:
+    owner_root = tmp_path / "missing-owner-secrets"
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(owner_root))
+    monkeypatch.setenv(
+        "LITELLM_MASTER_KEY_FILE",
+        str(owner_root / "litellm_master_key.txt"),
+    )
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
 
 
 class FakeCursor:
@@ -132,7 +144,15 @@ def test_swarm_manifest_route_reports_exact_topology(monkeypatch) -> None:
     assert payload["manifest"]["coreAgentCount"] == 8
     assert payload["manifest"]["maxActiveSpecialists"] == 4
     assert payload["manifest"]["autoMerge"] is False
-    assert payload["allowedModels"] == ["gpt-5.4-mini"]
+    assert payload["allowedModels"] == ["sovereign-balanced"]
+
+
+def test_allowed_models_drop_direct_provider_identifiers(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "SOVEREIGN_AGENTS_ALLOWED_MODELS",
+        "direct-provider-model,sovereign-fast",
+    )
+    assert routes_runtime._allowed_models() == frozenset({"sovereign-fast"})
 
 
 def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
@@ -151,7 +171,7 @@ def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
     assert payload["receivedEvidenceId"].startswith("evidence-")
     assert payload["reason"]
     assert payload["nextAction"] == "PROVIDE_MISSING_EVIDENCE_OR_PROTECTED_CONFIGURATION"
-    assert "OPENAI_API_KEY" in payload["blocker"]
+    assert "LiteLLM internal service key" in payload["blocker"]
     assert factory.commits == 2
     assert any("INSERT INTO agent_runs" in sql for sql, _ in factory.calls)
     assert any("UPDATE agent_runs" in sql for sql, _ in factory.calls)
@@ -239,9 +259,9 @@ def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monk
     async def fail_swarm(*args, **kwargs):
         raise SwarmExecutionError(
             stage="dispatcher",
-            family="OPENAI_PERMISSION_DENIED",
+            family="LITELLM_OR_PROVIDER_PERMISSION_DENIED",
             error_type="PermissionDeniedError",
-            next_action="VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS",
+            next_action="VERIFY_LITELLM_ALIAS_AND_PROVIDER_ACCESS",
             retryable=False,
             http_status=403,
             request_id="req-safe-456",
@@ -258,11 +278,11 @@ def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monk
 
     assert response.status_code == 502
     assert payload["status"] == "FAILED_RECOVERABLE"
-    assert payload["blocker"] == "OPENAI_PERMISSION_DENIED"
+    assert payload["blocker"] == "LITELLM_OR_PROVIDER_PERMISSION_DENIED"
     assert payload["failureStage"] == "dispatcher"
     assert payload["httpStatus"] == 403
     assert payload["requestId"] == "req-safe-456"
-    assert payload["nextAction"] == "VERIFY_OPENAI_PROJECT_AND_MODEL_ACCESS"
+    assert payload["nextAction"] == "VERIFY_LITELLM_ALIAS_AND_PROVIDER_ACCESS"
     assert payload["retryable"] is False
     assert "provider message" not in str(payload)
     assert any("INSERT INTO agent_failures" in sql for sql, _ in factory.calls)
