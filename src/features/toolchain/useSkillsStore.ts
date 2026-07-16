@@ -2,8 +2,8 @@
  * useSkillsStore — Zustand-Store für Sovereign App Skills.
  *
  * Skills können aus beliebigen Repos gescannt und adaptiert werden.
- * Aktive Skills werden automatisch in den KI-Kontext injiziert.
- * User ruft sie per /skill-slug im Chat auf.
+ * Aktive Skills sind ausdrücklich per /skill-slug auswählbar.
+ * Kein Skill-Prompt wird ungefragt in andere Aufträge injiziert.
  */
 
 import { create } from 'zustand';
@@ -34,11 +34,19 @@ interface SkillsState {
   deleteSkill: (id: string) => Promise<void>;
   reset: () => void;
 
-  // For KI — returns active skill prompts for system context
+  // Metadata-only catalog. Workflow prompts are used only after explicit /skill invocation.
   getActiveSkillContext: () => string;
 
-  // For /command palette — active skills as slash commands
-  getSkillSlashCommands: () => { cmd: string; label: string; description: string; adapted_prompt: string }[];
+  // For /command palette — active skills as slash commands with persisted provenance.
+  getSkillSlashCommands: () => {
+    cmd: string;
+    label: string;
+    description: string;
+    adapted_prompt: string;
+    skill_id: string;
+    source_sha?: string;
+    content_sha256?: string;
+  }[];
 }
 
 export const useSkillsStore = create<SkillsState>()(
@@ -86,6 +94,7 @@ export const useSkillsStore = create<SkillsState>()(
           path: found.path,
           raw_content: readData.content,
           framework: readData.framework,
+          source_sha: readData.sha,
         });
 
         onProgress?.(`Installiere ${adapted.name}…`);
@@ -97,20 +106,11 @@ export const useSkillsStore = create<SkillsState>()(
           source_path: found.path,
           framework: adapted.framework,
           adapted_prompt: adapted.adapted_prompt,
+          source_sha: adapted.source_sha,
+          content_sha256: adapted.content_sha256,
         });
 
-        const newSkill: UserSkill = {
-          id: installed.id,
-          name: adapted.name,
-          slug: adapted.slug,
-          description: adapted.description,
-          source_repo: `${owner}/${repo}`,
-          source_path: found.path,
-          framework: adapted.framework,
-          adapted_prompt: adapted.adapted_prompt,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        };
+        const newSkill: UserSkill = installed.skill;
 
         set((s) => ({ skills: [...s.skills.filter((x) => x.slug !== newSkill.slug), newSkill] }));
         return newSkill;
@@ -135,12 +135,10 @@ export const useSkillsStore = create<SkillsState>()(
         const active = get().skills.filter((s) => s.is_active);
         if (active.length === 0) return '';
         return [
-          `── Installierte Skills (${active.length}) ──`,
-          ...active.map((s) => [
-            `**/${s.slug}** — ${s.description}`,
-            s.adapted_prompt ? `Prompt: ${s.adapted_prompt.slice(0, 400)}` : '',
-          ].filter(Boolean).join('\n')),
-        ].join('\n\n');
+          `── Explizit auswählbare Skills (${active.length}) ──`,
+          ...active.map((s) => `/${s.slug} — ${s.description}`),
+          'Skill-Workflows werden nur bei ausdrücklichem Slash-Aufruf in einen Auftrag übernommen.',
+        ].join('\n');
       },
 
       getSkillSlashCommands: () =>
@@ -151,6 +149,9 @@ export const useSkillsStore = create<SkillsState>()(
             label: s.name,
             description: s.description,
             adapted_prompt: s.adapted_prompt,
+            skill_id: s.id,
+            source_sha: s.source_sha,
+            content_sha256: s.content_sha256,
           })),
     }),
     { name: 'sovereign-skills-store', partialize: (s) => ({ skills: s.skills }) },

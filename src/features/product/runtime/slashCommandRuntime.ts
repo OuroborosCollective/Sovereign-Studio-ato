@@ -11,6 +11,10 @@ export interface SlashCommandDefinition {
   readonly adapted_prompt?: string;
   /** marks a command as dynamically installed by the skill system */
   readonly is_skill?: boolean;
+  /** persisted provenance used by the explicit runtime handoff */
+  readonly skill_id?: string;
+  readonly source_sha?: string;
+  readonly content_sha256?: string;
 }
 
 /** Static built-in commands always available */

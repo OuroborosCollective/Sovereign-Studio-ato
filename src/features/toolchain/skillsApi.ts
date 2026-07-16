@@ -28,6 +28,7 @@ export interface FoundSkill {
   path: string;
   name: string;
   framework: string;
+  kind: 'skill' | 'mcp_app';
   preview: string;
   size: number;
 }
@@ -41,8 +42,11 @@ export interface UserSkill {
   source_path: string;
   framework: string;
   adapted_prompt: string;
+  source_sha?: string;
+  content_sha256?: string;
   is_active: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ScanResult {
@@ -59,6 +63,8 @@ export interface AdaptResult {
   description: string;
   adapted_prompt: string;
   framework: string;
+  source_sha: string;
+  content_sha256: string;
 }
 
 // ── API functions ─────────────────────────────────────────────────────────────
@@ -73,7 +79,7 @@ export const skillsApi = {
   },
 
   /** Read a specific skill file from GitHub. */
-  readSkillFile(params: { owner: string; repo: string; path: string }): Promise<{ content: string; framework: string }> {
+  readSkillFile(params: { owner: string; repo: string; path: string; ref?: string }): Promise<{ content: string; framework: string; sha: string }> {
     return skillFetch('/api/toolchain/skills/read', {
       method: 'POST',
       body: JSON.stringify(params),
@@ -87,6 +93,8 @@ export const skillsApi = {
     path: string;
     raw_content: string;
     framework: string;
+    source_sha: string;
+    ref?: string;
   }): Promise<AdaptResult> {
     return skillFetch('/api/toolchain/skills/adapt', {
       method: 'POST',
@@ -103,7 +111,9 @@ export const skillsApi = {
     source_path: string;
     framework: string;
     adapted_prompt: string;
-  }): Promise<{ id: string; slug: string }> {
+    source_sha: string;
+    content_sha256: string;
+  }): Promise<{ id: string; slug: string; skill: UserSkill }> {
     return skillFetch('/api/toolchain/skills/install', {
       method: 'POST',
       body: JSON.stringify(params),
