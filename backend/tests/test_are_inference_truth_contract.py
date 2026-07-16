@@ -32,13 +32,16 @@ def test_quarantine_reports_created_only_for_new_persisted_candidate():
         assert status({"duplicate": True}) == 200
 
 
-def test_quarantine_promotion_requires_accepted_vectorized_pattern_for_same_user():
+def test_quarantine_promotion_requires_causally_bound_accepted_pattern_for_same_user():
     for path in SOURCES:
         _status, source = _load_quarantine_status(path)
+        assert "FROM are_learning_quarantine q" in source
         assert "JOIN sovereign_agent_pattern_vectors v" in source
         assert "v.candidate_id=c.candidate_id AND v.user_id=c.user_id" in source
+        assert "q.status='pending'" in source
         assert "c.decision='accepted'" in source
         assert "c.remote_memory_allowed=true" in source
+        assert "c.payload->>'missionSha256'=BTRIM(q.prompt_sha256)" in source
 
 
 def test_embedding_repair_persists_actual_batch_model_truth():

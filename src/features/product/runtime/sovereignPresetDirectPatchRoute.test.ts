@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { classifyIntent, decideSovereignCapabilityRoute } from './sovereignCapabilityRouter';
+import {
+  buildOfflineCapabilityLanguageEvidence,
+  classifyOfflineCapabilityIntent,
+  decideSovereignCapabilityRoute,
+} from './sovereignCapabilityRouter';
 import {
   buildSovereignPresetActionSubmission,
   getSovereignPresetAction,
@@ -18,10 +22,10 @@ describe('docs preset direct patch entry', () => {
       },
     );
 
-    expect(classifyIntent(submission)).toBe('direct_patch');
+    expect(classifyOfflineCapabilityIntent(submission)).toBe('direct_patch');
 
     const decision = decideSovereignCapabilityRoute({
-      text: submission,
+      language: buildOfflineCapabilityLanguageEvidence(submission),
       repoReady: true,
       githubAccessState: 'ready',
       agentReady: false,

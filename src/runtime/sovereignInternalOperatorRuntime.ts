@@ -1,5 +1,6 @@
 import { defaultTraceIdProvider, globalTelemetry, type TraceIdProvider } from './RuntimeIntelligence';
 import type { SovereignToolCapabilityRegistry } from '../features/product/runtime/sovereignToolCapabilityRuntime';
+import type { SovereignExecutorIntentKind } from '../features/product/runtime/sovereignExecutorRuntime';
 
 export type SovereignInternalOperatorRoute =
   | 'direct_patch'
@@ -23,7 +24,8 @@ export interface SovereignInternalOperatorSignal {
 }
 
 export interface SovereignInternalOperatorInput {
-  readonly text: string;
+  readonly intent: SovereignExecutorIntentKind;
+  readonly taskComplexity?: 'simple' | 'medium' | 'complex' | 'unknown';
   readonly capabilities: SovereignToolCapabilityRegistry;
   readonly candidatePath?: string;
   /** True only when a callable internal patch adapter is connected in the current runtime. */
@@ -49,13 +51,6 @@ export interface SovereignInternalOperatorDecision {
   readonly traceId: string;
   readonly nodes: readonly SovereignInternalOperatorNode[];
   readonly learningDelta: number;
-}
-
-const DOC_TOKENS = ['readme', 'docs', 'dokumentation', 'changelog', 'titel'];
-const CODE_TOKENS = ['baue', 'bauen', 'implementiere', 'runtime', 'workflow', 'backend', 'frontend', 'test'];
-
-function hasAny(text: string, tokens: readonly string[]): boolean {
-  return tokens.some((token) => text.includes(token));
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -100,9 +95,8 @@ function reason(route: SovereignInternalOperatorRoute): string {
 
 export function decideSovereignInternalOperator(input: SovereignInternalOperatorInput): SovereignInternalOperatorDecision {
   const traceId = (input.traceIdProvider ?? defaultTraceIdProvider)();
-  const lower = input.text.toLowerCase();
-  const simpleDocs = hasAny(lower, DOC_TOKENS) && !hasAny(lower, CODE_TOKENS);
-  const complex = hasAny(lower, CODE_TOKENS);
+  const simpleDocs = input.intent === 'direct_patch';
+  const complex = input.taskComplexity === 'complex' || input.intent === 'code_execution';
   const signals = input.signals ?? [];
 
   const nodes: SovereignInternalOperatorNode[] = [

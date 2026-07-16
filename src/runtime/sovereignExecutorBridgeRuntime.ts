@@ -70,7 +70,8 @@ export function decideSovereignExecutorBridgeRoute(
   }
 
   const operatorDecision = decideSovereignInternalOperator({
-    text: input.text,
+    intent: input.intent,
+    taskComplexity: input.taskComplexity,
     capabilities: input.capabilities,
     candidatePath: input.candidatePath,
   });

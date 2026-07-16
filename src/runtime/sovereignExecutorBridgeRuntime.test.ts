@@ -20,8 +20,8 @@ function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCap
 describe('sovereignExecutorBridgeRuntime', () => {
   it('keeps allowed executor decisions unchanged', () => {
     const decision = decideSovereignExecutorBridgeRoute({
-      text: 'Bitte README Titel ändern',
       intent: 'direct_patch',
+      taskComplexity: 'simple',
       capabilities: capabilities(),
       candidatePath: 'README.md',
     });
@@ -35,8 +35,8 @@ describe('sovereignExecutorBridgeRuntime', () => {
 
   it('does not bypass missing GitHub write access', () => {
     const decision = decideSovereignExecutorBridgeRoute({
-      text: 'Implementiere eine Runtime mit Tests',
       intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({
         githubAccessState: 'missing',
         githubTokenPresent: false,
@@ -53,8 +53,8 @@ describe('sovereignExecutorBridgeRuntime', () => {
 
   it('blocks instead of inventing an internal executor when no evidence-backed route exists', () => {
     const decision = decideSovereignExecutorBridgeRoute({
-      text: 'Baue internen Operator Fallback mit Tests',
       intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({
         directPatchSupported: false,
         agentConfigured: false,
@@ -71,8 +71,8 @@ describe('sovereignExecutorBridgeRuntime', () => {
 
   it('keeps an allowed workspace route queued until runtime start evidence exists', () => {
     const decision = decideSovereignExecutorBridgeRoute({
-      text: 'Implementiere eine Runtime mit Tests',
       intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({
         directPatchSupported: false,
         agentConfigured: false,
