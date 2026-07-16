@@ -663,7 +663,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       await waitFor(() => expect(screen.getByText("LLM Runtime")).toBeDefined());
       expect(screen.queryByText("LLM Runtime nicht geprüft")).toBeNull();
     } finally {
-      rejectInference?.(new Error('LiteLLM evidence assertion completed.'));
+      await act(async () => {
+        rejectInference?.(new Error('LiteLLM evidence assertion completed.'));
+        await Promise.resolve();
+      });
       restoreUser();
     }
   });
