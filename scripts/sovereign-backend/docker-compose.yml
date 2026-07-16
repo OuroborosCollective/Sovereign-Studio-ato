@@ -18,7 +18,9 @@ services:
     container_name: sovereign-backend
     ports:
       - "127.0.0.1:8788:8787"
-    env_file: .env
+    env_file:
+      - .env
+      - /opt/sovereign-chatgpt-tools/backend-runtime.env
     environment:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY_FILE: /opt/sovereign-owner-managed/litellm_master_key.txt
