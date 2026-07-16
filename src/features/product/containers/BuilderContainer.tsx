@@ -3854,13 +3854,23 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
 
-    // ── Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
+    // Natural language goes to the online LLM first. Deterministic parsing is
+    // reserved for exact controls (slash commands, repository URLs) and becomes
+    // the language fallback only when the online interpretation is unavailable.
+    const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
+    const directRepoUrl = parseDevChatGithubUrl(submittedText);
+    const shouldUseOnlineLanguageUnderstanding =
+      !options.resumePendingIntent &&
+      !isSafeAnalysisPreset &&
+      !directRepoUrl;
+
+    // ── Issue #522 P2 Fix 2 & 3: Offline/local fallback routing
     // Status, diagnostic, and retry intents must be handled locally FIRST.
     // They should NOT create an integration draft card.
     // Order matters: local routes > createIntegrationIntentDraft > capability router
 
     // P2 Fix 2: Status questions - answered locally from runtime state
-    if (isLocalCompletionStatusQuestion(submittedText)) {
+    if (!shouldUseOnlineLanguageUnderstanding && isLocalCompletionStatusQuestion(submittedText)) {
       const statusAnswer = buildLocalStatusAnswer({
         githubWriteAllowed,
         githubAccessState: effectiveGitHubAccessState,
@@ -3894,7 +3904,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     }
 
     // Fix: "Warum?" follow-up after local status answer → answer locally, no worker call
-    if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
+    if (!shouldUseOnlineLanguageUnderstanding && lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
       const whyAnswer = patchPreviewReady
         ? "Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss."
         : !githubWriteAllowed
@@ -3914,7 +3924,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
-    if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
+    if (!shouldUseOnlineLanguageUnderstanding && isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
       // If user asks status question, answer locally first before retry
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
@@ -3980,7 +3990,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // P2 Fix 3: Diagnostic questions ("warum passiert nichts?") - answered locally
     const _executorIsActive = agentWorkSnapshot.state !== 'idle' ||
       (scopedAgentJob != null && scopedAgentJob.status !== 'idle');
-    if (isExecutorStatusQuestion(submittedText) && (_executorIsActive || !routingWorkerBlocker)) {
+    if (!shouldUseOnlineLanguageUnderstanding && isExecutorStatusQuestion(submittedText) && (_executorIsActive || !routingWorkerBlocker)) {
       const statusAnswer = buildExecutorStatusAnswer({
         agentState: agentWorkSnapshot.state,
         agentStatus: scopedAgentJob?.status,
@@ -3999,6 +4009,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
     // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
     if (
+      !shouldUseOnlineLanguageUnderstanding &&
       routingWorkerBlocker &&
       !isWorkerRetryIntent(submittedText) &&
       !isSovereignAgentExecutionIntent(submittedText)
@@ -4023,13 +4034,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Online-first language understanding: the LLM interprets natural language;
     // the application remains the sole authority for capabilities, execution and success.
     // Local token classifiers are used only when the online interpreter is unavailable.
-    const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
-    const directRepoUrl = parseDevChatGithubUrl(submittedText);
-    const shouldUseOnlineLanguageUnderstanding =
-      !options.resumePendingIntent &&
-      !isSafeAnalysisPreset &&
-      !directRepoUrl;
-
     if (shouldUseOnlineLanguageUnderstanding) {
       const routeDecision = palRoute(
         submittedText,
@@ -4078,6 +4082,37 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           && actionableIntent !== null
           && actionableIntent !== 'question'
           && actionableIntent !== 'status';
+
+        if (interpretation.intent === 'status') {
+          const statusAnswer = buildLocalStatusAnswer({
+            githubWriteAllowed,
+            githubAccessState: effectiveGitHubAccessState,
+            writeIntentBlockedByRepo: !effectiveRepoReady,
+            agentRunning: scopedAgentJob?.status === 'running',
+            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+            hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
+            patchPreviewReady,
+            patchConfirmed,
+            hasWorkerResponse: hasScopedWorkerResponse,
+            workerBlocker: routingWorkerBlocker,
+            buildWorkerBlockerAnswer: routingWorkerBlocker
+              ? () => buildWorkerBlockerAnswer({
+                  blocker: routingWorkerBlocker,
+                  repoReady: effectiveRepoReady,
+                  chatRepoSnapshot,
+                  agentReady,
+                })
+              : undefined,
+            questionText: submittedText,
+          });
+          appendChatLine({ role: 'assistant', text: statusAnswer });
+          setLastAnswerWasLocal(true);
+          appendActionEvent(buildLocalRuntimeResultEvent({
+            label: 'LLM-verstandene Status-Frage',
+            detail: 'Antwort ausschließlich aus aktuellem Runtime-State; keine Statusbehauptung des LLM übernommen.',
+          }));
+          return;
+        }
 
         if (!isAction) {
           appendGuardedWorkerText(
@@ -4144,6 +4179,100 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         state: 'blocked',
       });
       addLog('warn', `Online intent unavailable; offline fallback=${offlineIntent}`, 'router');
+
+      // Offline language handling is fail-closed and may only read current
+      // runtime state or prepare a gated action. It never falls through to a
+      // second online language endpoint.
+      if (offlineIntent === 'status' || isLocalCompletionStatusQuestion(submittedText)) {
+        const statusAnswer = buildLocalStatusAnswer({
+          githubWriteAllowed,
+          githubAccessState: effectiveGitHubAccessState,
+          writeIntentBlockedByRepo: !effectiveRepoReady,
+          agentRunning: scopedAgentJob?.status === 'running',
+          draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
+          patchPreviewReady,
+          patchConfirmed,
+          hasWorkerResponse: hasScopedWorkerResponse,
+          workerBlocker: routingWorkerBlocker,
+          buildWorkerBlockerAnswer: routingWorkerBlocker
+            ? () => buildWorkerBlockerAnswer({
+                blocker: routingWorkerBlocker,
+                repoReady: effectiveRepoReady,
+                chatRepoSnapshot,
+                agentReady,
+              })
+            : undefined,
+          questionText: submittedText,
+        });
+        appendChatLine({ role: 'assistant', text: statusAnswer });
+        setLastAnswerWasLocal(true);
+        appendActionEvent(buildLocalRuntimeResultEvent({
+          label: 'Offline-Status-Fallback',
+          detail: 'Online-Deutung fehlgeschlagen; Status ausschließlich aus Runtime-State beantwortet.',
+        }));
+        return;
+      }
+
+      if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
+        const whyAnswer = patchPreviewReady
+          ? 'Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss.'
+          : !githubWriteAllowed
+            ? 'Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, kann der Auftrag fortgesetzt werden.'
+            : routingWorkerBlocker
+              ? 'Weil die LLM-/Worker-Route blockiert ist. Die Runtime meldet noch keinen erfolgreichen nächsten Zustand.'
+              : 'Weil noch kein belegter Ausführungszustand vorliegt.';
+        appendChatLine({ role: 'assistant', text: whyAnswer });
+        setLastAnswerWasLocal(true);
+        return;
+      }
+
+      if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
+        setWorkerBlocker(null);
+        if (lastWorkerRequestMessage) {
+          appendActionEvent(buildLocalRuntimeResultEvent({
+            label: 'Offline-Retry gestartet',
+            detail: 'Der letzte korrelierte Request wird erneut durch die vollständige Pipeline geschickt.',
+          }));
+          await _processSubmit(lastWorkerRequestMessage, {
+            ignoreExistingWorkerBlocker: true,
+            inputAlreadyRecorded: true,
+          });
+        } else {
+          appendChatLine({
+            role: 'assistant',
+            text: 'Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.',
+          });
+        }
+        return;
+      }
+
+      if (isExecutorStatusQuestion(submittedText)) {
+        appendChatLine({
+          role: 'assistant',
+          text: buildExecutorStatusAnswer({
+            agentState: agentWorkSnapshot.state,
+            agentStatus: scopedAgentJob?.status,
+            changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
+            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+            blockerReason: agentWorkSnapshot.blockerReason,
+          }),
+        });
+        return;
+      }
+
+      if (routingWorkerBlocker && isWorkerDiagnosticQuestion(submittedText)) {
+        appendChatLine({
+          role: 'assistant',
+          text: buildWorkerBlockerAnswer({
+            blocker: routingWorkerBlocker,
+            repoReady: effectiveRepoReady,
+            chatRepoSnapshot,
+            agentReady,
+          }),
+        });
+        return;
+      }
 
       if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
         const explicitOfflineExecution =
