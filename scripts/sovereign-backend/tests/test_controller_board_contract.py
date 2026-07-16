@@ -113,6 +113,23 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "sovereign_session" not in controller
 
 
+def test_code_missions_materialize_real_job_workspace_and_tool_task() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+
+    assert "def _mission_requires_repository_execution(" in controller
+    assert "create_sovereign_agent_job(" in controller
+    assert 'clone_repo=True' in controller
+    assert 'job_id=implementation_job.job_id if implementation_job else None' in controller
+    assert "create_agent_task(" in controller
+    assert 'status="WAITING_FOR_TOOL"' in controller
+    assert 'next_action="EXECUTE_BOUNDED_REPOSITORY_TOOLS"' in controller
+    assert '("file", "git-status", "diff", "test", "draft-pr-prepare", "draft-pr-create")' in controller
+    assert '"At least one actionable changed file is persisted."' in controller
+    assert '"Git diff evidence is non-empty and git diff --check passes."' in controller
+    assert '"At most one Draft PR is created and auto-merge remains disabled."' in controller
+    assert '"autoMerge": False' in controller
+
+
 def test_task_lifecycle_preserves_history_without_false_active_blockers() -> None:
     controller = CONTROLLER.read_text("utf-8")
 
