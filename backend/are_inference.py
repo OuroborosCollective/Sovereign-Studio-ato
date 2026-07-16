@@ -399,15 +399,20 @@ def _promote_quarantine(conn: Any, *, user_id: str, quarantine_id: str, pattern_
     with conn.cursor() as cur:
         cur.execute(
             """SELECT c.candidate_id
-               FROM sovereign_agent_pattern_candidates c
+               FROM are_learning_quarantine q
+               JOIN sovereign_agent_pattern_candidates c
+                 ON c.candidate_id=%s
                JOIN sovereign_agent_pattern_vectors v
                  ON v.candidate_id=c.candidate_id AND v.user_id=c.user_id
-               WHERE c.candidate_id=%s
+               WHERE q.id=%s::uuid
+                 AND q.user_id=%s::uuid
+                 AND q.status='pending'
                  AND c.user_id=%s
                  AND c.decision='accepted'
                  AND c.remote_memory_allowed=true
+                 AND c.payload->>'missionSha256'=BTRIM(q.prompt_sha256)
                LIMIT 1""",
-            (pattern_candidate_id, user_id),
+            (pattern_candidate_id, quarantine_id, user_id, user_id),
         )
         accepted = cur.fetchone()
         if not accepted:

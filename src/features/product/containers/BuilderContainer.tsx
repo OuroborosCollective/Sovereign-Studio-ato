@@ -129,6 +129,7 @@ import {
 import {
   decideSovereignCapabilityRoute,
   buildCapabilityRouteActionEvent,
+  buildOfflineCapabilityLanguageEvidence,
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
 import type {
@@ -205,7 +206,8 @@ import {
 import { buildSovereignToolCapabilityRegistry } from "../runtime/sovereignToolCapabilityRuntime";
 import { createSovereignWorkspaceScope } from "../runtime/sovereignWorkspaceScopeRuntime";
 import {
-  classifySovereignExecutorIntent,
+  classifyOfflineSovereignExecutorIntent,
+  type SovereignExecutorIntentKind,
 } from "../runtime/sovereignExecutorRuntime";
 import { decideSovereignExecutorBridgeRoute } from "../../../runtime/sovereignExecutorBridgeRuntime";
 
@@ -310,7 +312,7 @@ const builderContainerContract = getSovereignContainerContract("builder");
 
 function mapInterpretedIntentToExecutorIntent(
   intent: DevChatWorkerIntentKind | undefined,
-): ReturnType<typeof classifySovereignExecutorIntent> | null {
+): SovereignExecutorIntentKind | null {
   switch (intent) {
     case 'status':
       return 'status';
@@ -2934,7 +2936,9 @@ export function BuilderContainer({
   const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
   const completedInspectionEvidenceRef = useRef<Partial<Record<SovereignToolInspectionId, number>>>({});
   const sovereignAgentStartAvailable = Boolean(agentReady && onStartAgent);
-  const executorIntent = useMemo(() => classifySovereignExecutorIntent(wishText), [wishText]);
+  // The explicit Executor shortcut is the action signal. Unsubmitted composer
+  // prose never becomes runtime intent evidence.
+  const executorIntent: SovereignExecutorIntentKind = wishText.trim() ? 'code_execution' : 'unknown';
   const runtimeEvidenceLog = useMemo(
     () => buildSovereignRuntimeEvidenceLog(actionStream.events, scopedAgentJob?.events ?? []),
     [actionStream.events, scopedAgentJob?.events],
@@ -3040,6 +3044,10 @@ export function BuilderContainer({
     [],
   );
 
+  const appendRuntimeNotice = useCallback((text: string) => {
+    appendChatLine({ role: 'system', text });
+  }, [appendChatLine]);
+
   const appendGuardedWorkerText = useCallback((text: string) => {
     const claimCheck = checkChatClaim(text, agentWorkSnapshot);
     const guardedText = claimCheck.allowed || !claimCheck.honestFallback
@@ -3137,8 +3145,8 @@ export function BuilderContainer({
     const message = isVeryOld
       ? `Ältere Sitzung wiederhergestellt — bitte Repo/Status prüfen. (${age})`
       : `Letzte Sitzung von vor ${age} wiederhergestellt.`;
-    appendChatLine({ role: 'assistant', text: message });
-  }, [appendChatLine]);
+    appendRuntimeNotice(message);
+  }, [appendRuntimeNotice]);
 
   // ── Issue #447: Auto-save workflow patterns after Draft PR success
   usePatternMemoryStore({
@@ -3625,28 +3633,28 @@ export function BuilderContainer({
   // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
   const startAgentFromText = async (
     text: string,
-    interpretedIntent?: ReturnType<typeof classifySovereignExecutorIntent>,
+    interpretedIntent: SovereignExecutorIntentKind,
   ): Promise<boolean> => {
-    const intent = interpretedIntent ?? classifySovereignExecutorIntent(text);
+    const intent = interpretedIntent;
     if (!effectiveRepoReady || !chatRepoSnapshot) {
       // Preserve the exact execution request across the repo gate. Loading the
       // repository is only a prerequisite; it must not erase the user's job.
       pendingWriteIntentRef.current = text;
       appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden; Auftrag für Wiederaufnahme vorgemerkt.', kind: 'blocked' }));
       setShowRepoSetup(true);
-      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.' });
+      appendRuntimeNotice('Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.');
       return false;
     }
     if (intent !== 'code_execution' && intent !== 'draft_pr') {
       appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein bestätigter Code- oder Draft-PR-Ausführungsauftrag.', kind: 'blocked' }));
-      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Der aktuelle Text ist kein klarer Code- oder Draft-PR-Ausführungsauftrag.' });
+      appendRuntimeNotice('Executor blockiert: Die strukturierte Intent-Evidence erlaubt keinen Code- oder Draft-PR-Ausführungsauftrag.');
       return false;
     }
     if (!githubWriteAllowed) {
       appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
       pendingWriteIntentRef.current = text;
       setShowGitHubAccessOverride(true);
-      appendChatLine({ role: 'assistant', text: 'Executor-Auftrag erkannt. Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.' });
+      appendRuntimeNotice('Executor-Aktion blockiert: Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.');
       return false;
     }
 
@@ -3668,10 +3676,7 @@ export function BuilderContainer({
         detail: 'Kein Start-Callback für die Sovereign Agent Runtime verdrahtet.',
         kind: 'blocked',
       }));
-      appendChatLine({
-        role: 'assistant',
-        text: 'Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geändert.',
-      });
+      appendRuntimeNotice('Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geändert.');
       addLog('error', 'Sovereign Agent start blocked: missing onStartAgent callback', 'router');
       return false;
     }
@@ -3701,12 +3706,9 @@ export function BuilderContainer({
         detail: message,
         state: 'failed',
       });
-      appendChatLine({
-        role: 'assistant',
-        text: `Sovereign Agent Runtime konnte nicht gestartet werden.
+      appendRuntimeNotice(`Sovereign Agent Runtime konnte nicht gestartet werden.
 Grund: ${message}
-Es wurde kein Job gestartet und keine Datei geändert.`,
-      });
+Es wurde kein Job gestartet und keine Datei geändert.`);
       addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
       return false;
     }
@@ -4117,23 +4119,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       return;
     }
 
-    // Online-first language understanding: the LLM interprets natural language;
-    // the application remains the sole authority for capabilities, execution and success.
-    // Local token classifiers are used only when the online interpreter is unavailable.
-    const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
-    const directRepoUrl = parseDevChatGithubUrl(submittedText);
-    const offlineControlIntent = classifySovereignExecutorIntent(submittedText);
-    const explicitRuntimeAction = offlineControlIntent !== 'question' && (
-      isSovereignAgentExecutionIntent(submittedText) ||
-      isDelegationIntent(submittedText) ||
-      isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory)
-    );
-    const shouldUseOnlineLanguageUnderstanding =
-      !options.resumePendingIntent &&
-      !isSafeAnalysisPreset &&
-      !directRepoUrl &&
-      !explicitRuntimeAction;
-
+    // Online-first language understanding: LiteLLM interprets natural language.
+    // Deterministic parsing remains limited to explicit controls and the marked
+    // offline fallback declared above.
     if (shouldUseOnlineLanguageUnderstanding) {
       let onlineAreInference: AreInferenceResult | null = null;
       let onlineMemoryContext = '';
@@ -4194,54 +4182,41 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         chatRepoSnapshot?.fileCount ?? 0,
         palDecisions,
       );
-      const interpreterOnline = onlineHealth?.ok !== false;
-      let interpretationResult: Awaited<ReturnType<typeof fetchDevChatWorkerInterpretation>>;
+      let interpretationResult: Awaited<ReturnType<typeof fetchSovereignLiteLlmInterpretation>>;
 
-      if (interpreterOnline) {
-        const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-        const canInterpret = await chargeCredits(routeDecision.modelId, estimatedTokens);
-        if (!canInterpret) {
-          addLog('warn', `Credits nicht ausreichend für Online-Sprachdeutung mit ${routeDecision.modelId}`, 'billing');
-          return;
-        }
+      setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
+      setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
+      setLastWorkerRequestMessage(submittedText);
+      setChatResponseBusy(true);
+      appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · LiteLLM Intent`));
 
-        setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
-        setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
-        setLastWorkerRequestMessage(submittedText);
-        setChatResponseBusy(true);
-        appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
-
-        interpretationResult = await fetchDevChatWorkerInterpretation({
-          model: routeDecision.modelId,
-          text: submittedText,
-          repoContext: chatRepoSnapshot
-            ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
-            : undefined,
-          memoryContext: onlineMemoryContext || undefined,
-          recentMessages: chatHistory
-            .filter((line) => line.role === 'user' || line.role === 'assistant')
-            .slice(-6)
-            .map((line) => ({
-              role: line.role === 'user' ? 'user' as const : 'assistant' as const,
-              content: line.text,
-            })),
-        });
-        setChatResponseBusy(false);
-      } else {
-        interpretationResult = {
-          ok: false,
-          error: onlineHealth?.error || 'Worker ist offline; lokaler Sprach-Fallback wird verwendet.',
-          diagnostic: {
-            route: SOVEREIGN_WORKER_CHAT,
-            model: routeDecision.modelId,
-            messageCount: 0,
-            status: onlineHealth?.status,
-            scope: 'network',
-            canClientFix: false,
-            nextAction: 'Offline-Fallback nutzen; keine Online-Antwort oder Aktions-Evidence vortäuschen.',
-          },
-        };
-      }
+      interpretationResult = await fetchSovereignLiteLlmInterpretation({
+        preferredModel: routeDecision.modelId,
+        text: submittedText,
+        repoContext: chatRepoSnapshot
+          ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
+          : undefined,
+        runtimeContext: [
+          `repo_ready=${effectiveRepoReady}`,
+          `github_write_ready=${githubWriteAllowed}`,
+          `github_access_state=${effectiveGitHubAccessState}`,
+          `agent_state=${scopedAgentJob?.status ?? agentWorkSnapshot.state}`,
+          `changed_files=${scopedAgentJob?.changedFiles?.length ?? 0}`,
+          `draft_pr_ready=${Boolean(scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)}`,
+          `patch_preview_ready=${patchPreviewReady}`,
+          `patch_confirmed=${patchConfirmed}`,
+          `legacy_worker_health=${onlineHealth?.ok === true ? 'ready' : onlineHealth?.ok === false ? 'blocked' : 'unknown'}`,
+        ].join('\n'),
+        memoryContext: onlineMemoryContext || undefined,
+        recentMessages: chatHistory
+          .filter((line) => line.role === 'user' || line.role === 'assistant')
+          .slice(-6)
+          .map((line) => ({
+            role: line.role === 'user' ? 'user' as const : 'assistant' as const,
+            content: line.text,
+          })),
+      });
+      setChatResponseBusy(false);
 
       const quarantineOnlineObservation = async (responseText: string, modelId: string) => {
         const inferenceEvidence = onlineAreInference;
@@ -4365,22 +4340,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           return;
         }
 
-        const explicitExecution =
-          isSovereignAgentExecutionIntent(submittedText) ||
-          isDelegationIntent(submittedText) ||
-          isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
-        if (explicitExecution) {
-          const started = await startAgentFromText(submittedText, actionableIntent ?? undefined);
-          if (started) {
-            if (interpretation.assistantText) appendGuardedWorkerText(interpretation.assistantText);
-            appendChatLine({
-              role: 'assistant',
-              text: 'Die Runtime hat den Job-Start angefragt. Ein Erfolg gilt erst mit bestätigter Job-/Patch-/Draft-PR-Evidence.',
-            });
-          }
-          return;
-        }
-
         const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
           path,
           type: 'blob' as const,
@@ -4416,7 +4375,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       // Preserve the exact failed request as retry target. Later advisory
       // messages such as "Warum?" must not overwrite this correlation.
       setLastWorkerRequestMessage(submittedText);
-      const offlineIntent = classifySovereignExecutorIntent(submittedText);
+      const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
       appendActionEvent({
         kind: 'blocked',
         route: 'worker',
@@ -4558,10 +4517,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         if (draft) {
           appendActionEvent(buildDraftCreatedEvent(draft));
           setIntentDraftState({ status: 'pending', draft });
-          appendChatLine({
-            role: 'assistant',
-            text: 'Online-Sprachdeutung ist nicht verfügbar. Ich habe nur einen lokalen Offline-Aktionshinweis erkannt; Ausführung bleibt bis zur Bestätigung und zu echten Runtime-Gates blockiert.',
-          });
+          appendRuntimeNotice('Offline-Fallback: Ein lokaler Aktionshinweis wurde erkannt; Ausführung bleibt bis zur Bestätigung und zu echten Runtime-Gates blockiert.');
           return;
         }
       }
@@ -4600,10 +4556,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           }),
         });
       } else {
-        appendChatLine({
-          role: 'assistant',
-          text: 'Online-Sprachdeutung ist nicht verfügbar und der lokale Offline-Fallback hat keinen sicheren Aktionspfad erkannt.',
-        });
+        appendRuntimeNotice('Online-Sprachdeutung ist nicht verfügbar und der lokale Offline-Fallback hat keinen sicheren Aktionspfad erkannt.');
       }
       return;
     }
@@ -4612,7 +4565,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Central routing decision using real runtime state.
     // BuilderContainer shows the decision; it does not create it.
     const capabilityRouterInput: CapabilityRouterInput = {
-      text: submittedText,
+      language: buildOfflineCapabilityLanguageEvidence(submittedText),
       repoReady: effectiveRepoReady,
       githubAccessState: effectiveGitHubAccessState,
       agentReady: agentReady ?? false,
@@ -4838,8 +4791,8 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           kind: 'access_required',
         }));
         appendChatLine({
-          role: 'assistant',
-          text: 'Schreibauftrag erkannt.\nEs ist noch kein Repo geladen — bitte zuerst einen GitHub-Repo-Link senden.',
+          role: 'system',
+          text: 'Schreibaktion blockiert.\nEs ist noch kein Repo geladen — bitte zuerst einen GitHub-Repo-Link senden.',
         });
         addLog('warn', 'Write intent blocked: no repo loaded', 'router');
         return;
@@ -4855,8 +4808,8 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         pendingWriteIntentRef.current = submittedText;
         setShowGitHubAccessOverride(true);
         appendChatLine({
-          role: 'assistant',
-          text: 'Schreibauftrag erkannt.\nFür Datei-/Repo-Änderungen wird sicherer GitHub-Schreibzugang benötigt.\nBitte GitHub-Zugang unten einrichten — der Auftrag wird nicht an den Worker-Chat gesendet.',
+          role: 'system',
+          text: 'Schreibaktion blockiert.\nFür Datei-/Repo-Änderungen wird sicherer GitHub-Schreibzugang benötigt.\nBitte GitHub-Zugang unten einrichten — der Auftrag wird nicht an den Worker-Chat gesendet.',
         });
         addLog('warn', 'Write intent blocked: GitHub write access missing', 'router');
         return;
@@ -4870,9 +4823,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       });
       if (agentDisabled) {
         // Use the Runtime Bridge to determine if Sovereign Internal Operator can handle this
+        const offlineLanguage = buildOfflineCapabilityLanguageEvidence(submittedText);
         const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
-          text: submittedText,
-          intent: classifySovereignExecutorIntent(submittedText),
+          intent: classifyOfflineSovereignExecutorIntent(submittedText),
+          taskComplexity: offlineLanguage.complexity,
           capabilities: buildSovereignToolCapabilityRegistry({
             repoReady: effectiveRepoReady,
             githubAccessState: effectiveGitHubAccessState,
@@ -5040,7 +4994,10 @@ Es wurde noch keine Datei geändert.`,
         return;
       }
       addLog('info', 'Write intent routed to patch/draft-pr executor after GitHub access gate', 'router');
-      const agentStartRequested = await startAgentFromText(submittedText);
+      const agentStartRequested = await startAgentFromText(
+        submittedText,
+        classifyOfflineSovereignExecutorIntent(submittedText),
+      );
       if (agentStartRequested) {
         appendChatLine({
           role: 'assistant',
@@ -5107,19 +5064,20 @@ Es wurde noch keine Datei geändert.`,
             : prev,
         );
         addLog('info', `Execution intent · type=${isDelegatedExecution ? 'delegated' : 'explicit'} · repo=${_repo}`, 'router');
-        const agentStartRequested = await startAgentFromText(submittedText);
+        const agentStartRequested = await startAgentFromText(
+          submittedText,
+          classifyOfflineSovereignExecutorIntent(submittedText),
+        );
         if (agentStartRequested) {
-          appendChatLine({
-            role: "assistant",
-            text: "Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestätigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.",
-          });
+          appendRuntimeNotice("Runtime-Aktion autorisiert.\nRoute gewählt: Sovereign Agent Runtime.\nJob-Start wurde angefragt; bestätigter Job-State kommt aus der Runtime. Ergebnis bleibt Draft PR, kein Auto-Merge.");
         }
         return;
       }
       // agentDisabled === true: Use Runtime Bridge to check Sovereign Internal Operator availability
+      const offlineLanguage = buildOfflineCapabilityLanguageEvidence(submittedText);
       const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
-        text: submittedText,
-        intent: classifySovereignExecutorIntent(submittedText),
+        intent: classifyOfflineSovereignExecutorIntent(submittedText),
+        taskComplexity: offlineLanguage.complexity,
         capabilities: buildSovereignToolCapabilityRegistry({
           repoReady: effectiveRepoReady,
           githubAccessState: effectiveGitHubAccessState,
@@ -5142,8 +5100,8 @@ Es wurde noch keine Datei geändert.`,
       if (executorBridgeDecision.bridgeRoute === 'sovereign_internal_operator' && executorBridgeDecision.state === 'allowed') {
         // Internal operator is available - runtime handoff decision, no fake patch claimed
         appendChatLine({
-          role: "assistant",
-          text: `Ausführungsauftrag erkannt.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereignAgent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+          role: "system",
+          text: `Runtime-Aktion autorisiert.\nRoute gewählt: Sovereign Internal Operator (${executorBridgeDecision.internalOperatorRoute ?? 'intern'}).\n\nSovereignAgent Runtime bleibt optional, wenn Direct Patch den Auftrag belegen kann.\nDer Auftrag bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
         });
         addLog('info', `Execution intent via Sovereign Internal Operator bridge · intent=${isDelegatedExecution ? 'delegated' : 'explicit'}`, 'router');
         return;
@@ -5158,8 +5116,8 @@ Es wurde noch keine Datei geändert.`,
           state: 'blocked',
         });
         appendChatLine({
-          role: "assistant",
-          text: `Ausführungsauftrag erkannt.
+          role: "system",
+          text: `Runtime-Aktion autorisiert.
 Route gewählt: Patch/Draft-PR Runtime.
 
 ${executorBridgeDecision.reason}
@@ -5763,7 +5721,7 @@ Das echte Repo-Setup wurde geöffnet.`,
       return;
     }
     if (decision.surface === 'executor-request') {
-      void startAgentFromText(wishText.trim());
+      void startAgentFromText(wishText.trim(), 'code_execution');
       return;
     }
     if (decision.surface === 'runtime-logs') {
@@ -6205,10 +6163,10 @@ Das echte Repo-Setup wurde geöffnet.`,
                     onConfirm={() => {
                       // Use Runtime Bridge for route decision
                       const intent = mapInterpretedIntentToExecutorIntent(draft.intentKind)
-                        ?? classifySovereignExecutorIntent(draft.originalText);
+                        ?? 'unknown';
                       const bridgeDecision = decideSovereignExecutorBridgeRoute({
-                        text: draft.originalText,
                         intent,
+                        taskComplexity: intent === 'direct_patch' ? 'simple' : intent === 'code_execution' ? 'complex' : 'unknown',
                         capabilities,
                         workspaceScope: workspaceScope ?? undefined,
                         candidatePath: chatRepoSnapshot
@@ -6242,8 +6200,8 @@ Das echte Repo-Setup wurde geöffnet.`,
                         if (bridgeDecision.state === 'allowed') {
                           // Internal operator is available - runtime handoff decision
                           appendChatLine({
-                            role: 'assistant',
-                            text: `Integrationsauftrag bestätigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
+                            role: 'system',
+                            text: `Runtime-Aktion bestätigt.\n\nRoute: Sovereign Internal Operator\nErgebnis bleibt Draft-PR-only: erst Patch/Diff prüfen, dann Draft PR.\nKein Auto-Merge.`,
                           });
                           addLog('info', `Integration via Sovereign Internal Operator bridge: ${bridgeDecision.reason}`, 'router');
                           setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
@@ -6422,10 +6380,7 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                         case 'worker_chat':
                           // Worker Chat — advisory only, no write success
-                          appendChatLine({
-                            role: 'assistant',
-                            text: 'Beratungsroute erkannt. Worker Chat kann Rückfragen beantworten.',
-                          });
+                          appendRuntimeNotice('Runtime-Route: Worker Chat für die vom LLM erkannte Beratungsabsicht.');
                           break;
 
                         case 'local_status':
@@ -6457,10 +6412,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                       });
                       pendingWriteIntentRef.current = draft.originalText;
                       setShowGitHubAccessOverride(true);
-                      appendChatLine({
-                        role: 'assistant',
-                        text: 'Integrationsauftrag bestätigt.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.',
-                      });
+                      appendRuntimeNotice('Runtime-Aktion bestätigt, aber blockiert.\nGitHub-Schreibzugang wird benötigt.\nBitte Zugang unten einrichten.');
                       setIntentDraftState({ status: 'idle' });
                       addLog('info', 'Integration draft confirmed: GitHub access gate opened', 'router');
                     }}
@@ -6475,10 +6427,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                       // Reject the draft - clear state and log honest rejection
                       appendActionEvent(buildDraftRejectedEvent());
                       setIntentDraftState({ status: 'idle' });
-                      appendChatLine({
-                        role: 'assistant',
-                        text: 'Integrationsauftrag verworfen. Bitte formuliere den Auftrag neu.',
-                      });
+                      appendRuntimeNotice('Runtime-Aktionsentwurf verworfen. Bitte formuliere den Auftrag neu.');
                       addLog('info', 'Integration draft rejected by user', 'router');
                     }}
                   />
@@ -6660,7 +6609,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     appendChatLine({ role: "assistant", text: explanation });
                   }}
                   onAgentInstead={(msg) => {
-                    void startAgentFromText(msg);
+                    void startAgentFromText(msg, 'code_execution');
                   }}
                   userMessage={lastWorkerRequestMessage ?? undefined}
                 />

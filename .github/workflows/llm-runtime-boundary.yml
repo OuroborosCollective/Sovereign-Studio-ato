@@ -1,0 +1,81 @@
+name: LLM Runtime Boundary
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/features/product/containers/BuilderContainer.tsx'
+      - 'src/features/product/runtime/sovereignLiteLlmIntentRuntime.ts'
+      - 'src/features/product/runtime/sovereignCapabilityTypes.ts'
+      - 'src/features/product/runtime/sovereignCapabilityRouter.ts'
+      - 'src/features/product/runtime/sovereignExecutorRuntime.ts'
+      - 'src/runtime/sovereignExecutorBridgeRuntime.ts'
+      - 'src/runtime/sovereignInternalOperatorRuntime.ts'
+      - 'src/runtime/RuntimeIntelligence.ts'
+      - 'backend/are_inference.py'
+      - 'backend/agent_runtime/pattern_gateway.py'
+      - 'scripts/sovereign-backend/are_inference.py'
+      - 'scripts/sovereign-backend/agent_runtime/pattern_gateway.py'
+      - 'backend/tests/test_agent_pattern_gateway.py'
+      - 'backend/tests/test_are_inference_truth_contract.py'
+      - 'docs/LLM_LANGUAGE_RUNTIME_BOUNDARY.md'
+      - 'scripts/llm-runtime-boundary-gate.mjs'
+      - 'package.json'
+      - '.github/workflows/llm-runtime-boundary.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/features/product/containers/BuilderContainer.tsx'
+      - 'src/features/product/runtime/sovereignLiteLlmIntentRuntime.ts'
+      - 'src/features/product/runtime/sovereignCapabilityTypes.ts'
+      - 'src/features/product/runtime/sovereignCapabilityRouter.ts'
+      - 'src/features/product/runtime/sovereignExecutorRuntime.ts'
+      - 'src/runtime/sovereignExecutorBridgeRuntime.ts'
+      - 'src/runtime/sovereignInternalOperatorRuntime.ts'
+      - 'src/runtime/RuntimeIntelligence.ts'
+      - 'backend/are_inference.py'
+      - 'backend/agent_runtime/pattern_gateway.py'
+      - 'scripts/sovereign-backend/are_inference.py'
+      - 'scripts/sovereign-backend/agent_runtime/pattern_gateway.py'
+      - 'backend/tests/test_agent_pattern_gateway.py'
+      - 'backend/tests/test_are_inference_truth_contract.py'
+      - 'docs/LLM_LANGUAGE_RUNTIME_BOUNDARY.md'
+      - 'scripts/llm-runtime-boundary-gate.mjs'
+      - 'package.json'
+      - '.github/workflows/llm-runtime-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundary:
+    name: Enforce LLM/runtime boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install focused backend test dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run boundary gate and regressions
+        run: pnpm test:llm-runtime-boundary

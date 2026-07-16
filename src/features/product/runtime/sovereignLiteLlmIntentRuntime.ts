@@ -38,6 +38,8 @@ export interface SovereignLiteLlmIntentRequest {
   readonly preferredModel?: string;
   readonly text: string;
   readonly repoContext?: string;
+  readonly runtimeContext?: string;
+  readonly memoryContext?: string;
   readonly recentMessages?: readonly DevChatWorkerMessage[];
   readonly signal?: AbortSignal;
   readonly fetchImpl?: typeof fetch;
@@ -277,7 +279,9 @@ function buildMessages(args: SovereignLiteLlmIntentRequest): readonly DevChatWor
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     'Bewerte die Gesamtbedeutung, nicht einzelne Schlüsselwörter.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
-  ].join('\n');
+    args.runtimeContext ? `Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung):\n${args.runtimeContext}` : '',
+    args.memoryContext ? `Evidence-geprüfter Memory-Kontext:\n${args.memoryContext}` : '',
+  ].filter(Boolean).join('\n');
   const recentMessages = (args.recentMessages ?? [])
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .slice(-6);

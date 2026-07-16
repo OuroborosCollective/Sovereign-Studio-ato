@@ -55,8 +55,8 @@ export interface SovereignExecutorDecision {
 }
 
 export interface SovereignExecutorRouteInput {
-  readonly text: string;
   readonly intent: SovereignExecutorIntentKind;
+  readonly taskComplexity?: 'simple' | 'medium' | 'complex' | 'unknown';
   readonly capabilities: SovereignToolCapabilityRegistry;
   readonly workspaceScope?: SovereignWorkspaceScope;
   readonly candidatePath?: string;
@@ -116,7 +116,8 @@ function includesAny(value: string, tokens: readonly string[]): boolean {
   return tokens.some((token) => value.includes(token));
 }
 
-export function classifySovereignExecutorIntent(text: string): SovereignExecutorIntentKind {
+/** Offline/degraded-only fallback. Online routes pass structured LLM intent evidence. */
+export function classifyOfflineSovereignExecutorIntent(text: string): SovereignExecutorIntentKind {
   const clean = text.trim().toLowerCase();
   if (!clean) return 'unknown';
   if (includesAny(clean, STATUS_TOKENS)) return 'status';

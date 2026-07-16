@@ -41,6 +41,8 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     const result = await fetchSovereignLiteLlmInterpretation({
       preferredModel: 'deepseek-r1',
       text: 'Repariere den Routingfehler und mach am Ende einen Draft PR.',
+      runtimeContext: 'repo_ready=true\ndraft_pr_ready=false',
+      memoryContext: 'Nur evidence-geprüftes Wissen.',
       requestId: '00000000-0000-4000-8000-000000000101',
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
@@ -64,6 +66,9 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(request.model).toBe('openai/gpt-5.2-mini');
     expect(request.requestId).toBe('00000000-0000-4000-8000-000000000101');
     expect(request.stream).toBe(false);
+    expect(request.messages[0].content).toContain('Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung)');
+    expect(request.messages[0].content).toContain('repo_ready=true');
+    expect(request.messages[0].content).toContain('Evidence-geprüfter Memory-Kontext');
   });
 
   it('uses the requested model when the enabled route catalog contains it', async () => {
