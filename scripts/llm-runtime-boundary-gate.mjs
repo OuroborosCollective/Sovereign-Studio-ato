@@ -27,6 +27,10 @@ function requirePattern(path, source, pattern, reason) {
   if (!pattern.test(source)) violations.push(`${path}: ${reason}`);
 }
 
+function forbidPattern(path, source, pattern, reason) {
+  if (pattern.test(source)) violations.push(`${path}: ${reason}`);
+}
+
 function walkFiles(directory) {
   if (!existsSync(directory)) return [];
   const files = [];
@@ -49,6 +53,19 @@ const workerPath = 'src/features/product/runtime/devChatWorkerBridge.ts';
 const intelligencePath = 'src/runtime/RuntimeIntelligence.ts';
 const patternGatewayPath = 'backend/agent_runtime/pattern_gateway.py';
 const quarantinePath = 'backend/are_inference.py';
+const allowedRuntimeEvidenceMethods = new Set([
+  'setModelHealthAdapters',
+  'getModelHealthReport',
+  'getModelHealthFallbackResult',
+  'getModelHealthFallbackState',
+  'stopModelHealthMonitoring',
+  'startModelHealthMonitoring',
+  'checkModelHealth',
+  'recordModelSuccessForFallback',
+  'recordModelFailureForFallback',
+  'assertModelHealthReady',
+  'getBestAvailableModel',
+]);
 
 const docs = read(docsPath);
 const types = read(typesPath);
@@ -108,8 +125,14 @@ for (const absolute of walkFiles(`${root}/src`)) {
   if (!/\.(ts|tsx)$/.test(relative) || /\.test\.(ts|tsx)$/.test(relative)) continue;
   if (relative === intelligencePath || relative === 'src/runtime/index.ts') continue;
   const source = readFileSync(absolute, 'utf8');
-  if (/from\s+['"][^'"]*RuntimeIntelligence['"]/.test(source) || /useRuntimeIntelligence\s*\(/.test(source)) {
-    violations.push(`${relative}: Runtime Intelligence raw-text diagnostics must not become an online language authority`);
+  if (/\buseRuntimeIntelligence\s*\(/.test(source)) {
+    violations.push(`${relative}: useRuntimeIntelligence must remain outside online production language paths`);
+  }
+  for (const match of source.matchAll(/\bruntimeIntelligence\.([A-Za-z_$][\w$]*)/g)) {
+    const method = match[1];
+    if (!allowedRuntimeEvidenceMethods.has(method)) {
+      violations.push(`${relative}: RuntimeIntelligence.${method} is not an allowed evidence or model-health capability`);
+    }
   }
 }
 
