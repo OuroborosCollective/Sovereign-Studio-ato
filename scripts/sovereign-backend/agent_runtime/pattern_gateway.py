@@ -8,6 +8,7 @@ that passed this gateway.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import re
 import uuid
@@ -41,6 +42,7 @@ class PatternLearningInput:
     blocker: str | None = None
     evidence_passed: bool = False
     can_learn_pattern: bool = False
+    blocker_evidence_passed: bool = False
     draft_pr_ready: bool = False
 
 
@@ -61,16 +63,30 @@ def _contains_secret(*values: str | None) -> bool:
     return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
 
 
+def _source_prompt(mission: str) -> str:
+    clean = mission.strip()
+    prefix = "Ideenfabrik Auftrag:"
+    if clean.lower().startswith(prefix.lower()):
+        clean = clean[len(prefix):].strip()
+        marker = "\nRepository-Kontext:"
+        marker_index = clean.find(marker)
+        if marker_index >= 0:
+            clean = clean[:marker_index].strip()
+    return clean
+
+
 def _safe_payload(input_value: PatternLearningInput, kind: PatternKind | None) -> dict[str, Any]:
     return {
         "jobId": sanitize_agent_text(input_value.job_id, 120),
         "source": sanitize_agent_text(input_value.source, 80),
         "kind": kind,
         "mission": sanitize_agent_text(input_value.mission, 600),
+        "missionSha256": hashlib.sha256(_source_prompt(input_value.mission).encode("utf-8")).hexdigest(),
         "changedFiles": list(normalize_agent_paths(input_value.changed_files))[:50],
         "diffSummary": sanitize_agent_text(input_value.diff_summary or "", 2000),
         "testSummary": sanitize_agent_text(input_value.test_summary or "", 2000),
         "blocker": sanitize_agent_text(input_value.blocker or "", 1000),
+        "blockerEvidencePassed": input_value.blocker_evidence_passed,
         "draftPrReady": input_value.draft_pr_ready,
     }
 
@@ -83,6 +99,16 @@ def pattern_input_from_job(job: StoredSovereignAgentJob, *, source: str = "agent
         blocker=job.blocker,
         tool_status="done" if job.status in ("running", "validating", "completed") else job.status,
     ))
+    blocker_evidence_passed = bool(
+        job.status in ("blocked", "failed")
+        and job.blocker
+        and any(
+            isinstance(event, dict)
+            and str(event.get("level") or "").lower() in ("warning", "error")
+            and len(str(event.get("message") or "").strip()) >= 8
+            for event in job.events
+        )
+    )
     return PatternLearningInput(
         job_id=job.job_id,
         source=source,
@@ -93,6 +119,7 @@ def pattern_input_from_job(job: StoredSovereignAgentJob, *, source: str = "agent
         blocker=job.blocker,
         evidence_passed=evidence.passed,
         can_learn_pattern=evidence.can_learn_pattern,
+        blocker_evidence_passed=blocker_evidence_passed,
         draft_pr_ready=(getattr(job, "pr_state", None) == "ready") or bool(getattr(job, "draft_pr_preparation", None)),
     )
 
@@ -108,8 +135,19 @@ def evaluate_pattern_learning(input_value: PatternLearningInput) -> PatternLearn
     ):
         blockers.append("pattern payload contains secret-like material")
 
-    has_solution_evidence = bool(input_value.evidence_passed and input_value.can_learn_pattern and input_value.changed_files and input_value.diff_summary and input_value.test_summary)
-    has_blocker_evidence = bool(input_value.blocker and len(input_value.blocker.strip()) >= 8)
+    has_solution_evidence = bool(
+        input_value.evidence_passed
+        and input_value.can_learn_pattern
+        and input_value.draft_pr_ready
+        and input_value.changed_files
+        and input_value.diff_summary
+        and input_value.test_summary
+    )
+    has_blocker_evidence = bool(
+        input_value.blocker_evidence_passed
+        and input_value.blocker
+        and len(input_value.blocker.strip()) >= 8
+    )
 
     if has_solution_evidence and not blockers:
         payload = _safe_payload(input_value, "solution")

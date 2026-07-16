@@ -116,11 +116,6 @@ const WORKFLOW_REPAIR_TOKENS = [
   'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
 ];
 
-function hasExplicitAgentIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  return SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token));
-}
-
 function hasExplicitMutationIntent(lower: string): boolean {
   return ENGLISH_MUTATION_PATTERN.test(lower)
     || GERMAN_MUTATION_STEMS.some((stem) => lower.includes(stem));
@@ -131,7 +126,8 @@ function isReadOnlyRequest(trimmed: string, lower: string): boolean {
   return /\?\s*$/.test(trimmed) && !hasExplicitMutationIntent(lower);
 }
 
-export function classifyIntent(text: string): IntentClassification {
+/** Offline/degraded-only language fallback. Never call from an online route. */
+export function classifyOfflineCapabilityIntent(text: string): IntentClassification {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
 
@@ -158,7 +154,8 @@ export function classifyIntent(text: string): IntentClassification {
   return 'unknown';
 }
 
-export function determineTaskComplexity(
+/** Offline/degraded-only complexity fallback. Online complexity comes from LLM evidence. */
+export function determineOfflineTaskComplexity(
   intent: IntentClassification,
   text: string,
 ): TaskComplexity {
@@ -292,11 +289,21 @@ function buildRepoMissingDecision(intent: IntentClassification): CapabilityDecis
   };
 }
 
+export function buildOfflineCapabilityLanguageEvidence(text: string): CapabilityRouterInput['language'] {
+  const intent = classifyOfflineCapabilityIntent(text);
+  return {
+    intent,
+    complexity: determineOfflineTaskComplexity(intent, text),
+    explicitAgentRequest: SOVEREIGN_AGENT_TOKENS.some((token) => text.toLowerCase().includes(token)),
+    source: 'offline_fallback',
+  };
+}
+
 export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): CapabilityDecision {
-  const intent = classifyIntent(input.text);
-  const complexity = determineTaskComplexity(intent, input.text);
+  const intent = input.language.intent;
+  const complexity = input.language.complexity;
   const blockers = detectBlockers(input);
-  const explicitSovereignAgentIntent = hasExplicitAgentIntent(input.text);
+  const explicitSovereignAgentIntent = input.language.explicitAgentRequest;
 
   if (intent === 'status_question') {
     return {

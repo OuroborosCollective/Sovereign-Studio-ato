@@ -23,7 +23,8 @@ function capabilities(overrides: Partial<Parameters<typeof buildSovereignToolCap
 describe('sovereignInternalOperatorRuntime', () => {
   it('uses direct patch for small documentation changes', () => {
     const decision = decideSovereignInternalOperator({
-      text: 'Bitte README Titel ändern',
+      intent: 'direct_patch',
+      taskComplexity: 'simple',
       capabilities: capabilities(),
       traceIdProvider: () => 'test-direct',
     });
@@ -37,7 +38,8 @@ describe('sovereignInternalOperatorRuntime', () => {
 
   it('prefers the own workspace before the optional Sovereign Agent bridge', () => {
     const decision = decideSovereignInternalOperator({
-      text: 'Implementiere eine Runtime mit Tests',
+      intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({ directPatchSupported: false }),
       traceIdProvider: () => 'test-workspace',
     });
@@ -50,7 +52,8 @@ describe('sovereignInternalOperatorRuntime', () => {
 
   it('blocks when no evidence-backed patch executor route exists', () => {
     const decision = decideSovereignInternalOperator({
-      text: 'Baue den internen Operator ein und teste die Route',
+      intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({
         directPatchSupported: false,
         agentConfigured: false,
@@ -68,7 +71,8 @@ describe('sovereignInternalOperatorRuntime', () => {
 
   it('blocks hard when repo or write access is not ready', () => {
     const decision = decideSovereignInternalOperator({
-      text: 'Implementiere eine Runtime',
+      intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({
         githubAccessState: 'missing',
         githubTokenPresent: false,
@@ -88,7 +92,8 @@ describe('sovereignInternalOperatorRuntime', () => {
     ];
 
     const decision = decideSovereignInternalOperator({
-      text: 'Baue den internen Operator ein',
+      intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: capabilities({
         directPatchSupported: false,
         agentConfigured: false,

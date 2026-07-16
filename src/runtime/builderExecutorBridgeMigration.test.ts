@@ -5,8 +5,8 @@ import { buildSovereignToolCapabilityRegistry } from '../features/product/runtim
 describe('builder executor bridge migration contract', () => {
   it('defines the runtime call BuilderContainer must use for blocked code execution', () => {
     const decision = decideSovereignExecutorBridgeRoute({
-      text: 'Baue internen Operator Fallback mit Tests',
       intent: 'code_execution',
+      taskComplexity: 'complex',
       capabilities: buildSovereignToolCapabilityRegistry({
         repoReady: true,
         githubAccessState: 'ready',

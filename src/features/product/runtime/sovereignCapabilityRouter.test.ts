@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCapabilityRouteActionEvent,
-  classifyIntent,
+  buildOfflineCapabilityLanguageEvidence,
+  classifyOfflineCapabilityIntent,
   decideSovereignCapabilityRoute,
   detectBlockers,
-  determineTaskComplexity,
+  determineOfflineTaskComplexity,
   getBlockerExplanation,
   getRouteLabel,
   mapCapabilityRouteToActionRoute,
@@ -13,8 +14,10 @@ import {
   type CapabilityRouterInput,
 } from './sovereignCapabilityRouter';
 
+const language = buildOfflineCapabilityLanguageEvidence;
+
 const FULL_READY_STATE: CapabilityRouterInput = {
-  text: '',
+  language: language(''),
   repoReady: true,
   githubAccessState: 'ready',
   agentReady: true,
@@ -24,7 +27,7 @@ const FULL_READY_STATE: CapabilityRouterInput = {
 };
 
 const GITHUB_MISSING_STATE: CapabilityRouterInput = {
-  text: '',
+  language: language(''),
   repoReady: true,
   githubAccessState: 'missing',
   agentReady: false,
@@ -34,7 +37,7 @@ const GITHUB_MISSING_STATE: CapabilityRouterInput = {
 };
 
 const GITHUB_VALIDATING_STATE: CapabilityRouterInput = {
-  text: '',
+  language: language(''),
   repoReady: true,
   githubAccessState: 'validating',
   agentReady: true,
@@ -48,7 +51,7 @@ describe('Sovereign Capability Router', () => {
     it('routes free chat to worker-chat', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Was bedeutet dieser Fehler?',
+        language: language('Was bedeutet dieser Fehler?'),
       });
 
       expect(decision.route).toBe('worker-chat');
@@ -60,7 +63,7 @@ describe('Sovereign Capability Router', () => {
     it('routes status questions to local runtime answer', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Bist du fertig?',
+        language: language('Bist du fertig?'),
       });
 
       expect(decision.route).toBe('local-runtime-answer');
@@ -71,7 +74,7 @@ describe('Sovereign Capability Router', () => {
     it('records local runtime answers as checked capability, not blocker handling', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Was ist der Status?',
+        language: language('Was ist der Status?'),
       });
       const event = buildCapabilityRouteActionEvent(decision, 'trace-local', 0);
 
@@ -83,19 +86,19 @@ describe('Sovereign Capability Router', () => {
     });
 
     it('classifies common intents', () => {
-      expect(classifyIntent('Was ist das?')).toBe('free_chat');
-      expect(classifyIntent('arbeitet er schon')).toBe('status_question');
-      expect(classifyIntent('https://github.com/owner/repo')).toBe('load_repo');
-      expect(classifyIntent('Was ist der Inhalt der README?')).toBe('free_chat');
-      expect(classifyIntent('Was ist ein Pull Request?')).toBe('free_chat');
-      expect(classifyIntent('Erkläre mir einen Workflow')).toBe('free_chat');
-      expect(classifyIntent('Can you show me the README?')).toBe('free_chat');
-      expect(classifyIntent('Tell me about the pull request?')).toBe('free_chat');
-      expect(classifyIntent('Hi, wie geht es dir?')).toBe('free_chat');
-      expect(classifyIntent('Aktualisiere README und Docs anhand der Architektur.')).toBe('direct_patch');
-      expect(classifyIntent('Kannst du einen Draft PR erstellen?')).toBe('draft_pr');
-      expect(classifyIntent('Can you update the README?')).toBe('direct_patch');
-      expect(classifyIntent('Kannst du den Workflow reparieren?')).toBe('repair_workflow');
+      expect(classifyOfflineCapabilityIntent('Was ist das?')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('arbeitet er schon')).toBe('status_question');
+      expect(classifyOfflineCapabilityIntent('https://github.com/owner/repo')).toBe('load_repo');
+      expect(classifyOfflineCapabilityIntent('Was ist der Inhalt der README?')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('Was ist ein Pull Request?')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('Erkläre mir einen Workflow')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('Can you show me the README?')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('Tell me about the pull request?')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('Hi, wie geht es dir?')).toBe('free_chat');
+      expect(classifyOfflineCapabilityIntent('Aktualisiere README und Docs anhand der Architektur.')).toBe('direct_patch');
+      expect(classifyOfflineCapabilityIntent('Kannst du einen Draft PR erstellen?')).toBe('draft_pr');
+      expect(classifyOfflineCapabilityIntent('Can you update the README?')).toBe('direct_patch');
+      expect(classifyOfflineCapabilityIntent('Kannst du den Workflow reparieren?')).toBe('repair_workflow');
     });
   });
 
@@ -103,7 +106,7 @@ describe('Sovereign Capability Router', () => {
     it('routes simple README changes to direct GitHub patch when available', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Passe README an und füge 🐥 in den Titel ein',
+        language: language('Passe README an und füge 🐥 in den Titel ein'),
       });
 
       expect(decision.route).toBe('direct-github-patch');
@@ -114,7 +117,7 @@ describe('Sovereign Capability Router', () => {
     it('blocks direct patch while GitHub is validating', () => {
       const decision = decideSovereignCapabilityRoute({
         ...GITHUB_VALIDATING_STATE,
-        text: 'Passe README an',
+        language: language('Passe README an'),
       });
 
       expect(decision.allowed).toBe(false);
@@ -124,7 +127,7 @@ describe('Sovereign Capability Router', () => {
 
     it('blocks direct patch with executor_unavailable when GitHub is already ready but no patch route exists', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Passe README an',
+        language: language('Passe README an'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: false,
@@ -144,7 +147,7 @@ describe('Sovereign Capability Router', () => {
     it('routes complex code work to workspace when workspace is available', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Implementiere Feature X und teste es',
+        language: language('Implementiere Feature X und teste es'),
       });
 
       expect(decision.route).toBe('workspace-executor');
@@ -155,7 +158,7 @@ describe('Sovereign Capability Router', () => {
 
     it('routes explicit Draft-PR execution to sovereign-agent only with validated GitHub access', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Bitte mit Sovereign Agent einen Draft PR erstellen.',
+        language: language('Bitte mit Sovereign Agent einen Draft PR erstellen.'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: true,
@@ -172,7 +175,7 @@ describe('Sovereign Capability Router', () => {
 
     it('blocks explicit Sovereign Agent execution while GitHub access is missing', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Bitte mit Sovereign Agent einen Draft PR erstellen.',
+        language: language('Bitte mit Sovereign Agent einen Draft PR erstellen.'),
         repoReady: true,
         githubAccessState: 'missing',
         agentReady: true,
@@ -189,7 +192,7 @@ describe('Sovereign Capability Router', () => {
 
     it('blocks explicit Sovereign Agent code execution while GitHub access is missing', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Sovereign Agent soll Feature X implementieren',
+        language: language('Sovereign Agent soll Feature X implementieren'),
         repoReady: true,
         githubAccessState: 'missing',
         agentReady: true,
@@ -206,7 +209,7 @@ describe('Sovereign Capability Router', () => {
 
     it('blocks repo-scoped execution before selecting an executor', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Implementiere Feature X und teste es',
+        language: language('Implementiere Feature X und teste es'),
         repoReady: false,
         githubAccessState: 'ready',
         agentReady: true,
@@ -222,7 +225,7 @@ describe('Sovereign Capability Router', () => {
 
     it('routes complex code work to workspace-executor when available', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Baue Feature X ein',
+        language: language('Baue Feature X ein'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: true,
@@ -238,7 +241,7 @@ describe('Sovereign Capability Router', () => {
 
     it('blocks complex code work with workspace_required when no executor exists', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Baue Feature X ein und teste es',
+        language: language('Baue Feature X ein und teste es'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: false,
@@ -254,7 +257,7 @@ describe('Sovereign Capability Router', () => {
 
     it('does not dead-end medium code work when package is missing', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Fixe den kleinen Button Bug',
+        language: language('Fixe den kleinen Button Bug'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: false,
@@ -273,7 +276,7 @@ describe('Sovereign Capability Router', () => {
 
     it('keeps a recoverable package route queued until package generation starts', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Fixe den kleinen Button Bug',
+        language: language('Fixe den kleinen Button Bug'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: false,
@@ -293,7 +296,7 @@ describe('Sovereign Capability Router', () => {
 
     it('runs code-llm when a package already exists', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Fixe den kleinen Button Bug',
+        language: language('Fixe den kleinen Button Bug'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: false,
@@ -312,7 +315,7 @@ describe('Sovereign Capability Router', () => {
   describe('draft PR package gate', () => {
     it('keeps draft PR without package recoverable using package_required instead of unsupported_intent', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Erstelle einen Draft PR',
+        language: language('Erstelle einen Draft PR'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: true,
@@ -333,7 +336,7 @@ describe('Sovereign Capability Router', () => {
     it('blocks draft PR when GitHub is missing after package exists', () => {
       const decision = decideSovereignCapabilityRoute({
         ...GITHUB_MISSING_STATE,
-        text: 'Erstelle einen Draft PR',
+        language: language('Erstelle einen Draft PR'),
         hasPackage: true,
       });
 
@@ -343,7 +346,7 @@ describe('Sovereign Capability Router', () => {
 
     it('routes draft PR to workspace-executor when workspace is ready', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Erstelle einen Draft PR',
+        language: language('Erstelle einen Draft PR'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: true,
@@ -360,7 +363,7 @@ describe('Sovereign Capability Router', () => {
 
     it('blocks draft PR when no executor is available', () => {
       const decision = decideSovereignCapabilityRoute({
-        text: 'Erstelle einen Draft PR',
+        language: language('Erstelle einen Draft PR'),
         repoReady: true,
         githubAccessState: 'ready',
         agentReady: false,
@@ -379,7 +382,7 @@ describe('Sovereign Capability Router', () => {
     it('routes workflow watch to worker-chat with workflow capability', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Beobachte den Workflow-Status',
+        language: language('Beobachte den Workflow-Status'),
       });
 
       expect(decision.route).toBe('worker-chat');
@@ -389,7 +392,7 @@ describe('Sovereign Capability Router', () => {
     it('blocks workflow watch when GitHub access is missing', () => {
       const decision = decideSovereignCapabilityRoute({
         ...GITHUB_MISSING_STATE,
-        text: 'Workflow-Status prüfen',
+        language: language('Workflow-Status prüfen'),
       });
 
       expect(decision.allowed).toBe(false);
@@ -399,7 +402,7 @@ describe('Sovereign Capability Router', () => {
     it('blocks workflow watch when the selected worker route has runtime evidence of a blocker', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Workflow-Status prüfen',
+        language: language('Workflow-Status prüfen'),
         hasActiveWorkerBlocker: true,
       });
 
@@ -418,16 +421,16 @@ describe('Sovereign Capability Router', () => {
     });
 
     it('classifies complexity', () => {
-      expect(determineTaskComplexity('direct_patch', 'passe readme an')).toBe('simple');
-      expect(determineTaskComplexity('code_generation', 'baue ein backend')).toBe('complex');
-      expect(determineTaskComplexity('code_generation', 'fixe button')).toBe('medium');
-      expect(determineTaskComplexity('unknown', 'unbekannte eingabe')).toBe('unknown');
+      expect(determineOfflineTaskComplexity('direct_patch', 'passe readme an')).toBe('simple');
+      expect(determineOfflineTaskComplexity('code_generation', 'baue ein backend')).toBe('complex');
+      expect(determineOfflineTaskComplexity('code_generation', 'fixe button')).toBe('medium');
+      expect(determineOfflineTaskComplexity('unknown', 'unbekannte eingabe')).toBe('unknown');
     });
 
     it('builds action events from decisions', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Was ist das?',
+        language: language('Was ist das?'),
       });
       const event = buildCapabilityRouteActionEvent(decision, 'trace', 0);
       expect(event.kind).toBe('route_selected');
@@ -449,7 +452,7 @@ describe('Sovereign Capability Router', () => {
       expect(getRouteLabel('draft-pr-runtime')).toBe('Draft PR');
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Implementiere Feature X und teste es',
+        language: language('Implementiere Feature X und teste es'),
       });
       expect(requiresExecutor(decision)).toBe(true);
       expect(requiresGitHubAccess(decision)).toBe(true);
@@ -458,7 +461,7 @@ describe('Sovereign Capability Router', () => {
     it('does not leak GitHub tokens into decisions', () => {
       const decision = decideSovereignCapabilityRoute({
         ...FULL_READY_STATE,
-        text: 'Passe README an',
+        language: language('Passe README an'),
       });
       const serialized = JSON.stringify(decision);
       expect(serialized).not.toMatch(/gh[pousr]_[A-Za-z0-9]{20,}/);

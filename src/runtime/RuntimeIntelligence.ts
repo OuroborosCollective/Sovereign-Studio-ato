@@ -607,6 +607,16 @@ export class RuntimeCircuitBreaker {
   async call<T>(fn: () => Promise<T>, inheritedTraceId?: TraceId): Promise<T> {
     const traceId = inheritedTraceId ?? this.traceIdProvider();
 
+    if (this.state === 'half-open' && this.halfOpenProbeInFlight) {
+      this.telemetry.track({
+        name: 'circuit_breaker_rejected',
+        properties: { name: this.name, reason: 'half_open_probe_in_flight' },
+        timestamp: runtimeNow(),
+        traceId,
+      });
+      throw new Error(`Circuit breaker half-open probe already running for ${this.name}`);
+    }
+
     if (this.state === 'open') {
       const canProbe = runtimeNow() - this.lastFailure > this.safeTimeoutMs;
 
@@ -1365,6 +1375,13 @@ export class RuntimeIntelligence {
     return this.modelHealthFallbackState;
   }
 
+  /**
+   * Offline diagnostic rule evaluation only.
+   *
+   * This method must never be used as the online chat/executor language authority.
+   * Online natural-language intent comes from structured LLM evidence; this
+   * legacy container grammar remains available only for degraded diagnostics.
+   */
   decide(
     containerId: string,
     visibleText: string,
@@ -1432,6 +1449,7 @@ export class RuntimeIntelligence {
     };
   }
 
+  /** Offline diagnostic pattern matching; never an online action authority. */
   matchMobilePattern(visibleText: string): MobileWorkflowPatternMatch {
     const traceId = this.traceIdProvider();
     const normalized = normalizeVisibleText(visibleText, this.maxVisibleTextLength);

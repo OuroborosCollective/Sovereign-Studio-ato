@@ -91,8 +91,15 @@ export interface CapabilityDecision {
 /**
  * Input for capability routing decision.
  */
+export interface SovereignLanguageIntentEvidence {
+  readonly intent: IntentClassification;
+  readonly complexity: TaskComplexity;
+  readonly explicitAgentRequest: boolean;
+  readonly source: 'online_llm' | 'offline_fallback' | 'explicit_runtime_action';
+}
+
 export interface CapabilityRouterInput {
-  readonly text: string;
+  readonly language: SovereignLanguageIntentEvidence;
   readonly repoReady: boolean;
   readonly githubAccessState: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid';
   readonly agentReady: boolean;

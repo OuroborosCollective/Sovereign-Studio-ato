@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  classifySovereignExecutorIntent,
+  classifyOfflineSovereignExecutorIntent,
   decideSovereignExecutorRoute,
 } from './sovereignExecutorRuntime';
 import { buildSovereignToolCapabilityRegistry } from './sovereignToolCapabilityRuntime';
@@ -36,18 +36,17 @@ function workspaceScope(overrides: Partial<Parameters<typeof createSovereignWork
 
 describe('sovereignExecutorRuntime', () => {
   it('classifies common executor intents without starting a route', () => {
-    expect(classifySovereignExecutorIntent('Was ist der Status?')).toBe('status');
-    expect(classifySovereignExecutorIntent('Bitte README Titel ändern')).toBe('direct_patch');
-    expect(classifySovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('code_execution');
-    expect(classifySovereignExecutorIntent('Erstelle einen Draft PR')).toBe('draft_pr');
-    expect(classifySovereignExecutorIntent('Warum ist das so?')).toBe('question');
-    expect(classifySovereignExecutorIntent('Was ist ein Pull Request?')).toBe('question');
-    expect(classifySovereignExecutorIntent('Wie funktioniert der README-Code?')).toBe('question');
+    expect(classifyOfflineSovereignExecutorIntent('Was ist der Status?')).toBe('status');
+    expect(classifyOfflineSovereignExecutorIntent('Bitte README Titel ändern')).toBe('direct_patch');
+    expect(classifyOfflineSovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('code_execution');
+    expect(classifyOfflineSovereignExecutorIntent('Erstelle einen Draft PR')).toBe('draft_pr');
+    expect(classifyOfflineSovereignExecutorIntent('Warum ist das so?')).toBe('question');
+    expect(classifyOfflineSovereignExecutorIntent('Was ist ein Pull Request?')).toBe('question');
+    expect(classifyOfflineSovereignExecutorIntent('Wie funktioniert der README-Code?')).toBe('question');
   });
 
   it('routes status questions locally and terminally', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'was ist der status',
       intent: 'status',
       capabilities: capabilities(),
     });
@@ -60,7 +59,6 @@ describe('sovereignExecutorRuntime', () => {
 
   it('blocks write intents before repo is loaded', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'Implementiere einen Fix',
       intent: 'code_execution',
       capabilities: capabilities({ repoReady: false }),
     });
@@ -72,7 +70,6 @@ describe('sovereignExecutorRuntime', () => {
 
   it('opens GitHub access route before Sovereign Agent when write access is missing', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'Implementiere einen Fix und erstelle einen Draft PR',
       intent: 'code_execution',
       capabilities: capabilities({
         githubAccessState: 'missing',
@@ -91,7 +88,6 @@ describe('sovereignExecutorRuntime', () => {
 
   it('selects Direct Patch for small documentation work when ready', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'Bitte README Titel ändern',
       intent: 'direct_patch',
       capabilities: capabilities(),
       workspaceScope: workspaceScope(),
@@ -106,7 +102,6 @@ describe('sovereignExecutorRuntime', () => {
 
   it('selects Sovereign Agent for complex code work only when GitHub write is ready', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'Implementiere eine Runtime und Tests in src/features/product/runtime/foo.ts',
       intent: 'code_execution',
       capabilities: capabilities({ directPatchSupported: false }),
       workspaceScope: workspaceScope(),
@@ -121,7 +116,6 @@ describe('sovereignExecutorRuntime', () => {
 
   it('blocks code work outside workspace scope', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'Implementiere Secret Handling in src/secrets/token.ts',
       intent: 'code_execution',
       capabilities: capabilities({ directPatchSupported: false }),
       workspaceScope: workspaceScope(),
@@ -136,7 +130,6 @@ describe('sovereignExecutorRuntime', () => {
 
   it('keeps unclear input on Worker Chat instead of starting write executors', () => {
     const decision = decideSovereignExecutorRoute({
-      text: 'Mach mal besser',
       intent: 'unknown',
       capabilities: capabilities(),
     });

@@ -1048,6 +1048,39 @@ describe('RuntimeCircuitBreaker', () => {
     expect(cb.getFailureCount()).toBe(0);
   });
 
+  it('allows only one half-open probe at a time', async () => {
+    const cb = new RuntimeCircuitBreaker(1, 1, 'half-open-concurrency-test');
+
+    await expect(
+      cb.call(async () => {
+        throw new Error('initial fail');
+      }),
+    ).rejects.toThrow('initial fail');
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    let releaseProbe: ((value: string) => void) | undefined;
+    const firstProbe = cb.call(
+      () => new Promise<string>((resolve) => {
+        releaseProbe = resolve;
+      }),
+    );
+    await Promise.resolve();
+
+    let secondOperationRan = false;
+    await expect(
+      cb.call(async () => {
+        secondOperationRan = true;
+        return 'unsafe second probe';
+      }),
+    ).rejects.toThrow('half-open probe already running');
+
+    expect(secondOperationRan).toBe(false);
+    releaseProbe?.('recovered');
+    await expect(firstProbe).resolves.toBe('recovered');
+    expect(cb.getState()).toBe('closed');
+  });
+
   it('reopens when half-open probe fails', async () => {
     const cb = new RuntimeCircuitBreaker(1, 1, 'half-open-fail-test');
 

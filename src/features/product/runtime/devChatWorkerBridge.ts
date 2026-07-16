@@ -785,6 +785,7 @@ export async function fetchDevChatWorkerInterpretation(args: {
   readonly model: string;
   readonly text: string;
   readonly repoContext?: string;
+  readonly runtimeContext?: string;
   readonly memoryContext?: string;
   readonly recentMessages?: readonly DevChatWorkerMessage[];
 }): Promise<DevChatWorkerInterpretationResult> {
@@ -800,6 +801,7 @@ export async function fetchDevChatWorkerInterpretation(args: {
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
+    args.runtimeContext ? `Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung):\n${args.runtimeContext}` : '',
     args.memoryContext ? `Evidence-geprüfter Memory-Kontext:\n${args.memoryContext}` : '',
   ].filter(Boolean).join('\n');
 
