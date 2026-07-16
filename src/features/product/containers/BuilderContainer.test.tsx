@@ -358,7 +358,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("shows integration intent draft card for normal text inputs when repo is ready", async () => {
     const props = baseProps();
-    mockFetchSequence(jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }));
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: JSON.stringify({
+        mode: 'action',
+        intent: 'code_execution',
+        assistant_text: 'Ich habe den Änderungsauftrag verstanden.',
+        action_title: 'Mobile UX und Runtime-Log verbessern',
+        confidence: 0.95,
+        language: 'de',
+      }) } }], model: 'deepseek-r1' }),
+    );
     renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} agentReady={false} />);
     await loadRepoFromChat();
     fireEvent.change(chatField(), { target: { value: "Bitte mobile UX verbessern und Log direkt sichtbar machen." } });
@@ -893,9 +903,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("fails closed for unknown intents without calling the Worker", async () => {
+  it("lets the online LLM answer unclear language instead of blocking on local keyword rules", async () => {
     const fetchMock = mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: "must not be used" } }] }),
+      jsonResponse({ choices: [{ message: { content: "Ich brauche noch etwas Kontext, um das sicher einzuordnen." } }] }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
 
@@ -903,10 +913,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() =>
-      expect(screen.getByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeDefined(),
+      expect(screen.getByText("Ich brauche noch etwas Kontext, um das sicher einzuordnen.")).toBeDefined(),
     );
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
-    expect(screen.queryByText("must not be used")).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(1);
+    expect(screen.queryByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeNull();
   });
 
   it("loads a GitHub repo as runtime context without writing analysis into the composer", async () => {

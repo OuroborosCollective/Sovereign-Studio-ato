@@ -103,6 +103,34 @@ describe('integrationIntentDraftRuntime', () => {
       expect(createIntegrationIntentDraft('Hilfe')).toBeNull();
     });
 
+    it('stores online LLM intent as evidence without authorizing execution', () => {
+      const draft = createIntegrationIntentDraft('Verbessere die mobile Chat-UX', undefined, {
+        now: 1700000000000,
+        idSeed: 'online-intent',
+        interpretation: {
+          intentKind: 'code_execution',
+          source: 'online_llm',
+          confidence: 0.93,
+          model: 'deepseek-r1',
+          actionTitle: 'Mobile Chat-UX verbessern',
+        },
+      });
+
+      expect(draft).toMatchObject({
+        title: 'Mobile Chat-UX verbessern',
+        intentKind: 'code_execution',
+        intentSource: 'online_llm',
+        intentConfidence: 0.93,
+        intentModel: 'deepseek-r1',
+      });
+      expect(canConfirmIntegrationIntentDraft(draft!, {
+        repoReady: false,
+        githubWriteReady: false,
+        directPatchReady: false,
+        agentReady: false,
+      }).canConfirm).toBe(false);
+    });
+
     it('extracts correct goal for fix intent', () => {
       const input = 'Fix den Bug im Chat';
       const draft = createIntegrationIntentDraft(input);
@@ -385,7 +413,8 @@ describe('integrationIntentDraftRuntime', () => {
       expect(event.kind).toBe('intent_detected');
       expect(event.route).toBe('runtime');
       expect(event.state).toBe('done');
-      expect(event.detail).toBe(draft.title);
+      expect(event.detail).toContain(draft.title);
+      expect(event.detail).toContain('Legacy-Entwurf');
     });
 
     it('buildDraftConfirmedEvent creates valid event', () => {
