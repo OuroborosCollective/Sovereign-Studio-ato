@@ -38,6 +38,7 @@ import {
   explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
+  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
@@ -45,6 +46,7 @@ import {
   type DevChatRepoSnapshot,
   type DevChatWorkerDiagnostic,
   type DevChatWorkerHealthResult,
+  type DevChatWorkerIntentKind,
   type DevChatWorkerMessage,
 } from "../runtime/devChatWorkerBridge";
 import {
@@ -302,6 +304,27 @@ import {
 const CUTE_THINKING_FRAME_MS = 1100;
 const CUTE_IDLE_FRAME_MS = 1450;
 const builderContainerContract = getSovereignContainerContract("builder");
+
+function mapInterpretedIntentToExecutorIntent(
+  intent: DevChatWorkerIntentKind | undefined,
+): ReturnType<typeof classifySovereignExecutorIntent> | null {
+  switch (intent) {
+    case 'status':
+      return 'status';
+    case 'free_chat':
+    case 'workflow_watch':
+      return 'question';
+    case 'direct_patch':
+      return 'direct_patch';
+    case 'code_execution':
+    case 'repair_workflow':
+      return 'code_execution';
+    case 'draft_pr':
+      return 'draft_pr';
+    default:
+      return null;
+  }
+}
 
 const TIER_COLOR: Record<RuntimeTier, string> = {
   ready: C.green,
@@ -3014,6 +3037,17 @@ export function BuilderContainer({
     [],
   );
 
+  const appendGuardedWorkerText = useCallback((text: string) => {
+    const claimCheck = checkChatClaim(text, agentWorkSnapshot);
+    const guardedText = claimCheck.allowed || !claimCheck.honestFallback
+      ? text
+      : `${text}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+    if (!claimCheck.allowed && claimCheck.violations.length > 0) {
+      addLog('warn', `chatClaimGuard: ${claimCheck.violations.join(', ')}`, 'router');
+    }
+    appendChatLine({ role: 'assistant', text: guardedText });
+  }, [addLog, agentWorkSnapshot, appendChatLine]);
+
   // ── Issue #557: Show session restore age on startup
   useEffect(() => {
     const snapshot = loadSessionMemory(localStorage);
@@ -3510,8 +3544,11 @@ export function BuilderContainer({
   ]);
 
   // ── Chat runtime actions: composer draft, chat history, worker route and executor gate are separated.
-  const startAgentFromText = async (text: string): Promise<boolean> => {
-    const intent = classifySovereignExecutorIntent(text);
+  const startAgentFromText = async (
+    text: string,
+    interpretedIntent?: ReturnType<typeof classifySovereignExecutorIntent>,
+  ): Promise<boolean> => {
+    const intent = interpretedIntent ?? classifySovereignExecutorIntent(text);
     if (!effectiveRepoReady || !chatRepoSnapshot) {
       appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden.', kind: 'blocked' }));
       setShowRepoSetup(true);
@@ -3538,7 +3575,9 @@ export function BuilderContainer({
         repoReason: effectiveRepoReason,
       }),
     );
-    emitMissionChange(clean);
+    if (lastMissionRef.current !== clean) {
+      emitMissionChange(clean);
+    }
 
     if (!onStartAgent) {
       appendActionEvent(buildBlockedActionEvent({
@@ -3980,34 +4019,352 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       return;
     }
 
-    // ── Issue #520: Integration Intent Draft Detection
-    // Normal non-question inputs with a connected repo are treated as potential
-    // integration/implementation requests. Show a draft card for confirmation.
-    // BUT: Explicit executor commands and delegation intents bypass the draft card
-    // to maintain backward compatibility with existing test expectations.
-    // Fix: Safe-analysis presets are read-only and must never create an integration draft.
+    // Online-first language understanding: the LLM interprets natural language;
+    // the application remains the sole authority for capabilities, execution and success.
+    // Local token classifiers are used only when the online interpreter is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
-    if (effectiveRepoReady &&
-        !options.resumePendingIntent &&
-        !isSafeAnalysisPreset &&
-        !isSovereignAgentExecutionIntent(submittedText) &&
-        !isDelegationIntent(submittedText) &&
-        !isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory)) {
-      const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
-        path,
-        type: 'blob' as const,
-        size: 0,
-        sha: '',
-      })) ?? [];
+    const directRepoUrl = parseDevChatGithubUrl(submittedText);
+    const offlineControlIntent = classifySovereignExecutorIntent(submittedText);
+    const explicitRuntimeAction = offlineControlIntent !== 'question' && (
+      isSovereignAgentExecutionIntent(submittedText) ||
+      isDelegationIntent(submittedText) ||
+      isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory)
+    );
+    const shouldUseOnlineLanguageUnderstanding =
+      !options.resumePendingIntent &&
+      !isSafeAnalysisPreset &&
+      !directRepoUrl &&
+      !explicitRuntimeAction;
 
-      const draft = createIntegrationIntentDraft(submittedText, repoFiles);
-      if (draft) {
+    if (shouldUseOnlineLanguageUnderstanding) {
+      let onlineAreInference: AreInferenceResult | null = null;
+      let onlineMemoryContext = '';
+      let onlineHealth: DevChatWorkerHealthResult | null = null;
+
+      if (authUser) {
+        try {
+          onlineHealth = await fetchDevChatWorkerHealth();
+          setWorkerHealthEvidence(onlineHealth);
+          onlineAreInference = await evaluateAreInference({
+            prompt: submittedText,
+            repository: buildAreRepositoryState({
+              owner: chatRepoSnapshot?.owner,
+              repo: chatRepoSnapshot?.repo,
+              branch: chatRepoSnapshot?.branch,
+              repositoryRevision: chatRepoSnapshot?.treeSha,
+              files: chatRepoSnapshot?.files ?? [],
+            }),
+            onlineAvailable: onlineHealth.ok,
+            limit: 5,
+          });
+          const transition = emitAreStateTransition(arePreviousStateRef.current, onlineAreInference);
+          arePreviousStateRef.current = {
+            stateHash: onlineAreInference.stateHash,
+            state: onlineAreInference.state,
+          };
+          if (transition.changed) {
+            addLog('info', `ARE-State geändert: ${transition.changeKinds.join(', ')} · ${transition.currentStateHash.slice(0, 12)}`, 'pattern');
+          }
+          onlineMemoryContext = [
+            onlineAreInference.knowledgeContext,
+            onlineAreInference.experienceContext,
+          ].filter(Boolean).join('\n\n');
+          if (onlineAreInference.selectedKnowledgeIds.length > 0 || onlineAreInference.selectedPatternIds.length > 0) {
+            appendActionEvent({
+              kind: 'context_collected',
+              route: 'runtime',
+              label: 'ARE-Kontext für Online-Deutung gesammelt',
+              detail: `${onlineAreInference.selectedKnowledgeIds.length} Knowledge-Blöcke · ${onlineAreInference.selectedPatternIds.length} evidence-geprüfte Muster.`,
+              state: 'done',
+            });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          addLog('warn', `ARE-Kontext nicht verfügbar; Online-Deutung bleibt unabhängig: ${message}`, 'pattern');
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'ARE-Kontext nicht verfügbar',
+            detail: `${message} · Kein Memory-Kandidat wurde erzeugt; die Online-Sprachroute darf bei erreichbarem Worker weiterlaufen.`,
+            kind: 'failed',
+          }));
+        }
+      }
+
+      const routeDecision = palRoute(
+        submittedText,
+        chatHistory.length + 1,
+        chatRepoSnapshot?.fileCount ?? 0,
+        palDecisions,
+      );
+      const interpreterOnline = onlineHealth?.ok !== false;
+      let interpretationResult: Awaited<ReturnType<typeof fetchDevChatWorkerInterpretation>>;
+
+      if (interpreterOnline) {
+        const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
+        const canInterpret = await chargeCredits(routeDecision.modelId, estimatedTokens);
+        if (!canInterpret) {
+          addLog('warn', `Credits nicht ausreichend für Online-Sprachdeutung mit ${routeDecision.modelId}`, 'billing');
+          return;
+        }
+
+        setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
+        setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
+        setLastWorkerRequestMessage(submittedText);
+        setChatResponseBusy(true);
+        appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
+
+        interpretationResult = await fetchDevChatWorkerInterpretation({
+          model: routeDecision.modelId,
+          text: submittedText,
+          repoContext: chatRepoSnapshot
+            ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
+            : undefined,
+          memoryContext: onlineMemoryContext || undefined,
+          recentMessages: chatHistory
+            .filter((line) => line.role === 'user' || line.role === 'assistant')
+            .slice(-6)
+            .map((line) => ({
+              role: line.role === 'user' ? 'user' as const : 'assistant' as const,
+              content: line.text,
+            })),
+        });
+        setChatResponseBusy(false);
+      } else {
+        interpretationResult = {
+          ok: false,
+          error: onlineHealth?.error || 'Worker ist offline; lokaler Sprach-Fallback wird verwendet.',
+          diagnostic: {
+            route: SOVEREIGN_WORKER_CHAT,
+            model: routeDecision.modelId,
+            messageCount: 0,
+            status: onlineHealth?.status,
+            scope: 'network',
+            canClientFix: false,
+            nextAction: 'Offline-Fallback nutzen; keine Online-Antwort oder Aktions-Evidence vortäuschen.',
+          },
+        };
+      }
+
+      const quarantineOnlineObservation = async (responseText: string, modelId: string) => {
+        const inferenceEvidence = onlineAreInference;
+        if (!inferenceEvidence || !authUser || !responseText.trim()) return;
+        try {
+          const quarantine = await quarantineAreResponse({
+            prompt: submittedText,
+            response: responseText,
+            stateHash: inferenceEvidence.stateHash,
+            adapter: inferenceEvidence.adapter,
+            modelId,
+            metadata: {
+              repository: currentRepositoryTargetKey,
+              intentOnly: true,
+              knowledgeIds: inferenceEvidence.selectedKnowledgeIds,
+              patternIds: inferenceEvidence.selectedPatternIds,
+            },
+          });
+          appendActionEvent({
+            kind: 'context_collected',
+            route: 'runtime',
+            label: quarantine.duplicate ? 'Online-Beobachtung bereits quarantänisiert' : 'Online-Beobachtung quarantänisiert',
+            detail: quarantine.learningState === 'pending_evidence'
+              ? 'DB bestätigt: Kandidat wartet auf echte Runtime-Evidence und ist noch kein gelerntes Muster.'
+              : `DB bestätigt bestehenden Lernzustand: ${quarantine.candidate.status}.`,
+            state: 'done',
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          addLog('warn', `ARE-Quarantäne nicht verfügbar: ${message}`, 'pattern');
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'Online-Beobachtung nicht gespeichert',
+            detail: message,
+            kind: 'failed',
+          }));
+        }
+      };
+      if (interpretationResult.ok && interpretationResult.interpretation) {
+        const interpretation = interpretationResult.interpretation;
+        setWorkerBlocker(null);
+        appendActionEvent(buildWorkerResponseEvent());
+        appendActionEvent({
+          kind: 'capability_checked',
+          route: 'runtime',
+          label: 'Online-Intent-Evidence empfangen',
+          detail: `${interpretation.intent} · confidence=${interpretation.confidence.toFixed(2)} · model=${interpretation.model}`,
+          state: 'done',
+        });
+
+        await quarantineOnlineObservation(
+          interpretation.mode === 'action'
+            ? JSON.stringify({
+                mode: interpretation.mode,
+                intent: interpretation.intent,
+                actionTitle: interpretation.actionTitle,
+                assistantText: interpretation.assistantText,
+                confidence: interpretation.confidence,
+              })
+            : interpretation.assistantText,
+          interpretation.model,
+        );
+
+        const actionableIntent = mapInterpretedIntentToExecutorIntent(interpretation.intent);
+        const isAction = interpretation.mode === 'action'
+          && actionableIntent !== null
+          && actionableIntent !== 'question'
+          && actionableIntent !== 'status';
+
+        if (!isAction) {
+          appendGuardedWorkerText(
+            interpretation.assistantText || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.',
+          );
+          setLastAnswerWasLocal(false);
+          return;
+        }
+
+        const explicitExecution =
+          isSovereignAgentExecutionIntent(submittedText) ||
+          isDelegationIntent(submittedText) ||
+          isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
+        if (explicitExecution) {
+          const started = await startAgentFromText(submittedText, actionableIntent ?? undefined);
+          if (started) {
+            if (interpretation.assistantText) appendGuardedWorkerText(interpretation.assistantText);
+            appendChatLine({
+              role: 'assistant',
+              text: 'Die Runtime hat den Job-Start angefragt. Ein Erfolg gilt erst mit bestätigter Job-/Patch-/Draft-PR-Evidence.',
+            });
+          }
+          return;
+        }
+
+        const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
+          path,
+          type: 'blob' as const,
+          size: 0,
+          sha: '',
+        })) ?? [];
+        const draft = createIntegrationIntentDraft(submittedText, repoFiles, {
+          interpretation: {
+            intentKind: interpretation.intent,
+            source: 'online_llm',
+            confidence: interpretation.confidence,
+            model: interpretation.model,
+            actionTitle: interpretation.actionTitle,
+          },
+        });
+        if (!draft) {
+          appendChatLine({
+            role: 'assistant',
+            text: interpretation.assistantText || 'Die Online-Deutung war nicht konkret genug für einen ausführbaren Auftrag.',
+          });
+          return;
+        }
+
         appendActionEvent(buildDraftCreatedEvent(draft));
         setIntentDraftState({ status: 'pending', draft });
-        addLog('info', `Integration intent draft created: ${draft.title}`, 'router');
-        // Don't continue to capability router - wait for user confirmation
+        if (interpretation.assistantText) {
+          appendGuardedWorkerText(interpretation.assistantText);
+        }
+        addLog('info', `Online LLM intent accepted as draft evidence: ${draft.title}`, 'router');
         return;
       }
+
+      const offlineIntent = classifySovereignExecutorIntent(submittedText);
+      appendActionEvent({
+        kind: 'blocked',
+        route: 'worker',
+        label: 'Online-Sprachdeutung nicht verfügbar',
+        detail: `${interpretationResult.error ?? 'Unbekannter Fehler'} · Offline-Fallback=${offlineIntent}`,
+        state: 'blocked',
+      });
+      addLog('warn', `Online intent unavailable; offline fallback=${offlineIntent}`, 'router');
+
+      if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
+        const explicitOfflineExecution =
+          isSovereignAgentExecutionIntent(submittedText) ||
+          isDelegationIntent(submittedText) ||
+          isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory);
+        if (explicitOfflineExecution) {
+          const started = await startAgentFromText(submittedText, offlineIntent);
+          if (started) {
+            appendChatLine({
+              role: 'assistant',
+              text: 'Online-Sprachdeutung war nicht verfügbar. Der explizite Auftrag wurde über den lokalen Offline-Fallback an die Runtime übergeben; Erfolg bleibt bis zu echter Runtime-Evidence offen.',
+            });
+          }
+          return;
+        }
+
+        const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
+          path,
+          type: 'blob' as const,
+          size: 0,
+          sha: '',
+        })) ?? [];
+        const offlineKind: DevChatWorkerIntentKind = offlineIntent === 'draft_pr'
+          ? 'draft_pr'
+          : offlineIntent === 'direct_patch'
+            ? 'direct_patch'
+            : 'code_execution';
+        const draft = createIntegrationIntentDraft(submittedText, repoFiles, {
+          interpretation: {
+            intentKind: offlineKind,
+            source: 'offline_fallback',
+            confidence: 0,
+            actionTitle: submittedText,
+          },
+        });
+        if (draft) {
+          appendActionEvent(buildDraftCreatedEvent(draft));
+          setIntentDraftState({ status: 'pending', draft });
+          appendChatLine({
+            role: 'assistant',
+            text: 'Online-Sprachdeutung ist nicht verfügbar. Ich habe nur einen lokalen Offline-Aktionshinweis erkannt; Ausführung bleibt bis zur Bestätigung und zu echten Runtime-Gates blockiert.',
+          });
+          return;
+        }
+      }
+
+      if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown' || offlineIntent === 'status')) {
+        await quarantineOnlineObservation(interpretationResult.rawContent, routeDecision.modelId);
+        appendGuardedWorkerText(interpretationResult.rawContent);
+        appendActionEvent({
+          kind: 'llm_response_received',
+          route: 'worker',
+          label: 'Freitext-Antwort als Chat-Fallback übernommen',
+          detail: 'Kein Aktionsschema vorhanden; Freitext wurde ausschließlich als Gesprächsantwort akzeptiert.',
+          state: 'done',
+        });
+        return;
+      }
+
+      const diagnostic = interpretationResult.diagnostic;
+      if (diagnostic) {
+        const health = onlineHealth ?? await fetchDevChatWorkerHealth();
+        setWorkerHealthEvidence(health);
+        const blocker: WorkerRuntimeBlocker = {
+          message: interpretationResult.error || 'Online-Sprachdeutung fehlgeschlagen.',
+          diagnostic,
+          health,
+          createdAt: Date.now(),
+        };
+        setWorkerBlocker(blocker);
+        appendChatLine({
+          role: 'assistant',
+          text: buildWorkerBlockerAnswer({
+            blocker,
+            repoReady: effectiveRepoReady,
+            chatRepoSnapshot,
+            agentReady,
+          }),
+        });
+      } else {
+        appendChatLine({
+          role: 'assistant',
+          text: 'Online-Sprachdeutung ist nicht verfügbar und der lokale Offline-Fallback hat keinen sicheren Aktionspfad erkannt.',
+        });
+      }
+      return;
     }
 
     // ── Issue #502: Sovereign Capability Router
@@ -5594,7 +5951,8 @@ Das echte Repo-Setup wurde geöffnet.`,
                     confirmBlocker={!effectiveRepoReady ? confirmCheck.blocker : undefined}
                     onConfirm={() => {
                       // Use Runtime Bridge for route decision
-                      const intent = classifySovereignExecutorIntent(draft.originalText);
+                      const intent = mapInterpretedIntentToExecutorIntent(draft.intentKind)
+                        ?? classifySovereignExecutorIntent(draft.originalText);
                       const bridgeDecision = decideSovereignExecutorBridgeRoute({
                         text: draft.originalText,
                         intent,
@@ -5604,6 +5962,20 @@ Das echte Repo-Setup wurde geöffnet.`,
                           ? detectDirectPatchTarget(draft.originalText, chatRepoSnapshot.filePaths ?? []) ?? undefined
                           : undefined,
                       });
+
+                      // Preserve the exact LLM-understood mission for execution and
+                      // later evidence-gated learning. A pattern is still saved only
+                      // after a real Draft PR URL exists.
+                      const confirmedMission = collapseRepeatedAnalyzedMission(
+                        buildAnalyzedMission({
+                          wish: draft.originalText,
+                          repoReady: effectiveRepoReady,
+                          repoReason: effectiveRepoReason,
+                        }),
+                      );
+                      if (lastMissionRef.current !== confirmedMission) {
+                        emitMissionChange(confirmedMission);
+                      }
 
                       // Log confirmed draft
                       appendActionEvent(buildDraftConfirmedEvent(draft));
@@ -5784,7 +6156,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                             break;
                           }
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
-                          void startAgentFromText(draft.originalText);
+                          void startAgentFromText(draft.originalText, intent);
                           break;
 
                         case 'workspace':

@@ -113,6 +113,38 @@ export interface DevChatWorkerReplyResult {
   readonly fallbackReason?: string;
 }
 
+export type DevChatWorkerIntentKind =
+  | 'free_chat'
+  | 'status'
+  | 'direct_patch'
+  | 'code_execution'
+  | 'draft_pr'
+  | 'workflow_watch'
+  | 'repair_workflow'
+  | 'load_repo'
+  | 'unknown';
+
+export interface DevChatWorkerInterpretation {
+  readonly mode: 'chat' | 'action';
+  readonly intent: DevChatWorkerIntentKind;
+  readonly assistantText: string;
+  readonly actionTitle: string;
+  readonly confidence: number;
+  readonly language: string;
+  readonly model: string;
+  readonly fallbackUsed: boolean;
+}
+
+export interface DevChatWorkerInterpretationResult {
+  readonly ok: boolean;
+  readonly interpretation?: DevChatWorkerInterpretation;
+  readonly diagnostic?: DevChatWorkerDiagnostic;
+  readonly error?: string;
+  /** Provider text retained only as a degraded chat fallback when it did not
+   *  satisfy the intent schema. It is never accepted as action evidence. */
+  readonly rawContent?: string;
+}
+
 export interface ParsedDevChatGithubUrl {
   readonly owner: string;
   readonly repo: string;
@@ -643,6 +675,175 @@ export async function fetchDevChatWorkerReply(
 
   // Should not be reachable due to returns above, but for TS:
   return { ok: false, error: 'Retry-Limit erreicht.', route: SOVEREIGN_WORKER_CHAT };
+}
+
+function extractSseChatText(content: string): string {
+  if (!content.includes('data:')) return content.trim();
+  let combined = '';
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+    try {
+      const payload = JSON.parse(data) as Record<string, unknown>;
+      const choices = payload.choices;
+      if (!Array.isArray(choices) || choices.length === 0) continue;
+      const choice = choices[0] as Record<string, unknown>;
+      const delta = choice.delta;
+      if (delta && typeof delta === 'object') {
+        const chunk = (delta as Record<string, unknown>).content;
+        if (typeof chunk === 'string') combined += chunk;
+      }
+      const message = choice.message;
+      if (message && typeof message === 'object') {
+        const text = (message as Record<string, unknown>).content;
+        if (typeof text === 'string') combined += text;
+      }
+    } catch {
+      // Malformed SSE fragments are ignored; they never become action evidence.
+    }
+  }
+  return combined.trim() || content.trim();
+}
+
+/** Parse and validate the model-produced intent envelope. */
+function parseWorkerInterpretationContent(
+  content: string,
+  model: string,
+  fallbackUsed: boolean,
+): DevChatWorkerInterpretation | null {
+  const clean = content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '');
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(clean);
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  const mode = record.mode;
+  const intent = record.intent;
+  const allowedIntents: readonly DevChatWorkerIntentKind[] = [
+    'free_chat',
+    'status',
+    'direct_patch',
+    'code_execution',
+    'draft_pr',
+    'workflow_watch',
+    'repair_workflow',
+    'load_repo',
+    'unknown',
+  ];
+  if (mode !== 'chat' && mode !== 'action') return null;
+  if (typeof intent !== 'string' || !allowedIntents.includes(intent as DevChatWorkerIntentKind)) return null;
+
+  const assistantText = typeof record.assistant_text === 'string'
+    ? record.assistant_text.trim()
+    : '';
+  const actionTitle = typeof record.action_title === 'string'
+    ? record.action_title.trim()
+    : '';
+  const confidenceValue = typeof record.confidence === 'number'
+    ? record.confidence
+    : Number(record.confidence);
+  const confidence = Number.isFinite(confidenceValue)
+    ? Math.max(0, Math.min(1, confidenceValue))
+    : 0;
+  const language = typeof record.language === 'string' && record.language.trim()
+    ? record.language.trim()
+    : 'und';
+
+  if (mode === 'chat' && !assistantText) return null;
+  if (mode === 'action' && (!actionTitle || confidence < 0.5)) return null;
+
+  return {
+    mode,
+    intent: intent as DevChatWorkerIntentKind,
+    assistantText,
+    actionTitle,
+    confidence,
+    language,
+    model,
+    fallbackUsed,
+  };
+}
+
+/**
+ * Uses the online LLM as the natural-language interpreter. The result is only
+ * intent evidence: the application still owns authorization, tool execution,
+ * repository scope and success truth. Local keyword classifiers are fallback
+ * paths for offline/degraded operation, never the primary online language path.
+ */
+export async function fetchDevChatWorkerInterpretation(args: {
+  readonly model: string;
+  readonly text: string;
+  readonly repoContext?: string;
+  readonly memoryContext?: string;
+  readonly recentMessages?: readonly DevChatWorkerMessage[];
+}): Promise<DevChatWorkerInterpretationResult> {
+  const systemPrompt = [
+    'Du bist der Natural-Language-Interpreter von Sovereign Studio.',
+    'Verstehe Sprache, Absicht, Kontext und implizite Verweise des Users.',
+    'Du führst selbst keine Aktion aus und behauptest niemals Erfolg.',
+    'Die Runtime entscheidet nach deiner Deutung separat über Repo-, GitHub-, Workspace- und Draft-PR-Gates.',
+    'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
+    'Schema:',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    'Nutze mode=action nur wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
+    'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
+    'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
+    args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
+    args.memoryContext ? `Evidence-geprüfter Memory-Kontext:\n${args.memoryContext}` : '',
+  ].filter(Boolean).join('\n');
+
+  const recentMessages = (args.recentMessages ?? [])
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .slice(-6);
+  const result = await fetchDevChatWorkerReply({
+    model: args.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...recentMessages,
+      { role: 'user', content: args.text },
+    ],
+  }, { maxRetries: 0 });
+
+  if (!result.ok || !result.content) {
+    return {
+      ok: false,
+      error: result.error || 'Online-Intent-Deutung fehlgeschlagen.',
+      diagnostic: result.diagnostic,
+    };
+  }
+
+  const interpretation = parseWorkerInterpretationContent(
+    result.content,
+    result.actualModel || args.model,
+    Boolean(result.fallbackUsed),
+  );
+  if (!interpretation) {
+    return {
+      ok: false,
+      error: 'Online-Intent-Deutung lieferte kein gültiges Schema.',
+      rawContent: extractSseChatText(result.content),
+      diagnostic: {
+        route: SOVEREIGN_WORKER_CHAT,
+        model: result.actualModel || args.model,
+        messageCount: recentMessages.length + 2,
+        scope: 'worker_runtime',
+        canClientFix: false,
+        bodySnippet: bodySnippet(result.content),
+        nextAction: 'Online-Antwort als ungültige Intent-Evidence verwerfen und lokalen Offline-Fallback verwenden.',
+      },
+    };
+  }
+
+  return { ok: true, interpretation };
 }
 
 /**

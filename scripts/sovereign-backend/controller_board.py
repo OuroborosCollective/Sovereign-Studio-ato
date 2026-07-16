@@ -34,6 +34,16 @@ from security_oauth import _decrypt_token
 
 ConnectionFactory = Callable[[], Any]
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_IMPLEMENTATION_ACTION_PATTERN = re.compile(
+    r"\b(?:fix(?:e|en)?|beheb(?:e|en)?|reparier(?:e|en)?|implement(?:iere|ieren)?|patch(?:e|en)?|"
+    r"änder(?:e|n)?|schreib(?:e|en)?|erstell(?:e|en)?|refactor(?:e|en)?|migrier(?:e|en)?)\b",
+    re.IGNORECASE,
+)
+_IMPLEMENTATION_TARGET_PATTERN = re.compile(
+    r"\b(?:code|datei(?:en)?|repository|repo|backend|frontend|endpoint|route|test(?:s)?|workflow|"
+    r"workspace|draft[- ]?pr|pull request|bug|fehler)\b",
+    re.IGNORECASE,
+)
 _OPERATOR_SECRET_MARKERS = (
     "sk-proj-",
     "github_pat_",
@@ -99,6 +109,15 @@ def _close(conn: Any) -> None:
     close = getattr(conn, "close", None)
     if callable(close):
         close()
+
+
+def _mission_requires_repository_execution(mission: str) -> bool:
+    normalized = str(mission or "").strip()
+    return bool(
+        normalized
+        and _IMPLEMENTATION_ACTION_PATTERN.search(normalized)
+        and _IMPLEMENTATION_TARGET_PATTERN.search(normalized)
+    )
 
 
 def _controller_workspace_root() -> Path | None:
@@ -322,7 +341,7 @@ def register_controller_board_routes(
         try:
             owner_id = _operator_owner_user_id(conn)
             implementation_job = None
-            if mission_intent.mode == "repository_execution":
+            if _mission_requires_repository_execution(mission):
                 repository = _controller_repository()
                 implementation_job = create_sovereign_agent_job(
                     conn,
@@ -330,7 +349,7 @@ def register_controller_board_routes(
                     payload={
                         "repoUrl": f"https://github.com/{repository}",
                         "branch": "main",
-                        "mission": mission_intent.normalized_goal,
+                        "mission": mission,
                         "executor": "sovereign-local-runner",
                         "draftPrOnly": True,
                         "allowAutoMerge": False,
@@ -409,10 +428,6 @@ def register_controller_board_routes(
                         "workspaceId": implementation_job.result.workspace_id,
                         "jobStatus": implementation_job.result.status,
                         "taskId": task_id,
-                        "intentMode": mission_intent.mode,
-                        "intentConfidence": mission_intent.confidence,
-                        "learningScope": mission_intent.learning_scope,
-                        "learningRequiresToolEvidence": True,
                         "draftPrOnly": True,
                         "autoMerge": False,
                     },
@@ -435,8 +450,6 @@ def register_controller_board_routes(
                     "taskId": task_id,
                     "jobStatus": implementation_job.result.status,
                     "changedFiles": list(implementation_job.result.changed_files),
-                    "intent": mission_intent.model_dump(),
-                    "learningState": "WAITING_FOR_TOOL_EVIDENCE",
                     "protectedValuesReturned": False,
                     "autoMerge": False,
                 }, 202)

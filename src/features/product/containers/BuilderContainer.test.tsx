@@ -358,7 +358,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("shows integration intent draft card for normal text inputs when repo is ready", async () => {
     const props = baseProps();
-    mockFetchSequence(jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }));
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: JSON.stringify({
+        mode: 'action',
+        intent: 'code_execution',
+        assistant_text: 'Ich habe den Änderungsauftrag verstanden.',
+        action_title: 'Mobile UX und Runtime-Log verbessern',
+        confidence: 0.95,
+        language: 'de',
+      }) } }], model: 'deepseek-r1' }),
+    );
     renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} agentReady={false} />);
     await loadRepoFromChat();
     fireEvent.change(chatField(), { target: { value: "Bitte mobile UX verbessern und Log direkt sichtbar machen." } });
@@ -369,6 +379,44 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByTestId("integration-intent-draft-card")).toBeInTheDocument());
     // Draft card should show the title
     expect(screen.getByText(/Ich habe daraus diesen Integrationsauftrag erkannt/)).toBeInTheDocument();
+  });
+
+  it("preserves the online-understood action as the mission used for execution and later PR-gated learning", async () => {
+    const props = {
+      ...baseProps(),
+      agentReady: true,
+      onStartAgent: vi.fn(),
+    };
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+      jsonResponse({ choices: [{ message: { content: JSON.stringify({
+        mode: 'action',
+        intent: 'code_execution',
+        assistant_text: 'Ich habe den Auftrag verstanden.',
+        action_title: 'Mobile Chat-UX verbessern',
+        confidence: 0.96,
+        language: 'de',
+      }) } }], model: 'deepseek-r1' }),
+    );
+
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    const originalText = 'Verbessere die mobile Chat-UX und prüfe den Runtime-Pfad.';
+    fireEvent.change(chatField(), { target: { value: originalText } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByTestId('integration-intent-draft-card')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Integrationsauftrag einbauen' }));
+
+    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+    expect(props.onMissionChange).toHaveBeenCalledOnce();
+    const learnedMission = props.onMissionChange.mock.calls[0][0] as string;
+    expect(learnedMission).toContain(originalText);
+    expect(learnedMission).toContain('Ideenfabrik Auftrag:');
   });
 
   it("syncs externally adopted insight missions only into an untouched empty composer", () => {
@@ -746,19 +794,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Health-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(1),
+        expect(screen.getByText('Worker response.')).toBeDefined(),
       );
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Health-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(2),
+        expect(screen.getAllByText(/Worker ist offline|Worker Health|Online-Sprachdeutung/i).length).toBeGreaterThan(0),
       );
       expect(healthChecks).toBe(2);
 
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
-      await waitFor(() => expect(screen.getByText('Cloudflare Worker nicht geprüft')).toBeDefined());
-      expect(screen.getByText('Noch keine Health- oder Response-Evidence für diese Sitzung.')).toBeDefined();
+      await waitFor(() => expect(screen.getByText('Cloudflare Worker blockiert')).toBeDefined());
     } finally {
       restoreUser();
     }
@@ -893,9 +940,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("fails closed for unknown intents without calling the Worker", async () => {
+  it("lets the online LLM answer unclear language instead of blocking on local keyword rules", async () => {
     const fetchMock = mockFetchSequence(
-      jsonResponse({ choices: [{ message: { content: "must not be used" } }] }),
+      jsonResponse({ choices: [{ message: { content: "Ich brauche noch etwas Kontext, um das sicher einzuordnen." } }] }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
 
@@ -903,10 +950,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() =>
-      expect(screen.getByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeDefined(),
+      expect(screen.getByText("Ich brauche noch etwas Kontext, um das sicher einzuordnen.")).toBeDefined(),
     );
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
-    expect(screen.queryByText("must not be used")).toBeNull();
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(1);
+    expect(screen.queryByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeNull();
   });
 
   it("loads a GitHub repo as runtime context without writing analysis into the composer", async () => {

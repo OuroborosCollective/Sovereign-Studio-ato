@@ -8,6 +8,7 @@ import {
   SOVEREIGN_WORKER_KV,
   devChatGithubUrlToRepoRequest,
   fetchDevChatWorkerHealth,
+  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   normalizeDevChatWorkerModel,
   parseDevChatGithubUrl,
@@ -116,6 +117,72 @@ describe('devChatWorkerBridge', () => {
 
     expect(result).toMatchObject({ ok: true, content: 'Antwort aus Worker.', route: SOVEREIGN_WORKER_CHAT });
     expect(fetchMock).toHaveBeenCalledWith(SOVEREIGN_WORKER_CHAT, expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('accepts structured online intent evidence without treating it as execution truth', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: JSON.stringify({
+        mode: 'action',
+        intent: 'code_execution',
+        assistant_text: 'Ich habe den Änderungsauftrag verstanden.',
+        action_title: 'Mobile Chat-UX verbessern',
+        confidence: 0.94,
+        language: 'de',
+      }) } }],
+      model: 'deepseek-r1',
+    })));
+
+    const result = await fetchDevChatWorkerInterpretation({
+      model: 'deepseek-r1',
+      text: 'Verbessere die mobile Chat-UX.',
+      repoContext: 'acme/tool#main · 12 files',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.interpretation).toMatchObject({
+      mode: 'action',
+      intent: 'code_execution',
+      actionTitle: 'Mobile Chat-UX verbessern',
+      confidence: 0.94,
+      model: 'deepseek-r1',
+    });
+  });
+
+  it('never upgrades non-schema provider text into action evidence', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      choices: [{ message: { content: 'Normale Gesprächsantwort ohne Aktionsschema.' } }],
+    })));
+
+    const result = await fetchDevChatWorkerInterpretation({
+      model: 'deepseek-r1',
+      text: 'Unklare Eingabe',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.interpretation).toBeUndefined();
+    expect(result.rawContent).toBe('Normale Gesprächsantwort ohne Aktionsschema.');
+    expect(result.error).toContain('kein gültiges Schema');
+  });
+
+  it('normalizes an accidental SSE reply to chat text without creating action evidence', async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Erste "}}]}',
+      'data: {"choices":[{"delta":{"content":"Antwort"}}]}',
+      'data: [DONE]',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const result = await fetchDevChatWorkerInterpretation({
+      model: 'deepseek-r1',
+      text: 'Wie geht es dir?',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.interpretation).toBeUndefined();
+    expect(result.rawContent).toBe('Erste Antwort');
   });
 
   it('ignores malformed non-string worker metadata in JSON replies', async () => {

@@ -12,6 +12,7 @@
  */
 
 import type { SovereignActionEventInput } from './sovereignActionStreamRuntime';
+import type { DevChatWorkerIntentKind } from './devChatWorkerBridge';
 import type { RepoFile } from '../../github/types';
 
 // в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
@@ -35,6 +36,11 @@ export interface IntegrationIntentDraft {
   readonly createdAt: number;
   /** Rephrased/previewed text for the input field */
   readonly rephrasedText: string;
+  /** Intent evidence produced by the online LLM or the offline fallback. */
+  readonly intentKind?: DevChatWorkerIntentKind;
+  readonly intentSource?: 'online_llm' | 'offline_fallback';
+  readonly intentConfidence?: number;
+  readonly intentModel?: string;
 }
 
 /**
@@ -270,6 +276,15 @@ export interface CreateDraftOptions {
   now?: number;
   /** Override ID seed for deterministic testing */
   idSeed?: string;
+  /** Optional structured intent evidence. It describes language understanding,
+   *  but never authorizes execution or success. */
+  interpretation?: {
+    readonly intentKind: DevChatWorkerIntentKind;
+    readonly source: 'online_llm' | 'offline_fallback';
+    readonly confidence: number;
+    readonly model?: string;
+    readonly actionTitle?: string;
+  };
 }
 
 /**
@@ -349,12 +364,16 @@ export function createIntegrationIntentDraft(
   return {
     id: generateId(clean, timestamp, options?.idSeed),
     originalText: clean,
-    title: extractTitle(clean),
+    title: options?.interpretation?.actionTitle?.trim() || extractTitle(clean),
     goal: extractGoal(clean),
     scope: extractScopeKeywords(clean),
     affectedFiles: deriveAffectedFiles(clean, repoFiles),
     createdAt: timestamp,
     rephrasedText: createRephrasedText(clean),
+    intentKind: options?.interpretation?.intentKind,
+    intentSource: options?.interpretation?.source,
+    intentConfidence: options?.interpretation?.confidence,
+    intentModel: options?.interpretation?.model,
   };
 }
 
@@ -492,11 +511,16 @@ export function reduceIntegrationIntentDraftAction(
  */
 
 export function buildDraftCreatedEvent(draft: IntegrationIntentDraft): SovereignActionEventInput {
+  const evidence = draft.intentSource === 'online_llm'
+    ? `Online-LLM · ${draft.intentKind ?? 'unknown'} · confidence=${(draft.intentConfidence ?? 0).toFixed(2)}${draft.intentModel ? ` · model=${draft.intentModel}` : ''}`
+    : draft.intentSource === 'offline_fallback'
+      ? `Offline-Fallback · ${draft.intentKind ?? 'unknown'}`
+      : 'Legacy-Entwurf ohne strukturierte Intent-Evidence';
   return {
     kind: 'intent_detected',
     route: 'runtime',
     label: 'Integrationsauftrag erkannt',
-    detail: draft.title,
+    detail: `${draft.title} · ${evidence}`,
     state: 'done',
   };
 }
