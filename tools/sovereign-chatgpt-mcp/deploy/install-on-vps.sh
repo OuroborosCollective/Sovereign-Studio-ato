@@ -5,6 +5,9 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 BIN_DIR="$INSTALL_ROOT/bin"
 BROKER_DIR="$INSTALL_ROOT/broker"
+COMPOSE_TEMPLATE_ROOT="$INSTALL_ROOT/templates"
+LITELLM_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-litellm"
+LITELLM_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-litellm"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
@@ -286,11 +289,22 @@ for command in docker systemctl python3 git ss openssl sha256sum; do
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
 [[ -S /var/run/docker.sock ]] || fail "docker socket is missing"
+[[ -f "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "sovereign-litellm compose template is missing"
+[[ -f "$LITELLM_TEMPLATE_SOURCE/config.yaml" ]] || fail "sovereign-litellm config template is missing"
 bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
   || fail "source self-update wrapper has invalid bash syntax"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR"
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$LITELLM_TEMPLATE_DIR"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-litellm /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq; do
+  if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
+    [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
+      || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
+  else
+    install -d -m 0750 "$MANAGED_COMPOSE_ROOT"
+  fi
+done
+unset MANAGED_COMPOSE_ROOT
 install -d -m 0755 "$ANDROID_SDK_DIR"
 install -d -m 0770 -o root -g sovereign-mcp "$COMMAND_QUEUE_DIR" "$COMMAND_QUEUE_DIR/inbox" "$COMMAND_QUEUE_DIR/processing" "$COMMAND_QUEUE_DIR/outbox"
 install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
@@ -331,9 +345,11 @@ for file in Dockerfile requirements.txt policy.py runtime.py database.py command
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
-for file in broker.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py; do
+for file in broker.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py litellm_stack.py managed_compose.py; do
   backup_control_plane_file "$BROKER_DIR/$file"
 done
+backup_control_plane_file "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
+backup_control_plane_file "$LITELLM_TEMPLATE_DIR/config.yaml"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report; do
   backup_control_plane_file "$BIN_DIR/$file"
 done
@@ -357,6 +373,10 @@ install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"
 install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"
 install -m 0640 "$SOURCE_DIR/policy.py" "$BROKER_DIR/policy.py"
 install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
+install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"
+install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"
+install -m 0640 "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
+install -m 0640 "$LITELLM_TEMPLATE_SOURCE/config.yaml" "$LITELLM_TEMPLATE_DIR/config.yaml"
 install -m 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database"
@@ -373,7 +393,7 @@ grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit h
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
   fail "installed tunnel unit still contains a curl-based MCP probe"
 fi
-chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR"
+chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR" "$COMPOSE_TEMPLATE_ROOT"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.env.example" "$INSTALL_ROOT/.env.example"
@@ -401,7 +421,8 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_MAIN_PUSH \
     SOVEREIGN_MCP_ENABLE_PR_MERGE \
     SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \
-    SOVEREIGN_MCP_ENABLE_SELF_UPDATE; do
+    SOVEREIGN_MCP_ENABLE_SELF_UPDATE \
+    SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
 fi
@@ -482,7 +503,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle sovereign-litellm-litellm-1 sovereign-litellm-db-1 code-server-46bq-code-server-1; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -538,7 +559,7 @@ export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 INSTALL_STAGE="write_broker_environment"
 {
   for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
-    grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
+    grep -E '^(GITHUB_TOKEN|SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
   done
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
@@ -546,6 +567,9 @@ INSTALL_STAGE="write_broker_environment"
   printf 'SOVEREIGN_MCP_SELF_UPDATE_SERVICE=sovereign-chatgpt-mcp-self-update.service\n'
   printf 'SOVEREIGN_MCP_SELF_UPDATE_STATUS=/var/lib/sovereign-chatgpt-self-update/status.json\n'
   printf 'SOVEREIGN_MCP_COMMAND_QUEUE=%s\n' "$COMMAND_QUEUE_DIR"
+  printf 'SOVEREIGN_COMPOSE_TEMPLATE_ROOT=%s\n' "$COMPOSE_TEMPLATE_ROOT"
+  printf 'SOVEREIGN_LITELLM_TEMPLATE_ROOT=%s\n' "$LITELLM_TEMPLATE_DIR"
+  printf 'SOVEREIGN_LITELLM_DEPLOY_ROOT=/opt/sovereign-litellm\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
 } > "$BROKER_ENV"
@@ -636,7 +660,7 @@ assert result.get("failure_family") == "INBOUND_MUTATION_FORBIDDEN", result
 PY
 
 INSTALL_STAGE="verify_runtime_import_contracts"
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 
 INSTALL_STAGE="verify_host_worker_canary"
 docker exec sovereign-chatgpt-mcp python -c 'import server; worker=server.broker.call("host_worker_canary", {}, timeout=10); assert worker.get("status") == "HOST_WORKER_READY", worker; assert worker.get("execution_origin") == "host_worker", worker'
@@ -686,4 +710,4 @@ unset TUNNEL_CONFIGURED
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"managed_compose_stacks":["sovereign-litellm","sovereign-backend","gpt-tools","code-server-46bq"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

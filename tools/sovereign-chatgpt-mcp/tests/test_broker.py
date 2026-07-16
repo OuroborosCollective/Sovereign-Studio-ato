@@ -103,7 +103,8 @@ def test_unknown_broker_action_is_blocked() -> None:
     assert "nicht freigegeben" in result["blocker"]
 
 
-def test_non_allowlisted_container_is_blocked() -> None:
+def test_non_allowlisted_container_is_blocked(monkeypatch) -> None:
+    monkeypatch.delenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", raising=False)
     runtime = BrokerRuntime()
     result = runtime.dispatch("container_status", {"container": "unrelated-root-container"})
     assert result["status"] == "BLOCKED"
