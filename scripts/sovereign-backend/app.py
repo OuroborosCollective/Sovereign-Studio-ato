@@ -1685,7 +1685,7 @@ def admin_llm_route_healthcheck(rid):
     })
     
     return jsonify({
-        "ok": True,
+        "ok": health_status == "healthy",
         "routeId": rid,
         "provider": provider,
         "model": model_name,
