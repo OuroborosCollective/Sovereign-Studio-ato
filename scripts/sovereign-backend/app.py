@@ -940,10 +940,16 @@ def admin_system_health():
     try:
         routes = query("SELECT COUNT(*) as count FROM llm_routes WHERE disabled = false", one=True)
         total = query("SELECT COUNT(*) as count FROM llm_routes", one=True)
+        active_routes = int(routes["count"] if routes else 0)
+        total_routes = int(total["count"] if total else 0)
+        routes_healthy = active_routes > 0
+        if not routes_healthy:
+            health["ok"] = False
         health["components"]["llm_routes"] = {
-            "status": "healthy",
-            "activeRoutes": routes["count"] if routes else 0,
-            "totalRoutes": total["count"] if total else 0,
+            "status": "healthy" if routes_healthy else "degraded",
+            "activeRoutes": active_routes,
+            "totalRoutes": total_routes,
+            "blocker": None if routes_healthy else "llm_routes_empty",
         }
     except Exception as e:
         health["components"]["llm_routes"] = {
@@ -6287,6 +6293,74 @@ def admin_llm_gateway_sync():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def _worker_route_fields(model_id: str) -> tuple[str, int]:
+    """Derive deterministic display and priority fields from one real Worker model id."""
+    normalized = str(model_id or "").strip()
+    friendly_name = normalized
+    if normalized.startswith("@cf/"):
+        parts = normalized.replace("@cf/", "", 1).split("/")
+        if len(parts) >= 2:
+            friendly_name = f"{parts[0]}-{parts[1]}"
+    lowered = normalized.lower()
+    priority = 100 if ("32b" in lowered or "70b" in lowered) else 25 if "7b" in lowered else 50
+    return friendly_name, priority
+
+
+def _reconcile_worker_routes_if_empty() -> tuple[int, str]:
+    """Restore an empty route catalog only from the live Worker model source."""
+    current = query("SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled = false", one=True)
+    current_count = int((current or {}).get("count") or 0)
+    if current_count > 0:
+        return current_count, ""
+
+    response, error = fetch_worker_ai("v1/models")
+    if error:
+        return 0, error
+    if response is None or not response.ok:
+        status_code = getattr(response, "status_code", "unknown")
+        return 0, f"Worker AI models HTTP {status_code}"
+
+    payload = response.json() if response.content else {}
+    worker_models = payload.get("data", []) if isinstance(payload, dict) else []
+    model_ids = sorted({
+        str(model.get("id") or "").strip()
+        for model in worker_models
+        if isinstance(model, dict) and str(model.get("id") or "").strip()
+    })
+    if not model_ids:
+        return 0, "Worker AI lieferte keine Modelle"
+
+    for model_id in model_ids:
+        friendly_name, priority = _worker_route_fields(model_id)
+        query(
+            """INSERT INTO llm_routes
+                   (id, model_id, model_name, provider, base_url,
+                    credits_per_unit, priority, disabled)
+               VALUES (gen_random_uuid()::text, %s, %s, 'cloudflare', %s, 0.001, %s, false)
+               ON CONFLICT (model_id) DO UPDATE SET
+                   model_name = EXCLUDED.model_name,
+                   provider = EXCLUDED.provider,
+                   base_url = EXCLUDED.base_url,
+                   credits_per_unit = EXCLUDED.credits_per_unit,
+                   priority = EXCLUDED.priority,
+                   disabled = false,
+                   updated_at = NOW()""",
+            (model_id, friendly_name, WORKER_AI_BASE, priority),
+            write=True,
+        )
+
+    restored = query("SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled = false", one=True)
+    restored_count = int((restored or {}).get("count") or 0)
+    if restored_count == 0:
+        return 0, "Worker-Routen konnten nicht persistent rekonstruiert werden"
+    audit("system_worker_ai_route_reconcile", None, {
+        "reason": "empty_route_catalog",
+        "restored": restored_count,
+        "workerModels": len(model_ids),
+    })
+    return restored_count, ""
+
+
 @app.route("/api/llm/auto-route", methods=["POST"])
 @require_session
 def public_llm_auto_route():
@@ -6307,7 +6381,20 @@ def public_llm_auto_route():
     try:
         routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
         if not routes:
-            return jsonify({"error": "Keine LLM Routes verfuegbar", "suggestion": "Sync ausfuehren"}), 503
+            _restored_count, reconcile_error = _reconcile_worker_routes_if_empty()
+            if reconcile_error:
+                return jsonify({
+                    "error": "Keine LLM Routes verfuegbar",
+                    "blocker": "llm_routes_empty",
+                    "cause": reconcile_error,
+                    "suggestion": "Worker-Modellquelle und Datenbank-Persistenz prüfen",
+                }), 503
+            routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
+        if not routes:
+            return jsonify({
+                "error": "Keine LLM Routes verfuegbar",
+                "blocker": "llm_routes_empty_after_reconcile",
+            }), 503
         selected = routes[0]
         provider = selected.get("provider", "")
         if provider == "cloudflare":

@@ -80,7 +80,9 @@ class FakeCursor:
             if params[6]:
                 self.conn.jobs[job_id]["draft_pr_url"] = params[6]
             if params[7]:
-                self.conn.jobs[job_id]["blocker"] = params[7]
+                self.conn.jobs[job_id]["blocker"] = None
+            elif params[8]:
+                self.conn.jobs[job_id]["blocker"] = params[8]
         elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS") and "AND JOB_ID" in normalized:
             user_id, job_id = params
             row = self.conn.jobs.get(job_id)

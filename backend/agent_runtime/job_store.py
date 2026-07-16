@@ -196,6 +196,7 @@ def update_agent_job_state(
     test_summary: str | None = None,
     draft_pr_url: str | None = None,
     blocker: str | None = None,
+    clear_blocker: bool = False,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -208,7 +209,7 @@ def update_agent_job_state(
                 diff_summary = COALESCE(%s, diff_summary),
                 test_summary = COALESCE(%s, test_summary),
                 draft_pr_url = COALESCE(%s, draft_pr_url),
-                blocker = COALESCE(%s, blocker)
+                blocker = CASE WHEN %s THEN NULL ELSE COALESCE(%s, blocker) END
             WHERE job_id = %s
             """,
             (
@@ -219,6 +220,7 @@ def update_agent_job_state(
                 sanitize_agent_text(diff_summary, 2000) if diff_summary else None,
                 sanitize_agent_text(test_summary, 2000) if test_summary else None,
                 draft_pr_url if draft_pr_url and draft_pr_url.startswith("https://github.com/") else None,
+                bool(clear_blocker),
                 sanitize_agent_text(blocker, 1200) if blocker else None,
                 job_id,
             ),

@@ -234,14 +234,23 @@ def append_tool_result_to_job(conn: Any, job_id: str, tool_result: Any) -> Evide
         message=_sanitize_text(gate.reason)[:1200],
     ))
 
+    next_status = (
+        "validating"
+        if gate.passed and gate.can_prepare_draft_pr
+        else "running"
+        if status == "done"
+        else "blocked"
+    )
+    next_blocker = None if gate.passed else gate.reason
     update_agent_job_state(
         conn,
         job_id=job_id,
-        status="validating" if gate.passed and gate.can_prepare_draft_pr else "running" if status == "done" else "blocked",
+        status=next_status,
         changed_files=getattr(tool_result, "changed_files", None) or None,
         diff_summary=getattr(tool_result, "diff_summary", None),
         test_summary=getattr(tool_result, "test_summary", None),
-        blocker=None if status == "done" else gate.reason,
+        blocker=next_blocker,
+        clear_blocker=gate.passed,
     )
     return gate
 
