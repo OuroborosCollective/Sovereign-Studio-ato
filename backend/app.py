@@ -37,6 +37,12 @@ from flask import Flask, jsonify, request, make_response, g
 from flask_cors import CORS
 import requests
 
+from litellm_runtime import (
+    extract_litellm_evidence,
+    extract_litellm_usage,
+    fetch_litellm,
+    litellm_readiness,
+)
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.contracts import sanitize_agent_text, normalize_agent_path, is_safe_branch
@@ -6754,7 +6760,24 @@ def public_llm_auto_route():
                 "blocker": "llm_routes_empty_after_reconcile",
             }), 503
         selected = routes[0]
-        provider = selected.get("provider", "")
+        provider = str(selected.get("provider") or "").strip().lower()
+        if provider == "litellm":
+            readiness = litellm_readiness()
+            if readiness.get("ok"):
+                return jsonify({
+                    "ok": True,
+                    "selected": {
+                        "modelId": selected["model_id"],
+                        "modelName": selected["model_name"],
+                        "provider": provider,
+                        "baseUrl": selected["base_url"],
+                        "creditsPerUnit": float(selected["credits_per_unit"]),
+                        "routeType": "litellm",
+                    },
+                    "fallback": [r for r in routes if r.get("provider") == "cloudflare"][:3],
+                    "message": f"LiteLLM: {selected['model_name']}",
+                    "runtimeEvidence": {"readiness": readiness},
+                })
         if provider == "cloudflare":
             return jsonify({"ok": True, "selected": {"modelId": selected["model_id"], "modelName": selected["model_name"], "provider": provider, "baseUrl": selected["base_url"], "creditsPerUnit": float(selected["credits_per_unit"]), "routeType": "worker-ai"}, "fallback": [r for r in routes[1:5]] if len(routes) > 1 else [], "message": f"Worker AI: {selected['model_name']}"})
         if provider in PROVIDER_MODELS:
@@ -6816,18 +6839,128 @@ def _resolve_enabled_llm_route(model: str):
     return None
 
 
-def _refund_reserved_llm_credits(user_id: str, amount: int, route_id: str) -> str:
+def _normalized_llm_request_id(raw_value: str) -> str:
+    normalized = str(raw_value or "").strip()
+    if not normalized:
+        return str(uuid.uuid4())
     try:
-        _apply_credit_delta(
+        return str(uuid.UUID(normalized))
+    except ValueError as exc:
+        raise ValueError("requestId muss eine gültige UUID sein") from exc
+
+
+def _create_llm_usage_settlement(
+    *,
+    request_id: str,
+    user_id: str,
+    route: dict,
+    estimated_tokens: int,
+) -> bool:
+    row = query(
+        """INSERT INTO llm_usage_settlements
+               (request_id, user_id, route_id, model_id, provider, status, estimated_tokens)
+           VALUES (%s::uuid, %s::uuid, %s, %s, %s, 'created', %s)
+           ON CONFLICT (request_id) DO NOTHING
+           RETURNING request_id::text""",
+        (
+            request_id,
+            user_id,
+            str(route.get("id") or ""),
+            str(route.get("model_id") or ""),
+            str(route.get("provider") or ""),
+            estimated_tokens,
+        ),
+        one=True,
+        write=True,
+    )
+    return bool(row)
+
+
+def _update_llm_usage_settlement(
+    request_id: str,
+    *,
+    status: str,
+    reserved_credits: int,
+    settled_credits: int = 0,
+    refunded_credits: int = 0,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+    upstream_request_id: str = "",
+    provider_cost_usd: float | None = None,
+    fallback_provider: str = "",
+    fallback_model_id: str = "",
+    error_code: str = "",
+) -> None:
+    query(
+        """UPDATE llm_usage_settlements
+           SET status=%s,
+               reserved_credits=%s,
+               settled_credits=%s,
+               refunded_credits=%s,
+               prompt_tokens=%s,
+               completion_tokens=%s,
+               total_tokens=%s,
+               upstream_request_id=NULLIF(%s, ''),
+               provider_cost_usd=%s,
+               fallback_provider=NULLIF(%s, ''),
+               fallback_model_id=NULLIF(%s, ''),
+               error_code=NULLIF(%s, ''),
+               updated_at=NOW(),
+               settled_at=CASE WHEN %s IN ('settled_usage','settled_estimate','refunded','failed') THEN NOW() ELSE settled_at END
+           WHERE request_id=%s::uuid""",
+        (
+            status,
+            reserved_credits,
+            settled_credits,
+            refunded_credits,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            upstream_request_id,
+            provider_cost_usd,
+            fallback_provider,
+            fallback_model_id,
+            error_code,
+            status,
+            request_id,
+        ),
+        write=True,
+    )
+
+
+def _resolve_cloudflare_fallback_route():
+    return query(
+        """SELECT id::text, model_id, model_name, provider, base_url,
+                  credits_per_unit::float AS credits_per_unit, priority
+           FROM llm_routes
+           WHERE disabled=false AND lower(provider)='cloudflare'
+           ORDER BY priority ASC, credits_per_unit ASC
+           LIMIT 1""",
+        one=True,
+    )
+
+
+def _refund_reserved_llm_credits(
+    user_id: str,
+    amount: int,
+    route_id: str,
+    request_id: str,
+) -> dict:
+    if amount <= 0:
+        return {"ok": True, "newBalance": _read_verified_credit_balance(user_id), "duplicate": False}
+    try:
+        result = _apply_credit_delta(
             user_id,
             amount,
             ledger_type="usage_refund",
-            reason=f"LLM runtime refund: {route_id}",
-            provider="runtime",
+            reason=f"LLM runtime refund: {route_id}; request={request_id}",
+            provider="llm_refund",
+            provider_tx_id=f"{request_id}:refund",
         )
-        return ""
+        return {"ok": True, **result}
     except Exception as exc:
-        return type(exc).__name__
+        return {"ok": False, "error": type(exc).__name__}
 
 
 @app.route("/api/llm/chat", methods=["POST"])
@@ -6835,11 +6968,18 @@ def _refund_reserved_llm_credits(user_id: str, amount: int, route_id: str) -> st
 def public_llm_chat():
     reserved_cost = 0
     reserved_route_id = ""
+    settlement_request_id = ""
+    upstream_succeeded = False
     user_id = request.session_user_id
     try:
         body = request.get_json(force=True) or {}
         model = str(body.get("model") or "").strip()
         messages = body.get("messages", [])
+        if body.get("stream") is True:
+            return jsonify({
+                "error": "Streaming ist für die evidence-basierte Phase 1 noch deaktiviert",
+                "blocker": "litellm_streaming_not_enabled",
+            }), 400
         try:
             max_tokens = int(body.get("max_tokens", 1000))
         except (TypeError, ValueError):
@@ -6848,6 +6988,9 @@ def public_llm_chat():
             return jsonify({"error": "messages required"}), 400
         if not 1 <= max_tokens <= 32_000:
             return jsonify({"error": "max_tokens muss zwischen 1 und 32000 liegen"}), 400
+        settlement_request_id = _normalized_llm_request_id(
+            str(body.get("requestId") or request.headers.get("X-Sovereign-Request-Id") or "")
+        )
 
         route = _resolve_enabled_llm_route(model)
         if not route:
@@ -6871,6 +7014,7 @@ def public_llm_chat():
                 "modelId": route["model_id"],
                 "credits": reserved_cost,
                 "tokenCount": estimated_tokens,
+                "requestId": settlement_request_id,
             },
             token=request.headers.get("X-Step-Up-Token", "").strip() or None,
         )
@@ -6882,6 +7026,19 @@ def public_llm_chat():
                 "reason": step_up.get("reason"),
             }), 428
 
+        if not _create_llm_usage_settlement(
+            request_id=settlement_request_id,
+            user_id=user_id,
+            route=route,
+            estimated_tokens=estimated_tokens,
+        ):
+            reserved_cost = 0
+            return jsonify({
+                "error": "Diese LLM-Anfrage wurde bereits verarbeitet oder gestartet",
+                "blocker": "duplicate_llm_request_id",
+                "requestId": settlement_request_id,
+            }), 409
+
         try:
             balance = _apply_credit_delta(
                 user_id,
@@ -6889,32 +7046,87 @@ def public_llm_chat():
                 ledger_type="usage",
                 reason=(
                     f"LLM runtime reservation: {route['model_id']}; "
-                    f"estimated_tokens={estimated_tokens}"
+                    f"estimated_tokens={estimated_tokens}; request={settlement_request_id}"
                 ),
                 provider="runtime",
             )
         except LookupError:
+            _update_llm_usage_settlement(
+                settlement_request_id,
+                status="failed",
+                reserved_credits=0,
+                error_code="user_not_found",
+            )
+            reserved_cost = 0
             return jsonify({"error": "User nicht gefunden"}), 404
         except InsufficientCredits as exc:
+            _update_llm_usage_settlement(
+                settlement_request_id,
+                status="failed",
+                reserved_credits=0,
+                error_code="insufficient_credits",
+            )
+            reserved_cost = 0
             return jsonify({
                 "error": "Nicht genug Credits",
                 "available": exc.available,
                 "required": exc.required,
             }), 402
         except CreditStateConflict as exc:
+            _update_llm_usage_settlement(
+                settlement_request_id,
+                status="failed",
+                reserved_credits=0,
+                error_code="credit_state_verification_failed",
+            )
+            reserved_cost = 0
             return jsonify({
                 "error": str(exc),
                 "blocker": "credit_state_verification_failed",
             }), 409
 
+        _update_llm_usage_settlement(
+            settlement_request_id,
+            status="reserved",
+            reserved_credits=reserved_cost,
+        )
+
         provider = str(route.get("provider") or "").strip().lower()
         route_model = str(route.get("model_id") or "").strip()
+        used_route = route
+        fallback_provider = ""
+        fallback_model_id = ""
         payload = {
             "model": route_model,
             "messages": messages,
             "max_tokens": max_tokens,
         }
-        if provider == "cloudflare":
+        if provider == "litellm":
+            resp, err = fetch_litellm(
+                "/v1/chat/completions",
+                method="POST",
+                json_data=payload,
+            )
+            if err or resp is None or not resp.ok:
+                fallback_route = _resolve_cloudflare_fallback_route()
+                if fallback_route:
+                    fallback_payload = {
+                        **payload,
+                        "model": str(fallback_route.get("model_id") or ""),
+                    }
+                    fallback_resp, fallback_error = fetch_worker_ai(
+                        "v1/chat/completions",
+                        method="POST",
+                        json_data=fallback_payload,
+                    )
+                    if not fallback_error and fallback_resp is not None and fallback_resp.ok:
+                        resp, err = fallback_resp, ""
+                        used_route = fallback_route
+                        fallback_provider = "cloudflare"
+                        fallback_model_id = str(fallback_route.get("model_id") or "")
+                    else:
+                        resp, err = fallback_resp, "litellm_and_cloudflare_fallback_failed"
+        elif provider == "cloudflare":
             resp, err = fetch_worker_ai(
                 "v1/chat/completions",
                 method="POST",
@@ -6930,52 +7142,191 @@ def public_llm_chat():
                 provider=provider,
             )
         else:
-            resp, err = None, "Route hat keinen Provider"
+            resp, err = None, "llm_route_provider_missing"
 
         if err or resp is None or not resp.ok:
-            refund_error = _refund_reserved_llm_credits(
+            refund = _refund_reserved_llm_credits(
                 user_id,
                 reserved_cost,
                 reserved_route_id,
+                settlement_request_id,
             )
-            reserved_cost = 0
-            if refund_error:
+            if not refund.get("ok"):
+                _update_llm_usage_settlement(
+                    settlement_request_id,
+                    status="failed",
+                    reserved_credits=reserved_cost,
+                    settled_credits=reserved_cost,
+                    error_code="llm_credit_refund_failed",
+                )
                 return jsonify({
                     "error": "LLM-Aufruf fehlgeschlagen und Credit-Gegenbuchung scheiterte",
                     "blocker": "llm_credit_refund_failed",
-                    "refundFailure": refund_error,
+                    "refundFailure": refund.get("error"),
                 }), 500
-            status_code = int(getattr(resp, "status_code", 502) or 502)
+            _update_llm_usage_settlement(
+                settlement_request_id,
+                status="refunded",
+                reserved_credits=reserved_cost,
+                refunded_credits=reserved_cost,
+                fallback_provider=fallback_provider,
+                fallback_model_id=fallback_model_id,
+                error_code=err or f"upstream_http_{getattr(resp, 'status_code', 502)}",
+            )
+            reserved_cost = 0
             return jsonify({
-                "error": err or str(getattr(resp, "text", "LLM upstream failure"))[:500],
+                "error": "Kein LLM-Upstream konnte die Anfrage erfolgreich abschließen",
+                "errorCode": err or "llm_upstream_failed",
                 "creditsRefunded": True,
-            }), status_code
+                "requestId": settlement_request_id,
+            }), 502
 
-        result = resp.json()
+        upstream_succeeded = True
+        try:
+            result = resp.json()
+        except ValueError:
+            _update_llm_usage_settlement(
+                settlement_request_id,
+                status="settled_estimate",
+                reserved_credits=reserved_cost,
+                settled_credits=reserved_cost,
+                fallback_provider=fallback_provider,
+                fallback_model_id=fallback_model_id,
+                error_code="invalid_upstream_json",
+            )
+            charged = reserved_cost
+            reserved_cost = 0
+            return jsonify({
+                "error": "Der LLM-Upstream lieferte keine auswertbare JSON-Antwort",
+                "blocker": "invalid_llm_upstream_response",
+                "requestId": settlement_request_id,
+                "chargedCredits": charged,
+            }), 502
+
+        used_provider = str(used_route.get("provider") or "").strip().lower()
+        if used_provider == "litellm":
+            evidence = extract_litellm_evidence(resp, result)
+        else:
+            evidence = {
+                **extract_litellm_usage(result),
+                "upstreamRequestId": str((result or {}).get("id") or "")[:200] if isinstance(result, dict) else "",
+                "providerCostUsd": None,
+            }
+        total_tokens = int(evidence.get("totalTokens") or 0)
+        settled_cost = reserved_cost
+        settlement_status = "settled_estimate"
+        if total_tokens > 0:
+            settled_cost = min(
+                reserved_cost,
+                _llm_usage_credit_cost(
+                    float(used_route["credits_per_unit"]),
+                    total_tokens,
+                ),
+            )
+            settlement_status = "settled_usage"
+        refund_amount = max(0, reserved_cost - settled_cost)
+        refund = _refund_reserved_llm_credits(
+            user_id,
+            refund_amount,
+            reserved_route_id,
+            settlement_request_id,
+        )
+        if not refund.get("ok"):
+            _update_llm_usage_settlement(
+                settlement_request_id,
+                status="failed",
+                reserved_credits=reserved_cost,
+                settled_credits=reserved_cost,
+                error_code="llm_credit_refund_failed",
+                prompt_tokens=int(evidence.get("promptTokens") or 0),
+                completion_tokens=int(evidence.get("completionTokens") or 0),
+                total_tokens=total_tokens,
+                upstream_request_id=str(evidence.get("upstreamRequestId") or ""),
+                provider_cost_usd=evidence.get("providerCostUsd"),
+                fallback_provider=fallback_provider,
+                fallback_model_id=fallback_model_id,
+            )
+            return jsonify({
+                "error": "LLM-Antwort liegt vor, aber die Credit-Abrechnung konnte nicht abgeschlossen werden",
+                "blocker": "llm_credit_refund_failed",
+                "requestId": settlement_request_id,
+            }), 500
+
+        _update_llm_usage_settlement(
+            settlement_request_id,
+            status=settlement_status,
+            reserved_credits=reserved_cost,
+            settled_credits=settled_cost,
+            refunded_credits=refund_amount,
+            prompt_tokens=int(evidence.get("promptTokens") or 0),
+            completion_tokens=int(evidence.get("completionTokens") or 0),
+            total_tokens=total_tokens,
+            upstream_request_id=str(evidence.get("upstreamRequestId") or ""),
+            provider_cost_usd=evidence.get("providerCostUsd"),
+            fallback_provider=fallback_provider,
+            fallback_model_id=fallback_model_id,
+        )
         response_payload = dict(result) if isinstance(result, dict) else {"result": result}
         response_payload["sovereignBilling"] = {
-            "chargedCredits": reserved_cost,
-            "newBalance": balance["newBalance"],
+            "requestId": settlement_request_id,
+            "reservedCredits": reserved_cost,
+            "chargedCredits": settled_cost,
+            "refundedCredits": refund_amount,
+            "newBalance": refund["newBalance"] if refund_amount else balance["newBalance"],
             "routeId": reserved_route_id,
             "modelId": route_model,
+            "usedProvider": used_provider,
+            "usedModelId": str(used_route.get("model_id") or ""),
+            "fallbackApplied": bool(fallback_provider),
             "tokenEstimate": estimated_tokens,
-            "chargeBasis": "reserved_request_estimate",
+            "tokenUsage": {
+                "prompt": int(evidence.get("promptTokens") or 0),
+                "completion": int(evidence.get("completionTokens") or 0),
+                "total": total_tokens,
+            },
+            "upstreamRequestId": str(evidence.get("upstreamRequestId") or ""),
+            "providerCostUsd": evidence.get("providerCostUsd"),
+            "chargeBasis": "actual_usage" if total_tokens > 0 else "reserved_request_estimate",
         }
+        reserved_cost = 0
         return jsonify(response_payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
-        if reserved_cost > 0 and reserved_route_id:
-            refund_error = _refund_reserved_llm_credits(
-                user_id,
-                reserved_cost,
-                reserved_route_id,
-            )
-            if refund_error:
-                return jsonify({
-                    "error": "LLM-Lauf abgebrochen und Credit-Gegenbuchung scheiterte",
-                    "blocker": "llm_credit_refund_failed",
-                    "refundFailure": refund_error,
-                }), 500
-        return jsonify({"error": str(exc)}), 500
+        if reserved_cost > 0 and reserved_route_id and settlement_request_id:
+            if not upstream_succeeded:
+                refund = _refund_reserved_llm_credits(
+                    user_id,
+                    reserved_cost,
+                    reserved_route_id,
+                    settlement_request_id,
+                )
+                if not refund.get("ok"):
+                    return jsonify({
+                        "error": "LLM-Lauf abgebrochen und Credit-Gegenbuchung scheiterte",
+                        "blocker": "llm_credit_refund_failed",
+                        "refundFailure": refund.get("error"),
+                    }), 500
+                _update_llm_usage_settlement(
+                    settlement_request_id,
+                    status="refunded",
+                    reserved_credits=reserved_cost,
+                    refunded_credits=reserved_cost,
+                    error_code=type(exc).__name__,
+                )
+            else:
+                _update_llm_usage_settlement(
+                    settlement_request_id,
+                    status="settled_estimate",
+                    reserved_credits=reserved_cost,
+                    settled_credits=reserved_cost,
+                    error_code=type(exc).__name__,
+                )
+        return jsonify({
+            "error": "LLM-Runtime konnte die Anfrage nicht abschließen",
+            "errorCode": type(exc).__name__,
+            "requestId": settlement_request_id or None,
+        }), 500
 
 
 if __name__ == "__main__":

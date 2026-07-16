@@ -15,8 +15,12 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_input_client.py" in dockerfile
     assert "owner_input_client.py" in installer
     assert "owner_input_client.py" in workflow
+    assert "owner_input_widget.py" in dockerfile
+    assert "owner_input_widget.py" in installer
+    assert "owner_input_widget.py" in workflow
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
+    assert "owner_approval_widget_open" in workflow
     assert "controller_run_start" in workflow
     assert "controller_run_list" in workflow
     assert "controller_run_status" in workflow
@@ -92,6 +96,11 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"targetId": selected_target' in client
     assert "if selected_target not in ALLOWED_TARGETS" in client
     assert "owner_input.create_request(" in server
+    assert "def owner_approval_widget_open(" in server
+    assert "meta=OWNER_INPUT_TOOL_META" in server
+    assert "structured_output=True" in server
+    assert '"sensitiveValuesIncluded": False' in server
+    assert '"protectedValueTransport": "direct_backend_https_only"' in server
     assert '"llm_can_receive_protected_value": False' in client
 
 

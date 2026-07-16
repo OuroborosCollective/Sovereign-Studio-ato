@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -10,6 +11,7 @@ from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
 from owner_input_client import ControllerRuntimeClient, OwnerInputClient
+from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
 from runtime import OperatorRuntime
 from self_heal import REPAIR_ENGINE
 from sovereign_cognitive_widget import register_sovereign_cognitive_widget
@@ -459,21 +461,39 @@ def mcp_host_command_status(request_id: str) -> dict[str, Any]:
     return broker.command_status(request_id)
 
 
-@mcp.tool(annotations=EXTERNAL_WRITE)
+@mcp.tool(
+    annotations=EXTERNAL_WRITE,
+    meta=OWNER_INPUT_TOOL_META,
+    structured_output=True,
+)
 def owner_approval_request_create(
     title: str,
     reason: str,
     target_id: str = "openai_api_key",
     field_label: str = "OpenAI API-Key",
     expires_in_seconds: int = 900,
-) -> dict[str, Any]:
-    """Create one metadata-only request for an allowlisted owner-controlled target."""
-    return owner_input.create_request(
+) -> types.CallToolResult:
+    """Create one metadata-only request and render its protected owner-input widget."""
+    payload = owner_input.create_request(
         target_id=target_id,
         title=title,
         reason=reason,
         field_label=field_label,
         expires_in_seconds=expires_in_seconds,
+    )
+    return types.CallToolResult(
+        content=[
+            types.TextContent(
+                type="text",
+                text="Geschützte Owner-Eingabe wurde angefordert.",
+            )
+        ],
+        structuredContent=payload,
+        _meta={
+            "widget": "sovereign-owner-input",
+            "sensitiveValuesIncluded": False,
+            "protectedValueTransport": "direct_backend_https_only",
+        },
     )
 
 
@@ -481,6 +501,30 @@ def owner_approval_request_create(
 def owner_approval_request_status(request_id: str) -> dict[str, Any]:
     """Read only lifecycle metadata for one owner request; protected values are never returned."""
     return owner_input.status(request_id)
+
+
+@mcp.tool(
+    annotations=NETWORK_READ,
+    meta=OWNER_INPUT_TOOL_META,
+    structured_output=True,
+)
+def owner_approval_widget_open(request_id: str) -> types.CallToolResult:
+    """Render one existing owner request in the protected chat widget without reading its value."""
+    payload = owner_input.status(request_id)
+    return types.CallToolResult(
+        content=[
+            types.TextContent(
+                type="text",
+                text="Geschützte Owner-Eingabe ist geöffnet.",
+            )
+        ],
+        structuredContent=payload,
+        _meta={
+            "widget": "sovereign-owner-input",
+            "sensitiveValuesIncluded": False,
+            "protectedValueTransport": "direct_backend_https_only",
+        },
+    )
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
@@ -595,6 +639,7 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
     )
 
 
+register_owner_input_widget(mcp)
 register_sovereign_cognitive_widget(
     mcp,
     read_only_annotations=READ_ONLY,

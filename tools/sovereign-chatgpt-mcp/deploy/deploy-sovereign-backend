@@ -45,7 +45,7 @@ ACTUAL_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$NEW_
 IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$NEW_IMAGE" 2>/dev/null || true)"
 [[ "$IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "image revision label does not match expected commit"
 
-for network in supabase_default areloria_arelorian-network; do
+for network in supabase_default areloria_arelorian-network sovereign-private; do
   docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
 done
 
@@ -61,6 +61,7 @@ docker run -d \
   "$NEW_IMAGE" >/dev/null
 
 docker network connect areloria_arelorian-network "$CANDIDATE"
+docker network connect sovereign-private "$CANDIDATE"
 
 candidate_cleanup() {
   docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
@@ -98,6 +99,7 @@ start_production() {
     -p 127.0.0.1:8788:8787 \
     "$image" >/dev/null
   docker network connect areloria_arelorian-network "$CONTAINER"
+  docker network connect sovereign-private "$CONTAINER"
 }
 
 start_production "$NEW_IMAGE" "$EXPECTED_REVISION"

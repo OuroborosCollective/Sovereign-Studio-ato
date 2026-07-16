@@ -6,7 +6,8 @@
 #
 # Networks:
 # - supabase_default: Network for PostgreSQL database access
-# - areloria_arelorian-network: Network for Areloria services
+# - areloria_arelorian-network: Existing compatibility network
+# - sovereign-private: Private LiteLLM service network
 # =============================================================================
 
 services:
@@ -17,13 +18,17 @@ services:
     container_name: sovereign-backend
     ports:
       - "127.0.0.1:8788:8787"
-    env_file: .env
+    env_file:
+      - .env
+      - /opt/sovereign-chatgpt-tools/backend-runtime.env
     volumes:
       - /opt/secure:/opt/secure:ro
+      - /opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw
     restart: unless-stopped
     networks:
       - supabase_default
       - areloria_arelorian-network
+      - sovereign-private
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health')"]
       interval: 30s
@@ -35,4 +40,6 @@ networks:
   supabase_default:
     external: true
   areloria_arelorian-network:
+    external: true
+  sovereign-private:
     external: true
