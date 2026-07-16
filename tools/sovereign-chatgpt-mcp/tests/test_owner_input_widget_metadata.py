@@ -21,14 +21,15 @@ def test_owner_widget_uses_one_https_backend_origin() -> None:
     assert parsed.path in {"", "/"}
     assert OWNER_BACKEND_ORIGIN == WIDGET_DOMAIN
     assert STRICT_CSP == {
-        "connectDomains": [OWNER_BACKEND_ORIGIN],
+        "connectDomains": [],
         "resourceDomains": [],
         "frameDomains": [],
     }
     assert RESOURCE_META["ui"]["domain"] == WIDGET_DOMAIN
     assert RESOURCE_META["ui"]["csp"] == STRICT_CSP
     assert RESOURCE_META["openai/widgetDomain"] == WIDGET_DOMAIN
-    assert RESOURCE_META["openai/widgetCSP"]["connect_domains"] == [OWNER_BACKEND_ORIGIN]
+    assert RESOURCE_META["openai/widgetCSP"]["connect_domains"] == []
+    assert RESOURCE_META["openai/widgetCSP"]["redirect_domains"] == [OWNER_BACKEND_ORIGIN]
 
 
 def test_owner_widget_is_bound_to_the_request_tool() -> None:
@@ -38,16 +39,18 @@ def test_owner_widget_is_bound_to_the_request_tool() -> None:
     assert TOOL_META["ui"]["visibility"] == ["model", "app"]
 
 
-def test_owner_widget_never_routes_protected_value_through_chat_or_tool_calls() -> None:
+def test_owner_widget_routes_all_protected_input_to_same_origin_owner_page() -> None:
     assert "sendFollowUpMessage" not in WIDGET_HTML
     assert "console." not in WIDGET_HTML
     assert "window.openai.toolOutput" in WIDGET_HTML
     assert "ui/notifications/tool-result" in WIDGET_HTML
-    assert "Content-Type': 'application/octet-stream'" in WIDGET_HTML
-    assert "credentials: 'omit'" in WIDGET_HTML
-    assert "cache: 'no-store'" in WIDGET_HTML
-    assert "encoded.fill(0)" in WIDGET_HTML
-    assert "clearSensitiveInputs()" in WIDGET_HTML
-    assert "byId('adminKey').value = ''" in WIDGET_HTML
-    assert "byId('protectedValue').value = ''" in WIDGET_HTML
-    assert "/api/admin/owner-input/requests/" in WIDGET_HTML
+    assert "event.source !== window.parent" in WIDGET_HTML
+    assert "message.jsonrpc !== '2.0'" in WIDGET_HTML
+    assert "window.openai.openExternal" in WIDGET_HTML
+    assert "redirectUrl: false" in WIDGET_HTML
+    assert "/owner-approvals?request_id=" in WIDGET_HTML
+    assert "fetch(" not in WIDGET_HTML
+    assert "adminKey" not in WIDGET_HTML
+    assert "protectedValue" not in WIDGET_HTML
+    assert "TextEncoder" not in WIDGET_HTML
+    assert "application/octet-stream" not in WIDGET_HTML

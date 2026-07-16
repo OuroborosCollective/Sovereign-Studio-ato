@@ -1,1 +1,7 @@
+# Phase-1 aliases remain unprovisioned until the protected provider key is
+# stored and the OpenAI project model inventory is verified by a real API call.
+# Do not add model names here from memory or assumption.
 model_list: []
+
+litellm_settings:
+  drop_params: true

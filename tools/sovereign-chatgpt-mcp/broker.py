@@ -262,6 +262,12 @@ class BrokerRuntime:
             "managed_compose_stack_plan": lambda values: self.managed_compose.plan(
                 stack_id=str(values.get("stack_id") or ""),
             ),
+            "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
+            "litellm_model_aliases_activate": lambda values: self.managed_compose.activate_litellm_model_aliases(
+                fast_provider_model=str(values.get("fast_provider_model") or ""),
+                balanced_provider_model=str(values.get("balanced_provider_model") or ""),
+                confirmation_inventory_sha256=str(values.get("confirmation_inventory_sha256") or ""),
+            ),
             "deploy_managed_compose_stack": lambda values: self.managed_compose.deploy(
                 stack_id=str(values.get("stack_id") or ""),
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),

@@ -69,12 +69,16 @@ def test_backend_reserves_request_capacity_during_long_agents_sdk_runs() -> None
     assert "--workers 2 --timeout 120" not in dockerfile
 
 
-def test_deploy_verifier_unions_duplicate_flask_route_methods() -> None:
+def test_backend_ci_is_validation_only_and_queue_only() -> None:
     workflow = WORKFLOW.read_text("utf-8")
 
-    assert 'controller_methods=set().union(*(methods for rule,methods in rules if rule=="/api/internal/controller/runs"))' in workflow
-    assert '{"GET","POST"}.issubset(controller_methods)' in workflow
-    assert 'next(methods for rule,methods in rules if rule=="/api/internal/controller/runs")' not in workflow
+    assert "release-policy-gate:" in workflow
+    assert "production release requires the Sovereign host-command queue." in workflow
+    assert "appleboy/" not in workflow
+    assert "VPS_PASSWORD" not in workflow
+    assert "docker build" not in workflow
+    assert "docker run" not in workflow
+    assert "Deploy to VPS" not in workflow
 
 
 def test_controller_uses_real_user_session_and_never_browser_storage() -> None:

@@ -5,6 +5,8 @@ on:
     branches: [main, master, develop]
     paths:
       - 'backend/requirements-test.txt'
+      - 'backend/app.py'
+      - 'backend/litellm_runtime.py'
       - 'scripts/check-backend-python-runtime.py'
       - 'scripts/sovereign-backend/**'
       - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
@@ -14,12 +16,17 @@ on:
     branches: [main, master, develop]
     paths:
       - 'backend/requirements-test.txt'
+      - 'backend/app.py'
+      - 'backend/litellm_runtime.py'
       - 'scripts/check-backend-python-runtime.py'
       - 'scripts/sovereign-backend/**'
       - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
       - '.github/actions/setup-backend-python/**'
       - '.github/workflows/sovereign-agent-backend.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,6 +56,9 @@ jobs:
         run: |
           python -m py_compile \
             scripts/sovereign-backend/app.py \
+            scripts/sovereign-backend/litellm_runtime.py \
+            backend/app.py \
+            backend/litellm_runtime.py \
             scripts/sovereign-backend/runner.py \
             scripts/sovereign-backend/agent_runtime/*.py \
             scripts/sovereign-backend/agent_runtime/tools/*.py
@@ -75,262 +85,32 @@ jobs:
       - name: Run Agent Runtime Tests
         run: pytest scripts/sovereign-backend/tests -q
 
-  deploy-vps:
-    name: Deploy to VPS
+  release-policy-gate:
+    name: Queue-only Release Policy
     needs: [compile-check, agent-tests]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    environment:
-      name: production
-      url: https://sovereign-backend.arelorian.de
-    env:
-      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
-      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
-      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
-      RELEASE_DIR: /opt/sovereign-backend/releases/${{ github.run_id }}-${{ github.run_attempt }}
-      IMAGE_TAG: sovereign-backend:${{ github.sha }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Validate deploy parameters
+      - name: Verify validation-only workflow boundary
         run: |
-          set -euo pipefail
-          if [ -z "${VPS_HOST:-}" ]; then
-            echo "VPS_HOST/SSH_HOST secret is not configured." >&2
-            exit 1
-          fi
-          if [ -z "${VPS_USER:-}" ]; then
-            echo "VPS_USER/SSH_USER secret is not configured." >&2
-            exit 1
-          fi
-          if [ -z "${VPS_PASSWORD:-}" ]; then
-            echo "VPS password secret is not configured. Expected VPS_PASSWORD, VPS_PW, SSH_PW, or SSH_PASSWORD." >&2
-            exit 1
-          fi
-          if ! [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]; then
-            echo "VPS_SSH_PORT/SSH_PORT must be numeric." >&2
-            exit 1
-          fi
-          case "${RELEASE_DIR}" in
-            /opt/sovereign-backend/releases/*) ;;
-            *)
-              echo "Unsafe release directory: ${RELEASE_DIR}" >&2
-              exit 1
-              ;;
-          esac
+          python - <<'PY'
+          from pathlib import Path
 
-      - name: Create tar archive
-        run: |
-          set -euo pipefail
-          tar -czf sovereign-backend.tar.gz scripts/sovereign-backend
-          tar -tzf sovereign-backend.tar.gz >/dev/null
-
-      - name: Prepare remote release directory
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ env.VPS_HOST }}
-          username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
-          port: ${{ env.VPS_SSH_PORT }}
-          command_timeout: 30m
-          script: |
-            set -eu
-            RELEASE_DIR='${{ env.RELEASE_DIR }}'
-            case "$RELEASE_DIR" in
-              /opt/sovereign-backend/releases/*) ;;
-              *)
-                echo "Unsafe release directory: $RELEASE_DIR" >&2
-                exit 1
-                ;;
-            esac
-            echo "Preparing release directory: $RELEASE_DIR"
-            if ! mkdir -p "$RELEASE_DIR"; then
-              echo "Cannot create release directory: $RELEASE_DIR" >&2
-              exit 1
-            fi
-            if [ ! -d "$RELEASE_DIR" ]; then
-              echo "Release directory was not created: $RELEASE_DIR" >&2
-              exit 1
-            fi
-            if [ ! -w "$RELEASE_DIR" ]; then
-              echo "Release directory is not writable for $(id -un): $RELEASE_DIR" >&2
-              ls -ld "$(dirname "$RELEASE_DIR")" "$RELEASE_DIR" >&2 || true
-              exit 1
-            fi
-            rm -f "$RELEASE_DIR/sovereign-backend.tar.gz"
-
-      - name: Upload release archive to VPS
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ env.VPS_HOST }}
-          username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
-          port: ${{ env.VPS_SSH_PORT }}
-          source: "sovereign-backend.tar.gz"
-          target: "${{ env.RELEASE_DIR }}"
-          overwrite: true
-
-      - name: Deploy release on VPS
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ env.VPS_HOST }}
-          username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
-          port: ${{ env.VPS_SSH_PORT }}
-          command_timeout: 30m
-          script: |
-            set -eu
-            RELEASE_DIR='${{ env.RELEASE_DIR }}'
-            IMAGE_TAG='${{ env.IMAGE_TAG }}'
-            ARCHIVE="$RELEASE_DIR/sovereign-backend.tar.gz"
-            WORK_DIR="$RELEASE_DIR/work"
-            cleanup() {
-              rm -rf "$RELEASE_DIR" || true
-            }
-            trap cleanup EXIT
-
-            case "$RELEASE_DIR" in
-              /opt/sovereign-backend/releases/*) ;;
-              *)
-                echo "Unsafe release directory: $RELEASE_DIR" >&2
-                exit 1
-                ;;
-            esac
-
-            if [ ! -f "$ARCHIVE" ]; then
-              echo "Release archive is missing: $ARCHIVE" >&2
-              exit 1
-            fi
-            tar -tzf "$ARCHIVE" >/dev/null
-            rm -rf "$WORK_DIR"
-            mkdir -p "$WORK_DIR"
-            tar -xzf "$ARCHIVE" -C "$WORK_DIR"
-
-            BUILD_DIR="$WORK_DIR/scripts/sovereign-backend"
-            OWNER_INPUT_ROOT="/opt/sovereign-owner-managed"
-            BACKEND_MANAGED_ENV="/opt/sovereign-chatgpt-tools/backend-runtime.env"
-            for required_file in Dockerfile app.py requirements.txt; do
-              if [ ! -f "$BUILD_DIR/$required_file" ]; then
-                echo "Required build file is missing: $BUILD_DIR/$required_file" >&2
-                exit 1
-              fi
-            done
-            if [ ! -f "$BUILD_DIR/auto-migrate.sh" ]; then
-              echo "Migration entrypoint is missing: $BUILD_DIR/auto-migrate.sh" >&2
-              exit 1
-            fi
-            chmod +x "$BUILD_DIR/auto-migrate.sh"
-            if [ ! -x "$BUILD_DIR/auto-migrate.sh" ]; then
-              echo "Migration entrypoint could not be made executable: $BUILD_DIR/auto-migrate.sh" >&2
-              exit 1
-            fi
-            bash -n "$BUILD_DIR/auto-migrate.sh"
-            for required_dir in agent_runtime migrations; do
-              if [ ! -d "$BUILD_DIR/$required_dir" ]; then
-                echo "Required build directory is missing: $BUILD_DIR/$required_dir" >&2
-                exit 1
-              fi
-            done
-            if [ ! -f /opt/sovereign-backend/.env ]; then
-              echo "Backend environment file is missing: /opt/sovereign-backend/.env" >&2
-              exit 1
-            fi
-            if [ ! -f "$BACKEND_MANAGED_ENV" ]; then
-              install -m 0600 /dev/null "$BACKEND_MANAGED_ENV"
-            fi
-            if [ ! -d /opt/secure ]; then
-              echo "Secure mount source is missing: /opt/secure" >&2
-              exit 1
-            fi
-            if [ ! -d "$OWNER_INPUT_ROOT" ] || [ -L "$OWNER_INPUT_ROOT" ]; then
-              echo "Owner-managed mount source is missing or unsafe: $OWNER_INPUT_ROOT" >&2
-              exit 1
-            fi
-            for network in supabase_default areloria_arelorian-network; do
-              if ! docker network inspect "$network" >/dev/null 2>&1; then
-                echo "Required Docker network is missing: $network" >&2
-                exit 1
-              fi
-            done
-
-            PREVIOUS_IMAGE="$(docker inspect --format='{{.Config.Image}}' sovereign-backend 2>/dev/null || true)"
-            COMMIT_SHA="${IMAGE_TAG#sovereign-backend:}"
-            docker build --label "org.opencontainers.image.revision=$COMMIT_SHA" -t "$IMAGE_TAG" "$BUILD_DIR"
-            docker rm -f sovereign-backend 2>/dev/null || true
-            docker run -d \
-              --name sovereign-backend \
-              --restart unless-stopped \
-              --env-file /opt/sovereign-backend/.env \
-              --env-file "$BACKEND_MANAGED_ENV" \
-              --label "org.opencontainers.image.revision=$COMMIT_SHA" \
-              --network supabase_default \
-              --volume /opt/secure:/opt/secure:ro \
-              --volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw" \
-              -p 127.0.0.1:8788:8787 \
-              "$IMAGE_TAG"
-            docker network connect areloria_arelorian-network sovereign-backend
-
-            HEALTH=""
-            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-              HEALTH="$(curl -fsS http://127.0.0.1:8788/health 2>/dev/null || true)"
-              if printf '%s' "$HEALTH" | grep -q '"ok":true'; then
-                echo "Deployment health check passed on attempt $attempt."
-                break
-              fi
-              sleep 5
-            done
-
-            if ! printf '%s' "$HEALTH" | grep -q '"ok":true'; then
-              echo "Deployment health check failed." >&2
-              docker logs sovereign-backend --tail 100 || true
-              docker rm -f sovereign-backend 2>/dev/null || true
-              if [ -n "$PREVIOUS_IMAGE" ]; then
-                echo "Restoring previous backend image: $PREVIOUS_IMAGE"
-                docker run -d \
-                  --name sovereign-backend \
-                  --restart unless-stopped \
-                  --env-file /opt/sovereign-backend/.env \
-                  --env-file "$BACKEND_MANAGED_ENV" \
-                  --network supabase_default \
-                  --volume /opt/secure:/opt/secure:ro \
-                  --volume "$OWNER_INPUT_ROOT:$OWNER_INPUT_ROOT:rw" \
-                  -p 127.0.0.1:8788:8787 \
-                  "$PREVIOUS_IMAGE"
-                docker network connect areloria_arelorian-network sovereign-backend
-              fi
-              exit 1
-            fi
-
-            echo "Health: $HEALTH"
-
-      - name: Verify Routes
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ env.VPS_HOST }}
-          username: ${{ env.VPS_USER }}
-          password: ${{ env.VPS_PASSWORD }}
-          port: ${{ env.VPS_SSH_PORT }}
-          command_timeout: 30m
-          script: |
-            set -eu
-            docker exec sovereign-backend python3 -c 'from app import app; rules=[(r.rule, set(r.methods or ())) for r in app.url_map.iter_rules()]; required={"/api/user/agent/swarm/manifest","/api/user/agent/swarm/run","/api/internal/controller/runs","/api/internal/controller/runs/<run_id>"}; present={rule for rule,_methods in rules}; missing=sorted(required-present); assert not missing, missing; controller_methods=set().union(*(methods for rule,methods in rules if rule=="/api/internal/controller/runs")); assert {"GET","POST"}.issubset(controller_methods), sorted(controller_methods); print({"agents_sdk_routes_verified": True, "required": sorted(required), "controller_methods": sorted(controller_methods)})'
-
-  smoke-test:
-    name: VPS Smoke Tests
-    needs: deploy-vps
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test Health Endpoint
-        run: |
-          set -euo pipefail
-          HEALTH="$(curl -fsS https://sovereign-backend.arelorian.de/health)"
-          echo "Health: $HEALTH"
-          if ! printf '%s' "$HEALTH" | grep -q '"ok":true'; then
-            echo "Backend health check failed." >&2
-            exit 1
-          fi
-          echo "All smoke tests passed."
+          workflow = Path(".github/workflows/sovereign-agent-backend.yml").read_text("utf-8")
+          forbidden = (
+              "apple" + "boy/",
+              "VPS_" + "PASSWORD",
+              "docker " + "build",
+              "docker " + "run",
+              "scp-" + "action",
+              "ssh-" + "action",
+          )
+          found = [marker for marker in forbidden if marker in workflow]
+          if found:
+              raise SystemExit(f"Direct host mutation markers remain: {found}")
+          print("Validation-only boundary verified; production release requires the Sovereign host-command queue.")
+          PY

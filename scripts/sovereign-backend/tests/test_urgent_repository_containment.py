@@ -52,15 +52,19 @@ def test_automation_cannot_merge_or_push_main_directly() -> None:
     assert "--draft" in workflow
 
 
-def test_backend_is_bound_to_localhost() -> None:
+def test_backend_is_bound_to_localhost_and_ci_cannot_deploy() -> None:
     compose = (REPO_ROOT / "scripts/sovereign-backend/docker-compose.yml").read_text(
         encoding="utf-8"
     )
-    deploy = (REPO_ROOT / ".github/workflows/sovereign-agent-backend.yml").read_text(
+    workflow = (REPO_ROOT / ".github/workflows/sovereign-agent-backend.yml").read_text(
         encoding="utf-8"
     )
     assert '127.0.0.1:8788:8787' in compose
-    assert '-p 127.0.0.1:8788:8787' in deploy
+    assert "release-policy-gate:" in workflow
+    assert "appleboy/" not in workflow
+    assert "VPS_PASSWORD" not in workflow
+    assert "docker build" not in workflow
+    assert "docker run" not in workflow
 
 
 def test_workspace_clone_creates_repo_directory_before_iteration() -> None:

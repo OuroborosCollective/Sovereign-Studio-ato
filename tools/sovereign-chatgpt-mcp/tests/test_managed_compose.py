@@ -22,6 +22,8 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "code-server-46bq",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
+    assert is_mutating_action("litellm_model_aliases_activate") is True
+    assert is_mutating_action("litellm_provider_model_inventory") is False
     assert is_mutating_action("managed_compose_stack_plan") is False
 
 
@@ -64,12 +66,18 @@ def test_litellm_plan_requires_exact_installed_template_bundle(tmp_path: Path) -
     template.mkdir()
     compose = b"services:\n  litellm:\n    image: example.invalid/litellm:v1\n"
     config = b"model_list: []\n"
+    entrypoint = b"from __future__ import annotations\n"
     (template / "docker-compose.yml").write_bytes(compose)
     (template / "config.yaml").write_bytes(config)
+    (template / "sovereign-entrypoint.py").write_bytes(entrypoint)
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     result = runtime.plan("sovereign-litellm")
     expected = hashlib.sha256(
-        f"{hashlib.sha256(compose).hexdigest()}:{hashlib.sha256(config).hexdigest()}".encode("ascii")
+        (
+            f"{hashlib.sha256(compose).hexdigest()}:"
+            f"{hashlib.sha256(config).hexdigest()}:"
+            f"{hashlib.sha256(entrypoint).hexdigest()}"
+        ).encode("ascii")
     ).hexdigest()
     assert result["templateBundleSha256"] == expected
     assert result["allowedStacks"] == sorted(STACKS)
@@ -132,3 +140,16 @@ def test_security_policy_blocks_unknown_services_networks_and_ports(tmp_path: Pa
                 }
             },
         )
+
+
+def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
+    root = Path(__file__).resolve().parents[1]
+    server = (root / "server.py").read_text("utf-8")
+    broker = (root / "broker.py").read_text("utf-8")
+
+    assert "def litellm_provider_model_inventory()" in server
+    assert "def litellm_model_aliases_activate(" in server
+    assert 'broker.call("litellm_provider_model_inventory", {}, timeout=90)' in server
+    assert '"litellm_model_aliases_activate"' in server
+    assert '"litellm_provider_model_inventory": lambda _values:' in broker
+    assert '"litellm_model_aliases_activate": lambda values:' in broker

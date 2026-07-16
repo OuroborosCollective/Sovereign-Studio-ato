@@ -19,6 +19,7 @@ services:
 
   litellm:
     image: docker.litellm.ai/berriai/litellm:v1.89.4
+    entrypoint: ["python", "/app/sovereign-entrypoint.py"]
     command: ["--config=/app/config.yaml", "--port", "4000"]
     environment:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/litellm
@@ -26,6 +27,8 @@ services:
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is required}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      - ./sovereign-entrypoint.py:/app/sovereign-entrypoint.py:ro
+      - /opt/sovereign-owner-managed/openai_api_key.txt:/run/secrets/openai_api_key:ro
     expose:
       - "4000"
     healthcheck:

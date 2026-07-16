@@ -41,6 +41,7 @@ jobs:
           set -euo pipefail
           python -m py_compile \
             scripts/sovereign-backend/app.py \
+            scripts/sovereign-backend/litellm_runtime.py \
             scripts/sovereign-backend/runner.py \
             scripts/sovereign-backend/security_oauth.py \
             scripts/sovereign-backend/security_runtime.py \

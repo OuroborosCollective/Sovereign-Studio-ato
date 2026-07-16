@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py .
+COPY litellm_runtime.py .
 COPY runner.py .
 COPY security_oauth.py .
 COPY security_runtime.py .

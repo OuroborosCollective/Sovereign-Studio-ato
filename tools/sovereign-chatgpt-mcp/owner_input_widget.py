@@ -11,7 +11,7 @@ WIDGET_DOMAIN = "https://sovereign-backend.arelorian.de"
 OWNER_BACKEND_ORIGIN = WIDGET_DOMAIN
 
 STRICT_CSP = {
-    "connectDomains": [OWNER_BACKEND_ORIGIN],
+    "connectDomains": [],
     "resourceDomains": [],
     "frameDomains": [],
 }
@@ -24,14 +24,14 @@ RESOURCE_META = {
     },
     "openai/widgetDomain": WIDGET_DOMAIN,
     "openai/widgetDescription": (
-        "Accepts one protected owner value directly into the Sovereign backend. "
-        "The value is never returned to ChatGPT or MCP."
+        "Opens the authenticated Sovereign owner page for one protected input. "
+        "The value is never entered into or returned through ChatGPT or MCP."
     ),
     "openai/widgetCSP": {
-        "connect_domains": [OWNER_BACKEND_ORIGIN],
+        "connect_domains": [],
         "resource_domains": [],
         "frame_domains": [],
-        "redirect_domains": [],
+        "redirect_domains": [OWNER_BACKEND_ORIGIN],
     },
 }
 
@@ -82,20 +82,10 @@ WIDGET_HTML = r'''<!doctype html>
     <p class="status" id="status" role="status" aria-live="polite"></p>
   </section>
   <section id="formSection" hidden>
-    <label for="adminKey">Sovereign Admin-Zugang</label>
-    <input id="adminKey" type="password" autocomplete="off" spellcheck="false">
-
-    <label for="protectedValue" id="valueLabel">Geschützter Wert</label>
-    <input id="protectedValue" type="password" autocomplete="new-password" spellcheck="false">
-
-    <label for="comment">Optionaler Kommentar ohne Zugangsdaten</label>
-    <textarea id="comment" maxlength="1000"></textarea>
-
-    <div class="row">
-      <button id="submit" type="button">Sicher eintragen</button>
-      <button id="deny" type="button">Ablehnen</button>
-    </div>
-    <p class="muted">Der geschützte Wert wird direkt per HTTPS an Sovereign übertragen. ChatGPT und MCP erhalten ihn nicht.</p>
+    <p>Admin-Zugang und geschützter Wert werden ausschließlich auf der HTTPS-Seite des Sovereign-Backends eingegeben.</p>
+    <button id="openOwnerPage" type="button">Sichere Sovereign-Seite öffnen</button>
+    <p class="muted"><a id="ownerLink" target="_blank" rel="noopener noreferrer">Direktlink zur sicheren Owner-Seite</a></p>
+    <p class="muted">Das Widget nimmt keine Zugangsdaten an und überträgt keine geschützten Werte.</p>
   </section>
 </main>
 <script>
@@ -107,11 +97,6 @@ WIDGET_HTML = r'''<!doctype html>
 
   function clean(value, fallback = '') {
     return typeof value === 'string' && value.trim() ? value.trim() : fallback;
-  }
-
-  function clearSensitiveInputs() {
-    byId('adminKey').value = '';
-    byId('protectedValue').value = '';
   }
 
   function setStatus(message, kind = '') {
@@ -138,71 +123,43 @@ WIDGET_HTML = r'''<!doctype html>
     }
     byId('reason').textContent = clean(request.reason, 'Geschützter Serverwert erforderlich.');
     byId('meta').textContent = `${clean(request.targetLabel, 'Owner-Ziel')} · gültig bis ${clean(request.expiresAt, 'unbekannt')}`;
-    byId('valueLabel').textContent = clean(request.fieldLabel, 'Geschützter Wert');
-    setStatus(request.status === 'pending' ? 'Bereit zur sicheren Eingabe.' : `Status: ${clean(request.status, 'unbekannt')}`);
+    const ownerUrl = BACKEND + '/owner-approvals?request_id=' + encodeURIComponent(request.id);
+    byId('ownerLink').href = ownerUrl;
+    setStatus(request.status === 'pending' ? 'Bereit zum Öffnen der sicheren Sovereign-Seite.' : `Status: ${clean(request.status, 'unbekannt')}`);
   }
 
-  async function resolve(decision) {
+  async function openOwnerPage() {
     if (state.busy || !state.request) return;
-    const adminKey = byId('adminKey').value.trim();
-    const comment = byId('comment').value.trim();
-    const rawValue = decision === 'yes' ? byId('protectedValue').value : '';
-    if (!adminKey) {
-      setStatus('Admin-Zugang fehlt.', 'danger');
-      return;
-    }
-    if (decision === 'yes' && !rawValue) {
-      setStatus('Geschützter Wert fehlt.', 'danger');
-      return;
-    }
-
+    const button = byId('openOwnerPage');
+    const url = BACKEND + '/owner-approvals?request_id=' + encodeURIComponent(state.request.id);
     state.busy = true;
-    byId('submit').disabled = true;
-    byId('deny').disabled = true;
-    setStatus('Direkte geschützte Übertragung läuft…');
-    const encoded = new TextEncoder().encode(rawValue);
-    const url = BACKEND + '/api/admin/owner-input/requests/'
-      + encodeURIComponent(state.request.id)
-      + '/resolve?decision=' + encodeURIComponent(decision)
-      + '&comment=' + encodeURIComponent(comment);
+    button.disabled = true;
+    setStatus('Sichere Sovereign-Seite wird geöffnet…');
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + adminKey,
-          'Content-Type': 'application/octet-stream'
-        },
-        body: encoded,
-        cache: 'no-store',
-        credentials: 'omit'
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(clean(data.error, 'Sichere Eingabe fehlgeschlagen.'));
-      byId('comment').value = '';
-      byId('formSection').hidden = true;
-      setStatus(decision === 'yes' ? 'Sicher gespeichert. Der Eingabepuffer wurde geleert.' : 'Anfrage wurde abgelehnt.', 'success');
+      if (!window.openai || typeof window.openai.openExternal !== 'function') {
+        throw new Error('ChatGPT kann die sichere Seite hier nicht automatisch öffnen. Bitte den Direktlink verwenden.');
+      }
+      await window.openai.openExternal({ href: url, redirectUrl: false });
+      setStatus('Sichere Sovereign-Seite geöffnet. Die Anfrage ist erst nach dortiger Bestätigung abgeschlossen.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Sichere Eingabe fehlgeschlagen.', 'danger');
+      setStatus(error instanceof Error ? error.message : 'Sichere Seite konnte nicht geöffnet werden.', 'danger');
     } finally {
-      encoded.fill(0);
-      clearSensitiveInputs();
       state.busy = false;
-      byId('submit').disabled = false;
-      byId('deny').disabled = false;
+      button.disabled = false;
     }
   }
 
   function acceptToolResult(event) {
-    const message = event && event.data;
-    if (!message || message.method !== 'ui/notifications/tool-result') return;
+    if (!event || event.source !== window.parent) return;
+    const message = event.data;
+    if (!message || message.jsonrpc !== '2.0' || message.method !== 'ui/notifications/tool-result') return;
     const result = message.params && message.params.result;
     render(result && result.structuredContent ? result.structuredContent : result);
   }
 
   window.addEventListener('message', acceptToolResult);
   if (window.openai && window.openai.toolOutput) render(window.openai.toolOutput);
-  byId('submit').addEventListener('click', () => resolve('yes'));
-  byId('deny').addEventListener('click', () => resolve('no'));
+  byId('openOwnerPage').addEventListener('click', openOwnerPage);
 })();
 </script>
 </body>
