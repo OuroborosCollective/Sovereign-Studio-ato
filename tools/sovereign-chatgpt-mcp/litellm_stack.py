@@ -16,6 +16,10 @@ LITELLM_CONTAINER = "sovereign-litellm-litellm-1"
 DB_CONTAINER = "sovereign-litellm-db-1"
 LITELLM_IMAGE = "docker.litellm.ai/berriai/litellm:v1.89.4"
 DB_IMAGE = "postgres:16-alpine"
+OWNER_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
+OPENAI_KEY_PATH = OWNER_SECRET_ROOT / "openai_api_key.txt"
+BACKEND_MASTER_KEY_PATH = OWNER_SECRET_ROOT / "litellm_master_key.txt"
+EXPECTED_MODEL_IDS = ("sovereign-fast", "sovereign-balanced")
 REQUIRED_SECRET_NAMES = (
     "POSTGRES_PASSWORD",
     "LITELLM_MASTER_KEY",
@@ -148,6 +152,29 @@ class LiteLLMStackRuntime:
             "arbitraryCommandAccepted": False,
             "secretValuesAccepted": False,
         }
+
+    def _read_owner_provider_key(self) -> str:
+        root = OWNER_SECRET_ROOT
+        path = OPENAI_KEY_PATH
+        if root.is_symlink() or path.is_symlink() or not path.is_file():
+            raise RuntimeError("Geschützter OpenAI-Provider-Key fehlt im Owner-Speicher")
+        size = path.stat().st_size
+        if size < 16 or size > 8192:
+            raise RuntimeError("Geschützter OpenAI-Provider-Key hat eine ungültige Größe")
+        value = path.read_text("utf-8").strip()
+        if not _SAFE_KEY_SECRET.fullmatch(value):
+            raise RuntimeError("Geschützter OpenAI-Provider-Key hat ein ungültiges Format")
+        return value
+
+    def _write_backend_master_key(self, value: str) -> None:
+        root = OWNER_SECRET_ROOT
+        if root.is_symlink():
+            raise RuntimeError("Owner-Secret-Root darf kein Symlink sein")
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(root, 0o700)
+        if BACKEND_MASTER_KEY_PATH.is_symlink():
+            raise RuntimeError("Backend-LiteLLM-Key-Ziel darf kein Symlink sein")
+        self._write_atomic(BACKEND_MASTER_KEY_PATH, (value + "\n").encode("utf-8"), 0o600)
 
     def _existing_secret_values(self) -> dict[str, str]:
         values: dict[str, str] = {}
@@ -289,7 +316,7 @@ class LiteLLMStackRuntime:
             if db_environment.get("POSTGRES_DB") != "litellm" or db_environment.get("POSTGRES_USER") != "litellm":
                 return {"ok": False, "error": "unexpected database identity"}
             litellm_environment = services["litellm"].get("environment") if isinstance(services["litellm"].get("environment"), dict) else {}
-            if set(litellm_environment) != {"DATABASE_URL", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY"}:
+            if set(litellm_environment) != {"DATABASE_URL", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY", "OPENAI_API_KEY"}:
                 return {"ok": False, "error": "unexpected LiteLLM environment"}
             database_url = str(litellm_environment.get("DATABASE_URL") or "")
             if not database_url.startswith("postgresql://litellm:") or not database_url.endswith("@db:5432/litellm"):
@@ -363,11 +390,15 @@ class LiteLLMStackRuntime:
         except (IndexError, json.JSONDecodeError):
             return {"ok": False, "error": "Modell-Antwort ist kein gültiges JSON"}
         model_ids = payload.get("modelIds") if isinstance(payload.get("modelIds"), list) else []
+        normalized_model_ids = sorted({str(model_id or "").strip() for model_id in model_ids if str(model_id or "").strip()})
+        expected_models_present = all(model_id in normalized_model_ids for model_id in EXPECTED_MODEL_IDS)
         return {
-            "ok": payload.get("httpStatus") == 200,
+            "ok": payload.get("httpStatus") == 200 and expected_models_present,
             "httpStatus": payload.get("httpStatus"),
-            "modelCount": len(model_ids),
-            "modelIds": model_ids[:20],
+            "modelCount": len(normalized_model_ids),
+            "modelIds": normalized_model_ids[:20],
+            "expectedModelIds": list(EXPECTED_MODEL_IDS),
+            "expectedModelsPresent": expected_models_present,
         }
 
     def deploy(
@@ -392,8 +423,10 @@ class LiteLLMStackRuntime:
             }
 
         secret_values = self._existing_secret_values()
+        provider_key = self._read_owner_provider_key()
         env_payload = (
-            "\n".join(f"{name}={secret_values[name]}" for name in REQUIRED_SECRET_NAMES) + "\n"
+            "\n".join(f"{name}={secret_values[name]}" for name in REQUIRED_SECRET_NAMES)
+            + f"\nOPENAI_API_KEY={provider_key}\n"
         ).encode("utf-8")
         validation = self._validate_candidate(compose, config, env_payload)
         if not validation["ok"]:
@@ -421,6 +454,7 @@ class LiteLLMStackRuntime:
         self._write_atomic(self.deploy_root / "docker-compose.yml", compose, 0o640)
         self._write_atomic(self.deploy_root / "config.yaml", config, 0o640)
         self._write_atomic(self.deploy_root / ".env", env_payload, 0o600)
+        self._write_backend_master_key(secret_values["LITELLM_MASTER_KEY"])
 
         deployed = self._run(
             [
@@ -472,7 +506,8 @@ class LiteLLMStackRuntime:
             "network": NETWORK_NAME,
             "networkCreated": network_created,
             "templates": {"composeSha256": compose_sha, "configSha256": config_sha},
-            "secretsPresent": list(REQUIRED_SECRET_NAMES),
+            "secretsPresent": [*REQUIRED_SECRET_NAMES, "OPENAI_API_KEY"],
+            "backendMasterKeyFileReady": BACKEND_MASTER_KEY_PATH.is_file() and not BACKEND_MASTER_KEY_PATH.is_symlink(),
             "secretValuesExposed": False,
             "runtime": runtime,
             "readiness": readiness,

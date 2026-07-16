@@ -15,6 +15,7 @@ def _rendered_payload(root: Path, *, public_port: bool = False, command: list[st
             "DATABASE_URL": "postgresql://litellm:abcdefghijklmnop@db:5432/litellm",
             "LITELLM_MASTER_KEY": "sk-abcdefghijklmnop",
             "LITELLM_SALT_KEY": "sk-ponmlkjihgfedcba",
+            "OPENAI_API_KEY": "sk-proj-providerabcdefghijklmnop",
         },
         "networks": {"sovereign-private": None},
         "volumes": [
@@ -67,7 +68,7 @@ def test_fixed_litellm_candidate_passes_strict_rendered_policy(tmp_path: Path) -
     result = runtime._validate_candidate(
         b"services: {}\n",
         b"model_list: []\n",
-        b"POSTGRES_PASSWORD=abcdefghijklmnop\nLITELLM_MASTER_KEY=sk-abcdefghijklmnop\nLITELLM_SALT_KEY=sk-ponmlkjihgfedcba\n",
+        b"POSTGRES_PASSWORD=abcdefghijklmnop\nLITELLM_MASTER_KEY=sk-abcdefghijklmnop\nLITELLM_SALT_KEY=sk-ponmlkjihgfedcba\nOPENAI_API_KEY=sk-proj-providerabcdefghijklmnop\n",
     )
     assert result == {"ok": True, "status": "VALIDATED"}
     assert "abcdefghijklmnop" not in repr(result)
@@ -89,3 +90,37 @@ def test_litellm_candidate_blocks_command_override(tmp_path: Path) -> None:
     result = runtime._validate_candidate(b"services: {}\n", b"model_list: []\n", b"x=y\n")
     assert result["ok"] is False
     assert result["error"] == "unexpected LiteLLM command"
+
+
+def test_models_requires_both_phase_one_aliases(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        payload = {
+            "httpStatus": 200,
+            "modelIds": ["sovereign-fast", "sovereign-balanced"],
+        }
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
+
+    runtime = LiteLLMStackRuntime(
+        runner=runner,
+        template_root=str(tmp_path),
+        deploy_root=str(tmp_path / "deploy"),
+    )
+    result = runtime._models()
+    assert result["ok"] is True
+    assert result["expectedModelsPresent"] is True
+    assert result["modelIds"] == ["sovereign-balanced", "sovereign-fast"]
+
+
+def test_models_blocks_incomplete_phase_one_catalog(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        payload = {"httpStatus": 200, "modelIds": ["sovereign-fast"]}
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
+
+    runtime = LiteLLMStackRuntime(
+        runner=runner,
+        template_root=str(tmp_path),
+        deploy_root=str(tmp_path / "deploy"),
+    )
+    result = runtime._models()
+    assert result["ok"] is False
+    assert result["expectedModelsPresent"] is False

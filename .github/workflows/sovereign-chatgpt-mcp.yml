@@ -180,6 +180,7 @@ jobs:
               'mcp_host_command_status',
               'owner_approval_request_create',
               'owner_approval_request_status',
+              'owner_approval_widget_open',
               'controller_run_start',
               'controller_run_list',
               'controller_run_status',

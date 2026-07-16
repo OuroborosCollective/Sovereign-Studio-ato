@@ -571,6 +571,8 @@ INSTALL_STAGE="write_broker_environment"
   printf 'SOVEREIGN_LITELLM_TEMPLATE_ROOT=%s\n' "$LITELLM_TEMPLATE_DIR"
   printf 'SOVEREIGN_LITELLM_DEPLOY_ROOT=/opt/sovereign-litellm\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
+  printf 'LITELLM_BASE_URL=http://litellm:4000\n'
+  printf 'LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
 } > "$BROKER_ENV"
 chmod 0600 "$BROKER_ENV"

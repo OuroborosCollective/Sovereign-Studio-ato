@@ -503,6 +503,30 @@ def owner_approval_request_status(request_id: str) -> dict[str, Any]:
     return owner_input.status(request_id)
 
 
+@mcp.tool(
+    annotations=NETWORK_READ,
+    meta=OWNER_INPUT_TOOL_META,
+    structured_output=True,
+)
+def owner_approval_widget_open(request_id: str) -> types.CallToolResult:
+    """Render one existing owner request in the protected chat widget without reading its value."""
+    payload = owner_input.status(request_id)
+    return types.CallToolResult(
+        content=[
+            types.TextContent(
+                type="text",
+                text="Geschützte Owner-Eingabe ist geöffnet.",
+            )
+        ],
+        structuredContent=payload,
+        _meta={
+            "widget": "sovereign-owner-input",
+            "sensitiveValuesIncluded": False,
+            "protectedValueTransport": "direct_backend_https_only",
+        },
+    )
+
+
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def controller_run_start(mission: str, evidence: str = "") -> dict[str, Any]:
     """Start one owner-scoped persisted OpenAI Agents SDK run with bounded non-secret input."""

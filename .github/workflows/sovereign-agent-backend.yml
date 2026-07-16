@@ -49,6 +49,7 @@ jobs:
         run: |
           python -m py_compile \
             scripts/sovereign-backend/app.py \
+            scripts/sovereign-backend/litellm_runtime.py \
             scripts/sovereign-backend/runner.py \
             scripts/sovereign-backend/agent_runtime/*.py \
             scripts/sovereign-backend/agent_runtime/tools/*.py
@@ -242,6 +243,12 @@ jobs:
             if [ ! -f "$BACKEND_MANAGED_ENV" ]; then
               install -m 0600 /dev/null "$BACKEND_MANAGED_ENV"
             fi
+            MANAGED_ENV_TMP="$(mktemp)"
+            grep -Ev '^(LITELLM_BASE_URL|LITELLM_MASTER_KEY_FILE)=' "$BACKEND_MANAGED_ENV" > "$MANAGED_ENV_TMP" || true
+            printf 'LITELLM_BASE_URL=http://litellm:4000\n' >> "$MANAGED_ENV_TMP"
+            printf 'LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt\n' >> "$MANAGED_ENV_TMP"
+            install -m 0600 "$MANAGED_ENV_TMP" "$BACKEND_MANAGED_ENV"
+            rm -f "$MANAGED_ENV_TMP"
             if [ ! -d /opt/secure ]; then
               echo "Secure mount source is missing: /opt/secure" >&2
               exit 1
@@ -250,7 +257,7 @@ jobs:
               echo "Owner-managed mount source is missing or unsafe: $OWNER_INPUT_ROOT" >&2
               exit 1
             fi
-            for network in supabase_default areloria_arelorian-network; do
+            for network in supabase_default areloria_arelorian-network sovereign-private; do
               if ! docker network inspect "$network" >/dev/null 2>&1; then
                 echo "Required Docker network is missing: $network" >&2
                 exit 1
@@ -273,6 +280,7 @@ jobs:
               -p 127.0.0.1:8788:8787 \
               "$IMAGE_TAG"
             docker network connect areloria_arelorian-network sovereign-backend
+            docker network connect sovereign-private sovereign-backend
 
             HEALTH=""
             for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
@@ -301,6 +309,7 @@ jobs:
                   -p 127.0.0.1:8788:8787 \
                   "$PREVIOUS_IMAGE"
                 docker network connect areloria_arelorian-network sovereign-backend
+                docker network connect sovereign-private sovereign-backend
               fi
               exit 1
             fi

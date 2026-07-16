@@ -20,6 +20,7 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_input_widget.py" in workflow
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
+    assert "owner_approval_widget_open" in workflow
     assert "controller_run_start" in workflow
     assert "controller_run_list" in workflow
     assert "controller_run_status" in workflow
