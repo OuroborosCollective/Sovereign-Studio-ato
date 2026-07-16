@@ -4200,7 +4200,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
             || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.';
           appendGuardedWorkerText(assistantResponse);
           setLastAnswerWasLocal(false);
-          await recordOnlineLanguageObservation({
+          // Learning is a quarantined side-channel. It records its own evidence
+          // and errors, but must never hold the chat/action serialization lock or
+          // delay the next user request.
+          void recordOnlineLanguageObservation({
             prompt: submittedText,
             response: assistantResponse,
             modelId: interpretation.model,

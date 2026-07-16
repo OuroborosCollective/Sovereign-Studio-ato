@@ -671,12 +671,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("preserves a second composer message when another submit owns the lock", async () => {
+  it("keeps a pending learning side-channel from owning the next chat submit", async () => {
     const restoreUser = setRuntimeTestUser();
-    let rejectInference: ((reason?: unknown) => void) | null = null;
-    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
-      () => new Promise<never>((_resolve, reject) => { rejectInference = reject; }),
-    );
+    let rejectFirstInference: ((reason?: unknown) => void) | null = null;
+    const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference')
+      .mockImplementationOnce(
+        () => new Promise<never>((_resolve, reject) => { rejectFirstInference = reject; }),
+      )
+      .mockImplementation((input) => Promise.resolve(localAreInferenceResult(input.onlineAvailable)));
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       return runtimeSupportResponse(url, init)
@@ -693,17 +695,19 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: secondMessage } });
       fireEvent.click(sendButton());
 
-      expect(chatField().value).toBe(secondMessage);
+      await waitFor(() => expect(inferenceSpy).toHaveBeenCalledTimes(2));
+      expect(screen.getAllByText(secondMessage).length).toBeGreaterThanOrEqual(1);
+      expect(chatField().value).toBe('');
     } finally {
       await act(async () => {
-        rejectInference?.(new Error('Composer lock assertion completed.'));
+        rejectFirstInference?.(new Error('Learning side-channel assertion completed.'));
         await Promise.resolve();
       });
       restoreUser();
     }
   });
 
-  it("retries a pending write intent after a competing submit releases the lock", async () => {
+  it("resumes a pending write intent without waiting for a learning side-channel", async () => {
     const restoreUser = setRuntimeTestUser();
     let resolveInference: ((result: AreInferenceResult) => void) | null = null;
     const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
@@ -750,14 +754,8 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(screen.getByLabelText(/GitHub Token/i), { target: { value: fakeGitHubPat() } });
       fireEvent.click(screen.getByText('Übernehmen'));
       await waitFor(() => expect(screen.getByText(/GitHub-Zugang ist bereit/i)).toBeDefined());
-      expect(props.onStartAgent).not.toHaveBeenCalled();
-
-      await act(async () => {
-        resolveInference?.(localAreInferenceResult());
-        await Promise.resolve();
-      });
-
       await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+      expect(inferenceSpy).toHaveBeenCalledOnce();
       expect(props.onStartAgent.mock.calls[0][0]).toContain(pendingMessage);
     } finally {
       await act(async () => {
