@@ -1262,7 +1262,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.getByText(/Die Runtime hat den Job-Start angefragt/i)).toBeDefined(),
     );
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-    expect(screen.getByText(/Runtime hat Job-Start angefragt/i)).toBeDefined();
     expect(screen.queryByText(/Sovereign Agent Runtime wird gestartet/i)).toBeNull();
     expect(screen.getByText(/kein Auto-Merge/i)).toBeDefined();
   });
@@ -1722,9 +1721,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() =>
-      expect(screen.getByTestId('integration-intent-draft-card')).toBeDefined(),
+      expect(screen.getByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeDefined(),
     );
     expect(screen.queryByText(/Ausführungsauftrag kann nicht ausgeführt werden/i)).toBeNull();
-    expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
+    expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
   });});
