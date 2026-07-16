@@ -117,6 +117,7 @@ def test_task_lifecycle_preserves_history_without_false_active_blockers() -> Non
     assert '"taskLifecycle": "current" if is_current else "historical"' in controller
     assert '"isActiveBlocker": is_current and not run_terminal' in controller
     assert '"resolvedByTaskId": current_task_id if not is_current else None' in controller
+    assert '"READY_FOR_DRAFT_PR",' in controller.split("_TERMINAL_RUN_STATUSES", 1)[1].split("})", 1)[0]
     assert "JOIN LATERAL (" in controller
     assert "ORDER BY created_at DESC LIMIT 1" in controller
     assert "Historische Evidence, kein aktiver Blocker." in controller
