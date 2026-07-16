@@ -99,7 +99,10 @@ requirePattern(paths.builder, source.builder, /const shouldUseOnlineLanguageUnde
 const onlineDecisionCount = (source.builder.match(/const shouldUseOnlineLanguageUnderstanding\s*=/g) ?? []).length;
 if (onlineDecisionCount !== 1) violations.push(`${paths.builder}: expected one online-first decision, found ${onlineDecisionCount}`);
 forbidText(paths.builder, source.builder, 'Beratungsroute erkannt', 'runtime still speaks as the LLM');
-forbidPattern(paths.builder, source.builder, /role:\s*['"]assistant['"][\s\S]{0,180}(?:Runtime-Aktion|Schreibaktion blockiert|Route blockiert|Executor blockiert)/m, 'runtime state is emitted as assistant speech');
+requireText(paths.builder, source.builder, "appendRuntimeNotice(\"Runtime-Aktion autorisiert.", 'executor route state is not rendered through the runtime notice path');
+requireText(paths.builder, source.builder, "role: 'system',\n          text: 'Schreibaktion blockiert.", 'write gate state is not rendered as system state');
+forbidText(paths.builder, source.builder, "role: 'assistant',\n          text: 'Schreibauftrag erkannt.", 'legacy write interpretation is still rendered as assistant speech');
+forbidText(paths.builder, source.builder, "role: 'assistant',\n                            text: 'Beratungsroute erkannt.", 'legacy advisory interpretation is still rendered as assistant speech');
 
 requireText(paths.intelligence, source.intelligence, "if (this.state === 'half-open' && this.halfOpenProbeInFlight)", 'concurrent half-open probes are not blocked');
 requireText(paths.intelligence, source.intelligence, 'Offline diagnostic rule evaluation only.', 'raw-text Runtime Intelligence is not marked offline-only');

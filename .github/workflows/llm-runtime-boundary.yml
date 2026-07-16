@@ -77,5 +77,19 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install focused backend test dependencies
         run: python -m pip install --disable-pip-version-check pytest
-      - name: Run boundary gate and regressions
-        run: pnpm test:llm-runtime-boundary
+      - name: Run static boundary gate
+        run: node scripts/llm-runtime-boundary-gate.mjs
+
+      - name: Run focused TypeScript regressions
+        run: >-
+          pnpm exec vitest run
+          src/features/product/runtime/sovereignCapabilityRouter.test.ts
+          src/features/product/runtime/sovereignExecutorRuntime.test.ts
+          src/features/product/runtime/sovereignPresetDirectPatchRoute.test.ts
+          src/features/product/runtime/sovereignLiteLlmIntentRuntime.test.ts
+          src/runtime/sovereignExecutorBridgeRuntime.test.ts
+          src/runtime/sovereignInternalOperatorRuntime.test.ts
+          src/runtime/RuntimeIntelligence.test.ts
+
+      - name: Run focused backend regressions
+        run: python -m pytest backend/tests/test_agent_pattern_gateway.py backend/tests/test_are_inference_truth_contract.py -q
