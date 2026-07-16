@@ -90,8 +90,10 @@ forbidText(paths.operator, source.operator, 'DOC_TOKENS', 'internal operator int
 forbidText(paths.operator, source.operator, 'CODE_TOKENS', 'internal operator interprets code words');
 
 requireText(paths.liteLlm, source.liteLlm, 'readonly runtimeContext?: string;', 'LiteLLM request lacks runtime facts');
+requireText(paths.liteLlm, source.liteLlm, 'explicit_executor_request?: unknown;', 'LiteLLM schema lacks explicit executor evidence');
 requireText(paths.liteLlm, source.liteLlm, 'Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung)', 'runtime context is not fact-bounded');
 requireText(paths.builder, source.builder, 'fetchSovereignLiteLlmInterpretation({', 'Builder does not call the LiteLLM interpreter');
+requireText(paths.builder, source.builder, 'if (interpretation.explicitExecutorRequest)', 'explicit executor intent is not routed from structured LLM evidence');
 forbidText(paths.builder, source.builder, 'fetchDevChatWorkerInterpretation', 'Builder still calls the legacy language interpreter');
 forbidText(paths.builder, source.builder, 'classifySovereignExecutorIntent', 'Builder uses the unscoped raw-text classifier');
 requireText(paths.builder, source.builder, "appendChatLine({ role: 'system', text });", 'Builder lacks a dedicated runtime system notice');

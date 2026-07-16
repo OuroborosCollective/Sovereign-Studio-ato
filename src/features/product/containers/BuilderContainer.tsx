@@ -4280,6 +4280,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
                 intent: interpretation.intent,
                 actionTitle: interpretation.actionTitle,
                 assistantText: interpretation.assistantText,
+                explicitExecutorRequest: interpretation.explicitExecutorRequest,
                 confidence: interpretation.confidence,
               })
             : interpretation.assistantText,
@@ -4337,6 +4338,19 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             modelId: interpretation.model,
             intent: interpretation.intent,
           });
+          return;
+        }
+
+        if (interpretation.explicitExecutorRequest) {
+          const started = await startAgentFromText(submittedText, actionableIntent!);
+          if (started) {
+            if (interpretation.assistantText) {
+              appendGuardedWorkerText(interpretation.assistantText);
+            }
+            appendRuntimeNotice(
+              'Die Runtime hat den Job-Start angefragt. Ein Erfolg gilt erst mit bestätigter Job-, Patch- oder Draft-PR-Evidence.',
+            );
+          }
           return;
         }
 

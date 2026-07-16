@@ -33,6 +33,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
           intent: 'draft_pr',
           assistant_text: 'Ich habe den Auftrag verstanden. Die Runtime prüft jetzt die Gates.',
           action_title: 'Routing reparieren und Draft PR erstellen',
+          explicit_executor_request: true,
           confidence: 0.96,
           language: 'de',
         }) } }],
@@ -51,6 +52,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(result.interpretation).toMatchObject({
       mode: 'action',
       intent: 'draft_pr',
+      explicitExecutorRequest: true,
       model: 'openai/gpt-5.2-mini',
       fallbackUsed: true,
     });
@@ -85,6 +87,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
           intent: 'free_chat',
           assistant_text: 'Das LLM versteht die Sprache; die Runtime kontrolliert nur Aktionen.',
           action_title: '',
+          explicit_executor_request: false,
           confidence: 0.98,
           language: 'de',
         }) } }],
@@ -100,6 +103,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(result.ok).toBe(true);
     expect(result.interpretation?.model).toBe('deepseek-r1');
     expect(result.interpretation?.fallbackUsed).toBe(false);
+    expect(result.interpretation?.explicitExecutorRequest).toBe(false);
     const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(request.model).toBe('deepseek-r1');
   });

@@ -126,6 +126,7 @@ describe('devChatWorkerBridge', () => {
         intent: 'code_execution',
         assistant_text: 'Ich habe den Änderungsauftrag verstanden.',
         action_title: 'Mobile Chat-UX verbessern',
+        explicit_executor_request: false,
         confidence: 0.94,
         language: 'de',
       }) } }],
@@ -143,6 +144,7 @@ describe('devChatWorkerBridge', () => {
       mode: 'action',
       intent: 'code_execution',
       actionTitle: 'Mobile Chat-UX verbessern',
+      explicitExecutorRequest: false,
       confidence: 0.94,
       model: 'deepseek-r1',
     });

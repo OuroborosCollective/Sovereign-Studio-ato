@@ -99,14 +99,19 @@ function lastUserTextFromLiteLlmRequest(init?: RequestInit): string {
 
 function testIntentEnvelope(text: string, assistantText: string) {
   const lower = text.toLocaleLowerCase('de-DE');
-  const status = /arbeitet|fertig|status|schon|fortschritt|warum passiert nichts|wo steckt|executor|ausführung/.test(lower);
+  const status = /arbeitet|fertig|status|schon|fortschritt|warum passiert nichts|wo steckt|executor status|ausführungsstatus/.test(lower);
   const draftPr = /draft\s*pr|pull\s*request/.test(lower) && /mach|erstell|implement|reparier|fix|bring/.test(lower);
   const write = draftPr || /implement|reparier|fix|änder|aktualisier|verbesser|bau\b|erzeug/.test(lower);
+  const explicitExecutorRequest = draftPr || (
+    write
+    && /\b(sovereign agent|executor|starte|start|direkt ausführen|sofort ausführen)\b/.test(lower)
+  );
   return {
     mode: write ? 'action' : 'chat',
     intent: status ? 'status' : draftPr ? 'draft_pr' : write ? 'code_execution' : 'free_chat',
     assistant_text: assistantText,
     action_title: write ? text : '',
+    explicit_executor_request: explicitExecutorRequest,
     confidence: 0.96,
     language: 'de',
   };

@@ -131,6 +131,7 @@ export interface DevChatWorkerInterpretation {
   readonly intent: DevChatWorkerIntentKind;
   readonly assistantText: string;
   readonly actionTitle: string;
+  readonly explicitExecutorRequest: boolean;
   readonly confidence: number;
   readonly language: string;
   readonly model: string;
@@ -750,6 +751,7 @@ function parseWorkerInterpretationContent(
   const actionTitle = typeof record.action_title === 'string'
     ? record.action_title.trim()
     : '';
+  const explicitExecutorRequest = record.explicit_executor_request === true;
   const confidenceValue = typeof record.confidence === 'number'
     ? record.confidence
     : Number(record.confidence);
@@ -768,6 +770,7 @@ function parseWorkerInterpretationContent(
     intent: intent as DevChatWorkerIntentKind,
     assistantText,
     actionTitle,
+    explicitExecutorRequest,
     confidence,
     language,
     model,
@@ -795,8 +798,9 @@ export async function fetchDevChatWorkerInterpretation(args: {
     'Die Runtime entscheidet nach deiner Deutung separat über Repo-, GitHub-, Workspace- und Draft-PR-Gates.',
     'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
     'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","explicit_executor_request":false,"confidence":0.0,"language":"de|en|..."}',
     'Nutze mode=action nur wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
+    'Setze explicit_executor_request=true nur wenn der User ausdrücklich sofortige Ausführung, einen Executor/Sovereign Agent oder einen Draft-PR-Ausführungspfad verlangt; bei bloßer Änderungsabsicht bleibt es false.',
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',

@@ -30,6 +30,7 @@ interface SovereignIntentEnvelope {
   readonly intent?: unknown;
   readonly assistant_text?: unknown;
   readonly action_title?: unknown;
+  readonly explicit_executor_request?: unknown;
   readonly confidence?: unknown;
   readonly language?: unknown;
 }
@@ -119,6 +120,7 @@ function parseIntentEnvelope(
   const actionTitle = typeof payload.action_title === 'string'
     ? payload.action_title.trim()
     : '';
+  const explicitExecutorRequest = payload.explicit_executor_request === true;
   const confidenceValue = typeof payload.confidence === 'number'
     ? payload.confidence
     : Number(payload.confidence);
@@ -137,6 +139,7 @@ function parseIntentEnvelope(
     intent: intent as DevChatWorkerIntentKind,
     assistantText,
     actionTitle,
+    explicitExecutorRequest,
     confidence,
     language,
     model,
@@ -273,8 +276,9 @@ function buildMessages(args: SovereignLiteLlmIntentRequest): readonly DevChatWor
     'Die Runtime entscheidet separat über Repo-, GitHub-, Workspace-, Tool-, Test- und Draft-PR-Gates.',
     'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
     'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","explicit_executor_request":false,"confidence":0.0,"language":"de|en|..."}',
     'Nutze mode=action nur, wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
+    'Setze explicit_executor_request=true nur bei ausdrücklich gewünschter sofortiger Ausführung, Executor-/Sovereign-Agent-Nutzung oder einem Draft-PR-Ausführungspfad; bloße Änderungsabsicht bleibt false.',
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     'Bewerte die Gesamtbedeutung, nicht einzelne Schlüsselwörter.',
