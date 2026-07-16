@@ -31,6 +31,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
     assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
+    assert "SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE" in script
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
@@ -42,6 +43,12 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
     assert 'ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue' in worker_service
     assert '/opt/sovereign-owner-managed' in worker_service
+    assert '/opt/sovereign-litellm' in worker_service
+    assert '/opt/sovereign-backend' in worker_service
+    assert '/opt/gpt-tools' in worker_service
+    assert '/opt/code-server-46bq' in worker_service
+    assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 

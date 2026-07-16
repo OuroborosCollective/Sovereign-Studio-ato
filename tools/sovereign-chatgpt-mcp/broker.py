@@ -13,6 +13,7 @@ from typing import Any
 from admin_mode import PrivateAdminRuntime
 from command_contract import is_mutating_action
 from github_admin import GitHubAdminRuntime
+from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
 from policy import validate_container
 from self_update import SelfUpdateRuntime
@@ -38,6 +39,7 @@ class BrokerRuntime:
             "ghcr.io/ouroboroscollective/sovereign-backend",
         ).strip()
         self.operations = OperationsRuntime()
+        self.managed_compose = ManagedComposeRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
@@ -256,6 +258,13 @@ class BrokerRuntime:
             "rollback_release": lambda values: self.operations.rollback_release(
                 target_image_digest=str(values.get("target_image_digest") or ""),
                 confirmation_digest=str(values.get("confirmation_digest") or ""),
+            ),
+            "managed_compose_stack_plan": lambda values: self.managed_compose.plan(
+                stack_id=str(values.get("stack_id") or ""),
+            ),
+            "deploy_managed_compose_stack": lambda values: self.managed_compose.deploy(
+                stack_id=str(values.get("stack_id") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
             ),
         }
         handler = handlers.get(action)

@@ -13,6 +13,7 @@ MUTATING_ACTIONS = frozenset(
         "mcp_self_update_schedule",
         "deploy_verified_release",
         "rollback_release",
+        "deploy_managed_compose_stack",
     }
 )
 

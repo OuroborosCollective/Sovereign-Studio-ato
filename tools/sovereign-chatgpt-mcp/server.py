@@ -42,6 +42,8 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.extend(("repository_workflow_dispatch", "repository_rerun_failed_workflows"))
     if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
         capabilities.append("mcp_self_update")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() == "1":
+        capabilities.append("managed_compose_write")
     return capabilities
 
 
@@ -515,6 +517,22 @@ def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
     """Read bounded logs from one allowlisted Docker container through the local broker."""
     return broker.call("container_logs", {"container": container, "tail": tail})
+
+
+@mcp.tool(annotations=READ_ONLY)
+def managed_compose_stack_plan(stack_id: str) -> dict[str, Any]:
+    """Read template hashes and runtime evidence for one allowlisted managed Compose stack."""
+    return broker.call("managed_compose_stack_plan", {"stack_id": stack_id}, timeout=60)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def deploy_managed_compose_stack(stack_id: str, confirmation_sha256: str) -> dict[str, Any]:
+    """Deploy one allowlisted fixed Compose template after exact bundle-hash confirmation."""
+    return broker.call(
+        "deploy_managed_compose_stack",
+        {"stack_id": stack_id, "confirmation_sha256": confirmation_sha256},
+        timeout=720,
+    )
 
 
 @mcp.tool(annotations=NETWORK_READ)
