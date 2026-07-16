@@ -6156,7 +6156,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                             break;
                           }
                           addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
-                          void startAgentFromText(draft.originalText);
+                          void startAgentFromText(draft.originalText, intent);
                           break;
 
                         case 'workspace':
