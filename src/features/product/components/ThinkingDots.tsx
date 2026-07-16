@@ -4,6 +4,8 @@ import { C } from "./builderConstants";
 export function ThinkingDots() {
   return (
     <div
+      role="status"
+      aria-label="Sovereign denkt nach"
       style={{
         display: "flex",
         alignItems: "center",
