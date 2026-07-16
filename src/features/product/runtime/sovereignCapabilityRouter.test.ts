@@ -288,6 +288,7 @@ describe('Sovereign Capability Router', () => {
       expect(decision.blocker).toBe('package_required');
       expect(event.label).toBe('Nächste Route eingeplant');
       expect(event.state).toBe('queued');
+      expect(requiresGitHubAccess(decision)).toBe(false);
     });
 
     it('runs code-llm when a package already exists', () => {
