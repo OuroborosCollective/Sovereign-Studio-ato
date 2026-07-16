@@ -293,8 +293,13 @@ function buildRepoMissingDecision(intent: IntentClassification): CapabilityDecis
 }
 
 export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): CapabilityDecision {
-  const intent = classifyIntent(input.text);
-  const complexity = determineTaskComplexity(intent, input.text);
+  // Online language understanding is authoritative when it has been validated
+  // into the strict SovereignIntentInterpretation contract. The keyword-based
+  // classifier remains an offline fallback only. Action permission and runtime
+  // state are still decided exclusively below from deterministic evidence.
+  const intent = input.interpretedIntent?.intent ?? classifyIntent(input.text);
+  const complexity = input.interpretedIntent?.complexity
+    ?? determineTaskComplexity(intent, input.text);
   const blockers = detectBlockers(input);
   const explicitSovereignAgentIntent = hasExplicitAgentIntent(input.text);
 
@@ -706,7 +711,9 @@ export function requiresGitHubAccess(decision: CapabilityDecision): boolean {
     'sovereign-agent',
     'workspace-executor',
   ];
-  return githubRoutes.includes(decision.route) && decision.allowed;
+  return githubRoutes.includes(decision.route)
+    && decision.allowed
+    && !decision.blocker;
 }
 
 export function requiresExecutor(decision: CapabilityDecision): boolean {

@@ -99,6 +99,71 @@ describe('Sovereign Capability Router', () => {
     });
   });
 
+  describe('LLM interpretation and deterministic action gates', () => {
+    it('uses validated online semantics instead of misleading keyword matches', () => {
+      const decision = decideSovereignCapabilityRoute({
+        ...FULL_READY_STATE,
+        text: 'Erkläre mir, warum der alte Fix nicht funktioniert.',
+        interpretedIntent: {
+          intent: 'free_chat',
+          complexity: 'simple',
+          normalizedRequest: 'Explain why the previous fix failed.',
+          requiresWrite: false,
+          requiresDraftPr: false,
+          confidence: 0.96,
+          source: 'online_llm',
+          modelId: 'sovereign-intent-model',
+          requestId: '00000000-0000-4000-8000-000000000010',
+        },
+      });
+
+      expect(decision.route).toBe('worker-chat');
+      expect(decision.capability).toBe('free_chat');
+      expect(decision.allowed).toBe(true);
+    });
+
+    it('does not let an online interpretation bypass missing repository evidence', () => {
+      const decision = decideSovereignCapabilityRoute({
+        ...FULL_READY_STATE,
+        repoReady: false,
+        text: 'Bring das zu Ende.',
+        interpretedIntent: {
+          intent: 'draft_pr',
+          complexity: 'complex',
+          normalizedRequest: 'Finish the repair and create a Draft PR.',
+          requiresWrite: true,
+          requiresDraftPr: true,
+          confidence: 0.93,
+          source: 'online_llm',
+        },
+      });
+
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBe('repo_missing');
+      expect(decision.nextAction).toBe('load_repo');
+    });
+
+    it('does not let an online direct-patch interpretation bypass GitHub access', () => {
+      const decision = decideSovereignCapabilityRoute({
+        ...GITHUB_MISSING_STATE,
+        text: 'Mach die kleine Dokuänderung.',
+        interpretedIntent: {
+          intent: 'direct_patch',
+          complexity: 'simple',
+          normalizedRequest: 'Apply the small documentation change.',
+          requiresWrite: true,
+          requiresDraftPr: false,
+          confidence: 0.9,
+          source: 'online_llm',
+        },
+      });
+
+      expect(decision.route).toBe('direct-github-patch');
+      expect(decision.allowed).toBe(false);
+      expect(decision.blocker).toBe('github_access_missing');
+    });
+  });
+
   describe('direct patch routing', () => {
     it('routes simple README changes to direct GitHub patch when available', () => {
       const decision = decideSovereignCapabilityRoute({
@@ -288,6 +353,7 @@ describe('Sovereign Capability Router', () => {
       expect(decision.blocker).toBe('package_required');
       expect(event.label).toBe('Nächste Route eingeplant');
       expect(event.state).toBe('queued');
+      expect(requiresGitHubAccess(decision)).toBe(false);
     });
 
     it('runs code-llm when a package already exists', () => {

@@ -89,10 +89,30 @@ export interface CapabilityDecision {
 }
 
 /**
+ * Structured language understanding produced by the online LLM route.
+ * The runtime does not infer actions from this object blindly: it only uses the
+ * semantic classification as input and still validates every capability,
+ * permission, state transition and evidence gate deterministically.
+ */
+export interface SovereignIntentInterpretation {
+  readonly intent: IntentClassification;
+  readonly complexity: TaskComplexity;
+  readonly normalizedRequest: string;
+  readonly assistantMessage?: string;
+  readonly requiresWrite: boolean;
+  readonly requiresDraftPr: boolean;
+  readonly confidence: number;
+  readonly source: 'online_llm' | 'offline_fallback';
+  readonly modelId?: string;
+  readonly requestId?: string;
+}
+
+/**
  * Input for capability routing decision.
  */
 export interface CapabilityRouterInput {
   readonly text: string;
+  readonly interpretedIntent?: SovereignIntentInterpretation;
   readonly repoReady: boolean;
   readonly githubAccessState: 'missing' | 'requested' | 'validating' | 'ready' | 'invalid';
   readonly agentReady: boolean;

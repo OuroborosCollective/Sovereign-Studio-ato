@@ -126,6 +126,7 @@ import {
   buildCapabilityRouteActionEvent,
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
+import { resolveSovereignIntent } from "../runtime/sovereignIntentInterpretationRuntime";
 import type {
   SovereignAgentConfig,
   SovereignAgentJobSnapshot,
@@ -282,7 +283,6 @@ import {
   createChatLineId,
   isFollowUpWhyQuestion,
   isLocalCompletionStatusQuestion,
-  isWriteIntent,
   phaseFromSignalAndConditions,
   sameConditions,
   sameRecord,
@@ -387,7 +387,6 @@ const IDEA_OPTIONS: IdeaOption[] = [
 // Intent detection from workerIntentDetector module
 import {
   isSovereignAgentExecutionIntent,
-  isCodeGenerationIntent,
   isWorkerRetryIntent,
   isWorkerDiagnosticQuestion,
   isDelegationIntent,
@@ -3980,14 +3979,70 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       return;
     }
 
+    // Online language understanding owns semantic interpretation. The runtime
+    // remains authoritative for permissions, action selection, state transitions
+    // and evidence. When the online route is unavailable, the existing keyword
+    // classifier is used only as an explicitly labelled offline fallback.
+    const interpretedIntent = await resolveSovereignIntent({
+      text: submittedText,
+      repositoryContext: effectiveRepoReason,
+      recentMessages: chatHistory.slice(-6).map((message) => ({
+        role: message.role,
+        text: message.text,
+      })),
+      fetchImpl: globalThis.fetch,
+    });
+    appendActionEvent({
+      kind: 'intent_detected',
+      route: interpretedIntent.source === 'online_llm' ? 'worker' : 'runtime',
+      label: interpretedIntent.source === 'online_llm'
+        ? 'Intent durch Online-LLM verstanden'
+        : 'Intent durch Offline-Fallback eingeordnet',
+      detail: `${interpretedIntent.intent} · ${interpretedIntent.complexity} · confidence=${interpretedIntent.confidence.toFixed(2)}`,
+      state: interpretedIntent.intent === 'unknown' ? 'blocked' : 'done',
+    });
+    addLog(
+      interpretedIntent.source === 'online_llm' ? 'info' : 'warn',
+      `Intent Interpreter: source=${interpretedIntent.source} intent=${interpretedIntent.intent} complexity=${interpretedIntent.complexity}`,
+      'router',
+    );
+
+    // Pure conversation is answered by the same online LLM that understood the
+    // message. This prevents a second legacy Worker call and keeps runtime rules
+    // out of natural-language interpretation. Claims are still checked against
+    // the current runtime snapshot before display.
+    if (
+      interpretedIntent.source === 'online_llm'
+      && interpretedIntent.intent === 'free_chat'
+      && interpretedIntent.assistantMessage
+    ) {
+      const claimCheck = checkChatClaim(interpretedIntent.assistantMessage, agentWorkSnapshot);
+      const responseText = claimCheck.allowed || !claimCheck.honestFallback
+        ? interpretedIntent.assistantMessage
+        : `${interpretedIntent.assistantMessage}\n\n_[Sovereign: ${claimCheck.honestFallback}]_`;
+      appendActionEvent({
+        kind: 'llm_response_received',
+        route: 'worker',
+        label: 'Online-LLM-Antwort empfangen',
+        detail: `Modell: ${interpretedIntent.modelId ?? 'belegte Backend-Route'}`,
+        state: 'done',
+      });
+      appendChatLine({ role: 'assistant', text: responseText });
+      setLastAnswerWasLocal(false);
+      if (!claimCheck.allowed && claimCheck.violations.length > 0) {
+        addLog('warn', `chatClaimGuard: ${claimCheck.violations.join(', ')}`, 'router');
+      }
+      return;
+    }
+
     // ── Issue #520: Integration Intent Draft Detection
-    // Normal non-question inputs with a connected repo are treated as potential
-    // integration/implementation requests. Show a draft card for confirmation.
-    // BUT: Explicit executor commands and delegation intents bypass the draft card
-    // to maintain backward compatibility with existing test expectations.
-    // Fix: Safe-analysis presets are read-only and must never create an integration draft.
+    // Only a semantically interpreted write request may open an integration
+    // draft. A normal statement or conversation must not become an action merely
+    // because it contains one of the legacy implementation keywords.
+    // Explicit executor commands and delegation intents still bypass the card.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     if (effectiveRepoReady &&
+        interpretedIntent.requiresWrite &&
         !options.resumePendingIntent &&
         !isSafeAnalysisPreset &&
         !isSovereignAgentExecutionIntent(submittedText) &&
@@ -4015,6 +4070,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // BuilderContainer shows the decision; it does not create it.
     const capabilityRouterInput: CapabilityRouterInput = {
       text: submittedText,
+      interpretedIntent,
       repoReady: effectiveRepoReady,
       githubAccessState: effectiveGitHubAccessState,
       agentReady: agentReady ?? false,
@@ -4036,8 +4092,20 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     );
     appendActionEvent(routeActionEvent);
 
-    // Log routing decision for telemetry
-    addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
+    // Log the actual execution phase, not an ambiguous allowed=true value next
+    // to a recoverable blocker. A queued prerequisite is not execution success.
+    const capabilityPhase = capabilityDecision.blocker
+      ? capabilityDecision.allowed
+        ? 'queued_prerequisite'
+        : 'blocked'
+      : capabilityDecision.allowed
+        ? 'executable'
+        : 'blocked';
+    addLog(
+      "info",
+      `Capability Router: route=${capabilityDecision.route} phase=${capabilityPhase} blocker=${capabilityDecision.blocker ?? 'none'} next=${capabilityDecision.nextAction}`,
+      "router",
+    );
 
     // ── Issue #502: Blocked capability decisions stop legacy routing.
     // Recoverable blockers persist the original intent and wait for real repo
@@ -4217,7 +4285,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // sent straight to the advisory Worker chat.
     if (
       !advisoryWorkerRoute
-      && isWriteIntent(submittedText)
+      && interpretedIntent.requiresWrite
       && !isSovereignAgentExecutionIntent(submittedText)
     ) {
       if (!effectiveRepoReady) {
@@ -4570,7 +4638,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       return;
     }
 
-    if (!advisoryWorkerRoute && !isSafeAnalysisPreset && isCodeGenerationIntent(submittedText)) {
+    if (!advisoryWorkerRoute && !isSafeAnalysisPreset && interpretedIntent.intent === 'code_generation') {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
         reason: 'Code-Auftrag erkannt; Code-LLM/Worker erzeugt Antwort oder Patchvorschlag.',
@@ -4586,8 +4654,8 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
     if (
       !advisoryWorkerRoute
       && !isSafeAnalysisPreset
-      && isWriteIntent(submittedText)
-      && !isCodeGenerationIntent(submittedText)
+      && interpretedIntent.requiresWrite
+      && interpretedIntent.intent !== 'code_generation'
     ) {
       appendActionEvent(buildRouteSelectionEvent({
         route: 'code-llm',
