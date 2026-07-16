@@ -74,6 +74,7 @@ _ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2
 class StoredAgentRun:
     run_id: str
     user_id: str
+    job_id: str | None
     session_key: str
     status: str
     source: str
@@ -329,6 +330,112 @@ def create_agent_run(
     }
 
 
+def link_agent_run_job(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    job_id: str,
+    trace_id: str,
+    workspace_id: str | None,
+) -> dict[str, str]:
+    """Link one persisted RECEIVED run to a real Agent Job with bounded handoff evidence."""
+
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_job_id = _validated_id(job_id, "job_id")
+    normalized_trace_id = _validated_id(trace_id, "trace_id")
+    normalized_workspace = _bounded(workspace_id, 240) or None
+    evidence_id = _new_id("evidence")
+    event_id = _new_id("event")
+    reason = "The routed LLM selected repository execution and the run was linked to a real Agent Job."
+    next_action = "CREATE_SIX_AGENT_TASKS"
+    payload = {
+        "jobId": normalized_job_id,
+        "workspaceId": normalized_workspace,
+        "draftPrOnly": True,
+        "autoMerge": False,
+    }
+    payload_json = _json(payload)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (
+                    evidence_id, run_id, task_id, agent_id, source, kind,
+                    summary, sha256, payload
+                ) VALUES (%s, %s, NULL, 'orchestrator', 'agents-sdk',
+                          'implementation_handoff', %s, %s, %s::jsonb)
+                """,
+                (
+                    evidence_id,
+                    normalized_run_id,
+                    reason,
+                    _digest_text(payload_json),
+                    payload_json,
+                ),
+            )
+            cur.execute(
+                """
+                UPDATE agent_runs
+                SET job_id = %s,
+                    status = 'PLANNED',
+                    source = 'agents-sdk',
+                    evidence_id = %s,
+                    trace_id = %s,
+                    reason = %s,
+                    next_action = %s
+                WHERE run_id = %s AND user_id = %s::uuid
+                  AND (job_id IS NULL OR job_id = %s)
+                RETURNING run_id
+                """,
+                (
+                    normalized_job_id,
+                    evidence_id,
+                    normalized_trace_id,
+                    reason,
+                    next_action,
+                    normalized_run_id,
+                    str(user_id),
+                    normalized_job_id,
+                ),
+            )
+            if not cur.fetchone():
+                raise LookupError("agent run could not be linked to the implementation job")
+            cur.execute(
+                """
+                INSERT INTO agent_events (
+                    event_id, run_id, task_id, agent_id, type, status, source,
+                    summary, evidence_id, trace_id, next_action
+                ) VALUES (%s, %s, NULL, 'orchestrator', 'implementation_job_linked',
+                          'PLANNED', 'agents-sdk', %s, %s, %s, %s)
+                """,
+                (
+                    event_id,
+                    normalized_run_id,
+                    reason,
+                    evidence_id,
+                    normalized_trace_id,
+                    next_action,
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+    return {
+        "runId": normalized_run_id,
+        "jobId": normalized_job_id,
+        "status": "PLANNED",
+        "source": "agents-sdk",
+        "evidenceId": evidence_id,
+        "traceId": normalized_trace_id,
+        "reason": reason,
+        "nextAction": next_action,
+    }
+
+
 def record_agent_stage_event(
     conn: Any,
     *,
@@ -435,6 +542,33 @@ def record_agent_stage_event(
                     normalized_next_action,
                 ),
             )
+            if task_id:
+                cur.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET status = %s,
+                        source = 'agents-sdk',
+                        evidence_id = %s,
+                        reason = %s,
+                        next_action = %s,
+                        completed_at = CASE
+                            WHEN %s IN ('COMPLETED', 'FAILED_FINAL', 'DRAFT_PR_CREATED') THEN NOW()
+                            WHEN %s IN ('RUNNING', 'VERIFYING', 'WAITING_FOR_AGENT', 'WAITING_FOR_TOOL') THEN NULL
+                            ELSE completed_at
+                        END
+                    WHERE task_id = %s AND run_id = %s
+                    """,
+                    (
+                        normalized_status,
+                        evidence_id,
+                        normalized_summary,
+                        normalized_next_action,
+                        normalized_status,
+                        normalized_status,
+                        task_id,
+                        normalized_run_id,
+                    ),
+                )
         conn.commit()
     except Exception:
         rollback = getattr(conn, "rollback", None)
@@ -1004,6 +1138,7 @@ def create_agent_task(
     timeout_seconds: int = 900,
     max_tool_calls: int = 20,
     max_retries: int = 2,
+    commit: bool = True,
 ) -> None:
     normalized_status = _validated_status(status)
     normalized_source = _validated_source(source)
@@ -1047,6 +1182,134 @@ def create_agent_task(
                     int(max_retries),
                 ),
             )
+        if commit:
+            conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+
+
+def start_agent_tool_call(
+    conn: Any,
+    *,
+    run_id: str,
+    task_id: str,
+    agent_id: str,
+    tool_name: str,
+    arguments: Mapping[str, object],
+    mutating: bool,
+) -> str:
+    """Reserve one bounded task tool call and persist only its argument digest."""
+
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_task_id = _validated_id(task_id, "task_id")
+    normalized_agent = _bounded(agent_id, 160)
+    normalized_tool = _bounded(tool_name, 160)
+    if not normalized_agent or not normalized_tool:
+        raise ValueError("agent tool call requires agent and tool names")
+    tool_call_id = _new_id("tool-call")
+    arguments_digest = _digest_text(_json(dict(arguments)))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE agent_tasks
+                SET tool_call_count = tool_call_count + 1,
+                    status = 'RUNNING',
+                    reason = %s,
+                    next_action = 'WAIT_FOR_TOOL_RESULT'
+                WHERE task_id = %s AND run_id = %s
+                  AND tool_call_count < max_tool_calls
+                RETURNING task_id
+                """,
+                (
+                    f"Agent started bounded tool {normalized_tool}.",
+                    normalized_task_id,
+                    normalized_run_id,
+                ),
+            )
+            if not cur.fetchone():
+                raise RuntimeError("agent task tool-call budget is exhausted or task is missing")
+            cur.execute(
+                """
+                INSERT INTO agent_tool_calls (
+                    tool_call_id, run_id, task_id, agent_id, tool_name,
+                    arguments_digest, status, mutating
+                ) VALUES (%s, %s, %s, %s, %s, %s, 'RUNNING', %s)
+                """,
+                (
+                    tool_call_id,
+                    normalized_run_id,
+                    normalized_task_id,
+                    normalized_agent,
+                    normalized_tool,
+                    arguments_digest,
+                    bool(mutating),
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+    return tool_call_id
+
+
+def finish_agent_tool_call(
+    conn: Any,
+    *,
+    tool_call_id: str,
+    status: str,
+    result_summary: Mapping[str, object],
+    failure_family: str | None = None,
+) -> None:
+    """Finish one tool call with a result digest; raw tool output is never stored here."""
+
+    normalized_id = _validated_id(tool_call_id, "tool_call_id")
+    normalized_status = str(status or "").strip().upper()
+    if normalized_status not in {"COMPLETED", "BLOCKED", "FAILED_RECOVERABLE", "FAILED_FINAL"}:
+        raise ValueError("unsupported agent tool-call result status")
+    result_digest = _digest_text(_json(dict(result_summary)))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE agent_tool_calls
+                SET status = %s,
+                    result_digest = %s,
+                    failure_family = %s,
+                    finished_at = NOW()
+                WHERE tool_call_id = %s AND status = 'RUNNING'
+                RETURNING task_id
+                """,
+                (
+                    normalized_status,
+                    result_digest,
+                    _bounded(failure_family, 160) or None,
+                    normalized_id,
+                ),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise LookupError("running agent tool call was not found")
+            if normalized_status in {"BLOCKED", "FAILED_RECOVERABLE", "FAILED_FINAL"}:
+                cur.execute(
+                    """
+                    UPDATE agent_tasks
+                    SET status = %s,
+                        reason = %s,
+                        next_action = 'REVIEW_TOOL_FAILURE_EVIDENCE'
+                    WHERE task_id = %s
+                    """,
+                    (
+                        normalized_status,
+                        f"Bounded tool call ended with {normalized_status}.",
+                        row["task_id"],
+                    ),
+                )
         conn.commit()
     except Exception:
         rollback = getattr(conn, "rollback", None)
@@ -1100,6 +1363,7 @@ def stored_run_from_row(row: Mapping[str, Any]) -> StoredAgentRun:
     return StoredAgentRun(
         run_id=str(row.get("run_id") or ""),
         user_id=str(row.get("user_id") or ""),
+        job_id=str(row.get("job_id") or "") or None,
         session_key=str(row.get("session_key") or ""),
         status=str(row.get("status") or ""),
         source=str(row.get("source") or ""),
@@ -1115,6 +1379,27 @@ def stored_run_from_row(row: Mapping[str, Any]) -> StoredAgentRun:
         lease_active=bool(row.get("lease_active")),
         resume_task_id=str(row.get("resume_task_id") or "") or None,
     )
+
+
+def read_agent_task_ids(conn: Any, *, run_id: str) -> dict[str, str]:
+    """Return the latest persisted task id for each agent in one run."""
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (agent_id) agent_id, task_id
+            FROM agent_tasks
+            WHERE run_id = %s
+            ORDER BY agent_id, created_at DESC
+            """,
+            (_validated_id(run_id, "run_id"),),
+        )
+        rows = cur.fetchall()
+    return {
+        str(row["agent_id"]): str(row["task_id"])
+        for row in rows
+        if row.get("agent_id") and row.get("task_id")
+    }
 
 
 def read_agent_run(conn: Any, *, user_id: str, run_id: str) -> StoredAgentRun | None:
