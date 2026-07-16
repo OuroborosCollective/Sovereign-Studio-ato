@@ -42,7 +42,9 @@ class FakeCursor:
             if params[1]:
                 self.conn.jobs[job_id]["workspace_id"] = params[1]
             if params[7]:
-                self.conn.jobs[job_id]["blocker"] = params[7]
+                self.conn.jobs[job_id]["blocker"] = None
+            elif params[8]:
+                self.conn.jobs[job_id]["blocker"] = params[8]
 
     def fetchone(self):
         return self.last_result if isinstance(self.last_result, dict) else None

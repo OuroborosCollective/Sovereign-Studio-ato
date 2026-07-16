@@ -72,7 +72,9 @@ class FakeCursor:
             if params[6]:
                 self.conn.jobs[job_id]["draft_pr_url"] = params[6]
             if params[7]:
-                self.conn.jobs[job_id]["blocker"] = params[7]
+                self.conn.jobs[job_id]["blocker"] = None
+            elif params[8]:
+                self.conn.jobs[job_id]["blocker"] = params[8]
         elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS") and "AND JOB_ID" in normalized:
             user_id, job_id = params
             row = self.conn.jobs.get(job_id)
@@ -284,6 +286,7 @@ def test_cleanup_terminal_job_sets_cleaned(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.get_json()["status"] == "cleaned"
     assert conn.jobs["agent-1"]["status"] == "cleaned"
+    assert conn.jobs["agent-1"]["blocker"] is None
     assert not (tmp_path / "agent-1").exists()
 
 
