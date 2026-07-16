@@ -3051,6 +3051,82 @@ export function BuilderContainer({
     appendChatLine({ role: 'assistant', text: guardedText });
   }, [addLog, agentWorkSnapshot, appendChatLine]);
 
+  const recordOnlineLanguageObservation = useCallback(async (input: {
+    readonly prompt: string;
+    readonly response: string;
+    readonly modelId: string;
+    readonly intent: DevChatWorkerIntentKind;
+  }): Promise<void> => {
+    if (!authUser || !input.response.trim()) return;
+    try {
+      const inference = await evaluateAreInference({
+        prompt: input.prompt,
+        repository: buildAreRepositoryState({
+          owner: chatRepoSnapshot?.owner,
+          repo: chatRepoSnapshot?.repo,
+          branch: chatRepoSnapshot?.branch,
+          repositoryRevision: chatRepoSnapshot?.treeSha,
+          files: chatRepoSnapshot?.files ?? [],
+        }),
+        onlineAvailable: true,
+        limit: 5,
+      });
+      const transition = emitAreStateTransition(arePreviousStateRef.current, inference);
+      arePreviousStateRef.current = {
+        stateHash: inference.stateHash,
+        state: inference.state,
+      };
+      if (transition.changed) {
+        addLog(
+          'info',
+          `ARE-State geändert: ${transition.changeKinds.join(', ')} · ${transition.currentStateHash.slice(0, 12)}`,
+          'pattern',
+        );
+      }
+
+      const quarantine = await quarantineAreResponse({
+        prompt: input.prompt,
+        response: input.response,
+        stateHash: inference.stateHash,
+        adapter: inference.adapter,
+        modelId: input.modelId,
+        metadata: {
+          repository: currentRepositoryTargetKey,
+          intent: input.intent,
+          source: 'litellm_online_language_observation',
+          knowledgeIds: inference.selectedKnowledgeIds,
+          patternIds: inference.selectedPatternIds,
+        },
+      });
+      appendActionEvent({
+        kind: 'context_collected',
+        route: 'runtime',
+        label: quarantine.duplicate
+          ? 'Online-Beobachtung bereits quarantänisiert'
+          : 'Online-Beobachtung quarantänisiert',
+        detail: quarantine.learningState === 'pending_evidence'
+          ? 'Noch kein gelerntes Muster: Der Kandidat wartet auf akzeptierte Runtime-Evidence.'
+          : `Bestehender evidenzgeprüfter Zustand: ${quarantine.candidate.status}.`,
+        state: 'done',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Online-Lernbeobachtung nicht gespeichert',
+        detail: message,
+        kind: 'failed',
+      }));
+      addLog('warn', `ARE Online-Beobachtung fehlgeschlagen: ${message}`, 'pattern');
+    }
+  }, [
+    addLog,
+    appendActionEvent,
+    authUser,
+    chatRepoSnapshot,
+    currentRepositoryTargetKey,
+  ]);
+
   // ── Issue #557: Show session restore age on startup
   useEffect(() => {
     const snapshot = loadSessionMemory(localStorage);
@@ -4115,10 +4191,16 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         }
 
         if (!isAction) {
-          appendGuardedWorkerText(
-            interpretation.assistantText || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.',
-          );
+          const assistantResponse = interpretation.assistantText
+            || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.';
+          appendGuardedWorkerText(assistantResponse);
           setLastAnswerWasLocal(false);
+          await recordOnlineLanguageObservation({
+            prompt: submittedText,
+            response: assistantResponse,
+            modelId: interpretation.model,
+            intent: interpretation.intent,
+          });
           return;
         }
 

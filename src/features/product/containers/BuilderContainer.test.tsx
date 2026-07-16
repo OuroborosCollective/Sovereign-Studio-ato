@@ -72,10 +72,86 @@ function authBootstrapResponse(): Response {
   return jsonResponse({ error: "not authenticated" }, 401);
 }
 
+const TEST_LITELLM_MODEL = 'deepseek-r1';
+
+function liteLlmRouteCatalogResponse(): Response {
+  return jsonResponse({
+    routes: [{
+      id: 'test-chat-route',
+      defaultModelId: TEST_LITELLM_MODEL,
+      enabled: true,
+    }],
+  });
+}
+
+function lastUserTextFromLiteLlmRequest(init?: RequestInit): string {
+  if (typeof init?.body !== 'string') return '';
+  try {
+    const payload = JSON.parse(init.body) as {
+      readonly messages?: readonly { readonly role?: unknown; readonly content?: unknown }[];
+    };
+    const message = [...(payload.messages ?? [])].reverse().find((entry) => entry.role === 'user');
+    return typeof message?.content === 'string' ? message.content : '';
+  } catch {
+    return '';
+  }
+}
+
+function testIntentEnvelope(text: string, assistantText: string) {
+  const lower = text.toLocaleLowerCase('de-DE');
+  const status = /arbeitet|fertig|status|schon|fortschritt|warum passiert nichts|wo steckt|executor|ausführung/.test(lower);
+  const draftPr = /draft\s*pr|pull\s*request/.test(lower) && /mach|erstell|implement|reparier|fix|bring/.test(lower);
+  const write = draftPr || /implement|reparier|fix|änder|aktualisier|verbesser|bau\b|erzeug/.test(lower);
+  return {
+    mode: write ? 'action' : 'chat',
+    intent: status ? 'status' : draftPr ? 'draft_pr' : write ? 'code_execution' : 'free_chat',
+    assistant_text: assistantText,
+    action_title: write ? text : '',
+    confidence: 0.96,
+    language: 'de',
+  };
+}
+
+async function normalizeLiteLlmMockResponse(
+  response: Response,
+  userText: string,
+): Promise<Response> {
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+    return response;
+  }
+  const payload = await response.clone().json() as {
+    readonly choices?: readonly { readonly message?: { readonly content?: unknown } }[];
+    readonly model?: unknown;
+  };
+  const content = payload.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') return response;
+  try {
+    const parsed = JSON.parse(content) as { readonly mode?: unknown };
+    if (parsed.mode === 'chat' || parsed.mode === 'action') return response;
+  } catch {
+    // Legacy test replies are wrapped below into the strict LiteLLM intent envelope.
+  }
+  return jsonResponse({
+    ...payload,
+    model: typeof payload.model === 'string' ? payload.model : TEST_LITELLM_MODEL,
+    choices: [{ message: { content: JSON.stringify(testIntentEnvelope(userText, content)) } }],
+  });
+}
+
 function mockFetchSequence(...responses: Array<Response | (() => Response | Promise<Response>)>) {
   const queue = [...responses];
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
+    const url = requestUrl(input);
+    if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+    if (url.includes('/api/llm/chat')) {
+      const next = queue.shift();
+      const userText = lastUserTextFromLiteLlmRequest(init);
+      const response = next
+        ? typeof next === 'function' ? await next() : next
+        : jsonResponse({ choices: [{ message: { content: 'Worker Antwort aus Cloudflare Route.' } }] });
+      return normalizeLiteLlmMockResponse(response, userText);
+    }
     const next = queue.shift();
     if (!next) return jsonResponse({ choices: [{ message: { content: "Worker Antwort aus Cloudflare Route." } }] });
     return typeof next === "function" ? next() : next;
@@ -104,18 +180,18 @@ function fakeGitHubPat(): string {
   ].join('');
 }
 
-function workerHealthResponse(ok = true): Response {
-  return jsonResponse({
-    ok,
-    provider: 'sovereign-llm-bridge',
-    gateway: 'gatter',
-    model: 'health-evidence-model',
-    upstreamConfigured: ok,
-    secretConfigured: ok,
-  }, ok ? 200 : 503);
-}
-
-function runtimeSupportResponse(url: string): Response | null {
+function runtimeSupportResponse(url: string, init?: RequestInit): Response | null {
+  if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+  if (url.includes('/api/llm/chat')) {
+    const userText = lastUserTextFromLiteLlmRequest(init);
+    return jsonResponse({
+      model: TEST_LITELLM_MODEL,
+      choices: [{ message: { content: JSON.stringify(testIntentEnvelope(
+        userText,
+        'Worker response must remain pending.',
+      )) } }],
+    });
+  }
   if (url.includes('/api/toolchain/user-tools')) {
     return jsonResponse({ tools: [], allowed_repos: [], rules: {} });
   }
@@ -555,67 +631,23 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(rtButton).toHaveAttribute("title", "Runtime Quelle");
     fireEvent.click(rtButton);
     expect(screen.getByText("Runtime Quelle")).toBeDefined();
-    expect(screen.getByText("Cloudflare Worker nicht geprüft")).toBeDefined();
+    expect(screen.getByText("LLM Runtime nicht geprüft")).toBeDefined();
     expect(screen.getByText("Noch keine Health- oder Response-Evidence für diese Sitzung.")).toBeDefined();
     expect(screen.getByText("Worker KV konfiguriert")).toBeDefined();
     expect(screen.getByText("Modellkatalog konfiguriert")).toBeDefined();
     expect(screen.getByText("Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
   });
 
-  it("promotes the Worker source only after successful session health evidence", async () => {
-    const originalRefreshUser = useUserStore.getState().refreshUser;
+  it("promotes the LLM runtime source only after a successful LiteLLM response", async () => {
+    const restoreUser = setRuntimeTestUser();
     let rejectInference: ((reason?: unknown) => void) | null = null;
     vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
       () => new Promise<never>((_resolve, reject) => { rejectInference = reject; }),
     );
-    useUserStore.setState({
-      user: {
-        id: 'runtime-health-user',
-        email: 'runtime-health@example.com',
-        displayName: 'Runtime Health',
-        role: 'user',
-        credits: 100,
-        subscriptionStatus: 'free',
-        isBanned: false,
-        createdAt: 1,
-      },
-      refreshUser: vi.fn(async () => undefined),
-    });
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (url.endsWith('/health')) {
-        return jsonResponse({
-          ok: true,
-          provider: 'sovereign-llm-bridge',
-          gateway: 'gatter',
-          model: 'health-evidence-model',
-          upstreamConfigured: true,
-          secretConfigured: true,
-        });
-      }
-      if (url.includes('/api/toolchain/user-tools')) {
-        return jsonResponse({ tools: [], allowed_repos: [], rules: {} });
-      }
-      if (url.includes('/api/toolchain/universal/manifest')) {
-        return jsonResponse({
-          name: 'test-universal-toolchain',
-          version: 'test',
-          runtime: 'embedded',
-          tools: [],
-          policy: {
-            autoLoad: true,
-            pushToMain: false,
-            draftPrOnly: true,
-            confirmRequired: true,
-            arbitraryShell: false,
-            directProductionRunner: false,
-            directGithubToken: false,
-            auditEvidence: true,
-          },
-        });
-      }
-      if (url.includes('/api/toolchain/skills/list')) return jsonResponse({ skills: [] });
-      return jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
+      return runtimeSupportResponse(url, init)
+        ?? jsonResponse({ choices: [{ message: { content: 'unused' } }] });
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -624,15 +656,15 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Was bedeutet Runtime-Evidence?' } });
       fireEvent.click(sendButton());
 
-      await waitFor(() =>
-        expect(fetchMock.mock.calls.some(([input]) => requestUrl(input as RequestInfo | URL).endsWith('/health'))).toBe(true),
-      );
+      await waitFor(() => expect(fetchMock.mock.calls.some(([input]) =>
+        requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'),
+      )).toBe(true));
       fireEvent.click(screen.getByRole("button", { name: /RT.*Runtime Quelle/i }));
-      await waitFor(() => expect(screen.getByText("Cloudflare Worker")).toBeDefined());
-      expect(screen.queryByText("Cloudflare Worker nicht geprüft")).toBeNull();
+      await waitFor(() => expect(screen.getByText("LLM Runtime")).toBeDefined());
+      expect(screen.queryByText("LLM Runtime nicht geprüft")).toBeNull();
     } finally {
-      rejectInference?.(new Error('Health evidence assertion completed.'));
-      useUserStore.setState({ refreshUser: originalRefreshUser });
+      rejectInference?.(new Error('LiteLLM evidence assertion completed.'));
+      restoreUser();
     }
   });
 
@@ -642,10 +674,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
       () => new Promise<never>((_resolve, reject) => { rejectInference = reject; }),
     );
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (url.endsWith('/health')) return workerHealthResponse();
-      return runtimeSupportResponse(url)
+      return runtimeSupportResponse(url, init)
         ?? jsonResponse({ choices: [{ message: { content: 'Worker response must remain pending.' } }] });
     }));
 
@@ -676,17 +707,16 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       () => new Promise<AreInferenceResult>((resolve) => { resolveInference = resolve; }),
     );
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.includes('/git/trees/')) {
         return jsonResponse({ sha: 'tree-sha', tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
       }
-      if (url.endsWith('/health')) return workerHealthResponse();
       if (url === 'https://api.github.com/user') return jsonResponse({ login: 'octo' });
       if (url === 'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato') {
         return jsonResponse({ permissions: { push: true } });
       }
-      return runtimeSupportResponse(url)
+      return runtimeSupportResponse(url, init)
         ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
     }));
 
@@ -735,40 +765,46 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("replaces successful Worker health evidence with the latest failed check", async () => {
+  it("replaces successful LiteLLM response evidence with the latest failed call", async () => {
     const restoreUser = setRuntimeTestUser();
     vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
       (input) => Promise.resolve(localAreInferenceResult(input.onlineAvailable)),
     );
-    let healthChecks = 0;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    let chatCalls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
-      if (url.endsWith('/health')) {
-        healthChecks += 1;
-        return workerHealthResponse(healthChecks === 1);
+      if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+      if (url.includes('/api/llm/chat')) {
+        chatCalls += 1;
+        if (chatCalls === 1) {
+          const userText = lastUserTextFromLiteLlmRequest(init);
+          return jsonResponse({
+            model: TEST_LITELLM_MODEL,
+            choices: [{ message: { content: JSON.stringify(testIntentEnvelope(
+              userText,
+              'Der erste LiteLLM-Aufruf war erfolgreich.',
+            )) } }],
+          });
+        }
+        return jsonResponse({ error: 'litellm_unavailable' }, 503);
       }
-      return runtimeSupportResponse(url)
-        ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
+      return runtimeSupportResponse(url, init)
+        ?? jsonResponse({ choices: [{ message: { content: 'unused' } }] });
     }));
 
     try {
       renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
-      fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Health-State.' } });
+      fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Runtime-State.' } });
       fireEvent.click(sendButton());
-      await waitFor(() =>
-        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(1),
-      );
+      await waitFor(() => expect(screen.getByText('Der erste LiteLLM-Aufruf war erfolgreich.')).toBeDefined());
 
-      fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Health-State.' } });
+      fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
-      await waitFor(() =>
-        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(2),
-      );
-      expect(healthChecks).toBe(2);
+      await waitFor(() => expect(screen.getByText(/LiteLLM Intent HTTP 503/i)).toBeDefined());
+      expect(chatCalls).toBe(2);
 
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
-      await waitFor(() => expect(screen.getByText('Cloudflare Worker nicht geprüft')).toBeDefined());
-      expect(screen.getByText('Noch keine Health- oder Response-Evidence für diese Sitzung.')).toBeDefined();
+      await waitFor(() => expect(screen.getByText('LLM Runtime blockiert')).toBeDefined());
     } finally {
       restoreUser();
     }
@@ -811,7 +847,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText("README-Inhalt erklärt.")).toBeDefined());
     expect(props.onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
   it("keeps a Pull Request question advisory despite executor keywords", async () => {
@@ -831,7 +867,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     expect(props.onStartAgent).not.toHaveBeenCalled();
     expect(screen.queryByText(/GitHub-Zugang fehlt/i)).toBeNull();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
   it("resumes one blocked Sovereign Agent request after GitHub access becomes ready", async () => {
@@ -915,7 +951,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() =>
       expect(screen.getByText("Ich brauche noch etwas Kontext, um das sicher einzuordnen.")).toBeDefined(),
     );
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(1);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
     expect(screen.queryByText(/Route blockiert: Auftrag konnte nicht erkannt werden/i)).toBeNull();
   });
 
@@ -936,7 +972,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("routes normal text after repo load through Cloudflare Worker instead of Sovereign Agent", async () => {
+  it("routes normal text after repo load through the LiteLLM runtime instead of Sovereign Agent", async () => {
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 123 }], truncated: false }),
@@ -951,15 +987,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toBe("");
     await waitFor(() => expect(screen.getByText("Repo-Frage über Worker beantwortet.")).toBeDefined());
     expect(props.onStartAgent).not.toHaveBeenCalled();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
-  it("shows streaming chunks in real-time and freezes final text after stream ends", async () => {
-    mockFetchSequence(() => new Response([
-      'data: {"choices":[{"delta":{"content":"Erste "}}]}',
-      'data: {"choices":[{"delta":{"content":"Antwort"}}]}',
-      "data: [DONE]",
-    ].join("\n"), { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+  it("renders the final non-streaming LiteLLM interpretation response", async () => {
+    mockFetchSequence(jsonResponse({
+      choices: [{ message: { content: "Erste Antwort" } }],
+      model: TEST_LITELLM_MODEL,
+    }));
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.change(chatField(), { target: { value: "Wie geht es dir?" } });
     fireEvent.click(sendButton());
@@ -967,34 +1002,27 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText("Erste Antwort")).toBeDefined());
   });
 
-  it("turns Worker HTTP 500 into a local runtime diagnostic and avoids blind repeat calls", async () => {
+  it("turns LiteLLM HTTP 500 into a runtime diagnostic and allows a fresh language follow-up", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ ok: true, provider: "sovereign-llm-bridge", gateway: "gatter", model: "cerebras/zai-glm-4.7", upstreamConfigured: true, secretConfigured: true }),
+      jsonResponse({ choices: [{ message: { content: "Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge für bessere UI?" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
     expect(screen.getAllByText(/HTTP 500/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/secret=ok/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/secret=ok/i)).toBeNull();
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length).toBeGreaterThanOrEqual(2));
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
+    await waitFor(() => expect(screen.getByText(/Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined());
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(4);
   });
 
-  it("retries the original Worker request after a diagnostic follow-up", async () => {
+  it("retries the original LiteLLM request after a diagnostic follow-up", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({
-        ok: true,
-        provider: "sovereign-llm-bridge",
-        gateway: "gatter",
-        model: "cerebras/zai-glm-4.7",
-        upstreamConfigured: true,
-        secretConfigured: true,
-      }),
+      jsonResponse({ choices: [{ message: { content: "Der erste Aufruf ist fehlgeschlagen; die Runtime hält den Blocker fest." } }] }),
       jsonResponse({ choices: [{ message: { content: "Retry beantwortet." } }] }),
     );
 
@@ -1015,16 +1043,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() =>
-      expect(
-        screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length,
-      ).toBeGreaterThanOrEqual(2),
+      expect(screen.getByText(/Der erste Aufruf ist fehlgeschlagen/i)).toBeDefined(),
     );
 
     fireEvent.click(screen.getAllByText("Retry")[0]);
 
     await waitFor(() => expect(screen.getByText("Retry beantwortet.")).toBeDefined());
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(6);
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
     fireEvent.click(within(actionStream).getByRole("button", { name: "Details" }));
     const retryEvent = Array.from(actionStream.querySelectorAll('[data-route="runtime"]'))
@@ -1274,7 +1300,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     });
   });
 
-  it("answers 'arbeitet er schon?' locally only for the loaded repo job", async () => {
+  it("lets the LLM understand 'arbeitet er schon?' but answers only from the loaded repo job", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
@@ -1294,10 +1320,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() =>
       expect(screen.getByText(/Ja, Sovereign Agent läuft/i)).toBeDefined(),
     );
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforeStatus);
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforeStatus + 2);
   });
 
-  it("answers executor status question locally when executor is idle (no job running, no workerBlocker)", async () => {
+  it("lets the LLM understand executor status while runtime reports the idle state", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ choices: [{ message: { content: "Worker reply" } }] }),
     );
@@ -1308,14 +1334,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() =>
       expect(screen.getByText(/Nein/i)).toBeDefined(),
     );
-    // Status answered locally — no Worker call
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(0);
+    // Language understanding uses LiteLLM; the answer itself is still runtime-derived.
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
   });
 
-  it("Worker HTTP 500 followed by 'Warum?' is answered locally — Worker not retried", async () => {
+  it("LiteLLM HTTP 500 followed by 'Warum?' is interpreted by a fresh online call", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ ok: true, provider: "sovereign-llm-bridge", gateway: "gatter", model: "cerebras/zai-glm-4.7", upstreamConfigured: true, secretConfigured: true }),
+      jsonResponse({ choices: [{ message: { content: "Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge?" } });
@@ -1324,9 +1350,8 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const callsAfterBlock = nonAuthFetchCalls(fetchMock).length;
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length).toBeGreaterThanOrEqual(2));
-    // No extra fetch was made for the "Warum?" message
-    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock);
+    await waitFor(() => expect(screen.getByText(/Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined());
+    expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock + 2);
   });
 
   it("SovereignToolLauncher github_access opens the secure GitHubAccessCard directly", async () => {
