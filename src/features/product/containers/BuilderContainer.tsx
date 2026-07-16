@@ -3935,10 +3935,15 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // the language fallback only when the online interpretation is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const directRepoUrl = parseDevChatGithubUrl(submittedText);
+    // "Retry" is an exact UI control, not natural language. It replays the
+    // last correlated request through the real pipeline and must never spend a
+    // second interpretation call merely to understand the control itself.
+    const isExactRetryControl = submittedText.trim().toLocaleLowerCase('de-DE') === 'retry';
     const shouldUseOnlineLanguageUnderstanding =
       !options.resumePendingIntent &&
       !isSafeAnalysisPreset &&
-      !directRepoUrl;
+      !directRepoUrl &&
+      !isExactRetryControl;
 
     // ── Issue #522 P2 Fix 2 & 3: Offline/local fallback routing
     // Status, diagnostic, and retry intents must be handled locally FIRST.
