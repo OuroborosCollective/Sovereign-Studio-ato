@@ -26,6 +26,12 @@ from .cognitive_swarm_manifest import (
 
 DEFAULT_MODEL: Final[str] = "gpt-5.4-mini"
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
+RELEASE_HUNT_SKILL_PATH: Final[Path] = (
+    Path(__file__).parent
+    / "skills"
+    / "sovereign-release-ready-error-family-hunt"
+    / "SKILL.md"
+)
 
 _AGENT_CLASS: Any | None = None
 _RUNNER_CLASS: Any | None = None
@@ -257,6 +263,10 @@ class JudgeVerdict(BaseModel):
     draft_pr_ready: bool
     mission_complete: bool = False
     human_approval_required: bool = True
+    hunt_outcome: str = ""
+    error_family: str = ""
+    next_error_family: str = ""
+    nullfind_confirmed: bool = False
 
 
 def _resolved_swarm_status(final_verdict: JudgeVerdict) -> tuple[bool, str]:
@@ -293,10 +303,16 @@ class CognitiveSwarm:
 
 
 def _load_skill_instructions() -> str:
-    content = SKILL_PATH.read_text("utf-8").strip()
-    if not content.startswith("---"):
-        raise RuntimeError("Sovereign cognitive skill front matter is missing.")
-    return content
+    bundles: list[str] = []
+    for path, label in (
+        (SKILL_PATH, "Sovereign cognitive"),
+        (RELEASE_HUNT_SKILL_PATH, "Sovereign release-hunt"),
+    ):
+        content = path.read_text("utf-8").strip()
+        if not content.startswith("---"):
+            raise RuntimeError(f"{label} skill front matter is missing.")
+        bundles.append(content)
+    return "\n\n--- bundled-skill-boundary ---\n\n".join(bundles)
 
 
 def _base_instructions(skill: str) -> str:
@@ -385,7 +401,8 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
             "For a read-only mission, mission_complete may be true when the requested analysis is satisfied, "
             "no blocker remains, and no repository change is required. Do not block on evidence for your own "
             "current response; the host records that stage afterward. The first-loop verdict can never end the "
-            "workflow; a second refinement loop is mandatory."
+            "workflow; a second refinement loop is mandatory. For release-hunt missions, populate hunt_outcome, "
+            "error_family, next_error_family and nullfind_confirmed exactly as the bundled release-hunt skill requires."
         ),
         output_type=JudgeVerdict,
     )

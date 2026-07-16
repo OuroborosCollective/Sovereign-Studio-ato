@@ -95,6 +95,18 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"llm_can_receive_protected_value": False' in client
 
 
+def test_controller_widget_forwards_persisted_release_hunt_and_task_lifecycle() -> None:
+    server = (ROOT / "server.py").read_text("utf-8")
+
+    assert '"taskLifecycle": _bounded_controller_text(item.get("taskLifecycle"), 40)' in server
+    assert '"isCurrentTask": bool(item.get("isCurrentTask"))' in server
+    assert '"isActiveBlocker": bool(item.get("isActiveBlocker"))' in server
+    assert '"resolvedByTaskId": _bounded_controller_text(item.get("resolvedByTaskId"), 100)' in server
+    assert 'release_hunt = detail.get("releaseHunt")' in server
+    assert '"releaseHunt": {' in server
+    assert '"nullfindConfirmed": bool(release_hunt.get("nullfindConfirmed"))' in server
+
+
 def test_controller_operator_tools_are_owner_scoped_and_secret_bounded() -> None:
     server = (ROOT / "server.py").read_text("utf-8")
     client = (ROOT / "owner_input_client.py").read_text("utf-8")
