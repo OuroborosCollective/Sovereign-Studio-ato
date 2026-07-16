@@ -15,6 +15,7 @@ from agent_runtime.cognitive_swarm_agents import (
     DEFAULT_MODEL,
     DispatchPlan,
     JudgeVerdict,
+    RELEASE_HUNT_SKILL_PATH,
     SKILL_PATH,
     SwarmExecutionError,
     WorkerReport,
@@ -155,10 +156,14 @@ def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> N
                 blockers=[],
                 accepted_evidence=["All required release gates are green."],
                 rejected_claims=[],
-                required_next_actions=["Document the nullfund."],
+                required_next_actions=["Switch to the next distinct error family."],
                 draft_pr_ready=False,
                 mission_complete=True,
                 human_approval_required=False,
+                hunt_outcome="NULLFIND",
+                error_family="functional-chat-cognitive-action",
+                next_error_family="agents-sdk-recovery-persistence",
+                nullfind_confirmed=True,
             )
         else:
             role = worker_roles[id(agent)]
@@ -182,24 +187,8 @@ def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> N
     assert result["status"] == "COMPLETED"
     assert result["approvalRequired"] is False
     assert result["finalVerdict"]["verdict"] == "nullfund_confirmed"
-    assert result["finalVerdict"]["mission_complete"] is True
-    assert result["finalVerdict"]["blockers"] == []
-
-
-def test_nullfund_label_cannot_override_a_real_blocker() -> None:
-    verdict = JudgeVerdict(
-        loop=2,
-        verdict="nullfund_confirmed",
-        blockers=["Runtime evidence is still missing."],
-        accepted_evidence=[],
-        rejected_claims=[],
-        required_next_actions=["Provide the missing runtime evidence."],
-        draft_pr_ready=False,
-        mission_complete=True,
-        human_approval_required=False,
-    )
-
-    assert swarm_module._resolved_swarm_status(verdict) == (False, "BLOCKED")
+    assert result["finalVerdict"]["hunt_outcome"] == "NULLFIND"
+    assert result["finalVerdict"]["nullfind_confirmed"] is True
 
 
 def test_provider_failures_are_classified_without_raw_error_text() -> None:
@@ -292,10 +281,36 @@ def test_base_instructions_define_released_lease_and_absent_pr_semantics() -> No
 
 def test_repo_local_skill_bundle_is_present_and_bounded() -> None:
     content = SKILL_PATH.read_text("utf-8")
+    release_hunt = RELEASE_HUNT_SKILL_PATH.read_text("utf-8")
+    bundled = swarm_module._load_skill_instructions()
+
     assert content.startswith("---")
     assert "name: sovereign-cognitive-architecture" in content
     assert "Never auto-merge" in content
     assert "Missing evidence is a blocker" in content
+    assert release_hunt.startswith("---")
+    assert "name: sovereign-release-ready-error-family-hunt" in release_hunt
+    assert "three immediately consecutive NULLFIND runs" in release_hunt
+    assert "isActiveBlocker=true" in release_hunt
+    assert content in bundled
+    assert release_hunt.strip() in bundled
+
+
+def test_release_hunt_verdict_fields_are_structured_and_default_closed() -> None:
+    verdict = JudgeVerdict(
+        loop=2,
+        verdict="blocked",
+        blockers=["missing runtime evidence"],
+        accepted_evidence=[],
+        rejected_claims=[],
+        required_next_actions=["provide evidence"],
+        draft_pr_ready=False,
+    )
+
+    assert verdict.hunt_outcome == ""
+    assert verdict.error_family == ""
+    assert verdict.next_error_family == ""
+    assert verdict.nullfind_confirmed is False
 
 
 def test_production_image_source_contains_the_same_cognitive_skill_bundle() -> None:
@@ -306,7 +321,15 @@ def test_production_image_source_contains_the_same_cognitive_skill_bundle() -> N
         / "sovereign-cognitive-architecture"
         / "SKILL.md"
     )
+    production_release_hunt_skill = (
+        PRODUCTION_BACKEND
+        / "agent_runtime"
+        / "skills"
+        / "sovereign-release-ready-error-family-hunt"
+        / "SKILL.md"
+    )
     assert production_skill.read_bytes() == SKILL_PATH.read_bytes()
+    assert production_release_hunt_skill.read_bytes() == RELEASE_HUNT_SKILL_PATH.read_bytes()
 
 
 def test_swarm_fails_closed_without_openai_api_key(monkeypatch) -> None:

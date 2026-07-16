@@ -166,6 +166,54 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
 
 
+_TERMINAL_RUN_STATUSES = frozenset({"FAILED_FINAL", "DRAFT_PR_CREATED", "COMPLETED"})
+_TERMINAL_TASK_STATUSES = frozenset({"COMPLETED", "FAILED_FINAL", "DRAFT_PR_CREATED"})
+_BLOCKING_TASK_STATUSES = frozenset({"BLOCKED", "FAILED_RECOVERABLE", "FAILED_FINAL"})
+
+
+def _current_task_id(run: dict[str, Any], tasks: list[dict[str, Any]]) -> str | None:
+    persisted = str(run.get("resume_task_id") or "").strip()
+    if persisted:
+        return persisted
+    if not tasks:
+        return None
+    return str(tasks[-1].get("task_id") or "").strip() or None
+
+
+def _task_runtime_view(
+    task: dict[str, Any],
+    *,
+    run_status: str,
+    current_task_id: str | None,
+) -> dict[str, Any]:
+    task_id = str(task.get("task_id") or "")
+    status = str(task.get("status") or "")
+    is_current = bool(current_task_id and task_id == current_task_id)
+    run_terminal = run_status in _TERMINAL_RUN_STATUSES
+    return {
+        **task,
+        "taskLifecycle": "current" if is_current else "historical",
+        "isCurrentTask": is_current,
+        "isActiveTask": is_current and not run_terminal and status not in _TERMINAL_TASK_STATUSES,
+        "isActiveBlocker": is_current and not run_terminal and status in _BLOCKING_TASK_STATUSES,
+        "resolvedByTaskId": current_task_id if not is_current else None,
+    }
+
+
+def _release_hunt_payload(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    outcome = str(value.get("outcome") or "").strip().upper()
+    if outcome not in {"FINDING", "NULLFIND", "BLOCKED"}:
+        return {}
+    return {
+        "outcome": outcome,
+        "errorFamily": str(value.get("errorFamily") or "")[:160],
+        "nextErrorFamily": str(value.get("nextErrorFamily") or "")[:160],
+        "nullfindConfirmed": bool(value.get("nullfindConfirmed")),
+    }
+
+
 def register_controller_board_routes(
     app: Any,
     *,
@@ -337,13 +385,33 @@ def register_controller_board_routes(
                     (run_id,),
                 )
                 approvals = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """SELECT payload->'releaseHunt' AS release_hunt
+                       FROM agent_evidence
+                       WHERE run_id=%s AND kind='judge_verdict'
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (run_id,),
+                )
+                hunt_row = cur.fetchone()
+            run_dict = dict(run)
+            current_task_id = _current_task_id(run_dict, tasks)
+            tasks = [
+                _task_runtime_view(
+                    task,
+                    run_status=str(run_dict.get("status") or ""),
+                    current_task_id=current_task_id,
+                )
+                for task in tasks
+            ]
+            release_hunt = _release_hunt_payload((hunt_row or {}).get("release_hunt"))
             normalize = lambda row: {
                 key: _iso(value) if key.endswith("_at") else value
                 for key, value in row.items()
             }
             return _operator_json({
                 "ok": True,
-                "run": normalize(dict(run)),
+                "run": normalize(run_dict),
+                "releaseHunt": release_hunt,
                 "events": [normalize(row) for row in events],
                 "tasks": [normalize(row) for row in tasks],
                 "failures": [normalize(row) for row in failures],
@@ -467,15 +535,33 @@ def register_controller_board_routes(
                 runs = [dict(row) for row in cur.fetchall()]
                 cur.execute(
                     """SELECT t.agent_id, t.specialist_role, t.status, t.source,
-                              t.reason, t.next_action, t.updated_at, t.run_id, t.task_id
-                       FROM agent_tasks t
-                       JOIN agent_runs r ON r.run_id=t.run_id
+                              t.reason, t.next_action, t.updated_at, t.run_id, t.task_id,
+                              r.status AS run_status
+                       FROM agent_runs r
+                       JOIN LATERAL (
+                           SELECT task_id, agent_id, specialist_role, status, source,
+                                  reason, next_action, updated_at, run_id
+                           FROM agent_tasks
+                           WHERE run_id=r.run_id
+                           ORDER BY created_at DESC LIMIT 1
+                       ) t ON TRUE
                        WHERE r.user_id=%s::uuid
+                         AND r.status NOT IN ('COMPLETED','FAILED_FINAL','DRAFT_PR_CREATED')
                          AND t.status NOT IN ('COMPLETED','FAILED_FINAL','DRAFT_PR_CREATED')
                        ORDER BY t.updated_at DESC LIMIT 50""",
                     (user_id,),
                 )
-                active_tasks = [dict(row) for row in cur.fetchall()]
+                active_tasks = []
+                for row in cur.fetchall():
+                    task = dict(row)
+                    run_status = str(task.pop("run_status", "") or "")
+                    active_tasks.append(
+                        _task_runtime_view(
+                            task,
+                            run_status=run_status,
+                            current_task_id=str(task.get("task_id") or "") or None,
+                        )
+                    )
                 cur.execute(
                     """SELECT
                          (SELECT COUNT(*) FROM agent_evidence e JOIN agent_runs r ON r.run_id=e.run_id WHERE r.user_id=%s::uuid)::integer AS evidence_count,
@@ -551,8 +637,27 @@ def register_controller_board_routes(
                     failure["diagnostics"] = _bounded_failure_diagnostics(
                         failure.pop("evidence_payload", None)
                     )
+                cur.execute(
+                    """SELECT payload->'releaseHunt' AS release_hunt
+                       FROM agent_evidence
+                       WHERE run_id=%s AND kind='judge_verdict'
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (run_id,),
+                )
+                hunt_row = cur.fetchone()
+            run_dict = dict(run)
+            current_task_id = _current_task_id(run_dict, tasks)
+            tasks = [
+                _task_runtime_view(
+                    task,
+                    run_status=str(run_dict.get("status") or ""),
+                    current_task_id=current_task_id,
+                )
+                for task in tasks
+            ]
             return jsonify({
-                "run": {key: _iso(value) if key.endswith("_at") else value for key, value in dict(run).items()},
+                "run": {key: _iso(value) if key.endswith("_at") else value for key, value in run_dict.items()},
+                "releaseHunt": _release_hunt_payload((hunt_row or {}).get("release_hunt")),
                 "events": [{key: _iso(value) if key.endswith("_at") else value for key, value in row.items()} for row in events],
                 "tasks": [{key: _iso(value) if key.endswith("_at") else value for key, value in row.items()} for row in tasks],
                 "failures": [{key: _iso(value) if key.endswith("_at") else value for key, value in row.items()} for row in failures],
@@ -880,7 +985,7 @@ async function loadOverview(){const d=await api('/api/controller/overview');stat
 function runCard(r){return `<div class="item"><div class="row between"><h3>${esc(r.mission_summary)}</h3>${badge(r.status)}</div><p class="code">${esc(r.run_id)}</p><p>${esc(r.reason)}</p><div class="row"><button class="ghost" onclick="runDetail('${esc(r.run_id)}')">Details</button>${!['COMPLETED','FAILED_FINAL','DRAFT_PR_CREATED','READY_FOR_DRAFT_PR','WAITING_FOR_OWNER'].includes(r.status)&&!r.lease_active?`<button class="primary" onclick="resumeRun('${esc(r.run_id)}','Manueller Resume aus Controller Board; keine Secrets.')">Resume</button>`:''}</div></div>`}
 async function startMission(){const m=$('mission').value.trim();if(!m)return;$('missionMsg').textContent='Runtime läuft…';try{const d=await api('/api/user/agent/swarm/run',{method:'POST',body:JSON.stringify({mission:m,evidence:$('evidence').value.trim()})});$('missionMsg').textContent=(d.status||'')+' · '+(d.reason||'');await loadOverview();if(d.runId)runDetail(d.runId)}catch(e){$('missionMsg').textContent=(e.data?.status||'Fehler')+' · '+(e.data?.reason||e.message);await loadOverview()}}
 async function resumeRun(id,evidence){try{const d=await api('/api/user/agent/swarm/runs/'+encodeURIComponent(id)+'/resume',{method:'POST',body:JSON.stringify({evidence})});await loadOverview();await runDetail(id);return d}catch(e){await loadOverview();alert(e.data?.reason||e.message)}}
-async function runDetail(id){const d=await api('/api/controller/runs/'+encodeURIComponent(id));const r=d.run;$('runDetail').classList.remove('hidden');$('runDetail').innerHTML=`<div class="row between"><h2>${esc(r.mission_summary)}</h2>${badge(r.status)}</div><p>${esc(r.reason)}</p><p class="code">Evidence: ${esc(r.evidence_id)}<br>Trace: ${esc(r.trace_id)}<br>Next: ${esc(r.next_action)}</p><h3>Tasks</h3><div class="list">${(d.tasks||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)}</b> ${badge(x.status)}<p>${esc(x.work_package)}</p></div>`).join('')||'<p class="muted">Keine Tasks.</p>'}</div><h3>Failures</h3><div class="list">${(d.failures||[]).map(x=>{const q=x.diagnostics||{};return `<div class="item"><div class="row between"><b>${esc(x.family)}</b>${badge(x.recoverable?'FAILED_RECOVERABLE':'FAILED_FINAL')}</div><p>${esc(x.summary)}</p><p class="code">Stage: ${esc(q.failureStage||'unknown')}<br>Error: ${esc(q.errorType||'unknown')}<br>HTTP: ${esc(q.httpStatus??'–')}<br>Request: ${esc(q.requestId||'–')}<br>Next: ${esc(q.nextAction||'–')}</p></div>`}).join('')||'<p class="muted">Keine Failure-Evidence.</p>'}</div><h3>Events</h3><div class="timeline">${(d.events||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)} · ${esc(x.type)}</b> ${badge(x.status)}<p>${esc(x.summary)}</p></div>`).join('')}</div>`;$('runDetail').scrollIntoView({behavior:'smooth'})}
+async function runDetail(id){const d=await api('/api/controller/runs/'+encodeURIComponent(id));const r=d.run,h=d.releaseHunt||{};$('runDetail').classList.remove('hidden');$('runDetail').innerHTML=`<div class="row between"><h2>${esc(r.mission_summary)}</h2>${badge(r.status)}</div><p>${esc(r.reason)}</p>${h.outcome?`<div class="item"><div class="row between"><b>Release-Jagd · ${esc(h.errorFamily||'unbekannte Familie')}</b>${badge(h.outcome)}</div><p>Nullfund bestätigt: ${h.nullfindConfirmed?'ja':'nein'}</p>${h.nextErrorFamily?`<p>Nächste Familie: ${esc(h.nextErrorFamily)}</p>`:''}</div>`:''}<p class="code">Evidence: ${esc(r.evidence_id)}<br>Trace: ${esc(r.trace_id)}<br>Next: ${esc(r.next_action)}</p><h3>Tasks</h3><div class="list">${(d.tasks||[]).map(x=>`<div class="item"><div class="row between"><b>${esc(x.agent_id)}</b><span>${badge(x.status)} ${badge(x.taskLifecycle||'historical')}</span></div><p>${esc(x.work_package)}</p>${x.isActiveBlocker?'<p class="bad">Aktiver Blocker</p>':x.taskLifecycle==='historical'?'<p class="muted">Historische Evidence, kein aktiver Blocker.</p>':''}</div>`).join('')||'<p class="muted">Keine Tasks.</p>'}</div><h3>Failures</h3><div class="list">${(d.failures||[]).map(x=>{const q=x.diagnostics||{};return `<div class="item"><div class="row between"><b>${esc(x.family)}</b>${badge(x.recoverable?'FAILED_RECOVERABLE':'FAILED_FINAL')}</div><p>${esc(x.summary)}</p><p class="code">Stage: ${esc(q.failureStage||'unknown')}<br>Error: ${esc(q.errorType||'unknown')}<br>HTTP: ${esc(q.httpStatus??'–')}<br>Request: ${esc(q.requestId||'–')}<br>Next: ${esc(q.nextAction||'–')}</p></div>`}).join('')||'<p class="muted">Keine Failure-Evidence.</p>'}</div><h3>Events</h3><div class="timeline">${(d.events||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)} · ${esc(x.type)}</b> ${badge(x.status)}<p>${esc(x.summary)}</p></div>`).join('')}</div>`;$('runDetail').scrollIntoView({behavior:'smooth'})}
 async function loadApprovals(){const d=await api('/api/controller/approvals');$('approvalList').innerHTML=(d.approvals||[]).map(a=>`<div class="item"><div class="row between"><h3>${esc(a.kind)} · ${esc(a.requested_by_agent)}</h3>${badge(a.status)}</div><p>${esc(a.reason)}</p><p class="code">Run: ${esc(a.run_id)}</p>${a.requiresProtectedOwnerInput?`<a class="link" href="/owner-approvals" target="_blank">Geschützte Eingabe im Owner-Panel öffnen</a>`:`<div class="row"><button class="primary" onclick="decide('${esc(a.approval_id)}','approve')">Bestätigen</button><button class="danger" onclick="decide('${esc(a.approval_id)}','reject')">Ablehnen</button></div>`}</div>`).join('')||'<p class="muted">Keine offenen Bestätigungen.</p>'}
 async function decide(id,decision){const d=await api('/api/controller/approvals/'+encodeURIComponent(id)+'/decision',{method:'POST',body:JSON.stringify({decision})});if(d.resumeRequired)await resumeRun(d.runId,d.resumeEvidence);await refreshAll()}
 async function loadGithub(){try{const d=await api('/api/controller/github');state.github=d;const l=d.latestCommit||{},s=d.playwrightStats||{};$('latestCommit').innerHTML=`<div class="item"><div class="row between"><h3>${esc(l.message||'Kein Commit')}</h3><span class="badge">${esc((l.sha||'').slice(0,10))}</span></div><p>+${l.stats?.additions||0} / -${l.stats?.deletions||0} · ${l.stats?.total||0} Änderungen</p><div class="code">${(l.files||[]).slice(0,30).map(f=>esc(f.status)+' '+esc(f.filename)+' (+'+f.additions+' -'+f.deletions+')').join('\n')}</div></div>`;$('commits').innerHTML=(d.commits||[]).map(c=>`<div class="item"><div class="row between"><h3>${esc(c.message)}</h3><span class="badge">${esc(c.sha.slice(0,8))}</span></div><p>${esc(c.author)} · ${esc(c.date)}</p></div>`).join('');$('playwrightMetrics').innerHTML=[['Erfolg',s.successful||0],['Fehler',s.failed||0],['Laufend',s.running||0],['Quote',s.successRate===null||s.successRate===undefined?'–':s.successRate+'%']].map(x=>`<div class="metric"><span class="muted">${x[0]}</span><strong>${x[1]}</strong></div>`).join('');$('playwrightRuns').innerHTML=runList(d.playwrightRuns);$('workflowRuns').innerHTML=runList(d.workflowRuns)}catch(e){$('latestCommit').innerHTML='<p class="bad">'+esc(e.message)+'</p>';if(!$('playwrightRuns').innerHTML)$('playwrightRuns').innerHTML='<p class="muted">Noch keine Evidence.</p>'}}

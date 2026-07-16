@@ -109,6 +109,11 @@ def _controller_item_summary(payload: Any) -> dict[str, Any]:
         "createdAt": _bounded_controller_text(item.get("created_at") or item.get("updated_at"), 80),
         "family": _bounded_controller_text(item.get("family"), 120),
         "recoverable": bool(item.get("recoverable")),
+        "taskLifecycle": _bounded_controller_text(item.get("taskLifecycle"), 40),
+        "isCurrentTask": bool(item.get("isCurrentTask")),
+        "isActiveTask": bool(item.get("isActiveTask")),
+        "isActiveBlocker": bool(item.get("isActiveBlocker")),
+        "resolvedByTaskId": _bounded_controller_text(item.get("resolvedByTaskId"), 100),
     }
 
 
@@ -132,8 +137,15 @@ def _controller_run_evidence(backend_configured: bool) -> dict[str, Any]:
                 detail = controller_runtime.run_status(run_id=latest_id)
                 detail = detail if isinstance(detail, dict) else {}
                 detail_run = detail.get("run") if isinstance(detail.get("run"), dict) else raw_runs[0]
+                release_hunt = detail.get("releaseHunt") if isinstance(detail.get("releaseHunt"), dict) else {}
                 latest = {
                     "run": _controller_run_summary(detail_run),
+                    "releaseHunt": {
+                        "outcome": _bounded_controller_text(release_hunt.get("outcome"), 40),
+                        "errorFamily": _bounded_controller_text(release_hunt.get("errorFamily"), 160),
+                        "nextErrorFamily": _bounded_controller_text(release_hunt.get("nextErrorFamily"), 160),
+                        "nullfindConfirmed": bool(release_hunt.get("nullfindConfirmed")),
+                    },
                     "tasks": [
                         _controller_item_summary(item)
                         for item in (detail.get("tasks") if isinstance(detail.get("tasks"), list) else [])[:20]
