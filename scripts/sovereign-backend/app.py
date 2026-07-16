@@ -1685,7 +1685,7 @@ def admin_llm_route_healthcheck(rid):
     })
     
     return jsonify({
-        "ok": True,
+        "ok": health_status == "healthy",
         "routeId": rid,
         "provider": provider,
         "model": model_name,
@@ -3157,7 +3157,10 @@ def user_billing_deduct():
             "tool_repo_load": 3,
         }
         if route:
-            amount = max(1, int(((max(1, token_count) / 1000) * float(route["credits_per_unit"])) + 0.999999))
+            amount = _llm_usage_credit_cost(
+                float(route["credits_per_unit"]),
+                token_count,
+            )
         elif cost_id in fixed_costs:
             amount = fixed_costs[cost_id]
         else:
@@ -6186,7 +6189,7 @@ def fetch_ai_gateway(path: str, method: str = "GET", json_data: dict = None, pro
         return None, f"AI Gateway request failed: {e}"
 
 def test_provider_key(provider: str) -> tuple:
-    resp, err = fetch_ai_gateway(f"/{provider}/v1/models", provider=provider)
+    resp, err = fetch_ai_gateway("/v1/models", provider=provider)
     if err:
         return False, err, []
     if resp.status_code == 401:
@@ -6205,8 +6208,66 @@ def test_provider_key(provider: str) -> tuple:
         return True, "", []
 
     if resp.status_code and resp.status_code < 500:
-        return True, f"{provider} available", model_info["models"]
+        model_ids = [
+            str(model.get("id") or model.get("name") or "").strip()
+            for model in models
+            if isinstance(model, dict)
+            and str(model.get("id") or model.get("name") or "").strip()
+        ]
+        return True, f"{provider} available", model_ids
     return False, f"{provider} error: HTTP {resp.status_code}", []
+
+class _PersistedProviderCatalog:
+    """Expose only enabled gateway providers and models persisted in llm_routes."""
+
+    @staticmethod
+    def _load() -> dict[str, dict]:
+        rows = query(
+            """SELECT provider, model_id
+               FROM llm_routes
+               WHERE disabled=false
+                 AND provider IS NOT NULL
+                 AND btrim(provider) <> ''
+                 AND lower(provider) <> 'cloudflare'
+               ORDER BY lower(provider), priority ASC, model_id ASC"""
+        )
+        catalog: dict[str, dict] = {}
+        for row in rows or []:
+            provider = str(row.get("provider") or "").strip().lower()
+            model_id = str(row.get("model_id") or "").strip()
+            if not provider or not model_id:
+                continue
+            entry = catalog.setdefault(
+                provider,
+                {
+                    "name": provider,
+                    "models": [],
+                    "default": model_id,
+                    "format": "{model}",
+                },
+            )
+            if model_id not in entry["models"]:
+                entry["models"].append(model_id)
+        return catalog
+
+    def items(self):
+        return self._load().items()
+
+    def __contains__(self, provider: object) -> bool:
+        normalized = str(provider or "").strip().lower()
+        return normalized in self._load()
+
+
+PROVIDER_MODELS = _PersistedProviderCatalog()
+
+
+def test_provider_available(provider: str) -> tuple:
+    """Probe one persisted gateway provider without relying on a static catalog."""
+    normalized = str(provider or "").strip().lower()
+    if normalized not in PROVIDER_MODELS:
+        return False, f"No enabled persisted routes for {normalized or 'provider'}", []
+    return test_provider_key(normalized)
+
 
 @app.route("/api/admin/llm/gateway/providers", methods=["GET"])
 @require_admin
@@ -6307,7 +6368,7 @@ def _worker_route_fields(model_id: str) -> tuple[str, int]:
 
 
 def _reconcile_worker_routes_if_empty() -> tuple[int, str]:
-    """Restore an empty route catalog only from the live Worker model source."""
+    """Atomically restore an empty catalog from the real Worker model source."""
     current = query("SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled = false", one=True)
     current_count = int((current or {}).get("count") or 0)
     if current_count > 0:
@@ -6330,35 +6391,63 @@ def _reconcile_worker_routes_if_empty() -> tuple[int, str]:
     if not model_ids:
         return 0, "Worker AI lieferte keine Modelle"
 
-    for model_id in model_ids:
-        friendly_name, priority = _worker_route_fields(model_id)
-        query(
-            """INSERT INTO llm_routes
-                   (id, model_id, model_name, provider, base_url,
-                    credits_per_unit, priority, disabled)
-               VALUES (gen_random_uuid()::text, %s, %s, 'cloudflare', %s, 0.001, %s, false)
-               ON CONFLICT (model_id) DO UPDATE SET
-                   model_name = EXCLUDED.model_name,
-                   provider = EXCLUDED.provider,
-                   base_url = EXCLUDED.base_url,
-                   credits_per_unit = EXCLUDED.credits_per_unit,
-                   priority = EXCLUDED.priority,
-                   disabled = false,
-                   updated_at = NOW()""",
-            (model_id, friendly_name, WORKER_AI_BASE, priority),
-            write=True,
-        )
+    pool = get_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                ("llm_routes_reconcile",),
+            )
+            cur.execute(
+                "SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled = false",
+            )
+            locked_count = int((cur.fetchone() or {}).get("count") or 0)
+            if locked_count > 0:
+                conn.commit()
+                return locked_count, ""
 
-    restored = query("SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled = false", one=True)
-    restored_count = int((restored or {}).get("count") or 0)
-    if restored_count == 0:
-        return 0, "Worker-Routen konnten nicht persistent rekonstruiert werden"
-    audit("system_worker_ai_route_reconcile", None, {
-        "reason": "empty_route_catalog",
-        "restored": restored_count,
-        "workerModels": len(model_ids),
-    })
-    return restored_count, ""
+            for model_id in model_ids:
+                friendly_name, priority = _worker_route_fields(model_id)
+                cur.execute(
+                    """INSERT INTO llm_routes
+                           (id, model_id, model_name, provider, base_url,
+                            credits_per_unit, priority, disabled)
+                       VALUES (gen_random_uuid()::text, %s, %s, 'cloudflare', %s, 0.001, %s, false)
+                       ON CONFLICT (model_id) DO UPDATE SET
+                           model_name = EXCLUDED.model_name,
+                           provider = EXCLUDED.provider,
+                           base_url = EXCLUDED.base_url,
+                           credits_per_unit = EXCLUDED.credits_per_unit,
+                           priority = EXCLUDED.priority,
+                           disabled = false,
+                           updated_at = NOW()""",
+                    (model_id, friendly_name, WORKER_AI_BASE, priority),
+                )
+
+            cur.execute(
+                "SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled = false",
+            )
+            restored_count = int((cur.fetchone() or {}).get("count") or 0)
+            if restored_count == 0:
+                raise RuntimeError("Worker-Routen konnten nicht persistent rekonstruiert werden")
+            cur.execute(
+                """INSERT INTO audit_log
+                       (admin_id, admin_email, action, target_id, changes)
+                   VALUES ('system', 'system', 'system_worker_ai_route_reconcile', NULL, %s::jsonb)""",
+                (psycopg2.extras.Json({
+                    "reason": "empty_route_catalog",
+                    "restored": restored_count,
+                    "workerModels": len(model_ids),
+                }),),
+            )
+        conn.commit()
+        return restored_count, ""
+    except Exception as exc:
+        conn.rollback()
+        return 0, f"Worker-Routen-Transaktion fehlgeschlagen ({type(exc).__name__})"
+    finally:
+        pool.putconn(conn)
 
 
 @app.route("/api/llm/auto-route", methods=["POST"])
@@ -6410,31 +6499,214 @@ def public_llm_auto_route():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def _llm_usage_credit_cost(credits_per_unit: float, token_count: int) -> int:
+    """Return the deterministic whole-credit charge for one bounded token estimate."""
+    normalized_tokens = max(1, int(token_count))
+    normalized_rate = max(0.0, float(credits_per_unit))
+    return max(1, int(((normalized_tokens / 1000) * normalized_rate) + 0.999999))
+
+
+def _estimate_llm_request_tokens(messages: list, max_tokens: int) -> int:
+    """Reserve output plus a deterministic upper estimate for serialized input."""
+    serialized = _json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+    input_estimate = max(1, (len(serialized) + 3) // 4)
+    return input_estimate + max_tokens
+
+
+def _resolve_enabled_llm_route(model: str):
+    normalized = str(model or "").strip()
+    if not normalized:
+        return None
+    route = query(
+        """SELECT id::text, model_id, model_name, provider, base_url,
+                  credits_per_unit::float AS credits_per_unit, priority
+           FROM llm_routes
+           WHERE disabled=false AND (model_id=%s OR id::text=%s)
+           ORDER BY priority ASC LIMIT 1""",
+        (normalized, normalized),
+        one=True,
+    )
+    if route:
+        return route
+    count_row = query(
+        "SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled=false",
+        one=True,
+    )
+    if int((count_row or {}).get("count") or 0) == 0:
+        _restored, reconcile_error = _reconcile_worker_routes_if_empty()
+        if not reconcile_error:
+            return query(
+                """SELECT id::text, model_id, model_name, provider, base_url,
+                          credits_per_unit::float AS credits_per_unit, priority
+                   FROM llm_routes
+                   WHERE disabled=false AND (model_id=%s OR id::text=%s)
+                   ORDER BY priority ASC LIMIT 1""",
+                (normalized, normalized),
+                one=True,
+            )
+    return None
+
+
+def _refund_reserved_llm_credits(user_id: str, amount: int, route_id: str) -> str:
+    try:
+        _apply_credit_delta(
+            user_id,
+            amount,
+            ledger_type="usage_refund",
+            reason=f"LLM runtime refund: {route_id}",
+            provider="runtime",
+        )
+        return ""
+    except Exception as exc:
+        return type(exc).__name__
+
+
 @app.route("/api/llm/chat", methods=["POST"])
 @require_session
 def public_llm_chat():
+    reserved_cost = 0
+    reserved_route_id = ""
+    user_id = request.session_user_id
     try:
         body = request.get_json(force=True) or {}
-        model = body.get("model", "")
+        model = str(body.get("model") or "").strip()
         messages = body.get("messages", [])
-        max_tokens = body.get("max_tokens", 1000)
-        if not messages:
+        try:
+            max_tokens = int(body.get("max_tokens", 1000))
+        except (TypeError, ValueError):
+            return jsonify({"error": "max_tokens muss eine ganze Zahl sein"}), 400
+        if not isinstance(messages, list) or not messages:
             return jsonify({"error": "messages required"}), 400
-        if model.startswith("@cf/"):
-            resp, err = fetch_worker_ai("v1/chat/completions", method="POST", json_data={"model": model, "messages": messages, "max_tokens": max_tokens})
-            if err: return jsonify({"error": err}), 500
-            if not resp.ok: return jsonify({"error": resp.text}), resp.status_code
-            return jsonify(resp.json())
-        if "/" in model:
-            parts = model.split("/", 1)
-            provider, model_name = parts[0], parts[1]
-            resp, err = fetch_ai_gateway("/compat/v1/chat/completions", method="POST", json_data={"model": model_name, "messages": messages, "max_tokens": max_tokens}, provider=provider)
-            if err: return jsonify({"error": err}), 500
-            if not resp.ok: return jsonify({"error": resp.text}), resp.status_code
-            return jsonify(resp.json())
-        return jsonify({"error": f"Unbekanntes Model: {model}"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        if not 1 <= max_tokens <= 32_000:
+            return jsonify({"error": "max_tokens muss zwischen 1 und 32000 liegen"}), 400
+
+        route = _resolve_enabled_llm_route(model)
+        if not route:
+            return jsonify({
+                "error": "LLM Route nicht aktiv oder nicht vorhanden",
+                "blocker": "llm_route_not_enabled",
+            }), 404
+
+        estimated_tokens = _estimate_llm_request_tokens(messages, max_tokens)
+        reserved_cost = _llm_usage_credit_cost(
+            float(route["credits_per_unit"]),
+            estimated_tokens,
+        )
+        reserved_route_id = str(route["id"])
+        step_up = consume_step_up_approval(
+            get_agent_runtime_connection,
+            user_id=user_id,
+            action="expensive_llm_route",
+            context={
+                "costId": reserved_route_id,
+                "modelId": route["model_id"],
+                "credits": reserved_cost,
+                "tokenCount": estimated_tokens,
+            },
+            token=request.headers.get("X-Step-Up-Token", "").strip() or None,
+        )
+        if not step_up.get("approved"):
+            return jsonify({
+                "error": "step_up_required",
+                "action": "expensive_llm_route",
+                "context": step_up.get("context"),
+                "reason": step_up.get("reason"),
+            }), 428
+
+        try:
+            balance = _apply_credit_delta(
+                user_id,
+                -reserved_cost,
+                ledger_type="usage",
+                reason=(
+                    f"LLM runtime reservation: {route['model_id']}; "
+                    f"estimated_tokens={estimated_tokens}"
+                ),
+                provider="runtime",
+            )
+        except LookupError:
+            return jsonify({"error": "User nicht gefunden"}), 404
+        except InsufficientCredits as exc:
+            return jsonify({
+                "error": "Nicht genug Credits",
+                "available": exc.available,
+                "required": exc.required,
+            }), 402
+        except CreditStateConflict as exc:
+            return jsonify({
+                "error": str(exc),
+                "blocker": "credit_state_verification_failed",
+            }), 409
+
+        provider = str(route.get("provider") or "").strip().lower()
+        route_model = str(route.get("model_id") or "").strip()
+        payload = {
+            "model": route_model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+        }
+        if provider == "cloudflare":
+            resp, err = fetch_worker_ai(
+                "v1/chat/completions",
+                method="POST",
+                json_data=payload,
+            )
+        elif provider:
+            gateway_model = route_model.split("/", 1)[1] if "/" in route_model else route_model
+            payload["model"] = gateway_model
+            resp, err = fetch_ai_gateway(
+                "/compat/v1/chat/completions",
+                method="POST",
+                json_data=payload,
+                provider=provider,
+            )
+        else:
+            resp, err = None, "Route hat keinen Provider"
+
+        if err or resp is None or not resp.ok:
+            refund_error = _refund_reserved_llm_credits(
+                user_id,
+                reserved_cost,
+                reserved_route_id,
+            )
+            reserved_cost = 0
+            if refund_error:
+                return jsonify({
+                    "error": "LLM-Aufruf fehlgeschlagen und Credit-Gegenbuchung scheiterte",
+                    "blocker": "llm_credit_refund_failed",
+                    "refundFailure": refund_error,
+                }), 500
+            status_code = int(getattr(resp, "status_code", 502) or 502)
+            return jsonify({
+                "error": err or str(getattr(resp, "text", "LLM upstream failure"))[:500],
+                "creditsRefunded": True,
+            }), status_code
+
+        result = resp.json()
+        response_payload = dict(result) if isinstance(result, dict) else {"result": result}
+        response_payload["sovereignBilling"] = {
+            "chargedCredits": reserved_cost,
+            "newBalance": balance["newBalance"],
+            "routeId": reserved_route_id,
+            "modelId": route_model,
+            "tokenEstimate": estimated_tokens,
+            "chargeBasis": "reserved_request_estimate",
+        }
+        return jsonify(response_payload)
+    except Exception as exc:
+        if reserved_cost > 0 and reserved_route_id:
+            refund_error = _refund_reserved_llm_credits(
+                user_id,
+                reserved_cost,
+                reserved_route_id,
+            )
+            if refund_error:
+                return jsonify({
+                    "error": "LLM-Lauf abgebrochen und Credit-Gegenbuchung scheiterte",
+                    "blocker": "llm_credit_refund_failed",
+                    "refundFailure": refund_error,
+                }), 500
+        return jsonify({"error": str(exc)}), 500
 
 
 if __name__ == "__main__":
