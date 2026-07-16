@@ -166,7 +166,12 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
 
 
-_TERMINAL_RUN_STATUSES = frozenset({"FAILED_FINAL", "DRAFT_PR_CREATED", "COMPLETED"})
+_TERMINAL_RUN_STATUSES = frozenset({
+    "FAILED_FINAL",
+    "READY_FOR_DRAFT_PR",
+    "DRAFT_PR_CREATED",
+    "COMPLETED",
+})
 _TERMINAL_TASK_STATUSES = frozenset({"COMPLETED", "FAILED_FINAL", "DRAFT_PR_CREATED"})
 _BLOCKING_TASK_STATUSES = frozenset({"BLOCKED", "FAILED_RECOVERABLE", "FAILED_FINAL"})
 
