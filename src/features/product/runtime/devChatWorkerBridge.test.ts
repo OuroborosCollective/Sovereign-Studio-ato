@@ -164,6 +164,27 @@ describe('devChatWorkerBridge', () => {
     expect(result.error).toContain('kein gültiges Schema');
   });
 
+  it('normalizes an accidental SSE reply to chat text without creating action evidence', async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Erste "}}]}',
+      'data: {"choices":[{"delta":{"content":"Antwort"}}]}',
+      'data: [DONE]',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })));
+
+    const result = await fetchDevChatWorkerInterpretation({
+      model: 'deepseek-r1',
+      text: 'Wie geht es dir?',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.interpretation).toBeUndefined();
+    expect(result.rawContent).toBe('Erste Antwort');
+  });
+
   it('ignores malformed non-string worker metadata in JSON replies', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
       choices: [{ message: { content: 'Antwort aus Worker.' } }],

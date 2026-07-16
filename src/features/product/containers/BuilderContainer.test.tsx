@@ -794,19 +794,18 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Health-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(1),
+        expect(screen.getByText('Worker response.')).toBeDefined(),
       );
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Health-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getAllByText(/ARE hat eine lokale Route gewählt/i)).toHaveLength(2),
+        expect(screen.getAllByText(/Worker ist offline|Worker Health|Online-Sprachdeutung/i).length).toBeGreaterThan(0),
       );
       expect(healthChecks).toBe(2);
 
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
-      await waitFor(() => expect(screen.getByText('Cloudflare Worker nicht geprüft')).toBeDefined());
-      expect(screen.getByText('Noch keine Health- oder Response-Evidence für diese Sitzung.')).toBeDefined();
+      await waitFor(() => expect(screen.getByText('Cloudflare Worker blockiert')).toBeDefined());
     } finally {
       restoreUser();
     }

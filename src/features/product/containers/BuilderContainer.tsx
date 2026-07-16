@@ -4024,47 +4024,164 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     // Local token classifiers are used only when the online interpreter is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const directRepoUrl = parseDevChatGithubUrl(submittedText);
+    const offlineControlIntent = classifySovereignExecutorIntent(submittedText);
+    const explicitRuntimeAction = offlineControlIntent !== 'question' && (
+      isSovereignAgentExecutionIntent(submittedText) ||
+      isDelegationIntent(submittedText) ||
+      isDelegatedSovereignAgentExecutionIntent(submittedText, chatHistory)
+    );
     const shouldUseOnlineLanguageUnderstanding =
       !options.resumePendingIntent &&
       !isSafeAnalysisPreset &&
-      !directRepoUrl;
+      !directRepoUrl &&
+      !explicitRuntimeAction;
 
     if (shouldUseOnlineLanguageUnderstanding) {
+      let onlineAreInference: AreInferenceResult | null = null;
+      let onlineMemoryContext = '';
+      let onlineHealth: DevChatWorkerHealthResult | null = null;
+
+      if (authUser) {
+        try {
+          onlineHealth = await fetchDevChatWorkerHealth();
+          setWorkerHealthEvidence(onlineHealth);
+          onlineAreInference = await evaluateAreInference({
+            prompt: submittedText,
+            repository: buildAreRepositoryState({
+              owner: chatRepoSnapshot?.owner,
+              repo: chatRepoSnapshot?.repo,
+              branch: chatRepoSnapshot?.branch,
+              repositoryRevision: chatRepoSnapshot?.treeSha,
+              files: chatRepoSnapshot?.files ?? [],
+            }),
+            onlineAvailable: onlineHealth.ok,
+            limit: 5,
+          });
+          const transition = emitAreStateTransition(arePreviousStateRef.current, onlineAreInference);
+          arePreviousStateRef.current = {
+            stateHash: onlineAreInference.stateHash,
+            state: onlineAreInference.state,
+          };
+          if (transition.changed) {
+            addLog('info', `ARE-State geändert: ${transition.changeKinds.join(', ')} · ${transition.currentStateHash.slice(0, 12)}`, 'pattern');
+          }
+          onlineMemoryContext = [
+            onlineAreInference.knowledgeContext,
+            onlineAreInference.experienceContext,
+          ].filter(Boolean).join('\n\n');
+          if (onlineAreInference.selectedKnowledgeIds.length > 0 || onlineAreInference.selectedPatternIds.length > 0) {
+            appendActionEvent({
+              kind: 'context_collected',
+              route: 'runtime',
+              label: 'ARE-Kontext für Online-Deutung gesammelt',
+              detail: `${onlineAreInference.selectedKnowledgeIds.length} Knowledge-Blöcke · ${onlineAreInference.selectedPatternIds.length} evidence-geprüfte Muster.`,
+              state: 'done',
+            });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          addLog('warn', `ARE-Kontext nicht verfügbar; Online-Deutung bleibt unabhängig: ${message}`, 'pattern');
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'ARE-Kontext nicht verfügbar',
+            detail: `${message} · Kein Memory-Kandidat wurde erzeugt; die Online-Sprachroute darf bei erreichbarem Worker weiterlaufen.`,
+            kind: 'failed',
+          }));
+        }
+      }
+
       const routeDecision = palRoute(
         submittedText,
         chatHistory.length + 1,
         chatRepoSnapshot?.fileCount ?? 0,
         palDecisions,
       );
-      const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-      const canInterpret = await chargeCredits(routeDecision.modelId, estimatedTokens);
-      if (!canInterpret) {
-        addLog('warn', `Credits nicht ausreichend für Online-Sprachdeutung mit ${routeDecision.modelId}`, 'billing');
-        return;
+      const interpreterOnline = onlineHealth?.ok !== false;
+      let interpretationResult: Awaited<ReturnType<typeof fetchDevChatWorkerInterpretation>>;
+
+      if (interpreterOnline) {
+        const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
+        const canInterpret = await chargeCredits(routeDecision.modelId, estimatedTokens);
+        if (!canInterpret) {
+          addLog('warn', `Credits nicht ausreichend für Online-Sprachdeutung mit ${routeDecision.modelId}`, 'billing');
+          return;
+        }
+
+        setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
+        setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
+        setLastWorkerRequestMessage(submittedText);
+        setChatResponseBusy(true);
+        appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
+
+        interpretationResult = await fetchDevChatWorkerInterpretation({
+          model: routeDecision.modelId,
+          text: submittedText,
+          repoContext: chatRepoSnapshot
+            ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
+            : undefined,
+          memoryContext: onlineMemoryContext || undefined,
+          recentMessages: chatHistory
+            .filter((line) => line.role === 'user' || line.role === 'assistant')
+            .slice(-6)
+            .map((line) => ({
+              role: line.role === 'user' ? 'user' as const : 'assistant' as const,
+              content: line.text,
+            })),
+        });
+        setChatResponseBusy(false);
+      } else {
+        interpretationResult = {
+          ok: false,
+          error: onlineHealth?.error || 'Worker ist offline; lokaler Sprach-Fallback wird verwendet.',
+          diagnostic: {
+            route: SOVEREIGN_WORKER_CHAT,
+            model: routeDecision.modelId,
+            messageCount: 0,
+            status: onlineHealth?.status,
+            scope: 'network',
+            canClientFix: false,
+            nextAction: 'Offline-Fallback nutzen; keine Online-Antwort oder Aktions-Evidence vortäuschen.',
+          },
+        };
       }
 
-      setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
-      setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
-      setLastWorkerRequestMessage(submittedText);
-      setChatResponseBusy(true);
-      appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
-
-      const interpretationResult = await fetchDevChatWorkerInterpretation({
-        model: routeDecision.modelId,
-        text: submittedText,
-        repoContext: chatRepoSnapshot
-          ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
-          : undefined,
-        recentMessages: chatHistory
-          .filter((line) => line.role === 'user' || line.role === 'assistant')
-          .slice(-6)
-          .map((line) => ({
-            role: line.role === 'user' ? 'user' as const : 'assistant' as const,
-            content: line.text,
-          })),
-      });
-
-      setChatResponseBusy(false);
+      const quarantineOnlineObservation = async (responseText: string, modelId: string) => {
+        const inferenceEvidence = onlineAreInference;
+        if (!inferenceEvidence || !authUser || !responseText.trim()) return;
+        try {
+          const quarantine = await quarantineAreResponse({
+            prompt: submittedText,
+            response: responseText,
+            stateHash: inferenceEvidence.stateHash,
+            adapter: inferenceEvidence.adapter,
+            modelId,
+            metadata: {
+              repository: currentRepositoryTargetKey,
+              intentOnly: true,
+              knowledgeIds: inferenceEvidence.selectedKnowledgeIds,
+              patternIds: inferenceEvidence.selectedPatternIds,
+            },
+          });
+          appendActionEvent({
+            kind: 'context_collected',
+            route: 'runtime',
+            label: quarantine.duplicate ? 'Online-Beobachtung bereits quarantänisiert' : 'Online-Beobachtung quarantänisiert',
+            detail: quarantine.learningState === 'pending_evidence'
+              ? 'DB bestätigt: Kandidat wartet auf echte Runtime-Evidence und ist noch kein gelerntes Muster.'
+              : `DB bestätigt bestehenden Lernzustand: ${quarantine.candidate.status}.`,
+            state: 'done',
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          addLog('warn', `ARE-Quarantäne nicht verfügbar: ${message}`, 'pattern');
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'Online-Beobachtung nicht gespeichert',
+            detail: message,
+            kind: 'failed',
+          }));
+        }
+      };
       if (interpretationResult.ok && interpretationResult.interpretation) {
         const interpretation = interpretationResult.interpretation;
         setWorkerBlocker(null);
@@ -4076,6 +4193,19 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
           detail: `${interpretation.intent} · confidence=${interpretation.confidence.toFixed(2)} · model=${interpretation.model}`,
           state: 'done',
         });
+
+        await quarantineOnlineObservation(
+          interpretation.mode === 'action'
+            ? JSON.stringify({
+                mode: interpretation.mode,
+                intent: interpretation.intent,
+                actionTitle: interpretation.actionTitle,
+                assistantText: interpretation.assistantText,
+                confidence: interpretation.confidence,
+              })
+            : interpretation.assistantText,
+          interpretation.model,
+        );
 
         const actionableIntent = mapInterpretedIntentToExecutorIntent(interpretation.intent);
         const isAction = interpretation.mode === 'action'
@@ -4196,6 +4326,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       }
 
       if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown' || offlineIntent === 'status')) {
+        await quarantineOnlineObservation(interpretationResult.rawContent, routeDecision.modelId);
         appendGuardedWorkerText(interpretationResult.rawContent);
         appendActionEvent({
           kind: 'llm_response_received',
@@ -4209,9 +4340,12 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
 
       const diagnostic = interpretationResult.diagnostic;
       if (diagnostic) {
+        const health = onlineHealth ?? await fetchDevChatWorkerHealth();
+        setWorkerHealthEvidence(health);
         const blocker: WorkerRuntimeBlocker = {
           message: interpretationResult.error || 'Online-Sprachdeutung fehlgeschlagen.',
           diagnostic,
+          health,
           createdAt: Date.now(),
         };
         setWorkerBlocker(blocker);

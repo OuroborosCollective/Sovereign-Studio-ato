@@ -69,9 +69,19 @@ jobs:
     - name: Type Check
       run: pnpm run type-check
     - name: Run Release Gate Tests
-      run: pnpm run test:release-gate
+      run: |
+        set -o pipefail
+        pnpm run test:release-gate 2>&1 | tee release-gate.log
       env:
         CI: true
+    - name: Upload Release Gate Evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-gate-log-${{ github.run_attempt }}
+        path: release-gate.log
+        if-no-files-found: error
+        retention-days: 3
     - name: Build Web Assets
       run: pnpm run build:web
     - name: Upload Web Build Artifact
