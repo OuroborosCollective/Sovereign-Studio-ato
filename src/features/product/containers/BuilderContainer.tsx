@@ -3629,9 +3629,12 @@ export function BuilderContainer({
   ): Promise<boolean> => {
     const intent = interpretedIntent ?? classifySovereignExecutorIntent(text);
     if (!effectiveRepoReady || !chatRepoSnapshot) {
-      appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden.', kind: 'blocked' }));
+      // Preserve the exact execution request across the repo gate. Loading the
+      // repository is only a prerequisite; it must not erase the user's job.
+      pendingWriteIntentRef.current = text;
+      appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden; Auftrag für Wiederaufnahme vorgemerkt.', kind: 'blocked' }));
       setShowRepoSetup(true);
-      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden.' });
+      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.' });
       return false;
     }
     if (intent !== 'code_execution' && intent !== 'draft_pr') {
