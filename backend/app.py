@@ -4656,6 +4656,7 @@ def _scan_tree_for_skills(tree: list[dict]) -> list[dict]:
                 "path": path,
                 "name": name or basename,
                 "framework": framework,
+                "kind": "mcp_app" if framework == "fastmcp" else "skill",
                 "size": item.get("size", 0),
                 "preview": "",
             })
@@ -4753,15 +4754,45 @@ def tc_skills_adapt():
         b       = request.get_json(force=True) or {}
         owner   = b.get("owner", "")
         repo    = b.get("repo", "")
-        path    = b.get("path", "")
+        path    = normalize_agent_path(str(b.get("path") or ""))
         content = b.get("raw_content", "")
         framework = b.get("framework", "generic")
+        source_sha = str(b.get("source_sha") or "").strip()
+        ref = b.get("ref")
+        if framework == "fastmcp":
+            return jsonify({
+                "error": "FastMCP-Server sind MCP-Apps und keine Prompt-Skills",
+                "blocker": "mcp_app_requires_plugin_installation",
+            }), 422
         if not content:
             return jsonify({"error": "raw_content erforderlich"}), 400
-        meta = _extract_skill_meta(content, path, framework)
+        if owner and repo:
+            if not path:
+                return jsonify({"error": "valider Repository-Pfad erforderlich"}), 400
+            if ref and not is_safe_branch(ref):
+                return jsonify({"error": "Ungültiger Branch-Name"}), 400
+            if not source_sha:
+                return jsonify({"error": "source_sha für Repository-Skills erforderlich"}), 400
+            source = _tc_read_github_file(owner, repo, path, ref)
+            actual_source_sha = str(source.get("sha") or "").strip()
+            if not actual_source_sha or not hmac.compare_digest(source_sha, actual_source_sha):
+                return jsonify({
+                    "error": "Skill-Quelle hat sich seit dem Lesen geändert",
+                    "blocker": "skill_source_sha_mismatch",
+                    "expectedSourceSha": source_sha,
+                    "actualSourceSha": actual_source_sha,
+                }), 409
+            content = str(source.get("content") or "")[:8000]
+        meta = _extract_skill_meta(content, path or "skill.md", framework)
+        content_sha256 = hashlib.sha256(meta["adapted_prompt"].encode("utf-8")).hexdigest()
         _tc_audit(request.session_user_id, "skill_adapt",
                   {"owner": owner, "repo": repo, "path": path, "name": meta["name"]})
-        return jsonify({**meta, "framework": framework})
+        return jsonify({
+            **meta,
+            "framework": framework,
+            "source_sha": source_sha,
+            "content_sha256": content_sha256,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4779,35 +4810,78 @@ def tc_skills_install():
         srepo = (b.get("source_repo") or "")[:200]
         spath = (b.get("source_path") or "")[:500]
         frame = (b.get("framework") or "generic")[:40]
-        prompt= (b.get("adapted_prompt") or "")[:8000]
+        prompt = (b.get("adapted_prompt") or "")[:8000]
+        source_sha = str(b.get("source_sha") or "").strip()[:160]
+        declared_content_sha256 = str(b.get("content_sha256") or "").strip().lower()
+        computed_content_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         if not name:
             return jsonify({"error": "name erforderlich"}), 400
+        if not prompt:
+            return jsonify({"error": "adapted_prompt erforderlich"}), 400
+        if frame == "fastmcp":
+            return jsonify({
+                "error": "FastMCP-Server müssen als MCP-App/Plugin installiert werden",
+                "blocker": "mcp_app_requires_plugin_installation",
+            }), 422
+        if srepo and spath and not source_sha:
+            return jsonify({"error": "source_sha für Repository-Skills erforderlich"}), 400
+        if (
+            declared_content_sha256
+            and not hmac.compare_digest(declared_content_sha256, computed_content_sha256)
+        ):
+            return jsonify({
+                "error": "Installierter Skill-Prompt stimmt nicht mit dem bestätigten Hash überein",
+                "blocker": "skill_content_hash_mismatch",
+            }), 409
 
-        existing = query(
-            "SELECT id FROM user_skills WHERE user_id=%s::uuid AND slug=%s LIMIT 1",
-            (uid, slug), one=True,
+        row = query(
+            """INSERT INTO user_skills
+                   (user_id, name, slug, description, source_repo, source_path,
+                    framework, adapted_prompt, source_sha, content_sha256,
+                    is_active, updated_at)
+               VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s,%s,true,NOW())
+               ON CONFLICT (user_id, slug) WHERE btrim(slug) <> '' DO UPDATE SET
+                   name=EXCLUDED.name,
+                   description=EXCLUDED.description,
+                   source_repo=EXCLUDED.source_repo,
+                   source_path=EXCLUDED.source_path,
+                   framework=EXCLUDED.framework,
+                   adapted_prompt=EXCLUDED.adapted_prompt,
+                   source_sha=EXCLUDED.source_sha,
+                   content_sha256=EXCLUDED.content_sha256,
+                   is_active=true,
+                   updated_at=NOW()
+               RETURNING id::text, name, slug, description, source_repo,
+                         source_path, framework, adapted_prompt, source_sha,
+                         content_sha256, is_active,
+                         to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+                         to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at""",
+            (
+                uid, name, slug, descr, srepo, spath, frame, prompt,
+                source_sha, computed_content_sha256,
+            ),
+            one=True,
+            write=True,
         )
-        if existing:
-            query(
-                """UPDATE user_skills SET name=%s, description=%s, source_repo=%s,
-                   source_path=%s, framework=%s, adapted_prompt=%s, is_active=true
-                   WHERE id=%s::uuid""",
-                (name, descr, srepo, spath, frame, prompt, str(existing["id"])),
-                write=True,
-            )
-            skill_id = str(existing["id"])
-        else:
-            rows = query(
-                """INSERT INTO user_skills
-                   (user_id, name, slug, description, source_repo, source_path, framework, adapted_prompt)
-                   VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                (uid, name, slug, descr, srepo, spath, frame, prompt),
-                write=True,
-            )
-            skill_id = str(rows[0]["id"]) if rows else "unknown"
+        if not row:
+            return jsonify({
+                "error": "Skill konnte nicht persistent installiert werden",
+                "blocker": "skill_persistence_missing",
+            }), 500
 
-        _tc_audit(uid, "skill_install", {"name": name, "slug": slug, "framework": frame})
-        return jsonify({"id": skill_id, "slug": slug, "installed": True})
+        _tc_audit(uid, "skill_install", {
+            "name": name,
+            "slug": slug,
+            "framework": frame,
+            "sourceSha": source_sha,
+            "contentSha256": computed_content_sha256,
+        })
+        return jsonify({
+            "id": row["id"],
+            "slug": row["slug"],
+            "installed": True,
+            "skill": dict(row),
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4820,8 +4894,10 @@ def tc_skills_list():
         uid  = request.session_user_id
         rows = query(
             """SELECT id::text, name, slug, description, source_repo, source_path,
-                      framework, adapted_prompt, is_active,
-                      to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+                      framework, adapted_prompt, source_sha, content_sha256,
+                      is_active,
+                      to_char(created_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+                      to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
                FROM user_skills WHERE user_id=%s::uuid ORDER BY created_at DESC""",
             (uid,),
         )
@@ -4838,11 +4914,17 @@ def tc_skills_toggle(skill_id: str):
         uid       = request.session_user_id
         b         = request.get_json(force=True) or {}
         is_active = bool(b.get("is_active", True))
-        query(
-            "UPDATE user_skills SET is_active=%s WHERE id=%s::uuid AND user_id=%s::uuid",
-            (is_active, skill_id, uid), write=True,
+        row = query(
+            """UPDATE user_skills
+               SET is_active=%s, updated_at=NOW()
+               WHERE id=%s::uuid AND user_id=%s::uuid
+               RETURNING id::text, slug, is_active,
+                         to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at""",
+            (is_active, skill_id, uid), one=True, write=True,
         )
-        return jsonify({"ok": True, "is_active": is_active})
+        if not row:
+            return jsonify({"error": "Skill nicht gefunden"}), 404
+        return jsonify({"ok": True, "skill": dict(row)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4853,12 +4935,19 @@ def tc_skills_delete(skill_id: str):
     """Delete a skill from the user's library."""
     try:
         uid = request.session_user_id
-        query(
-            "DELETE FROM user_skills WHERE id=%s::uuid AND user_id=%s::uuid",
-            (skill_id, uid), write=True,
+        row = query(
+            """DELETE FROM user_skills
+               WHERE id=%s::uuid AND user_id=%s::uuid
+               RETURNING id::text, slug""",
+            (skill_id, uid), one=True, write=True,
         )
-        _tc_audit(uid, "skill_delete", {"skill_id": skill_id})
-        return jsonify({"ok": True})
+        if not row:
+            return jsonify({"error": "Skill nicht gefunden"}), 404
+        _tc_audit(uid, "skill_delete", {
+            "skill_id": row["id"],
+            "slug": row["slug"],
+        })
+        return jsonify({"ok": True, "deleted": dict(row)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

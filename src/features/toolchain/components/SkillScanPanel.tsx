@@ -104,7 +104,7 @@ export function SkillScanPanel({ onClose, onInstalled }: Props) {
           <div>
             <div style={{ color: C.accent, fontWeight: 700, fontSize: 15 }}>🔍 Skill-Scanner</div>
             <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
-              Erkennt Skills aus jedem Repo — Replit, Cursor, Claude, MCP, Custom
+              Erkennt Text-Skills und trennt MCP-Apps für den Plugin-Pfad
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>✕</button>
@@ -146,17 +146,18 @@ export function SkillScanPanel({ onClose, onInstalled }: Props) {
         {scanResult && (
           <>
             <div style={{ color: C.muted, fontSize: 12 }}>
-              {scanResult.total} Skills gefunden — Frameworks: {scanResult.frameworks_detected.join(', ')}
+              {scanResult.total} wiederverwendbare Artefakte gefunden — Frameworks: {scanResult.frameworks_detected.join(', ')}
             </div>
 
             {scanResult.found.length === 0 && (
               <div style={{ color: C.muted, fontSize: 13, textAlign: 'center', padding: 20 }}>
-                Keine Skills erkannt. Unterstützte Formate: SKILL.md, .cursorrules, AGENTS.md, prompts/, server.py MCP Tools.
+                Keine Skills oder MCP-Apps erkannt. Unterstützte Formate: SKILL.md, .cursorrules, AGENTS.md, prompts/ und FastMCP-Server.
               </div>
             )}
 
             {scanResult.found.map((found) => {
               const isInstalled = installedPaths.has(found.path);
+              const isMcpApp = found.kind === 'mcp_app';
 
               return (
                 <div
@@ -175,6 +176,9 @@ export function SkillScanPanel({ onClose, onInstalled }: Props) {
                       {found.framework}
                     </span>
                     <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{found.name}</span>
+                    <span style={{ color: isMcpApp ? C.warn : C.accent, fontSize: 10, fontWeight: 700 }}>
+                      {isMcpApp ? 'MCP-APP' : 'SKILL'}
+                    </span>
                   </div>
                   <div style={{ color: C.muted, fontSize: 11, fontFamily: 'monospace' }}>{found.path}</div>
                   {found.preview && (
@@ -185,19 +189,24 @@ export function SkillScanPanel({ onClose, onInstalled }: Props) {
                   {installMsg[found.path] && (
                     <div style={{ color: C.accent, fontSize: 11 }}>{installMsg[found.path]}</div>
                   )}
+                  {isMcpApp && (
+                    <div style={{ color: C.warn, fontSize: 11, lineHeight: 1.4 }}>
+                      MCP-Server werden nicht als Prompt-Skill installiert. Dafür ist ein geprüftes Plugin/App-Paket mit Tool-Schemas und MCP-Runtime erforderlich.
+                    </div>
+                  )}
                   <button
                     onClick={() => handleInstall(found)}
-                    disabled={installing === found.path || isInstalled}
+                    disabled={isMcpApp || installing === found.path || isInstalled}
                     style={{
-                      background: isInstalled ? `${C.accent}33` : C.accent,
+                      background: isMcpApp ? `${C.warn}22` : isInstalled ? `${C.accent}33` : C.accent,
                       border: 'none', borderRadius: 8, padding: '6px 14px',
-                      color: isInstalled ? C.accent : '#000',
+                      color: isMcpApp ? C.warn : isInstalled ? C.accent : '#000',
                       fontWeight: 700, fontSize: 12, cursor: 'pointer',
                       alignSelf: 'flex-start',
                       opacity: installing === found.path ? 0.7 : 1,
                     }}
                   >
-                    {isInstalled ? '✓ Installiert' : installing === found.path ? '…' : '+ Installieren'}
+                    {isMcpApp ? 'Als Plugin/App prüfen' : isInstalled ? '✓ Installiert' : installing === found.path ? '…' : '+ Skill installieren'}
                   </button>
                 </div>
               );

@@ -435,6 +435,7 @@ import { LoginModal } from '../../user/components/LoginModal';
 import { UserProfile } from '../../user/components/UserProfile';
 import { useToolchainStore } from '../../toolchain/useToolchainStore';
 import { useSkillsStore } from '../../toolchain/useSkillsStore';
+import { buildExplicitSkillMission } from '../../toolchain/skillRuntime';
 import { SkillScanPanel } from '../../toolchain/components/SkillScanPanel';
 
 // ─────────────────────────────────────────────────────────────
@@ -2663,7 +2664,6 @@ export function BuilderContainer({
   // ── Sovereign Skill System — auto-load + dynamic slash commands
   const {
     loadSkills,
-    getActiveSkillContext,
     getSkillSlashCommands,
     skills: installedSkills,
     loaded: skillsLoaded,
@@ -2682,6 +2682,9 @@ export function BuilderContainer({
       description: s.description,
       adapted_prompt: s.adapted_prompt,
       is_skill: true,
+      skill_id: s.skill_id,
+      source_sha: s.source_sha,
+      content_sha256: s.content_sha256,
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [installedSkills],
@@ -3782,10 +3785,23 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       if (command.action === "skill-run" && command.adapted_prompt) {
         triggerHaptic("light");
         appendChatLine({ role: "user", text: submittedText });
-        appendChatLine({
-          role: "assistant",
-          text: `**${command.label}** wird ausgeführt…\n\n${command.adapted_prompt.slice(0, 600)}`,
+        appendActionEvent({
+          kind: 'route_selected',
+          route: 'runtime',
+          label: `Expliziter Skill gewählt: /${command.cmd.replace(/^\/+/, '')}`,
+          detail: 'Der installierte Workflow wird über die normale Sovereign-Routing- und Evidence-Pipeline ausgeführt.',
+          state: 'running',
         });
+        const skillMission = buildExplicitSkillMission({
+          name: command.label,
+          slug: command.cmd,
+          adaptedPrompt: command.adapted_prompt,
+          argument,
+          skillId: command.skill_id,
+          sourceSha: command.source_sha,
+          contentSha256: command.content_sha256,
+        });
+        await _processSubmit(skillMission, { inputAlreadyRecorded: true });
         return;
       }
     }
@@ -4777,7 +4793,6 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       chatRepoSnapshot,
       toolchainContext: [
         getToolContext(),
-        getActiveSkillContext(),
         autoToolchainContext,
         referenceKnowledgeContext,
         experiencePatternContext,
