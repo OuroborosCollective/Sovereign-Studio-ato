@@ -381,6 +381,44 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText(/Ich habe daraus diesen Integrationsauftrag erkannt/)).toBeInTheDocument();
   });
 
+  it("preserves the online-understood action as the mission used for execution and later PR-gated learning", async () => {
+    const props = {
+      ...baseProps(),
+      agentReady: true,
+      onStartAgent: vi.fn(),
+    };
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+      jsonResponse({ choices: [{ message: { content: JSON.stringify({
+        mode: 'action',
+        intent: 'code_execution',
+        assistant_text: 'Ich habe den Auftrag verstanden.',
+        action_title: 'Mobile Chat-UX verbessern',
+        confidence: 0.96,
+        language: 'de',
+      }) } }], model: 'deepseek-r1' }),
+    );
+
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    const originalText = 'Verbessere die mobile Chat-UX und prüfe den Runtime-Pfad.';
+    fireEvent.change(chatField(), { target: { value: originalText } });
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(screen.getByTestId('integration-intent-draft-card')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Integrationsauftrag einbauen' }));
+
+    await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
+    expect(props.onMissionChange).toHaveBeenCalledOnce();
+    const learnedMission = props.onMissionChange.mock.calls[0][0] as string;
+    expect(learnedMission).toContain(originalText);
+    expect(learnedMission).toContain('Ideenfabrik Auftrag:');
+  });
+
   it("syncs externally adopted insight missions only into an untouched empty composer", () => {
     const props = baseProps();
     const { rerender } = renderWithProviders(<BuilderContainer {...props} mission="" />);

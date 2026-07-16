@@ -3575,7 +3575,9 @@ export function BuilderContainer({
         repoReason: effectiveRepoReason,
       }),
     );
-    emitMissionChange(clean);
+    if (lastMissionRef.current !== clean) {
+      emitMissionChange(clean);
+    }
 
     if (!onStartAgent) {
       appendActionEvent(buildBlockedActionEvent({
@@ -5826,6 +5828,20 @@ Das echte Repo-Setup wurde geöffnet.`,
                           ? detectDirectPatchTarget(draft.originalText, chatRepoSnapshot.filePaths ?? []) ?? undefined
                           : undefined,
                       });
+
+                      // Preserve the exact LLM-understood mission for execution and
+                      // later evidence-gated learning. A pattern is still saved only
+                      // after a real Draft PR URL exists.
+                      const confirmedMission = collapseRepeatedAnalyzedMission(
+                        buildAnalyzedMission({
+                          wish: draft.originalText,
+                          repoReady: effectiveRepoReady,
+                          repoReason: effectiveRepoReason,
+                        }),
+                      );
+                      if (lastMissionRef.current !== confirmedMission) {
+                        emitMissionChange(confirmedMission);
+                      }
 
                       // Log confirmed draft
                       appendActionEvent(buildDraftConfirmedEvent(draft));
