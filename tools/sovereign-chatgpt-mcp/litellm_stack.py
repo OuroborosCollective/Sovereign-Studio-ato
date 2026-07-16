@@ -93,6 +93,39 @@ class LiteLLMStackRuntime:
             raise ValueError(f"LiteLLM-Template ist zu groß: {name}")
         return payload, _sha256(payload)
 
+    def _compose_command_prefix(self) -> list[str]:
+        return [
+            "docker",
+            "compose",
+            "--project-name",
+            PROJECT_NAME,
+            "--project-directory",
+            str(self.deploy_root),
+            "--env-file",
+            str(self.deploy_root / ".env"),
+            "--file",
+            str(self.deploy_root / "docker-compose.yml"),
+        ]
+
+    def _compose_up_command(self) -> list[str]:
+        return [
+            *self._compose_command_prefix(),
+            "up",
+            "-d",
+            "--remove-orphans",
+        ]
+
+    def _litellm_recreate_command(self) -> list[str]:
+        """Recreate only LiteLLM so atomic provider-secret rotation remounts the new inode."""
+        return [
+            *self._compose_command_prefix(),
+            "up",
+            "-d",
+            "--force-recreate",
+            "--no-deps",
+            "litellm",
+        ]
+
     def _container_state(self, container: str) -> dict[str, Any]:
         inspected = self._run(
             [
@@ -194,13 +227,36 @@ request = urllib.request.Request(
     headers={'Authorization': 'Bearer ' + value},
 )
 with urllib.request.urlopen(request, timeout=30) as response:
+    model_http_status = response.status
+    model_project_id = str(response.headers.get('openai-project') or '').strip()
     payload = json.loads(response.read().decode('utf-8'))
+identity_request = urllib.request.Request(
+    'https://api.openai.com/v1/me',
+    headers={'Authorization': 'Bearer ' + value},
+)
+with urllib.request.urlopen(identity_request, timeout=30) as identity_response:
+    identity_http_status = identity_response.status
+    identity_project_id = str(identity_response.headers.get('openai-project') or '').strip()
+    identity_payload = json.loads(identity_response.read().decode('utf-8'))
 model_ids = sorted({
     str(item.get('id') or '').strip()
     for item in payload.get('data', [])
     if isinstance(item, dict) and str(item.get('id') or '').strip()
 })
-print(json.dumps({'httpStatus': response.status, 'modelIds': model_ids}, separators=(',', ':')))
+organization_ids = sorted({
+    str(item.get('id') or '').strip()
+    for item in ((identity_payload.get('orgs') or {}).get('data') or [])
+    if isinstance(item, dict) and str(item.get('id') or '').strip()
+})
+print(json.dumps({
+    'httpStatus': model_http_status,
+    'modelIds': model_ids,
+    'identityHttpStatus': identity_http_status,
+    'principalId': str(identity_payload.get('id') or '').strip(),
+    'principalName': str(identity_payload.get('name') or '').strip(),
+    'organizationIds': organization_ids,
+    'projectId': identity_project_id or model_project_id,
+}, separators=(',', ':')))
 """
         result = self._run(
             [
@@ -246,15 +302,40 @@ print(json.dumps({'httpStatus': response.status, 'modelIds': model_ids}, separat
             for model_id in payload.get("modelIds", [])
             if _SAFE_PROVIDER_MODEL.fullmatch(str(model_id or "").strip())
         })
+        principal_id = str(payload.get("principalId") or "").strip()
+        if not _SAFE_PROVIDER_MODEL.fullmatch(principal_id):
+            principal_id = ""
+        principal_name = "".join(
+            character
+            for character in str(payload.get("principalName") or "")
+            if character.isprintable()
+        ).strip()[:160]
+        organization_ids = sorted({
+            str(organization_id or "").strip()
+            for organization_id in payload.get("organizationIds", [])
+            if _SAFE_PROVIDER_MODEL.fullmatch(str(organization_id or "").strip())
+        })
+        project_id = str(payload.get("projectId") or "").strip()
+        if project_id and not _SAFE_PROVIDER_MODEL.fullmatch(project_id):
+            project_id = ""
+        identity_verified = payload.get("identityHttpStatus") == 200 and bool(principal_id)
         inventory_sha = _sha256(("\n".join(model_ids) + "\n").encode("utf-8"))
         return {
-            "ok": payload.get("httpStatus") == 200 and bool(model_ids),
+            "ok": payload.get("httpStatus") == 200 and bool(model_ids) and identity_verified,
             "status": "PROVIDER_MODEL_INVENTORY",
             "httpStatus": payload.get("httpStatus"),
             "modelCount": len(model_ids),
             "modelIds": model_ids[:200],
             "inventorySha256": inventory_sha,
             "truncated": len(model_ids) > 200,
+            "providerIdentity": {
+                "verified": identity_verified,
+                "httpStatus": payload.get("identityHttpStatus"),
+                "principalId": principal_id,
+                "principalName": principal_name,
+                "organizationIds": organization_ids,
+                "projectId": project_id,
+            },
             "providerKeyPresent": True,
             "providerKeyValueReturned": False,
             "secretValuesExposed": False,
@@ -717,30 +798,27 @@ print(json.dumps({'httpStatus': response.status, 'modelIds': model_ids}, separat
         self._write_atomic(self.deploy_root / ".env", env_payload, 0o600)
         self._write_backend_service_key(secret_values["LITELLM_MASTER_KEY"])
 
-        deployed = self._run(
-            [
-                "docker",
-                "compose",
-                "--project-name",
-                PROJECT_NAME,
-                "--project-directory",
-                str(self.deploy_root),
-                "--env-file",
-                str(self.deploy_root / ".env"),
-                "--file",
-                str(self.deploy_root / "docker-compose.yml"),
-                "up",
-                "-d",
-                "--remove-orphans",
-            ],
-            timeout=600,
-        )
+        deployed = self._run(self._compose_up_command(), timeout=600)
         if not deployed["ok"]:
             return {
                 "ok": False,
                 "status": "FAILED",
                 "blocker": "Allowlisteter LiteLLM-Compose-Deploy ist fehlgeschlagen",
                 "deploy": {"ok": False, "exit_code": deployed["exit_code"], "error": "docker compose up failed"},
+                "networkCreated": network_created,
+            }
+
+        remounted = self._run(self._litellm_recreate_command(), timeout=600)
+        if not remounted["ok"]:
+            return {
+                "ok": False,
+                "status": "FAILED",
+                "blocker": "LiteLLM konnte den atomar rotierten Provider-Zugang nicht neu mounten",
+                "providerSecretRemount": {
+                    "ok": False,
+                    "exit_code": remounted["exit_code"],
+                    "error": "docker compose force-recreate litellm failed",
+                },
                 "networkCreated": network_created,
             }
 
@@ -793,6 +871,12 @@ print(json.dumps({'httpStatus': response.status, 'modelIds': model_ids}, separat
             "secretsPresent": list(REQUIRED_SECRET_NAMES),
             "providerInputFileReady": PROVIDER_INPUT_PATH.is_file() and not PROVIDER_INPUT_PATH.is_symlink(),
             "backendServiceKeyFileReady": BACKEND_SERVICE_KEY_PATH.is_file() and not BACKEND_SERVICE_KEY_PATH.is_symlink(),
+            "providerSecretRemount": {
+                "ok": True,
+                "service": "litellm",
+                "forceRecreate": True,
+                "databaseRecreated": False,
+            },
             "activeConfigSha256": _sha256(config),
             "aliasSelection": alias_selection,
             "secretValuesExposed": False,

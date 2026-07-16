@@ -117,6 +117,122 @@ def test_litellm_candidate_blocks_command_override(tmp_path: Path) -> None:
     assert result["error"] == "unexpected LiteLLM command"
 
 
+def test_compose_deploy_preserves_stack_update_and_forces_secret_remount(
+    tmp_path: Path,
+) -> None:
+    runtime = LiteLLMStackRuntime(
+        runner=_runner_factory(),
+        template_root=str(tmp_path),
+        deploy_root=str(tmp_path / "deploy"),
+    )
+
+    assert runtime._compose_up_command()[-3:] == [
+        "up",
+        "-d",
+        "--remove-orphans",
+    ]
+    assert runtime._litellm_recreate_command()[-5:] == [
+        "up",
+        "-d",
+        "--force-recreate",
+        "--no-deps",
+        "litellm",
+    ]
+
+
+def test_deploy_confirms_remount_only_after_targeted_recreate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    template_root = tmp_path / "templates"
+    deploy_root = tmp_path / "deploy"
+    template_root.mkdir()
+    (template_root / "docker-compose.yml").write_bytes(b"services: {}\n")
+    (template_root / "config.yaml").write_bytes(b"model_list: []\n")
+    (template_root / "sovereign-entrypoint.py").write_bytes(
+        b"from __future__ import annotations\n"
+    )
+    captured: list[list[str]] = []
+
+    def runner(argv, **kwargs):
+        captured.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    runtime = LiteLLMStackRuntime(
+        runner=runner,
+        template_root=str(template_root),
+        deploy_root=str(deploy_root),
+    )
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "1")
+    monkeypatch.setattr(runtime, "_resolved_config", lambda config: (config, None))
+    monkeypatch.setattr(
+        runtime,
+        "_existing_secret_values",
+        lambda: {
+            "POSTGRES_PASSWORD": "abcdefghijklmnop",
+            "LITELLM_MASTER_KEY": "test-master-key-abcdefghijklmnop",
+            "LITELLM_SALT_KEY": "test-salt-key-ponmlkjihgfedcba",
+        },
+    )
+    monkeypatch.setattr(runtime, "_validate_owner_provider_input", lambda: None)
+    monkeypatch.setattr(
+        runtime,
+        "_validate_candidate",
+        lambda compose, config, entrypoint, env_payload: {
+            "ok": True,
+            "status": "VALIDATED",
+        },
+    )
+    monkeypatch.setattr(runtime, "_write_backend_service_key", lambda value: None)
+    monkeypatch.setattr(
+        runtime,
+        "_wait_for_runtime",
+        lambda: {
+            "litellm": {
+                "running": True,
+                "health": "healthy",
+                "networks": ["sovereign-private"],
+                "publishedPorts": {},
+            },
+            "db": {
+                "running": True,
+                "health": "healthy",
+                "networks": ["sovereign-private"],
+                "publishedPorts": {},
+            },
+        },
+    )
+    monkeypatch.setattr(runtime, "_readiness", lambda: {"ok": True})
+    monkeypatch.setattr(runtime, "_models", lambda: {"ok": False})
+    _, compose_sha = runtime._template("docker-compose.yml")
+    _, config_sha = runtime._template("config.yaml")
+    _, entrypoint_sha = runtime._template("sovereign-entrypoint.py")
+
+    result = runtime.deploy(
+        confirmation_compose_sha256=compose_sha,
+        confirmation_config_sha256=config_sha,
+        confirmation_entrypoint_sha256=entrypoint_sha,
+    )
+
+    compose_up_calls = [
+        argv
+        for argv in captured
+        if argv[:2] == ["docker", "compose"] and "up" in argv
+    ]
+    assert compose_up_calls == [
+        runtime._compose_up_command(),
+        runtime._litellm_recreate_command(),
+    ]
+    assert result["status"] == "DEPLOYED_UNVERIFIED"
+    assert result["providerSecretRemount"] == {
+        "ok": True,
+        "service": "litellm",
+        "forceRecreate": True,
+        "databaseRecreated": False,
+    }
+
+
 def _completion_runner(*, request_id_present: bool = True, total_tokens: int = 3):
     def runner(argv, **kwargs):
         payload = {
@@ -172,6 +288,11 @@ def test_provider_inventory_runs_in_portless_fixed_image_and_returns_only_metada
         payload = {
             "httpStatus": 200,
             "modelIds": ["gpt-confirmed-b", "invalid model id", "gpt-confirmed-a"],
+            "identityHttpStatus": 200,
+            "principalId": "user-confirmed-service-account",
+            "principalName": "Sovereignatp",
+            "organizationIds": ["org-confirmed"],
+            "projectId": "proj-confirmed",
         }
         return subprocess.CompletedProcess(argv, 0, json.dumps(payload) + "\n", "")
 
@@ -190,6 +311,14 @@ def test_provider_inventory_runs_in_portless_fixed_image_and_returns_only_metada
     assert result["providerKeyValueReturned"] is False
     assert result["secretValuesExposed"] is False
     assert result["publicPortOpened"] is False
+    assert result["providerIdentity"] == {
+        "verified": True,
+        "httpStatus": 200,
+        "principalId": "user-confirmed-service-account",
+        "principalName": "Sovereignatp",
+        "organizationIds": ["org-confirmed"],
+        "projectId": "proj-confirmed",
+    }
     argv = captured[0]
     assert argv[:3] == ["docker", "run", "--rm"]
     assert "--read-only" in argv
@@ -197,7 +326,39 @@ def test_provider_inventory_runs_in_portless_fixed_image_and_returns_only_metada
     assert "--publish" not in argv
     assert "-p" not in argv
     assert LITELLM_IMAGE in argv
+    assert "https://api.openai.com/v1/me" in " ".join(argv)
     assert "sk-proj-" not in " ".join(argv)
+
+
+def test_provider_inventory_blocks_without_safe_principal_identity(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def runner(argv, **kwargs):
+        payload = {
+            "httpStatus": 200,
+            "modelIds": ["gpt-confirmed-a"],
+            "identityHttpStatus": 200,
+            "principalId": "",
+            "principalName": "",
+            "organizationIds": [],
+            "projectId": "",
+        }
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload) + "\n", "")
+
+    runtime = LiteLLMStackRuntime(
+        runner=runner,
+        template_root=str(tmp_path),
+        deploy_root=str(tmp_path / "deploy"),
+    )
+    monkeypatch.setattr(runtime, "_validate_owner_provider_input", lambda: None)
+
+    result = runtime.provider_model_inventory()
+
+    assert result["ok"] is False
+    assert result["providerIdentity"]["verified"] is False
+    assert result["providerKeyValueReturned"] is False
+    assert result["secretValuesExposed"] is False
 
 
 def test_alias_config_is_derived_only_from_confirmed_provider_models() -> None:
