@@ -801,7 +801,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
       fireEvent.click(sendButton());
-      await waitFor(() => expect(screen.getByText(/LiteLLM Intent HTTP 503/i)).toBeDefined());
+      await waitFor(() =>
+        expect(screen.getAllByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i).length)
+          .toBeGreaterThanOrEqual(1),
+      );
       expect(chatCalls).toBe(2);
 
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
@@ -876,6 +879,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
       jsonResponse({ login: "octo" }),
       jsonResponse({ permissions: { push: true } }),
     );
@@ -902,6 +906,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const originalText = "Sovereign Agent soll Feature X implementieren";
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
     mockFetchSequence(
+      jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
       jsonResponse({ permissions: { push: true } }),
@@ -1254,10 +1259,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "Implementiere den mobilen Chat-Fix als Draft PR." } });
     fireEvent.click(sendButton());
     await waitFor(() =>
-      expect(screen.getByText(/Ausführungsauftrag erkannt/i)).toBeDefined(),
+      expect(screen.getByText(/Die Runtime hat den Job-Start angefragt/i)).toBeDefined(),
     );
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
-    expect(screen.getByText(/Job-Start wurde angefragt/i)).toBeDefined();
+    expect(screen.getByText(/Runtime hat Job-Start angefragt/i)).toBeDefined();
     expect(screen.queryByText(/Sovereign Agent Runtime wird gestartet/i)).toBeNull();
     expect(screen.getByText(/kein Auto-Merge/i)).toBeDefined();
   });
@@ -1716,7 +1721,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), { target: { value: "Erstelle einen Draft PR für README und Docs." } });
     fireEvent.click(sendButton());
 
-    await waitFor(() => expect(screen.getByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeDefined());
+    await waitFor(() =>
+      expect(screen.getByTestId('integration-intent-draft-card')).toBeDefined(),
+    );
     expect(screen.queryByText(/Ausführungsauftrag kann nicht ausgeführt werden/i)).toBeNull();
+    expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
   });});

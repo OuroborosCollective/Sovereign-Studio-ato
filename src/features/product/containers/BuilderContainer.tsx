@@ -4126,7 +4126,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       // LiteLLM call. Charging here as well would double-bill one interpretation.
       // PAL only supplies a preferred model; the enabled backend route catalog
       // remains the source of truth for the actual model.
-      setLastWorkerRequestMessage(submittedText);
       setChatResponseBusy(true);
       appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · LiteLLM Intent`));
 
@@ -4148,7 +4147,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
       setChatResponseBusy(false);
       if (interpretationResult.ok && interpretationResult.interpretation) {
         const interpretation = interpretationResult.interpretation;
-        setWorkerBlocker(null);
+        // A successful advisory/status interpretation does not prove that the
+        // previously failed correlated request was repaired. Only a successful
+        // actionable request or an explicit retry may clear that blocker.
+        if (interpretation.mode === 'action' || options.ignoreExistingWorkerBlocker) {
+          setWorkerBlocker(null);
+          if (options.ignoreExistingWorkerBlocker) setLastWorkerRequestMessage(null);
+        }
         appendActionEvent(buildWorkerResponseEvent());
         appendActionEvent({
           kind: 'capability_checked',
@@ -4260,6 +4265,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         return;
       }
 
+      // Preserve the exact failed request as retry target. Later advisory
+      // messages such as "Warum?" must not overwrite this correlation.
+      setLastWorkerRequestMessage(submittedText);
       const offlineIntent = classifySovereignExecutorIntent(submittedText);
       appendActionEvent({
         kind: 'blocked',
