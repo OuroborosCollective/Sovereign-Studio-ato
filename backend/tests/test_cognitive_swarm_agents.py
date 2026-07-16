@@ -124,7 +124,7 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     assert all("prompt" not in event and "output" not in event for event in events)
 
 
-def test_confirmed_nullfund_finishes_completed_without_approval(monkeypatch) -> None:
+def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> None:
     monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
     monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
 

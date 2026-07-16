@@ -2320,6 +2320,14 @@ function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
 
+  const handleClear = useCallback(() => {
+    onChange("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.focus();
+    }
+  }, [onChange]);
+
   return (
     <div
       style={{
@@ -2379,12 +2387,38 @@ function Composer({
             overflowY: "auto",
           }}
         />
+        {value && (
+          <button
+            type="button"
+            onClick={handleClear}
+            aria-label="Eingabe löschen"
+            title="Eingabe löschen"
+            style={{
+              width: 32,
+              height: 40,
+              flexShrink: 0,
+              background: "transparent",
+              border: "none",
+              color: C.textMuted,
+              fontSize: 16,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "color 0.15s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = C.textSub)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = C.textMuted)}
+          >
+            ✕
+          </button>
+        )}
         <button
           type="button"
           onClick={onSubmit}
           disabled={disabled || loading}
           aria-label="Senden"
-          title="Senden"
+          title={disabled || loading ? "Senden (deaktiviert)" : "Senden"}
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{
