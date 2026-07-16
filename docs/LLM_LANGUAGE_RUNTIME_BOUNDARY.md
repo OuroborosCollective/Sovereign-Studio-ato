@@ -21,6 +21,8 @@ Runtime und Tools sind ausschließlich zuständig für:
 
 Das LLM darf eine gewünschte Aktion verstehen, beschreiben und als strukturierten Intent melden. Es darf die Aktion nicht als ausgeführt oder erfolgreich behaupten.
 
+Ein direkter Executor-Handoff ist nur zulässig, wenn das validierte Schema zusätzlich `explicit_executor_request=true` enthält. Eine allgemeine Änderungsabsicht erzeugt dagegen einen bestätigbaren Integrationsentwurf und startet kein Tool automatisch.
+
 Die Runtime darf dem LLM belegte Fakten bereitstellen, beispielsweise:
 
 ```text
