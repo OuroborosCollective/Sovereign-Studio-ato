@@ -11,7 +11,7 @@ import importlib.metadata
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, Field
 
@@ -291,6 +291,74 @@ def _require_agents_sdk() -> tuple[Any, Any]:
             "install the pinned backend dependency before running the swarm"
         )
     return _AGENT_CLASS, _RUNNER_CLASS
+
+
+class MissionIntent(BaseModel):
+    mode: Literal["conversation", "read_only_analysis", "repository_execution"]
+    normalized_goal: str = Field(min_length=1, max_length=2000)
+    requires_online_tools: bool
+    requires_repository_workspace: bool
+    learning_scope: list[str] = Field(default_factory=list, max_length=12)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+async def classify_mission_intent(
+    mission: str,
+    *,
+    model: str | None = None,
+) -> MissionIntent:
+    """Let the routed LLM understand user language; runtime only validates the bounded action contract."""
+
+    normalized_mission = mission.strip()
+    if not normalized_mission:
+        raise ValueError("mission is required")
+    if not ensure_openai_runtime_key():
+        raise SwarmExecutionError(
+            stage="intent-router",
+            family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
+            error_type="RuntimeConfigurationError",
+            next_action="VERIFY_LITELLM_SERVICE_KEY",
+            retryable=False,
+        )
+    selected_model = (model or os.getenv("SOVEREIGN_AGENTS_MODEL") or DEFAULT_MODEL).strip()
+    if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
+        raise ValueError("A Sovereign LiteLLM model alias is required.")
+    agent_class, runner_class = _require_agents_sdk()
+    router = agent_class(
+        name="Sovereign Intent Router",
+        model=selected_model,
+        instructions=(
+            "Understand the user's natural language, including typos, slang, incomplete grammar and mixed technical language. "
+            "Choose repository_execution when the user asks the system to change, fix, implement, rerun, test, build, deploy, "
+            "or otherwise act on the configured repository/runtime. Choose read_only_analysis when tools may inspect evidence "
+            "but no mutation is requested. Choose conversation for explanation or discussion without online tools. "
+            "Do not infer success, permissions, secrets or completed actions. Return only the structured intent. "
+            "learning_scope may name reusable observations that should be learned only after real tool evidence exists."
+        ),
+        output_type=MissionIntent,
+    )
+    result = await _run_stage(
+        runner_class,
+        router,
+        f"User mission:\n{normalized_mission}",
+        stage="intent-router",
+    )
+    intent = result.final_output
+    if not isinstance(intent, MissionIntent):
+        raise SwarmExecutionError(
+            stage="intent-router-output",
+            family="AGENTS_STRUCTURED_OUTPUT_INVALID",
+            error_type=type(intent).__name__,
+            next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
+            retryable=True,
+        )
+    if intent.mode == "repository_execution":
+        intent.requires_online_tools = True
+        intent.requires_repository_workspace = True
+    elif intent.mode == "conversation":
+        intent.requires_online_tools = False
+        intent.requires_repository_workspace = False
+    return intent
 
 
 class DispatchPlan(BaseModel):
