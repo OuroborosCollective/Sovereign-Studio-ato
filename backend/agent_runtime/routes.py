@@ -126,6 +126,16 @@ def _tool_result_to_api(result: ToolResult, gate: EvidenceGateResult | None = No
     }
 
 
+def _pattern_learning_response_state(pattern_result: Any, vector_memory: dict[str, Any]) -> tuple[bool, int, str | None]:
+    """Derive API truth only from both candidate and pgvector persistence outcomes."""
+    if not getattr(pattern_result, "allowed", False):
+        return False, 400, "pattern_not_accepted"
+    if not bool(vector_memory.get("stored")):
+        blocker = str(vector_memory.get("reason") or "pattern_vector_not_stored")[:120]
+        return False, 503, blocker
+    return True, 200, None
+
+
 def _workspace_root() -> Path | None:
     configured = os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "").strip()
     return Path(configured) if configured else None
@@ -433,7 +443,12 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "blocker": cleanup.blocker,
                     "events": [asdict(event) for event in cleanup.events],
                 }), 400
-            update_agent_job_state(conn, job_id=job_id, status="cleaned")
+            update_agent_job_state(
+                conn,
+                job_id=job_id,
+                status="cleaned",
+                clear_blocker=True,
+            )
             return jsonify({
                 "ok": True,
                 "runtime": "sovereign-agent",
@@ -541,14 +556,19 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 user_id=user_id,
                 result=pattern_result,
             )
+            response_ok, status_code, blocker = _pattern_learning_response_state(
+                pattern_result,
+                vector_memory,
+            )
             return jsonify({
-                "ok": pattern_result.allowed,
+                "ok": response_ok,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "candidateId": candidate_id,
                 "patternLearning": pattern_learning_signal(pattern_result),
                 "vectorMemory": vector_memory,
-            }), 200 if pattern_result.allowed else 400
+                "blocker": blocker,
+            }), status_code
         finally:
             _close(conn)
 

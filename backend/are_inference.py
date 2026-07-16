@@ -374,6 +374,11 @@ def _quarantine_candidate(conn: Any, *, user_id: str, body: dict[str, Any]) -> d
     }
 
 
+def _quarantine_response_status(result: dict[str, Any]) -> int:
+    """Return created only when this request persisted a genuinely new candidate."""
+    return 200 if bool(result.get("duplicate")) else 201
+
+
 def _list_quarantine(conn: Any, *, user_id: str) -> list[dict[str, Any]]:
     with conn.cursor() as cur:
         cur.execute(
@@ -393,8 +398,15 @@ def _list_quarantine(conn: Any, *, user_id: str) -> list[dict[str, Any]]:
 def _promote_quarantine(conn: Any, *, user_id: str, quarantine_id: str, pattern_candidate_id: str) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT candidate_id FROM sovereign_agent_pattern_candidates
-               WHERE candidate_id=%s AND user_id=%s AND decision='accepted' LIMIT 1""",
+            """SELECT c.candidate_id
+               FROM sovereign_agent_pattern_candidates c
+               JOIN sovereign_agent_pattern_vectors v
+                 ON v.candidate_id=c.candidate_id AND v.user_id=c.user_id
+               WHERE c.candidate_id=%s
+                 AND c.user_id=%s
+                 AND c.decision='accepted'
+                 AND c.remote_memory_allowed=true
+               LIMIT 1""",
             (pattern_candidate_id, user_id),
         )
         accepted = cur.fetchone()
@@ -453,7 +465,7 @@ def repair_missing_knowledge_embeddings(
                 """UPDATE knowledge_blocks
                    SET embedding=%s::vector, embedding_model=%s, updated_at=NOW()
                    WHERE id=%s::uuid AND user_id=%s::uuid AND embedding IS NULL""",
-                (vector_literal(vector), EMBEDDING_MODEL, row["id"], user_id),
+                (vector_literal(vector), batch.model, row["id"], user_id),
             )
             if int(getattr(cur, "rowcount", 0) or 0) > 0:
                 updated_ids.append(row["id"])
@@ -480,7 +492,7 @@ def repair_missing_knowledge_embeddings(
                      WHERE sb.source_id=s.id AND sb.block_id=ANY(%s::uuid[])
                  )""",
                 (
-                    json.dumps({"embeddingModel": EMBEDDING_MODEL, "repairProvider": batch.provider}),
+                    json.dumps({"embeddingModel": batch.model, "repairProvider": batch.provider}),
                     user_id,
                     updated_ids,
                 ),
@@ -498,7 +510,7 @@ def repair_missing_knowledge_embeddings(
         "repaired": len(updated_ids),
         "remaining": remaining,
         "remainingForUser": remaining,
-        "embeddingModel": EMBEDDING_MODEL,
+        "embeddingModel": batch.model,
         "provider": batch.provider,
         "blockIds": updated_ids,
     }
@@ -567,7 +579,11 @@ def register_are_inference_routes(app: Any, *, require_session: Callable, get_co
         conn = get_connection()
         try:
             result = _quarantine_candidate(conn, user_id=request.session_user_id, body=body)
-            return jsonify({"ok": True, **result}), 201
+            return jsonify({
+                "ok": True,
+                "created": not result["duplicate"],
+                **result,
+            }), _quarantine_response_status(result)
         except ValueError as exc:
             conn.rollback()
             return jsonify({"ok": False, "error": str(exc)}), 400
