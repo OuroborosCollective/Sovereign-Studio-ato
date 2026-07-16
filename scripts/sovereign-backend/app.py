@@ -6382,6 +6382,97 @@ def admin_llm_gateway_providers():
     })
     return jsonify({"ok": True, "providers": results, "gatewayUrl": AI_GATEWAY_BASE})
 
+def _sync_worker_routes_from_live_source() -> dict:
+    """Synchronize the complete live Worker model set in one database transaction."""
+    response, error = fetch_worker_ai("v1/models")
+    if error:
+        raise RuntimeError("Worker model source unavailable")
+    if response is None or not response.ok:
+        status_code = getattr(response, "status_code", "unknown")
+        raise RuntimeError(f"Worker model source HTTP {status_code}")
+
+    payload = response.json() if response.content else {}
+    worker_models = payload.get("data", []) if isinstance(payload, dict) else []
+    model_ids = sorted({
+        str(model.get("id") or "").strip()
+        for model in worker_models
+        if isinstance(model, dict) and str(model.get("id") or "").strip()
+    })
+    if not model_ids:
+        raise RuntimeError("Worker model source returned no models")
+
+    pool = get_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                ("llm_routes_worker_sync",),
+            )
+            cur.execute(
+                """SELECT model_id
+                   FROM llm_routes
+                   WHERE lower(provider)='cloudflare'
+                   FOR UPDATE"""
+            )
+            existing_ids = {
+                str(row.get("model_id") or "").strip()
+                for row in cur.fetchall()
+                if str(row.get("model_id") or "").strip()
+            }
+
+            for model_id in model_ids:
+                friendly_name, priority = _worker_route_fields(model_id)
+                cur.execute(
+                    """INSERT INTO llm_routes
+                           (id, model_id, model_name, provider, base_url,
+                            credits_per_unit, priority, disabled)
+                       VALUES (gen_random_uuid()::text, %s, %s, 'cloudflare', %s, 0.001, %s, false)
+                       ON CONFLICT (model_id) DO UPDATE SET
+                           model_name = EXCLUDED.model_name,
+                           provider = EXCLUDED.provider,
+                           base_url = EXCLUDED.base_url,
+                           credits_per_unit = EXCLUDED.credits_per_unit,
+                           priority = EXCLUDED.priority,
+                           disabled = false,
+                           updated_at = NOW()""",
+                    (model_id, friendly_name, WORKER_AI_BASE, priority),
+                )
+
+            cur.execute(
+                """UPDATE llm_routes
+                   SET disabled=true, updated_at=NOW()
+                   WHERE lower(provider)='cloudflare'
+                     AND disabled=false
+                     AND NOT (model_id = ANY(%s))
+                   RETURNING model_id""",
+                (model_ids,),
+            )
+            disabled_ids = [str(row.get("model_id") or "") for row in cur.fetchall()]
+            created = len(set(model_ids) - existing_ids)
+            updated = len(set(model_ids) & existing_ids)
+            result = {
+                "ok": True,
+                "totalModels": len(model_ids),
+                "created": created,
+                "updated": updated,
+                "disabled": len(disabled_ids),
+            }
+            cur.execute(
+                """INSERT INTO audit_log
+                       (admin_id, admin_email, action, target_id, changes)
+                   VALUES ('system', 'system', 'system_worker_ai_sync', NULL, %s::jsonb)""",
+                (psycopg2.extras.Json(result),),
+            )
+        conn.commit()
+        return result
+    except Exception as exc:
+        conn.rollback()
+        raise RuntimeError(f"Worker route sync failed ({type(exc).__name__})") from None
+    finally:
+        pool.putconn(conn)
+
+
 @app.route("/api/admin/llm/gateway/sync", methods=["POST"])
 @require_admin
 def admin_llm_gateway_sync():
@@ -6391,6 +6482,7 @@ def admin_llm_gateway_sync():
             available, message, _ = test_provider_available(provider_id)
             if not available:
                 results["providers"][provider_id] = {"configured": False, "status": message, "created": 0, "updated": 0}
+                results["errors"].append(f"{provider_id}: {message}")
                 continue
             created, updated = 0, 0
             for model in info["models"]:
@@ -6414,32 +6506,17 @@ def admin_llm_gateway_sync():
                     results["errors"].append(f"{full_model_id}: {str(e)}")
             results["providers"][provider_id] = {"configured": True, "status": message, "modelCount": len(info["models"]), "created": created, "updated": updated}
         try:
-            resp, err = fetch_worker_ai("v1/models")
-            if not err and resp and resp.ok:
-                worker_models = resp.json().get("data", [])
-                w_c, w_u = 0, 0
-                for wm in worker_models:
-                    mid = wm.get("id", "")
-                    if not mid: continue
-                    existing = query("SELECT id::text FROM llm_routes WHERE model_id = %s", (mid,), one=True)
-                    p = 50
-                    if "70b" in mid or "32b" in mid: p = 100
-                    elif "7b" in mid: p = 25
-                    try:
-                        if existing:
-                            query("UPDATE llm_routes SET model_name = %s, base_url = %s, priority = %s, disabled = false, updated_at = NOW() WHERE model_id = %s",
-                                  (mid, WORKER_AI_BASE, p, mid), write=True)
-                            w_u += 1
-                        else:
-                            query("INSERT INTO llm_routes (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled) VALUES (gen_random_uuid(), %s, %s, 'cloudflare', %s, 0.001, %s, false)",
-                                  (mid, mid, WORKER_AI_BASE, p), write=True)
-                            w_c += 1
-                    except: pass
-                results["workerAiSync"] = {"ok": True, "totalModels": len(worker_models), "created": w_c, "updated": w_u}
+            results["workerAiSync"] = _sync_worker_routes_from_live_source()
         except Exception as e:
             results["workerAiSync"] = {"ok": False, "error": str(e)}
+            results["errors"].append(f"cloudflare: {str(e)}")
+        sync_ok = not results["errors"]
         audit("admin_llm_gateway_sync", None, results)
-        return jsonify({"ok": True, "results": results, "message": "AI Gateway sync completed."})
+        return jsonify({
+            "ok": sync_ok,
+            "results": results,
+            "message": "AI Gateway sync completed." if sync_ok else "AI Gateway sync completed with blockers.",
+        }), 200 if sync_ok else 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
