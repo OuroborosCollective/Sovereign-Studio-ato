@@ -120,10 +120,12 @@ export function classifySovereignExecutorIntent(text: string): SovereignExecutor
   const clean = text.trim().toLowerCase();
   if (!clean) return 'unknown';
   if (includesAny(clean, STATUS_TOKENS)) return 'status';
+  // Offline fallback only: a real question must stay advisory even when it
+  // mentions action nouns such as README, code or Pull Request.
+  if (includesAny(clean, QUESTION_TOKENS)) return 'question';
   if (includesAny(clean, DRAFT_PR_TOKENS)) return 'draft_pr';
   if (includesAny(clean, DIRECT_PATCH_TOKENS) && !includesAny(clean, CODE_EXECUTION_TOKENS)) return 'direct_patch';
   if (includesAny(clean, CODE_EXECUTION_TOKENS)) return 'code_execution';
-  if (includesAny(clean, QUESTION_TOKENS)) return 'question';
   return 'unknown';
 }
 

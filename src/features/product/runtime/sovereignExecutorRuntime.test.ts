@@ -41,6 +41,8 @@ describe('sovereignExecutorRuntime', () => {
     expect(classifySovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('code_execution');
     expect(classifySovereignExecutorIntent('Erstelle einen Draft PR')).toBe('draft_pr');
     expect(classifySovereignExecutorIntent('Warum ist das so?')).toBe('question');
+    expect(classifySovereignExecutorIntent('Was ist ein Pull Request?')).toBe('question');
+    expect(classifySovereignExecutorIntent('Wie funktioniert der README-Code?')).toBe('question');
   });
 
   it('routes status questions locally and terminally', () => {
