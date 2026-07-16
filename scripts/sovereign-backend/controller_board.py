@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+from pathlib import Path
 import re
 import time
 import uuid
@@ -20,14 +21,27 @@ from agent_runtime.cognitive_run_store import (
     AgentRunResumeConflict,
     claim_agent_run_for_resume,
     create_agent_run,
+    create_agent_task,
+    transition_agent_run,
 )
 from agent_runtime.cognitive_swarm_manifest import manifest_payload
 from agent_runtime.cognitive_swarm_routes import execute_persisted_swarm
+from agent_runtime.job_lifecycle import create_sovereign_agent_job
 from security_oauth import _decrypt_token
 
 
 ConnectionFactory = Callable[[], Any]
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_IMPLEMENTATION_ACTION_PATTERN = re.compile(
+    r"\b(?:fix(?:e|en)?|beheb(?:e|en)?|reparier(?:e|en)?|implement(?:iere|ieren)?|patch(?:e|en)?|"
+    r"änder(?:e|n)?|schreib(?:e|en)?|erstell(?:e|en)?|refactor(?:e|en)?|migrier(?:e|en)?)\b",
+    re.IGNORECASE,
+)
+_IMPLEMENTATION_TARGET_PATTERN = re.compile(
+    r"\b(?:code|datei(?:en)?|repository|repo|backend|frontend|endpoint|route|test(?:s)?|workflow|"
+    r"workspace|draft[- ]?pr|pull request|bug|fehler)\b",
+    re.IGNORECASE,
+)
 _OPERATOR_SECRET_MARKERS = (
     "sk-proj-",
     "github_pat_",
@@ -93,6 +107,20 @@ def _close(conn: Any) -> None:
     close = getattr(conn, "close", None)
     if callable(close):
         close()
+
+
+def _mission_requires_repository_execution(mission: str) -> bool:
+    normalized = str(mission or "").strip()
+    return bool(
+        normalized
+        and _IMPLEMENTATION_ACTION_PATTERN.search(normalized)
+        and _IMPLEMENTATION_TARGET_PATTERN.search(normalized)
+    )
+
+
+def _controller_workspace_root() -> Path | None:
+    configured = os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", "").strip()
+    return Path(configured) if configured else None
 
 
 def _controller_repository() -> str:
@@ -298,6 +326,37 @@ def register_controller_board_routes(
         conn = get_connection()
         try:
             owner_id = _operator_owner_user_id(conn)
+            implementation_job = None
+            if _mission_requires_repository_execution(mission):
+                repository = _controller_repository()
+                implementation_job = create_sovereign_agent_job(
+                    conn,
+                    user_id=owner_id,
+                    payload={
+                        "repoUrl": f"https://github.com/{repository}",
+                        "branch": "main",
+                        "mission": mission,
+                        "executor": "sovereign-local-runner",
+                        "draftPrOnly": True,
+                        "allowAutoMerge": False,
+                    },
+                    workspace_root=_controller_workspace_root(),
+                    provision_workspace=True,
+                    clone_repo=True,
+                )
+                if implementation_job.result.status in {"blocked", "failed"}:
+                    return _operator_json({
+                        "ok": False,
+                        "runtime": "sovereign-agent",
+                        "status": "BLOCKED",
+                        "jobId": implementation_job.job_id,
+                        "workspaceId": implementation_job.result.workspace_id,
+                        "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
+                        "reason": "The real repository workspace could not be provisioned.",
+                        "nextAction": "FIX_WORKSPACE_PROVISIONING_AND_RERUN",
+                        "protectedValuesReturned": False,
+                    }, 503)
+
             received_state = create_agent_run(
                 conn,
                 user_id=owner_id,
@@ -308,7 +367,78 @@ def register_controller_board_routes(
                 trace_id=trace_id,
                 max_active_specialists=int(manifest["maxActiveSpecialists"]),
                 max_iterations=_operator_max_iterations(),
+                job_id=implementation_job.job_id if implementation_job else None,
             )
+            if implementation_job:
+                task_id = _new_id("task-implementation")
+                create_agent_task(
+                    conn,
+                    run_id=run_id,
+                    task_id=task_id,
+                    agent_id="implementation_coordinator",
+                    specialist_role="repository_execution",
+                    work_package=(
+                        "Execute the authenticated code mission in the linked real repository workspace; "
+                        "produce file, diff, test and Draft-PR-only evidence."
+                    ),
+                    evidence_id=received_state["evidenceId"],
+                    status="WAITING_FOR_TOOL",
+                    reason="A code mission was routed to the real Sovereign Agent Job runtime.",
+                    next_action="EXECUTE_BOUNDED_REPOSITORY_TOOLS",
+                    allowed_tools=("file", "git-status", "diff", "test", "draft-pr-prepare", "draft-pr-create"),
+                    acceptance_criteria=(
+                        "At least one actionable changed file is persisted.",
+                        "Git diff evidence is non-empty and git diff --check passes.",
+                        "Relevant tests or build checks pass.",
+                        "At most one Draft PR is created and auto-merge remains disabled.",
+                    ),
+                    forbidden_actions=(
+                        "persist or reveal secrets",
+                        "merge a pull request",
+                        "claim completion without diff and test evidence",
+                    ),
+                )
+                routed_state = transition_agent_run(
+                    conn,
+                    user_id=owner_id,
+                    run_id=run_id,
+                    status="WAITING_FOR_TOOL",
+                    source="agents-sdk",
+                    trace_id=trace_id,
+                    reason="Code mission is linked to a real repository workspace and awaits bounded tool execution.",
+                    next_action="EXECUTE_BOUNDED_REPOSITORY_TOOLS",
+                    evidence_kind="implementation_handoff",
+                    evidence_summary="The controller materialized a real Agent Job, workspace and implementation task.",
+                    evidence_payload={
+                        "jobId": implementation_job.job_id,
+                        "workspaceId": implementation_job.result.workspace_id,
+                        "jobStatus": implementation_job.result.status,
+                        "taskId": task_id,
+                        "draftPrOnly": True,
+                        "autoMerge": False,
+                    },
+                    agent_id="orchestrator",
+                    task_id=task_id,
+                )
+                return _operator_json({
+                    "ok": True,
+                    "runtime": "sovereign-agent",
+                    "runId": run_id,
+                    "sessionKey": session_key,
+                    "traceId": trace_id,
+                    "status": routed_state["status"],
+                    "source": routed_state["source"],
+                    "evidenceId": routed_state["evidenceId"],
+                    "reason": routed_state["reason"],
+                    "nextAction": routed_state["nextAction"],
+                    "jobId": implementation_job.job_id,
+                    "workspaceId": implementation_job.result.workspace_id,
+                    "taskId": task_id,
+                    "jobStatus": implementation_job.result.status,
+                    "changedFiles": list(implementation_job.result.changed_files),
+                    "protectedValuesReturned": False,
+                    "autoMerge": False,
+                }, 202)
         except Exception as exc:
             return _operator_json({
                 "ok": False,
