@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -24,6 +25,7 @@ from agent_runtime.cognitive_run_store import (
     create_agent_task,
     transition_agent_run,
 )
+from agent_runtime.cognitive_swarm_agents import SwarmExecutionError, classify_mission_intent
 from agent_runtime.cognitive_swarm_manifest import manifest_payload
 from agent_runtime.cognitive_swarm_routes import execute_persisted_swarm
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
@@ -32,16 +34,6 @@ from security_oauth import _decrypt_token
 
 ConnectionFactory = Callable[[], Any]
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-_IMPLEMENTATION_ACTION_PATTERN = re.compile(
-    r"\b(?:fix(?:e|en)?|beheb(?:e|en)?|reparier(?:e|en)?|implement(?:iere|ieren)?|patch(?:e|en)?|"
-    r"änder(?:e|n)?|schreib(?:e|en)?|erstell(?:e|en)?|refactor(?:e|en)?|migrier(?:e|en)?)\b",
-    re.IGNORECASE,
-)
-_IMPLEMENTATION_TARGET_PATTERN = re.compile(
-    r"\b(?:code|datei(?:en)?|repository|repo|backend|frontend|endpoint|route|test(?:s)?|workflow|"
-    r"workspace|draft[- ]?pr|pull request|bug|fehler)\b",
-    re.IGNORECASE,
-)
 _OPERATOR_SECRET_MARKERS = (
     "sk-proj-",
     "github_pat_",
@@ -107,15 +99,6 @@ def _close(conn: Any) -> None:
     close = getattr(conn, "close", None)
     if callable(close):
         close()
-
-
-def _mission_requires_repository_execution(mission: str) -> bool:
-    normalized = str(mission or "").strip()
-    return bool(
-        normalized
-        and _IMPLEMENTATION_ACTION_PATTERN.search(normalized)
-        and _IMPLEMENTATION_TARGET_PATTERN.search(normalized)
-    )
 
 
 def _controller_workspace_root() -> Path | None:
@@ -320,6 +303,18 @@ def register_controller_board_routes(
             return _operator_json({"error": "secret-shaped material is forbidden in operator input"}, 400)
 
         manifest = manifest_payload()
+        try:
+            mission_intent = asyncio.run(classify_mission_intent(mission))
+        except SwarmExecutionError as exc:
+            return _operator_json({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "status": "FAILED_RECOVERABLE" if exc.retryable else "BLOCKED",
+                "blocker": exc.family,
+                "reason": "The routed LLM could not produce a validated mission intent.",
+                "nextAction": exc.next_action,
+                "protectedValuesReturned": False,
+            }, 502 if exc.retryable else 503)
         run_id = f"run-{uuid.uuid4().hex}"
         session_key = f"session-{uuid.uuid4().hex}"
         trace_id = f"trace-{uuid.uuid4().hex}"
@@ -327,7 +322,7 @@ def register_controller_board_routes(
         try:
             owner_id = _operator_owner_user_id(conn)
             implementation_job = None
-            if _mission_requires_repository_execution(mission):
+            if mission_intent.mode == "repository_execution":
                 repository = _controller_repository()
                 implementation_job = create_sovereign_agent_job(
                     conn,
@@ -335,7 +330,7 @@ def register_controller_board_routes(
                     payload={
                         "repoUrl": f"https://github.com/{repository}",
                         "branch": "main",
-                        "mission": mission,
+                        "mission": mission_intent.normalized_goal,
                         "executor": "sovereign-local-runner",
                         "draftPrOnly": True,
                         "allowAutoMerge": False,
@@ -414,6 +409,10 @@ def register_controller_board_routes(
                         "workspaceId": implementation_job.result.workspace_id,
                         "jobStatus": implementation_job.result.status,
                         "taskId": task_id,
+                        "intentMode": mission_intent.mode,
+                        "intentConfidence": mission_intent.confidence,
+                        "learningScope": mission_intent.learning_scope,
+                        "learningRequiresToolEvidence": True,
                         "draftPrOnly": True,
                         "autoMerge": False,
                     },
@@ -436,6 +435,8 @@ def register_controller_board_routes(
                     "taskId": task_id,
                     "jobStatus": implementation_job.result.status,
                     "changedFiles": list(implementation_job.result.changed_files),
+                    "intent": mission_intent.model_dump(),
+                    "learningState": "WAITING_FOR_TOOL_EVIDENCE",
                     "protectedValuesReturned": False,
                     "autoMerge": False,
                 }, 202)

@@ -115,8 +115,16 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
 
 def test_code_missions_materialize_real_job_workspace_and_tool_task() -> None:
     controller = CONTROLLER.read_text("utf-8")
+    agents = SWARM_AGENTS.read_text("utf-8")
 
-    assert "def _mission_requires_repository_execution(" in controller
+    assert "class MissionIntent(BaseModel):" in agents
+    assert "async def classify_mission_intent(" in agents
+    assert 'Literal["conversation", "read_only_analysis", "repository_execution"]' in agents
+    assert "Understand the user's natural language" in agents
+    assert 'mission_intent = asyncio.run(classify_mission_intent(mission))' in controller
+    assert 'mission_intent.mode == "repository_execution"' in controller
+    assert "_IMPLEMENTATION_ACTION_PATTERN" not in controller
+    assert "_IMPLEMENTATION_TARGET_PATTERN" not in controller
     assert "create_sovereign_agent_job(" in controller
     assert 'clone_repo=True' in controller
     assert 'job_id=implementation_job.job_id if implementation_job else None' in controller
@@ -127,6 +135,9 @@ def test_code_missions_materialize_real_job_workspace_and_tool_task() -> None:
     assert '"At least one actionable changed file is persisted."' in controller
     assert '"Git diff evidence is non-empty and git diff --check passes."' in controller
     assert '"At most one Draft PR is created and auto-merge remains disabled."' in controller
+    assert '"intent": mission_intent.model_dump()' in controller
+    assert '"learningState": "WAITING_FOR_TOOL_EVIDENCE"' in controller
+    assert '"learningRequiresToolEvidence": True' in controller
     assert '"autoMerge": False' in controller
 
 
