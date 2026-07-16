@@ -5,7 +5,7 @@
  * 1. App loads with BuilderContainer shell
  * 2. Composer is usable
  * 3. Missing repository evidence is explicit and never claims global readiness
- * 4. Worker state remains unverified until real health or response evidence exists
+ * 4. LLM runtime remains unverified until real response evidence exists
  * 5. BuilderContainer has proper navigation structure
  *
  * Issue #477
@@ -64,12 +64,12 @@ test.describe('BuilderContainer Smoke Tests', () => {
     await expect(page.getByText('Repo fehlt').first()).toBeVisible();
   });
 
-  test('4. Worker state remains unverified until real evidence exists', async ({ page }) => {
+  test('4. LLM runtime remains unverified until real evidence exists', async ({ page }) => {
     await expect(page.locator('[data-testid="worker-blocker-card"]')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'RT – Runtime Quelle' }).click();
 
-    await expect(page.getByText('Cloudflare Worker nicht geprüft')).toBeVisible();
+    await expect(page.getByText('LLM Runtime nicht geprüft')).toBeVisible();
     await expect(
       page.getByText('Noch keine Health- oder Response-Evidence für diese Sitzung.'),
     ).toBeVisible();
