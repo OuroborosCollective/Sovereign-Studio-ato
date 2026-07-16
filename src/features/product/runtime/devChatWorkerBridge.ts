@@ -74,7 +74,9 @@ export type DevChatWorkerFailureScope =
   | 'unknown';
 
 export interface DevChatWorkerDiagnostic {
-  readonly route: typeof SOVEREIGN_WORKER_CHAT;
+  /** Concrete runtime route that produced the evidence. Legacy Worker and
+   * LiteLLM-backed backend diagnostics share this envelope. */
+  readonly route: string;
   readonly model: string;
   readonly messageCount: number;
   readonly status?: number;

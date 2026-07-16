@@ -706,7 +706,9 @@ export function requiresGitHubAccess(decision: CapabilityDecision): boolean {
     'sovereign-agent',
     'workspace-executor',
   ];
-  return githubRoutes.includes(decision.route) && decision.allowed;
+  return githubRoutes.includes(decision.route)
+    && decision.allowed
+    && !decision.blocker;
 }
 
 export function requiresExecutor(decision: CapabilityDecision): boolean {

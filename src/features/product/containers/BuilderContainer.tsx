@@ -38,7 +38,6 @@ import {
   explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
-  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
@@ -49,6 +48,10 @@ import {
   type DevChatWorkerIntentKind,
   type DevChatWorkerMessage,
 } from "../runtime/devChatWorkerBridge";
+import {
+  fetchSovereignLiteLlmInterpretation,
+  SOVEREIGN_LITELLM_CHAT,
+} from "../runtime/sovereignLiteLlmIntentRuntime";
 import {
   buildToolchainAutoContext,
   formatToolchainAutoContext,
@@ -3151,7 +3154,7 @@ export function BuilderContainer({
   );
   const workStateStatus = runtimeThinkingActive
     ? chatResponseBusy
-      ? "Cloudflare Worker antwortet"
+      ? "LLM Runtime antwortet"
       : scopedAgentJob
         ? agentJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
         : "Runtime arbeitet"
@@ -3205,16 +3208,16 @@ export function BuilderContainer({
   const runtimeSource = {
     id: "worker-chat",
     label: workerBlocker
-      ? "Cloudflare Worker blockiert"
+      ? "LLM Runtime blockiert"
       : workerSourceTier === "unknown"
-        ? "Cloudflare Worker nicht geprüft"
-        : "Cloudflare Worker",
+        ? "LLM Runtime nicht geprüft"
+        : "LLM Runtime",
     tier: workerSourceTier,
     description: workerBlocker
       ? workerBlocker.message
       : workerSourceTier === "unknown"
         ? "Noch keine Health- oder Response-Evidence für diese Sitzung."
-        : SOVEREIGN_WORKER_CHAT,
+        : `${SOVEREIGN_LITELLM_CHAT} · Legacy-Chat ${SOVEREIGN_WORKER_CHAT}`,
     available: !workerBlocker && (workerHealthReady || workerResponseReady),
   };
   const runtimeSources = [
@@ -4034,21 +4037,16 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         chatRepoSnapshot?.fileCount ?? 0,
         palDecisions,
       );
-      const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-      const canInterpret = await chargeCredits(routeDecision.modelId, estimatedTokens);
-      if (!canInterpret) {
-        addLog('warn', `Credits nicht ausreichend für Online-Sprachdeutung mit ${routeDecision.modelId}`, 'billing');
-        return;
-      }
-
-      setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
-      setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
+      // The authenticated backend owns reservation and settlement for this
+      // LiteLLM call. Charging here as well would double-bill one interpretation.
+      // PAL only supplies a preferred model; the enabled backend route catalog
+      // remains the source of truth for the actual model.
       setLastWorkerRequestMessage(submittedText);
       setChatResponseBusy(true);
-      appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
+      appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · LiteLLM Intent`));
 
-      const interpretationResult = await fetchDevChatWorkerInterpretation({
-        model: routeDecision.modelId,
+      const interpretationResult = await fetchSovereignLiteLlmInterpretation({
+        preferredModel: routeDecision.modelId,
         text: submittedText,
         repoContext: chatRepoSnapshot
           ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
@@ -4133,7 +4131,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
         if (interpretation.assistantText) {
           appendGuardedWorkerText(interpretation.assistantText);
         }
-        addLog('info', `Online LLM intent accepted as draft evidence: ${draft.title}`, 'router');
+        addLog('info', `LiteLLM intent accepted as draft evidence: ${draft.title} · model=${interpretation.model}`, 'router');
         return;
       }
 
@@ -4257,8 +4255,20 @@ Es wurde kein Job gestartet und keine Datei geändert.`,
     );
     appendActionEvent(routeActionEvent);
 
-    // Log routing decision for telemetry
-    addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
+    // A queued prerequisite is not execution permission. Log the concrete phase
+    // so `allowed=true` can never look like success next to package_required.
+    const capabilityPhase = capabilityDecision.blocker
+      ? capabilityDecision.allowed
+        ? 'queued_prerequisite'
+        : 'blocked'
+      : capabilityDecision.allowed
+        ? 'executable'
+        : 'blocked';
+    addLog(
+      "info",
+      `Capability Router: route=${capabilityDecision.route} phase=${capabilityPhase} blocker=${capabilityDecision.blocker ?? 'none'} next=${capabilityDecision.nextAction}`,
+      "router",
+    );
 
     // ── Issue #502: Blocked capability decisions stop legacy routing.
     // Recoverable blockers persist the original intent and wait for real repo
