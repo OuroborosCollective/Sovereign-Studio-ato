@@ -92,6 +92,16 @@ def test_skill_install_is_atomic_hash_verified_and_reloadable():
         assert '"skill": dict(row)' in source
 
 
+def test_toggle_and_delete_require_real_owned_rows_before_success():
+    for path in APP_SOURCES:
+        source = path.read_text(encoding="utf-8")
+        assert "UPDATE user_skills\n               SET is_active=%s, updated_at=NOW()" in source
+        assert "RETURNING id::text, slug, is_active" in source
+        assert "DELETE FROM user_skills\n               WHERE id=%s::uuid AND user_id=%s::uuid\n               RETURNING id::text, slug" in source
+        assert source.count('return jsonify({"error": "Skill nicht gefunden"}), 404') >= 2
+        assert 'return jsonify({"ok": True, "deleted": dict(row)})' in source
+
+
 def test_user_skills_migration_matches_runtime_contract_without_destructive_actions():
     source = MIGRATION.read_text(encoding="utf-8")
     for column in (
@@ -113,6 +123,8 @@ def test_live_and_deploy_skill_functions_are_semantically_identical():
         "tc_skills_adapt",
         "tc_skills_install",
         "tc_skills_list",
+        "tc_skills_toggle",
+        "tc_skills_delete",
     ):
         assert _function_ast(APP_SOURCES[0], name) == _function_ast(
             APP_SOURCES[1],

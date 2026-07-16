@@ -4800,11 +4800,17 @@ def tc_skills_toggle(skill_id: str):
         uid       = request.session_user_id
         b         = request.get_json(force=True) or {}
         is_active = bool(b.get("is_active", True))
-        query(
-            "UPDATE user_skills SET is_active=%s WHERE id=%s::uuid AND user_id=%s::uuid",
-            (is_active, skill_id, uid), write=True,
+        row = query(
+            """UPDATE user_skills
+               SET is_active=%s, updated_at=NOW()
+               WHERE id=%s::uuid AND user_id=%s::uuid
+               RETURNING id::text, slug, is_active,
+                         to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at""",
+            (is_active, skill_id, uid), one=True, write=True,
         )
-        return jsonify({"ok": True, "is_active": is_active})
+        if not row:
+            return jsonify({"error": "Skill nicht gefunden"}), 404
+        return jsonify({"ok": True, "skill": dict(row)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4815,12 +4821,19 @@ def tc_skills_delete(skill_id: str):
     """Delete a skill from the user's library."""
     try:
         uid = request.session_user_id
-        query(
-            "DELETE FROM user_skills WHERE id=%s::uuid AND user_id=%s::uuid",
-            (skill_id, uid), write=True,
+        row = query(
+            """DELETE FROM user_skills
+               WHERE id=%s::uuid AND user_id=%s::uuid
+               RETURNING id::text, slug""",
+            (skill_id, uid), one=True, write=True,
         )
-        _tc_audit(uid, "skill_delete", {"skill_id": skill_id})
-        return jsonify({"ok": True})
+        if not row:
+            return jsonify({"error": "Skill nicht gefunden"}), 404
+        _tc_audit(uid, "skill_delete", {
+            "skill_id": row["id"],
+            "slug": row["slug"],
+        })
+        return jsonify({"ok": True, "deleted": dict(row)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
