@@ -677,6 +677,36 @@ export async function fetchDevChatWorkerReply(
   return { ok: false, error: 'Retry-Limit erreicht.', route: SOVEREIGN_WORKER_CHAT };
 }
 
+function extractSseChatText(content: string): string {
+  if (!content.includes('data:')) return content.trim();
+  let combined = '';
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') continue;
+    try {
+      const payload = JSON.parse(data) as Record<string, unknown>;
+      const choices = payload.choices;
+      if (!Array.isArray(choices) || choices.length === 0) continue;
+      const choice = choices[0] as Record<string, unknown>;
+      const delta = choice.delta;
+      if (delta && typeof delta === 'object') {
+        const chunk = (delta as Record<string, unknown>).content;
+        if (typeof chunk === 'string') combined += chunk;
+      }
+      const message = choice.message;
+      if (message && typeof message === 'object') {
+        const text = (message as Record<string, unknown>).content;
+        if (typeof text === 'string') combined += text;
+      }
+    } catch {
+      // Malformed SSE fragments are ignored; they never become action evidence.
+    }
+  }
+  return combined.trim() || content.trim();
+}
+
 /** Parse and validate the model-produced intent envelope. */
 function parseWorkerInterpretationContent(
   content: string,
@@ -753,6 +783,7 @@ export async function fetchDevChatWorkerInterpretation(args: {
   readonly model: string;
   readonly text: string;
   readonly repoContext?: string;
+  readonly memoryContext?: string;
   readonly recentMessages?: readonly DevChatWorkerMessage[];
 }): Promise<DevChatWorkerInterpretationResult> {
   const systemPrompt = [
@@ -767,7 +798,8 @@ export async function fetchDevChatWorkerInterpretation(args: {
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
-  ].join('\n');
+    args.memoryContext ? `Evidence-geprüfter Memory-Kontext:\n${args.memoryContext}` : '',
+  ].filter(Boolean).join('\n');
 
   const recentMessages = (args.recentMessages ?? [])
     .filter((message) => message.role === 'user' || message.role === 'assistant')
@@ -798,7 +830,7 @@ export async function fetchDevChatWorkerInterpretation(args: {
     return {
       ok: false,
       error: 'Online-Intent-Deutung lieferte kein gültiges Schema.',
-      rawContent: result.content,
+      rawContent: extractSseChatText(result.content),
       diagnostic: {
         route: SOVEREIGN_WORKER_CHAT,
         model: result.actualModel || args.model,
