@@ -38,7 +38,6 @@ import {
   explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
-  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
@@ -49,6 +48,10 @@ import {
   type DevChatWorkerIntentKind,
   type DevChatWorkerMessage,
 } from "../runtime/devChatWorkerBridge";
+import {
+  fetchSovereignLiteLlmInterpretation,
+  SOVEREIGN_LITELLM_CHAT,
+} from "../runtime/sovereignLiteLlmIntentRuntime";
 import {
   buildToolchainAutoContext,
   formatToolchainAutoContext,
@@ -3056,6 +3059,82 @@ export function BuilderContainer({
     appendChatLine({ role: 'assistant', text: guardedText });
   }, [addLog, agentWorkSnapshot, appendChatLine]);
 
+  const recordOnlineLanguageObservation = useCallback(async (input: {
+    readonly prompt: string;
+    readonly response: string;
+    readonly modelId: string;
+    readonly intent: DevChatWorkerIntentKind;
+  }): Promise<void> => {
+    if (!authUser || !input.response.trim()) return;
+    try {
+      const inference = await evaluateAreInference({
+        prompt: input.prompt,
+        repository: buildAreRepositoryState({
+          owner: chatRepoSnapshot?.owner,
+          repo: chatRepoSnapshot?.repo,
+          branch: chatRepoSnapshot?.branch,
+          repositoryRevision: chatRepoSnapshot?.treeSha,
+          files: chatRepoSnapshot?.files ?? [],
+        }),
+        onlineAvailable: true,
+        limit: 5,
+      });
+      const transition = emitAreStateTransition(arePreviousStateRef.current, inference);
+      arePreviousStateRef.current = {
+        stateHash: inference.stateHash,
+        state: inference.state,
+      };
+      if (transition.changed) {
+        addLog(
+          'info',
+          `ARE-State geändert: ${transition.changeKinds.join(', ')} · ${transition.currentStateHash.slice(0, 12)}`,
+          'pattern',
+        );
+      }
+
+      const quarantine = await quarantineAreResponse({
+        prompt: input.prompt,
+        response: input.response,
+        stateHash: inference.stateHash,
+        adapter: inference.adapter,
+        modelId: input.modelId,
+        metadata: {
+          repository: currentRepositoryTargetKey,
+          intent: input.intent,
+          source: 'litellm_online_language_observation',
+          knowledgeIds: inference.selectedKnowledgeIds,
+          patternIds: inference.selectedPatternIds,
+        },
+      });
+      appendActionEvent({
+        kind: 'context_collected',
+        route: 'runtime',
+        label: quarantine.duplicate
+          ? 'Online-Beobachtung bereits quarantänisiert'
+          : 'Online-Beobachtung quarantänisiert',
+        detail: quarantine.learningState === 'pending_evidence'
+          ? 'Noch kein gelerntes Muster: Der Kandidat wartet auf akzeptierte Runtime-Evidence.'
+          : `Bestehender evidenzgeprüfter Zustand: ${quarantine.candidate.status}.`,
+        state: 'done',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Online-Lernbeobachtung nicht gespeichert',
+        detail: message,
+        kind: 'failed',
+      }));
+      addLog('warn', `ARE Online-Beobachtung fehlgeschlagen: ${message}`, 'pattern');
+    }
+  }, [
+    addLog,
+    appendActionEvent,
+    authUser,
+    chatRepoSnapshot,
+    currentRepositoryTargetKey,
+  ]);
+
   // ── Issue #557: Show session restore age on startup
   useEffect(() => {
     const snapshot = loadSessionMemory(localStorage);
@@ -3159,7 +3238,7 @@ export function BuilderContainer({
   );
   const workStateStatus = runtimeThinkingActive
     ? chatResponseBusy
-      ? "Cloudflare Worker antwortet"
+      ? "LLM Runtime antwortet"
       : scopedAgentJob
         ? agentJobStatus?.trim() || "Sovereign Agent Runtime arbeitet"
         : "Runtime arbeitet"
@@ -3213,16 +3292,16 @@ export function BuilderContainer({
   const runtimeSource = {
     id: "worker-chat",
     label: workerBlocker
-      ? "Cloudflare Worker blockiert"
+      ? "LLM Runtime blockiert"
       : workerSourceTier === "unknown"
-        ? "Cloudflare Worker nicht geprüft"
-        : "Cloudflare Worker",
+        ? "LLM Runtime nicht geprüft"
+        : "LLM Runtime",
     tier: workerSourceTier,
     description: workerBlocker
       ? workerBlocker.message
       : workerSourceTier === "unknown"
         ? "Noch keine Health- oder Response-Evidence für diese Sitzung."
-        : SOVEREIGN_WORKER_CHAT,
+        : `${SOVEREIGN_LITELLM_CHAT} · Legacy-Chat ${SOVEREIGN_WORKER_CHAT}`,
     available: !workerBlocker && (workerHealthReady || workerResponseReady),
   };
   const runtimeSources = [
@@ -3558,9 +3637,12 @@ export function BuilderContainer({
   ): Promise<boolean> => {
     const intent = interpretedIntent;
     if (!effectiveRepoReady || !chatRepoSnapshot) {
-      appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden.', kind: 'blocked' }));
+      // Preserve the exact execution request across the repo gate. Loading the
+      // repository is only a prerequisite; it must not erase the user's job.
+      pendingWriteIntentRef.current = text;
+      appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden; Auftrag für Wiederaufnahme vorgemerkt.', kind: 'blocked' }));
       setShowRepoSetup(true);
-      appendRuntimeNotice('Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden.');
+      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.' });
       return false;
     }
     if (intent !== 'code_execution' && intent !== 'draft_pr') {
@@ -3837,14 +3919,22 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
 
+    // Natural language goes to the online LLM first. Deterministic parsing is
+    // reserved for exact controls (slash commands, repository URLs) and becomes
+    // the language fallback only when the online interpretation is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
     const directRepoUrl = parseDevChatGithubUrl(submittedText);
+    // "Retry" is an exact UI control, not natural language. It replays the
+    // last correlated request through the real pipeline and must never spend a
+    // second interpretation call merely to understand the control itself.
+    const isExactRetryControl = submittedText.trim().toLocaleLowerCase('de-DE') === 'retry';
     const shouldUseOnlineLanguageUnderstanding =
       !options.resumePendingIntent &&
       !isSafeAnalysisPreset &&
-      !directRepoUrl;
+      !directRepoUrl &&
+      !isExactRetryControl;
 
-    // ── Issue #522 P2 Fix 2 & 3: Local routing BEFORE Integration Intent Draft Detection
+    // ── Issue #522 P2 Fix 2 & 3: Offline/local fallback routing
     // Status, diagnostic, and retry intents must be handled locally FIRST.
     // They should NOT create an integration draft card.
     // Order matters: local routes > createIntegrationIntentDraft > capability router
@@ -3904,7 +3994,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
 
     // P2 Fix 2: Worker retry intents - clear blocker and trigger real retry
     // Runtime-Truth: Retry must produce Action → Request → Response, not just UI reset
-    if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
+    if (!shouldUseOnlineLanguageUnderstanding && isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
       // If user asks status question, answer locally first before retry
               if (submittedText && isLocalCompletionStatusQuestion(submittedText)) {
         const statusAnswer = buildLocalStatusAnswer({
@@ -3983,6 +4073,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
 
     // P2 Fix 3: Worker blocker diagnostic - answered locally, no draft
     if (
+      !shouldUseOnlineLanguageUnderstanding &&
       routingWorkerBlocker &&
       !isWorkerRetryIntent(submittedText) &&
       !isSovereignAgentExecutionIntent(submittedText)
@@ -4166,7 +4257,13 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       };
       if (interpretationResult.ok && interpretationResult.interpretation) {
         const interpretation = interpretationResult.interpretation;
-        setWorkerBlocker(null);
+        // A successful advisory/status interpretation does not prove that the
+        // previously failed correlated request was repaired. Only a successful
+        // actionable request or an explicit retry may clear that blocker.
+        if (interpretation.mode === 'action' || options.ignoreExistingWorkerBlocker) {
+          setWorkerBlocker(null);
+          if (options.ignoreExistingWorkerBlocker) setLastWorkerRequestMessage(null);
+        }
         appendActionEvent(buildWorkerResponseEvent());
         appendActionEvent({
           kind: 'capability_checked',
@@ -4195,11 +4292,51 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           && actionableIntent !== 'question'
           && actionableIntent !== 'status';
 
+        if (interpretation.intent === 'status') {
+          const statusAnswer = buildLocalStatusAnswer({
+            githubWriteAllowed,
+            githubAccessState: effectiveGitHubAccessState,
+            writeIntentBlockedByRepo: !effectiveRepoReady,
+            agentRunning: scopedAgentJob?.status === 'running',
+            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+            hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
+            patchPreviewReady,
+            patchConfirmed,
+            hasWorkerResponse: hasScopedWorkerResponse,
+            workerBlocker: routingWorkerBlocker,
+            buildWorkerBlockerAnswer: routingWorkerBlocker
+              ? () => buildWorkerBlockerAnswer({
+                  blocker: routingWorkerBlocker,
+                  repoReady: effectiveRepoReady,
+                  chatRepoSnapshot,
+                  agentReady,
+                })
+              : undefined,
+            questionText: submittedText,
+          });
+          appendChatLine({ role: 'assistant', text: statusAnswer });
+          setLastAnswerWasLocal(true);
+          appendActionEvent(buildLocalRuntimeResultEvent({
+            label: 'LLM-verstandene Status-Frage',
+            detail: 'Antwort ausschließlich aus aktuellem Runtime-State; keine Statusbehauptung des LLM übernommen.',
+          }));
+          return;
+        }
+
         if (!isAction) {
-          appendGuardedWorkerText(
-            interpretation.assistantText || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.',
-          );
+          const assistantResponse = interpretation.assistantText
+            || 'Ich habe die Eingabe verstanden, aber keinen ausführbaren Änderungsauftrag erkannt.';
+          appendGuardedWorkerText(assistantResponse);
           setLastAnswerWasLocal(false);
+          // Learning is a quarantined side-channel. It records its own evidence
+          // and errors, but must never hold the chat/action serialization lock or
+          // delay the next user request.
+          void recordOnlineLanguageObservation({
+            prompt: submittedText,
+            response: assistantResponse,
+            modelId: interpretation.model,
+            intent: interpretation.intent,
+          });
           return;
         }
 
@@ -4231,11 +4368,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         if (interpretation.assistantText) {
           appendGuardedWorkerText(interpretation.assistantText);
         }
-        addLog('info', `Online LLM intent accepted as draft evidence: ${draft.title}`, 'router');
+        addLog('info', `LiteLLM intent accepted as draft evidence: ${draft.title} · model=${interpretation.model}`, 'router');
         return;
       }
 
-      const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
+      // Preserve the exact failed request as retry target. Later advisory
+      // messages such as "Warum?" must not overwrite this correlation.
+      setLastWorkerRequestMessage(submittedText);
+      const offlineIntent = classifySovereignExecutorIntent(submittedText);
       appendActionEvent({
         kind: 'blocked',
         route: 'worker',
@@ -4244,6 +4384,100 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         state: 'blocked',
       });
       addLog('warn', `Online intent unavailable; offline fallback=${offlineIntent}`, 'router');
+
+      // Offline language handling is fail-closed and may only read current
+      // runtime state or prepare a gated action. It never falls through to a
+      // second online language endpoint.
+      if (offlineIntent === 'status' || isLocalCompletionStatusQuestion(submittedText)) {
+        const statusAnswer = buildLocalStatusAnswer({
+          githubWriteAllowed,
+          githubAccessState: effectiveGitHubAccessState,
+          writeIntentBlockedByRepo: !effectiveRepoReady,
+          agentRunning: scopedAgentJob?.status === 'running',
+          draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+          hasPatch: Boolean(scopedAgentJob?.changedFiles?.length),
+          patchPreviewReady,
+          patchConfirmed,
+          hasWorkerResponse: hasScopedWorkerResponse,
+          workerBlocker: routingWorkerBlocker,
+          buildWorkerBlockerAnswer: routingWorkerBlocker
+            ? () => buildWorkerBlockerAnswer({
+                blocker: routingWorkerBlocker,
+                repoReady: effectiveRepoReady,
+                chatRepoSnapshot,
+                agentReady,
+              })
+            : undefined,
+          questionText: submittedText,
+        });
+        appendChatLine({ role: 'assistant', text: statusAnswer });
+        setLastAnswerWasLocal(true);
+        appendActionEvent(buildLocalRuntimeResultEvent({
+          label: 'Offline-Status-Fallback',
+          detail: 'Online-Deutung fehlgeschlagen; Status ausschließlich aus Runtime-State beantwortet.',
+        }));
+        return;
+      }
+
+      if (lastAnswerWasLocal && isFollowUpWhyQuestion(submittedText)) {
+        const whyAnswer = patchPreviewReady
+          ? 'Die Patch-Vorschau wurde erzeugt, aber noch nicht angewendet. Es gibt noch keinen Commit und keinen Draft PR, weil die Vorschau erst geprüft und bestätigt werden muss.'
+          : !githubWriteAllowed
+            ? 'Weil sicherer GitHub-Zugang noch fehlt. Sobald der Zugang verifiziert ist, kann der Auftrag fortgesetzt werden.'
+            : routingWorkerBlocker
+              ? 'Weil die LLM-/Worker-Route blockiert ist. Die Runtime meldet noch keinen erfolgreichen nächsten Zustand.'
+              : 'Weil noch kein belegter Ausführungszustand vorliegt.';
+        appendChatLine({ role: 'assistant', text: whyAnswer });
+        setLastAnswerWasLocal(true);
+        return;
+      }
+
+      if (isWorkerRetryIntent(submittedText) && routingWorkerBlocker) {
+        setWorkerBlocker(null);
+        if (lastWorkerRequestMessage) {
+          appendActionEvent(buildLocalRuntimeResultEvent({
+            label: 'Offline-Retry gestartet',
+            detail: 'Der letzte korrelierte Request wird erneut durch die vollständige Pipeline geschickt.',
+          }));
+          await _processSubmit(lastWorkerRequestMessage, {
+            ignoreExistingWorkerBlocker: true,
+            inputAlreadyRecorded: true,
+          });
+        } else {
+          appendChatLine({
+            role: 'assistant',
+            text: 'Der Blocker wurde zurückgesetzt. Es gibt keinen vorherigen korrelierten Request zum Wiederholen.',
+          });
+        }
+        return;
+      }
+
+      if (isExecutorStatusQuestion(submittedText)) {
+        appendChatLine({
+          role: 'assistant',
+          text: buildExecutorStatusAnswer({
+            agentState: agentWorkSnapshot.state,
+            agentStatus: scopedAgentJob?.status,
+            changedFiles: scopedAgentJob?.changedFiles?.length ?? 0,
+            draftPrUrl: scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl ?? null,
+            blockerReason: agentWorkSnapshot.blockerReason,
+          }),
+        });
+        return;
+      }
+
+      if (routingWorkerBlocker && isWorkerDiagnosticQuestion(submittedText)) {
+        appendChatLine({
+          role: 'assistant',
+          text: buildWorkerBlockerAnswer({
+            blocker: routingWorkerBlocker,
+            repoReady: effectiveRepoReady,
+            chatRepoSnapshot,
+            agentReady,
+          }),
+        });
+        return;
+      }
 
       if (offlineIntent === 'direct_patch' || offlineIntent === 'code_execution' || offlineIntent === 'draft_pr') {
         const explicitOfflineExecution =
@@ -4350,8 +4584,20 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     );
     appendActionEvent(routeActionEvent);
 
-    // Log routing decision for telemetry
-    addLog("info", `Capability Router: route=${capabilityDecision.route} allowed=${capabilityDecision.allowed} blocker=${capabilityDecision.blocker ?? 'none'}`, "router");
+    // A queued prerequisite is not execution permission. Log the concrete phase
+    // so `allowed=true` can never look like success next to package_required.
+    const capabilityPhase = capabilityDecision.blocker
+      ? capabilityDecision.allowed
+        ? 'queued_prerequisite'
+        : 'blocked'
+      : capabilityDecision.allowed
+        ? 'executable'
+        : 'blocked';
+    addLog(
+      "info",
+      `Capability Router: route=${capabilityDecision.route} phase=${capabilityPhase} blocker=${capabilityDecision.blocker ?? 'none'} next=${capabilityDecision.nextAction}`,
+      "router",
+    );
 
     // ── Issue #502: Blocked capability decisions stop legacy routing.
     // Recoverable blockers persist the original intent and wait for real repo

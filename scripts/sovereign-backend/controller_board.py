@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -24,6 +25,7 @@ from agent_runtime.cognitive_run_store import (
     create_agent_task,
     transition_agent_run,
 )
+from agent_runtime.cognitive_swarm_agents import SwarmExecutionError, classify_mission_intent
 from agent_runtime.cognitive_swarm_manifest import manifest_payload
 from agent_runtime.cognitive_swarm_routes import execute_persisted_swarm
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
@@ -320,6 +322,18 @@ def register_controller_board_routes(
             return _operator_json({"error": "secret-shaped material is forbidden in operator input"}, 400)
 
         manifest = manifest_payload()
+        try:
+            mission_intent = asyncio.run(classify_mission_intent(mission))
+        except SwarmExecutionError as exc:
+            return _operator_json({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "status": "FAILED_RECOVERABLE" if exc.retryable else "BLOCKED",
+                "blocker": exc.family,
+                "reason": "The routed LLM could not produce a validated mission intent.",
+                "nextAction": exc.next_action,
+                "protectedValuesReturned": False,
+            }, 502 if exc.retryable else 503)
         run_id = f"run-{uuid.uuid4().hex}"
         session_key = f"session-{uuid.uuid4().hex}"
         trace_id = f"trace-{uuid.uuid4().hex}"
