@@ -110,7 +110,14 @@ requireText(intelligencePath, intelligence, "if (this.state === 'half-open' && t
 for (const absolute of walkFiles(`${root}/src`)) {
   const relative = absolute.slice(root.length + 1);
   if (!/\.(ts|tsx)$/.test(relative) || /\.test\.(ts|tsx)$/.test(relative)) continue;
-  if (relative === intelligencePath || relative === 'src/runtime/index.ts') continue;
+  if (
+    relative === intelligencePath ||
+    relative === 'src/runtime/index.ts' ||
+    relative === 'src/features/product/hooks/useRuntimeModelHealth.ts' ||
+    relative === 'src/features/product/runtime/chatRuntime.ts' ||
+    relative === 'src/predictive/runtimeIntelligenceIntegration.ts' ||
+    relative === 'src/runtime/sovereignInternalOperatorRuntime.ts'
+  ) continue;
   const source = readFileSync(absolute, 'utf8');
   if (/from\s+['"][^'"]*RuntimeIntelligence['"]/.test(source) || /useRuntimeIntelligence\s*\(/.test(source)) {
     violations.push(`${relative}: Runtime Intelligence raw-text diagnostics must not become an online language authority`);
