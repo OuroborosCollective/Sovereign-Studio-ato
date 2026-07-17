@@ -348,7 +348,7 @@ for file in Dockerfile requirements.txt policy.py runtime.py database.py command
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
-for file in broker.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py litellm_stack.py managed_compose.py; do
+for file in broker.py browserless_reader.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py litellm_stack.py managed_compose.py; do
   backup_control_plane_file "$BROKER_DIR/$file"
 done
 backup_control_plane_file "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
@@ -368,6 +368,7 @@ mv -f "$SELF_UPDATE_NEXT" "$SELF_UPDATE_BIN"
 unset SELF_UPDATE_NEXT
 
 install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
+install -m 0640 "$SOURCE_DIR/browserless_reader.py" "$BROKER_DIR/browserless_reader.py"
 install -m 0640 "$SOURCE_DIR/command_contract.py" "$BROKER_DIR/command_contract.py"
 install -m 0640 "$SOURCE_DIR/command_queue.py" "$BROKER_DIR/command_queue.py"
 install -m 0640 "$SOURCE_DIR/command_worker.py" "$BROKER_DIR/command_worker.py"
