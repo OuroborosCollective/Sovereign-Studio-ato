@@ -579,12 +579,31 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             return jsonify({"error": "githubAccessToken has an invalid format"}), 400
         conn = _connection()
         try:
+            # Manifest: credits = permission. Every write action costs 10 credits.
+            with conn.cursor() as cur:
+                cur.execute("SELECT credits, role FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,))
+                user_row = cur.fetchone()
+                if not user_row:
+                    return jsonify({"error": "User nicht gefunden"}), 404
+                
+                is_admin = user_row.get("role") in ("admin", "superadmin")
+                if not is_admin:
+                    if int(user_row.get("credits") or 0) < 10:
+                        return jsonify({"error": "Nicht genügend Credits (10 erforderlich)"}), 402
+                    # Deduct credits
+                    cur.execute("UPDATE admin_users SET credits = credits - 10 WHERE id = %s::uuid", (user_id,))
+                    cur.execute("""INSERT INTO credit_ledger (user_id, amount, description, type, reference_id) 
+                                   VALUES (%s::uuid, %s, %s, 'usage', %s)""", 
+                                (user_id, -10, f"Agent PR: {job_id}", "usage", f"agent-pr:{job_id}"))
+                    conn.commit()
+
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             result = create_draft_pr_for_job(job, token=github_token)
             if result.allowed and result.pr_url:
                 mark_draft_pr_created(conn, job_id=job_id, pr_url=result.pr_url)
+                conn.commit()
             return jsonify({
                 "ok": result.allowed,
                 "runtime": "sovereign-agent",

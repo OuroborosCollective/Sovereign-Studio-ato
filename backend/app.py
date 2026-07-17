@@ -4344,11 +4344,21 @@ def tc_create_draft_pr():
                 "block_report":  report,
             })
 
-        # Check admin role for write actions
+        # Manifest: credits = permission. Every write action costs 10 credits.
         uid      = request.session_user_id
-        user_row = query("SELECT role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
-        if not user_row or user_row.get("role") not in ("admin", "superadmin"):
-            return jsonify({"error": "Nur Admins dürfen PRs erstellen"}), 403
+        user_row = query("SELECT credits, role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
+        if not user_row:
+            return jsonify({"error": "User nicht gefunden"}), 404
+        
+        is_admin = user_row.get("role") in ("admin", "superadmin")
+        if not is_admin:
+            if int(user_row.get("credits") or 0) < 10:
+                return jsonify({"error": "Nicht genügend Credits (10 erforderlich)"}), 402
+            # Deduct credits
+            query("UPDATE admin_users SET credits = credits - 10 WHERE id = %s::uuid", (uid,), write=True)
+            query("""INSERT INTO credit_ledger (user_id, amount, description, type, reference_id) 
+                     VALUES (%s::uuid, %s, %s, 'usage', %s)""", 
+                  (uid, -10, f"Toolchain PR: {owner}/{repo}", "usage", f"pr:{owner}/{repo}"), write=True)
 
         current  = _tc_read_github_file(owner, repo, path)
         new_content, report = _tc_apply_blocks(current["content"], blocks)
@@ -4407,10 +4417,21 @@ def tc_apply_patch_worker():
                 "worker":  worker,
             })
 
+        # Manifest: credits = permission. Every write action costs 10 credits.
         uid      = request.session_user_id
-        user_row = query("SELECT role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
-        if not user_row or user_row.get("role") not in ("admin", "superadmin"):
-            return jsonify({"error": "Nur Admins dürfen den Patch Worker aufrufen"}), 403
+        user_row = query("SELECT credits, role FROM admin_users WHERE id = %s::uuid LIMIT 1", (uid,), one=True)
+        if not user_row:
+            return jsonify({"error": "User nicht gefunden"}), 404
+        
+        is_admin = user_row.get("role") in ("admin", "superadmin")
+        if not is_admin:
+            if int(user_row.get("credits") or 0) < 10:
+                return jsonify({"error": "Nicht genügend Credits (10 erforderlich)"}), 402
+            # Deduct credits
+            query("UPDATE admin_users SET credits = credits - 10 WHERE id = %s::uuid", (uid,), write=True)
+            query("""INSERT INTO credit_ledger (user_id, amount, description, type, reference_id) 
+                     VALUES (%s::uuid, %s, %s, 'usage', %s)""", 
+                  (uid, -10, f"Toolchain Patch: {owner}/{repo}", "usage", f"patch:{owner}/{repo}"), write=True)
 
         _tc_allowed(owner, repo)
         resp = requests.post(worker, json=payload, timeout=60)
