@@ -133,7 +133,11 @@ def test_message_send_uses_shared_agents_sdk_start_callback_and_persisted_task(m
 
     def start_run(**kwargs):
         captured.update(kwargs)
-        return {"runId": kwargs["run_id"], "status": "BLOCKED"}, 503
+        return {
+            "runId": kwargs["run_id"],
+            "status": "BLOCKED",
+            "evidenceId": "evidence-a2a-route",
+        }, 503
 
     response = _app(start_run).test_client().post(
         "/a2a/v1/message:send",
