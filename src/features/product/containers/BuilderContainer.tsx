@@ -38,6 +38,7 @@ import {
   explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
+  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,

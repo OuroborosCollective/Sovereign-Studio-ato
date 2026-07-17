@@ -54,6 +54,7 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   onOpenLauncher,
 }) => {
   const [open, setOpen] = useState(false);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const launchTool = useLauncherStore((store) => store.launchTool);
   const inspectionEvidence = useSovereignToolInspectionStore((store) => store.evidence);
@@ -66,7 +67,10 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
     [open, resolvedRuntimeContext],
   );
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setFocusedId(null);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -84,6 +88,46 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
     };
   }, [open, close]);
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      const trigger = containerRef.current?.querySelector('button[aria-haspopup="true"]');
+      (trigger as HTMLElement)?.focus();
+      return;
+    }
+
+    const menuitems = containerRef.current
+      ? (Array.from(containerRef.current.querySelectorAll('[role="menuitem"]:not([disabled])')) as HTMLElement[])
+      : [];
+
+    if (menuitems.length === 0) return;
+
+    const activeEl = document.activeElement as HTMLElement;
+    const currentIndex = menuitems.indexOf(activeEl);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextIndex = (currentIndex + 1) % menuitems.length;
+      menuitems[nextIndex]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIndex =
+        currentIndex === -1
+          ? menuitems.length - 1
+          : (currentIndex - 1 + menuitems.length) % menuitems.length;
+      menuitems[prevIndex]?.focus();
+    }
+  };
+
   function handleSelect(tool: ToolEntry) {
     if (!tool.canOpen) {
       onBlockedSelect?.(tool.id);
@@ -96,7 +140,12 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
   }
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-block' }} data-testid="sovereign-tool-launcher">
+    <div
+      ref={containerRef}
+      onKeyDown={handleKeyDown}
+      style={{ position: 'relative', display: 'inline-block' }}
+      data-testid="sovereign-tool-launcher"
+    >
       <button
         type="button"
         aria-label="Tool Launcher öffnen"
@@ -154,15 +203,18 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
                 gap: 10,
                 width: '100%',
                 padding: '8px 14px 9px',
-                background: `${C.accent}12`,
+                background: focusedId === 'all-tools' ? `${C.accent}20` : `${C.accent}12`,
                 border: 'none',
                 borderBottom: `1px solid ${C.border}`,
                 borderLeft: `2px solid ${C.accent}`,
                 cursor: 'pointer',
                 textAlign: 'left',
                 marginBottom: 4,
+                outline: 'none',
               }}
               aria-label="Alle Tools im Launcher öffnen"
+              onFocus={() => setFocusedId('all-tools')}
+              onBlur={() => setFocusedId(null)}
             >
               <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0, color: C.accent }}>⬡</span>
               <span style={{ fontSize: 13, color: C.accent, fontWeight: 600 }}>Alle Tools</span>
@@ -179,12 +231,19 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
               textTransform: 'uppercase',
               borderBottom: `1px solid ${C.border}`,
               marginBottom: 4,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
             }}
           >
-            Werkzeuge · Runtime-Gates
+            <span>Werkzeuge · Runtime-Gates</span>
+            <span style={{ fontSize: 8, textTransform: 'none', color: C.accent, fontWeight: 400, opacity: 0.8 }}>
+              [↑↓ Navigieren]
+            </span>
           </div>
           {resolvedTools.map((tool) => {
             const isActive = tool.id === activeToolId;
+            const isFocused = focusedId === tool.id;
             const canExplainBlocker = !tool.canOpen && Boolean(onBlockedSelect);
             const isInteractive = tool.canOpen || canExplainBlocker;
             const tone = tool.canOpen ? (tool.state === 'ready' ? C.accent : C.sky) : C.amber;
@@ -206,16 +265,19 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
                   gap: 10,
                   width: '100%',
                   padding: '8px 14px',
-                  background: isActive ? `${C.accent}15` : 'transparent',
+                  background: isActive || isFocused ? `${C.accent}15` : 'transparent',
                   border: 'none',
-                  borderLeft: isActive ? `2px solid ${C.accent}` : '2px solid transparent',
+                  borderLeft: isActive || isFocused ? `2px solid ${C.accent}` : '2px solid transparent',
                   cursor: isInteractive ? 'pointer' : 'not-allowed',
                   opacity: tool.canOpen ? 1 : 0.68,
                   textAlign: 'left',
                   transition: 'background 0.1s',
+                  outline: 'none',
                 }}
                 aria-current={isActive ? 'true' : undefined}
                 aria-label={tool.label}
+                onFocus={() => setFocusedId(tool.id)}
+                onBlur={() => setFocusedId(null)}
               >
                 <span style={{ fontSize: 13, width: 18, textAlign: 'center', flexShrink: 0, color: isActive ? C.accent : C.textSub, marginTop: 1 }}>
                   {tool.icon}
