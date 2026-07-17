@@ -6,41 +6,40 @@ import {
 } from './builderChatHelpers';
 
 describe('isWriteIntent', () => {
-  it('detects README/doc change requests', () => {
-    expect(isWriteIntent('Bitte README ändern und Titel anpassen')).toBe(true);
-    expect(isWriteIntent('Kannst du die Dokumentation anpassen?')).toBe(true);
+  it('returns the LLM-declared explicit value when provided', () => {
+    // The LLM (Brain) classifies intent; the runtime just passes it through.
+    expect(isWriteIntent('Bitte README ändern', true)).toBe(true);
+    expect(isWriteIntent('Wie funktioniert React?', false)).toBe(false);
+    expect(isWriteIntent('erstelle einen draft pr', true)).toBe(true);
   });
 
-  it('detects patch/diff/commit/push/PR language', () => {
-    expect(isWriteIntent('Erzeuge bitte einen patch')).toBe(true);
-    expect(isWriteIntent('zeig mir den diff')).toBe(true);
-    expect(isWriteIntent('mach einen commit')).toBe(true);
-    expect(isWriteIntent('push das bitte')).toBe(true);
-    expect(isWriteIntent('erstelle einen draft pr')).toBe(true);
-    expect(isWriteIntent('öffne einen pull request')).toBe(true);
+  it('returns false when no explicit classification is provided — LLM must declare intent', () => {
+    // Keyword-based pre-classification has been removed. Without LLM input, default is false.
+    expect(isWriteIntent('Bitte README ändern und Titel anpassen')).toBe(false);
+    expect(isWriteIntent('Erzeuge bitte einen patch')).toBe(false);
+    expect(isWriteIntent('mach einen commit')).toBe(false);
+    expect(isWriteIntent('erstelle einen draft pr')).toBe(false);
+    expect(isWriteIntent('Passe die Datei an das neue Format an')).toBe(false);
   });
 
-  it('detects separable-verb "passe ... an" pattern', () => {
-    expect(isWriteIntent('Kannst du die Datei an das neue Format anpassen')).toBe(false);
-    expect(isWriteIntent('Passe die Datei an das neue Format an')).toBe(true);
-  });
-
-  it('does not flag plain advisory/chat questions as write intent', () => {
+  it('returns false for advisory/chat questions regardless of content', () => {
     expect(isWriteIntent('Wie funktioniert React useEffect?')).toBe(false);
     expect(isWriteIntent('Was denkst du über diese Architektur?')).toBe(false);
-    expect(isWriteIntent('Erklär mir bitte den Unterschied zwischen let und const')).toBe(false);
   });
 });
 
 describe('isLocalCompletionStatusQuestion', () => {
-  it('detects completion status questions', () => {
-    expect(isLocalCompletionStatusQuestion('Bist du fertig?')).toBe(true);
-    expect(isLocalCompletionStatusQuestion('Ist das erledigt?')).toBe(true);
-    expect(isLocalCompletionStatusQuestion('Wo ist der patch?')).toBe(true);
-    expect(isLocalCompletionStatusQuestion('Gibt es einen Draft PR?')).toBe(true);
+  it('returns the LLM-declared explicit value when provided', () => {
+    expect(isLocalCompletionStatusQuestion('Bist du fertig?', true)).toBe(true);
+    expect(isLocalCompletionStatusQuestion('Baue eine neue Funktion', false)).toBe(false);
   });
 
-  it('does not flag unrelated messages', () => {
+  it('returns false when no explicit classification is provided — LLM must declare intent', () => {
+    // Keyword-based pre-classification has been removed. Without LLM input, default is false.
+    expect(isLocalCompletionStatusQuestion('Bist du fertig?')).toBe(false);
+    expect(isLocalCompletionStatusQuestion('Ist das erledigt?')).toBe(false);
+    expect(isLocalCompletionStatusQuestion('Wo ist der patch?')).toBe(false);
+    expect(isLocalCompletionStatusQuestion('Gibt es einen Draft PR?')).toBe(false);
     expect(isLocalCompletionStatusQuestion('Baue eine neue Funktion')).toBe(false);
   });
 });

@@ -72,7 +72,13 @@ const SECRET_PATTERNS: readonly RegExp[] = [
   /((?:token|password|secret|api[_-]?key)\s*[=:]\s*)[^\s\n]+/gi,
 ];
 
-const CODE_EXECUTION_SIGNALS = [
+/**
+ * Hint vocabularies for LLM prompt-building only.
+ * Do NOT use these arrays for runtime routing — that is the LLM's job.
+ * Exported so the worker system-prompt can include examples that help the LLM
+ * map user language to AgentWorkspaceIntentKind values.
+ */
+export const CODE_EXECUTION_SIGNAL_HINTS = [
   'implement', 'implementation', 'fix', 'repair', 'refactor', 'patch', 'change file', 'modify file',
   'create draft pr', 'draft pr', 'pull request', 'commit', 'run tests', 'add test', 'update code',
   'baue', 'bauen', 'implementiere', 'umsetzen', 'ändere', 'aendere', 'fixe', 'repariere',
@@ -80,7 +86,7 @@ const CODE_EXECUTION_SIGNALS = [
   'tests ausfuehren', 'code ändern', 'code aendern',
 ];
 
-const READ_ONLY_SIGNALS = [
+export const READ_ONLY_SIGNAL_HINTS = [
   'explain', 'summarize', 'status', 'what happened', 'why', 'read', 'inspect', 'analyse', 'analyze',
   'erklär', 'erklaer', 'zusammenfassen', 'was ist', 'warum', 'prüfe', 'pruefe', 'lies', 'ansehen',
 ];
@@ -127,40 +133,37 @@ export function normalizeWorkspacePath(path: string): string | null {
   return clean;
 }
 
-export function classifyWorkspaceIntent(message: string): AgentWorkspaceIntentKind {
-  const normalized = message.toLowerCase().trim();
-  if (!normalized) return 'none';
-
-  const codeSignalCount = CODE_EXECUTION_SIGNALS.filter((signal) => normalized.includes(signal)).length;
-  const hasFileContext = /\b(src|tests?|android|scripts|\.tsx?|\.jsx?|\.mjs|\.json|\.ya?ml|README\.md)\b/i.test(message);
-  const hasDraftPrSignal = /draft\s*pr|pull request|pr erstellen|create pr/i.test(message);
-
-  if (hasDraftPrSignal || codeSignalCount >= 2 || (codeSignalCount >= 1 && hasFileContext)) {
-    return 'code-execution';
-  }
-
-  if (READ_ONLY_SIGNALS.some((signal) => normalized.includes(signal))) {
-    return 'read-only';
-  }
-
+/**
+ * classifyWorkspaceIntent — DEPRECATED stub.
+ *
+ * Keyword-based workspace intent classification has been removed. The LLM (Brain) is
+ * responsible for all semantic classification. Callers must pass `intentKind` explicitly
+ * via `decideAgentWorkspaceIntent`. This stub is kept only for gradual migration.
+ *
+ * @deprecated Pass intentKind to decideAgentWorkspaceIntent instead.
+ */
+export function classifyWorkspaceIntent(_message: string): AgentWorkspaceIntentKind {
   return 'none';
 }
 
 export function decideAgentWorkspaceIntent(input: {
   readonly message: string;
+  /** LLM-declared intent kind. Required to reach 'code-execution'. When absent, defaults to 'none'. */
+  readonly intentKind?: AgentWorkspaceIntentKind;
   readonly repoReady: boolean;
   readonly executorReady: boolean;
   readonly activeWorkspaceStatus?: AgentWorkspaceStatus | 'idle';
   readonly executor?: AgentWorkspaceExecutor;
 }): AgentWorkspaceIntentDecision {
-  const kind = classifyWorkspaceIntent(input.message);
+  // Use LLM-declared kind; keyword scanning has been removed from this module.
+  const kind: AgentWorkspaceIntentKind = input.intentKind ?? 'none';
   if (kind !== 'code-execution') {
     return {
       kind,
       allowed: false,
       reason: kind === 'read-only'
         ? 'Read-only chat can use repo snapshot, Worker chat, logs or memory without a write workspace.'
-        : 'No code-execution intent detected.',
+        : 'No code-execution intent detected. Declare intentKind from the LLM layer.',
     };
   }
 

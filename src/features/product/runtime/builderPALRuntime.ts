@@ -26,31 +26,16 @@ export interface PALDecision {
   costFactor: number;
 }
 
-const ARCH_KW = [
-  "architektur", "architecture", "refactor", "redesign",
-  "migration", "pattern", "dependency", "abstraction",
-  "interface", "contract",
-];
-const PLAN_KW = [
-  "plan", "planung", "roadmap", "strategie", "feature",
-  "implement", "konzept", "vorschlag", "analyse", "überblick",
-];
-const QUICK_KW = [
-  "kurz", "quick", "schnell", "simple", "einfach",
-  "was ist", "what is", "define", "erkläre", "explain", "tipp",
-];
-const THINK_KW = [
-  "denk nach", "think", "tiefgründig", "trade-off",
-  "kompromiss", "komplexität", "algorithmus", "optimiere",
-];
-
 export function palRoute(
   message: string,
   histDepth: number,
   fileCount: number,
   prior: PALDecision[],
 ): PALDecision {
-  const lower = message.toLowerCase();
+  // Structural scoring only — no keyword/semantic analysis here.
+  // The LLM (Brain) handles semantic complexity; this module handles
+  // structural signals: message length, code blocks, context depth.
+  // Keyword-based scoring (ARCH_KW, PLAN_KW, THINK_KW, QUICK_KW) has been removed.
   let score = 0;
   const len = message.length;
   if (len >= 300) score += 15;
@@ -58,10 +43,6 @@ export function palRoute(
   else if (len >= 60) score += 5;
   score += Math.min(((message.match(/```/g) ?? []).length / 2) * 5, 15);
   if (fileCount > 0) score += 10;
-  if (ARCH_KW.some((k) => lower.includes(k))) score += 20;
-  if (THINK_KW.some((k) => lower.includes(k))) score += 18;
-  if (PLAN_KW.some((k) => lower.includes(k))) score += 12;
-  if (QUICK_KW.some((k) => lower.includes(k))) score -= 15;
   if (histDepth > 10) score += 5;
   score = Math.max(0, Math.min(100, score));
   const powerCount = prior.filter((d) => d.tier === "power").length;
