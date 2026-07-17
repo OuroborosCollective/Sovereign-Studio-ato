@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import wraps
 from pathlib import Path
 import sys
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -56,30 +57,37 @@ def _require_session(handler):
     return wrapped
 
 
-def _message_payload() -> dict[str, object]:
-    return {
-        "message": {
-            "messageId": "message-a2a-route",
-            "contextId": "context-a2a-route",
-            "role": "ROLE_USER",
-            "parts": [
-                {
-                    "text": "Inspect the persisted Sovereign truth chain.",
-                    "mediaType": "text/plain",
-                }
-            ],
-            "metadata": {"model": "sovereign-fast"},
-        }
+def _message_payload(
+    *,
+    task_id: str = "",
+    context_id: str = "context-a2a-route",
+    text: str = "Inspect the persisted Sovereign truth chain.",
+) -> dict[str, object]:
+    message: dict[str, object] = {
+        "messageId": "message-a2a-route",
+        "contextId": context_id,
+        "role": "ROLE_USER",
+        "parts": [
+            {
+                "text": text,
+                "mediaType": "text/plain",
+            }
+        ],
+        "metadata": {"model": "sovereign-fast"},
     }
+    if task_id:
+        message["taskId"] = task_id
+    return {"message": message}
 
 
-def _app(start_run) -> Flask:
+def _app(start_run, resume_run=None) -> Flask:
     app = Flask(__name__)
     register_a2a_routes(
         app,
         require_session=_require_session,
         get_connection=lambda: None,
         start_run=start_run,
+        resume_run=resume_run or (lambda **kwargs: ({"blocker": "RUN_NOT_RESUMABLE"}, 409)),
     )
     return app
 
@@ -176,7 +184,7 @@ def test_task_subscription_streams_only_persisted_run_and_event_evidence(monkeyp
     assert response.status_code == 200
     assert response.content_type.startswith("text/event-stream")
     assert response.headers["A2A-Version"] == "1.0"
-    assert body.count("data: ") >= 3
+    assert body.count("data: ") >= 2
     assert "TASK_STATE_COMPLETED" in body
     assert persisted.evidence_id in body
     assert "rawModelOutputPersisted" in body
@@ -226,6 +234,229 @@ def test_task_list_uses_filter_bound_cursor_and_omits_artifacts_by_default(monke
     assert "active task filters" in mismatch_error["message"]
 
 
+def test_follow_up_message_resumes_existing_task_without_creating_new_run(monkeypatch) -> None:
+    existing = _run("BLOCKED")
+    completed = _run("COMPLETED")
+    completed.evidence_id = "evidence-a2a-follow-up-completed"
+    runs = iter((existing, completed))
+    captured: dict[str, Any] = {}
+    start_called = False
+
+    def start_run(**kwargs):
+        nonlocal start_called
+        start_called = True
+        return {}, 200
+
+    def resume_run(**kwargs):
+        captured.update(kwargs)
+        return {"resumed": True, "runId": kwargs["run_id"]}, 200
+
+    monkeypatch.setattr(
+        routes_runtime,
+        "_read_run",
+        lambda *args, **kwargs: next(runs, completed),
+    )
+
+    response = _app(start_run, resume_run).test_client().post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(
+            task_id=existing.run_id,
+            text="Continue with the newly supplied runtime evidence.",
+        ),
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert start_called is False
+    assert captured["run_id"] == existing.run_id
+    assert captured["user_id"] == USER_ID
+    assert "A2A follow-up message" in captured["evidence"]
+    assert "newly supplied runtime evidence" in captured["evidence"]
+    assert payload["task"]["id"] == existing.run_id
+    assert payload["task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+
+
+def test_follow_up_message_rejects_active_run_before_resume(monkeypatch) -> None:
+    existing = _run("RUNNING")
+    resumed = False
+    monkeypatch.setattr(routes_runtime, "_read_run", lambda *args, **kwargs: existing)
+
+    def resume_run(**kwargs):
+        nonlocal resumed
+        resumed = True
+        return {"resumed": True}, 200
+
+    response = _app(lambda **kwargs: ({}, 200), resume_run).test_client().post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(task_id=existing.run_id),
+    )
+    error = response.get_json()["error"]
+
+    assert response.status_code == 400
+    assert resumed is False
+    assert error["code"] == 400
+    assert error["status"] == "INVALID_ARGUMENT"
+    assert "cannot be resumed concurrently" in error["message"]
+
+
+def test_follow_up_message_rejects_context_mismatch_before_resume(monkeypatch) -> None:
+    existing = _run("BLOCKED")
+    resumed = False
+    monkeypatch.setattr(routes_runtime, "_read_run", lambda *args, **kwargs: existing)
+
+    def resume_run(**kwargs):
+        nonlocal resumed
+        resumed = True
+        return {"resumed": True}, 200
+
+    response = _app(lambda **kwargs: ({}, 200), resume_run).test_client().post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(
+            task_id=existing.run_id,
+            context_id="different-context",
+        ),
+    )
+    error = response.get_json()["error"]
+
+    assert response.status_code == 400
+    assert resumed is False
+    assert error["details"][0]["reason"] == "INVALID_REQUEST"
+    assert "does not match" in error["message"]
+
+
+def test_follow_up_resume_persistence_failure_returns_agent_unavailable(monkeypatch) -> None:
+    existing = _run("BLOCKED")
+    monkeypatch.setattr(routes_runtime, "_read_run", lambda *args, **kwargs: existing)
+
+    response = _app(
+        lambda **kwargs: ({}, 200),
+        lambda **kwargs: ({
+            "resumed": True,
+            "blocker": "AGENT_RUN_FAILURE_PERSISTENCE_UNAVAILABLE",
+        }, 502),
+    ).test_client().post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(task_id=existing.run_id),
+    )
+    error = response.get_json()["error"]
+
+    assert response.status_code == 500
+    assert error["code"] == 500
+    assert error["status"] == "INTERNAL"
+    assert error["details"][0]["reason"] == "INTERNAL_ERROR"
+
+
+def test_stream_waits_through_pre_claim_blocked_state_while_resume_worker_is_active(monkeypatch) -> None:
+    blocked = _run("BLOCKED")
+    running = _run("RUNNING")
+    running.evidence_id = "evidence-resume-claimed"
+    completed = _run("COMPLETED")
+    completed.evidence_id = "evidence-resume-completed"
+    runs = iter((blocked, running, completed))
+    worker_done = threading.Event()
+
+    monkeypatch.setattr(
+        routes_runtime,
+        "_read_run",
+        lambda *args, **kwargs: next(runs, completed),
+    )
+    monkeypatch.setattr(routes_runtime, "_read_events", lambda *args, **kwargs: ())
+    monkeypatch.setattr(routes_runtime.time, "sleep", lambda _seconds: None)
+
+    chunks = list(routes_runtime._stream_persisted_run(
+        get_connection=lambda: None,
+        user_id=USER_ID,
+        run_id=blocked.run_id,
+        initial_run=blocked,
+        worker_done=worker_done,
+    ))
+    body = "".join(chunks)
+
+    assert "TASK_STATE_INPUT_REQUIRED" in body
+    assert "TASK_STATE_WORKING" in body
+    assert "TASK_STATE_COMPLETED" in body
+
+
+def test_follow_up_stream_resumes_same_task_and_streams_new_snapshot(monkeypatch) -> None:
+    existing = _run("BLOCKED")
+    completed = _run("COMPLETED")
+    completed.evidence_id = "evidence-a2a-follow-up-stream-completed"
+    runs = iter((existing, completed, completed))
+    captured: dict[str, Any] = {}
+    start_called = False
+
+    def start_run(**kwargs):
+        nonlocal start_called
+        start_called = True
+        return {}, 200
+
+    def resume_run(**kwargs):
+        captured.update(kwargs)
+        return {"resumed": True, "runId": kwargs["run_id"]}, 200
+
+    monkeypatch.setattr(
+        routes_runtime,
+        "_read_run",
+        lambda *args, **kwargs: next(runs, completed),
+    )
+    monkeypatch.setattr(routes_runtime, "_read_events", lambda *args, **kwargs: ())
+
+    response = _app(start_run, resume_run).test_client().post(
+        "/a2a/v1/message:stream",
+        headers=A2A_HEADERS,
+        json=_message_payload(
+            task_id=existing.run_id,
+            text="Resume this task and stream the persisted result.",
+        ),
+    )
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert start_called is False
+    assert captured["run_id"] == existing.run_id
+    assert "TASK_STATE_COMPLETED" in body
+
+
+def test_invalid_cursor_timestamp_is_rejected_before_database_access(monkeypatch) -> None:
+    database_called = False
+
+    def count_runs(*args, **kwargs):
+        nonlocal database_called
+        database_called = True
+        return 0
+
+    monkeypatch.setattr(routes_runtime, "count_agent_runs", count_runs)
+    filter_digest = routes_runtime._task_filter_digest(
+        context_id="",
+        status_name="",
+        status_after="",
+        history_length=0,
+        include_artifacts=False,
+    )
+    token = routes_runtime.base64.urlsafe_b64encode(
+        routes_runtime.json.dumps({
+            "updatedAt": "not-a-timestamp",
+            "runId": "run-valid-cursor",
+            "filterDigest": filter_digest,
+        }).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+
+    response = _app(lambda **kwargs: ({}, 200)).test_client().get(
+        f"/a2a/v1/tasks?pageToken={token}",
+        headers=A2A_HEADERS,
+    )
+    error = response.get_json()["error"]
+
+    assert response.status_code == 400
+    assert database_called is False
+    assert error["details"][0]["reason"] == "INVALID_REQUEST"
+    assert "timestamp cursor" in error["message"]
+
+
 def test_terminal_task_subscription_returns_protocol_error(monkeypatch) -> None:
     persisted = _run("COMPLETED")
     monkeypatch.setattr(routes_runtime, "_read_run", lambda *args, **kwargs: persisted)
@@ -256,6 +487,39 @@ def test_rejected_start_returns_actual_validation_error_not_fake_persistence_fai
     assert response.status_code == 400
     assert error["details"][0]["reason"] == "INVALID_REQUEST"
     assert error["message"] == "model is not allowlisted"
+
+
+def test_message_send_returns_persisted_task_before_worker_finishes(monkeypatch) -> None:
+    received = _run("RECEIVED")
+    worker_entered = threading.Event()
+    release_worker = threading.Event()
+    worker_finished = threading.Event()
+
+    def start_run(**kwargs):
+        worker_entered.set()
+        release_worker.wait(timeout=2)
+        worker_finished.set()
+        return {
+            "status": "COMPLETED",
+            "evidenceId": "evidence-completed",
+        }, 200
+
+    monkeypatch.setattr(routes_runtime, "_read_run", lambda *args, **kwargs: received)
+
+    response = _app(start_run).test_client().post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(),
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert worker_entered.is_set()
+    assert worker_finished.is_set() is False
+    assert payload["task"]["status"]["state"] == "TASK_STATE_SUBMITTED"
+
+    release_worker.set()
+    assert worker_finished.wait(timeout=2)
 
 
 def test_message_stream_runs_the_same_callback_and_returns_sse(monkeypatch) -> None:

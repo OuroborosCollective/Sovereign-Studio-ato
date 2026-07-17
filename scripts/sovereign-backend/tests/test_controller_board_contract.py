@@ -36,7 +36,7 @@ CANONICAL_FILE_TOOL = CANONICAL_RUNTIME / "tools" / "file_tool.py"
 
 
 def test_controller_module_has_valid_python_syntax() -> None:
-    for path in (CONTROLLER, RUN_STORE, JOB_STORE, JOB_ROUTES, PATTERN_GATEWAY, SWARM_ROUTES, SWARM_AGENTS, REPOSITORY_TOOLS, TOOL_EVENTS, FILE_TOOL):
+    for path in (CONTROLLER, RUN_STORE, JOB_STORE, JOB_ROUTES, PATTERN_GATEWAY, SWARM_ROUTES, A2A_ADAPTER, A2A_ROUTES, SWARM_AGENTS, REPOSITORY_TOOLS, TOOL_EVENTS, FILE_TOOL):
         ast.parse(path.read_text("utf-8"), filename=str(path))
 
 
@@ -195,7 +195,9 @@ def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> N
     assert "mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))" in routes
     assert routes.index("received_state = create_agent_run(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))")
     assert "payload, status_code = start_cognitive_swarm_run(" in routes
+    assert "payload, status_code = resume_cognitive_swarm_run(" in routes
     assert "start_run=start_cognitive_swarm_run" in routes
+    assert "resume_run=resume_cognitive_swarm_run" in routes
     assert "intent_classification_failure" in routes
     assert "link_agent_run_job(" in routes
     assert 'mission_intent.mode == "repository_execution"' in routes

@@ -283,7 +283,14 @@ def run_statuses_for_task_state(state_name: str) -> tuple[str, ...]:
 
 
 def _timestamp_from_value(value: object) -> Timestamp | None:
-    normalized = str(value or "").strip()
+    if value is None:
+        return None
+    isoformat = getattr(value, "isoformat", None)
+    normalized = (
+        str(isoformat())
+        if callable(isoformat)
+        else str(value or "").strip()
+    )
     if not normalized:
         return None
     timestamp = Timestamp()

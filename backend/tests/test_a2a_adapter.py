@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -91,7 +92,7 @@ def test_agent_card_advertises_a2a_1_0_http_json_without_push_notifications() ->
     assert payload["capabilities"].get("pushNotifications", False) is False
     assert payload["securitySchemes"]["bearerAuth"]["httpAuthSecurityScheme"]["scheme"] == "Bearer"
     assert payload["securitySchemes"]["bearerAuth"]["httpAuthSecurityScheme"]["bearerFormat"] == "JWT"
-    assert any(skill["id"] == "sovereign-judge" for skill in payload["skills"]) 
+    assert any(skill["id"] == "sovereign-judge" for skill in payload["skills"])
 
 
 def test_persisted_run_status_is_the_only_a2a_task_state_authority() -> None:
@@ -160,6 +161,10 @@ def test_task_timestamps_and_history_come_only_from_persisted_evidence() -> None
 
     assert payload["status"]["timestamp"] == "2026-07-17T18:00:00Z"
     assert payload["history"][0]["parts"][0]["text"]
+
+    run.updated_at = datetime(2026, 7, 17, 18, 0, tzinfo=timezone.utc)
+    database_datetime = message_to_dict(task_from_run(run))
+    assert database_datetime["status"]["timestamp"] == "2026-07-17T18:00:00Z"
 
     run.updated_at = "not-a-timestamp"
     malformed = message_to_dict(task_from_run(run))

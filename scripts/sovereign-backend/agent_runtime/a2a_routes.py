@@ -1,8 +1,8 @@
 """Flask HTTP+JSON/SSE routes for the Sovereign A2A 1.0 adapter.
 
-A2A is transport only. The injected ``start_run`` callback executes the existing
-OpenAI Agents SDK path, while task snapshots and stream updates are read from the
-persisted Sovereign truth chain.
+A2A is transport only. The injected ``start_run`` and ``resume_run`` callbacks
+execute the existing OpenAI Agents SDK paths, while task snapshots and stream
+updates are read from the persisted Sovereign truth chain.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import binascii
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -51,6 +52,8 @@ from .cognitive_swarm_manifest import manifest_payload
 
 ConnectionFactory = Callable[[], Any]
 StartRun = Callable[..., tuple[dict[str, object], int]]
+ResumeRun = Callable[..., tuple[dict[str, object], int]]
+_A2A_TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 
 
 def _close_connection(conn: Any) -> None:
@@ -168,6 +171,173 @@ def _a2a_context_id(request_message: Any) -> str:
     return value or f"context-{uuid.uuid4().hex}"
 
 
+def _persisted_a2a_context(run: object) -> str:
+    return str(
+        getattr(run, "a2a_context_id", None)
+        or getattr(run, "session_key", "")
+        or f"context-{getattr(run, 'run_id', '')}"
+    )
+
+
+def _validate_follow_up_context(request_message: Any, run: object) -> str:
+    supplied = str(request_message.message.context_id or "").strip()
+    if len(supplied) > 500:
+        raise ValueError("A2A contextId exceeds the bounded input limit")
+    persisted = _persisted_a2a_context(run)
+    if supplied and supplied != persisted:
+        raise ValueError("A2A contextId does not match the persisted task context")
+    return persisted
+
+
+def _follow_up_evidence(mission: str, evidence: str) -> str:
+    payload = (
+        "A2A follow-up message:\n"
+        f"{mission.strip()}\n\n"
+        "Additional runtime evidence:\n"
+        f"{evidence.strip() or '[no additional evidence supplied]'}"
+    )
+    if len(payload) > 250_000:
+        raise ValueError("A2A follow-up evidence exceeds the bounded input limit")
+    return payload
+
+
+def _resume_precondition_error(run: object) -> tuple[Response, int] | None:
+    run_id = str(getattr(run, "run_id", "") or "")
+    if bool(getattr(run, "lease_active", False)):
+        return _a2a_error(
+            "INVALID_REQUEST",
+            "The task already has an active resume lease.",
+            400,
+            status_name="INVALID_ARGUMENT",
+            metadata={"taskId": run_id},
+        )
+    status = str(getattr(run, "status", "") or "").upper()
+    if status not in {"BLOCKED", "FAILED_RECOVERABLE"}:
+        reason = (
+            "INVALID_REQUEST"
+            if status in {
+                "RECEIVED",
+                "SCOPING",
+                "PLANNED",
+                "QUEUED",
+                "ASSIGNED",
+                "RUNNING",
+                "WAITING_FOR_TOOL",
+                "WAITING_FOR_AGENT",
+                "VERIFYING",
+            }
+            else "UNSUPPORTED_OPERATION"
+        )
+        message = (
+            "The persisted task is still active and cannot be resumed concurrently."
+            if reason == "INVALID_REQUEST"
+            else "The persisted task is not eligible for another message."
+        )
+        return _a2a_error(
+            reason,
+            message,
+            400,
+            status_name="INVALID_ARGUMENT" if reason == "INVALID_REQUEST" else "FAILED_PRECONDITION",
+            metadata={"taskId": run_id, "sovereignStatus": status},
+        )
+    if int(getattr(run, "iteration_count", 0) or 0) >= int(
+        getattr(run, "max_iterations", 0) or 0
+    ):
+        return _a2a_error(
+            "UNSUPPORTED_OPERATION",
+            "The persisted task exhausted its bounded iteration budget.",
+            400,
+            status_name="FAILED_PRECONDITION",
+            metadata={"taskId": run_id},
+        )
+    return None
+
+
+def _execution_result_has_persisted_state(payload: Mapping[str, object]) -> bool:
+    return bool(payload.get("status") and payload.get("evidenceId"))
+
+
+def _execution_failure_response(
+    payload: Mapping[str, object],
+    status_code: int,
+    *,
+    fallback_message: str,
+) -> tuple[Response, int]:
+    safe_status = int(status_code) if 400 <= int(status_code) <= 599 else 500
+    message = str(
+        payload.get("error")
+        or payload.get("reason")
+        or payload.get("blocker")
+        or fallback_message
+    )[:1000]
+    if safe_status < 500:
+        return _a2a_error(
+            "INVALID_REQUEST",
+            message,
+            400,
+            status_name="INVALID_ARGUMENT",
+        )
+    return _a2a_error(
+        "INTERNAL_ERROR",
+        message,
+        500,
+        status_name="INTERNAL",
+    )
+
+
+def _resume_result_has_persisted_state(payload: Mapping[str, object]) -> bool:
+    return bool(
+        payload.get("resumed")
+        and _execution_result_has_persisted_state(payload)
+    )
+
+
+def _resume_failure_response(
+    payload: Mapping[str, object],
+    status_code: int,
+    *,
+    run_id: str,
+) -> tuple[Response, int]:
+    safe_status = int(status_code) if 400 <= int(status_code) <= 599 else 503
+    blocker = str(payload.get("blocker") or "").strip()
+    message = str(
+        payload.get("error")
+        or payload.get("reason")
+        or blocker
+        or "The persisted task could not be resumed."
+    )[:1000]
+    if safe_status == 404:
+        return _a2a_error(
+            "TASK_NOT_FOUND",
+            "The specified task does not exist or is not accessible.",
+            404,
+            metadata={"taskId": run_id},
+        )
+    if blocker in {"RUN_NOT_RESUMABLE", "RUN_ITERATION_LIMIT_EXHAUSTED"}:
+        return _a2a_error(
+            "UNSUPPORTED_OPERATION",
+            message,
+            400,
+            status_name="FAILED_PRECONDITION",
+            metadata={"taskId": run_id, "blocker": blocker},
+        )
+    if safe_status < 500:
+        return _a2a_error(
+            "INVALID_REQUEST",
+            message,
+            400,
+            status_name="INVALID_ARGUMENT",
+            metadata={"taskId": run_id, "blocker": blocker},
+        )
+    return _a2a_error(
+        "INTERNAL_ERROR",
+        message,
+        500,
+        status_name="INTERNAL",
+        metadata={"taskId": run_id, "blocker": blocker},
+    )
+
+
 def _task_filter_digest(
     *,
     context_id: str,
@@ -212,7 +382,14 @@ def _decode_page_token(
         raise ValueError("pageToken does not match the active task filters")
     if not updated_at or not run_id:
         raise ValueError("pageToken cursor is incomplete")
-    return updated_at, run_id
+    if not _A2A_TASK_ID_PATTERN.fullmatch(run_id):
+        raise ValueError("pageToken task cursor is invalid")
+    timestamp = Timestamp()
+    try:
+        timestamp.FromJsonString(updated_at.replace("+00:00", "Z"))
+    except ValueError as exc:
+        raise ValueError("pageToken timestamp cursor is invalid") from exc
+    return timestamp.ToJsonString(), run_id
 
 
 def _encode_page_token(run: object, *, filter_digest: str) -> str:
@@ -332,14 +509,18 @@ def _stream_persisted_run(
     run_id: str,
     initial_run: object,
     worker_done: threading.Event | None = None,
+    initial_event_ids: set[str] | None = None,
 ) -> Iterator[str]:
     context_id = str(
         getattr(initial_run, "a2a_context_id", None)
         or getattr(initial_run, "session_key", "")
         or f"context-{run_id}"
     )
-    seen_event_ids: set[str] = set()
-    last_snapshot = ("", "")
+    seen_event_ids: set[str] = set(initial_event_ids or ())
+    last_snapshot = (
+        str(getattr(initial_run, "status", "") or ""),
+        str(getattr(initial_run, "evidence_id", "") or ""),
+    )
     deadline = time.monotonic() + _stream_window_seconds()
 
     yield _sse(task_stream_response(task_from_run(initial_run, include_artifact=False)))
@@ -367,13 +548,9 @@ def _stream_persisted_run(
             yield _sse(task_stream_response(task_from_run(run, include_artifact=True)))
 
         if is_terminal_or_interrupted(run.status):
-            return
-        if worker_done is not None and worker_done.is_set() and run.status not in {
-            "RUNNING",
-            "WAITING_FOR_TOOL",
-            "WAITING_FOR_AGENT",
-            "VERIFYING",
-        }:
+            if worker_done is None or worker_done.is_set() or is_terminal_run_status(run.status):
+                return
+        if worker_done is not None and worker_done.is_set():
             return
         time.sleep(_poll_interval_seconds())
 
@@ -388,6 +565,7 @@ def register_a2a_routes(
     require_session,
     get_connection: ConnectionFactory,
     start_run: StartRun,
+    resume_run: ResumeRun,
 ) -> None:
     @app.route("/.well-known/agent-card.json", methods=["GET"])
     def sovereign_a2a_agent_card():
@@ -410,37 +588,142 @@ def register_a2a_routes(
         try:
             request_message = parse_send_message(request.get_json(force=True) or {})
             mission, evidence, model = mission_from_a2a_request(request_message)
-            a2a_context_id = _a2a_context_id(request_message)
         except (TypeError, ValueError) as exc:
             return _a2a_error("INVALID_REQUEST", str(exc), 400)
 
         user_id = str(getattr(request, "session_user_id", "") or "")
-        run_id = f"run-{uuid.uuid4().hex}"
-        session_key = f"session-{uuid.uuid4().hex}"
+        requested_task_id = str(request_message.message.task_id or "").strip()
         trace_id = f"trace-{uuid.uuid4().hex}"
-        start_payload, start_status = start_run(
-            get_connection=get_connection,
-            user_id=user_id,
-            mission=mission,
-            evidence=evidence,
-            model=model,
-            run_id=run_id,
-            session_key=session_key,
-            a2a_context_id=a2a_context_id,
-            trace_id=trace_id,
-        )
-        run = _read_run(get_connection, user_id=user_id, run_id=run_id)
+        existing_run = None
+        baseline_evidence_id = ""
+
+        if requested_task_id:
+            existing_run = _read_run(
+                get_connection,
+                user_id=user_id,
+                run_id=requested_task_id,
+            )
+            if existing_run is None:
+                return _a2a_error(
+                    "TASK_NOT_FOUND",
+                    "The specified task does not exist or is not accessible.",
+                    404,
+                    metadata={"taskId": requested_task_id},
+                )
+            precondition_error = _resume_precondition_error(existing_run)
+            if precondition_error:
+                return precondition_error
+            try:
+                _validate_follow_up_context(request_message, existing_run)
+                follow_up_evidence = _follow_up_evidence(mission, evidence)
+            except ValueError as exc:
+                return _a2a_error("INVALID_REQUEST", str(exc), 400)
+            run_id = requested_task_id
+            session_key = ""
+            a2a_context_id = _persisted_a2a_context(existing_run)
+            baseline_evidence_id = str(existing_run.evidence_id or "")
+        else:
+            try:
+                a2a_context_id = _a2a_context_id(request_message)
+            except ValueError as exc:
+                return _a2a_error("INVALID_REQUEST", str(exc), 400)
+            run_id = f"run-{uuid.uuid4().hex}"
+            session_key = f"session-{uuid.uuid4().hex}"
+            follow_up_evidence = ""
+
+        worker_done = threading.Event()
+        worker_result: dict[str, object] = {}
+
+        def execute() -> None:
+            try:
+                if requested_task_id:
+                    payload, status_code = resume_run(
+                        get_connection=get_connection,
+                        user_id=user_id,
+                        run_id=run_id,
+                        evidence=follow_up_evidence,
+                        model=model,
+                        trace_id=trace_id,
+                    )
+                else:
+                    payload, status_code = start_run(
+                        get_connection=get_connection,
+                        user_id=user_id,
+                        mission=mission,
+                        evidence=evidence,
+                        model=model,
+                        run_id=run_id,
+                        session_key=session_key,
+                        a2a_context_id=a2a_context_id,
+                        trace_id=trace_id,
+                    )
+                worker_result["payload"] = payload
+                worker_result["statusCode"] = status_code
+            except Exception as exc:
+                worker_result["errorType"] = type(exc).__name__
+            finally:
+                worker_done.set()
+
+        threading.Thread(
+            target=execute,
+            name=f"sovereign-a2a-send-{run_id[-12:]}",
+            daemon=True,
+        ).start()
+
+        run = existing_run
+        persistence_deadline = time.monotonic() + 10.0
+        while time.monotonic() < persistence_deadline:
+            current_run = _read_run(
+                get_connection,
+                user_id=user_id,
+                run_id=run_id,
+            )
+            if current_run is not None:
+                run = current_run
+                if not requested_task_id or str(current_run.evidence_id or "") != baseline_evidence_id:
+                    break
+            if worker_done.is_set():
+                break
+            time.sleep(0.02)
+
+        raw_status = worker_result.get("statusCode")
+        raw_payload = worker_result.get("payload")
+        safe_payload = raw_payload if isinstance(raw_payload, Mapping) else {}
+        if (
+            worker_done.is_set()
+            and isinstance(raw_status, int)
+            and raw_status >= 400
+            and not (
+                _resume_result_has_persisted_state(safe_payload)
+                if requested_task_id
+                else _execution_result_has_persisted_state(safe_payload)
+            )
+        ):
+            if requested_task_id:
+                return _resume_failure_response(
+                    safe_payload,
+                    raw_status,
+                    run_id=run_id,
+                )
+            return _execution_failure_response(
+                safe_payload,
+                raw_status,
+                fallback_message="The Agents SDK run could not persist an initial task state.",
+            )
+
         if run is None:
-            safe_status = start_status if 400 <= int(start_status) <= 599 else 503
-            safe_message = str(
-                start_payload.get("error")
-                or start_payload.get("blocker")
-                or "The Agents SDK run did not produce persisted truth-chain state."
-            )[:500]
+            return _execution_failure_response(
+                safe_payload,
+                int(raw_status) if isinstance(raw_status, int) else 500,
+                fallback_message="The Agents SDK run did not produce persisted truth-chain state.",
+            )
+        if requested_task_id and str(run.evidence_id or "") == baseline_evidence_id:
             return _a2a_error(
-                "INVALID_REQUEST" if safe_status < 500 else "AGENT_UNAVAILABLE",
-                safe_message,
-                safe_status,
+                "INTERNAL_ERROR",
+                "The persisted task resume claim was not recorded before the response deadline.",
+                500,
+                status_name="INTERNAL",
+                metadata={"taskId": run_id},
             )
         return _a2a_json(send_message_response(task_from_run(run)))
 
@@ -453,33 +736,86 @@ def register_a2a_routes(
         try:
             request_message = parse_send_message(request.get_json(force=True) or {})
             mission, evidence, model = mission_from_a2a_request(request_message)
-            a2a_context_id = _a2a_context_id(request_message)
         except (TypeError, ValueError) as exc:
             return _a2a_error("INVALID_REQUEST", str(exc), 400)
 
         user_id = str(getattr(request, "session_user_id", "") or "")
-        run_id = f"run-{uuid.uuid4().hex}"
-        session_key = f"session-{uuid.uuid4().hex}"
+        requested_task_id = str(request_message.message.task_id or "").strip()
         trace_id = f"trace-{uuid.uuid4().hex}"
+        existing_run = None
+        initial_event_ids: set[str] = set()
+
+        if requested_task_id:
+            existing_run = _read_run(
+                get_connection,
+                user_id=user_id,
+                run_id=requested_task_id,
+            )
+            if existing_run is None:
+                return _a2a_error(
+                    "TASK_NOT_FOUND",
+                    "The specified task does not exist or is not accessible.",
+                    404,
+                    metadata={"taskId": requested_task_id},
+                )
+            precondition_error = _resume_precondition_error(existing_run)
+            if precondition_error:
+                return precondition_error
+            try:
+                _validate_follow_up_context(request_message, existing_run)
+                follow_up_evidence = _follow_up_evidence(mission, evidence)
+            except ValueError as exc:
+                return _a2a_error("INVALID_REQUEST", str(exc), 400)
+            run_id = requested_task_id
+            initial_event_ids = {
+                str(event.get("event_id") or "")
+                for event in _read_events(
+                    get_connection,
+                    user_id=user_id,
+                    run_id=run_id,
+                )
+                if event.get("event_id")
+            }
+            session_key = ""
+            a2a_context_id = _persisted_a2a_context(existing_run)
+        else:
+            try:
+                a2a_context_id = _a2a_context_id(request_message)
+            except ValueError as exc:
+                return _a2a_error("INVALID_REQUEST", str(exc), 400)
+            run_id = f"run-{uuid.uuid4().hex}"
+            session_key = f"session-{uuid.uuid4().hex}"
+            follow_up_evidence = ""
+
         worker_done = threading.Event()
         worker_result: dict[str, object] = {}
 
         def execute() -> None:
             try:
-                payload, status_code = start_run(
-                    get_connection=get_connection,
-                    user_id=user_id,
-                    mission=mission,
-                    evidence=evidence,
-                    model=model,
-                    run_id=run_id,
-                    session_key=session_key,
-                    a2a_context_id=a2a_context_id,
-                    trace_id=trace_id,
-                )
+                if requested_task_id:
+                    payload, status_code = resume_run(
+                        get_connection=get_connection,
+                        user_id=user_id,
+                        run_id=run_id,
+                        evidence=follow_up_evidence,
+                        model=model,
+                        trace_id=trace_id,
+                    )
+                else:
+                    payload, status_code = start_run(
+                        get_connection=get_connection,
+                        user_id=user_id,
+                        mission=mission,
+                        evidence=evidence,
+                        model=model,
+                        run_id=run_id,
+                        session_key=session_key,
+                        a2a_context_id=a2a_context_id,
+                        trace_id=trace_id,
+                    )
                 worker_result["payload"] = payload
                 worker_result["statusCode"] = status_code
-            except Exception as exc:  # persisted helper is responsible for bounded failure state
+            except Exception as exc:  # shared helpers own bounded failure persistence
                 worker_result["errorType"] = type(exc).__name__
             finally:
                 worker_done.set()
@@ -491,29 +827,74 @@ def register_a2a_routes(
         )
         thread.start()
 
-        initial_run = None
-        persistence_deadline = time.monotonic() + 10.0
-        while time.monotonic() < persistence_deadline:
-            initial_run = _read_run(get_connection, user_id=user_id, run_id=run_id)
-            if initial_run is not None:
-                break
+        initial_run = existing_run
+        if requested_task_id and existing_run is not None:
+            baseline_evidence_id = str(existing_run.evidence_id or "")
+            claim_deadline = time.monotonic() + 1.0
+            while time.monotonic() < claim_deadline:
+                current_run = _read_run(
+                    get_connection,
+                    user_id=user_id,
+                    run_id=run_id,
+                )
+                if current_run is not None:
+                    initial_run = current_run
+                    if str(current_run.evidence_id or "") != baseline_evidence_id:
+                        break
+                if worker_done.is_set():
+                    break
+                time.sleep(0.02)
             if worker_done.is_set():
-                break
-            time.sleep(0.05)
-        if initial_run is None:
+                raw_status = worker_result.get("statusCode")
+                raw_payload = worker_result.get("payload")
+                safe_payload = raw_payload if isinstance(raw_payload, Mapping) else {}
+                if (
+                    isinstance(raw_status, int)
+                    and raw_status >= 400
+                    and not _resume_result_has_persisted_state(safe_payload)
+                ):
+                    return _resume_failure_response(
+                        safe_payload,
+                        raw_status,
+                        run_id=run_id,
+                    )
+        else:
+            persistence_deadline = time.monotonic() + 10.0
+            while time.monotonic() < persistence_deadline:
+                initial_run = _read_run(
+                    get_connection,
+                    user_id=user_id,
+                    run_id=run_id,
+                )
+                if initial_run is not None:
+                    break
+                if worker_done.is_set():
+                    break
+                time.sleep(0.05)
+
+        if worker_done.is_set():
             raw_status = worker_result.get("statusCode")
-            safe_status = int(raw_status) if isinstance(raw_status, int) and 400 <= raw_status <= 599 else 503
             raw_payload = worker_result.get("payload")
             safe_payload = raw_payload if isinstance(raw_payload, Mapping) else {}
-            safe_message = str(
-                safe_payload.get("error")
-                or safe_payload.get("blocker")
-                or "The Agents SDK run could not be persisted before streaming."
-            )[:500]
-            return _a2a_error(
-                "INVALID_REQUEST" if safe_status < 500 else "AGENT_UNAVAILABLE",
-                safe_message,
-                safe_status,
+            if (
+                isinstance(raw_status, int)
+                and raw_status >= 400
+                and not _execution_result_has_persisted_state(safe_payload)
+            ):
+                return _execution_failure_response(
+                    safe_payload,
+                    raw_status,
+                    fallback_message="The Agents SDK run could not persist a final task state.",
+                )
+
+        if initial_run is None:
+            raw_status = worker_result.get("statusCode")
+            raw_payload = worker_result.get("payload")
+            safe_payload = raw_payload if isinstance(raw_payload, Mapping) else {}
+            return _execution_failure_response(
+                safe_payload,
+                int(raw_status) if isinstance(raw_status, int) else 500,
+                fallback_message="The Agents SDK run could not be persisted before streaming.",
             )
 
         response = Response(
@@ -523,6 +904,7 @@ def register_a2a_routes(
                 run_id=run_id,
                 initial_run=initial_run,
                 worker_done=worker_done,
+                initial_event_ids=initial_event_ids,
             )),
             status=200,
             content_type="text/event-stream",
@@ -736,12 +1118,22 @@ def register_a2a_routes(
                 status_name="FAILED_PRECONDITION",
                 metadata={"taskId": run_id},
             )
+        initial_event_ids = {
+            str(event.get("event_id") or "")
+            for event in _read_events(
+                get_connection,
+                user_id=user_id,
+                run_id=run_id,
+            )
+            if event.get("event_id")
+        }
         response = Response(
             stream_with_context(_stream_persisted_run(
                 get_connection=get_connection,
                 user_id=user_id,
                 run_id=run_id,
                 initial_run=run,
+                initial_event_ids=initial_event_ids,
             )),
             status=200,
             content_type="text/event-stream",

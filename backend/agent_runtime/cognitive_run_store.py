@@ -124,6 +124,15 @@ def _bounded(value: object, limit: int) -> str:
     return sanitize_agent_text(str(value or ""), limit).strip()
 
 
+def _timestamp_text(value: object) -> str:
+    if value is None:
+        return ""
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return str(isoformat())
+    return str(value or "").strip()
+
+
 def _digest_text(value: object) -> str:
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
@@ -1392,7 +1401,7 @@ def stored_run_from_row(row: Mapping[str, Any]) -> StoredAgentRun:
         iteration_count=int(row.get("iteration_count") or 0),
         lease_active=bool(row.get("lease_active")),
         resume_task_id=str(row.get("resume_task_id") or "") or None,
-        updated_at=str(row.get("updated_at") or ""),
+        updated_at=_timestamp_text(row.get("updated_at")),
     )
 
 
