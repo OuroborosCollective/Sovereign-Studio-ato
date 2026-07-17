@@ -18,6 +18,7 @@ def _rendered_payload(root: Path, *, public_port: bool = False, command: list[st
             "DATABASE_URL": "postgresql://litellm:abcdefghijklmnop@db:5432/litellm",
             "LITELLM_MASTER_KEY": "sk-abcdefghijklmnop",
             "LITELLM_SALT_KEY": "sk-ponmlkjihgfedcba",
+            "STORE_MODEL_IN_DB": "True",
         },
         "networks": {"sovereign-private": None},
         "volumes": [

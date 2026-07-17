@@ -34,17 +34,12 @@ describe('useLlmAdapters', () => {
     expect(typeof result.current.hasEnabledAdapter).toBe('boolean');
   });
 
-  it('should include mlvoca adapter by default', () => {
+  it('should expose only the backend route and local analysis fallback', () => {
     const { result } = renderHook(() => useLlmAdapters());
-    
-    const hasMlvoca = result.current.adapters.some(a => a.id === 'mlvoca');
-    expect(hasMlvoca).toBe(true);
-  });
 
-  it('should include pollinations adapter by default', () => {
-    const { result } = renderHook(() => useLlmAdapters());
-    
-    const hasPollinations = result.current.adapters.some(a => a.id === 'pollinations');
-    expect(hasPollinations).toBe(true);
+    expect(result.current.adapters.map((adapter) => adapter.id)).toEqual([
+      'optional-user-keys',
+      'local-safe',
+    ]);
   });
 });

@@ -33,7 +33,7 @@ services:
       - areloria_arelorian-network
       - sovereign-private
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health')"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health/ready', timeout=8)"]
       interval: 30s
       timeout: 10s
       retries: 3

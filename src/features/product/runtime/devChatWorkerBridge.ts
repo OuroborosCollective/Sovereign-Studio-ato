@@ -1,31 +1,29 @@
 /**
- * DevChat Worker Bridge
+ * DevChat runtime bridge.
  *
- * Typed runtime helpers extracted from the approved DevChat reference.
- * This module owns Cloudflare route constants, real GitHub URL parsing,
- * Worker health diagnostics and the standard hosted LLM bridge request shape.
- * It contains no demo messages and no simulated model responses.
+ * Legacy type names remain for compatibility, but every online request now
+ * uses the authenticated Sovereign Backend and its private LiteLLM route.
  */
+import { resolvePrimaryBridgeConfig } from '../llm/primaryBridgeConfig';
 
-export const SOVEREIGN_WORKER_BASE = 'https://sovereign-llm-proxy.projectouroboroscollective.workers.dev' as const;
-export const SOVEREIGN_WORKER_CHAT = `${SOVEREIGN_WORKER_BASE}/v1/chat/completions` as const;
-export const SOVEREIGN_WORKER_HEALTH = `${SOVEREIGN_WORKER_BASE}/health` as const;
-export const SOVEREIGN_WORKER_KV = `${SOVEREIGN_WORKER_BASE}/kv` as const;
+const BACKEND_CONFIG = resolvePrimaryBridgeConfig();
+export const SOVEREIGN_WORKER_BASE = BACKEND_CONFIG.backendBaseUrl;
+export const SOVEREIGN_WORKER_CHAT = BACKEND_CONFIG.chatUrl;
+export const SOVEREIGN_WORKER_HEALTH = `${BACKEND_CONFIG.backendBaseUrl}/health/ready`;
+export const SOVEREIGN_WORKER_KV = `${BACKEND_CONFIG.backendBaseUrl}/api/auth/me`;
 export const SOVEREIGN_SESSION_KEY = 'sovereign-session-v1' as const;
-// Verified live against the Worker /v1/models endpoint 2026-07-02:
-//   OK:   deepseek-r1, mistral-7b, llama-3.1-8b
-//   DEAD: cerebras/gpt-oss-120b (no route), cerebras/zai-glm-4.7 (no route),
-//         qwen-14b (no route), gemma-7b (no route), llama-3-8b (deprecated 2026-05-30)
-export const DEV_CHAT_WORKER_DEFAULT_MODEL = 'deepseek-r1' as const;
-export const DEV_CHAT_WORKER_FALLBACK_MODEL = 'llama-3.1-8b' as const;
+export const DEV_CHAT_WORKER_DEFAULT_MODEL = 'sovereign-fast' as const;
+export const DEV_CHAT_WORKER_FALLBACK_MODEL = 'sovereign-balanced' as const;
 
-// Models that no longer route correctly on the Worker — normalised to default.
 const LEGACY_WORKER_MODEL_ALIASES = new Set([
+  'deepseek-r1',
+  'mistral-7b',
+  'llama-3.1-8b',
+  'llama-3-8b',
   'cerebras/gpt-oss-120b',
   'cerebras/zai-glm-4.7',
-  'llama-3-8b',   // deprecated by Cloudflare 2026-05-30
-  'gemma-7b',     // no route as of 2026-07-02
-  'qwen-14b',     // no route as of 2026-07-02
+  'gemma-7b',
+  'qwen-14b',
 ]);
 
 export type DevChatWorkerModelTier = 'fast' | 'smart' | 'power';
@@ -37,14 +35,10 @@ export interface DevChatWorkerModel {
   readonly thinking: boolean;
 }
 
-/**
- * Active models verified against the deployed Worker on 2026-07-02.
- * Keep this list in sync with the Worker's /v1/models response.
- */
+/** Abstract aliases only. The backend catalog remains the runtime truth. */
 export const DEV_CHAT_WORKER_MODELS: readonly DevChatWorkerModel[] = [
-  { id: 'deepseek-r1',   label: 'DeepSeek R1',    tier: 'power', thinking: true  },
-  { id: 'mistral-7b',    label: 'Mistral 7B',      tier: 'smart', thinking: false },
-  { id: 'llama-3.1-8b',  label: 'Llama 3.1 8B',   tier: 'fast',  thinking: false },
+  { id: 'sovereign-fast', label: 'Sovereign Fast', tier: 'fast', thinking: false },
+  { id: 'sovereign-balanced', label: 'Sovereign Balanced', tier: 'smart', thinking: true },
 ];
 
 export function normalizeDevChatWorkerModel(model: string | undefined): string {
@@ -52,6 +46,34 @@ export function normalizeDevChatWorkerModel(model: string | undefined): string {
   if (!clean) return DEV_CHAT_WORKER_DEFAULT_MODEL;
   if (LEGACY_WORKER_MODEL_ALIASES.has(clean)) return DEV_CHAT_WORKER_DEFAULT_MODEL;
   return clean;
+}
+
+interface BackendLlmRoute {
+  readonly id?: string;
+  readonly defaultModelId?: string;
+  readonly enabled?: boolean;
+}
+
+async function resolveActiveBackendModel(requestedModel: string, signal?: AbortSignal): Promise<string> {
+  if (requestedModel === DEV_CHAT_WORKER_DEFAULT_MODEL || requestedModel === DEV_CHAT_WORKER_FALLBACK_MODEL) {
+    return requestedModel;
+  }
+  const response = await fetch(BACKEND_CONFIG.routesUrl, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  const payload = await response.json() as { routes?: BackendLlmRoute[]; error?: unknown };
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : `Route catalog HTTP ${response.status}`);
+  }
+  const active = (payload.routes ?? []).filter((route) => route.enabled !== false);
+  const requested = active.find((route) => route.defaultModelId === requestedModel || route.id === requestedModel);
+  const selected = requested ?? active.find((route) => route.defaultModelId) ?? active.find((route) => route.id);
+  const model = selected?.defaultModelId || selected?.id || '';
+  if (!model) throw new Error('Keine owner-bestätigte LiteLLM-Route ist aktiv.');
+  return model;
 }
 
 export interface DevChatWorkerMessage {
@@ -469,6 +491,7 @@ export async function fetchDevChatWorkerHealth(signal?: AbortSignal): Promise<De
   try {
     const response = await fetch(SOVEREIGN_WORKER_HEALTH, {
       method: 'GET',
+      credentials: 'include',
       headers: { Accept: 'application/json' },
       signal: combinedSignal,
     });
@@ -526,7 +549,8 @@ export async function fetchDevChatWorkerReply(
   const messages = request.messages
     .map((message) => ({ role: message.role, content: message.content.trim() }))
     .filter((message) => message.content.length > 0);
-  const model = normalizeDevChatWorkerModel(request.model);
+  const requestedModel = normalizeDevChatWorkerModel(request.model);
+  let model = requestedModel;
 
   if (messages.length === 0) {
     const diagnostic: DevChatWorkerDiagnostic = {
@@ -538,6 +562,26 @@ export async function fetchDevChatWorkerReply(
       nextAction: 'Vor dem Senden mindestens eine echte Nachricht erzeugen.',
     };
     return { ok: false, error: 'Worker Chat blockiert: keine gültige Nachricht.', route: SOVEREIGN_WORKER_CHAT, diagnostic };
+  }
+
+  try {
+    model = await resolveActiveBackendModel(requestedModel, request.signal);
+  } catch (error) {
+    const diagnostic: DevChatWorkerDiagnostic = {
+      route: SOVEREIGN_WORKER_CHAT,
+      model: requestedModel,
+      messageCount: messages.length,
+      scope: 'worker_config',
+      canClientFix: false,
+      nextAction: 'Im Admin eine owner-bestätigte LiteLLM-Route aktivieren.',
+      bodySnippet: error instanceof Error ? error.message : undefined,
+    };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'LiteLLM-Routenkatalog nicht verfügbar.',
+      route: SOVEREIGN_WORKER_CHAT,
+      diagnostic,
+    };
   }
 
   let lastError: any = null;
@@ -556,6 +600,7 @@ export async function fetchDevChatWorkerReply(
     try {
       const response = await fetch(SOVEREIGN_WORKER_CHAT, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
@@ -566,7 +611,6 @@ export async function fetchDevChatWorkerReply(
           messages,
           temperature: 0.2,
           max_tokens: 4096,
-          reasoning_format: 'parsed',
           stream: false,
         }),
         signal: combinedSignal,
@@ -616,7 +660,10 @@ export async function fetchDevChatWorkerReply(
         payload = { response: text };
       }
 
-      const content = readWorkerContent(payload);
+      const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+      const content = contentType.includes('text/event-stream')
+        ? extractSseChatText(text)
+        : readWorkerContent(payload);
       if (!content) {
         const diagnostic: DevChatWorkerDiagnostic = {
           route: SOVEREIGN_WORKER_CHAT,
@@ -916,6 +963,29 @@ export async function* streamDevChatWorkerReply(
   request: DevChatWorkerReplyRequest,
   onMetadata?: (metadata: { fallbackUsed: boolean; preferredModel: string; actualModel: string; fallbackReason?: string }) => void,
 ): AsyncGenerator<string> {
+  const bounded = await fetchDevChatWorkerReply(request, { maxRetries: 0 });
+  if (!bounded.ok || !bounded.content) {
+    throw createWorkerRuntimeError({
+      message: bounded.error || 'LiteLLM Runtime lieferte keine Antwort.',
+      diagnostic: bounded.diagnostic ?? {
+        route: SOVEREIGN_WORKER_CHAT,
+        model: request.model,
+        messageCount: request.messages.length,
+        scope: 'worker_runtime',
+        canClientFix: false,
+        nextAction: 'Backend- und LiteLLM-Readiness prüfen.',
+      },
+    });
+  }
+  onMetadata?.({
+    fallbackUsed: Boolean(bounded.fallbackUsed),
+    preferredModel: bounded.preferredModel || request.model,
+    actualModel: bounded.actualModel || request.model,
+    fallbackReason: bounded.fallbackReason,
+  });
+  yield bounded.content;
+  return;
+
   const messages = request.messages
     .map((message) => ({ role: message.role, content: message.content.trim() }))
     .filter((message) => message.content.length > 0);

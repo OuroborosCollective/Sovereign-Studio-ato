@@ -73,21 +73,21 @@ export function palRoute(
         : powerCount >= 10
           ? "smart"
           : "power";
-  // Models verified live 2026-07-02: deepseek-r1, mistral-7b, llama-3.1-8b only.
-  // llama-3-8b deprecated; qwen-14b and gemma-7b have no Worker route.
-  const tierModelMap: Record<string, string[]> = {
-    fast:  ["llama-3.1-8b", "mistral-7b"],
-    smart: ["mistral-7b",   "llama-3.1-8b"],
-    power: ["deepseek-r1",  "mistral-7b"],
+  // PAL chooses only abstract LiteLLM aliases. The backend resolves the actual
+  // provider/model deployment from its active route catalog.
+  const tierAliasMap: Record<string, string> = {
+    fast: "sovereign-fast",
+    smart: "sovereign-balanced",
+    power: "sovereign-balanced",
   };
   const matched =
-    DEV_CHAT_WORKER_MODELS.find((m) => tierModelMap[tier].includes(m.id)) ??
+    DEV_CHAT_WORKER_MODELS.find((model) => model.id === tierAliasMap[tier]) ??
     DEV_CHAT_WORKER_MODELS[0];
   const costMap = { fast: 1, smart: 10, power: 30 };
   return {
     tier,
-    modelId: matched?.id ?? "llama-3-8b",
-    modelLabel: matched?.label ?? "Llama 3 8B",
+    modelId: matched?.id ?? "sovereign-fast",
+    modelLabel: matched?.label ?? "Sovereign Fast",
     score,
     costFactor: costMap[tier],
   };

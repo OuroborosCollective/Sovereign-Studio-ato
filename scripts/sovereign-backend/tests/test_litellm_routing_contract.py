@@ -8,7 +8,6 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_BACKEND = ROOT / "scripts" / "sovereign-backend"
 APP_PATHS = (
     SCRIPT_BACKEND / "app.py",
-    ROOT / "backend" / "app.py",
 )
 
 
@@ -44,8 +43,8 @@ def test_backend_routes_reserve_then_settle_from_runtime_usage() -> None:
         '"blocker": "duplicate_llm_request_id"',
         'if provider == "litellm":',
         "fetch_litellm(",
-        "_resolve_cloudflare_fallback_route()",
-        '"litellm_and_cloudflare_fallback_failed"',
+        '"direct_provider_route_blocked"',
+        '"litellm_unavailable"',
         "extract_litellm_evidence(resp, result)",
         '"chargeBasis": "actual_usage" if total_tokens > 0 else "reserved_request_estimate"',
         'provider_tx_id=f"{request_id}:refund"',
@@ -57,6 +56,7 @@ def test_backend_routes_reserve_then_settle_from_runtime_usage() -> None:
             assert fragment in source, f"{fragment!r} missing from {path}"
         assert "OPENAI_API_KEY" not in source
         assert "getattr(resp, \"text\"" not in source
+        assert "return refund_failed_run(\"litellm_unavailable\")" in source
 
 
 def test_migration_adds_two_litellm_routes_and_settlement_evidence() -> None:

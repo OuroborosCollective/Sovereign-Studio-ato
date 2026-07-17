@@ -25,6 +25,7 @@ services:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required}
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is required}
+      STORE_MODEL_IN_DB: "True"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./sovereign-entrypoint.py:/app/sovereign-entrypoint.py:ro

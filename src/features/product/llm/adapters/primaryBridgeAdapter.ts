@@ -18,6 +18,11 @@ type ChatCompletionResponse = {
   error?: unknown;
 };
 
+type RouteResponse = {
+  routes?: Array<{ id?: string; defaultModelId?: string; enabled?: boolean }>;
+  error?: unknown;
+};
+
 function providerError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
@@ -64,28 +69,43 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
 
   return {
     id: 'optional-user-keys',
-    label: 'Hosted primary LLM bridge',
-    kind: 'user-key',
+    label: 'Sovereign Backend · private LiteLLM',
+    kind: 'existing',
     priority: -10,
     enabled: config.ready,
     async run(context: LlmAdapterContext): Promise<LlmAdapterResult> {
       const prompt = buildSovereignLlmPrompt(context);
-      const proxyUrl = normalizePrimaryBridgeUrl(config.proxyUrl);
+      const backendBaseUrl = normalizePrimaryBridgeUrl(config.backendBaseUrl);
 
       try {
-        const response = await fetch(proxyUrl, {
+        const routesResponse = await fetch(`${backendBaseUrl}/api/llm/routes`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: { 'X-Sovereign-Client': 'android-webview' },
+          signal: context.signal,
+        });
+        const routesPayload = await routesResponse.json() as RouteResponse;
+        if (!routesResponse.ok) {
+          throw new Error(typeof routesPayload.error === 'string' ? routesPayload.error : `Route catalog HTTP ${routesResponse.status}`);
+        }
+        const selectedRoute = routesPayload.routes?.find((route) => route.enabled && route.defaultModelId)
+          ?? routesPayload.routes?.find((route) => route.enabled && route.id);
+        const selectedModel = config.model || selectedRoute?.defaultModelId || selectedRoute?.id || '';
+        if (!selectedModel) throw new Error('No owner-verified LiteLLM route is active.');
+
+        const response = await fetch(`${backendBaseUrl}/api/llm/chat`, {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             'X-Sovereign-Client': 'android-webview',
-            ...(config.proxyKey ? { 'X-API-Key': config.proxyKey } : {}),
           },
           body: JSON.stringify({
-            model: config.model,
+            model: selectedModel,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.2,
             max_tokens: 4096,
-            reasoning_format: 'parsed',
+            stream: false,
           }),
           signal: context.signal,
         });
@@ -98,7 +118,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
 
         return { providerId: 'optional-user-keys', brain: parsed, raw };
       } catch (error) {
-        throw new Error(`Primary bridge provider failed: ${maskSecrets(providerError(error))}`);
+        throw new Error(`Sovereign LiteLLM route failed: ${maskSecrets(providerError(error))}`);
       }
     },
   };

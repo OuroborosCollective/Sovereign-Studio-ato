@@ -41,8 +41,7 @@ env:
   NODE_VERSION: '22'
   PNPM_VERSION: '9.12.2'
   CI: 'true'
-  VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
-  VITE_SOVEREIGN_LLM_MODEL: deepseek-r1
+  VITE_ADMIN_API_BASE: https://sovereign-backend.arelorian.de
 
 concurrency:
   group: sovereign-e2e-smoke-${{ github.ref }}

@@ -58,13 +58,19 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
     targets = runtime._target_map()
 
-    assert set(targets) == {"openai_api_key"}
+    assert set(targets) == {"openai_api_key", "litellm_provider_key"}
 
     openai_target = targets["openai_api_key"]
     assert openai_target["path"] == (tmp_path / "openai_api_key.txt").resolve()
     assert openai_target["label"] == "OpenAI Provider für LiteLLM"
     assert openai_target["fieldLabel"] == "OpenAI API-Key"
     assert openai_target["maxBytes"] == 8192
+
+    provider_target = targets["litellm_provider_key"]
+    assert provider_target["path"] == (tmp_path / "litellm_provider_key.txt").resolve()
+    assert provider_target["label"] == "Einmaliger Fremdprovider-Zugang für LiteLLM"
+    assert provider_target["fieldLabel"] == "Provider API-Key"
+    assert provider_target["maxBytes"] == 8192
 
 
 def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypatch, tmp_path: Path) -> None:

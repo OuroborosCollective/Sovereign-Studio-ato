@@ -19,14 +19,14 @@ function nextIndex(index: number, length: number): number {
 }
 
 function startIndex(active: LlmAdapter[], memory: LlmRevolverMemory): number {
-  const hostedBridgeIndex = active.findIndex((adapter) => adapter.id === 'optional-user-keys' && adapter.kind === 'user-key');
+  const hostedBridgeIndex = active.findIndex((adapter) => adapter.id === 'optional-user-keys');
   if (hostedBridgeIndex >= 0) return hostedBridgeIndex;
   return Math.max(0, Math.min(memory.nextIndex, active.length - 1));
 }
 
 function assertRealProvider(adapter: LlmAdapter): void {
   if (adapter.kind !== 'local-safe') return;
-  throw new Error('VALIDATION_FAILED_LLM_REQUIRED: local-safe is analysis-only and cannot be the source of a publishable Draft PR. A real hosted/user-key provider must produce the package.');
+  throw new Error('VALIDATION_FAILED_LLM_REQUIRED: local-safe is analysis-only and cannot be the source of a publishable Draft PR. The authenticated Sovereign Backend must produce the package.');
 }
 
 function emit(options: LlmRevolverOptions, attempts: LlmRevolverEvent[], event: LlmRevolverEvent): void {
