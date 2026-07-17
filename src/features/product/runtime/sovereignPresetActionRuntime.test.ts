@@ -105,6 +105,6 @@ describe('sovereignPresetActionRuntime', () => {
     expect(blocked.reason).toMatch(/GitHub-Schreibzugang fehlt/);
     expect(submitted).toContain('ausschließlich einen Draft PR');
     expect(submitted).not.toContain('Preset-Ausführungsmodus: safe_analysis');
-    expect(isWriteIntent(submitted)).toBe(true);
+    expect(isWriteIntent(submitted, true)).toBe(true);
   });
 });

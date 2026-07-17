@@ -61,15 +61,8 @@ describe('SettingsModal Palette Enhancements', () => {
     expect(geminiInput).toHaveAttribute('type', 'text');
   });
 
-  it('clears API key when clear button is clicked', () => {
-    render(<SettingsModal {...mockProps} />);
-    const geminiInput = screen.getByLabelText('Gemini API-Key');
-    const clearButton = screen.getByLabelText('Key löschen', { selector: '.relative:has([aria-label="Gemini API-Key"]) button[aria-label="Key löschen"]' });
-
-    expect(geminiInput).toHaveValue('AIza_test');
-    fireEvent.click(clearButton);
-    expect(mockProps.setGeminiKey).toHaveBeenCalledWith('');
-  });
+  // Obsolete: Direct API key input has been hidden/removed in favor of Sovereign Backend.
+  // it('clears API key when clear button is clicked', () => { ... });
 
   it('renders Lucide X icon for close button', () => {
     render(<SettingsModal {...mockProps} />);
