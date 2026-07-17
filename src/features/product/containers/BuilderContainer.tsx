@@ -4962,16 +4962,21 @@ Es wurde noch keine Datei geändert.`,
         return;
       }
       addLog('info', 'Write intent routed to patch/draft-pr executor after GitHub access gate', 'router');
+      // Derive executor intent from the runtime-validated capability decision — not from
+      // offline keyword classification. The capability router already determined the route
+      // using structured runtime state; re-running keyword matching here would violate the
+      // LLM/Tool boundary (Tool must not interpret language).
+      const executorIntentFromCapability: SovereignExecutorIntentKind =
+        capabilityDecision.capability === 'draft_pr' ? 'draft_pr' : 'code_execution';
       const agentStartRequested = await startAgentFromText(
         submittedText,
-        classifyOfflineSovereignExecutorIntent(submittedText),
+        executorIntentFromCapability,
       );
       if (agentStartRequested) {
         appendRuntimeNotice('GitHub-Zugang ist bereit. Die Schreibaktion wurde an die Sovereign Agent Runtime übergeben. Warte auf bestätigten Job-State. Ergebnis bleibt Draft PR, kein Auto-Merge.');
       }
       return;
     }
-
     // ── #500/#501 Alternative write route: answer locally without Sovereign Agent lock-in.
     // NOTE: Status, diagnostic, and retry intents are handled earlier in the flow
     // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.

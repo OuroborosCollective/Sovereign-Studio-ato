@@ -299,6 +299,25 @@ export function buildOfflineCapabilityLanguageEvidence(text: string): Capability
   };
 }
 
+/**
+ * Build language evidence from a verified online LLM interpretation.
+ * Use this instead of buildOfflineCapabilityLanguageEvidence when the online
+ * interpreter has already returned a structured intent — the source is then
+ * 'online_llm', not 'offline_fallback'.
+ */
+export function buildOnlineCapabilityLanguageEvidence(
+  onlineIntent: IntentClassification,
+  complexity: TaskComplexity,
+  explicitAgentRequest: boolean,
+): CapabilityRouterInput['language'] {
+  return {
+    intent: onlineIntent,
+    complexity,
+    explicitAgentRequest,
+    source: 'online_llm',
+  };
+}
+
 export function decideSovereignCapabilityRoute(input: CapabilityRouterInput): CapabilityDecision {
   const intent = input.language.intent;
   const complexity = input.language.complexity;
