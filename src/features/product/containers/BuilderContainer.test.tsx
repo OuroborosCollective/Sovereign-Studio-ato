@@ -102,9 +102,11 @@ function testIntentEnvelope(text: string, assistantText: string) {
   const status = /arbeitet|fertig|status|schon|fortschritt|warum passiert nichts|wo steckt|executor|ausführung/.test(lower);
   const draftPr = /draft\s*pr|pull\s*request/.test(lower) && /mach|erstell|implement|reparier|fix|bring/.test(lower);
   const write = draftPr || /implement|reparier|fix|änder|aktualisier|verbesser|bau\b|erzeug/.test(lower);
+  const execute = write && (draftPr || lower.includes('sovereign agent'));
   return {
     mode: write ? 'action' : 'chat',
     intent: status ? 'status' : draftPr ? 'draft_pr' : write ? 'code_execution' : 'free_chat',
+    action_disposition: execute ? 'execute' : 'review',
     assistant_text: assistantText,
     action_title: write ? text : '',
     confidence: 0.96,
@@ -836,7 +838,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Runtime-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getByText('Worker response.')).toBeDefined(),
+        expect(screen.getByText('Der erste LiteLLM-Aufruf war erfolgreich.')).toBeDefined(),
       );
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
@@ -1737,7 +1739,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText("Zugang eingeben")).toBeNull();
   });
 
-  it("allowed Draft-PR bridge route is not rendered as an execution blocker", async () => {
+  it("blocks a Draft-PR execution request when no product executor is connected", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -1760,9 +1762,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
 
     await waitFor(() =>
-      expect(screen.getByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeDefined(),
+      expect(screen.getByText(/Ausführungsauftrag kann nicht ausgeführt werden/i)).toBeDefined(),
     );
-    expect(screen.queryByText(/Ausführungsauftrag kann nicht ausgeführt werden/i)).toBeNull();
+    expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
   });});

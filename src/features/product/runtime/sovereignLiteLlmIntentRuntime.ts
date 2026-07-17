@@ -28,6 +28,7 @@ interface LiteLlmRouteCatalog {
 interface SovereignIntentEnvelope {
   readonly mode?: unknown;
   readonly intent?: unknown;
+  readonly action_disposition?: unknown;
   readonly assistant_text?: unknown;
   readonly action_title?: unknown;
   readonly confidence?: unknown;
@@ -112,6 +113,9 @@ function parseIntentEnvelope(
     return null;
   }
 
+  const actionDisposition = payload.action_disposition === 'execute'
+    ? 'execute'
+    : 'review';
   const assistantText = typeof payload.assistant_text === 'string'
     ? payload.assistant_text.trim()
     : '';
@@ -134,6 +138,7 @@ function parseIntentEnvelope(
   return {
     mode,
     intent: intent as DevChatWorkerIntentKind,
+    actionDisposition,
     assistantText,
     actionTitle,
     confidence,
@@ -272,8 +277,9 @@ function buildMessages(args: SovereignLiteLlmIntentRequest): readonly DevChatWor
     'Die Runtime entscheidet separat über Repo-, GitHub-, Workspace-, Tool-, Test- und Draft-PR-Gates.',
     'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
     'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
     'Nutze mode=action nur, wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
+    'Nutze action_disposition=execute nur bei einem ausdrücklichen sofortigen Ausführungsauftrag. Nutze review, wenn der erkannte Änderungsauftrag zuerst als Integrationsentwurf bestätigt werden soll.',
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     'Bewerte die Gesamtbedeutung, nicht einzelne Schlüsselwörter.',
