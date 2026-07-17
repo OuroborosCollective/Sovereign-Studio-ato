@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from admin_mode import PrivateAdminRuntime
+from browserless_reader import BrowserlessReplayReader
 from command_contract import is_mutating_action
 from github_admin import GitHubAdminRuntime
 from managed_compose import ManagedComposeRuntime
@@ -39,6 +40,7 @@ class BrokerRuntime:
             "ghcr.io/ouroboroscollective/sovereign-backend",
         ).strip()
         self.operations = OperationsRuntime()
+        self.browserless = BrowserlessReplayReader()
         self.managed_compose = ManagedComposeRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
@@ -124,6 +126,9 @@ class BrokerRuntime:
             "stderr": result["stderr"],
         }
 
+    def read_manus_replay(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        return self.browserless.read_manus_replay(str(arguments.get("share_url") or ""))
+
     def resolve_backend_image(self, arguments: dict[str, Any]) -> dict[str, Any]:
         revision = str(arguments.get("revision") or "").strip()
         if not COMMIT_SHA_RE.fullmatch(revision):
@@ -207,6 +212,7 @@ class BrokerRuntime:
             },
             "container_status": self.container_status,
             "container_logs": self.container_logs,
+            "manus_public_replay_read": self.read_manus_replay,
             "resolve_backend_image": self.resolve_backend_image,
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
                 workspace_id=str(values.get("workspace_id") or ""),
