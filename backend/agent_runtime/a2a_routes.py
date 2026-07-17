@@ -690,25 +690,16 @@ def register_a2a_routes(
         raw_payload = worker_result.get("payload")
         safe_payload = raw_payload if isinstance(raw_payload, Mapping) else {}
         if (
-            worker_done.is_set()
+            requested_task_id
+            and worker_done.is_set()
             and isinstance(raw_status, int)
             and raw_status >= 400
-            and not (
-                _resume_result_has_persisted_state(safe_payload)
-                if requested_task_id
-                else _execution_result_has_persisted_state(safe_payload)
-            )
+            and not _resume_result_has_persisted_state(safe_payload)
         ):
-            if requested_task_id:
-                return _resume_failure_response(
-                    safe_payload,
-                    raw_status,
-                    run_id=run_id,
-                )
-            return _execution_failure_response(
+            return _resume_failure_response(
                 safe_payload,
                 raw_status,
-                fallback_message="The Agents SDK run could not persist an initial task state.",
+                run_id=run_id,
             )
 
         if run is None:
