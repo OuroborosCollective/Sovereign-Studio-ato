@@ -202,23 +202,56 @@ def update_agent_job_state(
         cur.execute(
             """
             UPDATE sovereign_agent_jobs
-            SET status = %s,
-                workspace_id = COALESCE(%s, workspace_id),
-                external_ref = COALESCE(%s, external_ref),
-                changed_files = COALESCE(%s::jsonb, changed_files),
-                diff_summary = COALESCE(%s, diff_summary),
-                test_summary = COALESCE(%s, test_summary),
-                draft_pr_url = COALESCE(%s, draft_pr_url),
-                blocker = CASE WHEN %s THEN NULL ELSE COALESCE(%s, blocker) END
-            WHERE job_id = %s
+            SET status = input.status,
+                workspace_id = COALESCE(input.workspace_id, sovereign_agent_jobs.workspace_id),
+                external_ref = COALESCE(input.external_ref, sovereign_agent_jobs.external_ref),
+                changed_files = CASE
+                    WHEN input.changed_files IS NULL THEN sovereign_agent_jobs.changed_files
+                    ELSE (
+                        SELECT COALESCE(jsonb_agg(item ORDER BY item), '[]'::jsonb)
+                        FROM (
+                            SELECT DISTINCT jsonb_array_elements_text(
+                                COALESCE(sovereign_agent_jobs.changed_files, '[]'::jsonb) || input.changed_files
+                            ) AS item
+                        ) merged_files
+                    )
+                END,
+                diff_summary = CASE
+                    WHEN input.diff_summary IS NULL THEN sovereign_agent_jobs.diff_summary
+                    WHEN sovereign_agent_jobs.diff_summary IS NULL OR sovereign_agent_jobs.diff_summary = '' THEN input.diff_summary
+                    ELSE LEFT(sovereign_agent_jobs.diff_summary || E'\n---\n' || input.diff_summary, 12000)
+                END,
+                test_summary = CASE
+                    WHEN input.test_summary IS NULL THEN sovereign_agent_jobs.test_summary
+                    WHEN sovereign_agent_jobs.test_summary IS NULL OR sovereign_agent_jobs.test_summary = '' THEN input.test_summary
+                    ELSE LEFT(sovereign_agent_jobs.test_summary || E'\n---\n' || input.test_summary, 12000)
+                END,
+                draft_pr_url = COALESCE(input.draft_pr_url, sovereign_agent_jobs.draft_pr_url),
+                blocker = CASE
+                    WHEN input.clear_blocker THEN NULL
+                    ELSE COALESCE(input.blocker, sovereign_agent_jobs.blocker)
+                END
+            FROM (
+                SELECT %s::text AS status,
+                       %s::text AS workspace_id,
+                       %s::text AS external_ref,
+                       %s::jsonb AS changed_files,
+                       %s::text AS diff_summary,
+                       %s::text AS test_summary,
+                       %s::text AS draft_pr_url,
+                       %s::boolean AS clear_blocker,
+                       %s::text AS blocker,
+                       %s::text AS job_id
+            ) AS input
+            WHERE sovereign_agent_jobs.job_id = input.job_id
             """,
             (
                 status,
                 workspace_id,
                 external_ref,
                 _json(list(changed_files)) if changed_files is not None else None,
-                sanitize_agent_text(diff_summary, 2000) if diff_summary else None,
-                sanitize_agent_text(test_summary, 2000) if test_summary else None,
+                sanitize_agent_text(diff_summary, 4000) if diff_summary else None,
+                sanitize_agent_text(test_summary, 4000) if test_summary else None,
                 draft_pr_url if draft_pr_url and draft_pr_url.startswith("https://github.com/") else None,
                 bool(clear_blocker),
                 sanitize_agent_text(blocker, 1200) if blocker else None,

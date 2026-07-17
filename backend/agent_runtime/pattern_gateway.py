@@ -201,6 +201,46 @@ def pattern_learning_signal(result: PatternLearningResult) -> dict[str, Any]:
     }
 
 
+def persist_pattern_learning_candidate_once(
+    conn: Any,
+    *,
+    user_id: str,
+    result: PatternLearningResult,
+) -> tuple[str | None, bool]:
+    """Persist one accepted evidence-backed pattern exactly once per job/kind/mission digest."""
+
+    if not result.allowed or not result.remote_memory_allowed or result.kind is None:
+        return None, False
+    job_id = sanitize_agent_text(result.payload.get("jobId") or "", 120)
+    mission_sha = sanitize_agent_text(result.payload.get("missionSha256") or "", 64)
+    if not job_id or not re.fullmatch(r"[0-9a-f]{64}", mission_sha):
+        return None, False
+    lock_key = f"{user_id}:{job_id}:{result.kind}:{mission_sha}"
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (lock_key,),
+        )
+        cur.execute(
+            """
+            SELECT candidate_id
+            FROM sovereign_agent_pattern_candidates
+            WHERE user_id = %s
+              AND job_id = %s
+              AND decision = 'accepted'
+              AND kind = %s
+              AND payload->>'missionSha256' = %s
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (user_id, job_id, result.kind, mission_sha),
+        )
+        existing = cur.fetchone()
+    if existing:
+        return str(existing["candidate_id"]), False
+    return persist_pattern_learning_candidate(conn, user_id=user_id, result=result), True
+
+
 def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: PatternLearningResult) -> str:
     """Persist a pattern gateway decision locally.
 

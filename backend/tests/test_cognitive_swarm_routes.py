@@ -10,11 +10,22 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from agent_runtime import cognitive_swarm_routes as routes_runtime
-from agent_runtime.cognitive_swarm_agents import SwarmExecutionError
+from agent_runtime.cognitive_swarm_agents import MissionIntent, SwarmExecutionError
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+async def _read_only_intent(mission: str, *, model: str | None = None) -> MissionIntent:
+    return MissionIntent(
+        mode="read_only_analysis",
+        normalized_goal=mission.strip(),
+        requires_online_tools=True,
+        requires_repository_workspace=False,
+        learning_scope=[],
+        confidence=1.0,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -94,6 +105,7 @@ def _stored_run_row(**overrides: Any) -> dict[str, Any]:
     row: dict[str, Any] = {
         "run_id": "run-resumable",
         "user_id": USER_ID,
+        "job_id": None,
         "session_key": "session-resumable",
         "status": "FAILED_RECOVERABLE",
         "source": "agents-sdk",
@@ -170,14 +182,16 @@ def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
     assert payload["evidenceId"].startswith("evidence-")
     assert payload["receivedEvidenceId"].startswith("evidence-")
     assert payload["reason"]
-    assert payload["nextAction"] == "PROVIDE_MISSING_EVIDENCE_OR_PROTECTED_CONFIGURATION"
-    assert "LiteLLM internal service key" in payload["blocker"]
+    assert payload["nextAction"] == "VERIFY_LITELLM_SERVICE_KEY"
+    assert payload["blocker"] == "LITELLM_RUNTIME_CONFIGURATION_MISSING"
+    assert payload["receivedEvidenceId"].startswith("evidence-")
     assert factory.commits == 2
     assert any("INSERT INTO agent_runs" in sql for sql, _ in factory.calls)
     assert any("UPDATE agent_runs" in sql for sql, _ in factory.calls)
 
 
 def test_swarm_persists_core_agent_stage_events_for_chat_widget(monkeypatch) -> None:
+    monkeypatch.setattr(routes_runtime, "classify_mission_intent", _read_only_intent)
     async def bounded_swarm(*args, stage_observer=None, **kwargs):
         assert stage_observer is not None
         stage_observer({
@@ -220,6 +234,7 @@ def test_swarm_persists_core_agent_stage_events_for_chat_widget(monkeypatch) -> 
 
 
 def test_swarm_persists_confirmed_nullfund_as_completed(monkeypatch) -> None:
+    monkeypatch.setattr(routes_runtime, "classify_mission_intent", _read_only_intent)
     async def completed_swarm(*args, **kwargs):
         return {
             "ok": True,
@@ -256,6 +271,7 @@ def test_swarm_persists_confirmed_nullfund_as_completed(monkeypatch) -> None:
 
 
 def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monkeypatch) -> None:
+    monkeypatch.setattr(routes_runtime, "classify_mission_intent", _read_only_intent)
     async def fail_swarm(*args, **kwargs):
         raise SwarmExecutionError(
             stage="dispatcher",

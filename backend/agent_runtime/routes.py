@@ -21,7 +21,12 @@ from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .git_workspace import normalize_ephemeral_github_token
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
-from .pattern_gateway import evaluate_pattern_learning, pattern_input_from_job, pattern_learning_signal, persist_pattern_learning_candidate
+from .pattern_gateway import (
+    evaluate_pattern_learning,
+    pattern_input_from_job,
+    pattern_learning_signal,
+    persist_pattern_learning_candidate_once,
+)
 from .pattern_vector_memory import persist_pattern_vector, search_pattern_vectors
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
@@ -134,6 +139,37 @@ def _pattern_learning_response_state(pattern_result: Any, vector_memory: dict[st
         blocker = str(vector_memory.get("reason") or "pattern_vector_not_stored")[:120]
         return False, 503, blocker
     return True, 200, None
+
+
+def _persist_accepted_pattern_memory(
+    conn: Any,
+    *,
+    user_id: str,
+    job: Any,
+) -> tuple[Any, str | None, bool, dict[str, Any]]:
+    """Store only accepted evidence-backed patterns; reruns reuse the first candidate."""
+
+    pattern_result = evaluate_pattern_learning(pattern_input_from_job(job))
+    candidate_id, candidate_created = persist_pattern_learning_candidate_once(
+        conn,
+        user_id=user_id,
+        result=pattern_result,
+    )
+    vector_memory = (
+        persist_pattern_vector(
+            conn,
+            candidate_id=candidate_id,
+            user_id=user_id,
+            result=pattern_result,
+        )
+        if candidate_id
+        else {
+            "stored": False,
+            "storage": "postgres-pgvector",
+            "reason": "pattern_not_accepted",
+        }
+    )
+    return pattern_result, candidate_id, candidate_created, vector_memory
 
 
 def _workspace_root() -> Path | None:
@@ -495,6 +531,14 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             preparation = prepare_draft_pr(draft_pr_input_from_job(job, head_branch=body.get("headBranch")))
+            pattern_result = None
+            candidate_id = None
+            candidate_created = False
+            vector_memory: dict[str, Any] = {
+                "stored": False,
+                "storage": "postgres-pgvector",
+                "reason": "draft_pr_not_prepared",
+            }
             if preparation.allowed:
                 mark_draft_pr_prepared(
                     conn,
@@ -504,11 +548,22 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     title=preparation.title or "Draft: Sovereign agent changes",
                     body=preparation.body or "",
                 )
+                prepared_job = _read_owned_job(conn, user_id, job_id)
+                if prepared_job:
+                    pattern_result, candidate_id, candidate_created, vector_memory = _persist_accepted_pattern_memory(
+                        conn,
+                        user_id=user_id,
+                        job=prepared_job,
+                    )
             return jsonify({
                 "ok": preparation.allowed,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "draftPrPreparation": draft_pr_preparation_signal(preparation),
+                "candidateId": candidate_id,
+                "candidateCreated": candidate_created,
+                "patternLearning": pattern_learning_signal(pattern_result) if pattern_result else None,
+                "vectorMemory": vector_memory,
             }), 200 if preparation.allowed else 400
         finally:
             _close(conn)
@@ -548,13 +603,10 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
-            pattern_result = evaluate_pattern_learning(pattern_input_from_job(job))
-            candidate_id = persist_pattern_learning_candidate(conn, user_id=user_id, result=pattern_result)
-            vector_memory = persist_pattern_vector(
+            pattern_result, candidate_id, candidate_created, vector_memory = _persist_accepted_pattern_memory(
                 conn,
-                candidate_id=candidate_id,
                 user_id=user_id,
-                result=pattern_result,
+                job=job,
             )
             response_ok, status_code, blocker = _pattern_learning_response_state(
                 pattern_result,
@@ -565,6 +617,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "candidateId": candidate_id,
+                "candidateCreated": candidate_created,
                 "patternLearning": pattern_learning_signal(pattern_result),
                 "vectorMemory": vector_memory,
                 "blocker": blocker,

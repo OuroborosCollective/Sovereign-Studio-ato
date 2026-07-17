@@ -9,24 +9,42 @@ CONTROLLER = BACKEND / "controller_board.py"
 APP = BACKEND / "app.py"
 DOCKERFILE = BACKEND / "Dockerfile"
 RUN_STORE = BACKEND / "agent_runtime" / "cognitive_run_store.py"
+JOB_STORE = BACKEND / "agent_runtime" / "job_store.py"
+JOB_ROUTES = BACKEND / "agent_runtime" / "routes.py"
+PATTERN_GATEWAY = BACKEND / "agent_runtime" / "pattern_gateway.py"
 SWARM_ROUTES = BACKEND / "agent_runtime" / "cognitive_swarm_routes.py"
 SWARM_AGENTS = BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
+REPOSITORY_TOOLS = BACKEND / "agent_runtime" / "cognitive_repository_tools.py"
+TOOL_EVENTS = BACKEND / "agent_runtime" / "tool_events.py"
+FILE_TOOL = BACKEND / "agent_runtime" / "tools" / "file_tool.py"
 WORKFLOW = BACKEND.parents[1] / ".github" / "workflows" / "sovereign-agent-backend.yml"
 CANONICAL_RUNTIME = BACKEND.parents[1] / "backend" / "agent_runtime"
 CANONICAL_RUN_STORE = CANONICAL_RUNTIME / "cognitive_run_store.py"
+CANONICAL_JOB_STORE = CANONICAL_RUNTIME / "job_store.py"
+CANONICAL_JOB_ROUTES = CANONICAL_RUNTIME / "routes.py"
+CANONICAL_PATTERN_GATEWAY = CANONICAL_RUNTIME / "pattern_gateway.py"
 CANONICAL_SWARM_ROUTES = CANONICAL_RUNTIME / "cognitive_swarm_routes.py"
 CANONICAL_SWARM_AGENTS = CANONICAL_RUNTIME / "cognitive_swarm_agents.py"
+CANONICAL_REPOSITORY_TOOLS = CANONICAL_RUNTIME / "cognitive_repository_tools.py"
+CANONICAL_TOOL_EVENTS = CANONICAL_RUNTIME / "tool_events.py"
+CANONICAL_FILE_TOOL = CANONICAL_RUNTIME / "tools" / "file_tool.py"
 
 
 def test_controller_module_has_valid_python_syntax() -> None:
-    for path in (CONTROLLER, RUN_STORE, SWARM_ROUTES, SWARM_AGENTS):
+    for path in (CONTROLLER, RUN_STORE, JOB_STORE, JOB_ROUTES, PATTERN_GATEWAY, SWARM_ROUTES, SWARM_AGENTS, REPOSITORY_TOOLS, TOOL_EVENTS, FILE_TOOL):
         ast.parse(path.read_text("utf-8"), filename=str(path))
 
 
 def test_canonical_and_deployed_agent_runtime_are_byte_identical() -> None:
     assert RUN_STORE.read_bytes() == CANONICAL_RUN_STORE.read_bytes()
+    assert JOB_STORE.read_bytes() == CANONICAL_JOB_STORE.read_bytes()
+    assert JOB_ROUTES.read_bytes() == CANONICAL_JOB_ROUTES.read_bytes()
+    assert PATTERN_GATEWAY.read_bytes() == CANONICAL_PATTERN_GATEWAY.read_bytes()
     assert SWARM_ROUTES.read_bytes() == CANONICAL_SWARM_ROUTES.read_bytes()
     assert SWARM_AGENTS.read_bytes() == CANONICAL_SWARM_AGENTS.read_bytes()
+    assert REPOSITORY_TOOLS.read_bytes() == CANONICAL_REPOSITORY_TOOLS.read_bytes()
+    assert TOOL_EVENTS.read_bytes() == CANONICAL_TOOL_EVENTS.read_bytes()
+    assert FILE_TOOL.read_bytes() == CANONICAL_FILE_TOOL.read_bytes()
 
 
 def test_read_only_agents_missions_have_a_terminal_completed_path() -> None:
@@ -113,21 +131,69 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "sovereign_session" not in controller
 
 
-def test_code_missions_materialize_real_job_workspace_and_tool_task() -> None:
+def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> None:
     controller = CONTROLLER.read_text("utf-8")
+    routes = SWARM_ROUTES.read_text("utf-8")
+    agents = SWARM_AGENTS.read_text("utf-8")
+    tools = REPOSITORY_TOOLS.read_text("utf-8")
+    run_store = RUN_STORE.read_text("utf-8")
+    tool_events = TOOL_EVENTS.read_text("utf-8")
+    job_store = JOB_STORE.read_text("utf-8")
 
-    assert "def _mission_requires_repository_execution(" in controller
+    assert "class MissionIntent(BaseModel):" in agents
+    assert "async def classify_mission_intent(" in agents
+    assert 'Literal["conversation", "read_only_analysis", "repository_execution"]' in agents
+    assert "Understand the user's natural language" in agents
+    assert 'mission_intent = asyncio.run(classify_mission_intent(mission))' in controller
+    assert controller.index("received_state = create_agent_run(") < controller.index("mission_intent = asyncio.run(classify_mission_intent(mission))")
+    assert "intent_classification_failure" in controller
+    assert "link_agent_run_job(" in controller
+    assert 'mission_intent.mode == "repository_execution"' in controller
+    assert "_IMPLEMENTATION_ACTION_PATTERN" not in controller
+    assert "_IMPLEMENTATION_TARGET_PATTERN" not in controller
     assert "create_sovereign_agent_job(" in controller
     assert 'clone_repo=True' in controller
     assert 'job_id=implementation_job.job_id if implementation_job else None' in controller
-    assert "create_agent_task(" in controller
-    assert 'status="WAITING_FOR_TOOL"' in controller
-    assert 'next_action="EXECUTE_BOUNDED_REPOSITORY_TOOLS"' in controller
-    assert '("file", "git-status", "diff", "test", "draft-pr-prepare", "draft-pr-create")' in controller
-    assert '"At least one actionable changed file is persisted."' in controller
-    assert '"Git diff evidence is non-empty and git diff --check passes."' in controller
-    assert '"At most one Draft PR is created and auto-merge remains disabled."' in controller
+    assert "create_repository_swarm_tasks(" in controller
+    assert "BoundRepositoryToolset(" in controller
+    assert "repository_tool_factory=(repository_toolset.tools_for_role" in controller
+    assert "ROLE_WORK_PACKAGES" in tools
+    for role in ("data_storage", "business_core", "endpoint_bridge", "chat_cognitive", "ui_accessibility", "predictive_qa"):
+        assert f'"{role}"' in tools
+    assert "function_tool(read_repository_file)" in tools
+    assert "function_tool(scan_repository_family)" in tools
+    assert "function_tool(apply_exact_repository_patch)" in tools
+    assert "start_agent_tool_call(" in tools
+    assert "finish_agent_tool_call(" in tools
+    assert "INSERT INTO agent_tool_calls" in run_store
+    assert "tool_call_count = tool_call_count + 1" in run_store
+    assert 'stage="agent_evidence_gate" if not evidence_pending else "agent_evidence_pending"' in tool_events
+    assert "next_blocker = gate.reason if tool_failed else None" in tool_events
+    assert "jsonb_agg(item ORDER BY item)" in job_store
+    assert "COALESCE(sovereign_agent_jobs.changed_files" in job_store
+    assert "LEFT(sovereign_agent_jobs.diff_summary || E'\\n---\\n' || input.diff_summary" in job_store
     assert '"autoMerge": False' in controller
+
+
+def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> None:
+    routes = SWARM_ROUTES.read_text("utf-8")
+
+    assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
+    assert "mission_intent = asyncio.run(classify_mission_intent(mission, model=model))" in routes
+    assert routes.index("received_state = create_agent_run(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(mission, model=model))")
+    assert "intent_classification_failure" in routes
+    assert "link_agent_run_job(" in routes
+    assert 'mission_intent.mode == "repository_execution"' in routes
+    assert "create_sovereign_agent_job(" in routes
+    assert "create_repository_swarm_tasks(" in routes
+    assert "BoundRepositoryToolset(" in routes
+    assert "repository_tool_factory=(repository_toolset.tools_for_role" in routes
+    assert "task_ids_by_agent=task_ids_by_agent" in routes
+    assert '"learningState": "PENDING_EVIDENCE"' in routes
+    assert '"autoMerge": False' in routes
+    assert "persist_pattern_learning_candidate_once(" in routes
+    assert '"learningEvidence"' in routes
+    assert "pg_advisory_xact_lock" in PATTERN_GATEWAY.read_text("utf-8")
 
 
 def test_task_lifecycle_preserves_history_without_false_active_blockers() -> None:

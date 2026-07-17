@@ -13,6 +13,7 @@ from agent_runtime.pattern_gateway import (  # noqa: E402
     evaluate_pattern_learning,
     pattern_input_from_job,
     pattern_learning_signal,
+    persist_pattern_learning_candidate_once,
 )
 
 
@@ -191,6 +192,59 @@ def test_pattern_input_from_job_uses_evidence_gate():
     assert input_value.can_learn_pattern is True
     assert input_value.draft_pr_ready is True
     assert result.allowed is True
+
+
+def test_accepted_pattern_rerun_reuses_existing_candidate() -> None:
+    result = evaluate_pattern_learning(PatternLearningInput(
+        job_id="agent-existing",
+        source="test",
+        mission="Fix runtime route",
+        blocker="route returned incompatible ToolResult shape",
+        blocker_evidence_passed=True,
+    ))
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, _query, _params) -> None:
+            pass
+
+        def fetchone(self):
+            return {"candidate_id": "pattern-existing"}
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    candidate_id, created = persist_pattern_learning_candidate_once(
+        Connection(),
+        user_id="user-1",
+        result=result,
+    )
+
+    assert candidate_id == "pattern-existing"
+    assert created is False
+
+
+def test_unaccepted_pattern_is_never_persisted() -> None:
+    result = evaluate_pattern_learning(PatternLearningInput(
+        job_id="agent-unaccepted",
+        source="test",
+        mission="Think about a plan",
+    ))
+
+    candidate_id, created = persist_pattern_learning_candidate_once(
+        object(),
+        user_id="user-1",
+        result=result,
+    )
+
+    assert candidate_id is None
+    assert created is False
 
 
 def test_pattern_learning_signal_is_serializable():
