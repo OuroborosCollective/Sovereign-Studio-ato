@@ -20,6 +20,7 @@ REPOSITORY_TOOLS = BACKEND / "agent_runtime" / "cognitive_repository_tools.py"
 TOOL_EVENTS = BACKEND / "agent_runtime" / "tool_events.py"
 FILE_TOOL = BACKEND / "agent_runtime" / "tools" / "file_tool.py"
 WORKFLOW = BACKEND.parents[1] / ".github" / "workflows" / "sovereign-agent-backend.yml"
+CI_WORKFLOW = BACKEND.parents[1] / ".github" / "workflows" / "ci.yml"
 CANONICAL_RUNTIME = BACKEND.parents[1] / "backend" / "agent_runtime"
 CANONICAL_RUN_STORE = CANONICAL_RUNTIME / "cognitive_run_store.py"
 CANONICAL_JOB_STORE = CANONICAL_RUNTIME / "job_store.py"
@@ -95,8 +96,13 @@ def test_backend_reserves_request_capacity_during_long_agents_sdk_runs() -> None
 
 def test_backend_ci_is_validation_only_and_queue_only() -> None:
     workflow = WORKFLOW.read_text("utf-8")
+    ci_workflow = CI_WORKFLOW.read_text("utf-8")
 
     assert "release-policy-gate:" in workflow
+    assert "agent_runtime/a2a_adapter.py" in ci_workflow
+    assert "agent_runtime/a2a_routes.py" in ci_workflow
+    assert "tests/test_a2a_adapter.py" in ci_workflow
+    assert "tests/test_a2a_routes.py" in ci_workflow
     assert "production release requires the Sovereign host-command queue." in workflow
     assert "appleboy/" not in workflow
     assert "VPS_PASSWORD" not in workflow
