@@ -23,6 +23,7 @@ REQUIRED_IMPORTS = {
     "pypdf": "pypdf",
     "webauthn": "webauthn",
     "openai-agents": "agents",
+    "a2a-sdk": "a2a",
     "pytest": "pytest",
 }
 
