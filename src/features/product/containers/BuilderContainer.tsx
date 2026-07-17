@@ -4132,6 +4132,17 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           repoContext: chatRepoSnapshot
             ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
             : undefined,
+          runtimeContext: [
+            `repo_ready=${effectiveRepoReady}`,
+            `github_write_ready=${githubWriteAllowed}`,
+            `github_access_state=${effectiveGitHubAccessState}`,
+            `agent_state=${scopedAgentJob?.status ?? agentWorkSnapshot.state}`,
+            `changed_files=${scopedAgentJob?.changedFiles?.length ?? 0}`,
+            `draft_pr_ready=${Boolean(scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)}`,
+            `patch_preview_ready=${patchPreviewReady}`,
+            `patch_confirmed=${patchConfirmed}`,
+            `worker_health=${onlineHealth?.ok === true ? 'ready' : onlineHealth?.ok === false ? 'blocked' : 'unknown'}`,
+          ].join('\n'),
           recentMessages: chatHistory
             .filter((line) => line.role === 'user' || line.role === 'assistant')
             .slice(-6)
