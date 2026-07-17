@@ -147,7 +147,8 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     for role in swarm_module.WORKER_ROLES:
         assert sum(event["agentId"] == role for event in events) == 4
     assert sum(event["agentId"] == "judge" for event in events) == 4
-    assert all(event["status"] in {"RUNNING", "VERIFYING", "COMPLETED"} for event in events)
+    assert all(event["status"] in {"RUNNING", "VERIFYING", "COMPLETED", "BLOCKED"} for event in events)
+    assert sum(event["status"] == "BLOCKED" for event in events) == 12
     assert all("prompt" not in event and "output" not in event for event in events)
 
 

@@ -228,20 +228,27 @@ def append_tool_result_to_job(conn: Any, job_id: str, tool_result: Any) -> Evide
     ))
 
     gate = _evidence_from_tool_result(tool_result)
+    tool_failed = status in ("blocked", "error")
+    evidence_pending = status == "done" and not gate.passed
+    evidence_message = (
+        gate.reason
+        if gate.passed or tool_failed
+        else f"Evidence pending after successful intermediate tool execution: {gate.reason}"
+    )
     append_agent_event(conn, job_id, SovereignAgentEvent(
-        stage="agent_evidence_gate",
-        level="success" if gate.passed else "warning",
-        message=_sanitize_text(gate.reason)[:1200],
+        stage="agent_evidence_gate" if not evidence_pending else "agent_evidence_pending",
+        level="success" if gate.passed else "warning" if tool_failed else "info",
+        message=_sanitize_text(evidence_message)[:1200],
     ))
 
     next_status = (
         "validating"
         if gate.passed and gate.can_prepare_draft_pr
-        else "running"
-        if status == "done"
         else "blocked"
+        if tool_failed
+        else "running"
     )
-    next_blocker = None if gate.passed else gate.reason
+    next_blocker = gate.reason if tool_failed else None
     update_agent_job_state(
         conn,
         job_id=job_id,

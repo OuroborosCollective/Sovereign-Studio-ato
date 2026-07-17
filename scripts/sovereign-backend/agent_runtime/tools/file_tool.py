@@ -6,6 +6,7 @@ All file operations are validated against workspace policy.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
@@ -74,7 +75,11 @@ class FileReadTool(ToolBase):
             return ToolResult(
                 status="done",
                 output=content,
-                metadata={"path": rel_path, "bytes": len(content_bytes)},
+                metadata={
+                    "path": rel_path,
+                    "bytes": len(content_bytes),
+                    "sha256": hashlib.sha256(content_bytes).hexdigest(),
+                },
             )
 
         except PermissionError:

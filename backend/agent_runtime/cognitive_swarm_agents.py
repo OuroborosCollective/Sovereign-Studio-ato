@@ -6,6 +6,7 @@ mutations remain in the existing bounded runtime tools and approval gates.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.metadata
 import os
@@ -46,6 +47,7 @@ _LITELLM_SERVICE_KEY_MAX_BYTES: Final[int] = 8192
 _DEFAULT_LITELLM_BASE_URL: Final[str] = "http://litellm:4000"
 
 StageObserver = Callable[[dict[str, object]], None]
+RepositoryToolFactory = Callable[[str], list[Any]]
 
 
 def _emit_stage(
@@ -454,7 +456,11 @@ def _base_instructions(skill: str) -> str:
     )
 
 
-def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
+def build_cognitive_swarm(
+    model: str | None = None,
+    *,
+    repository_tool_factory: RepositoryToolFactory | None = None,
+) -> CognitiveSwarm:
     selected_model = (model or os.getenv("SOVEREIGN_AGENTS_MODEL") or DEFAULT_MODEL).strip()
     if not selected_model:
         raise ValueError("A model identifier is required.")
@@ -502,7 +508,17 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
 
     workers: list[Any] = []
     for contract in AGENTS[1:7]:
-        worker_tools = specialist_tools if contract.role == "chat_cognitive" else []
+        worker_tools = list(specialist_tools) if contract.role == "chat_cognitive" else []
+        if repository_tool_factory is not None:
+            worker_tools.extend(repository_tool_factory(contract.role))
+        repository_instruction = (
+            "Repository tools are connected to a real isolated Agent Job workspace. "
+            "Use at least one supplied repository tool before making repository claims. "
+            "Read or scan before writing. Writes must use exact SHA-bound replacement tools, "
+            "and completion requires independent status, diff and test evidence. "
+            if repository_tool_factory is not None
+            else ""
+        )
         workers.append(agent_class(
             name=contract.name,
             model=selected_model,
@@ -513,7 +529,8 @@ def build_cognitive_swarm(model: str | None = None) -> CognitiveSwarm:
                 "Analyze only your bounded domain. Return a WorkerReport. "
                 "Use a specialist tool only for a clearly bounded package and keep orchestration ownership. "
                 "Set blocked=true whenever evidence needed for a claim is absent. "
-                "You may recommend exact changes, but you may not claim they were applied."
+                f"{repository_instruction}"
+                "You may recommend exact changes, but you may claim an action was applied only when a tool result confirms it."
             ),
             tools=worker_tools,
             output_type=WorkerReport,
@@ -590,6 +607,7 @@ async def run_cognitive_swarm(
     evidence: str = "",
     model: str | None = None,
     stage_observer: StageObserver | None = None,
+    repository_tool_factory: RepositoryToolFactory | None = None,
 ) -> dict[str, Any]:
     normalized_mission = mission.strip()
     if not normalized_mission:
@@ -604,7 +622,14 @@ async def run_cognitive_swarm(
 
     try:
         _, runner_class = _require_agents_sdk()
-        swarm = build_cognitive_swarm(model=model)
+        swarm = (
+            build_cognitive_swarm(model=model)
+            if repository_tool_factory is None
+            else build_cognitive_swarm(
+                model=model,
+                repository_tool_factory=repository_tool_factory,
+            )
+        )
     except SwarmExecutionError:
         raise
     except Exception as exc:
@@ -645,14 +670,13 @@ async def run_cognitive_swarm(
     prior_verdict: JudgeVerdict | None = None
 
     for loop in (1, 2):
-        reports: list[WorkerReport] = []
-        for role, worker in zip(WORKER_ROLES, swarm.workers, strict=True):
+        async def execute_worker(role: str, worker: Any) -> WorkerReport:
             _emit_stage(
                 stage_observer,
                 agent_id=role,
                 event_type="agent_started",
                 status="RUNNING",
-                summary=f"{role} started evidence analysis for double-loop pass {loop}.",
+                summary=f"{role} started evidence analysis for parallel double-loop pass {loop}.",
                 next_action="WAIT_FOR_AGENT_REPORT",
                 loop=loop,
             )
@@ -680,16 +704,25 @@ async def run_cognitive_swarm(
                 )
             report.role = role
             report.loop = loop
-            reports.append(report)
             _emit_stage(
                 stage_observer,
                 agent_id=role,
                 event_type="agent_completed",
-                status="COMPLETED",
-                summary=f"{role} produced a validated evidence report for double-loop pass {loop}.",
-                next_action="CONTINUE_WORKER_PASS" if role != WORKER_ROLES[-1] else "START_JUDGE_CHECKPOINT",
+                status="BLOCKED" if report.blocked else "COMPLETED",
+                summary=(
+                    f"{role} produced a blocked evidence report for parallel double-loop pass {loop}."
+                    if report.blocked
+                    else f"{role} produced a validated evidence report for parallel double-loop pass {loop}."
+                ),
+                next_action="WAIT_FOR_PARALLEL_WORKER_PASS",
                 loop=loop,
             )
+            return report
+
+        reports = list(await asyncio.gather(*(
+            execute_worker(role, worker)
+            for role, worker in zip(WORKER_ROLES, swarm.workers, strict=True)
+        )))
 
         _emit_stage(
             stage_observer,
@@ -758,6 +791,7 @@ async def run_cognitive_swarm(
         "loops": loop_payloads,
         "finalVerdict": final_verdict.model_dump(),
         "activeSpecialists": len(swarm.specialists),
+        "repositoryToolMode": repository_tool_factory is not None,
         "approvalRequired": final_status == "READY_FOR_DRAFT_PR" and final_verdict.human_approval_required,
         "autoMerge": False,
     }
