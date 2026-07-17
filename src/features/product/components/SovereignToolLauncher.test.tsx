@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, act } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SovereignToolLauncher } from './SovereignToolLauncher';
@@ -165,5 +165,77 @@ describe('SovereignToolLauncher', () => {
       expect(item.getAttribute('title')).toContain('erst');
       expect(item.getAttribute('title')?.toLowerCase()).not.toContain('gesund');
     }
+  });
+
+  describe('Keyboard navigation support', () => {
+    it('allows opening with ArrowDown when closed', () => {
+      render(<SovereignToolLauncher onSelect={vi.fn()} />);
+      const btn = screen.getByLabelText('Tool Launcher öffnen');
+      expect(btn).toHaveAttribute('aria-expanded', 'false');
+
+      act(() => {
+        fireEvent.keyDown(btn, { key: 'ArrowDown' });
+      });
+      expect(btn).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('navigates through active options with ArrowDown and ArrowUp', () => {
+      render(
+        <SovereignToolLauncher
+          onSelect={vi.fn()}
+          onOpenLauncher={vi.fn()}
+          runtimeContext={{
+            ...createEmptySovereignToolShortcutContext(),
+            repoReady: true,
+            repoFileCount: 4,
+          }}
+        />,
+      );
+      const btn = screen.getByLabelText('Tool Launcher öffnen');
+      act(() => {
+        fireEvent.click(btn);
+      });
+
+      const menuitems = screen.getAllByRole('menuitem').filter(item => !item.hasAttribute('disabled'));
+      expect(menuitems.length).toBeGreaterThan(0);
+
+      // Focus on first item
+      act(() => {
+        menuitems[0].focus();
+      });
+      expect(document.activeElement).toBe(menuitems[0]);
+
+      // Move down
+      act(() => {
+        fireEvent.keyDown(menuitems[0], { key: 'ArrowDown' });
+      });
+      expect(document.activeElement).toBe(menuitems[1]);
+
+      // Move up
+      act(() => {
+        fireEvent.keyDown(menuitems[1], { key: 'ArrowUp' });
+      });
+      expect(document.activeElement).toBe(menuitems[0]);
+    });
+
+    it('closes menu with Escape and restores focus to main trigger button', () => {
+      render(<SovereignToolLauncher onSelect={vi.fn()} />);
+      const btn = screen.getByLabelText('Tool Launcher öffnen');
+      act(() => {
+        fireEvent.click(btn);
+      });
+      expect(btn).toHaveAttribute('aria-expanded', 'true');
+
+      const menuitems = screen.getAllByRole('menuitem').filter(item => !item.hasAttribute('disabled'));
+      act(() => {
+        menuitems[0].focus();
+      });
+
+      act(() => {
+        fireEvent.keyDown(menuitems[0], { key: 'Escape' });
+      });
+      expect(btn).toHaveAttribute('aria-expanded', 'false');
+      expect(document.activeElement).toBe(btn);
+    });
   });
 });
