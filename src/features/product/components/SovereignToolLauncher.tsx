@@ -139,6 +139,8 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
     setOpen(false);
   }
 
+  const launcherLabel = open ? 'Tool Launcher schließen' : 'Tool Launcher öffnen';
+
   return (
     <div
       ref={containerRef}
@@ -148,8 +150,8 @@ export const SovereignToolLauncher: React.FC<SovereignToolLauncherProps> = ({
     >
       <button
         type="button"
-        aria-label="Tool Launcher öffnen"
-        title="Tool Launcher öffnen"
+        aria-label={launcherLabel}
+        title={launcherLabel}
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((v) => !v)}

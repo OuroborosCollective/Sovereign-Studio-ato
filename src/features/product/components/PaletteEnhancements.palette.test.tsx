@@ -79,9 +79,19 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('SovereignToolLauncher Enhancements', () => {
-    it('Launcher button has title and aria-label', () => {
+    it('Launcher button has dynamic title and aria-label matching state', () => {
       render(<SovereignToolLauncher onSelect={vi.fn()} />);
       const launcherButton = screen.getByRole('button', { name: /Tool Launcher öffnen/i });
+      expect(launcherButton).toHaveAttribute('aria-label', 'Tool Launcher öffnen');
+      expect(launcherButton).toHaveAttribute('title', 'Tool Launcher öffnen');
+
+      // Click to open
+      fireEvent.click(launcherButton);
+      expect(launcherButton).toHaveAttribute('aria-label', 'Tool Launcher schließen');
+      expect(launcherButton).toHaveAttribute('title', 'Tool Launcher schließen');
+
+      // Click to close
+      fireEvent.click(launcherButton);
       expect(launcherButton).toHaveAttribute('aria-label', 'Tool Launcher öffnen');
       expect(launcherButton).toHaveAttribute('title', 'Tool Launcher öffnen');
     });
