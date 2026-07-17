@@ -34,11 +34,11 @@ import { formatCuteWorkStateLabel } from "../runtime/cuteThinkingStatus";
 import {
   DEV_CHAT_WORKER_MODELS,
   SOVEREIGN_WORKER_CHAT,
+  SOVEREIGN_WORKER_HEALTH,
   SOVEREIGN_WORKER_KV,
   explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
-  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
@@ -4101,57 +4101,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // Local token classifiers are used only when the online interpreter is unavailable.
     if (shouldUseOnlineLanguageUnderstanding) {
       let onlineAreInference: AreInferenceResult | null = null;
-      let onlineMemoryContext = '';
       let onlineHealth: DevChatWorkerHealthResult | null = null;
-
-      if (authUser) {
-        try {
-          onlineHealth = await fetchDevChatWorkerHealth();
-          setWorkerHealthEvidence(onlineHealth);
-          onlineAreInference = await evaluateAreInference({
-            prompt: submittedText,
-            repository: buildAreRepositoryState({
-              owner: chatRepoSnapshot?.owner,
-              repo: chatRepoSnapshot?.repo,
-              branch: chatRepoSnapshot?.branch,
-              repositoryRevision: chatRepoSnapshot?.treeSha,
-              files: chatRepoSnapshot?.files ?? [],
-            }),
-            onlineAvailable: onlineHealth.ok,
-            limit: 5,
-          });
-          const transition = emitAreStateTransition(arePreviousStateRef.current, onlineAreInference);
-          arePreviousStateRef.current = {
-            stateHash: onlineAreInference.stateHash,
-            state: onlineAreInference.state,
-          };
-          if (transition.changed) {
-            addLog('info', `ARE-State geändert: ${transition.changeKinds.join(', ')} · ${transition.currentStateHash.slice(0, 12)}`, 'pattern');
-          }
-          onlineMemoryContext = [
-            onlineAreInference.knowledgeContext,
-            onlineAreInference.experienceContext,
-          ].filter(Boolean).join('\n\n');
-          if (onlineAreInference.selectedKnowledgeIds.length > 0 || onlineAreInference.selectedPatternIds.length > 0) {
-            appendActionEvent({
-              kind: 'context_collected',
-              route: 'runtime',
-              label: 'ARE-Kontext für Online-Deutung gesammelt',
-              detail: `${onlineAreInference.selectedKnowledgeIds.length} Knowledge-Blöcke · ${onlineAreInference.selectedPatternIds.length} evidence-geprüfte Muster.`,
-              state: 'done',
-            });
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          addLog('warn', `ARE-Kontext nicht verfügbar; Online-Deutung bleibt unabhängig: ${message}`, 'pattern');
-          appendActionEvent(buildBlockedActionEvent({
-            route: 'runtime',
-            label: 'ARE-Kontext nicht verfügbar',
-            detail: `${message} · Kein Memory-Kandidat wurde erzeugt; die Online-Sprachroute darf bei erreichbarem Worker weiterlaufen.`,
-            kind: 'failed',
-          }));
-        }
-      }
 
       const routeDecision = palRoute(
         submittedText,
@@ -4159,8 +4109,8 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         chatRepoSnapshot?.fileCount ?? 0,
         palDecisions,
       );
-      const interpreterOnline = onlineHealth?.ok !== false;
-      let interpretationResult: Awaited<ReturnType<typeof fetchDevChatWorkerInterpretation>>;
+      const interpreterOnline = true;
+      let interpretationResult: Awaited<ReturnType<typeof fetchSovereignLiteLlmInterpretation>>;
 
       if (interpreterOnline) {
         const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
@@ -4176,8 +4126,8 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         setChatResponseBusy(true);
         appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
 
-        interpretationResult = await fetchDevChatWorkerInterpretation({
-          model: routeDecision.modelId,
+        interpretationResult = await fetchSovereignLiteLlmInterpretation({
+          preferredModel: routeDecision.modelId,
           text: submittedText,
           repoContext: chatRepoSnapshot
             ? `${chatRepoSnapshot.owner}/${chatRepoSnapshot.repo}#${chatRepoSnapshot.branch} · ${chatRepoSnapshot.fileCount} files`
@@ -4193,7 +4143,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             `patch_confirmed=${patchConfirmed}`,
             `worker_health=${onlineHealth?.ok === true ? 'ready' : onlineHealth?.ok === false ? 'blocked' : 'unknown'}`,
           ].join('\n'),
-          memoryContext: onlineMemoryContext || undefined,
           recentMessages: chatHistory
             .filter((line) => line.role === 'user' || line.role === 'assistant')
             .slice(-6)
@@ -4535,7 +4484,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
 
       const diagnostic = interpretationResult.diagnostic;
       if (diagnostic) {
-        const health = onlineHealth ?? await fetchDevChatWorkerHealth();
+        const health: DevChatWorkerHealthResult = onlineHealth ?? {
+          ok: false,
+          route: SOVEREIGN_WORKER_HEALTH,
+          status: diagnostic.status,
+          statusText: diagnostic.statusText,
+          error: interpretationResult.error || diagnostic.nextAction,
+          bodySnippet: diagnostic.bodySnippet,
+        };
         setWorkerHealthEvidence(health);
         const blocker: WorkerRuntimeBlocker = {
           message: interpretationResult.error || 'Online-Sprachdeutung fehlgeschlagen.',
