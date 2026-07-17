@@ -38,6 +38,7 @@ import {
   explainDevChatWorkerDiagnostic,
   fetchDevChatRepoTree,
   fetchDevChatWorkerHealth,
+  fetchDevChatWorkerInterpretation,
   fetchDevChatWorkerReply,
   parseDevChatGithubUrl,
   streamDevChatWorkerReply,
@@ -3642,7 +3643,7 @@ export function BuilderContainer({
       pendingWriteIntentRef.current = text;
       appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden; Auftrag für Wiederaufnahme vorgemerkt.', kind: 'blocked' }));
       setShowRepoSetup(true);
-      appendChatLine({ role: 'assistant', text: 'Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.' });
+      appendRuntimeNotice('Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.');
       return false;
     }
     if (intent !== 'code_execution' && intent !== 'draft_pr') {
@@ -4375,7 +4376,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // Preserve the exact failed request as retry target. Later advisory
       // messages such as "Warum?" must not overwrite this correlation.
       setLastWorkerRequestMessage(submittedText);
-      const offlineIntent = classifySovereignExecutorIntent(submittedText);
+      const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
       appendActionEvent({
         kind: 'blocked',
         route: 'worker',

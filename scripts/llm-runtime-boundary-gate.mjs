@@ -27,6 +27,10 @@ function requirePattern(path, source, pattern, reason) {
   if (!pattern.test(source)) violations.push(`${path}: ${reason}`);
 }
 
+function forbidPattern(path, source, pattern, reason) {
+  if (pattern.test(source)) violations.push(`${path}: ${reason}`);
+}
+
 function walkFiles(directory) {
   if (!existsSync(directory)) return [];
   const files = [];
