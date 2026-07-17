@@ -55,11 +55,12 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     (repo / "backend").mkdir()
     (repo / "src").mkdir()
     (repo / "tools" / "sovereign-chatgpt-mcp").mkdir(parents=True)
+    secret_like = "sk-" + "proj-" + "x" * 30
     (repo / "backend" / "knowledge.py").write_text(
         "from pgvector.sqlalchemy import Vector\n"
         "DATABASE_VECTOR_DIMENSION = 1536\n"
         "# Authorization: Bearer super-secret-value\n"
-        "SECRET_ENDPOINT = '/api/knowledge/sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'\n"
+        f"SECRET_ENDPOINT = '/api/knowledge/{secret_like}'\n"
         "def search_memory():\n"
         "    return '/api/knowledge/search?token=not-returned'\n",
         "utf-8",

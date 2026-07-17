@@ -24,6 +24,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("litellm_model_aliases_activate") is True
     assert is_mutating_action("litellm_provider_model_inventory") is False
+    assert is_mutating_action("openai_project_runtime_evidence") is False
     assert is_mutating_action("managed_compose_stack_plan") is False
 
 
@@ -152,4 +153,5 @@ def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     assert 'broker.call("litellm_provider_model_inventory", {}, timeout=90)' in server
     assert '"litellm_model_aliases_activate"' in server
     assert '"litellm_provider_model_inventory": lambda _values:' in broker
+    assert '"openai_project_runtime_evidence": lambda _values:' in broker
     assert '"litellm_model_aliases_activate": lambda values:' in broker

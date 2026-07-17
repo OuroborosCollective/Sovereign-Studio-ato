@@ -408,6 +408,9 @@ class ManagedComposeRuntime:
     def litellm_provider_model_inventory(self) -> dict[str, Any]:
         return self.litellm.provider_model_inventory()
 
+    def openai_project_runtime_evidence(self) -> dict[str, Any]:
+        return self.litellm.runtime_access_evidence()
+
     def activate_litellm_model_aliases(
         self,
         *,

@@ -739,6 +739,63 @@ print(json.dumps({
             "secretValuesExposed": False,
         }
 
+    def runtime_access_evidence(self) -> dict[str, Any]:
+        """Verify current provider identity and the live private LiteLLM inference path without mutation."""
+        inventory = self.provider_model_inventory()
+        runtime = {
+            "litellm": self._container_state(LITELLM_CONTAINER),
+            "db": self._container_state(DB_CONTAINER),
+        }
+        litellm = runtime["litellm"]
+        database = runtime["db"]
+        private_runtime_ready = bool(
+            litellm.get("running")
+            and litellm.get("health") == "healthy"
+            and database.get("running")
+            and database.get("health") == "healthy"
+            and litellm.get("networks") == [NETWORK_NAME]
+            and database.get("networks") == [NETWORK_NAME]
+            and not litellm.get("publishedPorts")
+            and not database.get("publishedPorts")
+        )
+        readiness = self._readiness() if litellm.get("running") else {"ok": False, "error": "litellm_not_running"}
+        models = self._models() if readiness.get("ok") else {"ok": False, "error": "readiness_not_verified"}
+        completion_canaries = (
+            {model_id: self._completion_canary(model_id) for model_id in EXPECTED_MODEL_IDS}
+            if models.get("ok")
+            else {
+                model_id: {"ok": False, "requestedModel": model_id, "error": "model_inventory_not_verified"}
+                for model_id in EXPECTED_MODEL_IDS
+            }
+        )
+        completion_ok = all(item.get("ok") is True for item in completion_canaries.values())
+        identity = inventory.get("providerIdentity") if isinstance(inventory.get("providerIdentity"), dict) else {}
+        project_attribution = bool(identity.get("verified") and str(identity.get("projectId") or "").strip())
+        ok = bool(
+            inventory.get("ok")
+            and project_attribution
+            and private_runtime_ready
+            and readiness.get("ok")
+            and models.get("ok")
+            and completion_ok
+        )
+        return {
+            "ok": ok,
+            "status": "OPENAI_PROJECT_RUNTIME_VERIFIED" if ok else "OPENAI_PROJECT_RUNTIME_BLOCKED",
+            "providerInventory": inventory,
+            "projectAttributionVerified": project_attribution,
+            "privateRuntimeReady": private_runtime_ready,
+            "runtime": runtime,
+            "readiness": readiness,
+            "models": models,
+            "completionCanaries": completion_canaries,
+            "completionCanariesPassed": completion_ok,
+            "mutationPerformed": False,
+            "providerKeyValueReturned": False,
+            "responseContentExposed": False,
+            "secretValuesExposed": False,
+        }
+
     def deploy(
         self,
         *,

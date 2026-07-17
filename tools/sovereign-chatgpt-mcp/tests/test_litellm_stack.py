@@ -362,6 +362,80 @@ def test_provider_inventory_blocks_without_safe_principal_identity(
     assert result["secretValuesExposed"] is False
 
 
+def test_runtime_access_evidence_requires_identity_private_stack_and_real_canaries(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runtime = LiteLLMStackRuntime(
+        runner=_runner_factory(),
+        template_root=str(tmp_path),
+        deploy_root=str(tmp_path / "deploy"),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "provider_model_inventory",
+        lambda: {
+            "ok": True,
+            "providerIdentity": {
+                "verified": True,
+                "projectId": "proj-confirmed",
+                "organizationIds": ["org-confirmed"],
+            },
+            "providerKeyValueReturned": False,
+            "secretValuesExposed": False,
+        },
+    )
+    states = {
+        "sovereign-litellm-litellm-1": {
+            "running": True,
+            "health": "healthy",
+            "networks": ["sovereign-private"],
+            "publishedPorts": {},
+        },
+        "sovereign-litellm-db-1": {
+            "running": True,
+            "health": "healthy",
+            "networks": ["sovereign-private"],
+            "publishedPorts": {},
+        },
+    }
+    monkeypatch.setattr(runtime, "_container_state", lambda container: states[container])
+    monkeypatch.setattr(runtime, "_readiness", lambda: {"ok": True, "httpStatus": 200})
+    monkeypatch.setattr(
+        runtime,
+        "_models",
+        lambda: {
+            "ok": True,
+            "expectedModelsPresent": True,
+            "modelIds": ["sovereign-fast", "sovereign-balanced"],
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_completion_canary",
+        lambda model_id: {
+            "ok": True,
+            "requestedModel": model_id,
+            "requestIdPresent": True,
+            "usage": {"totalTokens": 3},
+            "responseContentExposed": False,
+            "secretValuesExposed": False,
+        },
+    )
+
+    result = runtime.runtime_access_evidence()
+
+    assert result["ok"] is True
+    assert result["status"] == "OPENAI_PROJECT_RUNTIME_VERIFIED"
+    assert result["projectAttributionVerified"] is True
+    assert result["privateRuntimeReady"] is True
+    assert result["completionCanariesPassed"] is True
+    assert result["mutationPerformed"] is False
+    assert result["providerKeyValueReturned"] is False
+    assert result["responseContentExposed"] is False
+    assert result["secretValuesExposed"] is False
+
+
 def test_alias_config_is_derived_only_from_confirmed_provider_models() -> None:
     selection = {
         "inventorySha256": "a" * 64,
