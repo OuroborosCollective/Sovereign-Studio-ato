@@ -1657,7 +1657,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     expect(screen.getByRole("menuitem", { name: "GitHub Access" }).getAttribute("title")).toContain("Validiert");
-    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByLabelText("Tool Launcher schließen"));
 
     await loadRepoUrlFromChat(SECOND_REPO_URL);
     const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
