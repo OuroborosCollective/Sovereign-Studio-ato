@@ -131,9 +131,17 @@ function extractScopeKeywords(input: string): string[] {
 /**
  * Derive possible affected files from repo context and input
  */
-function deriveAffectedFiles(input: string, repoFiles?: RepoFile[]): string[] {
+function deriveAffectedFiles(input: string, repoFiles?: RepoFile[], options?: CreateDraftOptions): string[] {
   if (!repoFiles || repoFiles.length === 0) {
     return [];
+  }
+
+  // Architectural rule: prioritize explicit target files from the LLM
+  if (options?.interpretation?.targetFiles && options.interpretation.targetFiles.length > 0) {
+    const found = repoFiles.filter((file) => 
+      options.interpretation!.targetFiles!.some((f) => f.toLowerCase() === file.path.toLowerCase())
+    );
+    if (found.length > 0) return found.map((f) => f.path);
   }
 
   const lower = input.toLowerCase();
@@ -284,6 +292,8 @@ export interface CreateDraftOptions {
     readonly confidence: number;
     readonly model?: string;
     readonly actionTitle?: string;
+    /** Explicit list of target files identified by the LLM */
+    readonly targetFiles?: readonly string[];
   };
 }
 
@@ -367,7 +377,7 @@ export function createIntegrationIntentDraft(
     title: options?.interpretation?.actionTitle?.trim() || extractTitle(clean),
     goal: extractGoal(clean),
     scope: extractScopeKeywords(clean),
-    affectedFiles: deriveAffectedFiles(clean, repoFiles),
+    affectedFiles: deriveAffectedFiles(clean, repoFiles, options),
     createdAt: timestamp,
     rephrasedText: createRephrasedText(clean),
     intentKind: options?.interpretation?.intentKind,

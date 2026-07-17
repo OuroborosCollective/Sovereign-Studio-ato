@@ -162,6 +162,10 @@ export interface DevChatWorkerInterpretation {
   readonly fallbackUsed: boolean;
   /** True when the LLM identifies this as a startup question ("Has it started?") */
   readonly isStartup?: boolean;
+  /** Explicit target path identified by the LLM (e.g. for direct patches) */
+  readonly targetPath?: string;
+  /** Explicit list of target files identified by the LLM */
+  readonly targetFiles?: readonly string[];
 }
 
 export interface DevChatWorkerInterpretationResult {

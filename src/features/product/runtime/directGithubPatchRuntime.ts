@@ -109,7 +109,12 @@ function shouldUseReadmeForTitleInstruction(lowerInstruction: string): boolean {
   return TITLE_TARGET_TOKENS.some((token) => lowerInstruction.includes(token));
 }
 
-export function detectDirectPatchTarget(instruction: string, repoFilePaths: readonly string[]): string | null {
+export function detectDirectPatchTarget(instruction: string, repoFilePaths: readonly string[], explicitTargetPath?: string): string | null {
+  if (explicitTargetPath) {
+    const matched = repoFilePaths.find((path) => path.toLowerCase() === explicitTargetPath.toLowerCase());
+    if (matched) return matched;
+    if (repoFilePaths.length === 0 && isDirectPatchAllowedPath(explicitTargetPath)) return explicitTargetPath;
+  }
   const lower = instruction.toLowerCase();
   const explicitPathMatch = instruction.match(/[a-zA-Z0-9_\-./]+\.(md|mdx|mdoc)/i);
   if (explicitPathMatch) {
@@ -133,15 +138,16 @@ export interface CheckDirectPatchCapabilityArgs {
   readonly githubAccessReady: boolean;
   readonly instruction: string;
   readonly baseContent?: string;
+  readonly explicitTargetPath?: string;
 }
 
 export function checkDirectPatchCapability(args: CheckDirectPatchCapabilityArgs): DirectGitHubPatchCapability {
-  const { repoContext, githubAccessReady, instruction, baseContent } = args;
+  const { repoContext, githubAccessReady, instruction, baseContent, explicitTargetPath } = args;
   if (!githubAccessReady) return { available: false, reason: 'GitHub-Zugang nicht bereit für Direct Patch Route.', blocker: 'github_access_missing' };
   if (!repoContext) return { available: false, reason: 'Repo-Kontext fehlt für Direct Patch Route.', blocker: 'repo_missing' };
   if (!isDirectPatchIntent(instruction)) return { available: false, reason: 'Auftrag ist nicht einfach genug für Direct Patch Route. Sovereign Agent/Executor wird empfohlen.', blocker: 'unsupported_intent' };
 
-  const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths);
+  const targetPath = detectDirectPatchTarget(instruction, repoContext.filePaths, explicitTargetPath);
   if (!targetPath) return { available: false, reason: 'Zieldatei konnte nicht erkannt werden.', blocker: 'target_not_in_repo' };
 
   const pathBlocker = getDirectPatchPathBlocker(targetPath);

@@ -4334,6 +4334,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             confidence: interpretation.confidence,
             model: interpretation.model,
             actionTitle: interpretation.actionTitle,
+            targetFiles: interpretation.targetFiles,
           },
         });
         if (!draft) {
