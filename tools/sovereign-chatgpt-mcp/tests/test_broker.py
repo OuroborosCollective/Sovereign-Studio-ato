@@ -111,6 +111,27 @@ def test_non_allowlisted_container_is_blocked(monkeypatch) -> None:
     assert "nicht freigegeben" in result["blocker"]
 
 
+def test_openai_project_runtime_evidence_dispatch_is_read_only(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    monkeypatch.setattr(
+        runtime.managed_compose,
+        "openai_project_runtime_evidence",
+        lambda: {
+            "ok": True,
+            "status": "OPENAI_PROJECT_RUNTIME_VERIFIED",
+            "mutationPerformed": False,
+            "secretValuesExposed": False,
+        },
+    )
+
+    result = runtime.dispatch("openai_project_runtime_evidence", {})
+
+    assert result["ok"] is True
+    assert result["status"] == "OPENAI_PROJECT_RUNTIME_VERIFIED"
+    assert result["mutationPerformed"] is False
+    assert result["secretValuesExposed"] is False
+
+
 def test_deploy_action_remains_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_DEPLOY", raising=False)
     runtime = BrokerRuntime()

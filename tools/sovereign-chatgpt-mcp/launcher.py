@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import android_validation_router
+import openai_project_access_tools
+import repository_skill_tools
 import server
 import tool_extensions
 
 
 android_validation_router.install(server.android, server.runtime, server.broker)
 tool_extensions.register(server.mcp, server.broker)
+repository_skill_tools.register(server.mcp, server.runtime)
+openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)
 mcp = server.mcp
 
 
