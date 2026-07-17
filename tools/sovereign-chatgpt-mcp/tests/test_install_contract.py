@@ -89,6 +89,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'android_hardening.py' in installer
     assert 'tool_extensions.py' in installer
     assert 'repository_skill_tools.py' in installer
+    assert 'deterministic_contract.py' in installer
+    assert 'deterministic_architecture_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
@@ -100,11 +102,15 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'android_hardening.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
+    assert 'deterministic_contract.py' in dockerfile
+    assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'PyYAML==6.0.3' in requirements
     assert 'openai_project_access_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'import repository_skill_tools' in launcher
     assert 'repository_skill_tools.register(server.mcp, server.runtime, server.database)' in launcher
+    assert 'import deterministic_architecture_tools' in launcher
+    assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import openai_project_access_tools' in launcher
     assert 'openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
@@ -145,6 +151,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(repository_skill_tools.repository_architecture_snapshot)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_drift_report)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_runtime_drift_evidence)' in installer
+    assert 'deterministic_contract.KAPPA_SCALE == 1000000' in installer
+    assert 'callable(deterministic_architecture_tools.deterministic_tool_inventory)' in installer
+    assert 'callable(deterministic_architecture_tools.deterministic_replay_verify)' in installer
+    assert 'callable(deterministic_architecture_tools.deterministic_transformation_plan)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_plan)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_runtime_evidence)' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer

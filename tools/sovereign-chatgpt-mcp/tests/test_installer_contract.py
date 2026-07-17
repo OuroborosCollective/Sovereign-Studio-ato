@@ -61,6 +61,8 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'android_hardening.py' in installer
     assert 'android_validation_router.py' in installer
     assert 'tool_extensions.py' in installer
+    assert 'deterministic_contract.py' in installer
+    assert 'deterministic_architecture_tools.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
     assert 'install -d -m 0755 "$ANDROID_SDK_DIR"' in installer
@@ -71,9 +73,14 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'android_hardening.py' in dockerfile
     assert 'android_validation_router.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
+    assert 'deterministic_contract.py' in dockerfile
+    assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'android_validation_router.install(server.android, server.runtime, server.broker)' in launcher
+    assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
+    assert 'deterministic_contract.KAPPA_SCALE == 1000000' in installer
+    assert 'callable(deterministic_architecture_tools.deterministic_transition_validate)' in installer
     assert '_native_validation_router_installed' in installer
     assert 'docker compose build' not in installer
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
