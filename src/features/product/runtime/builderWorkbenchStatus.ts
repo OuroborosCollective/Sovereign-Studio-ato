@@ -78,8 +78,8 @@ function isNoiseLevel(level: string): boolean {
  * any message-content scanning.
  */
 function isResolvedGithubAccessLog(_input: WorkbenchStatusInput, _msg: string): boolean {
-  // No message-text scanning. Suppression based on log content is not possible
-  // without a structured log kind field. Return false until that is added.
+  // No message-text scanning. Suppression based on log content is forbidden
+  // by the Manifest. Use a structured log kind field for filtering.
   return false;
 }
 

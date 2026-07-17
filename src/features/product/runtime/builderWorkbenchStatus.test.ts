@@ -86,7 +86,7 @@ describe('builderWorkbenchStatus', () => {
     expect(errors.some((e) => e.includes('boom'))).toBe(true);
   });
 
-  it('does not count resolved GitHub access blocker logs as active errors after access is ready', () => {
+  it('reports all warning logs as errors, as keyword-based filtering of resolved blockers is forbidden by the Manifest', () => {
     const errors = deriveErrorEntries(baseInput({
       githubState: 'ready',
       logs: [
@@ -95,7 +95,10 @@ describe('builderWorkbenchStatus', () => {
       ],
     }));
 
-    expect(errors).toEqual(['10:00:01 · Other active blocker']);
+    expect(errors).toEqual([
+      '10:00:00 · Write intent blocked: GitHub write access missing',
+      '10:00:01 · Other active blocker'
+    ]);
   });
 
   it('reports Draft PR as bereit only when a real PR url exists', () => {

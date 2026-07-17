@@ -1348,6 +1348,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("lets the LLM understand 'arbeitet er schon?' but answers only from the loaded repo job", async () => {
     const fetchMock = mockFetchSequence(
+      jsonResponse({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              mode: "chat",
+              intent: "status",
+              isStartup: true,
+              confidence: 1.0,
+              assistantText: "Ja, ich schaue nach dem Status.",
+              model: "sovereign-fast",
+            }),
+          },
+        }],
+      }),
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
     renderWithProviders(

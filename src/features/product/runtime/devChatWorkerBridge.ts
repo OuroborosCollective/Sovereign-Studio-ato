@@ -160,6 +160,8 @@ export interface DevChatWorkerInterpretation {
   readonly language: string;
   readonly model: string;
   readonly fallbackUsed: boolean;
+  /** True when the LLM identifies this as a startup question ("Has it started?") */
+  readonly isStartup?: boolean;
 }
 
 export interface DevChatWorkerInterpretationResult {

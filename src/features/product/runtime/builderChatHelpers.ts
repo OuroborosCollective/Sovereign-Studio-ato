@@ -50,8 +50,8 @@ import type {
  */
 export function isWriteIntent(_text: string, explicit?: boolean): boolean {
   if (explicit !== undefined) return explicit;
-  // Keyword-based pre-classification has been removed. Default to false so that
-  // no message is silently blocked before the LLM has a chance to classify it.
+  // Keyword-based pre-classification is forbidden by the Manifest.
+  // The LLM must classify the intent and pass it via the 'explicit' parameter.
   return false;
 }
 
@@ -73,8 +73,8 @@ export function isWriteIntent(_text: string, explicit?: boolean): boolean {
  */
 export function isLocalCompletionStatusQuestion(_text: string, explicit?: boolean): boolean {
   if (explicit !== undefined) return explicit;
-  // Keyword-based pre-classification has been removed. Return false so messages
-  // are not intercepted before the LLM classifies them.
+  // Keyword-based pre-classification is forbidden by the Manifest.
+  // The LLM must classify the intent and pass it via the 'explicit' parameter.
   return false;
 }
 
@@ -90,6 +90,8 @@ export function isLocalCompletionStatusQuestion(_text: string, explicit?: boolea
  */
 export function isStartupQuestion(_text: string, explicit?: boolean): boolean {
   if (explicit !== undefined) return explicit;
+  // Keyword-based pre-classification is forbidden by the Manifest.
+  // The LLM must classify the intent and pass it via the 'explicit' parameter.
   return false;
 }
 
@@ -109,6 +111,8 @@ export interface LocalStatusAnswerArgs {
   readonly buildWorkerBlockerAnswer?: () => string;
   /** Optional question text to determine if this is a startup question */
   readonly questionText?: string;
+  /** Explicit flag from LLM: is this a startup question? */
+  readonly isStartup?: boolean;
 }
 
 /**
@@ -124,8 +128,9 @@ export interface LocalStatusAnswerArgs {
  * the Sovereign Agent is still running.
  */
 export function buildLocalStatusAnswer(args: LocalStatusAnswerArgs): string {
-  // Startup questions get priority: "Is the Sovereign Agent running?" must answer that directly
-  if (args.questionText && isStartupQuestion(args.questionText) && args.agentRunning) {
+  // Startup questions get priority: "Is the Sovereign Agent running?" must answer that directly.
+  // Architectural rule: use the explicit 'isStartup' flag provided by the LLM.
+  if (args.isStartup && args.agentRunning) {
     return "Ja, Sovereign Agent läuft.";
   }
 

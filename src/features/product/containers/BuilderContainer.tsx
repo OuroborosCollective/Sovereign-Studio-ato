@@ -4271,6 +4271,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
                 })
               : undefined,
             questionText: submittedText,
+            isStartup: interpretation.isStartup,
           });
           appendChatLine({ role: 'assistant', text: statusAnswer });
           setLastAnswerWasLocal(true);
