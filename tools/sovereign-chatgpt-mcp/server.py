@@ -235,7 +235,7 @@ mcp = FastMCP(
         "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
-        "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Diese Werkzeuge liefern statische Evidence und Kandidaten, niemals Runtime-Erfolg, Datenbankänderung oder persisted Hunt-Ergebnis. "
+        "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_architecture_snapshot, repository_architecture_drift_report, repository_architecture_runtime_drift_evidence, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Architektur-Snapshot und statischer Drift liefern Kandidaten; repository_architecture_runtime_drift_evidence verbindet Repo-Migrationen ausschließlich mit read-only PostgreSQL-Schema- und Vector-Evidence. Keines dieser Werkzeuge behauptet LLM-Erfolg, mutiert die Datenbank oder erzeugt persisted Hunt-Ergebnisse. Parserfehler können Python-Grammatik-/Versionsdrift oder tatsächlich ungültigen Source bedeuten und müssen gegen die Repository-Zielversion geprüft werden. "
         "Für sichere OpenAI-Projektzugänge nutze openai_project_access_plan ausschließlich mit nicht-geheimen Metadaten. Nutze openai_project_access_runtime_evidence für Provider-Identität, Projektzuordnung, Modellinventar, private LiteLLM-Zustände und echte Completion-Canaries. Diese Tools erstellen, lesen, rotieren oder widerrufen keinen OpenAI-Schlüssel und führen keine OpenAI-Admin-Mutation aus. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
         "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
@@ -623,6 +623,12 @@ def backend_image_resolve(revision: str) -> dict[str, Any]:
 def postgres_canary() -> dict[str, Any]:
     """Run a read-only SELECT 1 canary against the configured production PostgreSQL connection."""
     return database.canary()
+
+
+@mcp.tool(annotations=READ_ONLY)
+def postgres_schema_inventory() -> dict[str, Any]:
+    """List bounded non-system PostgreSQL table metadata without returning row data."""
+    return database.schema_inventory()
 
 
 @mcp.tool(annotations=READ_ONLY)

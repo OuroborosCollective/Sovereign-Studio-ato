@@ -21,6 +21,26 @@ class FakeRuntime:
         return self.repo
 
 
+class FakeDatabase:
+    def schema_inventory(self):
+        return {
+            "ok": True,
+            "status": "POSTGRES_SCHEMA_INVENTORY",
+            "tables": [
+                {"table_schema": "public", "table_name": "live_only_table"},
+            ],
+            "rowDataReturned": False,
+            "secretValuesExposed": False,
+        }
+
+    def vector_canary(self):
+        return {
+            "ok": True,
+            "extension_version": "0.8.0",
+            "vector_columns": [],
+        }
+
+
 class FakeMCP:
     def __init__(self) -> None:
         self.names: list[str] = []
@@ -55,6 +75,10 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     (repo / "backend").mkdir()
     (repo / "src").mkdir()
     (repo / "tools" / "sovereign-chatgpt-mcp").mkdir(parents=True)
+    (repo / "backend" / "agent_runtime").mkdir()
+    (repo / "scripts" / "sovereign-backend" / "migrations").mkdir(parents=True)
+    (repo / "src" / "runtime").mkdir()
+    (repo / ".github" / "workflows").mkdir(parents=True)
     secret_like = "sk-" + "proj-" + "x" * 30
     (repo / "backend" / "knowledge.py").write_text(
         "from pgvector.sqlalchemy import Vector\n"
@@ -78,15 +102,49 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
         "def tool_contract():\n    return 'ready'\n",
         "utf-8",
     )
+    (repo / "backend" / "app.py").write_text(
+        "@app.route('/api/items/<item_id>', methods=['GET'])\n"
+        "def item(item_id):\n    return item_id\n\n"
+        "@app.post('/api/orders')\n"
+        "def order():\n    return 'ok'\n",
+        "utf-8",
+    )
+    (repo / "src" / "contracts.ts").write_text(
+        "fetch(`/api/items/${itemId}`);\n"
+        "api.post('/api/orders');\n"
+        "api.post(`/api/items/${itemId}`);\n"
+        "api.delete('/api/missing');\n",
+        "utf-8",
+    )
+    (repo / "scripts" / "sovereign-backend" / "migrations" / "001_create.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS architecture_events (id bigint primary key);\n",
+        "utf-8",
+    )
+    (repo / ".github" / "workflows" / "dead.workflow").write_text(
+        "name: ignored\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps: []\n",
+        "utf-8",
+    )
+    (repo / ".github" / "workflows" / "valid.yml").write_text(
+        "name: valid\non: [push]\njobs:\n  validate:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        "utf-8",
+    )
+    (repo / "backend" / "broken.py").write_text("def unsupported(:\n    pass\n", "utf-8")
+    (repo / "src" / "runtime" / "keywordRouter.ts").write_text(
+        "export const route = (text: string) => text.toLowerCase().includes('create');\n",
+        "utf-8",
+    )
+    (repo / "backend" / "mirror.py").write_text("VALUE = 'canonical'\n", "utf-8")
+    (repo / "scripts" / "sovereign-backend" / "mirror.py").write_text("VALUE = 'deployment'\n", "utf-8")
     _git(repo, "add", "--all")
     _git(repo, "commit", "-m", "fixture")
 
     monkeypatch.setattr(skill_tools, "_RUNTIME", FakeRuntime(repo))
+    monkeypatch.setattr(skill_tools, "_DATABASE", None)
     monkeypatch.setattr(skill_tools, "_REGISTERED", False)
     return repo
 
 
-def test_inventory_registers_six_read_only_tools(repository: Path) -> None:
+def test_inventory_registers_nine_read_only_tools(repository: Path) -> None:
     mcp = FakeMCP()
     skill_tools.register(mcp, FakeRuntime(repository))
 
@@ -95,6 +153,9 @@ def test_inventory_registers_six_read_only_tools(repository: Path) -> None:
         "repository_knowledge_surface_scan",
         "repository_product_logic_map",
         "repository_change_impact_manifest",
+        "repository_architecture_snapshot",
+        "repository_architecture_drift_report",
+        "repository_architecture_runtime_drift_evidence",
         "repository_learning_records_normalize_preview",
         "repository_release_hunt_manifest",
     ]
@@ -142,6 +203,49 @@ def test_change_impact_and_release_hunt_remain_candidates(repository: Path) -> N
     assert "MCP_BROKER_PROTOCOL_BOUNDARY" in families
 
 
+def test_architecture_guardian_detects_cross_layer_drift_without_claiming_runtime_truth(repository: Path) -> None:
+    snapshot = skill_tools.repository_architecture_snapshot(WORKSPACE_ID)
+    repeated = skill_tools.repository_architecture_snapshot(WORKSPACE_ID)
+    drift = skill_tools.repository_architecture_drift_report(WORKSPACE_ID)
+
+    assert snapshot["snapshotSha256"] == repeated["snapshotSha256"]
+    assert any(item["path"] == "/api/items/<p>" and item["methods"] == ["GET"] for item in snapshot["backendContracts"])
+    assert any(item["path"] == "/api/orders" and item["methods"] == ["POST"] for item in snapshot["backendContracts"])
+    assert any(item["path"] == "/api/items/<p>" and item["method"] == "POST" for item in snapshot["frontendCalls"])
+    assert any(item["table"] == "architecture_events" for item in snapshot["sqlTables"])
+    assert any(item["path"] == "backend/broken.py" for item in snapshot["parserFindings"])
+    valid_workflow = next(item for item in snapshot["workflows"] if item["path"] == ".github/workflows/valid.yml")
+    assert valid_workflow["validYaml"] is True if valid_workflow["parserAvailable"] else valid_workflow["validYaml"] is None
+    assert snapshot["truthBoundary"]["liveDatabaseAccessed"] is False
+    assert snapshot["truthBoundary"]["vpsAccessed"] is False
+
+    families = {item["family"] for item in drift["findings"]}
+    assert "CONTRACT_DRIFT" in families
+    assert "CONTRACT_METHOD_DRIFT" in families
+    assert "CI_DEAD_CHECK" in families
+    assert "LLM_TOOL_BOUNDARY" in families
+    assert "PYTHON_GRAMMAR_VERSION_DRIFT_OR_INVALID_SOURCE" in families
+    assert "CANONICAL_DEPLOYMENT_MIRROR_DRIFT" in families
+    assert drift["persistedOutcome"] is None
+    assert drift["mutationPerformed"] is False
+    assert "Static candidates" in drift["truthNotice"]
+
+
+def test_architecture_runtime_drift_uses_only_schema_metadata(repository: Path, monkeypatch) -> None:
+    monkeypatch.setattr(skill_tools, "_DATABASE", FakeDatabase())
+
+    result = skill_tools.repository_architecture_runtime_drift_evidence(WORKSPACE_ID)
+
+    families = {item["family"] for item in result["findings"]}
+    assert result["status"] == "ARCHITECTURE_RUNTIME_DRIFT_EVIDENCE_READY"
+    assert "DB_DRIFT_MISSING_LIVE_TABLE" in families
+    assert "DB_DRIFT_UNMAPPED_LIVE_TABLE" in families
+    assert result["schemaInventory"]["rowDataReturned"] is False
+    assert result["mutationPerformed"] is False
+    assert result["rowDataReturned"] is False
+    assert result["secretValuesExposed"] is False
+
+
 def test_normalization_preview_deduplicates_without_writing(repository: Path) -> None:
     record = {
         "title": " Evidence gate ",
@@ -181,6 +285,20 @@ def test_normalization_preview_deduplicates_without_writing(repository: Path) ->
     assert result["records"][0]["tags"] == ["runtime-truth"]
     assert result["records"][0]["content_hash"].startswith("sha256:")
     assert not (repository / "patterns.normalized.jsonl").exists()
+
+
+def test_real_repository_architecture_snapshot_is_bounded_and_read_only() -> None:
+    repo = Path(__file__).resolve().parents[3]
+    result = skill_tools._architecture_snapshot(repo)
+    rendered = json.dumps(result, ensure_ascii=False)
+
+    assert len(result["revision"]) == 40
+    assert result["backendContracts"]
+    assert result["workflows"]
+    assert result["truthBoundary"]["staticEvidenceOnly"] is True
+    assert result["truthBoundary"]["liveDatabaseAccessed"] is False
+    assert result["truthBoundary"]["vpsAccessed"] is False
+    assert len(rendered.encode("utf-8")) < 1_000_000
 
 
 def test_real_repository_knowledge_scan_is_bounded_and_read_only() -> None:
