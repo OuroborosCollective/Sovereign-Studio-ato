@@ -1,8 +1,13 @@
 /**
  * Chat Intent Router - Runtime spine for chat workbench
  *
- * Translates natural language messages from the chat into validated runtime actions.
- * UI sends intent, runtime validates preconditions and produces actionable output.
+ * Validates preconditions for LLM-declared intents and produces actionable output.
+ * The LLM (Brain) is responsible for intent classification from natural language.
+ * This module is the Tool (Execution): it validates state and gates actions.
+ *
+ * Architectural rule: do NOT detect intent from message text here.
+ * Pass intent explicitly via ChatIntentRouterInput.intent (LLM-declared).
+ * The only structural detection allowed is GitHub URL pattern (unambiguous syntax).
  *
  * No DOM/React dependencies - pure runtime module.
  */
@@ -21,9 +26,14 @@ export type ChatIntent =
 /**
  * Extended input for more granular precondition checks.
  * All boolean fields default to false for backward compatibility.
+ *
+ * `intent` must be declared by the LLM layer. When absent, only structural
+ * patterns (GitHub URL) are used; all semantic classification is the LLM's job.
  */
 export interface ChatIntentRouterInput {
   message: string;
+  /** LLM-declared intent. Provide this instead of relying on keyword detection. */
+  intent?: ChatIntent;
   repoReady: boolean;
   repoFileCount: number;
   hasToken: boolean;
@@ -132,13 +142,17 @@ const INTENT_PRECONDITIONS: Record<ChatIntent, IntentPrecondition> = {
   },
 };
 
-const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
+/**
+ * Hint vocabulary for LLM prompt-building only.
+ * Do NOT use these arrays for runtime routing — that is the LLM's job.
+ * Exported so the worker system-prompt can include examples that help the LLM
+ * map user language to the ChatIntent enum values.
+ */
+export const INTENT_SIGNAL_HINTS: Record<ChatIntent, string[]> = {
   'load-repo': [
     'load repo', 'fetch repository', 'open repo', 'select repository', 'repo url', 'github link',
     'lade repository', 'repository laden', 'repo laden', 'github repository öffnen',
     'welches repository', 'repo auswählen',
-    // GitHub URL patterns
-    'github.com/', 'https://github.com/',
   ],
   'explain-status': [
     'status', 'was ist der status', 'what is the status', 'explain', 'erkläre', 'show state', 'zustand',
@@ -168,7 +182,7 @@ const INTENT_SIGNALS: Record<ChatIntent, string[]> = {
     'läuft der workflow', 'workflow ergebnis', 'github actions status',
   ],
   'repair-workflow': [
-    'fix workflow', 'ci fix', // Scope to CI/workflow wording only
+    'fix workflow', 'ci fix',
     'workflow reparieren', 'behebe workflow', 'workflowfehler beheben',
     'ci fehler', 'workflowfehler',
   ],
@@ -206,35 +220,15 @@ const TARGET_TABS: Record<ChatIntent, ChatIntentRouterOutput['targetTab'] | unde
 
 const GITHUB_URL_REGEX = /^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i;
 
-function detectIntent(message: string): ChatIntent {
-  const normalized = message.toLowerCase().trim();
-
-  // Check for GitHub URL first (more specific than word signals)
+/**
+ * Structural-only detection: recognises a GitHub repo URL — an unambiguous syntactic
+ * pattern, not natural language. This is the ONLY permitted local detection.
+ * All semantic classification belongs to the LLM.
+ */
+function detectStructuralIntent(message: string): ChatIntent {
   if (GITHUB_URL_REGEX.test(message.trim())) {
     return 'load-repo';
   }
-
-  // Sort signals by specificity: workflow-specific first, then generic
-  const intentOrder: ChatIntent[] = [
-    'watch-workflow',
-    'repair-workflow',
-    'load-repo',
-    'create-draft-pr',
-    'show-diff',
-    'generate-package',
-    'search-patterns',
-    'explain-status',
-  ];
-
-  for (const intent of intentOrder) {
-    const signals = INTENT_SIGNALS[intent];
-    for (const signal of signals) {
-      if (normalized.includes(signal)) {
-        return intent;
-      }
-    }
-  }
-
   return 'unknown';
 }
 
@@ -288,7 +282,9 @@ function buildBlockedReason(intent: ChatIntent, input: ChatIntentRouterInput): s
 }
 
 export function routeChatIntent(input: ChatIntentRouterInput): ChatIntentRouterOutput {
-  const intent = detectIntent(input.message);
+  // Use LLM-declared intent when provided; fall back to structural detection only.
+  // Keyword-based semantic detection has been removed — that is the LLM's responsibility.
+  const intent: ChatIntent = input.intent ?? detectStructuralIntent(input.message);
 
   // Unknown intent is always blocked - user needs to provide a clear mission
   if (intent === 'unknown') {

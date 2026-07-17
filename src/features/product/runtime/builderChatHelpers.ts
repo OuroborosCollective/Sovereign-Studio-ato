@@ -33,119 +33,64 @@ import type {
 // Write intent detection (Aufgabe 1)
 // ─────────────────────────────────────────────────────────────
 
-// Keywords that mark a message as a WRITE INTENT: the user wants Sovereign
-// to change a real file/repo state (README, docs, code, commit, PR, ...).
-// Kept deliberately broad (German-first) — false positives are safer than
-// silently treating a write request as free chat/advice.
-const WRITE_INTENT_TOKENS = [
-  "readme ändern",
-  "readme anpassen",
-  "dokumentation ändern",
-  "dokumentation anpassen",
-  "datei ändern",
-  "titel ändern",
-  "füge hinzu",
-  "fuege hinzu",
-  "ergänze",
-  "ergaenze",
-  "ersetze",
-  "patch",
-  "diff",
-  "commit",
-  "push",
-  "draft pr",
-  "draft-pr",
-  "pull request",
-  "mach das ins repo",
-  "ändere im repo",
-  "aendere im repo",
-  "bau das ein",
-  "setze das um",
-  "setz das um",
-  "implementiere",
-  "passe an",
-  "passe die",
-  "passe das",
-];
-
-// Regex covers the "passe ... an" pattern (separable German verb) explicitly,
-// since the token list alone cannot match arbitrary infixes.
-const PASSE_AN_PATTERN = /\bpasse\b.*\ban\b/i;
-
 /**
- * Detects if a message is a WRITE INTENT: the user wants a real file/repo
- * change (README, docs, code, patch, commit, push, draft PR, ...).
+ * Reports whether a user message is a WRITE INTENT: the user wants a real
+ * file/repo change (README, docs, code, patch, commit, push, draft PR, ...).
+ *
+ * Architectural rule: semantic write-intent classification is the LLM's job.
+ * Pass the LLM-declared result via `explicit`. When `explicit` is not provided,
+ * this function returns `false` — the runtime must NOT pre-parse natural language.
+ *
  * Write intents must never be treated as normal advisory chat — they require
  * a loaded repo and verified GitHub write access before any executor route.
+ *
+ * @param _text  Original message (reserved for future structural checks; unused).
+ * @param explicit  LLM-declared classification: true = write intent, false = not.
+ *                  Omit until the LLM layer provides an explicit value.
  */
-export function isWriteIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  if (WRITE_INTENT_TOKENS.some((token) => lower.includes(token))) return true;
-  return PASSE_AN_PATTERN.test(lower);
+export function isWriteIntent(_text: string, explicit?: boolean): boolean {
+  if (explicit !== undefined) return explicit;
+  // Keyword-based pre-classification has been removed. Default to false so that
+  // no message is silently blocked before the LLM has a chance to classify it.
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────
 // Local completion status questions (Aufgabe 2)
 // ─────────────────────────────────────────────────────────────
 
-const LOCAL_STATUS_QUESTION_TOKENS = [
-  "bist du fertig",
-  "schon fertig",
-  "ist das erledigt",
-  "hast du es geändert",
-  "hast du es geaendert",
-  "wurde es gepusht",
-  "gibt es einen draft pr",
-  "wo ist der patch",
-  "warum passiert nichts",
-  "was ist der status",
-  "arbeitet er schon",
-  "läuft das",
-  "läuft er",
-  "was macht er",
-  "hat er angefangen",
-  "ist er gestartet",
-  "macht er was",
-  "tut er was",
-  "passiert etwas",
-  "passiert gerade",
-  "fertig?",
-  "complete?",
-];
-
 /**
- * Tokens that ask if the Sovereign Agent has STARTED (not if it's done).
- * For these questions, "Ja, Sovereign Agent läuft" is the expected answer.
- */
-const STARTUP_QUESTION_TOKENS = [
-  "arbeitet er schon",
-  "läuft das",
-  "läuft er",
-  "was macht er",
-  "hat er angefangen",
-  "ist er gestartet",
-  "macht er was",
-  "tut er was",
-  "passiert etwas",
-  "passiert gerade",
-];
-
-/**
- * Detects local completion-status questions ("bist du fertig?", "wo ist der
- * patch?", ...). These must be answered locally from runtime state and must
+ * Reports whether a message is a local completion-status question ("bist du fertig?",
+ * "wo ist der patch?", ...). These should be answered from runtime state and must
  * NEVER be forwarded to the Worker as a new request.
+ *
+ * Architectural rule: semantic classification is the LLM's job.
+ * Pass the LLM-declared result via `explicit`. When `explicit` is not provided,
+ * this function returns `false` — the runtime must NOT pre-parse natural language.
+ *
+ * @param _text  Original message (reserved for future structural checks; unused).
+ * @param explicit  LLM-declared classification: true = is a status question.
  */
-export function isLocalCompletionStatusQuestion(text: string): boolean {
-  const lower = text.toLowerCase();
-  return LOCAL_STATUS_QUESTION_TOKENS.some((token) => lower.includes(token));
+export function isLocalCompletionStatusQuestion(_text: string, explicit?: boolean): boolean {
+  if (explicit !== undefined) return explicit;
+  // Keyword-based pre-classification has been removed. Return false so messages
+  // are not intercepted before the LLM classifies them.
+  return false;
 }
 
 /**
- * Detects if the question is asking if the Sovereign Agent has STARTED (not if it's done).
+ * Reports whether the question asks if the Sovereign Agent has STARTED (not if it's done).
+ * For these questions, "Ja, Sovereign Agent läuft" is the expected runtime answer.
+ *
+ * Architectural rule: semantic classification is the LLM's job.
+ * Pass the LLM-declared result via `explicit`. Default is false.
+ *
+ * @param _text  Original message (reserved for future structural checks; unused).
+ * @param explicit  LLM-declared classification: true = startup question.
  */
-export function isStartupQuestion(text: string): boolean {
-  const lower = text.toLowerCase();
-  return STARTUP_QUESTION_TOKENS.some((token) => lower.includes(token));
+export function isStartupQuestion(_text: string, explicit?: boolean): boolean {
+  if (explicit !== undefined) return explicit;
+  return false;
 }
 
 export interface LocalStatusAnswerArgs {

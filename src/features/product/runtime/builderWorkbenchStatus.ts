@@ -65,14 +65,22 @@ function isNoiseLevel(level: string): boolean {
   return level === 'error' || level === 'warn';
 }
 
-function isResolvedGithubAccessLog(input: WorkbenchStatusInput, msg: string): boolean {
-  if (input.githubState !== 'ready') return false;
-  const lower = msg.toLowerCase();
-  return lower.includes('github write access missing')
-    || lower.includes('github-zugang erforderlich')
-    || lower.includes('github-schreibzugang fehlt')
-    || lower.includes('write intent blocked: github write access missing')
-    || lower.includes('github access missing');
+/**
+ * Returns true when a log entry should be suppressed because it describes a GitHub
+ * access problem that has since been resolved.
+ *
+ * Previously this function scanned unstructured log message text for semantic phrases
+ * (e.g. "github write access missing") — that is runtime pre-interpretation and has
+ * been removed. The structured `githubState` field is the authoritative source.
+ *
+ * TODO: add a `kind: string` field to WorkbenchStatusLogEntry so log entries can be
+ * tagged at emission time (e.g. `kind: 'github-access'`) and filtered here without
+ * any message-content scanning.
+ */
+function isResolvedGithubAccessLog(_input: WorkbenchStatusInput, _msg: string): boolean {
+  // No message-text scanning. Suppression based on log content is not possible
+  // without a structured log kind field. Return false until that is added.
+  return false;
 }
 
 /** System Actions: real started/executed actions, excluding tab navigation and raw signal noise. */

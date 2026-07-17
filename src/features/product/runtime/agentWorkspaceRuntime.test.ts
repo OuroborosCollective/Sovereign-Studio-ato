@@ -70,10 +70,16 @@ describe('agentWorkspaceRuntime', () => {
     expect(result.blockers).toContain('Workspace request contains a secret-like value and must be sanitized before dispatch.');
   });
 
-  it('keeps casual and read-only chat away from write workspaces', () => {
-    expect(classifyWorkspaceIntent('Warum ist der Worker blockiert?')).toBe('read-only');
+  it('classifyWorkspaceIntent is a deprecated stub that always returns none — LLM must declare intent', () => {
+    // Keyword-based classification has been removed. The LLM (Brain) classifies intent.
+    // classifyWorkspaceIntent is a no-op stub kept for gradual migration.
+    expect(classifyWorkspaceIntent('Warum ist der Worker blockiert?')).toBe('none');
     expect(classifyWorkspaceIntent('Erzähl mir einen Witz über Code.')).toBe('none');
+    expect(classifyWorkspaceIntent('Implementiere einen Fix und erstelle einen Draft PR.')).toBe('none');
+  });
 
+  it('keeps chat away from write workspaces when no intentKind is declared', () => {
+    // Without LLM-declared intentKind, decideAgentWorkspaceIntent defaults to none.
     const decision = decideAgentWorkspaceIntent({
       message: 'Warum ist der Worker blockiert?',
       repoReady: true,
@@ -81,12 +87,13 @@ describe('agentWorkspaceRuntime', () => {
     });
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toContain('Read-only chat');
+    expect(decision.reason).toContain('No code-execution intent detected');
   });
 
-  it('allows explicit code work when repo and executor are ready', () => {
+  it('allows code work when LLM declares code-execution intent and repo/executor are ready', () => {
     const decision = decideAgentWorkspaceIntent({
       message: 'Implementiere einen Fix in src/features/product/runtime/agentWorkspaceRuntime.ts und ergänze Tests.',
+      intentKind: 'code-execution',
       repoReady: true,
       executorReady: true,
       activeWorkspaceStatus: 'idle',
@@ -100,12 +107,14 @@ describe('agentWorkspaceRuntime', () => {
   it('blocks code work without repo or while another workspace is running', () => {
     expect(decideAgentWorkspaceIntent({
       message: 'Fix src/App.tsx und erstelle einen Draft PR.',
+      intentKind: 'code-execution',
       repoReady: false,
       executorReady: true,
     }).reason).toContain('loaded repository');
 
     expect(decideAgentWorkspaceIntent({
       message: 'Fix src/App.tsx und erstelle einen Draft PR.',
+      intentKind: 'code-execution',
       repoReady: true,
       executorReady: true,
       activeWorkspaceStatus: 'running',
@@ -166,29 +175,31 @@ describe('agentWorkspaceRuntime', () => {
     }
   });
 
-  it('read-only Worker diagnostic does not start workspace', () => {
-    const readOnlyMessages = [
+  it('without LLM intentKind, all messages produce kind=none and are blocked', () => {
+    // Keyword-based classification has been removed. Without an explicit intentKind from
+    // the LLM, every message defaults to 'none' — the runtime never tries to be the Brain.
+    const messages = [
       'Was ist der Worker-Status?',
       'Erkläre mir die Fehlermeldung.',
-      'Prüfe die Health-Status.',
-      'Warum ist der Worker blockiert?',
-      'Lies die Logs und erkläre sie.',
+      'Implementiere einen Bug-Fix in src/App.tsx.',
+      'Erstelle einen Draft PR für den Fix.',
     ];
 
-    for (const msg of readOnlyMessages) {
+    for (const msg of messages) {
       const decision = decideAgentWorkspaceIntent({
         message: msg,
         repoReady: true,
         executorReady: true,
       });
       expect(decision.allowed).toBe(false);
-      expect(decision.kind).toBe('read-only');
+      expect(decision.kind).toBe('none');
     }
   });
 
-  it('repo missing blocks workspace', () => {
+  it('repo missing blocks workspace when LLM declares code-execution', () => {
     const decision = decideAgentWorkspaceIntent({
       message: 'Implementiere einen Bug-Fix in src/App.tsx.',
+      intentKind: 'code-execution',
       repoReady: false,
       executorReady: true,
     });
@@ -196,9 +207,10 @@ describe('agentWorkspaceRuntime', () => {
     expect(decision.reason).toContain('loaded repository');
   });
 
-  it('executor missing blocks workspace', () => {
+  it('executor missing blocks workspace when LLM declares code-execution', () => {
     const decision = decideAgentWorkspaceIntent({
       message: 'Implementiere einen Bug-Fix in src/App.tsx.',
+      intentKind: 'code-execution',
       repoReady: true,
       executorReady: false,
     });
@@ -206,10 +218,11 @@ describe('agentWorkspaceRuntime', () => {
     expect(decision.reason).toContain('executor');
   });
 
-  it('another active workspace blocks new workspace', () => {
+  it('another active workspace blocks new workspace when LLM declares code-execution', () => {
     for (const status of ['queued', 'running'] as const) {
       const decision = decideAgentWorkspaceIntent({
         message: 'Erstelle einen Draft PR für den Fix.',
+        intentKind: 'code-execution',
         repoReady: true,
         executorReady: true,
         activeWorkspaceStatus: status,
@@ -219,9 +232,10 @@ describe('agentWorkspaceRuntime', () => {
     }
   });
 
-  it('blocked workspace status allows retry', () => {
+  it('blocked workspace status allows retry when LLM declares code-execution', () => {
     const decision = decideAgentWorkspaceIntent({
       message: 'Erstelle einen Draft PR für den Fix.',
+      intentKind: 'code-execution',
       repoReady: true,
       executorReady: true,
       activeWorkspaceStatus: 'blocked',
@@ -229,9 +243,10 @@ describe('agentWorkspaceRuntime', () => {
     expect(decision.allowed).toBe(true);
   });
 
-  it('cleaned workspace allows new workspace', () => {
+  it('cleaned workspace allows new workspace when LLM declares code-execution', () => {
     const decision = decideAgentWorkspaceIntent({
       message: 'Erstelle einen Draft PR für den Fix.',
+      intentKind: 'code-execution',
       repoReady: true,
       executorReady: true,
       activeWorkspaceStatus: 'cleaned',
