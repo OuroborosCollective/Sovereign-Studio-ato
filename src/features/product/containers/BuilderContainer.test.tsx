@@ -849,7 +849,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(chatCalls).toBe(2);
 
       fireEvent.click(screen.getByRole('button', { name: /RT.*Runtime Quelle/i }));
-      await waitFor(() => expect(screen.getByText('Cloudflare Worker blockiert')).toBeDefined());
+      await waitFor(() => expect(screen.getByText('LLM Runtime blockiert')).toBeDefined());
     } finally {
       restoreUser();
     }

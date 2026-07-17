@@ -3663,7 +3663,7 @@ export function BuilderContainer({
       appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
       if (!pendingOnlineExecutionRef.current) pendingWriteIntentRef.current = text;
       setShowGitHubAccessOverride(true);
-      appendRuntimeNotice('Executor-Aktion blockiert: Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.');
+      appendRuntimeNotice('GitHub-Zugang fehlt. Executor-Aktion blockiert: Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.');
       return false;
     }
 
