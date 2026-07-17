@@ -7,6 +7,67 @@ import pytest
 from database import DatabaseRuntime, _preview_body
 
 
+def test_schema_inventory_returns_metadata_only(monkeypatch) -> None:
+    class Cursor:
+        def __init__(self) -> None:
+            self.query_count = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, _query):
+            self.query_count += 1
+
+        def fetchone(self):
+            return {"database": "sovereign", "user": "runtime_reader"}
+
+        def fetchall(self):
+            return [
+                {"table_schema": "public", "table_name": "agent_jobs"},
+                {"table_schema": "auth", "table_name": "users"},
+            ]
+
+    class Connection:
+        def __init__(self) -> None:
+            self.cursor_instance = Cursor()
+            self.readonly = False
+            self.rolled_back = False
+            self.closed = False
+
+        def set_session(self, *, readonly, autocommit):
+            self.readonly = readonly is True and autocommit is False
+
+        def cursor(self, **_kwargs):
+            return self.cursor_instance
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            self.closed = True
+
+    connection = Connection()
+    monkeypatch.setattr(DatabaseRuntime, "_connection", staticmethod(lambda _prefix="POSTGRES": connection))
+    database = DatabaseRuntime(lambda _workspace_id: None)
+
+    result = database.schema_inventory()
+
+    assert result["ok"] is True
+    assert result["tableCount"] == 2
+    assert result["tables"] == [
+        {"table_schema": "public", "table_name": "agent_jobs"},
+        {"table_schema": "auth", "table_name": "users"},
+    ]
+    assert result["rowDataReturned"] is False
+    assert result["secretValuesExposed"] is False
+    assert connection.readonly is True
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+
 def test_migration_blocks_dangerous_sql(repo_runtime) -> None:
     runtime, workspace_id, repo = repo_runtime
     migration = repo / "migrations" / "001.sql"

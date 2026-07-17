@@ -7,6 +7,7 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import sys
 from typing import Any, Final
 
 from mcp.types import ToolAnnotations
@@ -68,6 +69,53 @@ _JS_SYMBOL = re.compile(
 )
 _GENERIC_CALL = re.compile(r"\b([A-Za-z_$][\w$]*)\s*\(")
 _CALL_KEYWORDS = {"if", "for", "while", "switch", "catch", "function", "func", "fn", "def"}
+_BACKEND_ROUTE_DECORATOR = re.compile(
+    r"@(?P<owner>[A-Za-z_][\w.]*)\.(?P<kind>route|api_route|get|post|put|patch|delete)\(\s*"
+    r"(?P<quote>['\"])(?P<path>/[^'\"]+)(?P=quote)(?P<tail>[^)]*)\)",
+    re.I | re.S,
+)
+_EXPRESS_ROUTE = re.compile(
+    r"\b(?:app|router|server)\.(?P<method>get|post|put|patch|delete)\(\s*"
+    r"(?P<quote>['\"`])(?P<path>/[^'\"`]+)(?P=quote)",
+    re.I,
+)
+_CLIENT_METHOD_CALL = re.compile(
+    r"\b(?:axios|api|client|http)\.(?P<method>get|post|put|patch|delete)\(\s*"
+    r"(?P<quote>['\"`])(?P<path>/api/[^'\"`]+)(?P=quote)",
+    re.I,
+)
+_FETCH_CALL = re.compile(
+    r"\bfetch\(\s*(?P<quote>['\"`])(?P<path>/api/[^'\"`]+)(?P=quote)"
+    r"(?P<tail>\s*,\s*\{.{0,600}?\})?\s*\)",
+    re.I | re.S,
+)
+_SQL_CREATE_TABLE = re.compile(
+    r"\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"
+    r"(?:(?P<schema_quote>[\"`]?)"
+    r"(?P<schema>[A-Za-z_][\w]*)(?P=schema_quote)\.)?"
+    r"(?P<table_quote>[\"`]?)(?P<table>[A-Za-z_][\w]*)(?P=table_quote)",
+    re.I,
+)
+_INTENT_BOUNDARY_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+    (
+        "javascript_keyword_intent",
+        re.compile(
+            r"(?:toLowerCase\(\)|casefold\(\)|lower\(\)).{0,160}"
+            r"(?:includes|test|search|match)\(.{0,160}"
+            r"(?:create|build|implement|fix|repair|deploy|merge|erstelle|baue|repariere)",
+            re.I | re.S,
+        ),
+    ),
+    (
+        "python_keyword_intent",
+        re.compile(
+            r"(?:re\.(?:search|match|fullmatch)|\bin\b).{0,180}"
+            r"(?:create|build|implement|fix|repair|deploy|merge|erstelle|baue|repariere)"
+            r".{0,180}(?:lower|casefold|\btext\b|\bmessage\b|\bprompt\b|\bmission\b)",
+            re.I | re.S,
+        ),
+    ),
+)
 
 _DOMAIN_PATTERNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("chat_ui", ("src/app.tsx", "src/features/product/containers/", "src/features/product/components/")),
@@ -116,6 +164,7 @@ _REQUIRED_TEXT = ("title", "problem", "solution", "applicability")
 _LIST_FIELDS = ("triggers", "preconditions", "invariants", "failure_modes", "validation", "exclusions", "tags", "supersedes")
 
 _RUNTIME: Any = None
+_DATABASE: Any = None
 _REGISTERED = False
 
 
@@ -197,11 +246,19 @@ def _path_class(path: str) -> str:
     return "PRODUCTION_CANDIDATE"
 
 
-def _python_symbols(text: str) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+def _python_symbols(
+    text: str,
+) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any] | None]:
     try:
         tree = ast.parse(text)
-    except SyntaxError:
-        return [], [], []
+    except SyntaxError as exc:
+        return [], [], [], {
+            "message": str(exc.msg or "invalid syntax")[:240],
+            "line": max(0, int(exc.lineno or 0)),
+            "offset": max(0, int(exc.offset or 0)),
+            "runtimeVersion": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "classification": "PYTHON_GRAMMAR_VERSION_DRIFT_OR_INVALID_SOURCE",
+        }
     symbols: list[dict[str, Any]] = []
     imports: list[str] = []
     calls: list[str] = []
@@ -217,7 +274,7 @@ def _python_symbols(text: str) -> tuple[list[dict[str, Any]], list[str], list[st
                 calls.append(node.func.id)
             elif isinstance(node.func, ast.Attribute):
                 calls.append(node.func.attr)
-    return symbols, sorted(set(imports)), sorted(set(calls))
+    return symbols, sorted(set(imports)), sorted(set(calls)), None
 
 
 def _js_symbols(text: str) -> tuple[list[dict[str, Any]], list[str], list[str]]:
@@ -251,6 +308,536 @@ def _routes(text: str) -> list[dict[str, Any]]:
     return output
 
 
+def _normalize_contract_path(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    raw = raw.split("?", 1)[0]
+    safe = _safe_endpoint(raw)
+    if safe == "<redacted-endpoint>":
+        return safe
+    safe = re.sub(r"\$\{[^}]+\}", "<p>", safe)
+    safe = re.sub(r"<[^>]+>", "<p>", safe)
+    safe = re.sub(r"\{[^{}\/]+\}", "<p>", safe)
+    safe = re.sub(r":([A-Za-z_][A-Za-z0-9_]*)", "<p>", safe)
+    safe = re.sub(r"/+", "/", safe)
+    if not safe.startswith("/"):
+        safe = "/" + safe
+    return safe.rstrip("/") or "/"
+
+
+def _route_methods(kind: str, tail: str) -> list[str]:
+    normalized_kind = str(kind or "").strip().lower()
+    if normalized_kind not in {"route", "api_route"}:
+        return [normalized_kind.upper()]
+    methods = re.search(
+        r"methods\s*=\s*[\[(]([^\])]+)[\])]",
+        str(tail or ""),
+        re.I | re.S,
+    )
+    if methods:
+        selected = sorted({item.upper() for item in re.findall(r"['\"]([A-Za-z]+)['\"]", methods.group(1))})
+        if selected:
+            return selected
+    return ["GET"]
+
+
+def _backend_contracts(repo: Path, files: list[str]) -> list[dict[str, Any]]:
+    prefixes = (
+        "backend/",
+        "scripts/sovereign-backend/",
+        "src/server/",
+        "server/",
+        "cloudflare-worker/",
+        "cloudflare-worker-ai-proxy/",
+        "tools/",
+    )
+    contracts: list[dict[str, Any]] = []
+    seen: set[tuple[str, tuple[str, ...], str, int]] = set()
+    for relative in files:
+        if not relative.startswith(prefixes) or _path_class(relative) == "TEST_ONLY":
+            continue
+        suffix = PurePosixPath(relative).suffix.casefold()
+        if suffix not in {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
+            continue
+        text = _safe_text(repo / relative)
+        if text is None:
+            continue
+        if suffix == ".py":
+            for match in _BACKEND_ROUTE_DECORATOR.finditer(text):
+                path = _normalize_contract_path(match.group("path"))
+                if not path or path == "<redacted-endpoint>":
+                    continue
+                methods = _route_methods(match.group("kind"), match.group("tail"))
+                line = text.count("\n", 0, match.start()) + 1
+                key = (path, tuple(methods), relative, line)
+                if key in seen:
+                    continue
+                seen.add(key)
+                contracts.append({
+                    "path": path,
+                    "methods": methods,
+                    "file": relative,
+                    "line": line,
+                    "confidence": "static_decorator",
+                })
+        else:
+            for match in _EXPRESS_ROUTE.finditer(text):
+                path = _normalize_contract_path(match.group("path"))
+                if not path or path == "<redacted-endpoint>":
+                    continue
+                line = text.count("\n", 0, match.start()) + 1
+                methods = [match.group("method").upper()]
+                key = (path, tuple(methods), relative, line)
+                if key in seen:
+                    continue
+                seen.add(key)
+                contracts.append({
+                    "path": path,
+                    "methods": methods,
+                    "file": relative,
+                    "line": line,
+                    "confidence": "static_call",
+                })
+        if len(contracts) >= _MAX_RESULT_ITEMS:
+            break
+    return sorted(contracts, key=lambda item: (item["path"], item["methods"], item["file"], item["line"]))
+
+
+def _frontend_contract_calls(repo: Path, files: list[str]) -> list[dict[str, Any]]:
+    prefixes = ("src/", "apps/", "packages/", "sovereign-studio-rn/", "ato-v2/")
+    calls: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, int]] = set()
+    for relative in files:
+        if not relative.startswith(prefixes) or _path_class(relative) == "TEST_ONLY":
+            continue
+        if "/server/" in relative or relative.startswith("src/server/"):
+            continue
+        suffix = PurePosixPath(relative).suffix.casefold()
+        if suffix not in {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
+            continue
+        text = _safe_text(repo / relative)
+        if text is None:
+            continue
+        for match in _CLIENT_METHOD_CALL.finditer(text):
+            path = _normalize_contract_path(match.group("path"))
+            if not path or path == "<redacted-endpoint>":
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            method = match.group("method").upper()
+            key = (path, method, relative, line)
+            if key not in seen:
+                seen.add(key)
+                calls.append({"path": path, "method": method, "file": relative, "line": line, "confidence": "static_client_call"})
+        for match in _FETCH_CALL.finditer(text):
+            path = _normalize_contract_path(match.group("path"))
+            if not path or path == "<redacted-endpoint>":
+                continue
+            tail = match.group("tail") or ""
+            method_match = re.search(r"\bmethod\s*:\s*['\"]([A-Za-z]+)['\"]", tail, re.I)
+            method = method_match.group(1).upper() if method_match else "GET"
+            line = text.count("\n", 0, match.start()) + 1
+            key = (path, method, relative, line)
+            if key not in seen:
+                seen.add(key)
+                calls.append({"path": path, "method": method, "file": relative, "line": line, "confidence": "static_fetch_call"})
+        if len(calls) >= _MAX_RESULT_ITEMS:
+            break
+    return sorted(calls, key=lambda item: (item["path"], item["method"], item["file"], item["line"]))[:_MAX_RESULT_ITEMS]
+
+
+def _contract_path_matches(left: str, right: str) -> bool:
+    def regex_for(value: str) -> re.Pattern[str]:
+        escaped = re.escape(value).replace(re.escape("<p>"), r"[^/]+")
+        return re.compile(r"^" + escaped + r"$")
+
+    return bool(regex_for(left).fullmatch(right) or regex_for(right).fullmatch(left))
+
+
+def _sql_table_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for relative in files:
+        if PurePosixPath(relative).suffix.casefold() != ".sql" or "migration" not in relative.casefold():
+            continue
+        text = _safe_text(repo / relative)
+        if text is None:
+            continue
+        for match in _SQL_CREATE_TABLE.finditer(text):
+            output.append({
+                "schema": match.group("schema") or "public",
+                "table": match.group("table"),
+                "file": relative,
+                "line": text.count("\n", 0, match.start()) + 1,
+                "confidence": "static_create_table",
+            })
+            if len(output) >= _MAX_RESULT_ITEMS:
+                return sorted(output, key=lambda item: (item["table"], item["file"], item["line"]))
+    return sorted(output, key=lambda item: (item["table"], item["file"], item["line"]))
+
+
+def _workflow_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
+    try:
+        import yaml  # type: ignore[import-untyped]
+    except ImportError:
+        yaml = None
+    output: list[dict[str, Any]] = []
+    for relative in files:
+        if not relative.startswith(".github/workflows/"):
+            continue
+        path = repo / relative
+        try:
+            payload = path.read_bytes()
+        except OSError:
+            continue
+        entry: dict[str, Any] = {
+            "path": relative,
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "recognizedExtension": path.suffix.casefold() in {".yml", ".yaml"},
+            "parserAvailable": yaml is not None,
+            "validYaml": None,
+            "jobs": [],
+        }
+        if len(payload) > _MAX_TEXT_BYTES:
+            entry["validYaml"] = False
+            entry["error"] = "workflow exceeds bounded parser size"
+        elif yaml is not None:
+            try:
+                parsed = yaml.safe_load(payload.decode("utf-8"))
+                jobs = parsed.get("jobs") if isinstance(parsed, dict) else None
+                entry["validYaml"] = isinstance(parsed, dict) and isinstance(jobs, dict) and bool(jobs)
+                entry["jobs"] = sorted(str(name)[:160] for name in jobs)[:100] if isinstance(jobs, dict) else []
+                if entry["validYaml"] is False:
+                    entry["error"] = "workflow must be a mapping with at least one jobs entry"
+            except (UnicodeDecodeError, yaml.YAMLError) as exc:
+                entry["validYaml"] = False
+                entry["error"] = str(exc).splitlines()[0][:240]
+        output.append(entry)
+        if len(output) >= _MAX_RESULT_ITEMS:
+            break
+    return sorted(output, key=lambda item: item["path"])
+
+
+def _test_inventory(files: list[str]) -> dict[str, Any]:
+    families: Counter[str] = Counter()
+    examples: defaultdict[str, list[str]] = defaultdict(list)
+    for relative in files:
+        lowered = relative.casefold()
+        family = ""
+        if relative.endswith(".py") and (PurePosixPath(relative).name.startswith("test_") or "/tests/" in lowered):
+            family = "pytest"
+        elif any(marker in lowered for marker in (".test.ts", ".test.tsx", ".test.js", ".test.jsx")):
+            family = "vitest_or_jest"
+        elif any(marker in lowered for marker in (".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx")):
+            family = "playwright_or_spec"
+        elif "/androidtest/" in lowered or "/test/" in lowered and relative.endswith((".kt", ".java")):
+            family = "android"
+        if not family:
+            continue
+        families[family] += 1
+        if len(examples[family]) < 20:
+            examples[family].append(relative)
+    return {"counts": dict(sorted(families.items())), "examples": dict(sorted(examples.items()))}
+
+
+def _mcp_component_inventory(files: list[str]) -> dict[str, list[str]]:
+    prefixes = (
+        "tools/sovereign-chatgpt-mcp/",
+        "backend/agent_runtime/tools/",
+        "scripts/sovereign-backend/agent_runtime/tools/",
+    )
+    output: dict[str, list[str]] = {}
+    for prefix in prefixes:
+        selected = [path for path in files if path.startswith(prefix) and PurePosixPath(path).suffix.casefold() in {".py", ".ts", ".tsx"}]
+        if selected:
+            output[prefix.rstrip("/")] = sorted(selected)[:_MAX_RESULT_ITEMS]
+    return output
+
+
+def _llm_boundary_candidates(repo: Path, files: list[str]) -> list[dict[str, Any]]:
+    prefixes = (
+        "src/runtime/",
+        "src/features/product/runtime/",
+        "backend/agent_runtime/",
+        "scripts/sovereign-backend/agent_runtime/",
+        "tools/sovereign-chatgpt-mcp/",
+    )
+    output: list[dict[str, Any]] = []
+    for relative in files:
+        if not relative.startswith(prefixes) or _path_class(relative) == "TEST_ONLY":
+            continue
+        if relative == "tools/sovereign-chatgpt-mcp/repository_skill_tools.py":
+            continue
+        if PurePosixPath(relative).suffix.casefold() not in {".py", ".ts", ".tsx", ".js", ".jsx"}:
+            continue
+        text = _safe_text(repo / relative)
+        if text is None:
+            continue
+        for family, pattern in _INTENT_BOUNDARY_PATTERNS:
+            for match in pattern.finditer(text):
+                output.append({
+                    "family": family,
+                    "file": relative,
+                    "line": text.count("\n", 0, match.start()) + 1,
+                    "status": "CANDIDATE_REQUIRES_REVIEW",
+                    "truthNotice": "Offline fallback and structured enum handling may be valid.",
+                })
+                if len(output) >= _MAX_RESULT_ITEMS:
+                    return output
+    return output
+
+
+def _mirror_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
+    tracked = set(files)
+    output: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for source in files:
+        target = ""
+        if source.startswith("backend/"):
+            target = "scripts/sovereign-backend/" + source.removeprefix("backend/")
+        elif source.startswith("scripts/sovereign-backend/"):
+            target = "backend/" + source.removeprefix("scripts/sovereign-backend/")
+        if not target or target not in tracked:
+            continue
+        pair = tuple(sorted((source, target)))
+        if pair in seen:
+            continue
+        seen.add(pair)
+        left, right = pair
+        try:
+            left_payload = (repo / left).read_bytes()
+            right_payload = (repo / right).read_bytes()
+        except OSError:
+            continue
+        output.append({
+            "source": left,
+            "mirror": right,
+            "byteEqual": left_payload == right_payload,
+            "sourceSha256": hashlib.sha256(left_payload).hexdigest(),
+            "mirrorSha256": hashlib.sha256(right_payload).hexdigest(),
+        })
+        if len(output) >= _MAX_RESULT_ITEMS:
+            break
+    return sorted(output, key=lambda item: (item["source"], item["mirror"]))
+
+
+def _architecture_snapshot(repo: Path) -> dict[str, Any]:
+    files = _tracked_files(repo)
+    product_map = _scan(repo, include_logic=True)
+    payload: dict[str, Any] = {
+        "schemaVersion": "sovereign.architecture-snapshot.v1",
+        "revision": _git(repo, "rev-parse", "HEAD"),
+        "dirty": bool(_git(repo, "status", "--porcelain")),
+        "pythonRuntimeVersion": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "backendContracts": _backend_contracts(repo, files),
+        "frontendCalls": _frontend_contract_calls(repo, files),
+        "sqlTables": _sql_table_inventory(repo, files),
+        "workflows": _workflow_inventory(repo, files),
+        "tests": _test_inventory(files),
+        "mcpComponents": _mcp_component_inventory(files),
+        "mirrorPairs": _mirror_inventory(repo, files),
+        "llmToolBoundaryCandidates": _llm_boundary_candidates(repo, files),
+        "parserFindings": ((product_map.get("logic") or {}).get("parserFindings") or [])[:_MAX_RESULT_ITEMS],
+        "knowledgeSummary": product_map.get("summary") or {},
+        "knowledgeTechnologies": sorted((product_map.get("knowledgeEvidence") or {}).keys()),
+        "truthBoundary": {
+            "staticEvidenceOnly": True,
+            "runtimeSuccessClaimed": False,
+            "liveDatabaseAccessed": False,
+            "vpsAccessed": False,
+            "requiredLiveTools": [
+                "postgres_canary",
+                "vector_database_canary",
+                "mcp_control_plane_status",
+                "vps_container_status",
+            ],
+        },
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload["snapshotSha256"] = hashlib.sha256(canonical).hexdigest()
+    return payload
+
+
+def _architecture_drift_report(repo: Path) -> dict[str, Any]:
+    snapshot = _architecture_snapshot(repo)
+    findings: list[dict[str, Any]] = []
+    backend = snapshot["backendContracts"]
+    for call in snapshot["frontendCalls"]:
+        path_matches = [item for item in backend if _contract_path_matches(call["path"], item["path"])]
+        if not path_matches:
+            findings.append({
+                "severity": "P1",
+                "family": "CONTRACT_DRIFT",
+                "status": "STATIC_CANDIDATE",
+                "what": f"{call['method']} {call['path']} has no statically discovered backend route",
+                "evidence": call,
+                "nextEvidence": "Inspect route prefixes, generated routes and live backend before fixing.",
+            })
+            continue
+        supported = sorted({method for item in path_matches for method in item["methods"]})
+        if call["method"] not in supported:
+            findings.append({
+                "severity": "P1",
+                "family": "CONTRACT_METHOD_DRIFT",
+                "status": "STATIC_CANDIDATE",
+                "what": f"{call['path']} exists but does not expose {call['method']} in static evidence",
+                "evidence": {"call": call, "backendMethods": supported, "backendRoutes": path_matches[:8]},
+                "nextEvidence": "Verify framework prefixes and the real route table before mutation.",
+            })
+    for workflow in snapshot["workflows"]:
+        if workflow.get("recognizedExtension") is False:
+            findings.append({
+                "severity": "P2",
+                "family": "CI_DEAD_CHECK",
+                "status": "STATIC_CANDIDATE",
+                "what": f"Workflow file has an unsupported extension: {workflow['path']}",
+                "evidence": workflow,
+            })
+        elif workflow.get("validYaml") is False:
+            findings.append({
+                "severity": "P0",
+                "family": "CI_DEAD_CHECK",
+                "status": "STATIC_CANDIDATE",
+                "what": f"Workflow cannot be parsed as a jobs-bearing YAML mapping: {workflow['path']}",
+                "evidence": workflow,
+                "nextEvidence": "Run the repository workflow contract and bind the result to the exact head SHA.",
+            })
+        elif workflow.get("parserAvailable") is False:
+            findings.append({
+                "severity": "P2",
+                "family": "CI_PARSER_UNAVAILABLE",
+                "status": "TOOL_LIMITATION",
+                "what": f"YAML parser unavailable for {workflow['path']}",
+                "evidence": workflow,
+            })
+    for item in snapshot["llmToolBoundaryCandidates"]:
+        findings.append({
+            "severity": "P1",
+            "family": "LLM_TOOL_BOUNDARY",
+            "status": "STATIC_CANDIDATE",
+            "what": f"Possible free-language interpretation in {item['file']}:{item['line']}",
+            "evidence": item,
+            "nextEvidence": "Review whether this is an explicitly marked offline fallback or structured enum handling.",
+        })
+    for item in snapshot["parserFindings"]:
+        findings.append({
+            "severity": "P1",
+            "family": item.get("classification") or "PYTHON_PARSE_FAILURE",
+            "status": "STATIC_CANDIDATE",
+            "what": f"Python parser could not parse {item['path']} at line {item.get('line', 0)}",
+            "evidence": item,
+            "nextEvidence": "Compare repository Python target version with the MCP interpreter before changing source.",
+        })
+    for pair in snapshot["mirrorPairs"]:
+        if pair.get("byteEqual") is False:
+            findings.append({
+                "severity": "P1",
+                "family": "CANONICAL_DEPLOYMENT_MIRROR_DRIFT",
+                "status": "STATIC_CANDIDATE",
+                "what": f"Mirrored backend files differ: {pair['source']} vs {pair['mirror']}",
+                "evidence": pair,
+                "nextEvidence": "Identify the canonical producer and run mirror contract tests before synchronization.",
+            })
+    severity_order = {"P0": 0, "P1": 1, "P2": 2}
+    findings.sort(key=lambda item: (severity_order.get(item["severity"], 9), item["family"], item["what"]))
+    counts = Counter(item["severity"] for item in findings)
+    return {
+        "schemaVersion": "sovereign.architecture-drift.v1",
+        "snapshotSha256": snapshot["snapshotSha256"],
+        "revision": snapshot["revision"],
+        "findingCount": len(findings),
+        "counts": {severity: counts.get(severity, 0) for severity in ("P0", "P1", "P2")},
+        "findings": findings[:_MAX_RESULT_ITEMS],
+        "truncated": len(findings) > _MAX_RESULT_ITEMS,
+        "persistedOutcome": None,
+        "mutationPerformed": False,
+        "truthNotice": "Static candidates are not runtime findings. Confirm each with bounded repository, CI, database or VPS evidence.",
+    }
+
+
+def _architecture_runtime_drift_evidence(repo: Path) -> dict[str, Any]:
+    snapshot = _architecture_snapshot(repo)
+    if _DATABASE is None:
+        return {
+            "ok": False,
+            "status": "POSTGRES_RUNTIME_NOT_REGISTERED",
+            "snapshotSha256": snapshot["snapshotSha256"],
+            "revision": snapshot["revision"],
+            "findings": [],
+            "mutationPerformed": False,
+            "rowDataReturned": False,
+            "secretValuesExposed": False,
+        }
+    try:
+        schema = _DATABASE.schema_inventory()
+        vector = _DATABASE.vector_canary()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "POSTGRES_RUNTIME_EVIDENCE_BLOCKED",
+            "snapshotSha256": snapshot["snapshotSha256"],
+            "revision": snapshot["revision"],
+            "blocker": type(exc).__name__,
+            "findings": [],
+            "mutationPerformed": False,
+            "rowDataReturned": False,
+            "secretValuesExposed": False,
+        }
+    repository_tables = {
+        (str(item.get("schema") or "public"), str(item.get("table") or ""))
+        for item in snapshot["sqlTables"]
+        if str(item.get("table") or "")
+    }
+    live_tables = {
+        (str(item.get("table_schema") or ""), str(item.get("table_name") or ""))
+        for item in (schema.get("tables") if isinstance(schema.get("tables"), list) else [])
+        if isinstance(item, dict)
+        and str(item.get("table_schema") or "")
+        and str(item.get("table_name") or "")
+    }
+    findings: list[dict[str, Any]] = []
+    for table_schema, table_name in sorted(repository_tables - live_tables):
+        findings.append({
+            "severity": "P1",
+            "family": "DB_DRIFT_MISSING_LIVE_TABLE",
+            "status": "RUNTIME_EVIDENCE",
+            "what": f"Migration-defined table is absent from live schema: {table_schema}.{table_name}",
+        })
+    for table_schema, table_name in sorted(live_tables - repository_tables):
+        findings.append({
+            "severity": "P2",
+            "family": "DB_DRIFT_UNMAPPED_LIVE_TABLE",
+            "status": "RUNTIME_EVIDENCE",
+            "what": f"Live table has no statically discovered CREATE TABLE migration: {table_schema}.{table_name}",
+            "nextEvidence": "Check bootstrap, extension, Supabase or historical migration ownership before changing schema.",
+        })
+    if "pgvector" in snapshot.get("knowledgeTechnologies", []) and not vector.get("ok"):
+        findings.append({
+            "severity": "P1",
+            "family": "VECTOR_RUNTIME_DRIFT",
+            "status": "RUNTIME_EVIDENCE",
+            "what": "Repository references pgvector but the live vector canary did not verify the extension.",
+        })
+    severity_order = {"P0": 0, "P1": 1, "P2": 2}
+    findings.sort(key=lambda item: (severity_order.get(item["severity"], 9), item["family"], item["what"]))
+    return {
+        "ok": bool(schema.get("ok")),
+        "status": "ARCHITECTURE_RUNTIME_DRIFT_EVIDENCE_READY" if schema.get("ok") else "ARCHITECTURE_RUNTIME_DRIFT_EVIDENCE_BLOCKED",
+        "snapshotSha256": snapshot["snapshotSha256"],
+        "revision": snapshot["revision"],
+        "repositoryMigrationTableCount": len(repository_tables),
+        "liveTableCount": len(live_tables),
+        "schemaInventory": schema,
+        "vectorEvidence": vector,
+        "findings": findings[:_MAX_RESULT_ITEMS],
+        "truncated": len(findings) > _MAX_RESULT_ITEMS,
+        "mutationPerformed": False,
+        "rowDataReturned": False,
+        "secretValuesExposed": False,
+        "truthNotice": "Live schema names are runtime evidence; table ownership and intended migrations still require review.",
+    }
+
+
 def _scan(repo: Path, *, include_logic: bool) -> dict[str, Any]:
     files = _tracked_files(repo)
     mapped = 0
@@ -264,6 +851,7 @@ def _scan(repo: Path, *, include_logic: bool) -> dict[str, Any]:
     sensitive_marker_count = 0
     routes: list[dict[str, Any]] = []
     symbols: list[dict[str, Any]] = []
+    parser_findings: list[dict[str, Any]] = []
     import_edges: list[dict[str, Any]] = []
     call_candidates: list[tuple[str, str]] = []
     symbol_locations: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -320,12 +908,15 @@ def _scan(repo: Path, *, include_logic: bool) -> dict[str, Any]:
         for route in file_routes:
             if len(routes) < _MAX_RESULT_ITEMS:
                 routes.append({"file": relative, **route})
+        parse_finding: dict[str, Any] | None = None
         if language == "python":
-            file_symbols, imports, calls = _python_symbols(text)
+            file_symbols, imports, calls, parse_finding = _python_symbols(text)
         elif language.startswith(("typescript", "javascript")):
             file_symbols, imports, calls = _js_symbols(text)
         else:
             file_symbols, imports, calls = [], [], []
+        if parse_finding is not None and len(parser_findings) < _MAX_RESULT_ITEMS:
+            parser_findings.append({"path": relative, **parse_finding})
         for symbol in file_symbols:
             symbol_locations[symbol["name"]].append({"file": relative, "line": symbol["line"]})
             if len(symbols) < _MAX_RESULT_ITEMS:
@@ -405,6 +996,7 @@ def _scan(repo: Path, *, include_logic: bool) -> dict[str, Any]:
             "importEdges": import_edges,
             "uniqueCallEdges": call_edges,
             "packageScripts": package_scripts,
+            "parserFindings": parser_findings,
         } if include_logic else None),
         "limitations": [
             "Static import, symbol and route evidence is not runtime proof.",
@@ -593,8 +1185,11 @@ def repository_skill_tool_inventory() -> dict[str, Any]:
             {"name": "repository_change_impact_manifest", "sourceSkill": "sovereign-truth-chain-operator", "mutates": False},
             {"name": "repository_learning_records_normalize_preview", "sourceSkill": "forge-repository-knowledge", "mutates": False},
             {"name": "repository_release_hunt_manifest", "sourceSkill": "sovereign-release-hunter", "mutates": False},
+            {"name": "repository_architecture_snapshot", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
+            {"name": "repository_architecture_drift_report", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
+            {"name": "repository_architecture_runtime_drift_evidence", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
         ],
-        "truthBoundary": "Static maps and ranked candidates are evidence inputs, not runtime success or release proof.",
+        "truthBoundary": "Static maps and ranked candidates are not runtime success. The runtime-drift tool reads schema metadata and vector canaries only; it never returns table rows or mutates PostgreSQL.",
         "databaseAccessed": False,
         "secretsReturned": False,
     }
@@ -618,6 +1213,21 @@ def repository_change_impact_manifest(
 ) -> dict[str, Any]:
     """Build a deterministic cross-layer impact and relevant-gate manifest for changed paths."""
     return _impact(_repo(workspace_id), base=base, head=head, paths=paths)
+
+
+def repository_architecture_snapshot(workspace_id: str) -> dict[str, Any]:
+    """Capture one deterministic static architecture snapshot for an isolated workspace."""
+    return _architecture_snapshot(_repo(workspace_id))
+
+
+def repository_architecture_drift_report(workspace_id: str) -> dict[str, Any]:
+    """Find bounded static contract, workflow, parser, mirror and LLM/tool-boundary drift candidates."""
+    return _architecture_drift_report(_repo(workspace_id))
+
+
+def repository_architecture_runtime_drift_evidence(workspace_id: str) -> dict[str, Any]:
+    """Compare repository migration metadata with bounded live PostgreSQL and vector evidence."""
+    return _architecture_runtime_drift_evidence(_repo(workspace_id))
 
 
 def repository_learning_records_normalize_preview(
@@ -701,9 +1311,10 @@ def repository_release_hunt_manifest(
     }
 
 
-def register(mcp: Any, runtime: Any) -> None:
-    global _RUNTIME, _REGISTERED
+def register(mcp: Any, runtime: Any, database: Any = None) -> None:
+    global _RUNTIME, _DATABASE, _REGISTERED
     _RUNTIME = runtime
+    _DATABASE = database
     if _REGISTERED:
         return
     for tool in (
@@ -711,6 +1322,9 @@ def register(mcp: Any, runtime: Any) -> None:
         repository_knowledge_surface_scan,
         repository_product_logic_map,
         repository_change_impact_manifest,
+        repository_architecture_snapshot,
+        repository_architecture_drift_report,
+        repository_architecture_runtime_drift_evidence,
         repository_learning_records_normalize_preview,
         repository_release_hunt_manifest,
     ):

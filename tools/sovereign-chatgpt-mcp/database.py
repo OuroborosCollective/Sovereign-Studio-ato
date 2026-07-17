@@ -66,6 +66,40 @@ class DatabaseRuntime:
         finally:
             conn.close()
 
+    def schema_inventory(self) -> dict[str, Any]:
+        """Read bounded non-system table metadata without returning row data."""
+        conn = self._connection("POSTGRES")
+        try:
+            conn.set_session(readonly=True, autocommit=False)
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT current_database() AS database, current_user AS user")
+                identity = dict(cur.fetchone() or {})
+                cur.execute(
+                    """SELECT table_schema, table_name
+                       FROM information_schema.tables
+                       WHERE table_type = 'BASE TABLE'
+                         AND table_schema NOT IN ('pg_catalog', 'information_schema')
+                       ORDER BY table_schema, table_name
+                       LIMIT 1001"""
+                )
+                rows = [dict(row) for row in cur.fetchall()]
+            conn.rollback()
+            truncated = len(rows) > 1000
+            tables = rows[:1000]
+            return {
+                "ok": True,
+                "status": "POSTGRES_SCHEMA_INVENTORY",
+                "database": str(identity.get("database") or "")[:160],
+                "user": str(identity.get("user") or "")[:160],
+                "tableCount": len(tables),
+                "tables": tables,
+                "truncated": truncated,
+                "rowDataReturned": False,
+                "secretValuesExposed": False,
+            }
+        finally:
+            conn.close()
+
     def vector_canary(self) -> dict[str, Any]:
         conn = self._connection("POSTGRES")
         try:

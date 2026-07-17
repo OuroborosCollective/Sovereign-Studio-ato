@@ -83,6 +83,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     compose = (ROOT / "docker-compose.yml").read_text("utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    requirements = (ROOT / "requirements.txt").read_text("utf-8")
     launcher = (ROOT / "launcher.py").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
@@ -99,10 +100,11 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'android_hardening.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
+    assert 'PyYAML==6.0.3' in requirements
     assert 'openai_project_access_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'import repository_skill_tools' in launcher
-    assert 'repository_skill_tools.register(server.mcp, server.runtime)' in launcher
+    assert 'repository_skill_tools.register(server.mcp, server.runtime, server.database)' in launcher
     assert 'import openai_project_access_tools' in launcher
     assert 'openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
@@ -140,8 +142,12 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'INSTALL_STAGE="verify_runtime_import_contracts"' in installer
     assert 'callable(repository_skill_tools.repository_knowledge_surface_scan)' in installer
     assert 'callable(repository_skill_tools.repository_release_hunt_manifest)' in installer
+    assert 'callable(repository_skill_tools.repository_architecture_snapshot)' in installer
+    assert 'callable(repository_skill_tools.repository_architecture_drift_report)' in installer
+    assert 'callable(repository_skill_tools.repository_architecture_runtime_drift_evidence)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_plan)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_runtime_evidence)' in installer
+    assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
     assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
     assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer
