@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { describeFreeFirstPlan, freeFirstProviderRoute } from './freeFirstPlan';
 
 describe('freeFirstPlan', () => {
-  it('keeps no-key providers first', () => {
-    expect(freeFirstProviderRoute[0]).toBe('mlvoca');
-    expect(freeFirstProviderRoute[1]).toBe('pollinations');
+  it('keeps the authenticated backend as the only online route', () => {
+    expect(freeFirstProviderRoute).toEqual(['optional-user-keys']);
   });
 
   it('does not require a key at boot', () => {

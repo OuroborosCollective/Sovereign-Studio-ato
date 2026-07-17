@@ -36,8 +36,7 @@ env:
   ANDROID_BUILD_TOOLS: 35.0.0
   KEYSTORE_FILE: android/app/keystore/release.jks
   VALIDATION_PROFILE: ${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }}
-  VITE_SOVEREIGN_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
-  VITE_SOVEREIGN_LLM_MODEL: deepseek-r1
+  VITE_ADMIN_API_BASE: https://sovereign-backend.arelorian.de
 
 jobs:
   build:

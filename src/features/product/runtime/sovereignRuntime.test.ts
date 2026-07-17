@@ -22,17 +22,14 @@ const cards: Card[] = [
 ];
 
 describe('sovereignRuntime', () => {
-  it('keeps the real free-first provider order before fallbacks', () => {
-    expect(SOVEREIGN_LLM_ROUTES.slice(0, 7).map((route) => route.id)).toEqual([
-      'mlvoca',
-      'pollinations',
-      'groq',
-      'huggingface',
-      'together',
-      'openrouter',
-      'optional-user-keys',
+  it('keeps the Sovereign Backend as the only online provider route', () => {
+    expect(SOVEREIGN_LLM_ROUTES).toEqual([
+      expect.objectContaining({
+        id: 'optional-user-keys',
+        endpoint: '/api/llm/chat',
+        requiresApiKey: false,
+      }),
     ]);
-    expect(SOVEREIGN_LLM_ROUTES.slice(7).map((route) => route.id)).toContain('ovh-anonymous-code-chat');
   });
 
   it('detects repository architecture from real tree paths', () => {
@@ -65,7 +62,7 @@ describe('sovereignRuntime', () => {
         '.github/workflows/ci.yml',
         'android/app/build.gradle',
       ],
-      existingProviderOrder: ['mlvoca', 'pollinations', 'optional-user-keys'],
+      existingProviderOrder: ['optional-user-keys'],
     });
 
     runtimeAssertSovereignPackage(pkg);

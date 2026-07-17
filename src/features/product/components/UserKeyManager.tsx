@@ -16,71 +16,7 @@ export interface LlmProviderInfo {
   icon: string;
 }
 
-export const LLM_PROVIDERS: LlmProviderInfo[] = [
-  {
-    id: 'pollinations',
-    name: 'Pollinations AI',
-    description: 'Kostenlose Basis-Nutzung, optional mit API-Key für Priority-Access',
-    docsUrl: 'https://pollinations.ai/dashboard',
-    keyPlaceholder: 'pollinations_xxx...',
-    freeTier: 'Unbegrenzte kostenlose Anfragen',
-    icon: '🌸',
-  },
-  {
-    id: 'mlvoca',
-    name: 'MLVOCA',
-    description: 'Komplett kostenlos, keine Anmeldung erforderlich',
-    docsUrl: 'https://mlvoca.com',
-    keyPlaceholder: 'Nicht erforderlich',
-    freeTier: 'Immer kostenlos',
-    icon: '🚀',
-  },
-  {
-    id: 'groq',
-    name: 'Groq',
-    description: 'Schnelle Inference mit kostenlosem Kontingent',
-    docsUrl: 'https://console.groq.com/keys',
-    keyPlaceholder: 'gsk_xxx...',
-    freeTier: '14.000 Anfragen/Minute gratis',
-    icon: '⚡',
-  },
-  {
-    id: 'huggingface',
-    name: 'HuggingFace',
-    description: 'Inference API mit gratis Kontingent',
-    docsUrl: 'https://huggingface.co/settings/tokens',
-    keyPlaceholder: 'hf_xxx...',
-    freeTier: 'Gratis-Tier verfügbar',
-    icon: '🤗',
-  },
-  {
-    id: 'together',
-    name: 'Together AI',
-    description: 'Open Source Models, Pay-per-Use',
-    docsUrl: 'https://api.together.xyz/settings/api-keys',
-    keyPlaceholder: 'together_xxx...',
-    freeTier: '$5 Gratis-Credit bei Anmeldung',
-    icon: '🎯',
-  },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    description: 'Zugriff auf 100+ Models über eine API',
-    docsUrl: 'https://openrouter.ai/keys',
-    keyPlaceholder: 'sk-or-v1-xxx...',
-    freeTier: 'Kostenlose Models verfügbar',
-    icon: '🛤️',
-  },
-  {
-    id: 'gemini',
-    name: 'Google Gemini',
-    description: 'Google\'s leistungsstarke AI Modelle',
-    docsUrl: 'https://aistudio.google.com/app/apikey',
-    keyPlaceholder: 'AIzaxxx...',
-    freeTier: '15 Anfragen/Minute, 1500/Tag gratis',
-    icon: '✨',
-  },
-];
+export const LLM_PROVIDERS: LlmProviderInfo[] = [];
 
 interface UserKeyManagerProps {
   onKeysChange?: (keys: UserApiKeys) => void;
@@ -179,7 +115,7 @@ export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
           <h3>🔐 API-Keys verwalten</h3>
           <p className="key-manager-description">
             Provider-Zugangsdaten werden nicht in Browser, WebView oder APK angenommen.
-            Aktive Routen und Schlüssel werden ausschließlich durch den Backend-Proxy bestätigt.
+            Neue Provider werden ausschließlich unter /admin → LLM Routes vorbereitet und über die geschützte Owner-Eingabe an das private LiteLLM übergeben.
           </p>
         </div>
 
@@ -261,7 +197,7 @@ export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
             onClick={handleSaveKeys}
             className="btn-save"
           >
-            🔒 Browser-Key-Speicherung deaktiviert
+            🔒 Provider nur im Admin-Backend verwalten
           </button>
         </div>
 

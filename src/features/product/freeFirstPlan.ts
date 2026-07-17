@@ -1,10 +1,4 @@
 export const freeFirstProviderRoute = [
-  'mlvoca',
-  'pollinations',
-  'groq',
-  'huggingface',
-  'together',
-  'openrouter',
   'optional-user-keys',
 ] as const;
 
@@ -14,7 +8,7 @@ export const sovereignWorkflowGuarantees = [
   'review-before-push',
   'auto-fix-loop',
   'android-webview-fallback',
-  'llm-revolver-before-local-safe',
+  'backend-litellm-before-local-safe',
 ] as const;
 
 export function describeFreeFirstPlan() {

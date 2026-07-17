@@ -1,15 +1,5 @@
 import type { LlmAdapter } from './llmAdapter';
 import { createPrimaryBridgeAdapter } from './adapters/primaryBridgeAdapter';
-import { createMlvocaAdapter } from './adapters/mlvocaAdapter';
-import { createPollinationsAdapter } from './adapters/pollinationsAdapter';
-import { createGroqAdapter } from './adapters/groqAdapter';
-import { createHuggingFaceAdapter } from './adapters/huggingfaceAdapter';
-import { createTogetherAdapter } from './adapters/togetherAdapter';
-import { createOpenRouterAdapter } from './adapters/openrouterAdapter';
-import { createGeminiAdapter } from './adapters/geminiAdapter';
-import { createOvhAnonymousCodeChatAdapter, createOvhAnonymousFixedModelAdapter } from './adapters/ovhAnonymousAdapter';
-import { createHfPublicSpaceAdapter } from './adapters/hfPublicSpaceAdapter';
-import { createPuterJsAdapter } from './adapters/puterJsAdapter';
 import { createLocalSafeAdapter } from './adapters/localSafeAdapter';
 import { resolvePrimaryBridgeConfig } from './primaryBridgeConfig';
 import type { Card, ProjectSettings } from '../types';
@@ -37,31 +27,13 @@ export function buildSovereignLlmAdapters(options: SovereignLlmAdapterOptions): 
 
   if (bridgeConfig.ready) {
     adapters.push(createPrimaryBridgeAdapter({
-      proxyUrl: bridgeConfig.proxyUrl,
+      proxyUrl: bridgeConfig.backendBaseUrl,
       model: bridgeConfig.model,
     }));
   }
 
-  adapters.push(
-    createMlvocaAdapter(),
-    createPollinationsAdapter(options.pollinationsApiKey),
-  );
-
-  if (options.groqApiKey) adapters.push(createGroqAdapter(options.groqApiKey));
-  if (options.huggingfaceApiKey) adapters.push(createHuggingFaceAdapter(options.huggingfaceApiKey));
-  if (options.togetherApiKey) adapters.push(createTogetherAdapter(options.togetherApiKey));
-  if (options.openrouterApiKey) adapters.push(createOpenRouterAdapter(options.openrouterApiKey));
-  if (options.geminiApiKey) adapters.push(createGeminiAdapter(options.geminiApiKey));
-
-  // Emergency keyless fallbacks — always present, silently activate when all
-  // higher-priority providers are exhausted or unavailable.
-  adapters.push(
-    createOvhAnonymousCodeChatAdapter(),
-    createOvhAnonymousFixedModelAdapter(),
-    createHfPublicSpaceAdapter(),
-    createPuterJsAdapter(),
-  );
-
+  // The client has exactly one online model path. Provider credentials,
+  // routing, fallback and billing are owned by the backend and private LiteLLM.
   adapters.push(createLocalSafeAdapter({
     cards: options.cards,
     settings: options.settings,

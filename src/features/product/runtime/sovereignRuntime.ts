@@ -59,21 +59,18 @@ export interface BuildImplementationInput {
 }
 
 const EXISTING_ROUTE_INFO: Record<string, LlmRouteDescriptor> = {
-  mlvoca: { id: 'mlvoca', label: 'Existing Mlvoca route', status: 'primary', requiresApiKey: false, requiresUserOptIn: false },
-  pollinations: { id: 'pollinations', label: 'Existing Pollinations route', status: 'enabled', requiresApiKey: false, requiresUserOptIn: false },
-  groq: { id: 'groq', label: 'Groq route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
-  huggingface: { id: 'huggingface', label: 'HuggingFace route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
-  together: { id: 'together', label: 'Together AI route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
-  openrouter: { id: 'openrouter', label: 'OpenRouter route', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
-  'optional-user-keys': { id: 'optional-user-keys', label: 'Optional user-key routes', status: 'enabled', requiresApiKey: true, requiresUserOptIn: false },
+  'optional-user-keys': {
+    id: 'optional-user-keys',
+    label: 'Sovereign Backend · private LiteLLM',
+    status: 'primary',
+    requiresApiKey: false,
+    requiresUserOptIn: false,
+    endpoint: '/api/llm/chat',
+  },
 };
 
 export const SOVEREIGN_LLM_ROUTES: LlmRouteDescriptor[] = [
   ...freeFirstProviderRoute.map((id) => EXISTING_ROUTE_INFO[id]),
-  { id: 'ovh-anonymous-code-chat', label: 'OVHcloud anonymous code_chat@latest', status: 'fallback', requiresApiKey: false, requiresUserOptIn: false, endpoint: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions' },
-  { id: 'ovh-anonymous-fixed-model', label: 'OVHcloud anonymous pinned model', status: 'fallback', requiresApiKey: false, requiresUserOptIn: false, endpoint: 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions' },
-  { id: 'puter-js-opt-in', label: 'Puter.js opt-in route', status: 'experimental', requiresApiKey: false, requiresUserOptIn: true },
-  { id: 'hf-curated-public-space', label: 'Curated Hugging Face public Space', status: 'experimental', requiresApiKey: false, requiresUserOptIn: true },
 ];
 
 function hasPath(paths: string[], predicate: (path: string) => boolean): boolean {
@@ -275,6 +272,6 @@ export function runtimeAssertSovereignPackage(pkg: SovereignImplementationPackag
   if (!pkg.files.length) throw new Error('Package must contain real files.');
   const invalid = pkg.files.find((file) => !file.path || !file.content.trim());
   if (invalid) throw new Error(`Invalid generated file: ${invalid.path || '<missing-path>'}`);
-  if (pkg.providerRoutes[0]?.id !== 'mlvoca') throw new Error('Free-first route order must start with mlvoca.');
+  if (pkg.providerRoutes[0]?.id !== 'optional-user-keys') throw new Error('Online route order must start with the Sovereign Backend.');
   assertSovereignBrainResult(pkg.brain);
 }

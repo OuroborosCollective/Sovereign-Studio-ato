@@ -33,19 +33,19 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe('devChatWorkerBridge', () => {
-  it('keeps the approved worker routes and model aliases', () => {
-    expect(SOVEREIGN_WORKER_CHAT).toContain('/v1/chat/completions');
-    expect(SOVEREIGN_WORKER_KV).toContain('/kv');
-    expect(SOVEREIGN_WORKER_HEALTH).toContain('/health');
-    // Models updated 2026-07-02: cerebras routes removed (no Worker route),
-    // llama-3-8b deprecated. Active: deepseek-r1, mistral-7b, llama-3.1-8b.
-    expect(DEV_CHAT_WORKER_DEFAULT_MODEL).toBe('deepseek-r1');
-    expect(DEV_CHAT_WORKER_FALLBACK_MODEL).toBe('llama-3.1-8b');
-    expect(DEV_CHAT_WORKER_MODELS).toHaveLength(3);
-    // Legacy aliases (dead models) normalise to the new default
+  it('keeps only backend LiteLLM routes and abstract aliases', () => {
+    expect(SOVEREIGN_WORKER_CHAT).toContain('/api/llm/chat');
+    expect(SOVEREIGN_WORKER_KV).toContain('/api/auth/me');
+    expect(SOVEREIGN_WORKER_HEALTH).toContain('/health/ready');
+    expect(DEV_CHAT_WORKER_DEFAULT_MODEL).toBe('sovereign-fast');
+    expect(DEV_CHAT_WORKER_FALLBACK_MODEL).toBe('sovereign-balanced');
+    expect(DEV_CHAT_WORKER_MODELS.map((model) => model.id)).toEqual([
+      'sovereign-fast',
+      'sovereign-balanced',
+    ]);
     expect(normalizeDevChatWorkerModel('llama-3-8b')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
     expect(normalizeDevChatWorkerModel('cerebras/gpt-oss-120b')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
-    expect(normalizeDevChatWorkerModel('cerebras/zai-glm-4.7')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
+    expect(normalizeDevChatWorkerModel('deepseek-r1')).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
   });
 
   it('parses GitHub URLs typed into the chat', () => {
@@ -330,7 +330,7 @@ describe('streamDevChatWorkerReply', () => {
     vi.stubGlobal('fetch', vi.fn(async () => sseResponse(['Hallo', ' Welt'])));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Sag Hallo' }] })) chunks.push(chunk);
-    expect(chunks).toEqual(['Hallo', ' Welt']);
+    expect(chunks).toEqual(['Hallo Welt']);
   });
 
   it('does not emit malformed non-string SSE metadata', async () => {
@@ -355,14 +355,19 @@ describe('streamDevChatWorkerReply', () => {
     }, onMetadata)) chunks.push(chunk);
 
     expect(chunks).toEqual(['Valid']);
-    expect(onMetadata).not.toHaveBeenCalled();
+    expect(onMetadata).toHaveBeenCalledWith({
+      fallbackUsed: false,
+      preferredModel: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      actualModel: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      fallbackReason: undefined,
+    });
   });
 
   it('terminates cleanly on DONE', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => sseResponse(['Teil 1', 'Teil 2'])));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Test' }] })) chunks.push(chunk);
-    expect(chunks).toEqual(['Teil 1', 'Teil 2']);
+    expect(chunks).toEqual(['Teil 1Teil 2']);
   });
 
   it('skips invalid JSON lines without crashing', async () => {
@@ -370,7 +375,7 @@ describe('streamDevChatWorkerReply', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Test' }] })) chunks.push(chunk);
-    expect(chunks).toEqual(['Valid', 'Auch valid']);
+    expect(chunks).toEqual(['ValidAuch valid']);
   });
 
   it('reads JSON worker replies when streaming is unavailable', async () => {

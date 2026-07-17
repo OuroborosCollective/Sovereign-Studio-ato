@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Shield, Sparkles, Key, ExternalLink, X, Eye, EyeOff, CircleX } from 'lucide-react';
 import type { ProjectSettings } from '../types';
 import { defaultSettings } from '../constants';
-import { LLM_PROVIDERS, type UserApiKeys } from './UserKeyManager';
+import type { UserApiKeys } from './UserKeyManager';
 
 interface SettingsModalProps {
   repoUrl: string;
@@ -18,24 +18,9 @@ interface SettingsModalProps {
   setUserApiKeys: (keys: UserApiKeys) => void;
 }
 
-type UserApiKeyId = keyof UserApiKeys;
-
-const USER_API_KEY_IDS: ReadonlySet<string> = new Set<UserApiKeyId>([
-  'pollinations',
-  'groq',
-  'huggingface',
-  'together',
-  'openrouter',
-  'gemini',
-]);
-
-function isUserApiKeyId(providerId: string): providerId is UserApiKeyId {
-  return USER_API_KEY_IDS.has(providerId);
-}
-
 export const SettingsModal: React.FC<SettingsModalProps> = ({
-  repoUrl, setRepoUrl, accessKey, setAccessKey, geminiKey, setGeminiKey,
-  settings = defaultSettings, setSettings = () => undefined, setShowSettings, userApiKeys, setUserApiKeys
+  repoUrl, setRepoUrl, accessKey, setAccessKey,
+  settings = defaultSettings, setSettings = () => undefined, setShowSettings
 }) => {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
@@ -49,24 +34,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setShowSettings]);
 
-  const handleKeyChange = (providerId: string, value: string) => {
-    if (!isUserApiKeyId(providerId)) return;
-    setUserApiKeys({ ...userApiKeys, [providerId]: value || undefined });
-  };
-
   const toggleShowKey = (providerId: string) => {
     setShowKeys((prev) => ({ ...prev, [providerId]: !prev[providerId] }));
   };
 
-  const openProviderDocs = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const getProviderKey = (providerId: string): string => {
-    return isUserApiKeyId(providerId) ? userApiKeys[providerId] || '' : '';
-  };
-
-  const activeProviders = Object.values(userApiKeys).filter(v => v).length;
+  // Legacy provider cards render from an empty collection. These no-op helpers
+  // keep old JSX type-safe until that presentational block is deleted entirely.
+  const openProviderDocs = (_url: string) => undefined;
+  const getProviderKey = (_providerId: string): string => '';
+  const handleKeyChange = (_providerId: string, _value: string) => undefined;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -90,20 +66,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-black text-stone-500 uppercase flex items-center gap-2">
                 <Key size={14}/> LLM API-Keys
-                {activeProviders > 0 && (
-                  <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px]">
-                    {activeProviders} aktiv
-                  </span>
-                )}
+
               </h4>
             </div>
 
             <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 text-[11px] text-emerald-900">
-              🌐 Kostenlose Routen (mlvoca, pollinations) funktionieren ohne Keys. Optionale Keys ermöglichen Backup bei Limit.
+              🔐 Online-Modelle laufen ausschließlich über das Sovereign Backend und das private LiteLLM. Provider und Preise werden unter /admin → LLM Routes verwaltet.
             </div>
 
-            <div className="space-y-3">
-              {LLM_PROVIDERS.filter(p => p.id !== 'mlvoca').map((provider) => (
+            <div className="hidden" aria-hidden="true">
+              {([] as Array<{ id: string; icon: string; name: string; docsUrl: string; keyPlaceholder: string; freeTier: string }>).map((provider) => (
                 <div key={provider.id} className="flex items-start gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
                   <span className="text-xl mt-0.5">{provider.icon}</span>
                   <div className="flex-1 min-w-0">
@@ -217,22 +189,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Gemini Key (optional)</label>
+              <div className="hidden" aria-hidden="true">
+                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Legacy Provider Key deaktiviert</label>
                 <div className="relative">
                   <input
                     type={showKeys['gemini'] ? 'text' : 'password'}
-                    value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
+                    value=""
+                    disabled
+                    readOnly
                     className="w-full p-2 pr-16 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="leer lassen ist ok"
                     aria-label="Gemini API-Key"
                   />
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                    {geminiKey && (
+                    {false && (
                       <button
                         type="button"
-                        onClick={() => setGeminiKey('')}
+                        onClick={() => undefined}
                         className="text-stone-400 hover:text-stone-600 p-1"
                         aria-label="Key löschen"
                         title="Key löschen"

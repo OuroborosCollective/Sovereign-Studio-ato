@@ -31,6 +31,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 8192,
         "kind": "credential",
     },
+    "litellm_provider_key": {
+        "label": "Einmaliger Fremdprovider-Zugang für LiteLLM",
+        "fieldLabel": "Provider API-Key",
+        "path": "/opt/sovereign-owner-managed/litellm_provider_key.txt",
+        "maxBytes": 8192,
+        "kind": "credential",
+    },
 }
 SENSITIVE_COMMENT_PATTERNS = (
     re.compile(r"\b(?:ghp_|github_pat_|sk-proj-|Bearer\s+)[A-Za-z0-9_./+=-]{8,}", re.IGNORECASE),
@@ -51,6 +58,7 @@ def _root() -> Path:
 def _target_map() -> dict[str, dict[str, Any]]:
     targets = {key: dict(value) for key, value in DEFAULT_TARGETS.items()}
     targets["openai_api_key"]["path"] = str(_root() / "openai_api_key.txt")
+    targets["litellm_provider_key"]["path"] = str(_root() / "litellm_provider_key.txt")
     configured = os.getenv("SOVEREIGN_OWNER_INPUT_TARGETS_JSON", "").strip()
     if configured:
         parsed = json.loads(configured)

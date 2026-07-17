@@ -62,7 +62,7 @@ export class SettingsErrorBoundary extends React.Component<SettingsErrorBoundary
           </div>
           
           <p className="text-sm text-red-600 mb-4">
-            Es ist ein Fehler aufgetreten. Deine API-Keys wurden nicht gespeichert.
+            Es ist ein Fehler aufgetreten. Provider-Zugänge werden grundsätzlich nicht in dieser Oberfläche gespeichert.
           </p>
 
           <details className="mb-4 p-3 bg-red-100 rounded-lg">
@@ -94,8 +94,7 @@ export class SettingsErrorBoundary extends React.Component<SettingsErrorBoundary
 
           <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
             <p className="text-sm text-emerald-700">
-              <strong>💡 Hinweis:</strong> Kostenlose Provider (mlvoca, pollinations) 
-              funktionieren weiterhin ohne API-Keys.
+              <strong>💡 Hinweis:</strong> Online-Modelle laufen ausschließlich über das Sovereign Backend und das private LiteLLM.
             </p>
           </div>
         </div>

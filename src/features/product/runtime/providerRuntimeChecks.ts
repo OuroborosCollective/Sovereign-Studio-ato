@@ -1,5 +1,5 @@
 import type { UserApiKeys } from './userApiKeysContract';
-import { validateUserApiKeys, getValidatedKeys } from './apiKeyValidation';
+
 
 export type LlmProviderStatus =
   | 'free_available'
@@ -25,24 +25,12 @@ export interface ProviderRuntimeReport {
 }
 
 const PROVIDER_IDS = [
-  'mlvoca',
-  'pollinations',
-  'groq',
-  'huggingface',
-  'together',
-  'openrouter',
-  'gemini',
+  'optional-user-keys',
   'local-safe',
 ] as const;
 
 const PROVIDER_PRIORITIES: Record<string, number> = {
-  mlvoca: 1,
-  pollinations: 2,
-  groq: 3,
-  huggingface: 4,
-  together: 5,
-  openrouter: 6,
-  gemini: 7,
+  'optional-user-keys': 1,
   'local-safe': 999,
 };
 
@@ -50,57 +38,30 @@ function byPriority(a: string, b: string): number {
   return (PROVIDER_PRIORITIES[a] ?? 100) - (PROVIDER_PRIORITIES[b] ?? 100);
 }
 
-export function getProviderStatus(providerId: string, keys: UserApiKeys): ProviderStatus {
-  const key = keys[providerId as keyof UserApiKeys];
+export function getProviderStatus(providerId: string, _keys: UserApiKeys): ProviderStatus {
   const priority = PROVIDER_PRIORITIES[providerId] ?? 100;
-
+  if (providerId === 'optional-user-keys') {
+    return {
+      providerId,
+      status: 'free_available',
+      label: 'Sovereign Backend · private LiteLLM',
+      priority,
+      isAvailable: true,
+    };
+  }
   if (providerId === 'local-safe') {
     return {
       providerId,
       status: 'free_available',
-      label: 'local-safe (Fallback)',
+      label: 'local-safe (analysis only)',
       priority,
       isAvailable: true,
     };
   }
-
-  if (!key || key.trim() === '') {
-    if (providerId === 'mlvoca' || providerId === 'pollinations') {
-      return {
-        providerId,
-        status: 'free_available',
-        label: `${providerId} (Free)`,
-        priority,
-        isAvailable: true,
-      };
-    }
-
-    return {
-      providerId,
-      status: 'not_configured',
-      label: `${providerId} (No key)`,
-      priority,
-      isAvailable: false,
-    };
-  }
-
-  const validation = validateUserApiKeys({ ...keys, [providerId]: key });
-  const providerValidation = validation.validations.find((item) => item.providerId === providerId);
-
-  if (providerValidation?.isValid) {
-    return {
-      providerId,
-      status: 'user_key_available',
-      label: `${providerId} (User Key)`,
-      priority,
-      isAvailable: true,
-    };
-  }
-
   return {
     providerId,
-    status: 'user_key_invalid',
-    label: `${providerId} (Invalid Key)`,
+    status: 'not_configured',
+    label: `${providerId} (server-managed only)`,
     priority,
     isAvailable: false,
   };
@@ -109,7 +70,7 @@ export function getProviderStatus(providerId: string, keys: UserApiKeys): Provid
 export function getProviderRuntimeReport(keys: UserApiKeys): ProviderRuntimeReport {
   const providers = PROVIDER_IDS.map((providerId) => getProviderStatus(providerId, keys));
   const freeProviders = providers
-    .filter((provider) => provider.status === 'free_available' && provider.providerId !== 'local-safe')
+    .filter((provider) => provider.providerId === 'optional-user-keys')
     .map((provider) => provider.providerId)
     .sort(byPriority);
   const validUserKeyProviders = providers
@@ -143,13 +104,10 @@ export function getSafeRuntimeKeys(keys: UserApiKeys): {
   isSecure: boolean;
 } {
   const report = getProviderRuntimeReport(keys);
-  const safeKeys = getValidatedKeys(keys);
-  const hasInvalidKeys = report.invalidUserKeyProviders.length > 0;
-
   return {
-    keys: safeKeys,
+    keys: {},
     report,
-    isSecure: !hasInvalidKeys,
+    isSecure: true,
   };
 }
 

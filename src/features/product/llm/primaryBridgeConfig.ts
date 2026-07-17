@@ -1,9 +1,4 @@
-const ACCOUNT_ID = '4a82319180f1f1cee60d85a971c3041d';
-const ROUTE_NAME = 'gatter';
-const HOST = ['gate', 'way.ai.', 'cloud', 'flare.com'].join('');
-const DEFAULT_URL = `https://${HOST}/v1/${ACCOUNT_ID}/${ROUTE_NAME}/compat/chat/completions`;
-const DEFAULT_PROXY_URL = 'https://sovereign-llm-proxy.projectouroboroscollective.workers.dev';
-const DEFAULT_MODEL = 'deepseek-r1';
+const DEFAULT_BACKEND_URL = 'https://sovereign-backend.arelorian.de';
 
 type ImportMetaWithEnv = ImportMeta & { env?: Record<string, string | undefined> };
 
@@ -29,41 +24,39 @@ export interface PrimaryBridgeConfig {
   proxyUrl: string;
   proxyKey: string;
   model: string;
+  backendBaseUrl: string;
+  routesUrl: string;
+  chatUrl: string;
   ready: boolean;
   reason: string;
 }
 
 export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model?: string; proxyKey?: string } = {}): PrimaryBridgeConfig {
-  const proxyUrl = overrides.proxyUrl?.trim()
-    || readWindowOverride('__SOVEREIGN_LLM_PROXY_URL__')
-    || readBuildEnv('VITE_SOVEREIGN_LLM_PROXY_URL')
-    || DEFAULT_PROXY_URL;
-  const proxyKey = overrides.proxyKey?.trim()
-    || readWindowOverride('__SOVEREIGN_LLM_PROXY_KEY__')
-    || readBuildEnv('VITE_SOVEREIGN_LLM_PROXY_KEY')
-    || '';
-  const model = overrides.model?.trim()
-    || readWindowOverride('__SOVEREIGN_LLM_MODEL__')
-    || readBuildEnv('VITE_SOVEREIGN_LLM_MODEL')
-    || DEFAULT_MODEL;
+  const backendBaseUrl = normalizePrimaryBridgeUrl(
+    overrides.proxyUrl?.trim()
+      || readWindowOverride('__SOVEREIGN_ADMIN_API_BASE__')
+      || readBuildEnv('VITE_ADMIN_API_BASE')
+      || DEFAULT_BACKEND_URL,
+  );
 
   return {
-    accountId: ACCOUNT_ID,
-    routeName: ROUTE_NAME,
-    upstreamUrl: DEFAULT_URL,
-    proxyUrl,
-    proxyKey,
-    model,
-    ready: proxyUrl.length > 0,
-    reason: proxyUrl.length > 0
-      ? 'Hosted bridge configured; provider access stays outside the APK.'
-      : 'Hosted bridge URL missing. Set VITE_SOVEREIGN_LLM_PROXY_URL for release builds.',
+    accountId: '',
+    routeName: 'private-litellm',
+    upstreamUrl: `${backendBaseUrl}/api/llm/chat`,
+    proxyUrl: backendBaseUrl,
+    proxyKey: '',
+    model: overrides.model?.trim() || '',
+    backendBaseUrl,
+    routesUrl: `${backendBaseUrl}/api/llm/routes`,
+    chatUrl: `${backendBaseUrl}/api/llm/chat`,
+    ready: true,
+    reason: 'Online model traffic is routed through the authenticated Sovereign Backend and private LiteLLM.',
   };
 }
 
 export function normalizePrimaryBridgeUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) throw new Error('Hosted bridge URL is missing.');
-  if (!/^https:\/\//i.test(trimmed)) throw new Error('Hosted bridge URL must use HTTPS.');
+  if (!trimmed) throw new Error('Sovereign backend URL is missing.');
+  if (!/^https:\/\//i.test(trimmed)) throw new Error('Sovereign backend URL must use HTTPS.');
   return trimmed.replace(/\/+$/, '');
 }

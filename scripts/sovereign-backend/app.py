@@ -40,6 +40,7 @@ import requests
 from litellm_runtime import (
     extract_litellm_evidence,
     fetch_litellm,
+    litellm_readiness,
 )
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
@@ -48,6 +49,7 @@ from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
+from llm_provider_runtime import register_llm_provider_routes
 from controller_board import register_controller_board_routes
 
 # GitHub App integration (Marketplace)
@@ -84,7 +86,7 @@ def fetch_worker_ai(path: str, method: str = "GET", json_data: dict = None) -> t
             resp = requests.post(url, headers=_worker_headers(), json=json_data, timeout=WORKER_AI_TIMEOUT)
         else:
             return None, f"Unsupported method: {method}"
-        
+
         return resp, ""  # Success (caller checks resp.ok)
     except requests.exceptions.Timeout:
         return None, f"Request to Worker AI timed out after {WORKER_AI_TIMEOUT}s"
@@ -382,7 +384,7 @@ def paginate(page_raw, limit_raw, default_limit=50):
 def audit(action: str, target_id: str | None, changes: dict):
     """Write an audit log entry with the REAL current admin actor."""
     admin = get_current_admin()
-    
+
     if admin:
         admin_id = admin["id"]
         admin_email = admin["email"]
@@ -390,7 +392,7 @@ def audit(action: str, target_id: str | None, changes: dict):
         # System-initiated actions (e.g., from non-authenticated endpoints)
         admin_id = "system"
         admin_email = "system"
-    
+
     query(
         """INSERT INTO audit_log (admin_id, admin_email, action, target_id, changes)
            VALUES (%s, %s, %s, %s, %s::jsonb)""",
@@ -819,6 +821,44 @@ def admin_llm_routes():
 @require_admin
 def admin_update_llm_route(rid):
     body = request.get_json(force=True) or {}
+    activation_evidence = None
+    if body.get("disabled") is False:
+        route = query(
+            """SELECT model_id, provider FROM llm_routes
+               WHERE id::text=%s LIMIT 1""",
+            (rid,), one=True,
+        )
+        if not route:
+            return jsonify({"error": "Route nicht gefunden"}), 404
+        if str(route.get("provider") or "").strip().lower() != "litellm":
+            return jsonify({
+                "error": "Direkte Provider-Routen dürfen nicht aktiviert werden",
+                "blocker": "direct_provider_route_blocked",
+            }), 409
+        canary_response, canary_error = fetch_litellm(
+            "/v1/chat/completions",
+            method="POST",
+            json_data={
+                "model": str(route.get("model_id") or ""),
+                "messages": [{"role": "user", "content": "Reply with OK."}],
+                "temperature": 0,
+                "max_tokens": 8,
+                "stream": False,
+            },
+        )
+        if canary_error or canary_response is None or not canary_response.ok:
+            return jsonify({
+                "error": "Route bleibt deaktiviert, weil die LiteLLM-Canary fehlgeschlagen ist",
+                "blocker": "litellm_route_canary_failed",
+            }), 502
+        try:
+            canary_payload = canary_response.json()
+        except ValueError:
+            return jsonify({"error": "LiteLLM-Canary lieferte kein gültiges JSON"}), 502
+        choices = canary_payload.get("choices", []) if isinstance(canary_payload, dict) else []
+        if not choices:
+            return jsonify({"error": "LiteLLM-Canary lieferte keine Modellantwort"}), 502
+        activation_evidence = extract_litellm_evidence(canary_response, canary_payload)
     col_map = {
         "creditsPerUnit": "credits_per_unit",
         "disabled":       "disabled",
@@ -837,20 +877,39 @@ def admin_update_llm_route(rid):
         f"UPDATE llm_routes SET {', '.join(sets)} WHERE id = %s",
         vals, write=True,
     )
-    audit("admin_update_llm_route", rid, body)
-    return jsonify({"ok": True})
+    audit("admin_update_llm_route", rid, {
+        **body,
+        "canaryRequestId": (
+            activation_evidence.get("upstreamRequestId")
+            if isinstance(activation_evidence, dict)
+            else None
+        ),
+        "canaryTokens": (
+            activation_evidence.get("totalTokens")
+            if isinstance(activation_evidence, dict)
+            else None
+        ),
+    })
+    return jsonify({
+        "ok": True,
+        "activationVerified": body.get("disabled") is not False or bool(activation_evidence),
+    })
 
 
 @app.route("/api/admin/llm/worker-ai/status", methods=["GET"])
 @require_admin
 def admin_worker_ai_status():
-    """Get Worker AI health status and available models from Cloudflare."""
+    return jsonify({
+        "error": "Legacy Worker-AI-Verwaltung wurde durch private LiteLLM-Routen ersetzt",
+        "blocker": "legacy_direct_provider_disabled",
+    }), 410
+    """Legacy endpoint retained only as an explicit tombstone."""
     start = time.time()
-    
+
     # Test health endpoint
     resp, _err = fetch_worker_ai("health")
     response_time_ms = int((time.time() - start) * 1000)
-    
+
     if _err:
         return jsonify({
             "status": "error",
@@ -860,12 +919,12 @@ def admin_worker_ai_status():
             "modelCount": 0,
             "responseTimeMs": response_time_ms,
         }), 500
-    
+
     health_data = resp.json() if resp.ok else {}
 
     # Get available models
     models_resp, _err = fetch_worker_ai("v1/models")
-    
+
     available_models = []
     if models_resp and models_resp.ok:
         models_data = models_resp.json()
@@ -887,13 +946,15 @@ def admin_worker_ai_status():
 @app.route("/api/admin/system/health", methods=["GET"])
 @require_admin
 def admin_system_health():
-    """Comprehensive system health check for all components."""
+    """Return the same runtime truth used by the production readiness gate."""
+    return health_ready()
+
     health = {
         "ok": True,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "components": {},
     }
-    
+
     # 1. Database check
     try:
         start = time.time()
@@ -909,7 +970,7 @@ def admin_system_health():
             "status": "unhealthy",
             "error": str(e)[:100],
         }
-    
+
     # 2. Worker AI check
     try:
         worker_url = WORKER_AI_BASE
@@ -940,7 +1001,7 @@ def admin_system_health():
             "status": "unhealthy",
             "error": str(e)[:100],
         }
-    
+
     # 3. LLM Routes check
     try:
         routes = query("SELECT COUNT(*) as count FROM llm_routes WHERE disabled = false", one=True)
@@ -961,7 +1022,7 @@ def admin_system_health():
             "status": "degraded",
             "error": str(e)[:100],
         }
-    
+
     # 4. Config file check
     config_file = _CONFIG_FILE
     if config_file:
@@ -969,56 +1030,61 @@ def admin_system_health():
             "status": "healthy" if os.path.exists(config_file) else "missing",
             "path": config_file,
         }
-    
+
     return jsonify(health)
 
 
 @app.route("/api/admin/llm/worker-ai/sync", methods=["POST"])
 @require_admin
 def admin_worker_ai_sync():
-    """Auto-discover and sync LLM routes from Worker AI.
-    
+    return jsonify({
+        "error": "Automatische Direktprovider-Routenerzeugung ist deaktiviert",
+        "blocker": "legacy_direct_provider_disabled",
+    }), 410
+    """Legacy sync is disabled.
+
+
     Creates/updates/deletes llm_routes entries based on available models
     in the Cloudflare Worker AI proxy.
     """
     try:
         worker_url = WORKER_AI_BASE
-        
+
         # Get available models from Worker
         resp, _err = fetch_worker_ai("v1/models")
         if _err:
             return jsonify({"error": f"Worker AI sync failed: {_err}"}), 500
         if not resp.ok:
             return jsonify({"error": f"Worker AI nicht erreichbar: HTTP {resp.status_code}"}), 502
-        
+
         worker_models = resp.json().get("data", [])
-        
+
         # Map Worker models to our route format
         # Cloudflare Worker AI format: @cf/meta/llama-3.1-8b-instruct
         # We store as: llama-3.1-8b (user-friendly name)
-        
+
         created = []
         updated = []
         deleted = []
-        
+
         for wm in worker_models:
             model_id = wm.get("id", "")
             if not model_id:
                 continue
-            
+
             # Convert @cf/xxx/yyy to friendly name: xxx-yyy
             friendly_name = model_id
             if model_id.startswith("@cf/"):
                 parts = model_id.replace("@cf/", "").split("/")
                 if len(parts) >= 2:
                     friendly_name = f"{parts[0]}-{parts[1]}"
-            
+
             # Check if route exists
             existing = query(
                 """SELECT id::text, model_id FROM llm_routes WHERE model_id = %s LIMIT 1""",
                 (model_id,), one=True,
             )
-            
+
             if existing:
                 # Update if needed (provider is already set)
                 updated.append({"id": existing["id"], "model": model_id})
@@ -1031,10 +1097,10 @@ def admin_worker_ai_sync():
                     priority = 100
                 elif "7b" in model_id.lower():
                     priority = 25
-                
+
                 try:
                     new_id = query(
-                        """INSERT INTO llm_routes 
+                        """INSERT INTO llm_routes
                            (id, model_id, model_name, provider, base_url, credits_per_unit, priority, disabled)
                            VALUES (gen_random_uuid(), %s, %s, 'cloudflare', %s, 0.001, %s, false)
                            RETURNING id::text""",
@@ -1053,28 +1119,28 @@ def admin_worker_ai_sync():
                     existing = query("SELECT id::text FROM llm_routes WHERE model_id = %s", (model_id,), one=True)
                     if existing:
                         updated.append({"id": existing["id"], "model": model_id})
-        
+
         # Sync: Disable routes that no longer exist in Worker AI
         all_worker_ids = [wm.get("id", "") for wm in worker_models if wm.get("id")]
         if all_worker_ids and len(all_worker_ids) > 0:
             # Use list instead of tuple for IN clause to avoid type issues
             disabled_routes = query(
                 """UPDATE llm_routes SET disabled = true, updated_at = NOW()
-                   WHERE provider = 'cloudflare' 
+                   WHERE provider = 'cloudflare'
                      AND model_id != ALL(%s)
                      AND disabled = false
                    RETURNING id::text, model_id""",
                 (all_worker_ids,), write=True,
             )
             deleted = [{"id": r["id"], "model": r["model_id"]} for r in disabled_routes] if disabled_routes else []
-        
+
         audit("admin_worker_ai_sync", None, {
             "created": len(created),
             "updated": len(updated),
             "disabled": len(deleted),
             "workerModels": len(worker_models),
         })
-        
+
         return jsonify({
             "ok": True,
             "synced": {
@@ -1085,7 +1151,7 @@ def admin_worker_ai_sync():
             "totalWorkerModels": len(worker_models),
             "totalRoutes": len(created) + len(updated),
         })
-        
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1093,38 +1159,42 @@ def admin_worker_ai_sync():
 @app.route("/api/admin/llm/worker-ai/models", methods=["GET"])
 @require_admin
 def admin_worker_ai_models():
-    """List models available in Worker AI with health status."""
+    return jsonify({
+        "error": "Legacy Worker-Modelle werden nicht mehr als App-Routen angeboten",
+        "blocker": "legacy_direct_provider_disabled",
+    }), 410
+    """Legacy endpoint retained only as an explicit tombstone."""
     try:
         worker_url = WORKER_AI_BASE
-        
+
         resp, _err = fetch_worker_ai("v1/models")
         if _err:
             return jsonify({"error": f"Worker AI sync failed: {_err}"}), 500
         if not resp.ok:
             return jsonify({"error": f"Worker AI Fehler: HTTP {resp.status_code}"}), 502
-        
+
         worker_models = resp.json().get("data", [])
-        
+
         # Get our configured routes
         our_routes = query(
             """SELECT model_id, model_name, disabled, priority, credits_per_unit
                FROM llm_routes WHERE provider = 'cloudflare'"""
         )
         route_map = {r["model_id"]: r for r in our_routes}
-        
+
         # Merge info
         result = []
         for wm in worker_models:
             model_id = wm.get("id", "")
             our_route = route_map.get(model_id, {})
-            
+
             # Friendly name
             friendly_name = model_id
             if model_id.startswith("@cf/"):
                 parts = model_id.replace("@cf/", "").split("/")
                 if len(parts) >= 2:
                     friendly_name = f"{parts[0]}-{parts[1]}"
-            
+
             result.append({
                 "modelId": model_id,
                 "friendlyName": friendly_name,
@@ -1134,9 +1204,9 @@ def admin_worker_ai_models():
                 "priority": our_route.get("priority", 50),
                 "creditsPerUnit": our_route.get("credits_per_unit", 0.001),
             })
-        
+
         return jsonify({"models": result, "total": len(result)})
-        
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1249,7 +1319,7 @@ def _save_runtime_config(config: dict) -> bool:
         config_dir = os.path.dirname(_CONFIG_FILE)
         if config_dir and not os.path.exists(config_dir):
             os.makedirs(config_dir, exist_ok=True)
-        
+
         with open(_CONFIG_FILE, "w") as f:
             _json.dump(config, f, indent=2)
         return True
@@ -1311,34 +1381,34 @@ def admin_runtime_config():
 def admin_update_runtime_config():
     """Update runtime configuration with validation, persistence, and CORS update."""
     global _RUNTIME_CONFIG
-    
+
     body = request.get_json(force=True) or {}
     allowed_keys = {"byok_mode", "cors_origins"}
-    
+
     # Filter allowed fields
     updates = {k: v for k, v in body.items() if k in allowed_keys}
-    
+
     if not updates:
         return jsonify({"error": "Keine erlaubten Felder zum Aktualisieren"}), 400
-    
+
     # Validate BYOK mode
     if "byok_mode" in updates:
         if updates["byok_mode"] not in ("system-key", "user-key", "disabled"):
             return jsonify({"error": "Ungültiger BYOK-Modus. Erlaubt: system-key, user-key, disabled"}), 400
-    
+
     # Validate CORS origins - block wildcard with credentials
     if "cors_origins" in updates:
         origins = updates["cors_origins"]
         if not isinstance(origins, list):
             return jsonify({"error": "cors_origins muss eine Liste sein"}), 400
-        
+
         for origin in origins:
             if origin.strip() == "*":
                 return jsonify({
                     "error": "Wildcard-Origin (*) ist nicht erlaubt. Bitte spezifische Domains angeben.",
                     "blocker": "cors_wildcard_blocked"
                 }), 400
-            
+
             # Check for credentials/authorization with suspicious patterns
             if any(pattern in origin.lower() for pattern in ["token=", "key=", "auth="]):
                 return jsonify({
@@ -1346,7 +1416,7 @@ def admin_update_runtime_config():
                     "blocker": "cors_auth_in_origin_blocked"
                 }), 400
         updates["cors_origins"] = _effective_cors_origins(origins)
-    
+
     candidate_config = dict(_RUNTIME_CONFIG)
     candidate_config.update(updates)
 
@@ -1359,7 +1429,7 @@ def admin_update_runtime_config():
             "persisted": os.path.exists(_CONFIG_FILE),
         }), 500
     _RUNTIME_CONFIG = candidate_config
-    
+
     # ACTUALLY update CORS middleware if origins changed
     cors_updated = False
     if "cors_origins" in updates:
@@ -1374,9 +1444,9 @@ def admin_update_runtime_config():
                 "corsUpdated": False,
                 "corsWarning": "CORS-Middleware konnte nicht dynamisch aktualisiert werden. Server-Restart erforderlich."
             })
-    
+
     audit("admin_update_runtime_config", None, updates)
-    
+
     return jsonify({
         "ok": True,
         "config": _mask_secrets(_RUNTIME_CONFIG),
@@ -1391,16 +1461,16 @@ def admin_validate_cors():
     """Validate CORS configuration before applying."""
     body = request.get_json(force=True) or {}
     origins = body.get("origins", [])
-    
+
     errors = []
     warnings = []
-    
+
     if not isinstance(origins, list):
         return jsonify({"error": "origins muss eine Liste sein"}), 400
-    
+
     for origin in origins:
         origin = origin.strip()
-        
+
         # Block wildcards
         if origin == "*":
             errors.append({
@@ -1409,7 +1479,7 @@ def admin_validate_cors():
                 "blocker": "cors_wildcard_blocked"
             })
             continue
-        
+
         # Block auth in origin
         if any(pattern in origin.lower() for pattern in ["token=", "key=", "auth="]):
             errors.append({
@@ -1418,22 +1488,22 @@ def admin_validate_cors():
                 "blocker": "cors_auth_in_origin_blocked"
             })
             continue
-        
+
         # Warn about http (non-HTTPS)
         if origin.startswith("http://") and not origin.startswith("http://localhost"):
             warnings.append({
                 "origin": origin,
                 "warning": "Non-HTTPS Origin erkannt. Empfehlung: HTTPS verwenden."
             })
-    
+
     result = {
         "valid": len(errors) == 0,
         "errors": errors,
         "warnings": warnings,
     }
-    
+
     audit("admin_validate_cors", None, {"origins": origins, "result": result})
-    
+
     return jsonify(result)
 
 
@@ -1443,13 +1513,13 @@ def admin_runtime_health():
     """Check runtime/worker health status with real checks."""
     health_status = "healthy"
     blockers = []
-    
+
     # Check if config is valid
     byok = _RUNTIME_CONFIG.get("byok_mode", "user-key")
     if byok not in ("system-key", "user-key", "disabled"):
         health_status = "degraded"
         blockers.append("invalid_byok_config")
-    
+
     # Check CORS origins count
     cors_count = len(_RUNTIME_CONFIG.get("cors_origins", []))
     if cors_count == 0:
@@ -1458,12 +1528,12 @@ def admin_runtime_health():
     elif cors_count > 20:
         health_status = "degraded"
         blockers.append("too_many_cors_origins")
-    
+
     # Check config file persistence
     if not os.path.exists(_CONFIG_FILE):
         health_status = "degraded"
         blockers.append("config_not_persisted")
-    
+
     # Check database connection
     try:
         test_query = query("SELECT 1 as test", one=True)
@@ -1473,7 +1543,7 @@ def admin_runtime_health():
     except Exception:
         health_status = "degraded"
         blockers.append("db_unavailable")
-    
+
     return jsonify({
         "ok": health_status == "healthy",
         "health": health_status,
@@ -1506,7 +1576,7 @@ def admin_list_api_keys():
     admin = get_current_admin()
     if not admin:
         return jsonify({"error": "Nicht autorisiert"}), 401
-    
+
     keys = query(
         """SELECT id::text, label, key_hash, created_at, last_used_at
            FROM admin_api_keys WHERE admin_id = %s::uuid
@@ -1532,18 +1602,18 @@ def admin_list_api_keys():
 def admin_create_api_key():
     """Create a new API key for the current admin. Returns the raw key ONCE."""
     import secrets
-    
+
     admin = get_current_admin()
     if not admin:
         return jsonify({"error": "Nicht autorisiert"}), 401
-    
+
     body = request.get_json(force=True) or {}
     label = body.get("label", "Admin Key")
-    
+
     # Generate a secure random key
     raw_key = secrets.token_urlsafe(32)
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    
+
     # Store the hash, not the key
     query(
         """INSERT INTO admin_api_keys (admin_id, key_hash, label)
@@ -1551,9 +1621,9 @@ def admin_create_api_key():
         (admin["id"], key_hash, label),
         write=True,
     )
-    
+
     audit("admin_create_api_key", None, {"label": label})
-    
+
     # Return the RAW key ONCE - it cannot be recovered!
     return jsonify({
         "ok": True,
@@ -1574,10 +1644,10 @@ def admin_llm_route_healthcheck(rid):
            FROM llm_routes WHERE id = %s""",
         (rid,), one=True,
     )
-    
+
     if not route:
         return jsonify({"error": "Route nicht gefunden"}), 404
-    
+
     provider = route.get("provider", "").lower()
     base_url = route.get("baseUrl") or ""
     model_name = route.get("modelName") or route.get("modelId") or "gpt-4"
@@ -1585,11 +1655,11 @@ def admin_llm_route_healthcheck(rid):
     blocker = None
     response_time_ms = None
     error_message = None
-    
+
     try:
         # Build the appropriate health check request based on provider
         headers = {"Content-Type": "application/json"}
-        
+
         if provider == "openai":
             if not base_url:
                 base_url = "https://api.openai.com"
@@ -1644,12 +1714,12 @@ def admin_llm_route_healthcheck(rid):
             else:
                 url = f"{base_url.rstrip('/')}/health"
                 timeout = 10
-        
+
         if url:
             start_time = time.time()
             resp = requests.get(url, headers=headers, timeout=timeout)
             response_time_ms = int((time.time() - start_time) * 1000)
-            
+
             if resp.status_code >= 500:
                 health_status = "degraded"
                 blocker = "server_error"
@@ -1660,14 +1730,14 @@ def admin_llm_route_healthcheck(rid):
                 error_message = f"HTTP {resp.status_code}"
             else:
                 health_status = "healthy"
-            
+
             # Validate response is JSON (API returned valid data)
             content_type = resp.headers.get("content-type", "")
             if "application/json" not in content_type and resp.status_code >= 400:
                 health_status = "degraded"
                 blocker = "invalid_response"
                 error_message = f"API Fehler: HTTP {resp.status_code} (erwartet JSON)"
-    
+
     except requests.exceptions.Timeout:
         health_status = "degraded"
         blocker = "timeout"
@@ -1680,7 +1750,7 @@ def admin_llm_route_healthcheck(rid):
         health_status = "degraded"
         blocker = "unknown_error"
         error_message = str(e)[:100]
-    
+
     audit("admin_llm_healthcheck", rid, {
         "provider": provider,
         "model": model_name,
@@ -1688,7 +1758,7 @@ def admin_llm_route_healthcheck(rid):
         "blocker": blocker,
         "responseTimeMs": response_time_ms,
     })
-    
+
     return jsonify({
         "ok": health_status == "healthy",
         "routeId": rid,
@@ -1712,10 +1782,10 @@ def admin_tool_healthcheck(tid):
            FROM launcher_overrides WHERE id = %s::uuid""",
         (tid,), one=True,
     )
-    
+
     if not tool:
         return jsonify({"error": "Tool nicht gefunden"}), 404
-    
+
     label = tool.get("label", "")
     base_url = tool.get("baseUrl") or ""
     auth_mode = tool.get("authMode") or "none"
@@ -1723,25 +1793,25 @@ def admin_tool_healthcheck(tid):
     blocker = None
     response_time_ms = None
     error_message = None
-    
+
     try:
         if not base_url:
             # Tools without a configured URL remain unknown
             health_status = "unknown"
             blocker = "missing_base_url"
-        
+
         else:
             # Perform actual HTTP health check
             health_paths = ["/health", "/api/health", "/status", "/api/status", ""]
             timeout = 10
-            
+
             for path in health_paths:
                 try:
                     url = f"{base_url.rstrip('/')}{path}"
                     start_time = time.time()
                     resp = requests.get(url, timeout=timeout)
                     response_time_ms = int((time.time() - start_time) * 1000)
-                    
+
                     if resp.ok:
                         health_status = "healthy"
                         break
@@ -1754,7 +1824,7 @@ def admin_tool_healthcheck(tid):
                     start_time = time.time()
                     resp = requests.get(url, timeout=timeout, allow_redirects=True)
                     response_time_ms = int((time.time() - start_time) * 1000)
-                    
+
                     if resp.ok:
                         health_status = "healthy"
                     else:
@@ -1769,19 +1839,19 @@ def admin_tool_healthcheck(tid):
                     health_status = "degraded"
                     blocker = "connection_error"
                     error_message = "Verbindung fehlgeschlagen"
-    
+
     except Exception as e:
         health_status = "degraded"
         blocker = "unknown_error"
         error_message = str(e)[:100]
-    
+
     audit("admin_tool_healthcheck", tid, {
         "label": label,
         "status": health_status,
         "blocker": blocker,
         "responseTimeMs": response_time_ms,
     })
-    
+
     return jsonify({
         "ok": health_status == "healthy",
         "toolId": tid,
@@ -1795,8 +1865,53 @@ def admin_tool_healthcheck(tid):
 
 
 @app.route("/health")
+@app.route("/health/live")
 def health():
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "status": "live"})
+
+
+@app.route("/health/ready")
+def health_ready():
+    components = {}
+    try:
+        query("SELECT 1", one=True)
+        migration = query("SELECT id FROM schema_migrations WHERE id=21 LIMIT 1", one=True)
+        routes = query(
+            """SELECT model_id, provider FROM llm_routes
+               WHERE disabled=false ORDER BY priority ASC"""
+        )
+        invalid_routes = [
+            str(row.get("model_id") or "")
+            for row in (routes or [])
+            if str(row.get("provider") or "").strip().lower() != "litellm"
+        ]
+        components["database"] = {
+            "ok": bool(migration),
+            "migration21": bool(migration),
+            "activeRoutes": len(routes or []),
+            "invalidDirectRoutes": invalid_routes,
+        }
+    except Exception:
+        components["database"] = {"ok": False, "blocker": "database_not_ready"}
+
+    lite = litellm_readiness()
+    components["litellm"] = {
+        "ok": bool(lite.get("ok")),
+        "httpStatus": lite.get("httpStatus"),
+        "error": lite.get("error") if not lite.get("ok") else None,
+    }
+    database = components["database"]
+    ready = bool(
+        database.get("ok")
+        and int(database.get("activeRoutes") or 0) > 0
+        and not database.get("invalidDirectRoutes")
+        and components["litellm"].get("ok")
+    )
+    return jsonify({
+        "ok": ready,
+        "status": "ready" if ready else "blocked",
+        "components": components,
+    }), 200 if ready else 503
 
 
 
@@ -3051,13 +3166,14 @@ def user_purchase():
 
 @app.route("/api/llm/routes")
 def public_llm_routes():
-    """All active LLM routes — merged DB config for frontend clients."""
+    """Expose only private LiteLLM routes to frontend clients."""
     try:
         rows = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
                       disabled, priority
                FROM llm_routes
+               WHERE lower(provider)='litellm'
                ORDER BY priority ASC"""
         )
         routes = []
@@ -3087,7 +3203,7 @@ def public_llm_route(route_id):
                       provider, credits_per_unit AS "creditsPerUnit",
                       disabled, priority
                FROM llm_routes
-               WHERE id::text = %s
+               WHERE id::text = %s AND lower(provider)='litellm'
                LIMIT 1""",
             (route_id,), one=True,
         )
@@ -3568,20 +3684,20 @@ def auth_github_callback_context():
 def auth_github():
     """
     GitHub OAuth Login Endpoint.
-    
+
     Security:
     - Token wird verschlüsselt in DB gespeichert
     - Token wird NIE im Response zurückgegeben
     - State-Validierung gegen CSRF
     - PKCE-Validierung (optional)
-    
+
     Request Body:
         {
             "code": "oauth_authorization_code",
             "state": "csrf_state",          // Optional aber empfohlen
             "code_verifier": "pkce_verifier" // Optional (PKCE)
         }
-    
+
     Response:
         User-Objekt (OHNE Token!) + Session Cookie
     """
@@ -3590,16 +3706,16 @@ def auth_github():
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
         if "," in client_ip:
             client_ip = client_ip.split(",")[0].strip()
-        
+
         # Rate limiting for OAuth callback
         allowed, remaining = _check_rate_limit(f"github_callback:{client_ip}", max_requests=20)
         if not allowed:
             _audit_event("RATE_LIMIT_EXCEEDED", False, "github_callback", client_ip)
             return jsonify({"error": "Zu viele Anfragen. Bitte später erneut versuchen."}), 429
-        
+
         if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
             return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
-        
+
         body = request.get_json(force=True) or {}
         code = body.get("code") or ""
         state = str(body.get("state") or "").strip()
@@ -3639,7 +3755,7 @@ def auth_github():
         )
         if not token_resp.ok:
             return jsonify({"error": "Konnte Access Token nicht erhalten"}), 502
-        
+
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
         if not access_token:
@@ -3657,7 +3773,7 @@ def auth_github():
         )
         if not user_resp.ok:
             return jsonify({"error": "Konnte GitHub User nicht abrufen"}), 502
-        
+
         github_user = user_resp.json()
         github_id = str(github_user.get("id", ""))
         github_username = github_user.get("login", "")
@@ -3680,7 +3796,7 @@ def auth_github():
                     if e.get("primary") and e.get("verified"):
                         email = e.get("email", "").lower()
                         break
-        
+
         if not email:
             email = f"{github_username}@users.noreply.github.com"
         if not github_id:
@@ -3731,9 +3847,9 @@ def auth_github():
 def auth_github_init():
     """
     Initiiert GitHub OAuth Flow und gibt Auth-URL zurück.
-    
+
     Generiert State + PKCE Challenge für sicheren OAuth Flow.
-    
+
     Response:
         {
             "authUrl": "https://github.com/login/oauth/authorize?...",
@@ -3744,7 +3860,7 @@ def auth_github_init():
     try:
         if not GITHUB_CLIENT_ID:
             return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
-        
+
         body = request.get_json(force=True) or {}
         requested_redirect_uri = str(body.get("redirect_uri") or "").strip()
         requested_opener_origin = str(
@@ -3799,7 +3915,7 @@ def auth_github_init():
             "redirect_uri": redirect_uri,
             "opener_origin": opener_origin,
         })
-        
+
         # GitHub Auth URL bauen
         params = urllib.parse.urlencode({
             "client_id": GITHUB_CLIENT_ID,
@@ -3810,7 +3926,7 @@ def auth_github_init():
             "code_challenge_method": "S256",
         })
         auth_url = f"https://github.com/login/oauth/authorize?{params}"
-        
+
         return jsonify({
             "authUrl": auth_url,
             "state": state,
@@ -5052,49 +5168,37 @@ input[type=text],input[type=password]{-webkit-appearance:none}
     <!-- LLM ROUTES -->
     <div id="s-llm" class="section">
       <h2>LLM Routes</h2>
-      <div class="subtitle">Worker AI Modelle und Routing konfigurieren.</div>
-      
-      <!-- Worker AI Status -->
-      <div class="card" style="margin-bottom:16px">
+      <div class="subtitle">Alle Online-Modelle laufen ausschließlich über das private LiteLLM. Direkte Browser-Provider sind deaktiviert.</div>
+
+      <div class="card open" style="margin-bottom:16px">
         <div class="card-header">
-          <span class="card-title">🤖 Cloudflare Worker AI</span>
-          <span class="badge" id="wai-status-badge">Lade…</span>
-          <span class="chevron">▼</span>
+          <span class="card-title">➕ Fremdprovider sicher hinzufügen</span>
+          <span class="badge on">OWNER-GATED</span>
         </div>
-        <div class="card-body" id="wai-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px">
-            <div>
-              <label style="color:var(--muted);font-size:11px;text-transform:uppercase">Status</label>
-              <div id="wai-status" style="font-size:16px;font-weight:500">-</div>
-            </div>
-            <div>
-              <label style="color:var(--muted);font-size:11px;text-transform:uppercase">Verfügbare Modelle</label>
-              <div id="wai-model-count" style="font-size:16px;font-weight:500">-</div>
-            </div>
-            <div>
-              <label style="color:var(--muted);font-size:11px;text-transform:uppercase">Letzte Prüfung</label>
-              <div id="wai-timestamp" style="font-size:14px">-</div>
-            </div>
+        <div class="card-body" style="display:block">
+          <div class="form-group"><label>Provider-Typ</label><select id="providerPrefix"></select></div>
+          <div class="form-group"><label>Modell-ID beim Provider</label><input id="providerModelId" type="text" placeholder="z. B. llama-3.3-70b-versatile"></div>
+          <div class="form-group"><label>Anzeigename</label><input id="providerDisplayName" type="text" placeholder="Produktname der Route"></div>
+          <div class="form-group"><label>API-Basis (nur falls erforderlich)</label><input id="providerApiBase" type="text" placeholder="https://provider.example/v1"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-group"><label>Credits pro 1.000 Tokens</label><input id="providerCredits" type="number" min="0.0001" step="0.0001" value="1"></div>
+            <div class="form-group"><label>Priorität</label><input id="providerPriority" type="number" step="1" value="50"></div>
           </div>
+          <p class="subtitle">Der Provider-Zugang wird nicht in diesem Formular übertragen. Nach der Vorbereitung öffnet sich die geschützte Owner-Eingabe. Erst eine echte LiteLLM-Completion-Canary aktiviert die Route.</p>
           <div class="btn-row">
-            <button class="btn btn-primary" onclick="syncWorkerAI()">🔄 Worker AI synchronisieren</button>
-            <button class="btn btn-ghost" onclick="loadWorkerAIStatus()">🔍 Status prüfen</button>
+            <button class="btn btn-primary" onclick="prepareProviderRoute()">Route vorbereiten</button>
+            <button class="btn btn-ghost" onclick="loadProviderDeployments()">Status neu laden</button>
           </div>
-          <div class="msg" id="wai-msg" style="display:none;margin-top:12px"></div>
+          <div class="msg" id="providerRouteMsg"></div>
+          <div id="providerActivation" style="margin-top:12px"></div>
         </div>
       </div>
-      
-      <!-- Available Models from Worker AI -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header">
-          <span class="card-title">📋 Verfügbare Modelle</span>
-          <span class="chevron">▼</span>
-        </div>
-        <div class="card-body" id="wai-models-body">
-          <div id="wai-models-list"><div style="color:var(--muted)">Klicke "Status prüfen" um Modelle zu laden…</div></div>
-        </div>
+
+      <div class="card open" style="margin-bottom:16px">
+        <div class="card-header"><span class="card-title">🔐 Provider-Deployments</span></div>
+        <div class="card-body" style="display:block" id="providerDeployments"><div style="color:var(--muted)">Lade…</div></div>
       </div>
-      
+
       <!-- Configured Routes -->
       <h3 style="margin:24px 0 12px;font-size:14px;color:var(--muted)">KONFIGURIERTE ROUTES</h3>
       <div id="llmList"><div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div></div>
@@ -5201,10 +5305,11 @@ function showSection(id, btn){
   document.querySelectorAll('header nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('s-'+id).classList.add('active');
   btn.classList.add('active');
-  
+
   // Load Worker AI status when LLM section is shown
   if(id === 'llm'){
-    loadWorkerAIStatus();
+    loadProviderPresets();
+    loadProviderDeployments();
     loadLLMRoutes();
   }
 }
@@ -5595,22 +5700,80 @@ function renderBilling(d){
     '</div>';
 }
 
-/* ────── WORKER AI ────── */
+/* ────── PRIVATE LITELLM PROVIDER ONBOARDING ────── */
+let providerPresets = [];
+async function loadProviderPresets(){
+  try{
+    const data=await boundedFetch('/api/admin/llm/provider-presets',{headers:hdr()});
+    providerPresets=data.providers||[];
+    const select=document.getElementById('providerPrefix');
+    if(!select)return;
+    select.innerHTML=providerPresets.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}</option>`).join('');
+    select.onchange=()=>{
+      const preset=providerPresets.find(item=>item.id===select.value);
+      document.getElementById('providerApiBase').value=preset?.apiBase||'';
+    };
+    select.onchange();
+  }catch(error){ providerRouteMessage(error.message,false); }
+}
+function providerRouteMessage(text,ok){
+  const el=document.getElementById('providerRouteMsg');
+  if(!el)return;
+  el.textContent=text;el.className='msg '+(ok?'ok':'err');el.style.display='block';
+}
+async function prepareProviderRoute(){
+  const body={
+    providerPrefix:document.getElementById('providerPrefix').value,
+    modelId:document.getElementById('providerModelId').value.trim(),
+    displayName:document.getElementById('providerDisplayName').value.trim(),
+    apiBase:document.getElementById('providerApiBase').value.trim(),
+    creditsPerUnit:Number(document.getElementById('providerCredits').value),
+    priority:Number(document.getElementById('providerPriority').value),
+  };
+  try{
+    const data=await boundedFetch('/api/admin/llm/provider-deployments/prepare',{method:'POST',headers:hdr(),body:JSON.stringify(body)});
+    providerRouteMessage('Metadaten gespeichert. Geschützten Provider-Zugang jetzt auf der Owner-Seite eintragen.',true);
+    const activation=document.getElementById('providerActivation');
+    activation.innerHTML=`<div class="card"><strong>${esc(body.displayName||body.modelId)}</strong><p class="muted">Route bleibt deaktiviert, bis Owner-Eingabe und Completion-Canary erfolgreich sind.</p><div class="btn-row"><button class="btn btn-primary" onclick="openOwnerInput('${esc(data.ownerUrl)}')">Owner-Eingabe öffnen</button><button class="btn btn-ghost" onclick="activateProviderRoute('${esc(data.routeId)}')">Nach Eingabe aktivieren</button></div></div>`;
+    await loadProviderDeployments();
+  }catch(error){ providerRouteMessage(error.message,false); }
+}
+function openOwnerInput(path){ window.open(path,'_blank','noopener,noreferrer'); }
+async function activateProviderRoute(routeId){
+  providerRouteMessage('LiteLLM-Registrierung und echte Completion-Canary laufen…',true);
+  try{
+    const data=await boundedFetch('/api/admin/llm/provider-deployments/'+encodeURIComponent(routeId)+'/activate',{method:'POST',headers:hdr(),body:'{}'},120000);
+    if(data.status!=='ready')throw new Error('Backend hat die Routenfreigabe nicht bestätigt.');
+    providerRouteMessage('Route durch LiteLLM-Canary bestätigt und aktiviert.',true);
+    document.getElementById('providerActivation').innerHTML='';
+    await Promise.all([loadProviderDeployments(),loadLLMRoutes()]);
+  }catch(error){ providerRouteMessage(error.message,false);await loadProviderDeployments(); }
+}
+async function loadProviderDeployments(){
+  const el=document.getElementById('providerDeployments');if(!el)return;
+  try{
+    const data=await boundedFetch('/api/admin/llm/provider-deployments',{headers:hdr()});
+    const items=data.deployments||[];
+    el.innerHTML=items.length?items.map(item=>`<div style="padding:10px 0;border-top:1px solid var(--border)"><strong>${esc(item.providerName||item.litellmModelName)}</strong> <span class="badge ${item.status==='ready'?'on':'off'}">${esc(item.status)}</span><div class="muted">${esc(item.providerPrefix)} / ${esc(item.upstreamModelId)} · ${esc(item.keyHint||'Zugang ausstehend')}</div>${item.lastCanaryAt?`<div class="muted">Canary: ${esc(item.lastCanaryAt)}</div>`:''}${item.status!=='ready'?`<button class="btn btn-ghost" style="margin-top:8px" onclick="activateProviderRoute('${esc(item.routeId)}')">Aktivierung prüfen</button>`:''}</div>`).join(''):'<div style="color:var(--muted)">Noch keine owner-gesteuerten Fremdprovider.</div>';
+  }catch(error){el.innerHTML='<div style="color:var(--danger)">'+esc(error.message)+'</div>';}
+}
+
+/* ────── LEGACY WORKER UI (endpoints return explicit 410 tombstones) ────── */
 async function loadWorkerAIStatus(){
   try {
     const r = await fetch(BASE+'/api/admin/llm/worker-ai/status',{headers:hdr()});
     const d = await r.json();
-    
+
     // Update status badge
     const badge = document.getElementById('wai-status-badge');
     badge.className = 'badge ' + (d.status === 'healthy' ? 'on' : 'off');
     badge.textContent = d.status === 'healthy' ? 'Aktiv' : d.status === 'error' ? 'Fehler' : 'Unbekannt';
-    
+
     // Update info
     document.getElementById('wai-status').textContent = d.status === 'healthy' ? '✓ Verbunden' : d.status === 'error' ? '✗ Fehler' : '? Unbekannt';
     document.getElementById('wai-model-count').textContent = d.modelCount || 0;
     document.getElementById('wai-timestamp').textContent = d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : '-';
-    
+
     // Show models list
     if(d.availableModels && d.availableModels.length > 0){
       const modelsHtml = d.availableModels.map(m => {
@@ -5628,7 +5791,7 @@ async function loadWorkerAIStatus(){
     } else {
       document.getElementById('wai-models-list').innerHTML = '<div style="color:var(--muted)">Keine Modelle gefunden</div>';
     }
-    
+
     showWaiMsg('Worker AI Status aktualisiert', true);
   } catch(e){
     showWaiMsg('Fehler: ' + e.message, false);
@@ -5647,17 +5810,17 @@ async function syncWorkerAI(){
   const btn = event.target;
   btn.disabled = true;
   btn.innerHTML = '⏳ Synchronisiere…';
-  
+
   try {
     const r = await fetch(BASE+'/api/admin/llm/worker-ai/sync',{method:'POST',headers:hdr()});
     const d = await r.json();
-    
+
     if(d.ok){
       const created = d.synced?.created?.length || 0;
       const updated = d.synced?.updated?.length || 0;
       const disabled = d.synced?.disabled?.length || 0;
       showWaiMsg(`✓ Sync完成: ${created} erstellt, ${updated} aktualisiert, ${disabled} deaktiviert`, true);
-      
+
       // Reload routes list
       loadLLMRoutes();
       loadWorkerAIStatus();
@@ -5667,7 +5830,7 @@ async function syncWorkerAI(){
   } catch(e){
     showWaiMsg('Fehler: ' + e.message, false);
   }
-  
+
   btn.disabled = false;
   btn.innerHTML = '🔄 Worker AI synchronisieren';
 }
@@ -5798,7 +5961,7 @@ async function loadTools(){
 function renderTools(launcherData, toolchainData){
   const el = document.getElementById('toolsList');
   const parts = [];
-  
+
   // Render Launcher Tools
   if (launcherData && launcherData.tools && launcherData.tools.length) {
     parts.push('<h3 style="font-size:13px;color:var(--accent);margin:0 0 12px;font-weight:700;">Launcher Tools</h3>');
@@ -5827,7 +5990,7 @@ function renderTools(launcherData, toolchainData){
       '</div>');
     });
   }
-  
+
   // Render Toolchain Tools
   if (toolchainData && toolchainData.tools && toolchainData.tools.length) {
     parts.push('<h3 style="font-size:13px;color:var(--accent);margin:16px 0 12px;font-weight:700;">Toolchain Tools</h3>');
@@ -5854,7 +6017,7 @@ function renderTools(launcherData, toolchainData){
       '</div>');
     });
   }
-  
+
   if (!parts.length) {
     el.innerHTML='<div style="color:var(--muted);font-size:14px">Keine Tools konfiguriert.</div>';
     return;
@@ -5978,26 +6141,26 @@ async function validateAndSaveCors(){
   const textarea = document.getElementById('corsTextarea');
   const msg = document.getElementById('corsMsg');
   const origins = textarea.value.split('\n').map(o=>o.trim()).filter(o=>o);
-  
+
   // Validate first
   const vr = await fetch(BASE+'/api/admin/runtime/validate-cors',{
     method:'POST',headers:hdr(),body:JSON.stringify({origins})
   });
   const vd = await vr.json();
-  
+
   if(!vd.valid && vd.errors?.length){
     const errMsgs = vd.errors.map(e=>e.error).join(', ');
     msg.textContent = '✗ Validierungsfehler: '+errMsgs;
     msg.className='msg err'; msg.style.display='block';
     return;
   }
-  
+
   // Save
   const sr = await fetch(BASE+'/api/admin/runtime/config',{
     method:'PATCH',headers:hdr(),body:JSON.stringify({cors_origins:origins})
   });
   const sd = await sr.json();
-  
+
   if(sd.ok){
     msg.textContent = '✓ Gespeichert!';
     msg.className='msg ok'; msg.style.display='block';
@@ -6096,6 +6259,14 @@ register_owner_input_routes(
     require_admin=require_admin,
     get_connection=get_agent_runtime_connection,
     get_current_admin=get_current_admin,
+)
+register_llm_provider_routes(
+    app,
+    require_admin=require_admin,
+    query=query,
+    get_connection=get_agent_runtime_connection,
+    get_current_admin=get_current_admin,
+    audit=audit,
 )
 register_controller_board_routes(
     app,
@@ -6377,15 +6548,12 @@ def admin_llm_gateway_providers():
             "models": models if available else info["models"],
             "defaultModel": info["default"] if available else None,
         })
-    results.append({
-        "provider": "cloudflare",
-        "name": "Cloudflare Worker AI",
-        "configured": True,
-        "status": "Always available (free)",
-        "models": [],
-        "defaultModel": "@cf/meta/llama-3.1-8b-instruct"
+    return jsonify({
+        "ok": True,
+        "providers": results,
+        "gatewayUrl": None,
+        "routingOwner": "private-litellm",
     })
-    return jsonify({"ok": True, "providers": results, "gatewayUrl": AI_GATEWAY_BASE})
 
 def _sync_worker_routes_from_live_source() -> dict:
     """Synchronize the complete live Worker model set in one database transaction."""
@@ -6481,6 +6649,10 @@ def _sync_worker_routes_from_live_source() -> dict:
 @app.route("/api/admin/llm/gateway/sync", methods=["POST"])
 @require_admin
 def admin_llm_gateway_sync():
+    return jsonify({
+        "error": "Direkte AI-Gateway-Synchronisierung ist deaktiviert; Provider werden owner-gated in LiteLLM angelegt",
+        "blocker": "legacy_direct_provider_disabled",
+    }), 410
     try:
         results = {"providers": {}, "workerAiSync": None, "errors": []}
         for provider_id, info in PROVIDER_MODELS.items():
@@ -6639,24 +6811,29 @@ def public_llm_auto_route():
         return jsonify({"error": str(exc), "runtimeState": "failed"}), 500
 
     try:
-        routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
-        if not routes:
-            _restored_count, reconcile_error = _reconcile_worker_routes_if_empty()
-            if reconcile_error:
-                return jsonify({
-                    "error": "Keine LLM Routes verfuegbar",
-                    "blocker": "llm_routes_empty",
-                    "cause": reconcile_error,
-                    "suggestion": "Worker-Modellquelle und Datenbank-Persistenz prüfen",
-                }), 503
-            routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
+        routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false AND lower(provider) = 'litellm' ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
         if not routes:
             return jsonify({
-                "error": "Keine LLM Routes verfuegbar",
-                "blocker": "llm_routes_empty_after_reconcile",
+                "error": "Keine durch den Owner bestätigte LiteLLM-Route verfügbar",
+                "blocker": "llm_routes_empty",
+                "suggestion": "Im Admin eine LiteLLM-Route per Canary aktivieren",
             }), 503
         selected = routes[0]
-        provider = selected.get("provider", "")
+        provider = str(selected.get("provider") or "").strip().lower()
+        if provider == "litellm":
+            return jsonify({
+                "ok": True,
+                "selected": {
+                    "modelId": selected["model_id"],
+                    "modelName": selected["model_name"],
+                    "provider": "litellm",
+                    "baseUrl": "http://litellm:4000",
+                    "creditsPerUnit": float(selected["credits_per_unit"]),
+                    "routeType": "private-litellm",
+                },
+                "fallback": [],
+                "message": f"LiteLLM: {selected['model_name']}",
+            })
         if provider == "cloudflare":
             return jsonify({"ok": True, "selected": {"modelId": selected["model_id"], "modelName": selected["model_name"], "provider": provider, "baseUrl": selected["base_url"], "creditsPerUnit": float(selected["credits_per_unit"]), "routeType": "worker-ai"}, "fallback": [r for r in routes[1:5]] if len(routes) > 1 else [], "message": f"Worker AI: {selected['model_name']}"})
         if provider in PROVIDER_MODELS:
@@ -6692,30 +6869,13 @@ def _resolve_enabled_llm_route(model: str):
         """SELECT id::text, model_id, model_name, provider, base_url,
                   credits_per_unit::float AS credits_per_unit, priority
            FROM llm_routes
-           WHERE disabled=false AND (model_id=%s OR id::text=%s)
+           WHERE disabled=false AND lower(provider)='litellm'
+             AND (model_id=%s OR id::text=%s)
            ORDER BY priority ASC LIMIT 1""",
         (normalized, normalized),
         one=True,
     )
-    if route:
-        return route
-    count_row = query(
-        "SELECT COUNT(*)::integer AS count FROM llm_routes WHERE disabled=false",
-        one=True,
-    )
-    if int((count_row or {}).get("count") or 0) == 0:
-        _restored, reconcile_error = _reconcile_worker_routes_if_empty()
-        if not reconcile_error:
-            return query(
-                """SELECT id::text, model_id, model_name, provider, base_url,
-                          credits_per_unit::float AS credits_per_unit, priority
-                   FROM llm_routes
-                   WHERE disabled=false AND (model_id=%s OR id::text=%s)
-                   ORDER BY priority ASC LIMIT 1""",
-                (normalized, normalized),
-                one=True,
-            )
-    return None
+    return route
 
 
 def _normalize_llm_request_id(body: dict) -> str:
@@ -7176,6 +7336,9 @@ def public_llm_chat():
         }
         fallback_route = None
 
+        if provider != "litellm":
+            return refund_failed_run("direct_provider_route_blocked")
+
         if provider == "litellm":
             resp, err = fetch_litellm(
                 "/v1/chat/completions",
@@ -7222,20 +7385,7 @@ def public_llm_chat():
                         "sovereignBilling": billing,
                     }), 502
 
-                fallback_route = _resolve_cloudflare_fallback_route()
-                if not fallback_route:
-                    return refund_failed_run("litellm_and_cloudflare_fallback_failed")
-                fallback_estimate = _llm_usage_credit_cost(
-                    float(fallback_route["credits_per_unit"]),
-                    estimated_tokens,
-                )
-                if fallback_estimate > reserved_cost:
-                    return refund_failed_run("fallback_cost_exceeds_reservation")
-                resp, err = _call_existing_llm_route(fallback_route, payload)
-                result = _safe_upstream_json(resp)
-                if err or resp is None or not resp.ok:
-                    return refund_failed_run("litellm_and_cloudflare_fallback_failed")
-                evidence = extract_litellm_evidence(resp, result)
+                return refund_failed_run("litellm_unavailable")
         else:
             resp, err = _call_existing_llm_route(route, payload)
             result = _safe_upstream_json(resp)
@@ -7286,5 +7436,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[WARN] Database connection failed: {e}")
         print("[WARN] Starting anyway - routes may fail if DB is required.")
-    
+
     app.run(host="0.0.0.0", port=8787, debug=False)

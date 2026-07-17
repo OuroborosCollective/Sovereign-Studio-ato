@@ -569,8 +569,15 @@ print(json.dumps({
             if db_environment.get("POSTGRES_DB") != "litellm" or db_environment.get("POSTGRES_USER") != "litellm":
                 return {"ok": False, "error": "unexpected database identity"}
             litellm_environment = services["litellm"].get("environment") if isinstance(services["litellm"].get("environment"), dict) else {}
-            if set(litellm_environment) != {"DATABASE_URL", "LITELLM_MASTER_KEY", "LITELLM_SALT_KEY"}:
+            if set(litellm_environment) != {
+                "DATABASE_URL",
+                "LITELLM_MASTER_KEY",
+                "LITELLM_SALT_KEY",
+                "STORE_MODEL_IN_DB",
+            }:
                 return {"ok": False, "error": "unexpected LiteLLM environment"}
+            if str(litellm_environment.get("STORE_MODEL_IN_DB") or "").lower() != "true":
+                return {"ok": False, "error": "LiteLLM dynamic model persistence is disabled"}
             database_url = str(litellm_environment.get("DATABASE_URL") or "")
             if not database_url.startswith("postgresql://litellm:") or not database_url.endswith("@db:5432/litellm"):
                 return {"ok": False, "error": "unexpected LiteLLM database URL"}
