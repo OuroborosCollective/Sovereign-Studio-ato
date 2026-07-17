@@ -83,9 +83,11 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     compose = (ROOT / "docker-compose.yml").read_text("utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    launcher = (ROOT / "launcher.py").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
     assert 'tool_extensions.py' in installer
+    assert 'repository_skill_tools.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
     assert 'install -d -m 0755 "$ANDROID_SDK_DIR"' in installer
@@ -95,7 +97,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions' in dockerfile
     assert 'android_hardening.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
+    assert 'repository_skill_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
+    assert 'import repository_skill_tools' in launcher
+    assert 'repository_skill_tools.register(server.mcp, server.runtime)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
     assert 'docker compose build' not in installer
@@ -129,6 +134,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'INSTALL_STAGE="verify_broker_socket_visibility"' in installer
     assert 'INSTALL_STAGE="verify_inbound_mutation_boundary"' in installer
     assert 'INSTALL_STAGE="verify_runtime_import_contracts"' in installer
+    assert 'callable(repository_skill_tools.repository_knowledge_surface_scan)' in installer
+    assert 'callable(repository_skill_tools.repository_release_hunt_manifest)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
     assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
     assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer

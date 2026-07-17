@@ -343,7 +343,7 @@ fi
 ROLLBACK_ARMED=1
 
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py owner_input_client.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py command_contract.py command_queue.py broker_client.py owner_input_client.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py repository_skill_tools.py launcher.py docker-compose.yml; do
   backup_control_plane_file "$INSTALL_ROOT/$file"
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
@@ -668,7 +668,7 @@ assert result.get("failure_family") == "INBOUND_MUTATION_FORBIDDEN", result
 PY
 
 INSTALL_STAGE="verify_runtime_import_contracts"
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import owner_input_widget; import tool_extensions; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); assert owner_input_widget.WIDGET_URI in {str(item.uri) for item in server.mcp._resource_manager.list_resources()}; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import owner_input_widget; import tool_extensions; import repository_skill_tools; assert launcher.mcp is server.mcp; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(repository_skill_tools.repository_knowledge_surface_scan); assert callable(repository_skill_tools.repository_product_logic_map); assert callable(repository_skill_tools.repository_change_impact_manifest); assert callable(repository_skill_tools.repository_learning_records_normalize_preview); assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); assert owner_input_widget.WIDGET_URI in {str(item.uri) for item in server.mcp._resource_manager.list_resources()}; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 
 INSTALL_STAGE="verify_host_worker_canary"
 docker exec sovereign-chatgpt-mcp python -c 'import server; worker=server.broker.call("host_worker_canary", {}, timeout=10); assert worker.get("status") == "HOST_WORKER_READY", worker; assert worker.get("execution_origin") == "host_worker", worker'
