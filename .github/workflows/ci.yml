@@ -217,6 +217,8 @@ jobs:
           agent_runtime/tools/git_tool.py \
           agent_runtime/tools/diff_tool.py \
           agent_runtime/tools/test_tool.py \
+          agent_runtime/a2a_adapter.py \
+          agent_runtime/a2a_routes.py \
           agent_runtime/cognitive_swarm_agents.py \
           agent_runtime/cognitive_swarm_routes.py \
           agent_runtime/cognitive_run_store.py \
@@ -270,6 +272,8 @@ jobs:
           tests/test_agent_event_mapping_compat.py \
           tests/test_cognitive_swarm_agents.py \
           tests/test_cognitive_swarm_routes.py \
+          tests/test_a2a_adapter.py \
+          tests/test_a2a_routes.py \
           ../scripts/sovereign-backend/tests/test_controller_board_contract.py \
           -v \
           --junitxml=agent-test-results.xml

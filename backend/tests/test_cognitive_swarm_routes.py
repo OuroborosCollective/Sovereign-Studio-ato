@@ -1,6 +1,7 @@
 from functools import wraps
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from typing import Any
 
 from flask import Flask, request
@@ -340,6 +341,59 @@ def test_swarm_resume_claims_run_reconstructs_task_and_finishes_with_same_lease(
     assert sum("UPDATE agent_runs" in sql for sql, _ in factory.calls) == 2
     assert any("UPDATE agent_tasks" in sql for sql, _ in factory.calls)
     assert any("lease_token = %s" in sql for sql, _ in factory.calls)
+
+
+def test_resume_repository_handoff_failure_persists_recoverable_state_with_same_lease(monkeypatch) -> None:
+    claim = SimpleNamespace(
+        run=SimpleNamespace(
+            run_id="run-resume-handoff",
+            job_id="job-resume-handoff",
+            mission_summary="Resume the repository task.",
+            mission_digest="a" * 64,
+            status="FAILED_RECOVERABLE",
+            evidence_id="evidence-previous",
+            session_key="session-resume-handoff",
+            a2a_context_id="context-resume-handoff",
+        ),
+        task_id="task-resume-handoff",
+        evidence_id="evidence-resume-claim",
+        work_package="RETRY_REPOSITORY_EXECUTION_HANDOFF",
+        lease_token="lease-resume-handoff",
+        lease_seconds=900,
+    )
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(routes_runtime, "claim_agent_run_for_resume", lambda *args, **kwargs: claim)
+    monkeypatch.setattr(
+        routes_runtime,
+        "read_agent_task_ids",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("task store unavailable")),
+    )
+
+    def persist_failure(*args, **kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "FAILED_RECOVERABLE",
+            "source": "agents-sdk",
+            "evidenceId": "evidence-resume-failed",
+            "reason": kwargs["reason"],
+            "nextAction": kwargs["next_action"],
+        }
+
+    monkeypatch.setattr(routes_runtime, "transition_agent_run", persist_failure)
+    payload, status_code = routes_runtime.resume_cognitive_swarm_run(
+        get_connection=FakeConnectionFactory(),
+        user_id=USER_ID,
+        run_id=claim.run.run_id,
+        evidence="Fresh runtime evidence.",
+    )
+
+    assert status_code == 503
+    assert payload["status"] == "FAILED_RECOVERABLE"
+    assert payload["blocker"] == "AGENT_REPOSITORY_RESUME_HANDOFF_FAILED"
+    assert payload["resumed"] is True
+    assert captured["expected_lease_token"] == claim.lease_token
+    assert captured["task_id"] == claim.task_id
+    assert captured["evidence_kind"] == "resume_implementation_handoff_failure"
 
 
 def test_swarm_resume_rejects_active_lease_without_starting_second_run(monkeypatch) -> None:

@@ -76,6 +76,7 @@ class StoredAgentRun:
     user_id: str
     job_id: str | None
     session_key: str
+    a2a_context_id: str | None
     status: str
     source: str
     evidence_id: str
@@ -89,6 +90,7 @@ class StoredAgentRun:
     iteration_count: int
     lease_active: bool
     resume_task_id: str | None
+    updated_at: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +122,15 @@ class AgentRunIterationLimit(RuntimeError):
 
 def _bounded(value: object, limit: int) -> str:
     return sanitize_agent_text(str(value or ""), limit).strip()
+
+
+def _timestamp_text(value: object) -> str:
+    if value is None:
+        return ""
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return str(isoformat())
+    return str(value or "").strip()
 
 
 def _digest_text(value: object) -> str:
@@ -223,6 +234,7 @@ def create_agent_run(
     max_active_specialists: int = 4,
     max_iterations: int = 12,
     job_id: str | None = None,
+    a2a_context_id: str | None = None,
 ) -> dict[str, str]:
     """Create one RECEIVED run plus its input evidence and event atomically."""
 
@@ -244,6 +256,9 @@ def create_agent_run(
         "suppliedEvidenceDigest": supplied_evidence_digest,
         "rawSecretsPersisted": False,
     }
+    normalized_a2a_context = _bounded(a2a_context_id, 500)
+    if normalized_a2a_context:
+        context_snapshot["a2aContextId"] = normalized_a2a_context
 
     try:
         with conn.cursor() as cur:
@@ -1360,11 +1375,19 @@ def record_agent_failure(
 
 
 def stored_run_from_row(row: Mapping[str, Any]) -> StoredAgentRun:
+    raw_context = row.get("context_snapshot") or {}
+    if isinstance(raw_context, str):
+        try:
+            raw_context = json.loads(raw_context)
+        except json.JSONDecodeError:
+            raw_context = {}
+    context_snapshot = raw_context if isinstance(raw_context, Mapping) else {}
     return StoredAgentRun(
         run_id=str(row.get("run_id") or ""),
         user_id=str(row.get("user_id") or ""),
         job_id=str(row.get("job_id") or "") or None,
         session_key=str(row.get("session_key") or ""),
+        a2a_context_id=str(context_snapshot.get("a2aContextId") or "") or None,
         status=str(row.get("status") or ""),
         source=str(row.get("source") or ""),
         evidence_id=str(row.get("evidence_id") or ""),
@@ -1378,6 +1401,7 @@ def stored_run_from_row(row: Mapping[str, Any]) -> StoredAgentRun:
         iteration_count=int(row.get("iteration_count") or 0),
         lease_active=bool(row.get("lease_active")),
         resume_task_id=str(row.get("resume_task_id") or "") or None,
+        updated_at=_timestamp_text(row.get("updated_at")),
     )
 
 
@@ -1416,6 +1440,132 @@ def read_agent_run(conn: Any, *, user_id: str, run_id: str) -> StoredAgentRun | 
         )
         row = cur.fetchone()
     return stored_run_from_row(row) if row else None
+
+
+def _agent_run_filters(
+    *,
+    user_id: str,
+    context_id: str | None = None,
+    statuses: Sequence[str] = (),
+    status_after: str | None = None,
+) -> tuple[list[str], list[object]]:
+    clauses = ["user_id = %s::uuid"]
+    params: list[object] = [str(user_id)]
+    normalized_context = _bounded(context_id, 500)
+    if normalized_context:
+        clauses.append("context_snapshot ->> 'a2aContextId' = %s")
+        params.append(normalized_context)
+    normalized_statuses = tuple(
+        _validated_status(status)
+        for status in statuses
+        if str(status or "").strip()
+    )
+    if normalized_statuses:
+        clauses.append("status = ANY(%s)")
+        params.append(list(normalized_statuses))
+    normalized_after = _bounded(status_after, 100)
+    if normalized_after:
+        clauses.append("updated_at >= %s::timestamptz")
+        params.append(normalized_after)
+    return clauses, params
+
+
+def count_agent_runs(
+    conn: Any,
+    *,
+    user_id: str,
+    context_id: str | None = None,
+    statuses: Sequence[str] = (),
+    status_after: str | None = None,
+) -> int:
+    """Count one authenticated, filtered A2A task view."""
+
+    clauses, params = _agent_run_filters(
+        user_id=user_id,
+        context_id=context_id,
+        statuses=statuses,
+        status_after=status_after,
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) AS total FROM agent_runs WHERE {' AND '.join(clauses)}",
+            tuple(params),
+        )
+        row = cur.fetchone()
+    return int((row or {}).get("total") or 0)
+
+
+def list_agent_runs(
+    conn: Any,
+    *,
+    user_id: str,
+    limit: int = 50,
+    context_id: str | None = None,
+    statuses: Sequence[str] = (),
+    status_after: str | None = None,
+    cursor_updated_at: str | None = None,
+    cursor_run_id: str | None = None,
+) -> tuple[StoredAgentRun, ...]:
+    """Return one authenticated, cursor-bounded page ordered by last update."""
+
+    safe_limit = max(1, min(int(limit), 101))
+    clauses, params = _agent_run_filters(
+        user_id=user_id,
+        context_id=context_id,
+        statuses=statuses,
+        status_after=status_after,
+    )
+    normalized_cursor_time = _bounded(cursor_updated_at, 100)
+    normalized_cursor_run = _bounded(cursor_run_id, 160)
+    if normalized_cursor_time or normalized_cursor_run:
+        if not normalized_cursor_time or not normalized_cursor_run:
+            raise ValueError("A2A task cursor requires updated_at and run_id")
+        _validated_id(normalized_cursor_run, "cursor_run_id")
+        clauses.append("(updated_at, run_id) < (%s::timestamptz, %s)")
+        params.extend((normalized_cursor_time, normalized_cursor_run))
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT *,
+                   (lease_token IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
+            FROM agent_runs
+            WHERE {' AND '.join(clauses)}
+            ORDER BY updated_at DESC, run_id DESC
+            LIMIT %s
+            """,
+            (*params, safe_limit),
+        )
+        rows = cur.fetchall()
+    return tuple(stored_run_from_row(row) for row in rows)
+
+
+def read_agent_events(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    limit: int = 500,
+) -> tuple[dict[str, object], ...]:
+    """Return bounded ordered event evidence for one authenticated user's run."""
+
+    safe_limit = max(1, min(int(limit), 1000))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.event_id, event.run_id, event.task_id, event.agent_id,
+                   event.type, event.status, event.source, event.summary,
+                   event.evidence_id, event.trace_id, event.created_at,
+                   event.next_action
+            FROM agent_events AS event
+            JOIN agent_runs AS run ON run.run_id = event.run_id
+            WHERE run.user_id = %s::uuid AND event.run_id = %s
+            ORDER BY event.created_at ASC, event.event_id ASC
+            LIMIT %s
+            """,
+            (str(user_id), _validated_id(run_id, "run_id"), safe_limit),
+        )
+        rows = cur.fetchall()
+    return tuple(dict(row) for row in rows)
 
 
 def list_resumable_agent_runs(

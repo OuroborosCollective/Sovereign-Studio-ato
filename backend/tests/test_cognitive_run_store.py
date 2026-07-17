@@ -17,8 +17,11 @@ from agent_runtime.cognitive_run_store import (
     AgentRunResumeConflict,
     claim_agent_run_for_resume,
     create_agent_run,
+    list_agent_runs,
     list_resumable_agent_runs,
+    read_agent_events,
     record_agent_stage_event,
+    stored_run_from_row,
     request_agent_approval,
     transition_agent_run,
 )
@@ -106,6 +109,31 @@ def test_create_run_persists_received_state_event_and_digest_only_evidence() -> 
     persisted_parameters = repr(conn.calls)
     assert supplied_evidence not in persisted_parameters
     assert hashlib.sha256(supplied_evidence.encode("utf-8")).hexdigest() in persisted_parameters
+
+
+def test_create_run_preserves_a2a_context_separately_from_unique_session_identity() -> None:
+    conn = FakeConnection()
+
+    create_agent_run(
+        conn,
+        user_id=USER_ID,
+        run_id="run-a2a-context",
+        session_key="session-unique-a2a-context",
+        mission="Preserve the A2A conversation context.",
+        supplied_evidence="",
+        trace_id="trace-a2a-context",
+        a2a_context_id="shared-a2a-conversation",
+    )
+
+    persisted_parameters = repr(conn.calls[0][1])
+    assert "session-unique-a2a-context" in persisted_parameters
+    assert "shared-a2a-conversation" in persisted_parameters
+    restored = stored_run_from_row({
+        **_stored_run_row(),
+        "context_snapshot": {"a2aContextId": "shared-a2a-conversation"},
+    })
+    assert restored.session_key == "session-resumable"
+    assert restored.a2a_context_id == "shared-a2a-conversation"
 
 
 def _stored_run_row(**overrides: Any) -> dict[str, Any]:
@@ -414,6 +442,38 @@ def test_invalid_status_and_source_fail_closed() -> None:
 
     assert conn.calls == []
     assert conn.commits == 0
+
+
+def test_a2a_run_and_event_queries_remain_owner_scoped() -> None:
+    conn = FakeConnection()
+    conn.fetchall_rows = [_stored_run_row(context_snapshot={"a2aContextId": "context-a2a"})]
+
+    runs = list_agent_runs(conn, user_id=USER_ID, limit=25)
+    assert len(runs) == 1
+    assert runs[0].a2a_context_id == "context-a2a"
+    assert "WHERE user_id = %s::uuid" in conn.calls[0][0]
+
+    conn.calls.clear()
+    conn.fetchall_rows = [{
+        "event_id": "event-a2a",
+        "run_id": "run-resumable",
+        "task_id": None,
+        "agent_id": "judge",
+        "type": "run_state_changed",
+        "status": "COMPLETED",
+        "source": "agents-sdk",
+        "summary": "Persisted completion.",
+        "evidence_id": "evidence-a2a",
+        "trace_id": "trace-a2a",
+        "created_at": "2026-07-17T18:00:00Z",
+        "next_action": "NO_FURTHER_ACTION_REQUIRED",
+    }]
+    events = read_agent_events(conn, user_id=USER_ID, run_id="run-resumable")
+    assert events[0]["event_id"] == "event-a2a"
+    sql, params = conn.calls[0]
+    assert "JOIN agent_runs AS run" in sql
+    assert "run.user_id = %s::uuid" in sql
+    assert params[0] == USER_ID
 
 
 def test_resumable_query_excludes_terminal_and_draft_ready_runs() -> None:

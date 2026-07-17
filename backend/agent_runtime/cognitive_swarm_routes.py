@@ -13,6 +13,7 @@ import uuid
 
 from flask import jsonify, request
 
+from .a2a_routes import register_a2a_routes
 from .cognitive_run_store import (
     AgentRunIterationLimit,
     AgentRunNotResumable,
@@ -35,6 +36,7 @@ from .cognitive_swarm_agents import (
     RepositoryToolFactory,
     SwarmExecutionError,
     classify_mission_intent,
+    classify_swarm_exception,
     ensure_openai_runtime_key,
     run_cognitive_swarm,
 )
@@ -131,6 +133,7 @@ def _stored_run_to_api(run: Any) -> dict[str, object]:
         "runId": run.run_id,
         "jobId": run.job_id,
         "sessionKey": run.session_key,
+        "a2aContextId": run.a2a_context_id,
         "status": run.status,
         "source": run.source,
         "evidenceId": run.evidence_id,
@@ -497,6 +500,474 @@ def execute_persisted_swarm(
     }, status_code)
 
 
+def start_cognitive_swarm_run(
+    *,
+    get_connection: ConnectionFactory,
+    user_id: str,
+    mission: str,
+    evidence: str = "",
+    model: str | None = None,
+    run_id: str | None = None,
+    session_key: str | None = None,
+    a2a_context_id: str | None = None,
+    trace_id: str | None = None,
+) -> tuple[dict[str, object], int]:
+    """Execute the single persisted Agents SDK start path for REST and A2A."""
+
+    normalized_mission = str(mission or "").strip()
+    normalized_evidence = str(evidence or "").strip()
+    normalized_model = str(model or "").strip() or None
+    if not normalized_mission:
+        return {"error": "mission is required"}, 400
+    if len(normalized_mission) > 20_000:
+        return {"error": "mission exceeds the bounded input limit"}, 400
+    if len(normalized_evidence) > 250_000:
+        return {"error": "evidence exceeds the bounded input limit"}, 400
+    if _contains_secret_shaped_text(normalized_mission) or _contains_secret_shaped_text(normalized_evidence):
+        return {"error": "secret-shaped material is forbidden in swarm input"}, 400
+    if normalized_model and normalized_model not in _allowed_models():
+        return {"error": "model is not allowlisted"}, 400
+    if not user_id:
+        return {"error": "authenticated user id is required"}, 401
+
+    resolved_run_id = str(run_id or f"run-{uuid.uuid4().hex}").strip()
+    resolved_session_key = str(session_key or f"session-{uuid.uuid4().hex}").strip()
+    resolved_trace_id = str(trace_id or f"trace-{uuid.uuid4().hex}").strip()
+    manifest = manifest_payload()
+
+    try:
+        conn = get_connection()
+        try:
+            received_state = create_agent_run(
+                conn,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                session_key=resolved_session_key,
+                mission=normalized_mission,
+                supplied_evidence=normalized_evidence,
+                trace_id=resolved_trace_id,
+                max_active_specialists=int(manifest["maxActiveSpecialists"]),
+                max_iterations=_max_iterations(),
+                job_id=None,
+                a2a_context_id=a2a_context_id,
+            )
+        finally:
+            _close_connection(conn)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "error": "agent run persistence unavailable",
+            "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
+            "errorType": type(exc).__name__,
+        }, 503
+
+    try:
+        mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))
+    except Exception as raw_exc:
+        exc = (
+            raw_exc
+            if isinstance(raw_exc, SwarmExecutionError)
+            else classify_swarm_exception(raw_exc, stage="intent-router")
+        )
+        conn = get_connection()
+        try:
+            intent_state = transition_agent_run(
+                conn,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                status="FAILED_RECOVERABLE" if exc.retryable else "BLOCKED",
+                source="agents-sdk",
+                trace_id=resolved_trace_id,
+                reason="The routed LLM could not produce a validated mission intent.",
+                next_action=exc.next_action,
+                evidence_kind="intent_classification_failure",
+                evidence_summary="Mission intent classification failed before any action was authorized.",
+                evidence_payload=exc.safe_payload(),
+                agent_id="intent_router",
+            )
+        finally:
+            _close_connection(conn)
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": intent_state["status"],
+            "source": intent_state["source"],
+            "evidenceId": intent_state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": exc.family,
+            "reason": intent_state["reason"],
+            "nextAction": intent_state["nextAction"],
+        }, 502 if exc.retryable else 503
+
+    implementation_job = None
+    task_ids_by_agent: dict[str, str] = {}
+    repository_toolset = None
+    try:
+        if mission_intent.mode == "repository_execution":
+            conn = get_connection()
+            try:
+                repository = _configured_repository()
+                implementation_job = create_sovereign_agent_job(
+                    conn,
+                    user_id=user_id,
+                    payload={
+                        "repoUrl": f"https://github.com/{repository}",
+                        "branch": "main",
+                        "mission": mission_intent.normalized_goal,
+                        "executor": "sovereign-local-runner",
+                        "draftPrOnly": True,
+                        "allowAutoMerge": False,
+                    },
+                    workspace_root=_workspace_root(),
+                    provision_workspace=True,
+                    clone_repo=True,
+                )
+                linked_state = link_agent_run_job(
+                    conn,
+                    user_id=user_id,
+                    run_id=resolved_run_id,
+                    job_id=implementation_job.job_id,
+                    trace_id=resolved_trace_id,
+                    workspace_id=implementation_job.result.workspace_id,
+                )
+                if implementation_job.result.status in {"blocked", "failed"}:
+                    blocked_state = transition_agent_run(
+                        conn,
+                        user_id=user_id,
+                        run_id=resolved_run_id,
+                        status="BLOCKED",
+                        source="agents-sdk",
+                        trace_id=resolved_trace_id,
+                        reason="The real repository workspace could not be provisioned.",
+                        next_action="FIX_WORKSPACE_PROVISIONING_AND_RERUN",
+                        evidence_kind="workspace_provisioning_failure",
+                        evidence_summary="Repository execution was selected but workspace provisioning failed.",
+                        evidence_payload={
+                            "jobId": implementation_job.job_id,
+                            "workspaceId": implementation_job.result.workspace_id,
+                            "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
+                            "autoMerge": False,
+                        },
+                        agent_id="orchestrator",
+                    )
+                    return {
+                        "ok": False,
+                        "runtime": "sovereign-agent",
+                        "runId": resolved_run_id,
+                        "status": blocked_state["status"],
+                        "source": blocked_state["source"],
+                        "evidenceId": blocked_state["evidenceId"],
+                        "receivedEvidenceId": received_state["evidenceId"],
+                        "jobId": implementation_job.job_id,
+                        "workspaceId": implementation_job.result.workspace_id,
+                        "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
+                        "reason": blocked_state["reason"],
+                        "nextAction": blocked_state["nextAction"],
+                    }, 503
+                task_ids_by_agent = create_repository_swarm_tasks(
+                    conn,
+                    run_id=resolved_run_id,
+                    evidence_id=linked_state["evidenceId"],
+                    write_confirmed=True,
+                )
+            finally:
+                _close_connection(conn)
+            repository_toolset = BoundRepositoryToolset(
+                get_connection=get_connection,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                job_id=implementation_job.job_id,
+                task_ids_by_agent=task_ids_by_agent,
+                workspace_root=_workspace_root(),
+                write_confirmed=True,
+            )
+    except Exception as exc:
+        conn = get_connection()
+        try:
+            handoff_state = transition_agent_run(
+                conn,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                status="FAILED_RECOVERABLE",
+                source="agents-sdk",
+                trace_id=resolved_trace_id,
+                reason="Repository execution handoff failed after intent classification.",
+                next_action="RETRY_REPOSITORY_EXECUTION_HANDOFF",
+                evidence_kind="implementation_handoff_failure",
+                evidence_summary="The implementation job or six-agent task graph could not be materialized.",
+                evidence_payload={"errorType": type(exc).__name__, "rawErrorPersisted": False},
+                agent_id="orchestrator",
+            )
+        finally:
+            _close_connection(conn)
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "status": handoff_state["status"],
+            "source": handoff_state["source"],
+            "evidenceId": handoff_state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "AGENT_REPOSITORY_HANDOFF_FAILED",
+            "reason": handoff_state["reason"],
+            "nextAction": handoff_state["nextAction"],
+        }, 503
+
+    return execute_persisted_swarm(
+        get_connection=get_connection,
+        user_id=user_id,
+        run_id=resolved_run_id,
+        trace_id=resolved_trace_id,
+        mission=normalized_mission,
+        evidence=normalized_evidence,
+        model=normalized_model,
+        repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
+        repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
+        job_id=implementation_job.job_id if implementation_job else None,
+        task_id=task_ids_by_agent.get("judge"),
+        task_ids_by_agent=task_ids_by_agent,
+        response_context={
+            "sessionKey": resolved_session_key,
+            "a2aContextId": str(a2a_context_id or "") or None,
+            "resumed": False,
+            "receivedEvidenceId": received_state["evidenceId"],
+            "intent": mission_intent.model_dump(),
+            "jobId": implementation_job.job_id if implementation_job else None,
+            "workspaceId": implementation_job.result.workspace_id if implementation_job else None,
+            "learningState": "PENDING_EVIDENCE" if implementation_job else "NOT_REQUESTED",
+            "autoMerge": False,
+        },
+    )
+
+
+def resume_cognitive_swarm_run(
+    *,
+    get_connection: ConnectionFactory,
+    user_id: str,
+    run_id: str,
+    evidence: str = "",
+    model: str | None = None,
+    trace_id: str | None = None,
+) -> tuple[dict[str, object], int]:
+    """Resume one owner-scoped persisted run through its existing bounded lease path."""
+
+    normalized_run_id = str(run_id or "").strip()
+    normalized_evidence = str(evidence or "").strip()
+    normalized_model = str(model or "").strip() or None
+    if not normalized_run_id:
+        return {"error": "run id is required"}, 400
+    if len(normalized_evidence) > 250_000:
+        return {"error": "evidence exceeds the bounded input limit"}, 400
+    if _contains_secret_shaped_text(normalized_evidence):
+        return {"error": "secret-shaped material is forbidden in swarm input"}, 400
+    if normalized_model and normalized_model not in _allowed_models():
+        return {"error": "model is not allowlisted"}, 400
+    if not user_id:
+        return {"error": "authenticated user id is required"}, 401
+
+    resolved_trace_id = str(trace_id or f"trace-{uuid.uuid4().hex}").strip()
+    try:
+        conn = get_connection()
+        try:
+            claim = claim_agent_run_for_resume(
+                conn,
+                user_id=user_id,
+                run_id=normalized_run_id,
+                supplied_evidence=normalized_evidence,
+                trace_id=resolved_trace_id,
+                lease_seconds=_resume_lease_seconds(),
+            )
+        finally:
+            _close_connection(conn)
+    except LookupError:
+        return {"error": "run not found"}, 404
+    except AgentRunResumeConflict as exc:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": normalized_run_id,
+            "status": "RUNNING",
+            "blocker": "RUN_ALREADY_CLAIMED",
+            "reason": str(exc),
+            "nextAction": "WAIT_FOR_ACTIVE_RESUME_LEASE_OR_RETRY_AFTER_EXPIRY",
+        }, 409
+    except AgentRunIterationLimit as exc:
+        reason = str(exc)
+        try:
+            conn = get_connection()
+            try:
+                final_state = transition_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=normalized_run_id,
+                    status="FAILED_FINAL",
+                    source="agents-sdk",
+                    trace_id=resolved_trace_id,
+                    reason=reason,
+                    next_action="OWNER_REVIEW_REQUIRED",
+                    evidence_kind="iteration_limit",
+                    evidence_summary="The persisted run exhausted its bounded iteration budget.",
+                    evidence_payload={"blocker": "RUN_ITERATION_LIMIT_EXHAUSTED"},
+                    task_id=exc.resume_task_id,
+                )
+            finally:
+                _close_connection(conn)
+        except Exception as persistence_exc:
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": normalized_run_id,
+                "blocker": "RUN_ITERATION_LIMIT_PERSISTENCE_UNAVAILABLE",
+                "reason": reason,
+                "errorType": type(persistence_exc).__name__,
+            }, 503
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": normalized_run_id,
+            "status": final_state["status"],
+            "source": final_state["source"],
+            "evidenceId": final_state["evidenceId"],
+            "blocker": "RUN_ITERATION_LIMIT_EXHAUSTED",
+            "reason": final_state["reason"],
+            "nextAction": final_state["nextAction"],
+        }, 409
+    except AgentRunNotResumable as exc:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": normalized_run_id,
+            "blocker": "RUN_NOT_RESUMABLE",
+            "reason": str(exc),
+            "nextAction": "READ_PERSISTED_RUN_STATE",
+        }, 409
+    except Exception as exc:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": normalized_run_id,
+            "blocker": "RUN_RESUME_PERSISTENCE_UNAVAILABLE",
+            "errorType": type(exc).__name__,
+        }, 503
+
+    task_ids_by_agent: dict[str, str] = {}
+    repository_toolset = None
+    try:
+        if claim.run.job_id:
+            conn = get_connection()
+            try:
+                task_ids_by_agent = read_agent_task_ids(conn, run_id=claim.run.run_id)
+                if not set(WORKER_ROLES).issubset(task_ids_by_agent):
+                    task_ids_by_agent.update(create_repository_swarm_tasks(
+                        conn,
+                        run_id=claim.run.run_id,
+                        evidence_id=claim.evidence_id,
+                        write_confirmed=True,
+                    ))
+            finally:
+                _close_connection(conn)
+            repository_toolset = BoundRepositoryToolset(
+                get_connection=get_connection,
+                user_id=user_id,
+                run_id=claim.run.run_id,
+                job_id=claim.run.job_id,
+                task_ids_by_agent=task_ids_by_agent,
+                workspace_root=_workspace_root(),
+                write_confirmed=True,
+            )
+    except Exception as exc:
+        failure_reason = "Repository execution resume handoff failed after the run lease was claimed."
+        try:
+            conn = get_connection()
+            try:
+                failed_state = transition_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=claim.run.run_id,
+                    status="FAILED_RECOVERABLE",
+                    source="agents-sdk",
+                    trace_id=resolved_trace_id,
+                    reason=failure_reason,
+                    next_action="RETRY_REPOSITORY_EXECUTION_HANDOFF",
+                    evidence_kind="resume_implementation_handoff_failure",
+                    evidence_summary=failure_reason,
+                    evidence_payload={
+                        "errorType": type(exc).__name__,
+                        "rawErrorPersisted": False,
+                    },
+                    task_id=claim.task_id,
+                    expected_lease_token=claim.lease_token,
+                )
+            finally:
+                _close_connection(conn)
+        except Exception as persistence_exc:
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": claim.run.run_id,
+                "blocker": "RUN_RESUME_FAILURE_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(persistence_exc).__name__,
+            }, 503
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "status": failed_state["status"],
+            "source": failed_state["source"],
+            "evidenceId": failed_state["evidenceId"],
+            "blocker": "AGENT_REPOSITORY_RESUME_HANDOFF_FAILED",
+            "reason": failed_state["reason"],
+            "nextAction": failed_state["nextAction"],
+            "resumed": True,
+        }, 503
+
+    resume_context = {
+        "persistedRunId": claim.run.run_id,
+        "persistedJobId": claim.run.job_id,
+        "persistedMissionDigest": claim.run.mission_digest,
+        "previousStatus": claim.run.status,
+        "previousEvidenceId": claim.run.evidence_id,
+        "recoveryTaskId": claim.task_id,
+        "recoveryWorkPackage": claim.work_package,
+        "missionWasBoundedSummary": True,
+    }
+    execution_evidence = (
+        "Persisted resume context:\n"
+        f"{json.dumps(resume_context, ensure_ascii=False, sort_keys=True)}\n\n"
+        "New runtime evidence:\n"
+        f"{normalized_evidence or '[no new evidence supplied]'}"
+    )
+    return execute_persisted_swarm(
+        get_connection=get_connection,
+        user_id=user_id,
+        run_id=claim.run.run_id,
+        trace_id=resolved_trace_id,
+        mission=claim.run.mission_summary,
+        evidence=execution_evidence,
+        model=normalized_model,
+        task_id=claim.task_id,
+        lease_token=claim.lease_token,
+        repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
+        repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
+        job_id=claim.run.job_id,
+        task_ids_by_agent=task_ids_by_agent,
+        response_context={
+            "sessionKey": claim.run.session_key,
+            "a2aContextId": claim.run.a2a_context_id,
+            "resumed": True,
+            "resumeClaimEvidenceId": claim.evidence_id,
+            "recoveryTask": {
+                "taskId": claim.task_id,
+                "workPackage": claim.work_package,
+                "leaseSeconds": claim.lease_seconds,
+            },
+        },
+    )
+
+
 def register_cognitive_swarm_routes(
     app,
     *,
@@ -549,170 +1020,12 @@ def register_cognitive_swarm_routes(
     @require_session
     def user_resume_cognitive_run(run_id: str):
         body: dict[str, Any] = request.get_json(force=True) or {}
-        evidence = str(body.get("evidence") or body.get("evidenceText") or "").strip()
-        model = str(body.get("model") or "").strip() or None
-
-        if len(evidence) > 250_000:
-            return jsonify({"error": "evidence exceeds the bounded input limit"}), 400
-        if _contains_secret_shaped_text(evidence):
-            return jsonify({"error": "secret-shaped material is forbidden in swarm input"}), 400
-        if model and model not in _allowed_models():
-            return jsonify({"error": "model is not allowlisted"}), 400
-
-        user_id = _current_session_user_id()
-        if not user_id:
-            return jsonify({"error": "authenticated user id is required"}), 401
-        trace_id = f"trace-{uuid.uuid4().hex}"
-
-        try:
-            conn = get_connection()
-            try:
-                claim = claim_agent_run_for_resume(
-                    conn,
-                    user_id=user_id,
-                    run_id=run_id,
-                    supplied_evidence=evidence,
-                    trace_id=trace_id,
-                    lease_seconds=_resume_lease_seconds(),
-                )
-            finally:
-                _close_connection(conn)
-        except LookupError:
-            return jsonify({"error": "run not found"}), 404
-        except AgentRunResumeConflict as exc:
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "status": "RUNNING",
-                "blocker": "RUN_ALREADY_CLAIMED",
-                "reason": str(exc),
-                "nextAction": "WAIT_FOR_ACTIVE_RESUME_LEASE_OR_RETRY_AFTER_EXPIRY",
-            }), 409
-        except AgentRunIterationLimit as exc:
-            reason = str(exc)
-            try:
-                conn = get_connection()
-                try:
-                    final_state = transition_agent_run(
-                        conn,
-                        user_id=user_id,
-                        run_id=run_id,
-                        status="FAILED_FINAL",
-                        source="agents-sdk",
-                        trace_id=trace_id,
-                        reason=reason,
-                        next_action="OWNER_REVIEW_REQUIRED",
-                        evidence_kind="iteration_limit",
-                        evidence_summary="The persisted run exhausted its bounded iteration budget.",
-                        evidence_payload={"blocker": "RUN_ITERATION_LIMIT_EXHAUSTED"},
-                        task_id=exc.resume_task_id,
-                    )
-                finally:
-                    _close_connection(conn)
-            except Exception as persistence_exc:
-                return jsonify({
-                    "ok": False,
-                    "runtime": "openai-agents-sdk",
-                    "runId": run_id,
-                    "blocker": "RUN_ITERATION_LIMIT_PERSISTENCE_UNAVAILABLE",
-                    "reason": reason,
-                    "errorType": type(persistence_exc).__name__,
-                }), 503
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "status": final_state["status"],
-                "source": final_state["source"],
-                "evidenceId": final_state["evidenceId"],
-                "blocker": "RUN_ITERATION_LIMIT_EXHAUSTED",
-                "reason": final_state["reason"],
-                "nextAction": final_state["nextAction"],
-            }), 409
-        except AgentRunNotResumable as exc:
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "blocker": "RUN_NOT_RESUMABLE",
-                "reason": str(exc),
-                "nextAction": "READ_PERSISTED_RUN_STATE",
-            }), 409
-        except Exception as exc:
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "blocker": "RUN_RESUME_PERSISTENCE_UNAVAILABLE",
-                "errorType": type(exc).__name__,
-            }), 503
-
-        task_ids_by_agent: dict[str, str] = {}
-        repository_toolset = None
-        if claim.run.job_id:
-            conn = get_connection()
-            try:
-                task_ids_by_agent = read_agent_task_ids(conn, run_id=claim.run.run_id)
-                if not set(WORKER_ROLES).issubset(task_ids_by_agent):
-                    task_ids_by_agent.update(create_repository_swarm_tasks(
-                        conn,
-                        run_id=claim.run.run_id,
-                        evidence_id=claim.evidence_id,
-                        write_confirmed=True,
-                    ))
-            finally:
-                _close_connection(conn)
-            repository_toolset = BoundRepositoryToolset(
-                get_connection=get_connection,
-                user_id=user_id,
-                run_id=claim.run.run_id,
-                job_id=claim.run.job_id,
-                task_ids_by_agent=task_ids_by_agent,
-                workspace_root=_workspace_root(),
-                write_confirmed=True,
-            )
-
-        resume_context = {
-            "persistedRunId": claim.run.run_id,
-            "persistedJobId": claim.run.job_id,
-            "persistedMissionDigest": claim.run.mission_digest,
-            "previousStatus": claim.run.status,
-            "previousEvidenceId": claim.run.evidence_id,
-            "recoveryTaskId": claim.task_id,
-            "recoveryWorkPackage": claim.work_package,
-            "missionWasBoundedSummary": True,
-        }
-        execution_evidence = (
-            "Persisted resume context:\n"
-            f"{json.dumps(resume_context, ensure_ascii=False, sort_keys=True)}\n\n"
-            "New runtime evidence:\n"
-            f"{evidence or '[no new evidence supplied]'}"
-        )
-        payload, status_code = execute_persisted_swarm(
+        payload, status_code = resume_cognitive_swarm_run(
             get_connection=get_connection,
-            user_id=user_id,
-            run_id=claim.run.run_id,
-            trace_id=trace_id,
-            mission=claim.run.mission_summary,
-            evidence=execution_evidence,
-            model=model,
-            task_id=claim.task_id,
-            lease_token=claim.lease_token,
-            repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
-            repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
-            job_id=claim.run.job_id,
-            task_ids_by_agent=task_ids_by_agent,
-            response_context={
-                "sessionKey": claim.run.session_key,
-                "resumed": True,
-                "resumeClaimEvidenceId": claim.evidence_id,
-                "recoveryTask": {
-                    "taskId": claim.task_id,
-                    "workPackage": claim.work_package,
-                    "leaseSeconds": claim.lease_seconds,
-                },
-            },
+            user_id=_current_session_user_id(),
+            run_id=run_id,
+            evidence=str(body.get("evidence") or body.get("evidenceText") or ""),
+            model=str(body.get("model") or "") or None,
         )
         return jsonify(payload), status_code
 
@@ -720,227 +1033,19 @@ def register_cognitive_swarm_routes(
     @require_session
     def user_run_cognitive_swarm():
         body: dict[str, Any] = request.get_json(force=True) or {}
-        mission = str(body.get("mission") or "").strip()
-        evidence = str(body.get("evidence") or body.get("evidenceText") or "").strip()
-        model = str(body.get("model") or "").strip() or None
-
-        if not mission:
-            return jsonify({"error": "mission is required"}), 400
-        if len(mission) > 20_000:
-            return jsonify({"error": "mission exceeds the bounded input limit"}), 400
-        if len(evidence) > 250_000:
-            return jsonify({"error": "evidence exceeds the bounded input limit"}), 400
-        if _contains_secret_shaped_text(mission) or _contains_secret_shaped_text(evidence):
-            return jsonify({"error": "secret-shaped material is forbidden in swarm input"}), 400
-        if model and model not in _allowed_models():
-            return jsonify({"error": "model is not allowlisted"}), 400
-
-        user_id = _current_session_user_id()
-        if not user_id:
-            return jsonify({"error": "authenticated user id is required"}), 401
-
-        manifest = manifest_payload()
-        run_id = f"run-{uuid.uuid4().hex}"
-        session_key = f"session-{uuid.uuid4().hex}"
-        trace_id = f"trace-{uuid.uuid4().hex}"
-
-        try:
-            conn = get_connection()
-            try:
-                received_state = create_agent_run(
-                    conn,
-                    user_id=user_id,
-                    run_id=run_id,
-                    session_key=session_key,
-                    mission=mission,
-                    supplied_evidence=evidence,
-                    trace_id=trace_id,
-                    max_active_specialists=int(manifest["maxActiveSpecialists"]),
-                    max_iterations=_max_iterations(),
-                    job_id=None,
-                )
-            finally:
-                _close_connection(conn)
-        except Exception as exc:
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "error": "agent run persistence unavailable",
-                "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
-                "errorType": type(exc).__name__,
-            }), 503
-
-        try:
-            mission_intent = asyncio.run(classify_mission_intent(mission, model=model))
-        except SwarmExecutionError as exc:
-            conn = get_connection()
-            try:
-                intent_state = transition_agent_run(
-                    conn,
-                    user_id=user_id,
-                    run_id=run_id,
-                    status="FAILED_RECOVERABLE" if exc.retryable else "BLOCKED",
-                    source="agents-sdk",
-                    trace_id=trace_id,
-                    reason="The routed LLM could not produce a validated mission intent.",
-                    next_action=exc.next_action,
-                    evidence_kind="intent_classification_failure",
-                    evidence_summary="Mission intent classification failed before any action was authorized.",
-                    evidence_payload=exc.safe_payload(),
-                    agent_id="intent_router",
-                )
-            finally:
-                _close_connection(conn)
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "traceId": trace_id,
-                "status": intent_state["status"],
-                "source": intent_state["source"],
-                "evidenceId": intent_state["evidenceId"],
-                "receivedEvidenceId": received_state["evidenceId"],
-                "blocker": exc.family,
-                "reason": intent_state["reason"],
-                "nextAction": intent_state["nextAction"],
-            }), 502 if exc.retryable else 503
-
-        implementation_job = None
-        task_ids_by_agent: dict[str, str] = {}
-        repository_toolset = None
-        try:
-            if mission_intent.mode == "repository_execution":
-                conn = get_connection()
-                try:
-                    repository = _configured_repository()
-                    implementation_job = create_sovereign_agent_job(
-                        conn,
-                        user_id=user_id,
-                        payload={
-                            "repoUrl": f"https://github.com/{repository}",
-                            "branch": "main",
-                            "mission": mission_intent.normalized_goal,
-                            "executor": "sovereign-local-runner",
-                            "draftPrOnly": True,
-                            "allowAutoMerge": False,
-                        },
-                        workspace_root=_workspace_root(),
-                        provision_workspace=True,
-                        clone_repo=True,
-                    )
-                    linked_state = link_agent_run_job(
-                        conn,
-                        user_id=user_id,
-                        run_id=run_id,
-                        job_id=implementation_job.job_id,
-                        trace_id=trace_id,
-                        workspace_id=implementation_job.result.workspace_id,
-                    )
-                    if implementation_job.result.status in {"blocked", "failed"}:
-                        blocked_state = transition_agent_run(
-                            conn,
-                            user_id=user_id,
-                            run_id=run_id,
-                            status="BLOCKED",
-                            source="agents-sdk",
-                            trace_id=trace_id,
-                            reason="The real repository workspace could not be provisioned.",
-                            next_action="FIX_WORKSPACE_PROVISIONING_AND_RERUN",
-                            evidence_kind="workspace_provisioning_failure",
-                            evidence_summary="Repository execution was selected but workspace provisioning failed.",
-                            evidence_payload={
-                                "jobId": implementation_job.job_id,
-                                "workspaceId": implementation_job.result.workspace_id,
-                                "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
-                                "autoMerge": False,
-                            },
-                            agent_id="orchestrator",
-                        )
-                        return jsonify({
-                            "ok": False,
-                            "runtime": "sovereign-agent",
-                            "runId": run_id,
-                            "status": blocked_state["status"],
-                            "source": blocked_state["source"],
-                            "evidenceId": blocked_state["evidenceId"],
-                            "receivedEvidenceId": received_state["evidenceId"],
-                            "jobId": implementation_job.job_id,
-                            "workspaceId": implementation_job.result.workspace_id,
-                            "blocker": implementation_job.result.blocker or "IMPLEMENTATION_JOB_PROVISIONING_FAILED",
-                            "reason": blocked_state["reason"],
-                            "nextAction": blocked_state["nextAction"],
-                        }), 503
-                    task_ids_by_agent = create_repository_swarm_tasks(
-                        conn,
-                        run_id=run_id,
-                        evidence_id=linked_state["evidenceId"],
-                        write_confirmed=True,
-                    )
-                finally:
-                    _close_connection(conn)
-                repository_toolset = BoundRepositoryToolset(
-                    get_connection=get_connection,
-                    user_id=user_id,
-                    run_id=run_id,
-                    job_id=implementation_job.job_id,
-                    task_ids_by_agent=task_ids_by_agent,
-                    workspace_root=_workspace_root(),
-                    write_confirmed=True,
-                )
-        except Exception as exc:
-            conn = get_connection()
-            try:
-                handoff_state = transition_agent_run(
-                    conn,
-                    user_id=user_id,
-                    run_id=run_id,
-                    status="FAILED_RECOVERABLE",
-                    source="agents-sdk",
-                    trace_id=trace_id,
-                    reason="Repository execution handoff failed after intent classification.",
-                    next_action="RETRY_REPOSITORY_EXECUTION_HANDOFF",
-                    evidence_kind="implementation_handoff_failure",
-                    evidence_summary="The implementation job or six-agent task graph could not be materialized.",
-                    evidence_payload={"errorType": type(exc).__name__, "rawErrorPersisted": False},
-                    agent_id="orchestrator",
-                )
-            finally:
-                _close_connection(conn)
-            return jsonify({
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "runId": run_id,
-                "status": handoff_state["status"],
-                "source": handoff_state["source"],
-                "evidenceId": handoff_state["evidenceId"],
-                "receivedEvidenceId": received_state["evidenceId"],
-                "blocker": "AGENT_REPOSITORY_HANDOFF_FAILED",
-                "reason": handoff_state["reason"],
-                "nextAction": handoff_state["nextAction"],
-            }), 503
-
-        payload, status_code = execute_persisted_swarm(
+        payload, status_code = start_cognitive_swarm_run(
             get_connection=get_connection,
-            user_id=user_id,
-            run_id=run_id,
-            trace_id=trace_id,
-            mission=mission,
-            evidence=evidence,
-            model=model,
-            repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
-            repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
-            job_id=implementation_job.job_id if implementation_job else None,
-            task_id=task_ids_by_agent.get("judge"),
-            task_ids_by_agent=task_ids_by_agent,
-            response_context={
-                "sessionKey": session_key,
-                "resumed": False,
-                "receivedEvidenceId": received_state["evidenceId"],
-                "intent": mission_intent.model_dump(),
-                "jobId": implementation_job.job_id if implementation_job else None,
-                "workspaceId": implementation_job.result.workspace_id if implementation_job else None,
-                "learningState": "PENDING_EVIDENCE" if implementation_job else "NOT_REQUESTED",
-                "autoMerge": False,
-            },
+            user_id=_current_session_user_id(),
+            mission=str(body.get("mission") or ""),
+            evidence=str(body.get("evidence") or body.get("evidenceText") or ""),
+            model=str(body.get("model") or "") or None,
         )
         return jsonify(payload), status_code
+
+    register_a2a_routes(
+        app,
+        require_session=require_session,
+        get_connection=get_connection,
+        start_run=start_cognitive_swarm_run,
+        resume_run=resume_cognitive_swarm_run,
+    )

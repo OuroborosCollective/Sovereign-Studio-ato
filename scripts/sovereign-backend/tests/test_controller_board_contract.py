@@ -13,17 +13,22 @@ JOB_STORE = BACKEND / "agent_runtime" / "job_store.py"
 JOB_ROUTES = BACKEND / "agent_runtime" / "routes.py"
 PATTERN_GATEWAY = BACKEND / "agent_runtime" / "pattern_gateway.py"
 SWARM_ROUTES = BACKEND / "agent_runtime" / "cognitive_swarm_routes.py"
+A2A_ADAPTER = BACKEND / "agent_runtime" / "a2a_adapter.py"
+A2A_ROUTES = BACKEND / "agent_runtime" / "a2a_routes.py"
 SWARM_AGENTS = BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
 REPOSITORY_TOOLS = BACKEND / "agent_runtime" / "cognitive_repository_tools.py"
 TOOL_EVENTS = BACKEND / "agent_runtime" / "tool_events.py"
 FILE_TOOL = BACKEND / "agent_runtime" / "tools" / "file_tool.py"
 WORKFLOW = BACKEND.parents[1] / ".github" / "workflows" / "sovereign-agent-backend.yml"
+CI_WORKFLOW = BACKEND.parents[1] / ".github" / "workflows" / "ci.yml"
 CANONICAL_RUNTIME = BACKEND.parents[1] / "backend" / "agent_runtime"
 CANONICAL_RUN_STORE = CANONICAL_RUNTIME / "cognitive_run_store.py"
 CANONICAL_JOB_STORE = CANONICAL_RUNTIME / "job_store.py"
 CANONICAL_JOB_ROUTES = CANONICAL_RUNTIME / "routes.py"
 CANONICAL_PATTERN_GATEWAY = CANONICAL_RUNTIME / "pattern_gateway.py"
 CANONICAL_SWARM_ROUTES = CANONICAL_RUNTIME / "cognitive_swarm_routes.py"
+CANONICAL_A2A_ADAPTER = CANONICAL_RUNTIME / "a2a_adapter.py"
+CANONICAL_A2A_ROUTES = CANONICAL_RUNTIME / "a2a_routes.py"
 CANONICAL_SWARM_AGENTS = CANONICAL_RUNTIME / "cognitive_swarm_agents.py"
 CANONICAL_REPOSITORY_TOOLS = CANONICAL_RUNTIME / "cognitive_repository_tools.py"
 CANONICAL_TOOL_EVENTS = CANONICAL_RUNTIME / "tool_events.py"
@@ -31,7 +36,7 @@ CANONICAL_FILE_TOOL = CANONICAL_RUNTIME / "tools" / "file_tool.py"
 
 
 def test_controller_module_has_valid_python_syntax() -> None:
-    for path in (CONTROLLER, RUN_STORE, JOB_STORE, JOB_ROUTES, PATTERN_GATEWAY, SWARM_ROUTES, SWARM_AGENTS, REPOSITORY_TOOLS, TOOL_EVENTS, FILE_TOOL):
+    for path in (CONTROLLER, RUN_STORE, JOB_STORE, JOB_ROUTES, PATTERN_GATEWAY, SWARM_ROUTES, A2A_ADAPTER, A2A_ROUTES, SWARM_AGENTS, REPOSITORY_TOOLS, TOOL_EVENTS, FILE_TOOL):
         ast.parse(path.read_text("utf-8"), filename=str(path))
 
 
@@ -41,6 +46,8 @@ def test_canonical_and_deployed_agent_runtime_are_byte_identical() -> None:
     assert JOB_ROUTES.read_bytes() == CANONICAL_JOB_ROUTES.read_bytes()
     assert PATTERN_GATEWAY.read_bytes() == CANONICAL_PATTERN_GATEWAY.read_bytes()
     assert SWARM_ROUTES.read_bytes() == CANONICAL_SWARM_ROUTES.read_bytes()
+    assert A2A_ADAPTER.read_bytes() == CANONICAL_A2A_ADAPTER.read_bytes()
+    assert A2A_ROUTES.read_bytes() == CANONICAL_A2A_ROUTES.read_bytes()
     assert SWARM_AGENTS.read_bytes() == CANONICAL_SWARM_AGENTS.read_bytes()
     assert REPOSITORY_TOOLS.read_bytes() == CANONICAL_REPOSITORY_TOOLS.read_bytes()
     assert TOOL_EVENTS.read_bytes() == CANONICAL_TOOL_EVENTS.read_bytes()
@@ -89,8 +96,13 @@ def test_backend_reserves_request_capacity_during_long_agents_sdk_runs() -> None
 
 def test_backend_ci_is_validation_only_and_queue_only() -> None:
     workflow = WORKFLOW.read_text("utf-8")
+    ci_workflow = CI_WORKFLOW.read_text("utf-8")
 
     assert "release-policy-gate:" in workflow
+    assert "agent_runtime/a2a_adapter.py" in ci_workflow
+    assert "agent_runtime/a2a_routes.py" in ci_workflow
+    assert "tests/test_a2a_adapter.py" in ci_workflow
+    assert "tests/test_a2a_routes.py" in ci_workflow
     assert "production release requires the Sovereign host-command queue." in workflow
     assert "appleboy/" not in workflow
     assert "VPS_PASSWORD" not in workflow
@@ -178,9 +190,14 @@ def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> 
 def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> None:
     routes = SWARM_ROUTES.read_text("utf-8")
 
+    assert 'def start_cognitive_swarm_run(' in routes
     assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
-    assert "mission_intent = asyncio.run(classify_mission_intent(mission, model=model))" in routes
-    assert routes.index("received_state = create_agent_run(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(mission, model=model))")
+    assert "mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))" in routes
+    assert routes.index("received_state = create_agent_run(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))")
+    assert "payload, status_code = start_cognitive_swarm_run(" in routes
+    assert "payload, status_code = resume_cognitive_swarm_run(" in routes
+    assert "start_run=start_cognitive_swarm_run" in routes
+    assert "resume_run=resume_cognitive_swarm_run" in routes
     assert "intent_classification_failure" in routes
     assert "link_agent_run_job(" in routes
     assert 'mission_intent.mode == "repository_execution"' in routes

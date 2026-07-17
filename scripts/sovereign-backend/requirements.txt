@@ -10,6 +10,7 @@ pypdf>=5.0.0,<6
 boto3>=1.35.0,<2
 webauthn>=2.7.0,<3
 openai-agents==0.18.2
+a2a-sdk==1.1.1
 
 # Security - REQUIRED for OAuth token encryption
 cryptography>=41.0.0
