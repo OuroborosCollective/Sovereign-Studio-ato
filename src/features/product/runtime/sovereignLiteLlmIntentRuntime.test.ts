@@ -31,6 +31,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
         choices: [{ message: { content: JSON.stringify({
           mode: 'action',
           intent: 'draft_pr',
+          action_disposition: 'execute',
           assistant_text: 'Ich habe den Auftrag verstanden. Die Runtime prüft jetzt die Gates.',
           action_title: 'Routing reparieren und Draft PR erstellen',
           confidence: 0.96,
@@ -49,6 +50,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(result.interpretation).toMatchObject({
       mode: 'action',
       intent: 'draft_pr',
+      actionDisposition: 'execute',
       model: 'openai/gpt-5.2-mini',
       fallbackUsed: true,
     });

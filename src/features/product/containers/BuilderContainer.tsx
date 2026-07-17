@@ -1056,7 +1056,8 @@ function Bubble({
 
   if (msg.role === "system")
     return (
-      <div style={{ padding: "4px 16px", textAlign: "center" }}>
+      <div style={{ padding: "4px 16px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
         <span
           style={{
             display: "inline-block",
@@ -2753,6 +2754,10 @@ export function BuilderContainer({
   );
   const [validatedGitHubTargetKey, setValidatedGitHubTargetKey] = useState<string | null>(null);
   const pendingWriteIntentRef = useRef<string | null>(null);
+  const pendingOnlineExecutionRef = useRef<{
+    readonly text: string;
+    readonly intent: 'code_execution' | 'draft_pr';
+  } | null>(null);
   const submitInFlightRef = useRef(false);
   const pendingResumeRetryRef = useRef(false);
   const [pendingResumeRetrySequence, setPendingResumeRetrySequence] = useState(0);
@@ -2813,7 +2818,10 @@ export function BuilderContainer({
       githubTokenRef.current = null;
       // Preserve an unscoped blocked intent across the first successful repo
       // load. A pending intent from an already-scoped previous repo is stale.
-      if (previousScopeKey) pendingWriteIntentRef.current = null;
+      if (previousScopeKey) {
+        pendingWriteIntentRef.current = null;
+        pendingOnlineExecutionRef.current = null;
+      }
       setValidatedGitHubTargetKey(null);
       setGitHubAccessState(createGitHubAccessSnapshot());
       setShowGitHubAccessOverride(false);
@@ -3640,7 +3648,7 @@ export function BuilderContainer({
     if (!effectiveRepoReady || !chatRepoSnapshot) {
       // Preserve the exact execution request across the repo gate. Loading the
       // repository is only a prerequisite; it must not erase the user's job.
-      pendingWriteIntentRef.current = text;
+      if (!pendingOnlineExecutionRef.current) pendingWriteIntentRef.current = text;
       appendActionEvent(buildBlockedActionEvent({ route: 'agent-job', label: 'Sovereign Agent Start blockiert', detail: 'Kein vollständiger Builder-Repo-Snapshot vorhanden; Auftrag für Wiederaufnahme vorgemerkt.', kind: 'blocked' }));
       setShowRepoSetup(true);
       appendRuntimeNotice('Executor blockiert: Bitte zuerst den Repository-Snapshot über das Repo-Setup laden. Der Auftrag bleibt für die automatische Wiederaufnahme vorgemerkt.');
@@ -3653,9 +3661,9 @@ export function BuilderContainer({
     }
     if (!githubWriteAllowed) {
       appendActionEvent({ kind: 'github_access_required', route: 'github-access', label: 'Executor braucht GitHub-Zugang', detail: 'Ausführungsauftrag erkannt, aber GitHub-Schreibzugang ist nicht validiert.', state: 'blocked' });
-      pendingWriteIntentRef.current = text;
+      if (!pendingOnlineExecutionRef.current) pendingWriteIntentRef.current = text;
       setShowGitHubAccessOverride(true);
-      appendRuntimeNotice('Executor-Aktion blockiert: Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.');
+      appendRuntimeNotice('GitHub-Zugang fehlt. Executor-Aktion blockiert: Vor dem Start muss der GitHub-Schreibzugang im sicheren Feld validiert werden.');
       return false;
     }
 
@@ -3673,12 +3681,12 @@ export function BuilderContainer({
     if (!onStartAgent) {
       appendActionEvent(buildBlockedActionEvent({
         route: 'agent-job',
-        label: 'Sovereign Agent Start blockiert',
-        detail: 'Kein Start-Callback für die Sovereign Agent Runtime verdrahtet.',
+        label: 'Executor-Start blockiert',
+        detail: 'Kein bestätigter Produkt-Executor ist für diesen Auftrag verdrahtet.',
         kind: 'blocked',
       }));
-      appendRuntimeNotice('Sovereign Agent Runtime kann nicht gestartet werden: Start-Callback ist nicht verdrahtet. Es wurde kein Job gestartet und keine Datei geändert.');
-      addLog('error', 'Sovereign Agent start blocked: missing onStartAgent callback', 'router');
+      appendRuntimeNotice('Ausführungsauftrag kann nicht ausgeführt werden: Es ist kein bestätigter Produkt-Executor verbunden. Es wurde kein Job gestartet und keine Datei geändert.');
+      addLog('error', 'Execution blocked: missing product executor callback', 'router');
       return false;
     }
 
@@ -4290,6 +4298,28 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           return;
         }
 
+        const executeWithoutReview = interpretation.actionDisposition === 'execute';
+        if (
+          executeWithoutReview
+          && (actionableIntent === 'code_execution' || actionableIntent === 'draft_pr')
+        ) {
+          if (!effectiveRepoReady || !githubWriteAllowed) {
+            pendingOnlineExecutionRef.current = {
+              text: submittedText,
+              intent: actionableIntent,
+            };
+          } else {
+            pendingOnlineExecutionRef.current = null;
+          }
+          const started = await startAgentFromText(submittedText, actionableIntent);
+          if (started && sovereignAgentStartAvailable) {
+            appendRuntimeNotice('Die Runtime hat den Job-Start angefragt. Ein laufender oder erfolgreicher Job gilt erst nach bestätigter Runtime-Evidence. Ergebnis bleibt Draft PR, kein Auto-Merge.');
+          }
+          if (started || (effectiveRepoReady && githubWriteAllowed)) {
+            pendingOnlineExecutionRef.current = null;
+          }
+          return;
+        }
         const repoFiles = chatRepoSnapshot?.filePaths?.map((path) => ({
           path,
           type: 'blob' as const,
@@ -5450,14 +5480,17 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
   };
 
   useEffect(() => {
+    const pendingOnlineExecution = pendingOnlineExecutionRef.current;
     const pendingIntent = pendingWriteIntentRef.current;
-    if (!pendingIntent || !effectiveRepoReady) return;
+    if ((!pendingOnlineExecution && !pendingIntent) || !effectiveRepoReady) return;
     if (localRepoLoading || chatResponseBusy || isPublishing) return;
 
     void runSerializedSubmit(async () => {
+      const currentOnlineExecution = pendingOnlineExecutionRef.current;
       const currentPendingIntent = pendingWriteIntentRef.current;
-      if (!currentPendingIntent) return;
+      if (!currentOnlineExecution && !currentPendingIntent) return;
 
+      pendingOnlineExecutionRef.current = null;
       pendingWriteIntentRef.current = null;
       setShowGitHubAccessOverride(false);
       appendActionEvent({
@@ -5465,12 +5498,18 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
         route: 'runtime',
         label: 'Blockierter Auftrag wird wiederaufgenommen',
         detail: githubWriteAllowed
-          ? 'Repository und GitHub-Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
+          ? 'Repository und Schreibzugang sind jetzt durch Runtime-Evidence belegt.'
           : 'Repository ist jetzt belegt; der Auftrag wird bis zum nächsten erforderlichen Gate fortgesetzt.',
         state: 'running',
       });
       addLog('info', 'Pending intent resumed after runtime gate changed', 'router');
-      await _processSubmit(currentPendingIntent, { resumePendingIntent: true });
+      if (currentOnlineExecution) {
+        pendingOnlineExecutionRef.current = currentOnlineExecution;
+        const started = await startAgentFromText(currentOnlineExecution.text, currentOnlineExecution.intent);
+        if (started || githubWriteAllowed) pendingOnlineExecutionRef.current = null;
+        return;
+      }
+      await _processSubmit(currentPendingIntent!, { resumePendingIntent: true });
     }, { retryPendingOnReject: true });
     // Resume is retried whenever repo/access evidence or a blocking busy gate
     // changes. The pending ref is cleared only after the submit lock is acquired.
@@ -6445,7 +6484,8 @@ Das echte Repo-Setup wurde geöffnet.`,
                       state: 'done',
                     });
 
-                    const pendingWriteIntent = pendingWriteIntentRef.current;
+                    const pendingWriteIntent = pendingOnlineExecutionRef.current?.text
+                      ?? pendingWriteIntentRef.current;
                     if (!pendingWriteIntent) {
                       appendRuntimeNotice('GitHub-Zugang ist bereit. Der Zugangswert wird nicht im Chat gespeichert. Wenn er in einem Screen Recording oder Clipboard-Verlauf sichtbar war, bitte rotieren.');
                       return;
@@ -6455,6 +6495,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     addLog('info', 'GitHub access confirmed; pending intent awaits state-driven resume', 'router');
                   }}
                   onDismiss={() => {
+                    pendingOnlineExecutionRef.current = null;
                     pendingWriteIntentRef.current = null;
                     setShowGitHubAccessOverride(false);
                     appendActionEvent(buildLocalRuntimeResultEvent({

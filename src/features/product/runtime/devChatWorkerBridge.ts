@@ -126,9 +126,12 @@ export type DevChatWorkerIntentKind =
   | 'load_repo'
   | 'unknown';
 
+export type DevChatWorkerActionDisposition = 'review' | 'execute';
+
 export interface DevChatWorkerInterpretation {
   readonly mode: 'chat' | 'action';
   readonly intent: DevChatWorkerIntentKind;
+  readonly actionDisposition: DevChatWorkerActionDisposition;
   readonly assistantText: string;
   readonly actionTitle: string;
   readonly confidence: number;
@@ -744,6 +747,9 @@ function parseWorkerInterpretationContent(
   if (mode !== 'chat' && mode !== 'action') return null;
   if (typeof intent !== 'string' || !allowedIntents.includes(intent as DevChatWorkerIntentKind)) return null;
 
+  const actionDisposition = record.action_disposition === 'execute'
+    ? 'execute'
+    : 'review';
   const assistantText = typeof record.assistant_text === 'string'
     ? record.assistant_text.trim()
     : '';
@@ -766,6 +772,7 @@ function parseWorkerInterpretationContent(
   return {
     mode,
     intent: intent as DevChatWorkerIntentKind,
+    actionDisposition,
     assistantText,
     actionTitle,
     confidence,
@@ -796,8 +803,9 @@ export async function fetchDevChatWorkerInterpretation(args: {
     'Die Runtime entscheidet nach deiner Deutung separat über Repo-, GitHub-, Workspace- und Draft-PR-Gates.',
     'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
     'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
     'Nutze mode=action nur wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
+    'Nutze action_disposition=execute nur bei einem ausdrücklichen sofortigen Ausführungsauftrag. Nutze review für einen erkannten Änderungsvorschlag, der zuerst als Integrationsentwurf bestätigt werden soll.',
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
     'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',

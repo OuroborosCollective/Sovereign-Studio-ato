@@ -124,6 +124,7 @@ describe('devChatWorkerBridge', () => {
       choices: [{ message: { content: JSON.stringify({
         mode: 'action',
         intent: 'code_execution',
+        action_disposition: 'review',
         assistant_text: 'Ich habe den Änderungsauftrag verstanden.',
         action_title: 'Mobile Chat-UX verbessern',
         confidence: 0.94,
@@ -142,6 +143,7 @@ describe('devChatWorkerBridge', () => {
     expect(result.interpretation).toMatchObject({
       mode: 'action',
       intent: 'code_execution',
+      actionDisposition: 'review',
       actionTitle: 'Mobile Chat-UX verbessern',
       confidence: 0.94,
       model: 'deepseek-r1',
