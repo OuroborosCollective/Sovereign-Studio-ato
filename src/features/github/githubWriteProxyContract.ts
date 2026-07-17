@@ -36,7 +36,7 @@ export interface GitHubWriteProxyValidationReport {
 }
 
 export const DEFAULT_GITHUB_WRITE_PROXY_CONFIG: GitHubWriteProxyConfig = {
-  endpointUrl: '/api/github/draft-pr',
+  endpointUrl: '/api/toolchain/create-draft-pr',
   requiresServerToken: true,
   allowedOperations: ['create_blob', 'create_tree', 'create_commit', 'create_ref', 'update_ref', 'create_draft_pr'],
   maxFilesPerRequest: 30,

@@ -20,7 +20,7 @@ describe('githubWriteProxyContract', () => {
 
     expect(report.valid).toBe(true);
     expect(DEFAULT_GITHUB_WRITE_PROXY_CONFIG.requiresServerToken).toBe(true);
-    expect(DEFAULT_GITHUB_WRITE_PROXY_CONFIG.endpointUrl).toBe('/api/github/draft-pr');
+    expect(DEFAULT_GITHUB_WRITE_PROXY_CONFIG.endpointUrl).toBe('/api/toolchain/create-draft-pr');
   });
 
   it('accepts safe draft PR payloads without a frontend token field', () => {
