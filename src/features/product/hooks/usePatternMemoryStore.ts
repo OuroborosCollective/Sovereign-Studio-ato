@@ -1,20 +1,17 @@
 /**
  * usePatternMemoryStore — Issues #447, #2, #3
  *
- * Watches for successful workflow completions and automatically saves
- * PatternMemoryEntries, appending an informational chat line each time.
+ * Projects server-accepted learning evidence into the local pattern cache and
+ * appends an informational chat line only after a vector was really stored.
  *
- * Two completion signals are handled:
- *  1. Sovereign Agent path  — agentWorkSnapshot.state === 'draft_pr_ready'
- *  2. Traditional path — publishedPrUrl prop (set by parent after mergeWhenGreen)
- *
- * The store is persisted to localStorage and rehydrated on mount so patterns
- * survive page refreshes and browser restarts.
+ * A Draft PR URL is context, never learning truth. The authoritative signal is
+ * the bounded preparation response: allowed + candidateId + vectorStored.
+ * The accepted cache survives refreshes but never promotes local observations.
  *
  * Product rules respected:
- *  - No fake truth: pattern is saved only when a real PR URL is present.
+ *  - No fake truth: PR context plus accepted candidate/vector evidence is required.
  *  - No auto-execute on repo writes: only writes to in-memory + localStorage.
- *  - No duplicate proposals: a Set ref guards per PR URL across both paths.
+ *  - No duplicate projections: a Set ref guards by accepted candidate identity.
  */
 
 import { useEffect, useRef } from 'react';
@@ -30,10 +27,11 @@ import {
   buildPatternSavedChatText,
 } from '../runtime/patternMemoryProposalRuntime';
 import type { AgentWorkSnapshot } from '../runtime/agentWorkRuntime';
+import type { SovereignPatternLearningEvidence } from '../runtime/sovereignAgentClient';
 
 // ── localStorage key ─────────────────────────────────────────────────────────
 
-export const PATTERN_MEMORY_LS_KEY = 'sovereign.patternMemoryStore.v1';
+export const PATTERN_MEMORY_LS_KEY = 'sovereign.acceptedPatternMemory.v2';
 
 // ── Safe localStorage helpers ────────────────────────────────────────────────
 
@@ -64,9 +62,16 @@ function lsSet<T>(key: string, value: T): void {
 export function loadPatternMemoryStoreFromStorage(): PatternMemoryStore {
   const candidate = lsGet<PatternMemoryStore>(PATTERN_MEMORY_LS_KEY);
   if (!candidate) return createPatternMemoryStore();
-  const report = validatePatternMemoryStore(candidate);
-  if (!report.valid) return createPatternMemoryStore();
-  return candidate;
+  try {
+    const report = validatePatternMemoryStore(candidate);
+    if (!report.valid) return createPatternMemoryStore();
+    const acceptedEntries = candidate.entries.filter((entry) => entry.verified && Boolean(entry.vectorRef));
+    return acceptedEntries.length === candidate.entries.length
+      ? candidate
+      : { ...candidate, entries: acceptedEntries };
+  } catch {
+    return createPatternMemoryStore();
+  }
 }
 
 // ── Public: structural type for appendChatLine ────────────────────────────────
@@ -96,6 +101,8 @@ export interface UsePatternMemoryStoreOptions {
   repoName: string;
   /** Appends a line to the BuilderContainer chat history (informational only). */
   appendChatLine: (line: AppendableChatLine) => void;
+  /** Normalized server-side learning and vector evidence from Draft-PR preparation. */
+  learningEvidence?: SovereignPatternLearningEvidence;
   /**
    * Traditional publish path (optional).
    * Set by the parent component to the PR URL returned by mergeWhenGreen once
@@ -107,9 +114,8 @@ export interface UsePatternMemoryStoreOptions {
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
- * Automatically saves a learned pattern and appends a chat notification when
- * a Draft PR workflow completes via either the Sovereign Agent path or the
- * traditional publish path.
+ * Projects one accepted server-side learning result into the local cache and
+ * chat only when a PR context and stored vector evidence are both available.
  *
  * Also persists the entire store to localStorage whenever it changes, and
  * should be initialised with `loadPatternMemoryStoreFromStorage()` in the
@@ -124,15 +130,15 @@ export function usePatternMemoryStore(opts: UsePatternMemoryStoreOptions): void 
     repoOwner,
     repoName,
     appendChatLine,
+    learningEvidence,
     publishedPrUrl,
   } = opts;
 
   /**
-   * Tracks every PR URL for which a pattern has already been saved in this
-   * session. A Set rather than a single string handles the edge case where
-   * both paths fire for different URLs in the same session.
+   * Tracks accepted candidate identities already projected in this session.
+   * PR URLs may repeat across retries and are not identity evidence.
    */
-  const savedPrUrlsRef = useRef<Set<string>>(new Set());
+  const savedCandidateIdsRef = useRef<Set<string>>(new Set());
 
   // ── Persist to localStorage whenever the store changes ──────────────────
   useEffect(() => {
@@ -142,16 +148,24 @@ export function usePatternMemoryStore(opts: UsePatternMemoryStoreOptions): void 
   // ── Shared save helper ───────────────────────────────────────────────────
   // Extracted so both effects use identical logic.
   const maybeSave = (prUrl: string | null | undefined): void => {
-    if (!prUrl) return;
-    if (savedPrUrlsRef.current.has(prUrl)) return;
-    savedPrUrlsRef.current.add(prUrl);
+    const candidateId = learningEvidence?.candidateId;
+    if (!prUrl || !candidateId || !learningEvidence.allowed || !learningEvidence.vectorStored) return;
+    if (savedCandidateIdsRef.current.has(candidateId)) return;
+    savedCandidateIdsRef.current.add(candidateId);
 
-    const intake = derivePatternIntakeFromWorkflow({
+    const proposal = derivePatternIntakeFromWorkflow({
       mission,
       repoOwner,
       repoName,
       prUrl,
     });
+    const intake = {
+      ...proposal,
+      sourceTraceId: `accepted:${candidateId}`,
+      vectorRef: candidateId,
+      verified: true,
+      localExecutable: false,
+    };
 
     setPatternMemoryStore((prev) => addPatternEntry(prev, intake));
 
@@ -166,12 +180,12 @@ export function usePatternMemoryStore(opts: UsePatternMemoryStoreOptions): void 
     if (agentWorkSnapshot.state !== 'draft_pr_ready') return;
     maybeSave(agentWorkSnapshot.draftPrUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentWorkSnapshot.state, agentWorkSnapshot.draftPrUrl]);
+  }, [agentWorkSnapshot.state, agentWorkSnapshot.draftPrUrl, learningEvidence]);
 
   // ── Signal 2: Traditional publish path ───────────────────────────────────
   useEffect(() => {
     if (!publishedPrUrl) return;
     maybeSave(publishedPrUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publishedPrUrl]);
+  }, [publishedPrUrl, learningEvidence]);
 }

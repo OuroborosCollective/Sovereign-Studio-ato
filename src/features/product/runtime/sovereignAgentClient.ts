@@ -13,6 +13,16 @@ export interface SovereignAgentClientOptions {
   now?: () => number;
 }
 
+export interface SovereignPatternLearningEvidence {
+  candidateId?: string;
+  candidateCreated: boolean;
+  allowed: boolean;
+  decision: string;
+  vectorStored: boolean;
+  vectorStorage?: string;
+  vectorReason?: string;
+}
+
 export interface SovereignStagedFile {
   path: string;
   content: string;
@@ -67,59 +77,7 @@ export interface SovereignDraftPrPreparationResponse {
     canCreateDraftPr?: boolean;
     blockers: string[];
   };
-}
-
-export interface SovereignDraftPrCreateResponse {
-  ok: boolean;
-  jobId: string;
-  draftPrCreate: {
-    allowed: boolean;
-    status: string;
-    prUrl?: string;
-    blocker?: string;
-    summary?: string;
-  };
-}
-
-export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
-  evidenceText?: string;
-  provisionWorkspace?: boolean;
-  cloneRepo?: boolean;
-}
-
-export interface SovereignToolchainFailureFamily {
-  code: string;
-  title: string;
-  severity: string;
-  score: number;
-  checks: string[];
-}
-
-export interface SovereignToolchainFollowup {
-  fromFamily: string;
-  prediction: string;
-  checkNext: string;
-}
-
-export interface SovereignToolchainDiagnosis {
-  evidenceHash?: string;
-  failureFamilies: SovereignToolchainFailureFamily[];
-  nextLogicalFailures: SovereignToolchainFollowup[];
-}
-
-export interface SovereignDraftPrPreparationResponse {
-  ok: boolean;
-  jobId: string;
-  draftPrPreparation: {
-    allowed: boolean;
-    decision: string;
-    summary?: string;
-    headBranch?: string;
-    baseBranch?: string;
-    nextAction?: string;
-    canCreateDraftPr?: boolean;
-    blockers: string[];
-  };
+  learningEvidence?: SovereignPatternLearningEvidence;
 }
 
 export interface SovereignDraftPrCreateResponse {
@@ -288,6 +246,24 @@ async function requestObject(args: { url: string; init: RequestInit; fetcher: ty
   }
   if (!isObject(body)) throw new Error(`${args.fallback} returned a non-object response.`);
   return body;
+}
+
+function patternLearningEvidence(body: Record<string, unknown>): SovereignPatternLearningEvidence | undefined {
+  const pattern = isObject(body.patternLearning) ? body.patternLearning : undefined;
+  const vector = isObject(body.vectorMemory) ? body.vectorMemory : undefined;
+  const candidateId = stringValue(body.candidateId);
+  if (!pattern && !vector && !candidateId) return undefined;
+  const vectorStorage = stringValue(vector?.storage);
+  const vectorReason = stringValue(vector?.reason);
+  return {
+    candidateCreated: body.candidateCreated === true,
+    allowed: pattern?.allowed === true,
+    decision: stringValue(pattern?.decision) || 'blocked',
+    vectorStored: vector?.stored === true,
+    ...(candidateId ? { candidateId } : {}),
+    ...(vectorStorage ? { vectorStorage } : {}),
+    ...(vectorReason ? { vectorReason } : {}),
+  };
 }
 
 function diagnosisValue(value: unknown): SovereignToolchainDiagnosis {
@@ -463,6 +439,7 @@ export class SovereignAgentClient {
         canCreateDraftPr: signal.canCreateDraftPr === true,
         blockers: stringArray(signal.blockers),
       },
+      learningEvidence: patternLearningEvidence(body),
     };
   }
   async createDraftPr(jobId: string, githubAccessToken?: string): Promise<SovereignDraftPrCreateResponse> {

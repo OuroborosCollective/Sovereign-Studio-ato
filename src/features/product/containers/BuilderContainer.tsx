@@ -137,6 +137,7 @@ import type {
   SovereignAgentConfig,
   SovereignAgentJobSnapshot,
 } from "../runtime/sovereignAgentRuntime";
+import type { SovereignPatternLearningEvidence } from "../runtime/sovereignAgentClient";
 import {
   createGitHubAccessSnapshot,
   requestGitHubAccess,
@@ -247,6 +248,7 @@ export interface BuilderContainerProps {
   agentReady?: boolean;
   agentConfig?: SovereignAgentConfig;
   agentJob?: SovereignAgentJobSnapshot;
+  patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
   onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string; readonly githubAccessToken?: string }) => void | Promise<void>;
@@ -2602,6 +2604,7 @@ export function BuilderContainer({
   agentReady,
   agentConfig,
   agentJob,
+  patternLearningEvidence,
   agentJobStatus,
   agentIsRunning,
   onStartAgent,
@@ -3157,7 +3160,7 @@ export function BuilderContainer({
     appendRuntimeNotice(message);
   }, [appendRuntimeNotice]);
 
-  // ── Issue #447: Auto-save workflow patterns after Draft PR success
+  // ── Issue #447: Project only server-accepted learning evidence into local cache
   usePatternMemoryStore({
     agentWorkSnapshot,
     patternMemoryStore,
@@ -3166,6 +3169,7 @@ export function BuilderContainer({
     repoOwner: chatRepoSnapshot?.owner ?? '',
     repoName: chatRepoSnapshot?.repo ?? '',
     appendChatLine,
+    learningEvidence: patternLearningEvidence,
     publishedPrUrl: scopedPublishedPrUrl,
   });
 
@@ -6137,8 +6141,8 @@ Das echte Repo-Setup wurde geöffnet.`,
                       });
 
                       // Preserve the exact LLM-understood mission for execution and
-                      // later evidence-gated learning. A pattern is still saved only
-                      // after a real Draft PR URL exists.
+                      // later evidence-gated learning. A PR URL is only context; the
+                      // pattern cache requires accepted server/vector evidence.
                       const confirmedMission = collapseRepeatedAnalyzedMission(
                         buildAnalyzedMission({
                           wish: draft.originalText,
