@@ -249,6 +249,86 @@ def test_github_rate_limit_is_not_misreported_as_repository_unavailable(monkeypa
     assert raised.value.response_status == 429
 
 
+@pytest.mark.parametrize(
+    ("exception", "blocker", "response_status"),
+    [
+        (
+            knowledge_library.requests.Timeout("raw timeout detail with secret-value"),
+            "github_api_timeout",
+            504,
+        ),
+        (
+            knowledge_library.requests.exceptions.SSLError("raw TLS detail with secret-value"),
+            "github_tls_failure",
+            502,
+        ),
+        (
+            knowledge_library.requests.ConnectionError("raw DNS detail with secret-value"),
+            "github_connection_unavailable",
+            502,
+        ),
+        (
+            knowledge_library.requests.RequestException("raw transport detail with secret-value"),
+            "github_transport_error",
+            502,
+        ),
+    ],
+)
+def test_github_transport_failures_return_bounded_safe_blockers(
+    monkeypatch,
+    exception,
+    blocker,
+    response_status,
+) -> None:
+    monkeypatch.setattr(
+        knowledge_library.requests,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(exception),
+    )
+
+    with pytest.raises(knowledge_library.GitHubKnowledgeAccessError) as raised:
+        knowledge_library._github_json("/repos/public-owner/public-repo")
+
+    assert raised.value.blocker == blocker
+    assert raised.value.github_status is None
+    assert raised.value.response_status == response_status
+    assert "HTTPS/443" in str(raised.value)
+    assert "secret-value" not in str(raised.value)
+
+
+def test_github_import_failure_audit_is_bounded_and_url_fingerprinted() -> None:
+    recorded = []
+    raw_url = "https://github.com/private-owner/private-repo?token=secret-value"
+    error = knowledge_library.GitHubKnowledgeAccessError(
+        "safe operator message",
+        blocker="github_connection_unavailable",
+        response_status=502,
+    )
+
+    def record(action, target_id, changes):
+        recorded.append({"action": action, "target_id": target_id, "changes": changes})
+
+    knowledge_library._record_github_import_failure(record, raw_url, error)
+
+    assert len(recorded) == 1
+    evidence = recorded[0]
+    assert evidence["action"] == "knowledge:github_import_failed"
+    assert evidence["target_id"].startswith("github:")
+    assert evidence["changes"] == {
+        "result": "blocked",
+        "blocker": "github_connection_unavailable",
+        "githubHttpStatus": None,
+        "transportFailure": True,
+    }
+    assert "private-owner" not in str(evidence)
+    assert "secret-value" not in str(evidence)
+
+
+def test_canonical_backend_wires_knowledge_failure_audit() -> None:
+    app = (BACKEND / "app.py").read_text("utf-8")
+    assert "audit_event=audit" in app
+
+
 def test_knowledge_runtime_mirror_remains_byte_equal() -> None:
     assert (BACKEND / "knowledge_library.py").read_bytes() == (
         ROOT / "backend" / "knowledge_library.py"

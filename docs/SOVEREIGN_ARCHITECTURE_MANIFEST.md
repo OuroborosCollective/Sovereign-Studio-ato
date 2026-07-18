@@ -1147,6 +1147,7 @@ GitHub Intent
 10. **BELEGT — MCP-Releasebasis:** Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap bestanden für `c1921578bb29e554bcfdc7c29391d6caab85ff8a`.
 11. **BELEGT — GitHub-Knowledge- und Modell-Health-Wahrheit:** PR #818 bestand Release Gate, vollständigen Type-check/Test/Build, Security Audit, alle CodeQL-Pfade, OAuth-Live-Path, E2E Smoke, Android- und Runtime-/UX-Verträge und wurde SHA-gebunden als Squash-Commit `feae19e0965ff276eadc97e95fb2b5aadd046463` gemergt. Öffentliche GitHub-Imports sind credential-frei bevorzugt, verlassene Knowledge-Imports werden fail-closed reconciled und Modell-Health erfordert eine echte Completion statt bloßer Readiness.
 12. **BELEGT — dreistufiger LLM-Kostenvertrag im Code und Live-Schema:** `free`, `standard` und `premium` sind als Backend-Policy, Admin-Vertrag, Usage-Settlement-Felder, Provider-Pricing-Felder und PostgreSQL-Constraints abgebildet. Provider-finanzierte Credits trennen bezahlte Kaufkraft von Bonus-/Admin-Gutschriften.
+13. **BELEGT — GitHub-Knowledge-Transportvertrag im Code:** GitHub-Antwortstatus und HTTPS-Transportfehler werden getrennt behandelt. Timeout, TLS, Connection/DNS und sonstige `requests`-Fehler liefern sichere `github_*`-Blocker mit passender `502`-/`504`-Semantik. Der Fehlerpfad schreibt Audit-Evidence nur mit einem URL-Fingerprint; rohe URL-, Query-, Credential- oder Exceptiondetails werden weder zurückgegeben noch persistiert.
 
 ## 24.2 Offen, teilweise oder blockiert
 
@@ -1157,6 +1158,7 @@ GitHub Intent
 5. **BLOCKIERT — Remote Memory:** Der optionale Memory Gateway ist prozessgesund, aber sein Milvus-Ziel war mit `EHOSTUNREACH` nicht erreichbar.
 6. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
 7. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation:** Der Architektur-Scanner meldet 57 heuristische Treffer in 27 Dateien. Repräsentative aktive Pfade wurden als Online-LLM-zuerst mit Offline-Fallback oder als strukturierte Policy-/Codeklassifikation bestätigt. Die vollständige SHA-gebundene Reviewliste muss noch maschinenlesbar verankert werden, damit jede Dateiänderung den Kandidaten automatisch erneut öffnet.
+8. **TEILWEISE — GitHub-Knowledge-Livecanary:** Der neue Codevertrag klassifiziert und auditiert HTTPS-443-Transportfehler sicher. Der vor dieser Änderung beobachtete Fehler hinterließ jedoch weder eine `knowledge_sources`-Zeile noch Audit-/Incident-Evidence; seine exakte DNS-, TLS-, Proxy- oder Connection-Unterursache ist deshalb rückwirkend nicht belegbar. Ein Livecanary nach einem separat freigegebenen immutable Backend-Deployment muss den realen GitHub-Import und den Auditblocker noch bestätigen.
 
 ## 24.3 Langfristig
 
@@ -1193,9 +1195,9 @@ Ein erster Release erfolgt nur, wenn:
 
 # 26. Aktueller Evidence-Snapshot
 
-Evidence-Stand: 18. Juli 2026. Implementierungs- und CI-Evidence ist an PR-Revision `75e2738594986b32bb41793cd150c56b0bdc5ae1` gebunden; dieser Dokumentnachtrag verändert ausschließlich die nachstehende Evidence-Beschreibung und muss als neuer PR-Head erneut durch alle GitHub-Gates laufen.
+Evidence-Stand: 18. Juli 2026. PR #820 wurde vom vollständig grünen Head `229a92bd1bb7eee42dc14fd428f0510e74e1f39f` als Merge-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc` in `main` übernommen. Die nachstehende GitHub-Knowledge-Transportänderung besitzt lokale Code-/Test-Evidence, ist aber noch nicht als immutable Backend-Release deployt.
 
-- **BELEGT:** Repository-Baseline vor dem Manifest-Update ist `feae19e0965ff276eadc97e95fb2b5aadd046463`.
+- **BELEGT:** Repository-Baseline für diese Folgearbeit ist der neu aufgelöste `main`-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc`.
 - **BELEGT:** Für die getrennte MCP-Release-Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
 - **BELEGT:** A2A wurde mit AgentCard, Owner-Scope, persistiertem Run und `contextId`, Streaming, Resume und Controller-/Task-Endstatus live korreliert.
@@ -1206,7 +1208,8 @@ Evidence-Stand: 18. Juli 2026. Implementierungs- und CI-Evidence ist an PR-Revis
 - **BELEGT:** Auf PR-Revision `75e2738594986b32bb41793cd150c56b0bdc5ae1` schlossen alle elf GitHub-Workflowläufe erfolgreich ab. Die gezielten lokalen Verträge bestanden mit `237`, die vollständige Suite unter `scripts/sovereign-backend/tests` mit `113` Tests; zusätzlich bestanden der Agents-SDK-Preflight für zwölf Agenten, Compile-, Mirror- und interne Live-Path-Verträge.
 - **BLOCKIERT:** Die Alias-Aktivierung von `sovereign-fast` und `sovereign-balanced` auf `gpt-5.4-mini` bestand die echten Completion-Canaries nicht. Die Alias-/Route-Aktivierung bleibt deshalb fail-closed; ein grüner Agents-SDK-Modellpfad wird nicht behauptet.
 - **BELEGT:** PR #818 wurde nach vollständig grünen GitHub-Gates SHA-gebunden gemergt. Der neue Modell-Healthvertrag unterscheidet Quota, Rate-Limit, Credentials, Aliasfehler und Infrastruktur und setzt `completionVerified=true` für Grün voraus.
-- **BELEGT:** Die Live-Knowledge-Datenbank enthält 37 bereite Quellen, 400/400 eingebettete Blöcke, `0` fehlende Embeddings und `0` verwaiste Links. Ein verlassener Import mit `0` Chunks wird durch den neuen 15-Minuten-Reconciliation-Vertrag fail-closed blockiert.
+- **BELEGT:** Der aktuelle Live-Readback enthält 38 Knowledge-Quellen: 37 `ready`, eine PDF-Quelle `processing`, 400 verknüpfte Chunks und keine persistierte GitHub-Quelle. In `audit_log` und `sovereign_toolchain_incidents` existiert für den früheren GitHub-443-Fehler keine passende Evidence; der Fehler lag damit vor dem bisherigen Quellen-Commit- und Auditpfad.
+- **BELEGT — Code/Test:** Der Folgecode klassifiziert GitHub-Timeout, TLS, Connection/DNS und sonstige Transportfehler in sichere Blocker, liefert keine rohen Exceptiondetails und persistiert nur einen URL-Fingerprint. Die vollständige Suite `scripts/sovereign-backend/tests` bestand lokal mit `119 passed`; der GitHub-PR- und Deploybeweis folgt getrennt.
 - **BELEGT:** Öffentliche GitHub-Wissensimporte laufen credential-frei zuerst; private Reads werden nur nach öffentlichem Nichtfund über den bestätigten Serverzugang versucht.
 - **BELEGT:** APK- und AAB-Artefakte, Hashes, Signaturdiagnose, genau ein Signer, Zertifikat-Fingerprint und Alignment liegen als Release-Evidence vor.
 - **BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server liefen ohne Restart-/OOM-/Exitfehler; LiteLLM und seine PostgreSQL-Instanz waren healthy.
