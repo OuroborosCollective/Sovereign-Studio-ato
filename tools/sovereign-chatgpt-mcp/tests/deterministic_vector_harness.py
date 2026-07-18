@@ -5,6 +5,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+MODULE_ROOT = Path(__file__).resolve().parents[1]
+if str(MODULE_ROOT) not in sys.path:
+    sys.path.insert(0, str(MODULE_ROOT))
+
 from deterministic_contract import (
     canonical_bytes,
     canonical_decimal_to_units,
