@@ -117,7 +117,10 @@ class A2ARuntimeClient(ControllerRuntimeClient):
             "contextId": context_id,
             "role": "ROLE_USER",
             "parts": [{"text": text[:20_000], "mediaType": "text/plain"}],
-            "metadata": {"model": "sovereign-fast", "evidence": evidence[:250_000]},
+            # A transport canary must not force a model alias. The backend owns
+            # the currently allowlisted Agents SDK default and rejects aliases
+            # that are healthy in LiteLLM but not enabled for this runtime.
+            "metadata": {"evidence": evidence[:250_000]},
         }
         if task_id:
             message["taskId"] = task_id
