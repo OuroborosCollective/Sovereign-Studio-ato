@@ -303,7 +303,7 @@ Das Admin Backend verwaltet keine bloßen UI-Listen, sondern serverseitige Vertr
 - Refund bei belegtem Fehlschlag,
 - Admin-Statistiken.
 
-**BELEGT:** Das Datenmodell besitzt jetzt eine getrennte `provider_funded_credits`-Spalte, damit Bonus-, Admin- oder Testgutschriften nicht automatisch externe Providerkosten auslösen dürfen. Live-Readback bestätigte die Spalte, die Constraints und `0` ungültige provider-finanzierte Balances.
+**BELEGT:** Das Datenmodell besitzt jetzt eine getrennte `provider_funded_credits`-Spalte, damit Bonus-, Admin- oder Testgutschriften nicht automatisch externe Providerkosten auslösen dürfen. Migration `022` wurde aus der unveränderten Repository-Quelle mit SHA-256 `7c08cf8f92dafe264171d62a19cd6bbc5accf1264574a00ad7f468c7323bdfa4` angewendet. Der anschließende Live-Readback bestätigte den Ledger-Eintrag `022`, alle sieben neuen Constraints, `0` ungültige provider-finanzierte Balances und `0` aktive Routen mit ungeprüfter Preisgrundlage.
 
 ## 6.3 Modelle, Provider und Routen
 
@@ -452,7 +452,7 @@ Der LiteLLM-Master-Key bleibt serverseitig. Nachgelagerte Services erhalten zwec
 
 **BELEGT — Inventar:** Der geschützte OpenAI-/LiteLLM-Inventarpfad lieferte 92 sichtbare Modelle und bestätigte `gpt-5.4-mini` als verfügbares Provider-Modell. Provider-Identität und Projektzugriff wurden ohne Secret-Ausgabe bestätigt.
 
-**BELEGT — Kostenarchitektur:** Das Repository enthält jetzt einen dreistufigen Kostenvertrag: `free` für Revolver-/Nullkostenrouten, `standard` mit mindestens `×4`, `premium` mit mindestens `×8`. Die Live-Datenbank besitzt die neuen Spalten und Constraints für provider-finanzierte Credits, Usage-Settlement, Billing-Kategorie, Multiplikator, Trace-/Stage-Evidence und Provider-Pricing-Metadaten.
+**BELEGT — Kostenarchitektur:** Das Repository enthält jetzt einen dreistufigen Kostenvertrag: `free` für Revolver-/Nullkostenrouten, `standard` mit mindestens `×4`, `premium` mit mindestens `×8`. Die Live-Datenbank besitzt die neuen Spalten und Constraints für provider-finanzierte Credits, Usage-Settlement, Billing-Kategorie, Multiplikator, Trace-/Stage-Evidence und Provider-Pricing-Metadaten. Die exakte Migration `022` wurde mit dem Repository-Hash `7c08cf8f92dafe264171d62a19cd6bbc5accf1264574a00ad7f468c7323bdfa4` angewendet und als Version `022` rückgelesen; alle sieben Constraints sind vorhanden, ungültige provider-finanzierte Balances und aktive ungeprüfte Routen stehen jeweils auf `0`.
 
 **BLOCKIERT — aktueller Modellpfad:** Die Aktivierung von `sovereign-fast` und `sovereign-balanced` auf `gpt-5.4-mini` wurde versucht. LiteLLM-Readiness und Modellalias-Inventar waren erreichbar, aber beide echten Completion-Canaries schlugen fehl. Die Aktivierung wurde deshalb nicht als grün übernommen. Agents-SDK läuft code-seitig nur über `sovereign-fast`, bleibt aber fail-closed blockiert, solange diese Route nicht aktiv, preisverifiziert und canary-bestanden ist.
 
@@ -1187,13 +1187,13 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, die grundsätzlich funktionsfähige LiteLLM-Kette, Knowledge-Integrität und signierte Android-Releaseartefakte sind belegt. Aktuelle harte Blocker sind der fehlgeschlagene post-install Gotenberg→Tika-Livecanary auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` sowie das erschöpfte Provider-Kontingent für echte LiteLLM-Completions. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
+**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, die grundsätzlich funktionsfähige LiteLLM-Kette, Knowledge-Integrität und signierte Android-Releaseartefakte sind belegt. Aktuelle harte Blocker sind der fehlgeschlagene post-install Gotenberg→Tika-Livecanary auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` sowie die aktuell fehlschlagenden echten LiteLLM-Completion-Canaries. Der geschützte Diagnosepfad liefert für den aktuellen Versuch keine belastbar feinere Providerursache; eine Kontingent-, Credential- oder andere Providerdiagnose wird daher nicht als heutige Wahrheit behauptet. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
 
 ---
 
 # 26. Aktueller Evidence-Snapshot
 
-Evidence-Stand: 18. Juli 2026, vor diesem Dokumentcommit.
+Evidence-Stand: 18. Juli 2026. Implementierungs- und CI-Evidence ist an PR-Revision `75e2738594986b32bb41793cd150c56b0bdc5ae1` gebunden; dieser Dokumentnachtrag verändert ausschließlich die nachstehende Evidence-Beschreibung und muss als neuer PR-Head erneut durch alle GitHub-Gates laufen.
 
 - **BELEGT:** Repository-Baseline vor dem Manifest-Update ist `feae19e0965ff276eadc97e95fb2b5aadd046463`.
 - **BELEGT:** Für die getrennte MCP-Release-Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
@@ -1202,7 +1202,8 @@ Evidence-Stand: 18. Juli 2026, vor diesem Dokumentcommit.
 - **BELEGT:** `scripts/sovereign-backend/app.py` ist die kanonische deployte Backend-App. `knowledge_library.py`, `r2_storage.py` und die übrigen echten Spiegel sind bytegleich.
 - **BELEGT:** Der generierte Endpoint-Snapshot enthält 156 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und vier separat klassifizierte nichtaktive Altflächen.
 - **BELEGT:** Das geschützte LiteLLM-/OpenAI-Inventar enthielt 92 Provider-Modelle und bestätigte `gpt-5.4-mini` als verfügbares Modell. Provider-Identität, Projektzugriff und vorhandener Provider-Key wurden ohne Secret-Ausgabe bestätigt.
-- **BELEGT:** Die Live-Datenbank enthält die neuen Kosten-/Billing-Spalten für `provider_funded_credits`, `llm_usage_settlements` und `llm_provider_deployments`; alle sieben neuen Constraints sind vorhanden, und es gibt `0` ungültige provider-finanzierte User-Balances.
+- **BELEGT:** Migration `022` wurde exakt aus der Repository-Quelle mit SHA-256 `7c08cf8f92dafe264171d62a19cd6bbc5accf1264574a00ad7f468c7323bdfa4` angewendet. Der Live-Readback bestätigte den Ledger-Eintrag `022`, die neuen Kosten-/Billing-Spalten für `provider_funded_credits`, `llm_usage_settlements` und `llm_provider_deployments`, alle sieben neuen Constraints, `0` ungültige provider-finanzierte User-Balances und `0` aktive Routen mit ungeprüfter Preisgrundlage.
+- **BELEGT:** Auf PR-Revision `75e2738594986b32bb41793cd150c56b0bdc5ae1` schlossen alle elf GitHub-Workflowläufe erfolgreich ab. Die gezielten lokalen Verträge bestanden mit `237`, die vollständige Suite unter `scripts/sovereign-backend/tests` mit `113` Tests; zusätzlich bestanden der Agents-SDK-Preflight für zwölf Agenten, Compile-, Mirror- und interne Live-Path-Verträge.
 - **BLOCKIERT:** Die Alias-Aktivierung von `sovereign-fast` und `sovereign-balanced` auf `gpt-5.4-mini` bestand die echten Completion-Canaries nicht. Die Alias-/Route-Aktivierung bleibt deshalb fail-closed; ein grüner Agents-SDK-Modellpfad wird nicht behauptet.
 - **BELEGT:** PR #818 wurde nach vollständig grünen GitHub-Gates SHA-gebunden gemergt. Der neue Modell-Healthvertrag unterscheidet Quota, Rate-Limit, Credentials, Aliasfehler und Infrastruktur und setzt `completionVerified=true` für Grün voraus.
 - **BELEGT:** Die Live-Knowledge-Datenbank enthält 37 bereite Quellen, 400/400 eingebettete Blöcke, `0` fehlende Embeddings und `0` verwaiste Links. Ein verlassener Import mit `0` Chunks wird durch den neuen 15-Minuten-Reconciliation-Vertrag fail-closed blockiert.
