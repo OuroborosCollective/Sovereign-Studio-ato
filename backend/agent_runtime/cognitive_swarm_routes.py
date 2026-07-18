@@ -46,6 +46,7 @@ from .cognitive_repository_tools import (
     create_repository_swarm_tasks,
 )
 from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
+from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import read_agent_job
@@ -77,10 +78,8 @@ def _contains_secret_shaped_text(value: str) -> bool:
 
 
 def _allowed_models() -> frozenset[str]:
-    configured = os.getenv("SOVEREIGN_AGENTS_ALLOWED_MODELS", DEFAULT_MODEL)
-    values = frozenset(item.strip() for item in configured.split(",") if item.strip())
-    allowed = values & ALLOWED_LITELLM_MODEL_ALIASES
-    return allowed or frozenset({DEFAULT_MODEL})
+    # Cost safety is a code contract, not an environment-controlled preference.
+    return frozenset({DEFAULT_MODEL}) & ALLOWED_LITELLM_MODEL_ALIASES
 
 
 def _current_session_user_id() -> str:
@@ -204,6 +203,7 @@ def execute_persisted_swarm(
     repository_tool_summary: Callable[[], dict[str, Any]] | None = None,
     job_id: str | None = None,
     task_ids_by_agent: dict[str, str] | None = None,
+    stage_billing: AgentStageBilling | None = None,
 ) -> tuple[dict[str, object], int]:
     manifest = manifest_payload()
 
@@ -250,6 +250,7 @@ def execute_persisted_swarm(
                 model=model,
                 stage_observer=persist_stage_event,
                 repository_tool_factory=repository_tool_factory,
+                stage_billing=stage_billing,
             )
         )
         repository_summary = repository_tool_summary() if callable(repository_tool_summary) else {}
@@ -435,7 +436,18 @@ def execute_persisted_swarm(
         finally:
             _close_connection(conn)
     except Exception as exc:
-        if isinstance(exc, SwarmExecutionError):
+        billing_failure = isinstance(exc, AgentBillingError)
+        if billing_failure:
+            failure = exc.safe_payload()
+            failure.update({
+                "failureStage": "billing",
+                "errorType": type(exc).__name__,
+                "nextAction": "PURCHASE_OR_REPLENISH_PROVIDER_FUNDED_CREDITS",
+                "retryable": False,
+                "httpStatus": exc.status_code,
+                "requestId": None,
+            })
+        elif isinstance(exc, SwarmExecutionError):
             failure = exc.safe_payload()
         else:
             failure = {
@@ -459,7 +471,7 @@ def execute_persisted_swarm(
                     conn,
                     user_id=user_id,
                     run_id=run_id,
-                    status="FAILED_RECOVERABLE",
+                    status="BLOCKED" if billing_failure else "FAILED_RECOVERABLE",
                     source="agents-sdk",
                     trace_id=trace_id,
                     reason=failure_reason,
@@ -510,7 +522,7 @@ def execute_persisted_swarm(
             "requestId": failure["requestId"],
             "error": str(failure["errorType"]),
             **(response_context or {}),
-        }, 502)
+        }, exc.status_code if billing_failure else 502)
 
     status_code = (
         202 if final_state["status"] == "WAITING_FOR_OWNER"
@@ -595,8 +607,52 @@ def start_cognitive_swarm_run(
             "errorType": type(exc).__name__,
         }, 503
 
+    stage_billing = AgentStageBilling(
+        get_connection=get_connection,
+        user_id=user_id,
+        run_id=resolved_run_id,
+        trace_id=resolved_trace_id,
+    )
     try:
-        mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))
+        mission_intent = asyncio.run(classify_mission_intent(
+            normalized_mission,
+            model=normalized_model,
+            stage_billing=stage_billing,
+        ))
+    except AgentBillingError as exc:
+        conn = get_connection()
+        try:
+            intent_state = transition_agent_run(
+                conn,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                status="BLOCKED",
+                source="agents-sdk",
+                trace_id=resolved_trace_id,
+                reason="The Agents SDK cost reservation was not backed by verified paid credits.",
+                next_action="PURCHASE_OR_REPLENISH_PROVIDER_FUNDED_CREDITS",
+                evidence_kind="agent_billing_blocker",
+                evidence_summary="The model call was blocked before provider execution.",
+                evidence_payload=exc.safe_payload(),
+                agent_id="billing",
+            )
+        finally:
+            _close_connection(conn)
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": intent_state["status"],
+            "source": intent_state["source"],
+            "evidenceId": intent_state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": exc.family,
+            "reason": intent_state["reason"],
+            "nextAction": intent_state["nextAction"],
+            "requiredCredits": exc.required_credits,
+            "availableProviderFundedCredits": exc.available_credits,
+        }, exc.status_code
     except Exception as raw_exc:
         exc = (
             raw_exc
@@ -762,6 +818,7 @@ def start_cognitive_swarm_run(
         job_id=implementation_job.job_id if implementation_job else None,
         task_id=task_ids_by_agent.get("judge"),
         task_ids_by_agent=task_ids_by_agent,
+        stage_billing=stage_billing,
         response_context={
             "sessionKey": resolved_session_key,
             "a2aContextId": str(a2a_context_id or "") or None,
@@ -973,6 +1030,12 @@ def resume_cognitive_swarm_run(
         "New runtime evidence:\n"
         f"{normalized_evidence or '[no new evidence supplied]'}"
     )
+    stage_billing = AgentStageBilling(
+        get_connection=get_connection,
+        user_id=user_id,
+        run_id=claim.run.run_id,
+        trace_id=resolved_trace_id,
+    )
     return execute_persisted_swarm(
         get_connection=get_connection,
         user_id=user_id,
@@ -987,6 +1050,7 @@ def resume_cognitive_swarm_run(
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
         job_id=claim.run.job_id,
         task_ids_by_agent=task_ids_by_agent,
+        stage_billing=stage_billing,
         response_context={
             "sessionKey": claim.run.session_key,
             "a2aContextId": claim.run.a2a_context_id,
