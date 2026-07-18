@@ -76,7 +76,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py deterministic_contract.py deterministic_architecture_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py openai_project_access_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -108,6 +108,9 @@ jobs:
           grep -q 'SOVEREIGN_BACKEND_INTERNAL_URL' deploy/install-on-vps.sh
           grep -q 'sovereign-chatgpt-command-worker.service' deploy/install-on-vps.sh
           grep -q 'tool_extensions.py' deploy/install-on-vps.sh
+          grep -q 'repository_skill_tools.py' deploy/install-on-vps.sh
+          grep -q 'skill_supply_chain_tools.py' deploy/install-on-vps.sh
+          grep -q 'openai_project_access_tools.py' deploy/install-on-vps.sh
           grep -q 'launcher.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_ADMIN_SQL' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_MAIN_PUSH' deploy/install-on-vps.sh

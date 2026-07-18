@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter, defaultdict
+import difflib
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -626,6 +627,117 @@ def _mirror_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
     return sorted(output, key=lambda item: (item["source"], item["mirror"]))
 
 
+def _redact_diff_line(line: str) -> str:
+    if not _SECRET_MARKER.search(line):
+        return line[:1_000]
+    prefix = line[:1] if line[:1] in {"+", "-", " "} else ""
+    return f"{prefix}<redacted-secret-shaped-line>"
+
+
+def _mirror_diff_report(repo: Path, paths: list[str] | None = None) -> dict[str, Any]:
+    files = _tracked_files(repo)
+    selected = {_safe_changed_path(path) for path in (paths or []) if str(path or "").strip()}
+    pairs = _mirror_inventory(repo, files)
+    if selected:
+        pairs = [item for item in pairs if item["source"] in selected or item["mirror"] in selected]
+    reports: list[dict[str, Any]] = []
+    for pair in pairs:
+        if pair["byteEqual"]:
+            continue
+        left = _safe_text(repo / pair["source"])
+        right = _safe_text(repo / pair["mirror"])
+        if left is None or right is None:
+            reports.append({
+                **pair,
+                "diffAvailable": False,
+                "diffLines": [],
+                "diffTruncated": False,
+                "reason": "non-text or bounded-size limit",
+            })
+            continue
+        raw = list(difflib.unified_diff(
+            left.splitlines(),
+            right.splitlines(),
+            fromfile=pair["source"],
+            tofile=pair["mirror"],
+            lineterm="",
+            n=3,
+        ))
+        changed = [line for line in raw if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+        reports.append({
+            **pair,
+            "diffAvailable": True,
+            "changedLineCount": len(changed),
+            "addedLineCount": sum(1 for line in changed if line.startswith("+")),
+            "removedLineCount": sum(1 for line in changed if line.startswith("-")),
+            "diffLines": [_redact_diff_line(line) for line in raw[:400]],
+            "diffTruncated": len(raw) > 400,
+        })
+    payload = {
+        "schemaVersion": "sovereign.mirror-diff.v1",
+        "revision": _git(repo, "rev-parse", "HEAD"),
+        "selectedPaths": sorted(selected),
+        "mismatchCount": len(reports),
+        "reports": reports[:40],
+        "truncated": len(reports) > 40,
+        "mutationPerformed": False,
+        "secretValuesReturned": False,
+        "truthNotice": "Diff hunks identify repository drift; they do not identify the canonical producer by themselves.",
+    }
+    payload["reportSha256"] = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return payload
+
+
+def _endpoint_reference(repo: Path) -> dict[str, Any]:
+    files = _tracked_files(repo)
+    backend = _backend_contracts(repo, files)
+    calls = _frontend_contract_calls(repo, files)
+    grouped: defaultdict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for item in backend:
+        for method in item["methods"]:
+            grouped[(method, item["path"])].append({
+                "file": item["file"],
+                "line": item["line"],
+                "confidence": item["confidence"],
+            })
+    endpoints: list[dict[str, Any]] = []
+    for (method, path), sources in sorted(grouped.items()):
+        identity = hashlib.sha256(f"{method} {path}".encode("utf-8")).hexdigest()[:24]
+        endpoints.append({
+            "endpointId": f"endpoint:{identity}",
+            "method": method,
+            "path": path,
+            "sources": sorted(sources, key=lambda item: (item["file"], item["line"])),
+        })
+    unmatched: list[dict[str, Any]] = []
+    for call in calls:
+        matches = [item for item in endpoints if item["method"] == call["method"] and _contract_path_matches(item["path"], call["path"])]
+        if not matches:
+            unmatched.append(call)
+    canonical = {
+        "revision": _git(repo, "rev-parse", "HEAD"),
+        "endpoints": endpoints,
+        "frontendCalls": calls,
+        "unmatchedFrontendCalls": unmatched,
+    }
+    return {
+        "schemaVersion": "sovereign.endpoint-reference.v1",
+        **canonical,
+        "endpointCount": len(endpoints),
+        "frontendCallCount": len(calls),
+        "unmatchedFrontendCallCount": len(unmatched),
+        "referenceSha256": hashlib.sha256(
+            json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "generatedFromCurrentRepository": True,
+        "runtimeReachabilityProven": False,
+        "mutationPerformed": False,
+        "truthNotice": "This reference is generated from static route and client-call contracts at the exact revision; live authentication and reachability require separate canaries.",
+    }
+
+
 def _architecture_snapshot(repo: Path) -> dict[str, Any]:
     files = _tracked_files(repo)
     product_map = _scan(repo, include_logic=True)
@@ -1193,6 +1305,8 @@ def repository_skill_tool_inventory() -> dict[str, Any]:
             {"name": "repository_architecture_snapshot", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
             {"name": "repository_architecture_drift_report", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
             {"name": "repository_architecture_runtime_drift_evidence", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
+            {"name": "repository_mirror_diff_report", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
+            {"name": "repository_endpoint_reference", "sourceSkill": "sovereign-architecture-guardian", "mutates": False},
         ],
         "truthBoundary": "Static maps and ranked candidates are not runtime success. The runtime-drift tool reads schema metadata and vector canaries only; it never returns table rows or mutates PostgreSQL.",
         "databaseAccessed": False,
@@ -1233,6 +1347,19 @@ def repository_architecture_drift_report(workspace_id: str) -> dict[str, Any]:
 def repository_architecture_runtime_drift_evidence(workspace_id: str) -> dict[str, Any]:
     """Compare repository migration metadata with bounded live PostgreSQL and vector evidence."""
     return _architecture_runtime_drift_evidence(_repo(workspace_id))
+
+
+def repository_mirror_diff_report(
+    workspace_id: str,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Return bounded secret-safe unified diffs for non-equal canonical/deployment mirror pairs."""
+    return _mirror_diff_report(_repo(workspace_id), paths=paths)
+
+
+def repository_endpoint_reference(workspace_id: str) -> dict[str, Any]:
+    """Generate a normalized endpoint and frontend-call reference from the current repository revision."""
+    return _endpoint_reference(_repo(workspace_id))
 
 
 def repository_learning_records_normalize_preview(
@@ -1330,6 +1457,8 @@ def register(mcp: Any, runtime: Any, database: Any = None) -> None:
         repository_architecture_snapshot,
         repository_architecture_drift_report,
         repository_architecture_runtime_drift_evidence,
+        repository_mirror_diff_report,
+        repository_endpoint_reference,
         repository_learning_records_normalize_preview,
         repository_release_hunt_manifest,
     ):

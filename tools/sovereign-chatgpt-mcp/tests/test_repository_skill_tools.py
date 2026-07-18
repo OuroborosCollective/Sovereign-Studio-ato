@@ -146,7 +146,7 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     return repo
 
 
-def test_inventory_registers_nine_read_only_tools(repository: Path) -> None:
+def test_inventory_registers_eleven_read_only_tools(repository: Path) -> None:
     mcp = FakeMCP()
     skill_tools.register(mcp, FakeRuntime(repository))
 
@@ -158,6 +158,8 @@ def test_inventory_registers_nine_read_only_tools(repository: Path) -> None:
         "repository_architecture_snapshot",
         "repository_architecture_drift_report",
         "repository_architecture_runtime_drift_evidence",
+        "repository_mirror_diff_report",
+        "repository_endpoint_reference",
         "repository_learning_records_normalize_preview",
         "repository_release_hunt_manifest",
     ]
@@ -232,6 +234,31 @@ def test_architecture_guardian_detects_cross_layer_drift_without_claiming_runtim
     assert drift["persistedOutcome"] is None
     assert drift["mutationPerformed"] is False
     assert "Static candidates" in drift["truthNotice"]
+
+
+def test_mirror_diff_and_endpoint_reference_are_precise_and_read_only(repository: Path) -> None:
+    mirror = skill_tools.repository_mirror_diff_report(
+        WORKSPACE_ID,
+        paths=["backend/mirror.py"],
+    )
+    endpoints = skill_tools.repository_endpoint_reference(WORKSPACE_ID)
+
+    assert mirror["mismatchCount"] == 1
+    assert mirror["reports"][0]["source"] == "backend/mirror.py"
+    assert mirror["reports"][0]["mirror"] == "scripts/sovereign-backend/mirror.py"
+    assert mirror["reports"][0]["changedLineCount"] == 2
+    assert mirror["mutationPerformed"] is False
+    assert mirror["secretValuesReturned"] is False
+
+    contracts = {(item["method"], item["path"]) for item in endpoints["endpoints"]}
+    unmatched = {(item["method"], item["path"]) for item in endpoints["unmatchedFrontendCalls"]}
+    assert ("GET", "/api/items/<p>") in contracts
+    assert ("POST", "/api/orders") in contracts
+    assert ("POST", "/api/items/<p>") in unmatched
+    assert ("DELETE", "/api/missing") in unmatched
+    assert endpoints["generatedFromCurrentRepository"] is True
+    assert endpoints["runtimeReachabilityProven"] is False
+    assert endpoints["mutationPerformed"] is False
 
 
 def test_architecture_runtime_drift_uses_only_schema_metadata(repository: Path, monkeypatch) -> None:

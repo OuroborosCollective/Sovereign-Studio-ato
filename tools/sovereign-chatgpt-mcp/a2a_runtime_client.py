@@ -132,6 +132,17 @@ class A2ARuntimeClient(ControllerRuntimeClient):
         task = payload.get("task")
         if isinstance(task, dict):
             return task
+        result = payload.get("result")
+        if isinstance(result, dict):
+            wrapped_task = result.get("task")
+            if isinstance(wrapped_task, dict):
+                return wrapped_task
+            if (
+                isinstance(result.get("id"), str)
+                and isinstance(result.get("contextId"), str)
+                and isinstance(result.get("status"), dict)
+            ):
+                return result
         if (
             isinstance(payload.get("id"), str)
             and isinstance(payload.get("contextId"), str)

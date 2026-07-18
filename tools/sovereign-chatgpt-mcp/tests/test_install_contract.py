@@ -157,6 +157,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(repository_skill_tools.repository_architecture_snapshot)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_drift_report)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_runtime_drift_evidence)' in installer
+    assert 'callable(repository_skill_tools.repository_mirror_diff_report)' in installer
+    assert 'callable(repository_skill_tools.repository_endpoint_reference)' in installer
     assert 'callable(skill_supply_chain_tools.skill_supply_chain_inventory)' in installer
     assert 'callable(skill_supply_chain_tools.template_generation_plan)' in installer
     assert 'deterministic_contract.KAPPA_SCALE == 1000000' in installer
@@ -183,6 +185,9 @@ def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None
 
     assert "Verify Gotenberg to Tika live canary" in workflow
     assert "document_pipeline.py" in workflow
+    assert "repository_skill_tools.py" in workflow
+    assert "skill_supply_chain_tools.py" in workflow
+    assert "openai_project_access_tools.py" in workflow
     assert "document_pipeline_live_canary" in workflow
     assert 'server.broker.call(' in workflow
     assert '"DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"' in workflow
