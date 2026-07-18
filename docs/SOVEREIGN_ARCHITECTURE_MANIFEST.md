@@ -4,7 +4,7 @@
 
 **Evidence-Stand:** 18. Juli 2026
 
-**Baseline-Revision vor diesem Manifest-Update:** `c1921578bb29e554bcfdc7c29391d6caab85ff8a`
+**Baseline-Revision vor diesem Manifest-Update:** `feae19e0965ff276eadc97e95fb2b5aadd046463`
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
 **Produkt:** Android-first NoCode-/AI-Service- und Agentenplattform  
@@ -429,7 +429,9 @@ Der LiteLLM-Master-Key bleibt serverseitig. Nachgelagerte Services erhalten zwec
 
 ## 8.7 Aktueller Betriebsbeweis
 
-**BELEGT:** Projektzuordnung und Service-Identität wurden über den geschützten Runtimepfad bestätigt. Das Providerinventar lieferte 92 sichtbare Modelle. Die privaten Aliase `sovereign-fast` und `sovereign-balanced` waren bereit und bestanden jeweils einen echten Completion-Canary über LiteLLM. Damit sind Providerzugriff, Aliasauflösung, Readiness und Completion für diese beiden Routen belegt.
+**BELEGT — historischer Funktionsbeweis:** Projektzuordnung und Service-Identität wurden über den geschützten Runtimepfad bestätigt. Das Providerinventar lieferte 92 sichtbare Modelle. Die privaten Aliase `sovereign-fast` und `sovereign-balanced` bestanden zu diesem Zeitpunkt jeweils einen echten Completion-Canary über LiteLLM. Damit sind Providerzugriff, Aliasauflösung, Readiness und Completion als grundsätzlich funktionsfähige Kette belegt.
+
+**BLOCKIERT — aktueller Betriebszustand:** Ein neuer echter Completion-Canary erreicht LiteLLM und den Providerpfad, wird aber mit HTTP 429 und der Providerfehlerfamilie `insufficient_quota` abgewiesen. Die Admin-Healthfläche klassifiziert diesen Zustand nun als `provider_quota_exhausted` statt als unspezifisches `unavailable`. Ein Prozess-/Readiness-Erfolg darf keine Modellroute grün markieren; `completionVerified=true` bleibt zwingend. Die produktive Datenbank enthält aktuell 17 deaktivierte Routen. Sie werden nicht automatisch aktiviert, solange keine erfolgreiche Completion-Evidence vorliegt.
 
 **TEILWEISE:** Der vollständige automatische Onboarding-Lifecycle für beliebige neue Provider — geschützter Key-Input, Preisergänzung, Datenbankeinträge, Aliasplanung, atomare Aktivierung und Rollback — ist weiterhin nicht als eine einzige durchgängige Produktionskette belegt.
 
@@ -648,6 +650,14 @@ Jede Migration muss fail-closed laufen, Preview/Rollback-Evidence liefern und da
 ---
 
 # 14. Vektordatenbank und Knowledge Memory
+
+## 14.1 Aktueller Live- und Importvertrag
+
+**BELEGT:** Die produktive PostgreSQL-/pgvector-Instanz enthält aktuell 37 `ready`-Quellen mit zusammen 400 verknüpften Wissensblöcken. Alle 400 Blöcke besitzen Embeddings; es wurden `0` fehlende Embeddings und `0` verwaiste Source-Block-Links gemessen.
+
+**BELEGT:** Ein weiterer Import steht mit `0` Chunks auf `processing`. Revision `feae19e0965ff276eadc97e95fb2b5aadd046463` führt deshalb einen fail-closed Reconciliation-Vertrag ein: ein länger als 15 Minuten verlassener `processing`-Datensatz ohne verknüpfte Blöcke wird als `blocked` mit `knowledge_import_interrupted` markiert. Ein Importfehler nach dem Processing-Commit wird ebenfalls als begrenzte Fehlerfamilie persistiert; interne Exception-Texte werden nicht als Blocker gespeichert.
+
+**BELEGT:** GitHub-Wissensimporte trennen öffentliche und private Lesepfade. Kanonische öffentliche `github.com`-Repository- und Datei-URLs werden zuerst ohne Server-Credential read-only über die GitHub API gelesen. Nur wenn das Repository öffentlich nicht auflösbar ist, darf einmal ein vorhandener serverseitiger Lesezugang versucht werden. Abgelehnte Credentials können öffentliche Repositories damit nicht mehr vergiften. Private Repositories, Rate-Limits, ungültige Antworten und nicht erlaubte Raw-Download-Hosts erzeugen getrennte, operator-sichere Blocker.
 
 ## Aufgaben
 
@@ -1008,7 +1018,10 @@ Structured Action
 
 ```text
 Repo-URL/Selection
-  → Access prüfen
+  → kanonische GitHub-URL validieren
+  → öffentlichen Read-only-Zugriff zuerst versuchen
+  → nur bei nicht öffentlichem Repository bestätigten privaten Lesezugang versuchen
+  → Rate-Limit, Credential- und Repo-Blocker getrennt klassifizieren
   → Snapshot/Clone
   → Branch/Revision fixieren
   → relevante Dateien finden
@@ -1049,8 +1062,9 @@ Request
 
 ```text
 GitHub Intent
-  → validierter Access-State
-  → Repo-/Branch-Scope
+  → URL und Repo-/Branch-Scope validieren
+  → öffentliche Reads credential-frei ausführen
+  → privaten Access-State nur für nicht öffentliche Reads oder Schreibaktionen verwenden
   → Lesen oder isolierter Workspace
   → Patch/Commit
   → Draft PR
@@ -1096,16 +1110,17 @@ GitHub Intent
 4. **BELEGT — persistierte Multi-Agent-Runs:** Dispatcher, sechs Worker, Judge, Tasks, Events, Tool Calls, Evidence, Blocker, Failures und Approvals sind persistiert und trennen aktuelle von historischen Zuständen.
 5. **BELEGT — kanonische Backend-Ownership:** `scripts/sovereign-backend/app.py` ist die einzige deployte App-Wahrheit; echte Spiegel einschließlich Knowledge und R2 sind bytegleich.
 6. **BELEGT — Endpoint-Referenz:** 156 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und vier offen ausgewiesene nichtaktive Altflächen.
-7. **BELEGT — LiteLLM-Kernpfad:** 92 Provider-Modelle wurden inventarisiert; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries.
+7. **BELEGT — historischer LiteLLM-Kernpfad:** 92 Provider-Modelle wurden inventarisiert; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries. Der davon getrennte aktuelle Quota-Blocker wird unter 24.2 geführt.
 8. **BELEGT — Android-Releaseartefakte:** APK und AAB, SHA-256, Signaturdiagnose, ein Signer, Zertifikat-Fingerprint und Alignment wurden im Releaseworkflow belegt.
 9. **BELEGT — externe Action-Stream-Brücke im Codevertrag:** owner-scoped, idempotente externe Events mit deterministischen IDs und ohne Run-, Task- oder Blockermutation sind über Store, Backendroute, MCP-Client und MCP-Tool verdrahtet und getestet.
 10. **BELEGT — MCP-Releasebasis:** Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap bestanden für `c1921578bb29e554bcfdc7c29391d6caab85ff8a`.
+11. **BELEGT — GitHub-Knowledge- und Modell-Health-Wahrheit:** PR #818 bestand Release Gate, vollständigen Type-check/Test/Build, Security Audit, alle CodeQL-Pfade, OAuth-Live-Path, E2E Smoke, Android- und Runtime-/UX-Verträge und wurde SHA-gebunden als Squash-Commit `feae19e0965ff276eadc97e95fb2b5aadd046463` gemergt. Öffentliche GitHub-Imports sind credential-frei bevorzugt, verlassene Knowledge-Imports werden fail-closed reconciled und Modell-Health erfordert eine echte Completion statt bloßer Readiness.
 
 ## 24.2 Offen, teilweise oder blockiert
 
 1. **BLOCKIERT — Dokumentpipeline:** Der post-install Gotenberg→Tika-Livecanary des Workflows `29649984723` ist trotz grüner Validation, Image-, Digest- und Bootstrap-Jobs fehlgeschlagen.
 2. **TEILWEISE — Action Stream:** Implementierung und Tests sind belegt; ein echter doppelter externer Append-Canary muss noch Idempotenz und unveränderten Run-/Blockerstatus in der Produktionsdatenbank bestätigen.
-3. **TEILWEISE — Provider-Onboarding:** Providerinventar, zwei Aliase und Completion-Canaries sind belegt; der vollständige automatische Lifecycle für beliebige neue Provider inklusive Preisen, atomarer Aktivierung und Rollback fehlt als durchgängiger Produktionsbeweis.
+3. **BLOCKIERT/TEILWEISE — Provider-Onboarding:** Providerinventar und historische Completion-Canaries belegen die grundsätzliche Kette. Der aktuelle echte Canary ist jedoch durch `provider_quota_exhausted` blockiert; alle 17 persistierten Routen bleiben deaktiviert. Zusätzlich fehlt der vollständige automatische Lifecycle für beliebige neue Provider inklusive Preisen, atomarer Aktivierung und Rollback als durchgängiger Produktionsbeweis.
 4. **TEILWEISE — Betriebsbeweise:** Browserless, Tika, Gotenberg, Dozzle, Code Server, LiteLLM und LiteLLM-PostgreSQL besitzen Prozess-/Health-Evidence. Fachliche End-to-End-Canaries bleiben je Funktion separat erforderlich.
 5. **BLOCKIERT — Remote Memory:** Der optionale Memory Gateway ist prozessgesund, aber sein Milvus-Ziel war mit `EHOSTUNREACH` nicht erreichbar.
 6. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
@@ -1140,7 +1155,7 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, LiteLLM-Kernrouten und signierte Android-Releaseartefakte sind inzwischen belegt. Der aktuelle harte interne Blocker ist jedoch der fehlgeschlagene post-install Gotenberg→Tika-Livecanary auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a`. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
+**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, die grundsätzlich funktionsfähige LiteLLM-Kette, Knowledge-Integrität und signierte Android-Releaseartefakte sind belegt. Aktuelle harte Blocker sind der fehlgeschlagene post-install Gotenberg→Tika-Livecanary auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` sowie das erschöpfte Provider-Kontingent für echte LiteLLM-Completions. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
 
 ---
 
@@ -1148,13 +1163,16 @@ Ein erster Release erfolgt nur, wenn:
 
 Evidence-Stand: 18. Juli 2026, vor diesem Dokumentcommit.
 
-- **BELEGT:** Repository-Baseline vor dem Manifest-Update ist `c1921578bb29e554bcfdc7c29391d6caab85ff8a`.
-- **BELEGT:** Für diese Revision bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
+- **BELEGT:** Repository-Baseline vor dem Manifest-Update ist `feae19e0965ff276eadc97e95fb2b5aadd046463`.
+- **BELEGT:** Für die getrennte MCP-Release-Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
 - **BELEGT:** A2A wurde mit AgentCard, Owner-Scope, persistiertem Run und `contextId`, Streaming, Resume und Controller-/Task-Endstatus live korreliert.
 - **BELEGT:** `scripts/sovereign-backend/app.py` ist die kanonische deployte Backend-App. `knowledge_library.py`, `r2_storage.py` und die übrigen echten Spiegel sind bytegleich.
 - **BELEGT:** Der generierte Endpoint-Snapshot enthält 156 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und vier separat klassifizierte nichtaktive Altflächen.
-- **BELEGT:** Das LiteLLM-Inventar enthielt 92 Provider-Modelle; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries.
+- **BELEGT:** Das LiteLLM-Inventar enthielt 92 Provider-Modelle; `sovereign-fast` und `sovereign-balanced` bestanden historische echte Completion-Canaries. Der aktuelle Canary erreicht den Providerpfad, ist aber durch HTTP 429 `insufficient_quota` blockiert; alle 17 persistierten Routen bleiben fail-closed deaktiviert.
+- **BELEGT:** PR #818 wurde nach vollständig grünen GitHub-Gates SHA-gebunden gemergt. Der neue Modell-Healthvertrag unterscheidet Quota, Rate-Limit, Credentials, Aliasfehler und Infrastruktur und setzt `completionVerified=true` für Grün voraus.
+- **BELEGT:** Die Live-Knowledge-Datenbank enthält 37 bereite Quellen, 400/400 eingebettete Blöcke, `0` fehlende Embeddings und `0` verwaiste Links. Ein verlassener Import mit `0` Chunks wird durch den neuen 15-Minuten-Reconciliation-Vertrag fail-closed blockiert.
+- **BELEGT:** Öffentliche GitHub-Wissensimporte laufen credential-frei zuerst; private Reads werden nur nach öffentlichem Nichtfund über den bestätigten Serverzugang versucht.
 - **BELEGT:** APK- und AAB-Artefakte, Hashes, Signaturdiagnose, genau ein Signer, Zertifikat-Fingerprint und Alignment liegen als Release-Evidence vor.
 - **BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server liefen ohne Restart-/OOM-/Exitfehler; LiteLLM und seine PostgreSQL-Instanz waren healthy.
 - **BLOCKIERT:** Workflow `29649984723` scheiterte ausschließlich im post-install Job `Verify Gotenberg to Tika live canary`; Validation, Image, Digest und VPS-Bootstrap waren grün.
