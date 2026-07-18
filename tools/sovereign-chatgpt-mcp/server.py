@@ -667,13 +667,52 @@ def postgres_migration_apply(workspace_id: str, path: str, confirmation_sha256: 
     return database.apply_migration(workspace_id, path, confirmation_sha256)
 
 
+def _deploy_backend_with_a2a_evidence(
+    image_digest: str,
+    expected_revision: str,
+    confirmation_revision: str,
+) -> dict[str, Any]:
+    deployment = broker.call(
+        "deploy_verified_release",
+        {
+            "image_digest": image_digest,
+            "expected_revision": expected_revision,
+            "confirmation_revision": confirmation_revision,
+        },
+        timeout=960,
+    )
+    if not isinstance(deployment, dict) or not deployment.get("ok"):
+        return deployment
+    try:
+        canary = a2a_runtime.live_canary(expected_revision=expected_revision)
+    except Exception as exc:
+        return {
+            **deployment,
+            "ok": False,
+            "status": "DEPLOYED_A2A_EVIDENCE_UNAVAILABLE",
+            "a2aCanary": {
+                "ok": False,
+                "status": "A2A_LIVE_CANARY_FAILED",
+                "errorType": type(exc).__name__,
+                "protectedValuesReturned": False,
+            },
+        }
+    canary_ok = bool(isinstance(canary, dict) and canary.get("ok"))
+    return {
+        **deployment,
+        "ok": canary_ok,
+        "status": "DEPLOYED_AND_A2A_VERIFIED" if canary_ok else "DEPLOYED_A2A_EVIDENCE_INCOMPLETE",
+        "a2aCanary": canary,
+    }
+
+
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def deploy_verified_backend_release(image_digest: str, expected_revision: str, confirmation_revision: str) -> dict[str, Any]:
-    """Use the local broker to deploy an immutable image digest."""
-    return broker.call(
-        "deploy_verified_release",
-        {"image_digest": image_digest, "expected_revision": expected_revision, "confirmation_revision": confirmation_revision},
-        timeout=960,
+    """Deploy one immutable backend digest and require owner-scoped A2A evidence."""
+    return _deploy_backend_with_a2a_evidence(
+        image_digest,
+        expected_revision,
+        confirmation_revision,
     )
 
 
