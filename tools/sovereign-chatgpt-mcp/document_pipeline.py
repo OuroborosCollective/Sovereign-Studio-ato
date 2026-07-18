@@ -11,7 +11,7 @@ import requests
 
 MIN_PDF_BYTES = 200
 MAX_PDF_BYTES = 33 * 1024 * 1024
-_DIRECT_CONTAINER_PROXIES = {"http": "", "https": ""}
+_DIRECT_CONTAINER_PROXIES = {"http": "", "https": "", "all": ""}
 
 
 class DocumentPipelineRuntime:

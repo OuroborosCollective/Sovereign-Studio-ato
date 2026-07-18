@@ -126,6 +126,61 @@ def test_controller_start_rejects_secret_shaped_input_before_network(monkeypatch
     assert session.calls == []
 
 
+def test_controller_external_event_uses_idempotent_owner_bridge_contract(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "event": {
+                "eventId": "event-external-1234",
+                "created": True,
+                "runStateChanged": False,
+            },
+        })
+    ])
+    client = ControllerRuntimeClient(session=session)
+    run_id = "run-11111111111111111111111111111111"
+
+    result = client.record_external_event(
+        run_id,
+        source="github",
+        external_identity="workflow:29648652001",
+        event_type="workflow_completed",
+        summary="Exact-head workflow completed.",
+        payload={"headSha": "a" * 40, "conclusion": "success"},
+    )
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == (
+        "http://backend:8787/api/internal/controller/runs/"
+        f"{run_id}/events/external"
+    )
+    assert call["json"]["source"] == "github"
+    assert call["json"]["externalIdentity"] == "workflow:29648652001"
+    assert call["timeout"] == 30
+    assert result["status"] == "CONTROLLER_EXTERNAL_EVENT_RECORDED"
+    assert result["protected_values_returned"] is False
+
+
+def test_controller_external_event_rejects_secret_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([])
+    client = ControllerRuntimeClient(session=session)
+
+    with pytest.raises(ValueError, match="secret-shaped"):
+        client.record_external_event(
+            "run-11111111111111111111111111111111",
+            source="github",
+            external_identity="workflow:29648652001",
+            event_type="workflow_completed",
+            summary="Exact-head workflow completed.",
+            payload={"token": "sk-proj-" + "x" * 30},
+        )
+    assert session.calls == []
+
+
 def test_status_rejects_non_uuid_before_network(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     session = FakeSession([])

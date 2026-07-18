@@ -21,6 +21,7 @@ from agent_runtime.cognitive_run_store import (
     list_resumable_agent_runs,
     read_agent_events,
     record_agent_stage_event,
+    record_external_action_event,
     stored_run_from_row,
     request_agent_approval,
     transition_agent_run,
@@ -194,6 +195,96 @@ def test_stage_event_persists_agent_activity_without_advancing_iteration_budget(
     assert hashlib.sha256(lease_token.encode("utf-8")).hexdigest() in update_params
     assert lease_token not in repr(conn.calls)
     assert "INSERT INTO agent_events" in conn.calls[2][0]
+
+
+def _external_run_row() -> dict[str, Any]:
+    return {
+        "run_id": "run-test",
+        "status": "BLOCKED",
+        "trace_id": "trace-test",
+        "next_action": "FIX_CURRENT_BLOCKER",
+    }
+
+
+def test_external_action_event_is_owner_scoped_idempotent_and_state_neutral() -> None:
+    conn = FakeConnection()
+    conn.fetchone_rows = [
+        _external_run_row(),
+        {"evidence_id": "created"},
+        {"event_id": "created"},
+    ]
+    raw_secret = "sk-proj-" + "x" * 30
+
+    state = record_external_action_event(
+        conn,
+        user_id=USER_ID,
+        run_id="run-test",
+        source="github",
+        external_identity="workflow:29648652001",
+        event_type="workflow_completed",
+        summary="Exact-head GitHub workflow completed.",
+        payload={
+            "headSha": "a" * 40,
+            "conclusion": "success",
+            "nested": {"credential": raw_secret},
+        },
+    )
+
+    assert state["created"] is True
+    assert state["duplicate"] is False
+    assert state["runStatus"] == "BLOCKED"
+    assert state["runStateChanged"] is False
+    assert state["taskStateChanged"] is False
+    assert state["activeBlockerChanged"] is False
+    assert state["rawSecretsPersisted"] is False
+    assert conn.commits == 1
+    assert conn.rollbacks == 0
+    assert [call[0].split()[0] for call in conn.calls] == ["SELECT", "INSERT", "INSERT"]
+    assert "user_id = %s::uuid" in conn.calls[0][0]
+    assert "FOR SHARE" in conn.calls[0][0]
+    assert not any(call[0].startswith("UPDATE") for call in conn.calls)
+    persisted = repr(conn.calls)
+    assert raw_secret not in persisted
+    assert "[redacted]" in persisted
+    assert "ON CONFLICT (evidence_id) DO NOTHING" in conn.calls[1][0]
+    assert "ON CONFLICT (event_id) DO NOTHING" in conn.calls[2][0]
+
+    duplicate = FakeConnection()
+    duplicate.fetchone_rows = [_external_run_row(), None, None]  # type: ignore[list-item]
+    repeated = record_external_action_event(
+        duplicate,
+        user_id=USER_ID,
+        run_id="run-test",
+        source="github",
+        external_identity="workflow:29648652001",
+        event_type="workflow_completed",
+        summary="Exact-head GitHub workflow completed.",
+        payload={"conclusion": "success"},
+    )
+    assert repeated["eventId"] == state["eventId"]
+    assert repeated["evidenceId"] == state["evidenceId"]
+    assert repeated["created"] is False
+    assert repeated["duplicate"] is True
+    assert not any(call[0].startswith("UPDATE") for call in duplicate.calls)
+
+
+def test_external_action_event_rejects_non_external_source_before_database_access() -> None:
+    conn = FakeConnection()
+
+    with pytest.raises(ValueError, match="not allowed for external action events"):
+        record_external_action_event(
+            conn,
+            user_id=USER_ID,
+            run_id="run-test",
+            source="agents-sdk",
+            external_identity="agent:self-report",
+            event_type="invalid_external_event",
+            summary="Agents SDK may not impersonate an external producer.",
+            payload={},
+        )
+
+    assert conn.calls == []
+    assert conn.commits == 0
 
 
 def test_transition_persists_evidence_before_state_and_event() -> None:

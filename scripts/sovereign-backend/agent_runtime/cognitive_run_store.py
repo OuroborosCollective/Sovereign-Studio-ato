@@ -604,6 +604,176 @@ def record_agent_stage_event(
     }
 
 
+EXTERNAL_ACTION_SOURCES: Final[frozenset[str]] = frozenset({
+    "mcp",
+    "broker",
+    "github",
+    "browserless",
+    "tika",
+    "gotenberg",
+    "database",
+})
+
+
+def _sanitize_external_payload(value: object, *, depth: int = 0) -> object:
+    """Return bounded JSON-safe external evidence without raw secret-shaped text."""
+
+    if depth > 5:
+        return "[depth-limit]"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, Mapping):
+        output: dict[str, object] = {}
+        for index, (key, item) in enumerate(sorted(value.items(), key=lambda pair: str(pair[0]))):
+            if index >= 60:
+                output["_truncated"] = True
+                break
+            safe_key = _bounded(key, 120)
+            if safe_key:
+                output[safe_key] = _sanitize_external_payload(item, depth=depth + 1)
+        return output
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [
+            _sanitize_external_payload(item, depth=depth + 1)
+            for item in list(value)[:100]
+        ]
+    return sanitize_agent_text(str(value), 1200)
+
+
+def record_external_action_event(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    source: str,
+    external_identity: str,
+    event_type: str,
+    summary: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    """Append one idempotent external action event without changing run/task state."""
+
+    normalized_run_id = _validated_id(run_id, "run_id")
+    normalized_source = _validated_source(source)
+    if normalized_source not in EXTERNAL_ACTION_SOURCES:
+        raise ValueError("source is not allowed for external action events")
+    normalized_identity = _validated_id(external_identity, "external_identity")
+    normalized_type = _bounded(event_type, 120)
+    normalized_summary = _bounded(summary, 2000)
+    if not normalized_type or not normalized_summary:
+        raise ValueError("external action event requires type and summary")
+
+    safe_payload = _sanitize_external_payload(dict(payload))
+    if not isinstance(safe_payload, dict):
+        raise ValueError("external action payload must be an object")
+    evidence_payload = {
+        "externalIdentity": normalized_identity,
+        "eventType": normalized_type,
+        "data": safe_payload,
+        "rawSecretsPersisted": False,
+        "runStateMutationAllowed": False,
+    }
+    payload_json = _json(evidence_payload)
+    identity_digest = hashlib.sha256(
+        f"{normalized_run_id}|{normalized_source}|{normalized_identity}".encode("utf-8")
+    ).hexdigest()
+    evidence_id = f"evidence-external-{identity_digest[:32]}"
+    event_id = f"event-external-{identity_digest[:32]}"
+    evidence_digest = _digest_text(payload_json)
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT run_id, status, trace_id, next_action
+                FROM agent_runs
+                WHERE run_id = %s AND user_id = %s::uuid
+                LIMIT 1
+                FOR SHARE
+                """,
+                (normalized_run_id, str(user_id)),
+            )
+            run = cur.fetchone()
+            if not run:
+                raise LookupError("agent run not found for authenticated user")
+            run_status = _validated_status(str(run.get("status") or ""))
+            trace_id = _validated_id(str(run.get("trace_id") or ""), "trace_id")
+            next_action = _bounded(run.get("next_action"), 1000) or "NO_RUN_STATE_CHANGE"
+
+            cur.execute(
+                """
+                INSERT INTO agent_evidence (
+                    evidence_id, run_id, task_id, agent_id, source, kind,
+                    summary, sha256, payload
+                ) VALUES (
+                    %s, %s, NULL, %s, %s, 'external_action',
+                    %s, %s, %s::jsonb
+                )
+                ON CONFLICT (evidence_id) DO NOTHING
+                RETURNING evidence_id
+                """,
+                (
+                    evidence_id,
+                    normalized_run_id,
+                    f"external:{normalized_source}",
+                    normalized_source,
+                    normalized_summary,
+                    evidence_digest,
+                    payload_json,
+                ),
+            )
+            evidence_created = bool(cur.fetchone())
+            cur.execute(
+                """
+                INSERT INTO agent_events (
+                    event_id, run_id, task_id, agent_id, type, status, source,
+                    summary, evidence_id, trace_id, next_action
+                ) VALUES (
+                    %s, %s, NULL, %s, %s, %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON CONFLICT (event_id) DO NOTHING
+                RETURNING event_id
+                """,
+                (
+                    event_id,
+                    normalized_run_id,
+                    f"external:{normalized_source}",
+                    normalized_type,
+                    run_status,
+                    normalized_source,
+                    normalized_summary,
+                    evidence_id,
+                    trace_id,
+                    next_action,
+                ),
+            )
+            event_created = bool(cur.fetchone())
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        raise
+
+    return {
+        "runId": normalized_run_id,
+        "source": normalized_source,
+        "externalIdentity": normalized_identity,
+        "eventType": normalized_type,
+        "eventId": event_id,
+        "evidenceId": evidence_id,
+        "created": event_created,
+        "duplicate": not event_created,
+        "evidenceCreated": evidence_created,
+        "runStatus": run_status,
+        "runStateChanged": False,
+        "taskStateChanged": False,
+        "activeBlockerChanged": False,
+        "rawSecretsPersisted": False,
+    }
+
+
 def transition_agent_run(
     conn: Any,
     *,

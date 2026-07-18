@@ -64,9 +64,9 @@ def test_live_canary_correlates_real_pdf_generation_and_text_extraction(monkeypa
     assert result["documentContentReturned"] is False
     assert result["secretValuesReturned"] is False
     assert calls[0]["url"].endswith("/forms/chromium/convert/html")
-    assert calls[0]["proxies"] == {"http": "", "https": ""}
+    assert calls[0]["proxies"] == {"http": "", "https": "", "all": ""}
     assert calls[1]["headers"]["Content-Type"] == "application/pdf"
-    assert calls[1]["proxies"] == {"http": "", "https": ""}
+    assert calls[1]["proxies"] == {"http": "", "https": "", "all": ""}
 
 
 def test_container_health_rejects_proxy_or_auth_responses_and_disables_env_proxies(monkeypatch) -> None:
@@ -85,7 +85,7 @@ def test_container_health_rejects_proxy_or_auth_responses_and_disables_env_proxi
     assert calls == [{
         "url": "http://172.18.0.7:3000/health",
         "timeout": min(runtime.timeout_seconds, 15),
-        "proxies": {"http": "", "https": ""},
+        "proxies": {"http": "", "https": "", "all": ""},
     }]
 
 
