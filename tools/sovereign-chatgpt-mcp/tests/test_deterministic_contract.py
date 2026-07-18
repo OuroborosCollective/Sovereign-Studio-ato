@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from deterministic_vector_harness import build_python_results, load_document
 from deterministic_contract import (
     KAPPA_SCALE,
     canonical_decimal_to_units,
@@ -132,3 +133,38 @@ def test_replay_is_bounded_and_does_not_claim_cross_runtime_parity() -> None:
     assert result["finalState"]["version"] == 2
     assert result["crossRuntimeParityProven"] is False
     assert result["mutationPerformed"] is False
+
+
+def test_python_reference_matches_committed_cross_runtime_vectors() -> None:
+    document = load_document()
+    results = build_python_results(document)
+    expected = document["expected"]
+
+    assert results["decimalVectors"] == expected["decimalVectors"]
+    assert results["arithmeticVectors"] == expected["arithmeticVectors"]
+    assert results["canonicalVectors"] == expected["canonicalVectors"]
+    assert results["rejectionVectors"] == expected["rejectionVectors"]
+    assert results["stateVectors"] == expected["stateVectors"]
+
+    transition = results["transitionVectors"][0]["result"]
+    expected_transition = expected["transitionVectors"][0]
+    assert transition["currentStateHash"] == expected_transition["currentStateHash"]
+    assert transition["actionHash"] == expected_transition["actionHash"]
+    assert transition["nextStateHash"] == expected_transition["nextStateHash"]
+    assert transition["chainHash"] == expected_transition["chainHash"]
+    assert transition["nextVersion"]["$integer"] == expected_transition["nextVersion"]
+
+    replay = results["replayVectors"][0]["result"]
+    expected_replay = expected["replayVectors"][0]
+    assert replay["finalStateHash"] == expected_replay["finalStateHash"]
+    assert replay["finalChainHash"] == expected_replay["finalChainHash"]
+    steps = [
+        {
+            "index": step["index"]["$integer"],
+            "actionHash": step["actionHash"],
+            "stateHash": step["stateHash"],
+            "chainHash": step["chainHash"],
+        }
+        for step in replay["steps"]
+    ]
+    assert steps == expected_replay["steps"]

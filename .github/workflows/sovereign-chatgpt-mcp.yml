@@ -52,6 +52,11 @@ jobs:
           cache: pip
           cache-dependency-path: tools/sovereign-chatgpt-mcp/requirements.txt
 
+      - name: Setup Node.js parity runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install Python dependencies
         run: python -m pip install --requirement requirements.txt
 
@@ -70,7 +75,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py deterministic_contract.py deterministic_architecture_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -151,6 +156,31 @@ jobs:
 
       - name: Run policy and runtime tests
         run: python -m pytest -q
+
+      - name: Prove Python and TypeScript deterministic parity
+        run: |
+          set -euo pipefail
+          python tests/deterministic_vector_harness.py tests/fixtures/deterministic_contract_vectors.json > /tmp/deterministic-python.json
+          node --experimental-strip-types tests/run_deterministic_contract_vectors.ts tests/fixtures/deterministic_contract_vectors.json > /tmp/deterministic-typescript.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          python_result = json.loads(Path('/tmp/deterministic-python.json').read_text('utf-8'))
+          typescript_result = json.loads(Path('/tmp/deterministic-typescript.json').read_text('utf-8'))
+          assert python_result == typescript_result, {
+              'python': python_result,
+              'typescript': typescript_result,
+          }
+          print({
+              'cross_runtime_parity': True,
+              'schema_version': python_result['sourceSchemaVersion'],
+              'decimal_vectors': len(python_result['decimalVectors']),
+              'canonical_vectors': len(python_result['canonicalVectors']),
+              'transition_vectors': len(python_result['transitionVectors']),
+              'replay_vectors': len(python_result['replayVectors']),
+          })
+          PY
 
       - name: Import MCP launcher and inspect contracts
         run: |

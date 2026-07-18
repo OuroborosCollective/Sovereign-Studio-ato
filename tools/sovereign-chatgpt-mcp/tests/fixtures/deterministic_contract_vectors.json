@@ -1,0 +1,131 @@
+{
+  "schemaVersion": "sovereign.deterministic-cross-runtime-vectors.v1",
+  "decimalVectors": [
+    {"name": "zero", "value": "0"},
+    {"name": "positive-truncation", "value": "1.2500009"},
+    {"name": "negative-truncation", "value": "-1.2500009"},
+    {"name": "negative-subunit", "value": "-0.0000009"},
+    {"name": "arbitrary-precision", "value": "123456789012345678901234567890.123456789"}
+  ],
+  "arithmeticVectors": [
+    {"name": "negative-dividend", "operation": "truncDiv", "left": {"$integer": "-7"}, "right": {"$integer": "3"}},
+    {"name": "negative-divisor", "operation": "truncDiv", "left": {"$integer": "7"}, "right": {"$integer": "-3"}},
+    {"name": "fixed-multiply-negative", "operation": "multiplyFixed", "left": {"$integer": "-1500000"}, "right": {"$integer": "500000"}},
+    {"name": "fixed-divide-negative", "operation": "divideFixed", "left": {"$integer": "-750000"}, "right": {"$integer": "500000"}},
+    {"name": "large-fixed-multiply", "operation": "multiplyFixed", "left": {"$integer": "123456789012345678901234567890"}, "right": {"$integer": "987654321098765432109876543210"}}
+  ],
+  "canonicalVectors": [
+    {"name": "key-order", "value": {"b": {"$integer": "2"}, "a": {"$integer": "1"}}},
+    {"name": "unicode-nfc", "value": {"é": "Å", "label": "Café"}},
+    {"name": "utf16-key-order", "value": {"": "private-use", "😀": "astral"}},
+    {"name": "large-integer", "value": {"value": {"$integer": "1234567890123456789012345678901234567890"}}},
+    {"name": "nested-controls", "value": {"lines": ["a\nb", "\t"], "ok": true, "none": null}}
+  ],
+  "rejectionVectors": [
+    {"name": "float-forbidden", "operation": "canonical", "value": 0.5},
+    {"name": "unsigned-negative", "operation": "decimalUnsigned", "value": "-1"},
+    {"name": "noncanonical-leading-zero", "operation": "decimalUnsigned", "value": "01.0"},
+    {"name": "unpaired-surrogate", "operation": "canonical", "value": "\ud800"}
+  ],
+  "stateVectors": [
+    {
+      "name": "metadata-excluded",
+      "state": {
+        "status": "SCOPING",
+        "version": {"$integer": "1"},
+        "payload": {"z": {"$integer": "9"}, "a": {"$integer": "1"}},
+        "chainHash": "ignored",
+        "actionHash": "ignored-too"
+      }
+    }
+  ],
+  "transitionVectors": [
+    {
+      "name": "classify-unicode-large-int",
+      "currentState": {"status": "RECEIVED", "version": {"$integer": "0"}, "mission": "Café"},
+      "action": {
+        "type": "CLASSIFY",
+        "targetStatus": "SCOPING",
+        "patch": {
+          "intent": "read_only_analysis",
+          "budget": {"$integer": "123456789012345678901234567890"}
+        }
+      },
+      "transitionTable": {
+        "RECEIVED": {"CLASSIFY": "SCOPING"},
+        "SCOPING": {"PLAN": "PLANNED"}
+      },
+      "expectedVersion": {"$integer": "0"},
+      "engineVersion": "are-v1"
+    }
+  ],
+  "replayVectors": [
+    {
+      "name": "two-step-replay",
+      "initialState": {"status": "RECEIVED", "version": {"$integer": "0"}, "mission": "inspect"},
+      "actions": [
+        {"type": "CLASSIFY", "patch": {"intent": "repository_execution"}},
+        {"type": "PLAN", "patch": {"planId": "plan-1", "weight": {"$integer": "-12345678901234567890"}}}
+      ],
+      "transitionTable": {
+        "RECEIVED": {"CLASSIFY": "SCOPING"},
+        "SCOPING": {"PLAN": "PLANNED"}
+      },
+      "engineVersion": "are-v1"
+    }
+  ],
+  "expected": {
+    "decimalVectors": [
+      {"name": "zero", "units": "0"},
+      {"name": "positive-truncation", "units": "1250000"},
+      {"name": "negative-truncation", "units": "-1250000"},
+      {"name": "negative-subunit", "units": "0"},
+      {"name": "arbitrary-precision", "units": "123456789012345678901234567890123456"}
+    ],
+    "arithmeticVectors": [
+      {"name": "negative-dividend", "result": "-2"},
+      {"name": "negative-divisor", "result": "-2"},
+      {"name": "fixed-multiply-negative", "result": "-750000"},
+      {"name": "fixed-divide-negative", "result": "-1500000"},
+      {"name": "large-fixed-multiply", "result": "121932631137021795226185032733622923332237463801111263"}
+    ],
+    "canonicalVectors": [
+      {"name": "key-order", "canonicalUtf8Hex": "7b2261223a312c2262223a327d", "sha256": "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"},
+      {"name": "unicode-nfc", "canonicalUtf8Hex": "7b226c6162656c223a22436166c3a9222c22c3a9223a22c385227d", "sha256": "2186edf25c0f16117243230ceff4d45b11f0792c4e9efa04cb5f76e8d12bb01d"},
+      {"name": "utf16-key-order", "canonicalUtf8Hex": "7b22f09f9880223a2261737472616c222c22ee8080223a22707269766174652d757365227d", "sha256": "f6a788d0dd66a683d916bbea00c8f87e728eda87a2f089f41f5405e1edba1d69"},
+      {"name": "large-integer", "canonicalUtf8Hex": "7b2276616c7565223a313233343536373839303132333435363738393031323334353637383930313233343536373839307d", "sha256": "8db84d07de035505687e9677cbc98328de912e43a76c16b9de95c3ab230b8cf3"},
+      {"name": "nested-controls", "canonicalUtf8Hex": "7b226c696e6573223a5b22615c6e62222c225c74225d2c226e6f6e65223a6e756c6c2c226f6b223a747275657d", "sha256": "b25c0cdcf01eef3147c055e13b20fc03d020f264dca5da198ab767034e58f156"}
+    ],
+    "rejectionVectors": [
+      {"name": "float-forbidden", "rejected": true},
+      {"name": "unsigned-negative", "rejected": true},
+      {"name": "noncanonical-leading-zero", "rejected": true},
+      {"name": "unpaired-surrogate", "rejected": true}
+    ],
+    "stateVectors": [
+      {"name": "metadata-excluded", "stateSha256": "9c706628337437ff21c3d5076333bc5776f3abed3bbc01d70c84c3560abc0546"}
+    ],
+    "transitionVectors": [
+      {
+        "name": "classify-unicode-large-int",
+        "currentStateHash": "ccbb83301dfcc2c988135b9d0bda6490f2044a7f729c83b0066a71fd23ea45ba",
+        "actionHash": "cad49e604c2a719c0697ba32cfbf58b102f96cbd284e1a4b7a0a0db13a8720ab",
+        "nextStateHash": "77e0d123acf06dbbb81a88b88bdf3642af3506fe58900a3560d1babb922707de",
+        "chainHash": "2d7a5d09130d75a2f72836f86f7dde4cbeb2d35a64704b969d6f91c4116be1c6",
+        "nextStatus": "SCOPING",
+        "nextVersion": "1"
+      }
+    ],
+    "replayVectors": [
+      {
+        "name": "two-step-replay",
+        "finalStateHash": "b2cff3bd9fe1b29871d5dfffa763582e52e586608f2a0eb564d07df8e875c3ee",
+        "finalChainHash": "01c73d61f79956fd284fe75d3a5e0141a687303b8b0a8f30553540c3aadd6e6e",
+        "steps": [
+          {"index": "1", "actionHash": "d970216117176e6d7d36b96ba23ed4b056da7b357a0c8cd61661ed7a0b607e8e", "stateHash": "dda19a63c7d894ab98b60bb298945d5a548b0986e328fd6c92ee5531a9af3353", "chainHash": "2d6dfa9812a4dba577ac4e6d716093c292c262d3d32be4e1ba67a9806754e105"},
+          {"index": "2", "actionHash": "09e8c54aa92106d636e975db73f8badf82469af83646f0d87abc6d95baa879db", "stateHash": "b2cff3bd9fe1b29871d5dfffa763582e52e586608f2a0eb564d07df8e875c3ee", "chainHash": "01c73d61f79956fd284fe75d3a5e0141a687303b8b0a8f30553540c3aadd6e6e"}
+        ]
+      }
+    ]
+  }
+}
