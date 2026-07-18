@@ -24,6 +24,8 @@ import psycopg2.extras
 import requests
 
 from r2_storage import (
+    MAX_KNOWLEDGE_BYTES,
+    MAX_PDF_KNOWLEDGE_BYTES,
     R2EvidenceMismatch,
     R2ObjectMissing,
     R2Storage,
@@ -1036,6 +1038,7 @@ def register_admin_knowledge_routes(
             return jsonify({"ok": False, "error": "file is required"}), 400
         try:
             filename = uploaded.filename or "upload.txt"
+            payload = uploaded.stream.read(upload_limit_bytes(filename) + 1)
             payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)
             document = upload_document(filename, payload)
             conn = get_connection()

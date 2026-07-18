@@ -24,6 +24,8 @@ import psycopg2.extras
 import requests
 
 from r2_storage import (
+    MAX_KNOWLEDGE_BYTES,
+    MAX_PDF_KNOWLEDGE_BYTES,
     R2EvidenceMismatch,
     R2ObjectMissing,
     R2Storage,

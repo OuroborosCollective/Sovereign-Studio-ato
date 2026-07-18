@@ -116,10 +116,25 @@ def test_knowledge_upload_blocks_path_escape_wrong_mime_and_oversize() -> None:
         r2_storage.validate_knowledge_upload("../", "text/plain", 10, digest)
     with pytest.raises(ValueError, match="content type"):
         r2_storage.validate_knowledge_upload("manual.pdf", "text/html", 10, digest)
+
+    maximum_pdf = r2_storage.validate_knowledge_upload(
+        "manual.pdf",
+        "application/pdf",
+        r2_storage.MAX_PDF_KNOWLEDGE_BYTES,
+        digest,
+    )
+    assert maximum_pdf.size_bytes == 33 * 1024 * 1024
     with pytest.raises(ValueError, match="exceeds"):
         r2_storage.validate_knowledge_upload(
             "manual.pdf",
             "application/pdf",
+            r2_storage.MAX_PDF_KNOWLEDGE_BYTES + 1,
+            digest,
+        )
+    with pytest.raises(ValueError, match="exceeds"):
+        r2_storage.validate_knowledge_upload(
+            "manual.txt",
+            "text/plain",
             r2_storage.MAX_KNOWLEDGE_BYTES + 1,
             digest,
         )

@@ -64,6 +64,11 @@ class DocumentPipelineRuntime:
         raise RuntimeError(last_family)
 
     @staticmethod
+    def _validate_pdf_size(size_bytes: int) -> None:
+        if not MIN_PDF_BYTES <= int(size_bytes) <= MAX_PDF_BYTES:
+            raise RuntimeError("GOTENBERG_OUTPUT_SIZE_INVALID")
+
+    @staticmethod
     def _html(marker: str) -> bytes:
         escaped = (
             marker.replace("&", "&amp;")
