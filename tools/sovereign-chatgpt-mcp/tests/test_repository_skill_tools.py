@@ -117,6 +117,8 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
         "utf-8",
     )
     (repo / "scripts" / "sovereign-backend" / "migrations" / "001_create.sql").write_text(
+        "-- CREATE TABLE IF NOT EXISTS does not create a table.\n"
+        "/* CREATE TABLE block_comment_only (id bigint primary key); */\n"
         "CREATE TABLE IF NOT EXISTS architecture_events (id bigint primary key);\n",
         "utf-8",
     )
@@ -213,6 +215,7 @@ def test_architecture_guardian_detects_cross_layer_drift_without_claiming_runtim
     assert any(item["path"] == "/api/orders" and item["methods"] == ["POST"] for item in snapshot["backendContracts"])
     assert any(item["path"] == "/api/items/<p>" and item["method"] == "POST" for item in snapshot["frontendCalls"])
     assert any(item["table"] == "architecture_events" for item in snapshot["sqlTables"])
+    assert {item["table"] for item in snapshot["sqlTables"]} == {"architecture_events"}
     assert any(item["path"] == "backend/broken.py" for item in snapshot["parserFindings"])
     valid_workflow = next(item for item in snapshot["workflows"] if item["path"] == ".github/workflows/valid.yml")
     assert valid_workflow["validYaml"] is True if valid_workflow["parserAvailable"] else valid_workflow["validYaml"] is None
