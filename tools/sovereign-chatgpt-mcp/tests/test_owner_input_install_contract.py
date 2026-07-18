@@ -15,6 +15,8 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_input_client.py" in dockerfile
     assert "owner_input_client.py" in installer
     assert "owner_input_client.py" in workflow
+    assert "a2a_runtime_client.py" in dockerfile
+    assert "a2a_runtime_client.py" in installer
     assert "owner_input_widget.py" in dockerfile
     assert "owner_input_widget.py" in installer
     assert "owner_input_widget.py" in workflow
@@ -25,6 +27,7 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "controller_run_list" in workflow
     assert "controller_run_status" in workflow
     assert "controller_run_resume" in workflow
+    assert "a2a_live_canary" in workflow
 
 
 def test_workflow_secret_scan_never_echoes_matching_lines() -> None:
@@ -135,6 +138,9 @@ def test_controller_operator_tools_are_owner_scoped_and_secret_bounded() -> None
 
     assert "ControllerRuntimeClient" in server
     assert "controller_runtime = ControllerRuntimeClient()" in server
+    assert "A2ARuntimeClient" in server
+    assert "a2a_runtime = A2ARuntimeClient()" in server
+    assert "def a2a_live_canary(" in server
     assert "def controller_run_start(" in server
     assert "def controller_run_list(" in server
     assert "def controller_run_status(" in server

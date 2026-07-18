@@ -7,6 +7,7 @@ from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from a2a_runtime_client import A2ARuntimeClient
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
@@ -73,6 +74,7 @@ broker = HostBrokerClient()
 android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_check)
 owner_input = OwnerInputClient()
 controller_runtime = ControllerRuntimeClient()
+a2a_runtime = A2ARuntimeClient()
 
 
 def _bounded_controller_text(value: Any, limit: int = 320) -> str:
@@ -553,6 +555,12 @@ def controller_run_status(run_id: str) -> dict[str, Any]:
 def controller_run_resume(run_id: str, evidence: str = "") -> dict[str, Any]:
     """Resume one eligible owner-scoped run with bounded non-secret runtime evidence."""
     return controller_runtime.resume_run(run_id=run_id, evidence=evidence)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def a2a_live_canary(expected_revision: str = "") -> dict[str, Any]:
+    """Run one owner-scoped A2A start, stream, task and controller correlation canary."""
+    return a2a_runtime.live_canary(expected_revision=expected_revision)
 
 
 @mcp.tool(annotations=NETWORK_READ)

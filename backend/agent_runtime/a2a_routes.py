@@ -16,6 +16,7 @@ import re
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
+from functools import wraps
 from typing import Any
 import uuid
 
@@ -53,6 +54,7 @@ from .cognitive_swarm_manifest import manifest_payload
 ConnectionFactory = Callable[[], Any]
 StartRun = Callable[..., tuple[dict[str, object], int]]
 ResumeRun = Callable[..., tuple[dict[str, object], int]]
+ServiceUserResolver = Callable[[], str | None]
 _A2A_TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 
 
@@ -559,6 +561,25 @@ def _stream_persisted_run(
         yield _sse(task_stream_response(task_from_run(final_run, include_artifact=True)))
 
 
+def _a2a_principal_guard(require_session, service_user_resolver: ServiceUserResolver | None):
+    """Accept a normal owner session or the bounded internal owner service principal."""
+
+    def decorate(handler):
+        session_handler = require_session(handler)
+
+        @wraps(handler)
+        def guarded(*args, **kwargs):
+            service_user_id = service_user_resolver() if service_user_resolver else None
+            if service_user_id:
+                request.session_user_id = service_user_id
+                return handler(*args, **kwargs)
+            return session_handler(*args, **kwargs)
+
+        return guarded
+
+    return decorate
+
+
 def register_a2a_routes(
     app,
     *,
@@ -566,7 +587,9 @@ def register_a2a_routes(
     get_connection: ConnectionFactory,
     start_run: StartRun,
     resume_run: ResumeRun,
+    service_user_resolver: ServiceUserResolver | None = None,
 ) -> None:
+    require_a2a_principal = _a2a_principal_guard(require_session, service_user_resolver)
     @app.route("/.well-known/agent-card.json", methods=["GET"])
     def sovereign_a2a_agent_card():
         base_url = os.getenv("SOVEREIGN_PUBLIC_BASE_URL", "").strip() or request.url_root.rstrip("/")
@@ -580,7 +603,7 @@ def register_a2a_routes(
         return response
 
     @app.route("/a2a/v1/message:send", methods=["POST"])
-    @require_session
+    @require_a2a_principal
     def sovereign_a2a_send_message():
         version_error = _protocol_error()
         if version_error:
@@ -719,7 +742,7 @@ def register_a2a_routes(
         return _a2a_json(send_message_response(task_from_run(run)))
 
     @app.route("/a2a/v1/message:stream", methods=["POST"])
-    @require_session
+    @require_a2a_principal
     def sovereign_a2a_stream_message():
         version_error = _protocol_error()
         if version_error:
@@ -906,7 +929,7 @@ def register_a2a_routes(
         return response
 
     @app.route("/a2a/v1/tasks/<run_id>", methods=["GET"])
-    @require_session
+    @require_a2a_principal
     def sovereign_a2a_get_task(run_id: str):
         version_error = _protocol_error()
         if version_error:
@@ -944,7 +967,7 @@ def register_a2a_routes(
         ))
 
     @app.route("/a2a/v1/tasks", methods=["GET"])
-    @require_session
+    @require_a2a_principal
     def sovereign_a2a_list_tasks():
         version_error = _protocol_error()
         if version_error:
@@ -1087,7 +1110,7 @@ def register_a2a_routes(
         return response
 
     @app.route("/a2a/v1/tasks/<run_id>:subscribe", methods=["GET", "POST"])
-    @require_session
+    @require_a2a_principal
     def sovereign_a2a_subscribe_task(run_id: str):
         version_error = _protocol_error()
         if version_error:
@@ -1135,7 +1158,7 @@ def register_a2a_routes(
         return response
 
     @app.route("/a2a/v1/tasks/<run_id>:cancel", methods=["POST"])
-    @require_session
+    @require_a2a_principal
     def sovereign_a2a_cancel_task(run_id: str):
         version_error = _protocol_error()
         if version_error:
