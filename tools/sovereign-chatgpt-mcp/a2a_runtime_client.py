@@ -128,10 +128,22 @@ class A2ARuntimeClient(ControllerRuntimeClient):
 
     @staticmethod
     def _task(payload: dict[str, Any]) -> dict[str, Any]:
+        """Accept the bounded task shapes used by A2A HTTP+JSON implementations."""
         task = payload.get("task")
-        if not isinstance(task, dict):
-            raise RuntimeError("A2A response has no task")
-        return task
+        if isinstance(task, dict):
+            return task
+
+        result = payload.get("result")
+        if isinstance(result, dict):
+            nested_task = result.get("task")
+            if isinstance(nested_task, dict):
+                return nested_task
+            if isinstance(result.get("status"), dict) and result.get("id"):
+                return result
+
+        if isinstance(payload.get("status"), dict) and payload.get("id"):
+            return payload
+        raise RuntimeError("A2A response has no task")
 
     @staticmethod
     def _state(task: dict[str, Any]) -> str:
