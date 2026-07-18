@@ -1,3 +1,4 @@
+// sovereign-endpoint-surface: legacy-unreferenced
 import { useState, useEffect, useCallback } from 'react';
 import { useDispatch } from 'react-redux';
 import { addVectors, CanvasObject } from '../../canvas/canvasSlice';

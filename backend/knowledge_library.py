@@ -1038,7 +1038,6 @@ def register_admin_knowledge_routes(
             return jsonify({"ok": False, "error": "file is required"}), 400
         try:
             filename = uploaded.filename or "upload.txt"
-            payload = uploaded.stream.read(upload_limit_bytes(filename) + 1)
             payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)
             document = upload_document(filename, payload)
             conn = get_connection()

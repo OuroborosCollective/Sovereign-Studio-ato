@@ -1,3 +1,4 @@
+// sovereign-endpoint-surface: disabled-launcher
 /**
  * useVpsConnection — Hook für VPS SSH-Session-Verwaltung.
  *

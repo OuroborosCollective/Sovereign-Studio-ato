@@ -11,6 +11,7 @@ import requests
 
 MIN_PDF_BYTES = 200
 MAX_PDF_BYTES = 33 * 1024 * 1024
+_DIRECT_CONTAINER_PROXIES = {"http": "", "https": ""}
 
 
 class DocumentPipelineRuntime:
@@ -55,11 +56,12 @@ class DocumentPipelineRuntime:
                 response = requests.get(
                     f"{base_url}{health_path}",
                     timeout=min(self.timeout_seconds, 15),
+                    proxies=_DIRECT_CONTAINER_PROXIES,
                 )
             except requests.RequestException:
                 last_family = "DOCUMENT_SERVICE_CONNECTION_FAILED"
                 continue
-            if response.status_code < 500:
+            if 200 <= response.status_code < 300:
                 return base_url
             last_family = f"DOCUMENT_SERVICE_HTTP_{response.status_code}"
         raise RuntimeError(last_family)
@@ -96,6 +98,7 @@ class DocumentPipelineRuntime:
                 f"{gotenberg_url}/forms/chromium/convert/html",
                 files={"files": ("index.html", self._html(normalized_marker), "text/html")},
                 timeout=self.timeout_seconds,
+                proxies=_DIRECT_CONTAINER_PROXIES,
             )
         except requests.RequestException as exc:
             raise RuntimeError("GOTENBERG_CONVERSION_UNAVAILABLE") from exc
@@ -115,6 +118,7 @@ class DocumentPipelineRuntime:
                     "Content-Type": "application/pdf",
                 },
                 timeout=self.timeout_seconds,
+                proxies=_DIRECT_CONTAINER_PROXIES,
             )
         except requests.RequestException as exc:
             raise RuntimeError("TIKA_EXTRACTION_UNAVAILABLE") from exc

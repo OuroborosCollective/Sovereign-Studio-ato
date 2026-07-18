@@ -37,16 +37,16 @@ def test_live_canary_correlates_real_pdf_generation_and_text_extraction(monkeypa
 
     calls: list[dict[str, Any]] = []
 
-    def fake_post(url, files, timeout):
-        calls.append({"kind": "post", "url": url, "files": files, "timeout": timeout})
+    def fake_post(url, files, timeout, proxies):
+        calls.append({"kind": "post", "url": url, "files": files, "timeout": timeout, "proxies": proxies})
         return FakeResponse(
             200,
             content=b"%PDF-1.7\n" + (b"real-pdf-evidence" * 16),
             headers={"Content-Type": "application/pdf"},
         )
 
-    def fake_put(url, data, headers, timeout):
-        calls.append({"kind": "put", "url": url, "data": data, "headers": headers, "timeout": timeout})
+    def fake_put(url, data, headers, timeout, proxies):
+        calls.append({"kind": "put", "url": url, "data": data, "headers": headers, "timeout": timeout, "proxies": proxies})
         return FakeResponse(200, text="SOVEREIGN_DOCUMENT_PIPELINE_CANARY\nGotenberg to Tika live evidence.")
 
     monkeypatch.setattr("document_pipeline.requests.post", fake_post)
@@ -64,7 +64,29 @@ def test_live_canary_correlates_real_pdf_generation_and_text_extraction(monkeypa
     assert result["documentContentReturned"] is False
     assert result["secretValuesReturned"] is False
     assert calls[0]["url"].endswith("/forms/chromium/convert/html")
+    assert calls[0]["proxies"] == {"http": "", "https": ""}
     assert calls[1]["headers"]["Content-Type"] == "application/pdf"
+    assert calls[1]["proxies"] == {"http": "", "https": ""}
+
+
+def test_container_health_rejects_proxy_or_auth_responses_and_disables_env_proxies(monkeypatch) -> None:
+    runtime = DocumentPipelineRuntime()
+    monkeypatch.setattr(runtime, "_inspect_networks", lambda container: ["172.18.0.7"])
+    calls: list[dict[str, Any]] = []
+
+    def fake_get(url, timeout, proxies):
+        calls.append({"url": url, "timeout": timeout, "proxies": proxies})
+        return FakeResponse(403)
+
+    monkeypatch.setattr("document_pipeline.requests.get", fake_get)
+
+    with pytest.raises(RuntimeError, match="DOCUMENT_SERVICE_HTTP_403"):
+        runtime._first_reachable("gpt-gotenberg", 3000, "/health")
+    assert calls == [{
+        "url": "http://172.18.0.7:3000/health",
+        "timeout": min(runtime.timeout_seconds, 15),
+        "proxies": {"http": "", "https": ""},
+    }]
 
 
 def test_live_canary_fails_closed_when_tika_does_not_return_marker(monkeypatch) -> None:

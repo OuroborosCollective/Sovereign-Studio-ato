@@ -90,6 +90,16 @@ _FETCH_CALL = re.compile(
     r"(?P<tail>\s*,\s*\{.{0,600}?\})?\s*\)",
     re.I | re.S,
 )
+_ENDPOINT_SURFACE_MARKER = re.compile(
+    r"sovereign-endpoint-surface:\s*([a-z0-9-]+)",
+    re.I,
+)
+_NON_ACTIVE_ENDPOINT_SURFACES: Final[frozenset[str]] = frozenset({
+    "legacy-unreferenced",
+    "disabled-launcher",
+    "test-only",
+    "quarantined",
+})
 _SQL_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _SQL_CREATE_TABLE = re.compile(
     r"^[ \t]*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"
@@ -98,6 +108,26 @@ _SQL_CREATE_TABLE = re.compile(
     r"(?P<table_quote>[\"`]?)(?P<table>[A-Za-z_][\w]*)(?P=table_quote)",
     re.I | re.M,
 )
+_CANONICAL_OWNERSHIP: Final[tuple[dict[str, Any], ...]] = (
+    {
+        "canonicalPath": "scripts/sovereign-backend/app.py",
+        "nonCanonicalPath": "backend/app.py",
+        "role": "production_backend_application",
+        "reason": "The immutable backend image builds exclusively from scripts/sovereign-backend.",
+        "byteEqualityRequired": False,
+        "endpointTruthSource": "canonical_only",
+    },
+)
+_NON_CANONICAL_BACKEND_CONTRACT_FILES: Final[frozenset[str]] = frozenset(
+    item["nonCanonicalPath"] for item in _CANONICAL_OWNERSHIP
+    if item.get("endpointTruthSource") == "canonical_only"
+)
+_NON_MIRROR_PAIRS: Final[frozenset[tuple[str, str]]] = frozenset(
+    tuple(sorted((item["canonicalPath"], item["nonCanonicalPath"])))
+    for item in _CANONICAL_OWNERSHIP
+    if item.get("byteEqualityRequired") is False
+)
+
 _INTENT_BOUNDARY_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     (
         "javascript_keyword_intent",
@@ -357,7 +387,11 @@ def _backend_contracts(repo: Path, files: list[str]) -> list[dict[str, Any]]:
     contracts: list[dict[str, Any]] = []
     seen: set[tuple[str, tuple[str, ...], str, int]] = set()
     for relative in files:
-        if not relative.startswith(prefixes) or _path_class(relative) == "TEST_ONLY":
+        if (
+            not relative.startswith(prefixes)
+            or _path_class(relative) == "TEST_ONLY"
+            or relative in _NON_CANONICAL_BACKEND_CONTRACT_FILES
+        ):
             continue
         suffix = PurePosixPath(relative).suffix.casefold()
         if suffix not in {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
@@ -406,6 +440,16 @@ def _backend_contracts(repo: Path, files: list[str]) -> list[dict[str, Any]]:
     return sorted(contracts, key=lambda item: (item["path"], item["methods"], item["file"], item["line"]))
 
 
+def _endpoint_surface_metadata(text: str) -> dict[str, Any]:
+    header = "\n".join(text.splitlines()[:20])
+    match = _ENDPOINT_SURFACE_MARKER.search(header)
+    status = match.group(1).casefold() if match else "active"
+    return {
+        "surfaceStatus": status,
+        "activeSurface": status not in _NON_ACTIVE_ENDPOINT_SURFACES,
+    }
+
+
 def _frontend_contract_calls(repo: Path, files: list[str]) -> list[dict[str, Any]]:
     prefixes = ("src/", "apps/", "packages/", "sovereign-studio-rn/", "ato-v2/")
     calls: list[dict[str, Any]] = []
@@ -421,6 +465,7 @@ def _frontend_contract_calls(repo: Path, files: list[str]) -> list[dict[str, Any
         text = _safe_text(repo / relative)
         if text is None:
             continue
+        surface = _endpoint_surface_metadata(text)
         for match in _CLIENT_METHOD_CALL.finditer(text):
             path = _normalize_contract_path(match.group("path"))
             if not path or path == "<redacted-endpoint>":
@@ -430,7 +475,7 @@ def _frontend_contract_calls(repo: Path, files: list[str]) -> list[dict[str, Any
             key = (path, method, relative, line)
             if key not in seen:
                 seen.add(key)
-                calls.append({"path": path, "method": method, "file": relative, "line": line, "confidence": "static_client_call"})
+                calls.append({"path": path, "method": method, "file": relative, "line": line, "confidence": "static_client_call", **surface})
         for match in _FETCH_CALL.finditer(text):
             path = _normalize_contract_path(match.group("path"))
             if not path or path == "<redacted-endpoint>":
@@ -442,7 +487,7 @@ def _frontend_contract_calls(repo: Path, files: list[str]) -> list[dict[str, Any
             key = (path, method, relative, line)
             if key not in seen:
                 seen.add(key)
-                calls.append({"path": path, "method": method, "file": relative, "line": line, "confidence": "static_fetch_call"})
+                calls.append({"path": path, "method": method, "file": relative, "line": line, "confidence": "static_fetch_call", **surface})
         if len(calls) >= _MAX_RESULT_ITEMS:
             break
     return sorted(calls, key=lambda item: (item["path"], item["method"], item["file"], item["line"]))[:_MAX_RESULT_ITEMS]
@@ -606,7 +651,7 @@ def _mirror_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
         if not target or target not in tracked:
             continue
         pair = tuple(sorted((source, target)))
-        if pair in seen:
+        if pair in seen or pair in _NON_MIRROR_PAIRS:
             continue
         seen.add(pair)
         left, right = pair
@@ -712,15 +757,21 @@ def _endpoint_reference(repo: Path) -> dict[str, Any]:
             "sources": sorted(sources, key=lambda item: (item["file"], item["line"])),
         })
     unmatched: list[dict[str, Any]] = []
+    non_active: list[dict[str, Any]] = []
     for call in calls:
         matches = [item for item in endpoints if item["method"] == call["method"] and _contract_path_matches(item["path"], call["path"])]
-        if not matches:
+        if matches:
+            continue
+        if call.get("activeSurface") is False:
+            non_active.append(call)
+        else:
             unmatched.append(call)
     canonical = {
         "revision": _git(repo, "rev-parse", "HEAD"),
         "endpoints": endpoints,
         "frontendCalls": calls,
         "unmatchedFrontendCalls": unmatched,
+        "nonActiveFrontendCalls": non_active,
     }
     return {
         "schemaVersion": "sovereign.endpoint-reference.v1",
@@ -728,6 +779,7 @@ def _endpoint_reference(repo: Path) -> dict[str, Any]:
         "endpointCount": len(endpoints),
         "frontendCallCount": len(calls),
         "unmatchedFrontendCallCount": len(unmatched),
+        "nonActiveFrontendCallCount": len(non_active),
         "referenceSha256": hashlib.sha256(
             json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest(),
@@ -753,6 +805,7 @@ def _architecture_snapshot(repo: Path) -> dict[str, Any]:
         "tests": _test_inventory(files),
         "mcpComponents": _mcp_component_inventory(files),
         "mirrorPairs": _mirror_inventory(repo, files),
+        "canonicalOwnership": [dict(item) for item in _CANONICAL_OWNERSHIP],
         "llmToolBoundaryCandidates": _llm_boundary_candidates(repo, files),
         "parserFindings": ((product_map.get("logic") or {}).get("parserFindings") or [])[:_MAX_RESULT_ITEMS],
         "knowledgeSummary": product_map.get("summary") or {},
@@ -780,6 +833,8 @@ def _architecture_drift_report(repo: Path) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     backend = snapshot["backendContracts"]
     for call in snapshot["frontendCalls"]:
+        if call.get("activeSurface") is False:
+            continue
         path_matches = [item for item in backend if _contract_path_matches(call["path"], item["path"])]
         if not path_matches:
             findings.append({

@@ -37,5 +37,6 @@ android/app/*.keystore
 android/app/*.p12
 backend_app.py
 
-# Generated VPS runtime truth; never commit live evidence or infrastructure details
+# Generated VPS/runtime truth and local diagnostic harnesses; never commit live evidence
 runtime-evidence/
+.sovereign-artifacts/
