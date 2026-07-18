@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from document_pipeline import DocumentPipelineRuntime
+from document_pipeline import MAX_PDF_BYTES, DocumentPipelineRuntime
 
 
 class FakeResponse:
@@ -78,3 +78,11 @@ def test_live_canary_rejects_unbounded_marker_before_network() -> None:
     runtime = DocumentPipelineRuntime()
     with pytest.raises(ValueError, match="1 to 160"):
         runtime.live_canary("x" * 161)
+
+
+def test_pdf_size_limit_accepts_33_mib_and_rejects_the_next_byte() -> None:
+    runtime = DocumentPipelineRuntime()
+    assert MAX_PDF_BYTES == 33 * 1024 * 1024
+    runtime._validate_pdf_size(MAX_PDF_BYTES)
+    with pytest.raises(RuntimeError, match="GOTENBERG_OUTPUT_SIZE_INVALID"):
+        runtime._validate_pdf_size(MAX_PDF_BYTES + 1)

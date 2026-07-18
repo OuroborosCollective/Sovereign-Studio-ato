@@ -9,6 +9,10 @@ from typing import Any
 import requests
 
 
+MIN_PDF_BYTES = 200
+MAX_PDF_BYTES = 33 * 1024 * 1024
+
+
 class DocumentPipelineRuntime:
     """Run bounded live Tika/Gotenberg evidence without persisting document content."""
 
@@ -61,6 +65,11 @@ class DocumentPipelineRuntime:
         raise RuntimeError(last_family)
 
     @staticmethod
+    def _validate_pdf_size(size_bytes: int) -> None:
+        if not MIN_PDF_BYTES <= int(size_bytes) <= MAX_PDF_BYTES:
+            raise RuntimeError("GOTENBERG_OUTPUT_SIZE_INVALID")
+
+    @staticmethod
     def _html(marker: str) -> bytes:
         escaped = (
             marker.replace("&", "&amp;")
@@ -95,8 +104,7 @@ class DocumentPipelineRuntime:
         pdf_bytes = bytes(generated.content or b"")
         if not pdf_bytes.startswith(b"%PDF-"):
             raise RuntimeError("GOTENBERG_OUTPUT_NOT_PDF")
-        if not 200 <= len(pdf_bytes) <= 10_000_000:
-            raise RuntimeError("GOTENBERG_OUTPUT_SIZE_INVALID")
+        self._validate_pdf_size(len(pdf_bytes))
 
         try:
             extracted = requests.put(

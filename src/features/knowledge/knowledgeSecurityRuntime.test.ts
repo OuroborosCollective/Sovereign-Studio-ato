@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { experienceContext, knowledgeContext, type ExperiencePatternResult, type KnowledgeSearchResult } from './knowledgeApi';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  MAX_KNOWLEDGE_UPLOAD_BYTES,
+  MAX_PDF_UPLOAD_BYTES,
+  experienceContext,
+  knowledgeContext,
+  uploadKnowledgeFile,
+  type ExperiencePatternResult,
+  type KnowledgeSearchResult,
+} from './knowledgeApi';
 import { KnowledgeLibraryPanel } from './KnowledgeLibraryPanel';
 import { SecuritySettingsPanel } from '../security/SecuritySettingsPanel';
 import {
@@ -57,5 +65,21 @@ describe('knowledge and security runtime contracts', () => {
   it('returns an empty context for no matching memory', () => {
     expect(knowledgeContext([])).toBe('');
     expect(experienceContext([])).toBe('');
+  });
+
+  it('blocks PDFs above 33 MiB before hashing or network work', async () => {
+    const arrayBuffer = vi.fn();
+    const statuses: string[] = [];
+    const oversizedPdf = {
+      name: 'oversized.pdf',
+      size: MAX_PDF_UPLOAD_BYTES + 1,
+      arrayBuffer,
+    } as unknown as File;
+
+    expect(MAX_PDF_UPLOAD_BYTES).toBe(33 * 1024 * 1024);
+    expect(MAX_KNOWLEDGE_UPLOAD_BYTES).toBe(12 * 1024 * 1024);
+    await expect(uploadKnowledgeFile(oversizedPdf, status => statuses.push(status))).rejects.toThrow('33-MB-Limit');
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(statuses).toEqual(['preparing', 'blocked']);
   });
 });
