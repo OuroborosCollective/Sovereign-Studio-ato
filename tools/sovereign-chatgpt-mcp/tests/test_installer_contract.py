@@ -153,6 +153,27 @@ def test_github_vps_release_directory_uses_portable_bounded_creation() -> None:
     assert '/tmp/sovereign-chatgpt-mcp-' not in prepare_step
 
 
+def test_github_vps_pull_uses_ephemeral_package_read_auth() -> None:
+    workflow = (ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+    deploy_job = workflow.split("  deploy-vps:", 1)[1]
+    install_step = deploy_job.split("- name: Install and verify private MCP on VPS", 1)[1].split(
+        "- name: Reverify deployed evidence in fresh SSH session",
+        1,
+    )[0]
+
+    assert "permissions:\n      contents: read\n      packages: read" in deploy_job
+    assert "GHCR_USERNAME: ${{ github.actor }}" in deploy_job
+    assert "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in deploy_job
+    assert "envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN" in install_step
+    assert 'DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"' in install_step
+    assert "json.dumps({'auths': {'ghcr.io': {'auth': encoded}}}" in install_step
+    assert 'chmod 0600 "$DOCKER_AUTH_DIR/config.json"' in install_step
+    assert "unset GHCR_TOKEN" in install_step
+    assert 'DOCKER_CONFIG="$DOCKER_AUTH_DIR"' in install_step
+    assert 'run_root rm -rf "$RELEASE_DIR"' in install_step
+    assert "docker login" not in install_step
+
+
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
     script = (ROOT / "deploy" / "bootstrap-database.sh").read_text("utf-8")
 
