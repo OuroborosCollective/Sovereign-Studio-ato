@@ -28,6 +28,10 @@ const WORD_WITH_SPACE_REGEX = /\S+\s*/g;
 let lastCountedText: string | null = null;
 let lastWordCount = 0;
 
+// 1-slot caching of word end indices to avoid redundant regex parsing in sliceAssistantResponseWords during high-frequency ticks (55ms).
+let lastSlicesText: string | null = null;
+let lastWordEndIndices: number[] = [];
+
 export function countAssistantResponseWords(text: string): number {
   if (text === lastCountedText) return lastWordCount;
 
@@ -44,15 +48,23 @@ export function countAssistantResponseWords(text: string): number {
 
 export function sliceAssistantResponseWords(text: string, visibleWords: number): string {
   if (visibleWords <= 0) return '';
-  WORD_WITH_SPACE_REGEX.lastIndex = 0;
-  let seen = 0;
-  let match: RegExpExecArray | null;
-  while ((match = WORD_WITH_SPACE_REGEX.exec(text)) !== null) {
-    seen += 1;
-    const end = match.index + match[0].length;
-    if (seen >= visibleWords) return text.slice(0, end);
+
+  // Calculate and cache the word end indices if the text has changed.
+  // This turns successive pacing slices (which hit the same text frequently) from O(N) regex scans into O(1) array indexing.
+  if (text !== lastSlicesText) {
+    lastSlicesText = text;
+    lastWordEndIndices = [];
+    WORD_WITH_SPACE_REGEX.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = WORD_WITH_SPACE_REGEX.exec(text)) !== null) {
+      lastWordEndIndices.push(match.index + match[0].length);
+    }
   }
-  return text;
+
+  if (visibleWords >= lastWordEndIndices.length) {
+    return text;
+  }
+  return text.slice(0, lastWordEndIndices[visibleWords - 1]);
 }
 
 export function createAssistantResponsePacingState(
