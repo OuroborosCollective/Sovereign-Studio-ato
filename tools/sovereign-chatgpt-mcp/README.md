@@ -8,10 +8,10 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - neue Backendmodule, Tests und Migrationen anlegen
 - React-/TypeScript-Komponenten und neue Menüs bauen
 - bestehende große Live-Dateien ohne blindes Komplettüberschreiben patchen
-- Abhängigkeiten mit dem committed Lockfile installieren
-- Python-Compile, Pytest, TypeScript, Vitest, Sovereign-Audit und Web-Build ausführen
+- Python-Compile und Pytest lokal ausführen; Node-/Web-Gates revisionsgebunden an GitHub Actions delegieren
 - Git-Diff und reale Check-Ergebnisse lesen
-- Änderungen committen und ausschließlich einen Draft-PR öffnen
+- Änderungen committen und genau einen Draft-PR pro aktivem Auftrag öffnen
+- im explizit aktivierten privaten Owner-Modus einen mergefähigen PR nur am bestätigten Head und nach den konfigurierten Check-Gates freigeben und mergen
 - allowlistete Docker-Container inspizieren und begrenzte Logs lesen
 - Postgres- und pgvector-Canaries ausführen
 - Migrationen gegen eine separate Preview-Datenbank ausführen und garantiert zurückrollen
@@ -21,8 +21,8 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 
 ## Harte Grenzen
 
-- kein Direkt-Push nach `main`
-- kein Merge und kein Auto-Merge
+- Direkt-Push nach `main` und PR-Merge sind außerhalb des explizit aktivierten privaten Owner-Modus gesperrt
+- kein Auto-Merge; der exakte PR-Head und alle relevanten terminalen Checks werden unmittelbar vor einem Merge erneut geprüft
 - kein generisches Shell-Tool
 - kein generisches SQL-Tool
 - keine `.env`-, Schlüssel-, Credential- oder Git-Interna
@@ -54,6 +54,19 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 6. `repository_install_dependencies`
 7. gezieltes `vitest`; beim Draft-PR folgen zusätzlich Typecheck, Audit und Build
 8. Diff prüfen und Draft-PR erstellen
+
+## Backend- und Systemarchitekturwerkzeuge
+
+Die sechs zusätzlichen Werkzeuge sind read-only, idempotent und liefern strukturierte Ergebnisse mit expliziten Evidenzgrenzen:
+
+- `backend_engineering_tool_inventory`: Werkzeugkarte, Reihenfolge und harte Grenzen
+- `backend_architecture_assess`: begrenzte, secret-sichere statische Architektur-, Technologie- und Risikoevidence
+- `backend_stack_select`: nachvollziehbare Stackbewertung aus Repository-Evidence und expliziten Betriebsanforderungen
+- `backend_delivery_plan`: test-, migrations- und rollback-gegateter Fahrplan für Greenfield, Modernisierung oder eine TSX-Prototyp-zu-Plattform-Migration
+- `backend_api_security_plan`: Threat-/Control-/Verifikationsvertrag für Identity, Autorisierung, Tenancy, dynamische Endpunkte, Plugins, Abuse und DevSecOps
+- `repository_revision_resolve`: getrennte Auflösung von Workspace-Head, aktuellem Base-Head, PR-Head/-Base, Merge-SHA, CI-Head und deployter MCP-Revision
+
+Die Planwerkzeuge implementieren nichts selbst und behaupten weder Laufzeiterfolg noch Compliance. Autorisierte Codeänderungen verwenden weiterhin die vorhandenen exakten Repository-Patchwerkzeuge. `repository_revision_resolve` muss vor Arbeit, Review und Merge sowie nach Merge, Rebase, Update-Branch, Force-Push, Branchwechsel oder Base-Advance erneut ausgeführt werden; bei Dirty-Tree- oder SHA-Konflikten lautet das Ergebnis fail-closed.
 
 ## Docker- und VPS-Trennung
 
@@ -108,7 +121,7 @@ cd tools/sovereign-chatgpt-mcp
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py server.py tests/*.py
+python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py enterprise_backend_tools.py server.py launcher.py tests/*.py
 python -m pytest -q
 docker build -t sovereign-chatgpt-mcp:local .
 ```
