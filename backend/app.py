@@ -4404,6 +4404,17 @@ def tc_apply_patch_worker():
         confirm = b.get("confirm", False)
         worker  = b.get("worker_url", _TC_WORKER_URL)
 
+        # Validate worker URL to prevent Server-Side Request Forgery (SSRF)
+        try:
+            worker_parsed = urllib.parse.urlparse(worker)
+            default_parsed = urllib.parse.urlparse(_TC_WORKER_URL)
+            if worker_parsed.scheme != "https":
+                return jsonify({"error": "Worker URL must use HTTPS"}), 400
+            if worker_parsed.netloc != default_parsed.netloc:
+                return jsonify({"error": "Unauthorized worker host (SSRF protection)"}), 400
+        except Exception as exc:
+            return jsonify({"error": f"Invalid worker URL: {str(exc)}"}), 400
+
         if not all([owner, repo, path, message, blocks]):
             return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
 
