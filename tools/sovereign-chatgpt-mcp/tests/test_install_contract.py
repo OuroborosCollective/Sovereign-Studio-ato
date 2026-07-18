@@ -170,6 +170,24 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"running no-health"' not in installer
 
 
+def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+
+    assert "Verify Gotenberg to Tika live canary" in workflow
+    assert "document_pipeline.py" in workflow
+    assert "document_pipeline_live_canary" in workflow
+    assert 'server.broker.call(' in workflow
+    assert '"DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"' in workflow
+    assert "33 * 1024 * 1024" in workflow
+    assert 'result.get("sourcePersisted") is False' in workflow
+    assert 'result.get("outputPersisted") is False' in workflow
+    assert 'result.get("documentContentReturned") is False' in workflow
+    assert 'result.get("secretValuesReturned") is False' in workflow
+    assert 'summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()' in workflow
+
+
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     updater = (ROOT / "deploy" / "self-update-chatgpt-mcp.sh").read_text("utf-8")
