@@ -123,7 +123,8 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'status=server.broker.status()' in workflow
-    assert "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'" in workflow
+    assert "canary.get('status') == 'HOST_WORKER_READY'" in workflow
+    assert "canary.get('execution_origin') == 'host_worker'" in workflow
     assert 'COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"' in workflow
     assert 'BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"' in workflow
     assert 'TUNNEL_SERVICE_STATE=not_required' in workflow
