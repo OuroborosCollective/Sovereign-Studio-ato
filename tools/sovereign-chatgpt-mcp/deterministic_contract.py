@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import re
@@ -17,18 +16,30 @@ _STATE_METADATA_FIELDS = frozenset({
 })
 
 
+def _normalize_text(value: str, *, path: str) -> str:
+    normalized = unicodedata.normalize("NFC", value)
+    if any(0xD800 <= ord(character) <= 0xDFFF for character in normalized):
+        raise ValueError(f"{path} contains an unpaired Unicode surrogate")
+    return normalized
+
+
+def _utf16_sort_key(value: str) -> bytes:
+    return value.encode("utf-16-be")
+
+
 def canonical_decimal_to_units(value: str, *, signed: bool = True) -> int:
-    raw = unicodedata.normalize("NFC", str(value or "").strip())
-    if not re.fullmatch(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", raw):
+    raw = _normalize_text(str(value or "").strip(), path="value")
+    match = re.fullmatch(r"(-?)(0|[1-9][0-9]*)(?:\.([0-9]+))?", raw)
+    if match is None:
         raise ValueError("value must be canonical decimal text")
-    try:
-        decimal_value = Decimal(raw)
-    except InvalidOperation as exc:
-        raise ValueError("value must be canonical decimal text") from exc
-    if not signed and decimal_value < 0:
+    negative = match.group(1) == "-"
+    if negative and not signed:
         raise ValueError("negative values are not allowed")
-    scaled = decimal_value * Decimal(KAPPA_SCALE)
-    return int(scaled.to_integral_value(rounding="ROUND_DOWN"))
+    whole = int(match.group(2))
+    fraction = match.group(3) or ""
+    fractional_units = int((fraction[:6].ljust(6, "0") or "0"))
+    units = whole * KAPPA_SCALE + fractional_units
+    return -units if negative and units else units
 
 
 def trunc_div_toward_zero(numerator: int, denominator: int) -> int:
@@ -56,19 +67,22 @@ def _canonical_value(value: Any, *, path: str = "$") -> Any:
             f"{path} contains a float; use scaled integers or canonical decimal text"
         )
     if isinstance(value, str):
-        return unicodedata.normalize("NFC", value)
+        return _normalize_text(value, path=path)
     if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key in sorted(value):
+        entries: dict[str, Any] = {}
+        for key, item in value.items():
             if not isinstance(key, str):
                 raise TypeError(f"{path} contains a non-string mapping key")
-            normalized_key = unicodedata.normalize("NFC", key)
-            if normalized_key in normalized:
+            normalized_key = _normalize_text(key, path=f"{path}.<key>")
+            if normalized_key in entries:
                 raise ValueError(
                     f"{path} contains duplicate keys after Unicode normalization"
                 )
+            entries[normalized_key] = item
+        normalized: dict[str, Any] = {}
+        for normalized_key in sorted(entries, key=_utf16_sort_key):
             normalized[normalized_key] = _canonical_value(
-                value[key], path=f"{path}.{normalized_key}"
+                entries[normalized_key], path=f"{path}.{normalized_key}"
             )
         return normalized
     if isinstance(value, (list, tuple)):
@@ -84,7 +98,7 @@ def canonical_bytes(value: Any) -> bytes:
     payload = json.dumps(
         normalized,
         ensure_ascii=False,
-        sort_keys=True,
+        sort_keys=False,
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
@@ -118,18 +132,28 @@ def normalize_transition_table(value: Any) -> dict[str, dict[str, str]]:
             raise ValueError("transition state names must be non-empty strings")
         if not isinstance(raw_actions, Mapping) or not raw_actions:
             raise ValueError("each transition state must contain action mappings")
-        state = unicodedata.normalize("NFC", raw_state.strip())
+        state = _normalize_text(raw_state.strip(), path="transition state")
+        if state in output:
+            raise ValueError("duplicate transition state after normalization")
         actions: dict[str, str] = {}
         for raw_action, raw_target in raw_actions.items():
             if not isinstance(raw_action, str) or not raw_action.strip():
                 raise ValueError("transition action names must be non-empty strings")
             if not isinstance(raw_target, str) or not raw_target.strip():
                 raise ValueError("transition targets must be non-empty strings")
-            action = unicodedata.normalize("NFC", raw_action.strip())
-            target = unicodedata.normalize("NFC", raw_target.strip())
+            action = _normalize_text(raw_action.strip(), path="transition action")
+            target = _normalize_text(raw_target.strip(), path="transition target")
+            if action in actions:
+                raise ValueError("duplicate transition action after normalization")
             actions[action] = target
-        output[state] = dict(sorted(actions.items()))
-    return dict(sorted(output.items()))
+        output[state] = {
+            key: actions[key]
+            for key in sorted(actions, key=_utf16_sort_key)
+        }
+    return {
+        key: output[key]
+        for key in sorted(output, key=_utf16_sort_key)
+    }
 
 
 def transition_preview(
