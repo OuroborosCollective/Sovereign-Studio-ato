@@ -148,6 +148,7 @@ export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
                       disabled
                       onChange={(e) => handleKeyChange(provider.id, e.target.value)}
                       className={`key-input ${invalidKeys[provider.id] ? 'key-input-invalid' : ''}`}
+                      aria-label={`${provider.name} API-Key`}
                     />
                     <button
                       type="button"
@@ -179,6 +180,7 @@ export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
                     type="button"
                     onClick={() => openDocs(provider.docsUrl)}
                     className="btn-docs"
+                    title={`API-Key Dokumentation für ${provider.name} in neuem Tab öffnen`}
                   >
                     🔗 API-Key erstellen → {provider.name}
                   </button>

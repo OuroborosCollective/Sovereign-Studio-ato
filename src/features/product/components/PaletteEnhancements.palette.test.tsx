@@ -5,6 +5,8 @@ import React from 'react';
 import { BuilderContainer } from '../containers/BuilderContainer';
 import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { Sidebar } from './Sidebar';
+import { AgentQuestionCard } from './AgentQuestionCard';
+import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -124,6 +126,73 @@ describe('Palette Accessibility Enhancements', () => {
       const settingsButton = screen.getByRole('button', { name: /Einstellungen/i });
       expect(settingsButton).toHaveAttribute('aria-label', 'Einstellungen');
       expect(settingsButton).toHaveAttribute('title', 'Einstellungen');
+    });
+  });
+
+  describe('AgentQuestionCard Enhancements', () => {
+    it('An Agent Senden button has correct state-dependent title and no redundant aria-label', () => {
+      const options = [{ id: 'opt1', label: 'Option 1' }, { id: 'opt2', label: 'Option 2' }];
+      const handleAnswer = vi.fn();
+      const { rerender } = render(
+        <AgentQuestionCard
+          question="Test Question"
+          options={options}
+          onAnswer={handleAnswer}
+        />
+      );
+
+      const sendButton = screen.getByRole('button', { name: /An Agent senden/i });
+      expect(sendButton).toHaveAttribute('title', 'Bitte wählen Sie zuerst eine Option aus');
+      expect(sendButton).not.toHaveAttribute('aria-label');
+
+      const opt1 = screen.getByRole('radio', { name: 'Option 1' });
+      expect(opt1).toHaveAttribute('title', 'Option 1');
+      fireEvent.click(opt1);
+
+      expect(sendButton).toHaveAttribute('title', 'Ausgewählte Antwort an den Agenten senden');
+
+      rerender(
+        <AgentQuestionCard
+          question="Test Question"
+          options={options}
+          onAnswer={handleAnswer}
+          disabled={true}
+        />
+      );
+      expect(sendButton).toHaveAttribute('title', 'Rückfrage bereits beantwortet');
+    });
+  });
+
+  describe('UserKeyManager Enhancements', () => {
+    it('Input and docs buttons have correct accessibility attributes', () => {
+      const testProviders = [
+        {
+          id: 'test-prov',
+          name: 'Test Provider',
+          description: 'A mock provider',
+          docsUrl: 'https://test.docs.com',
+          keyPlaceholder: 'Insert key',
+          freeTier: 'Yes',
+          icon: '🔑',
+        },
+      ];
+
+      const originalProviders = [...LLM_PROVIDERS];
+      LLM_PROVIDERS.push(...testProviders);
+
+      try {
+        render(<UserKeyManager />);
+
+        const input = screen.getByLabelText('Test Provider API-Key');
+        expect(input).toHaveAttribute('placeholder', 'Serverseitig verwaltet');
+        expect(input).toBeDisabled();
+
+        const docsBtn = screen.getByRole('button', { name: /API-Key erstellen → Test Provider/i });
+        expect(docsBtn).toHaveAttribute('title', 'API-Key Dokumentation für Test Provider in neuem Tab öffnen');
+      } finally {
+        LLM_PROVIDERS.length = 0;
+        LLM_PROVIDERS.push(...originalProviders);
+      }
     });
   });
 });
