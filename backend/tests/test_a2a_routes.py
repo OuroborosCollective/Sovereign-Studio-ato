@@ -57,6 +57,13 @@ def _require_session(handler):
     return wrapped
 
 
+def _reject_session(handler):
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        return {"error": "session required"}, 401
+    return wrapped
+
+
 def _message_payload(
     *,
     task_id: str = "",
@@ -80,14 +87,15 @@ def _message_payload(
     return {"message": message}
 
 
-def _app(start_run, resume_run=None) -> Flask:
+def _app(start_run, resume_run=None, *, require_session=_require_session, service_user_resolver=None) -> Flask:
     app = Flask(__name__)
     register_a2a_routes(
         app,
-        require_session=_require_session,
+        require_session=require_session,
         get_connection=lambda: None,
         start_run=start_run,
         resume_run=resume_run or (lambda **kwargs: ({"blocker": "RUN_NOT_RESUMABLE"}, 409)),
+        service_user_resolver=service_user_resolver,
     )
     return app
 
@@ -101,6 +109,88 @@ def test_agent_card_is_public_and_advertises_the_rest_interface() -> None:
     assert payload["supportedInterfaces"][0]["protocolVersion"] == "1.0"
     assert payload["supportedInterfaces"][0]["url"].endswith("/a2a/v1")
     assert payload["capabilities"]["streaming"] is True
+
+
+def test_internal_owner_principal_uses_same_a2a_route_without_browser_session(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    persisted = _run("BLOCKED")
+    monkeypatch.setattr(routes_runtime, "_read_run", lambda *args, **kwargs: persisted)
+
+    def start_run(**kwargs):
+        captured.update(kwargs)
+        return {"runId": kwargs["run_id"], "status": "BLOCKED", "evidenceId": persisted.evidence_id}, 503
+
+    client = _app(
+        start_run,
+        require_session=_reject_session,
+        service_user_resolver=lambda: USER_ID,
+    ).test_client()
+    response = client.post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(),
+    )
+
+    assert response.status_code == 200
+    assert captured["user_id"] == USER_ID
+
+    rejected = _app(
+        start_run,
+        require_session=_reject_session,
+        service_user_resolver=lambda: None,
+    ).test_client().post(
+        "/a2a/v1/message:send",
+        headers=A2A_HEADERS,
+        json=_message_payload(),
+    )
+    assert rejected.status_code == 401
+
+
+def test_service_owner_resolver_is_fail_closed_and_uses_configured_identity(monkeypatch) -> None:
+    class Cursor:
+        def __init__(self) -> None:
+            self.sql = ""
+            self.params = ()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, sql, params):
+            self.sql = sql
+            self.params = params
+
+        def fetchone(self):
+            return {"id": USER_ID}
+
+    class Connection:
+        def __init__(self) -> None:
+            self.cursor_instance = Cursor()
+            self.closed = False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def close(self):
+            self.closed = True
+
+    connection = Connection()
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "owner-key")
+    monkeypatch.setenv("SOVEREIGN_OWNER_ADMIN_ID", USER_ID)
+
+    app = Flask(__name__)
+    from agent_runtime import cognitive_swarm_routes as swarm_routes
+    with app.test_request_context(headers={"X-Sovereign-Owner-Request-Key": "wrong"}):
+        assert swarm_routes._service_owner_user_id(lambda: (_ for _ in ()).throw(AssertionError("db used"))) is None
+
+    with app.test_request_context(headers={"X-Sovereign-Owner-Request-Key": "owner-key"}):
+        resolved = swarm_routes._service_owner_user_id(lambda: connection)
+
+    assert resolved == USER_ID
+    assert connection.cursor_instance.params == (USER_ID,)
+    assert connection.closed is True
 
 
 def test_a2a_rest_routes_reject_missing_version_header_before_execution() -> None:

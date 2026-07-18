@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -90,6 +91,38 @@ def _close_connection(conn: Any) -> None:
     close = getattr(conn, "close", None)
     if callable(close):
         close()
+
+
+def _service_owner_user_id(get_connection: ConnectionFactory) -> str | None:
+    """Resolve only the configured owner when the existing internal key matches."""
+
+    expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    supplied = str(request.headers.get("X-Sovereign-Owner-Request-Key") or "").strip()
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        return None
+    expected_id = os.getenv("SOVEREIGN_OWNER_ADMIN_ID", "").strip()
+    expected_email = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "").strip().lower()
+    if not expected_id and not expected_email:
+        raise RuntimeError("Sovereign owner identity is not configured")
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            if expected_id:
+                cur.execute(
+                    "SELECT id::text FROM admin_users WHERE id=%s::uuid LIMIT 1",
+                    (expected_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id::text FROM admin_users WHERE lower(email)=lower(%s) LIMIT 1",
+                    (expected_email,),
+                )
+            row = cur.fetchone()
+    finally:
+        _close_connection(conn)
+    if not row:
+        raise LookupError("Configured Sovereign owner was not found")
+    return str(row["id"])
 
 
 def _workspace_root() -> Path | None:
@@ -1048,4 +1081,5 @@ def register_cognitive_swarm_routes(
         get_connection=get_connection,
         start_run=start_cognitive_swarm_run,
         resume_run=resume_cognitive_swarm_run,
+        service_user_resolver=lambda: _service_owner_user_id(get_connection),
     )
