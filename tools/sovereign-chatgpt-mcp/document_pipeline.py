@@ -9,7 +9,6 @@ from typing import Any
 import requests
 
 
-MIN_PDF_BYTES = 200
 MAX_PDF_BYTES = 33 * 1024 * 1024
 
 
@@ -104,7 +103,8 @@ class DocumentPipelineRuntime:
         pdf_bytes = bytes(generated.content or b"")
         if not pdf_bytes.startswith(b"%PDF-"):
             raise RuntimeError("GOTENBERG_OUTPUT_NOT_PDF")
-        self._validate_pdf_size(len(pdf_bytes))
+        if not 200 <= len(pdf_bytes) <= MAX_PDF_BYTES:
+            raise RuntimeError("GOTENBERG_OUTPUT_SIZE_INVALID")
 
         try:
             extracted = requests.put(
@@ -133,12 +133,14 @@ class DocumentPipelineRuntime:
                 "httpStatus": generated.status_code,
                 "contentType": str(generated.headers.get("Content-Type") or "")[:120],
                 "pdfBytes": len(pdf_bytes),
+                "maxPdfBytes": MAX_PDF_BYTES,
                 "pdfSha256": hashlib.sha256(pdf_bytes).hexdigest(),
             },
             "tika": {
                 "container": self.tika_container,
                 "httpStatus": extracted.status_code,
                 "extractedCharacters": len(extracted_text),
+                "maxPdfBytes": MAX_PDF_BYTES,
                 "markerVerified": marker_verified,
             },
             "sourcePersisted": False,

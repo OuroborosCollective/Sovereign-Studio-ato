@@ -53,7 +53,7 @@ def test_admin_knowledge_and_pdf_live_path_is_registered_and_visible() -> None:
         assert "def register_admin_knowledge_routes(" in source
         assert '"/api/admin/knowledge/sources/upload"' in source
         assert 'filename = uploaded.filename or "upload.txt"' in source
-        assert "payload = uploaded.stream.read(upload_limit_bytes(filename) + 1)" in source
+        assert "payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)" in source
         assert "document = upload_document(filename, payload)" in source
         assert '"/api/admin/knowledge/search"' in source
         assert '"/api/admin/knowledge/repair"' in source

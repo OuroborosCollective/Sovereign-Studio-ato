@@ -63,6 +63,16 @@ def _task(state: str) -> dict[str, Any]:
     }
 
 
+def test_task_accepts_wrapped_send_response_and_direct_task_read() -> None:
+    client = A2ARuntimeClient(session=FakeSession([]))
+    direct = _task("TASK_STATE_WORKING")["task"]
+
+    assert client._task({"task": direct}) is direct
+    assert client._task(direct) is direct
+    with pytest.raises(RuntimeError, match="A2A response has no task"):
+        client._task({"status": {"state": "TASK_STATE_WORKING"}})
+
+
 def _controller(status: str, iteration: int, *, resumed: bool = False) -> dict[str, Any]:
     events = [{"type": "run_received", "run_id": RUN_ID}]
     if resumed:

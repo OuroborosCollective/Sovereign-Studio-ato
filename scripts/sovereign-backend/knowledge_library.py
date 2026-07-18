@@ -38,8 +38,8 @@ from vector_embedding import EMBEDDING_MODEL, EmbeddingUnavailable, embed_texts,
 
 ConnectionFactory = Callable[[], Any]
 
-MAX_UPLOAD_BYTES = MAX_KNOWLEDGE_BYTES
-MAX_PDF_UPLOAD_BYTES = MAX_PDF_KNOWLEDGE_BYTES
+MAX_UPLOAD_BYTES = 33 * 1024 * 1024
+MAX_NON_PDF_UPLOAD_BYTES = 12 * 1024 * 1024
 MAX_SOURCE_TEXT_CHARS = 12_000_000
 MAX_GITHUB_FILES = 80
 MAX_GITHUB_FILE_BYTES = 512 * 1024
@@ -326,16 +326,16 @@ def _pdf_document(filename: str, payload: bytes) -> KnowledgeDocument:
     )
 
 
-def upload_limit_bytes(filename: str) -> int:
-    return MAX_PDF_UPLOAD_BYTES if str(filename or "").lower().endswith(".pdf") else MAX_UPLOAD_BYTES
+def _upload_limit_bytes(filename: str) -> int:
+    return MAX_UPLOAD_BYTES if str(filename or "").lower().endswith(".pdf") else MAX_NON_PDF_UPLOAD_BYTES
 
 
 def upload_document(filename: str, payload: bytes) -> KnowledgeDocument:
     if not payload:
         raise ValueError("Uploaded file is empty")
-    maximum = upload_limit_bytes(filename)
-    if len(payload) > maximum:
-        raise ValueError(f"Uploaded file exceeds {maximum // (1024 * 1024)} MB")
+    upload_limit = _upload_limit_bytes(filename)
+    if len(payload) > upload_limit:
+        raise ValueError(f"Uploaded file exceeds {upload_limit // (1024 * 1024)} MB")
     lower = filename.lower()
     if lower.endswith(".pdf"):
         return _pdf_document(filename, payload)
@@ -703,19 +703,19 @@ def _confirm_r2_upload(conn: Any, user_id: str, object_id: str) -> dict[str, Any
     storage = R2Storage.from_env()
     try:
         filename = str(row["object_key"]).rsplit("/", 1)[-1]
-        maximum = upload_limit_bytes(filename)
+        upload_limit = _upload_limit_bytes(filename)
         evidence = storage.verify_object(
             bucket=str(row["bucket_name"]),
             object_key=str(row["object_key"]),
             expected_sha256=str(row["sha256"]),
             expected_content_type=str(row["content_type"]),
             expected_size_bytes=int(row["size_bytes"]),
-            max_bytes=maximum,
+            max_bytes=upload_limit,
         )
         payload = storage.get_object_bytes(
             bucket=evidence.bucket,
             object_key=evidence.object_key,
-            max_bytes=maximum,
+            max_bytes=upload_limit,
         )
         document = upload_document(filename, payload)
         result = _insert_document(
@@ -878,7 +878,7 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
             return jsonify({"ok": False, "error": "file is required"}), 400
         try:
             filename = uploaded.filename or "upload.txt"
-            payload = uploaded.stream.read(upload_limit_bytes(filename) + 1)
+            payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)
             document = upload_document(filename, payload)
             conn = get_connection()
             try:
@@ -1038,7 +1038,7 @@ def register_admin_knowledge_routes(
             return jsonify({"ok": False, "error": "file is required"}), 400
         try:
             filename = uploaded.filename or "upload.txt"
-            payload = uploaded.stream.read(upload_limit_bytes(filename) + 1)
+            payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)
             document = upload_document(filename, payload)
             conn = get_connection()
             try:

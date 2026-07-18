@@ -51,6 +51,47 @@ def test_markdown_upload_is_classified_and_preserves_heading_context(
     }
 
 
+def test_pdf_upload_limit_is_33_mib_while_non_pdf_limit_stays_bounded(monkeypatch) -> None:
+    assert knowledge_library.MAX_UPLOAD_BYTES == 33 * 1024 * 1024
+    assert knowledge_library.MAX_NON_PDF_UPLOAD_BYTES == 12 * 1024 * 1024
+    assert knowledge_library._upload_limit_bytes("manual.pdf") == 33 * 1024 * 1024
+    assert knowledge_library._upload_limit_bytes("manual.md") == 12 * 1024 * 1024
+
+    expected = knowledge_library.KnowledgeDocument(
+        source_type="pdf",
+        title="manual.pdf",
+        text="# Page 1\n\nverified",
+        source_url=None,
+        metadata={"filename": "manual.pdf", "pages": 1},
+    )
+    monkeypatch.setattr(knowledge_library, "_pdf_document", lambda filename, payload: expected)
+    assert knowledge_library.upload_document(
+        "manual.pdf",
+        b"x" * knowledge_library.MAX_UPLOAD_BYTES,
+    ) == expected
+
+    with pytest.raises(ValueError, match="33 MB"):
+        knowledge_library.upload_document(
+            "manual.pdf",
+            b"x" * (knowledge_library.MAX_UPLOAD_BYTES + 1),
+        )
+    with pytest.raises(ValueError, match="12 MB"):
+        knowledge_library.upload_document(
+            "manual.md",
+            b"x" * (knowledge_library.MAX_NON_PDF_UPLOAD_BYTES + 1),
+        )
+
+
+def test_r2_confirmation_reuses_the_file_specific_upload_limit() -> None:
+    runtime_module = (BACKEND / "knowledge_library.py").read_text(encoding="utf-8")
+    deploy_module = (DEPLOY / "knowledge_library.py").read_text(encoding="utf-8")
+
+    assert runtime_module == deploy_module
+    assert 'filename = str(row["object_key"]).rsplit("/", 1)[-1]' in runtime_module
+    assert "upload_limit = _upload_limit_bytes(filename)" in runtime_module
+    assert runtime_module.count("max_bytes=upload_limit") == 2
+
+
 def test_markdown_upload_contract_is_visible_in_backend_and_both_surfaces() -> None:
     runtime_module = (BACKEND / "knowledge_library.py").read_text(encoding="utf-8")
     deploy_module = (DEPLOY / "knowledge_library.py").read_text(encoding="utf-8")
