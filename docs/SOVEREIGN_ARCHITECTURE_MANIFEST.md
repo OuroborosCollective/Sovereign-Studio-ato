@@ -4,7 +4,7 @@
 
 **Evidence-Stand:** 18. Juli 2026
 
-**Baseline-Revision:** `b828e3b84367dda85d0b22cdec76de3bda1d78e2`
+**Baseline-Revision vor diesem Manifest-Update:** `c1921578bb29e554bcfdc7c29391d6caab85ff8a`
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
 **Produkt:** Android-first NoCode-/AI-Service- und Agentenplattform  
@@ -52,8 +52,8 @@ Sovereign ist kein UI-Dashboard, das Aktivität simuliert. Es ist eine Runtime m
 3. Kein Fake-Erfolg.
 4. Kein harter Prozentfortschritt ohne reale Berechnung.
 5. Keine Mocks, Stubs oder Fassaden im Live-Pfad.
-6. Kein Auto-Merge.
-7. Maximal Draft PR, sofern ausdrücklich beauftragt.
+6. Kein unautorisierter oder gate-loser Auto-Merge.
+7. Der Standardpfad endet bei einem Draft PR. Der private owner-scoped Operator darf einen PR nur nach ausdrücklicher Owner-Freigabe, exakter Head-SHA-Bindung, bestätigter Mergefähigkeit und relevanten grünen Gates mergen.
 8. Jede Aktion erzeugt ein Ergebnis.
 9. Jedes Ergebnis erzeugt einen gespeicherten Zustand.
 10. Jeder Zustand erlaubt oder blockiert die nächste Aktion.
@@ -273,7 +273,9 @@ Die Admin-Backend-Instanz unter
 `https://sovereign-backend.arelorian.de/admin`
 ist der vorgesehene kanonische Backend-/Admin-Livepfad.
 
-**TEILWEISE:** Die produktiven Agent-Runtime-, A2A-, ARE-, Knowledge-, Security- und LiteLLM-Module sind zwischen `backend/` und `scripts/sovereign-backend/` überwiegend bytegleich. Der aktuelle Architektur-Snapshot weist jedoch noch zwei nicht bytegleiche Spiegelpaare aus: `backend/app.py` gegenüber `scripts/sovereign-backend/app.py` sowie `backend/r2_storage.py` gegenüber `scripts/sovereign-backend/r2_storage.py`. Bis Eigentümerschaft und Deploymentquelle dieser Abweichungen geklärt und vereinheitlicht sind, ist die doppelte Backend-Wahrheit nicht vollständig beseitigt.
+**BELEGT:** Die produktive Backend-Anwendung besitzt eine eindeutige kanonische Quelle: `scripts/sovereign-backend/app.py`. Das immutable Backend-Image wird ausschließlich aus diesem Deploymentbaum gebaut. `backend/app.py` bleibt als nicht deployte Kompatibilitäts-/Analysequelle sichtbar, ist aber weder Endpoint-Wahrheit noch bytegleichheitspflichtiger Produktionsspiegel.
+
+**BELEGT:** Die tatsächlich gespiegelten Agent-Runtime-, A2A-, ARE-, Knowledge-, Security-, LiteLLM-, `knowledge_library.py`- und `r2_storage.py`-Dateien sind im Architektur-Snapshot bytegleich. Der produktive R2-Adapter verwendet die vollständige fail-closed Implementierung einschließlich Pfad-, MIME-, Hash-, Evidence- und 33-MiB-PDF-Grenzen.
 
 ---
 
@@ -425,6 +427,12 @@ Request
 
 Der LiteLLM-Master-Key bleibt serverseitig. Nachgelagerte Services erhalten zweckgebundene interne Keys mit minimalen Rechten.
 
+## 8.7 Aktueller Betriebsbeweis
+
+**BELEGT:** Projektzuordnung und Service-Identität wurden über den geschützten Runtimepfad bestätigt. Das Providerinventar lieferte 92 sichtbare Modelle. Die privaten Aliase `sovereign-fast` und `sovereign-balanced` waren bereit und bestanden jeweils einen echten Completion-Canary über LiteLLM. Damit sind Providerzugriff, Aliasauflösung, Readiness und Completion für diese beiden Routen belegt.
+
+**TEILWEISE:** Der vollständige automatische Onboarding-Lifecycle für beliebige neue Provider — geschützter Key-Input, Preisergänzung, Datenbankeinträge, Aliasplanung, atomare Aktivierung und Rollback — ist weiterhin nicht als eine einzige durchgängige Produktionskette belegt.
+
 ---
 
 # 9. MCP Docker und ChatGPT Operator
@@ -435,17 +443,18 @@ Der private Sovereign ChatGPT MCP verbindet ChatGPT mit kontrollierten Repositor
 
 ## 9.2 Belegter Control-Plane-Stand
 
-**BELEGT:** Die Control Plane meldet `BROKER_READY`. Das private MCP ist auf exakt Revision `b828e3b84367dda85d0b22cdec76de3bda1d78e2` installiert. Revision, Archiv, immutable Image-Digest und Image-ID sind verifiziert; Container, MCP-Protokoll, Broker-RPC und Host-Command-Worker sind bereit. Direkte eingehende Mutationen bleiben verboten. Die Cross-Runtime-Parität zwischen Python- und TypeScript-Vertrag ist revisionsgebunden als `cross_runtime_parity_proven=true` belegt.
+**BELEGT:** Die Control Plane meldete `BROKER_READY`. Für Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden Validation, Veröffentlichung des immutable MCP-Images, Digestprüfung und VPS-Bootstrap. Revision, Archiv, Image-Digest, Image-ID, Containerzustand, MCP-Protokoll, Broker-RPC, Host-Command-Worker und Python-/TypeScript-Cross-Runtime-Parität werden revisionsgebunden geprüft. Direkte eingehende Mutationen bleiben verboten.
 
 Die Runtime-Grenzen schreiben unter anderem vor:
 
-- keine generische Shell,
+- keine freie generische Shell im privaten MCP-Wahrheitspfad,
 - keine Secrets im Modellpfad,
-- Host-Mutationen nur über kontrollierte Queue,
+- Host-Mutationen nur über validierte Queue und Host Worker,
 - Node-Builds und Dependency-Installationen über GitHub Actions,
-- Draft-PR-only als normaler Releaseausgang.
+- Draft PR als normaler Releaseausgang,
+- optionaler owner-scoped Merge nur nach ausdrücklicher Freigabe, exakter PR-Head-SHA und relevanten grünen Gates.
 
-**BELEGT:** Der jüngste persistierte Agents-SDK-Lauf `run-1f7ee714872445319bed247506cdd366` ist `COMPLETED`, lief drei Iterationen und endete ohne Repositoryänderung mit `NO_FURTHER_ACTION_REQUIRED`. Ältere blockierte Läufe bleiben als historische Evidence erhalten und werden nicht in einen globalen Grünstatus umgedeutet.
+**BELEGT:** Persistierte Agents-SDK-Runs enthalten Dispatcher-, sechs Worker- und Judge-Evidence, Tasks, Events, Tool Calls, Blocker und Statusprojektionen. Aktuelle und historische Tasks werden getrennt ausgewiesen; ein früherer blockierter Task erzeugt keinen globalen Rot- oder Grünstatus. Fehlende Runtime-Evidence führt weiterhin fail-closed zu `BLOCKED`.
 
 ## 9.3 Fähigkeiten
 
@@ -461,9 +470,9 @@ Die Runtime-Grenzen schreiben unter anderem vor:
 
 ## 9.4 A2A-Adapter
 
-**BELEGT:** Der Backendvertrag enthält eine AgentCard unter `/.well-known/agent-card.json`, A2A-Nachrichten-, Streaming-, Task-, Subscribe- und Cancel-Routen sowie owner-scoped Service-Authentisierung. Der Adapter startet und liest dieselbe persistierte Agents-SDK-Truth-Chain wie die direkten Swarm-Routen; er ist kein zweiter fachlicher Orchestrator. PR #799 wurde mit vollständigen Backend-, MCP-, Security-, Android-, Build- und Runtime-Gates grün abgeschlossen.
+**BELEGT:** Der Backendvertrag enthält eine AgentCard unter `/.well-known/agent-card.json`, A2A-Nachrichten-, Streaming-, Task-, Subscribe- und Cancel-Routen sowie owner-scoped Service-Authentisierung. Der Adapter startet und liest dieselbe persistierte Agents-SDK-Truth-Chain wie die direkten Swarm-Routen; er ist kein zweiter fachlicher Orchestrator.
 
-**OFFEN:** In der laufenden Produktionsdatenbank besitzen derzeit `0` von `27` Agent-Runs einen gespeicherten `a2aContextId`. Ein authentifizierter Live-Canary muss noch einen A2A-Run erzeugen, den Task erneut lesen und den Endstatus mit der nativen Controller-Evidence vergleichen. A2A darf bis dahin als implementiert und CI-belegt, aber nicht als produktiv genutzt bezeichnet werden.
+**BELEGT:** Ein authentifizierter Produktions-Canary bestätigte AgentCard, Protokollversion 1.0, Owner-Scope, persistierten Run, `contextId`, identische Task-/Controller-Identität, Streaming, Resume und übereinstimmende Endstatusprojektion. A2A ist damit nicht mehr nur statisch oder CI-belegt, sondern für diesen Livepfad runtime-verifiziert.
 
 ---
 
@@ -509,9 +518,13 @@ Zweck:
 
 Dozzle ist keine Runtime-Wahrheitsquelle und kein Orchestrator.
 
-## 10.5 Aktuell gemeldete Betriebsdaten
+## 10.5 Aktueller Betriebsstand
 
-Vom Owner wurden laufende Container für Browserless, Tika, Gotenberg, Dozzle, LiteLLM, Code Server, MCP und Memory Gateway gemeldet. Diese Meldung ist kein Ersatz für unabhängige Container- und Health-Evidence.
+**BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server wurden unabhängig als laufende Container ohne Restart-, OOM- oder Exitfehler geprüft. LiteLLM und seine PostgreSQL-Instanz meldeten zusätzlich einen gesunden Healthzustand ohne Failing Streak.
+
+**TEILWEISE:** Prozess- und Health-Evidence beweisen nicht automatisch jede Fachfunktion. Der Gotenberg→Tika-End-to-End-Canary ist weiterhin separat blockiert und wird in Abschnitt 12 geführt.
+
+**BLOCKIERT:** Der Memory-Gateway-Prozess ist HTTP-seitig gesund, sein optionales Milvus-Backend war jedoch mit der Fehlerfamilie `EHOSTUNREACH` nicht erreichbar. Remote Memory ist deshalb funktional blockiert und bleibt eine optionale Synchronisationsschicht, nicht die kanonische Produktwahrheit.
 
 ---
 
@@ -558,6 +571,12 @@ Runtime Evidence / Report Data
 ```
 
 OCR darf nur als gekennzeichnete Extraktionsstufe auftreten. Extrahierter Text ist keine automatisch verifizierte fachliche Wahrheit.
+
+## 12.1 Aktueller Live-Status
+
+**BLOCKIERT:** Auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden im Workflow `29649984723` die MCP-Validation, Veröffentlichung des immutable Images, Digestprüfung und VPS-Bootstrap. Ausschließlich der Job `Verify Gotenberg to Tika live canary` schlug im Schritt `Generate PDF with Gotenberg and extract marker with Tika` fehl.
+
+Der aktuelle Code führt den Canary als festen, speicherlosen Node-Prozess im vorhandenen `gpt-browserless`-Netzwerk-Peer aus, adressiert Gotenberg und Tika über feste Docker-DNS-Namen, leert Proxyvariablen und validiert PDF-Signatur, Größe, SHA-256, HTTP-Status und Marker erneut in Python. Die zugehörigen Dokument-, Installer- und vollständigen MCP-Tests sind grün. Trotzdem gilt die Dokumentpipeline erst nach einem erfolgreichen post-install Live-Canary als produktiv belegt.
 
 ---
 
@@ -834,7 +853,7 @@ Kontrollierte Repository- und VPS-Operationen.
 
 ### Memory Gateway
 
-Trennung von Contributor-Daten und geteilten abgeleiteten Mustern.
+Optionale Synchronisationsschicht zur Trennung von Contributor-Daten und geteilten abgeleiteten Mustern. PostgreSQL und die lokale Knowledge-/Pattern-Provenance bleiben kanonisch. Ein gesunder Gateway-Prozess ohne erreichbares Vector-Backend ist kein funktionsfähiger Memorypfad.
 
 ### GPT Tools
 
@@ -949,7 +968,9 @@ Die folgenden Familien sind im Backendvertrag belegt oder als kanonische Gruppen
 - `/a2a/v1/tasks`
 - A2A-Task-, Subscribe- und Cancel-Unterpfade
 
-**OFFEN:** Eine vollständig automatisch generierte, normalisierte Endpoint-Referenz aus dem jeweils aktuellen Backendcode und den Protokollverträgen bleibt ausstehend. Statische Routenerkennung ersetzt keinen authentifizierten Live-Canary.
+**BELEGT:** Die deterministische Architekturreferenz wird aus dem aktuellen Repositorycode erzeugt. Die produktive Endpoint-Wahrheit stammt ausschließlich aus `scripts/sovereign-backend/app.py` sowie den registrierten Runtime-/Protokollmodulen. Der aktuelle Snapshot enthält 156 kanonische Backendverträge und `0` aktive unmatched Frontend-Calls.
+
+Vier weiterhin sichtbare Altflächen werden nicht verborgen, sondern getrennt ausgewiesen: `/api/ai/gemini` als `legacy-unreferenced` sowie `/api/vps/connect`, `/api/vps/disconnect` und `/api/vps/exec` als `disabled-launcher`. Statische Routenerkennung bleibt Orientierung; produktive Funktionsaussagen benötigen zusätzlich Live-Evidence.
 
 ---
 
@@ -1007,7 +1028,8 @@ Code Intent
   → Checks/CI
   → Evidence Gate
   → Draft PR
-  → kein Auto-Merge
+  → optionaler owner-scoped Merge nur bei expliziter Freigabe,
+    exakter Head-SHA, Mergefähigkeit und relevanten grünen Gates
 ```
 
 ## 22.5 Creditflow
@@ -1033,7 +1055,8 @@ GitHub Intent
   → Patch/Commit
   → Draft PR
   → Checks beobachten
-  → Merge nur separate ausdrückliche Owner-Freigabe
+  → Merge nur bei separater ausdrücklicher Owner-Freigabe,
+    exakter Head-SHA und relevanten grünen Gates
 ```
 
 ---
@@ -1045,8 +1068,8 @@ GitHub Intent
 3. LLM versteht Sprache.
 4. Runtime versteht strukturierte Aktionen.
 5. Evidence schlägt Vermutung.
-6. Kein Auto-Merge.
-7. Maximal Draft PR im Standardpfad.
+6. Kein unautorisierter oder gate-loser Auto-Merge.
+7. Maximal Draft PR im Standardpfad; ein owner-scoped Merge ist nur nach ausdrücklicher Freigabe, exakter Head-SHA, bestätigter Mergefähigkeit und relevanten grünen Gates zulässig.
 8. Keine Mocks, Stubs oder Fassaden im Live-Pfad.
 9. Keine statischen Provider-Routen im Frontend.
 10. Keine hartcodierten Provider wie Pollinations, Groq oder vergleichbare direkte Clientprovider.
@@ -1067,25 +1090,26 @@ GitHub Intent
 
 ## 24.1 Erledigt und belegt
 
-1. **BELEGT — Cross-Runtime-Parität:** Python- und TypeScript-Verträge werden über gemeinsame Vektoren verglichen; die erfolgreiche Parität wird seit PR #798 revisionsgebunden im immutable MCP-Release belegt.
-2. **BELEGT — A2A-Vertrag und Agents-SDK-Verdrahtung:** AgentCard, owner-scoped Authentisierung, Nachrichten-/Task-Routen und Truth-Chain-Abgleich wurden mit PR #799 implementiert und durch CI-Gates bestätigt.
-3. **BELEGT — deterministischer ARE-State:** Hash-, Schwellen- und Sortiermaterial wurde mit PR #800 auf Kappa-Fixed-Point umgestellt.
-4. **BELEGT — Release-Ergebnisvalidierung:** PR #801 stärkte die Validierung von Release-Resultaten; alle relevanten Checks waren grün.
-5. **BELEGT — persistierte Multi-Agent-Runs:** Agents-SDK-Runs, Tasks, Events und Evidence werden persistiert; der jüngste Run wurde nach drei Iterationen erfolgreich abgeschlossen.
-6. **BELEGT — MCP-Control-Plane:** Exact-Revision-, Digest-, Container-, Protokoll-, Broker-, Host-Worker- und Boundary-Evidence ist für die aktuelle Main-Revision vorhanden.
+1. **BELEGT — Cross-Runtime-Parität:** Python- und TypeScript-Verträge werden über gemeinsame Vektoren verglichen und revisionsgebunden im immutable MCP-Release geprüft.
+2. **BELEGT — A2A-Livepfad:** AgentCard, owner-scoped Authentisierung, Nachrichten-, Task-, Streaming- und Resume-Verträge wurden in einem echten Produktions-Canary mit derselben persistierten Controller-Truth-Chain korreliert.
+3. **BELEGT — deterministischer ARE-State:** Hash-, Schwellen- und Sortiermaterial verwendet Kappa-Fixed-Point mit der Skala `1_000_000`.
+4. **BELEGT — persistierte Multi-Agent-Runs:** Dispatcher, sechs Worker, Judge, Tasks, Events, Tool Calls, Evidence, Blocker, Failures und Approvals sind persistiert und trennen aktuelle von historischen Zuständen.
+5. **BELEGT — kanonische Backend-Ownership:** `scripts/sovereign-backend/app.py` ist die einzige deployte App-Wahrheit; echte Spiegel einschließlich Knowledge und R2 sind bytegleich.
+6. **BELEGT — Endpoint-Referenz:** 156 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und vier offen ausgewiesene nichtaktive Altflächen.
+7. **BELEGT — LiteLLM-Kernpfad:** 92 Provider-Modelle wurden inventarisiert; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries.
+8. **BELEGT — Android-Releaseartefakte:** APK und AAB, SHA-256, Signaturdiagnose, ein Signer, Zertifikat-Fingerprint und Alignment wurden im Releaseworkflow belegt.
+9. **BELEGT — externe Action-Stream-Brücke im Codevertrag:** owner-scoped, idempotente externe Events mit deterministischen IDs und ohne Run-, Task- oder Blockermutation sind über Store, Backendroute, MCP-Client und MCP-Tool verdrahtet und getestet.
+10. **BELEGT — MCP-Releasebasis:** Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap bestanden für `c1921578bb29e554bcfdc7c29391d6caab85ff8a`.
 
-## 24.2 Offen oder teilweise
+## 24.2 Offen, teilweise oder blockiert
 
-1. **TEILWEISE — doppelte Backend-Wahrheit:** `app.py` und `r2_storage.py` sind zwischen Quell- und Deploymentbaum noch nicht bytegleich.
-2. **OFFEN — A2A-Live-Canary:** Ein authentifizierter Produktionslauf über A2A mit persistiertem `a2aContextId` und anschließendem Task-/Controllervergleich fehlt.
-3. **BELEGT — Pattern Memory:** PR #802 ist vollständig grün und als `c81af1ef295d102a887211e738e4b30ac4788944` gemergt; lokale Pattern-Projektion benötigt akzeptierte serverseitige Candidate- und Vector-Evidence.
-4. **OFFEN — Provider-Onboarding:** geschützter Key-Input, Inventar, Preise, Aliase, LiteLLM-Readiness, Completion-Canary und atomare Aktivierung/Rollback müssen als eine durchgängige Live-Kette belegt werden.
-5. **TEILWEISE — LiteLLM-Runtimekonsolidierung:** Datenbank-, Alias- und Routenkonzepte existieren; der vollständige automatische Provider-Lifecycle ist noch nicht releasebelegt.
-6. **OFFEN — vollständige Endpoint-Referenz:** automatisierte Generierung aus aktuellem Code, Protokollverträgen und OpenAPI-/Schemaquellen.
-7. **OFFEN — unabhängige Betriebsbeweise:** Browserless, Tika, Gotenberg, Dozzle, Code Server und Memory Gateway benötigen jeweils aktuellen Container-, Health- und Funktionsnachweis.
-8. **OFFEN — Android-Releasebeweis:** signiertes APK/AAB, Prüfsumme, Alignment, Signing, Installation und echter Hauptpfad-Smoke auf Android müssen gemeinsam belegt werden.
-9. **OFFEN — Dokumentpipeline:** Tika-Ingestion und Gotenberg-Evidence-PDF benötigen einen vollständigen produktiven End-to-End-Nachweis.
-10. **OFFEN — einheitlicher Sovereign Action Stream:** alle aktiven Routen müssen auf eine persistierte, idempotente und überprüfbare Aktions-/Ereigniskette konsolidiert werden.
+1. **BLOCKIERT — Dokumentpipeline:** Der post-install Gotenberg→Tika-Livecanary des Workflows `29649984723` ist trotz grüner Validation, Image-, Digest- und Bootstrap-Jobs fehlgeschlagen.
+2. **TEILWEISE — Action Stream:** Implementierung und Tests sind belegt; ein echter doppelter externer Append-Canary muss noch Idempotenz und unveränderten Run-/Blockerstatus in der Produktionsdatenbank bestätigen.
+3. **TEILWEISE — Provider-Onboarding:** Providerinventar, zwei Aliase und Completion-Canaries sind belegt; der vollständige automatische Lifecycle für beliebige neue Provider inklusive Preisen, atomarer Aktivierung und Rollback fehlt als durchgängiger Produktionsbeweis.
+4. **TEILWEISE — Betriebsbeweise:** Browserless, Tika, Gotenberg, Dozzle, Code Server, LiteLLM und LiteLLM-PostgreSQL besitzen Prozess-/Health-Evidence. Fachliche End-to-End-Canaries bleiben je Funktion separat erforderlich.
+5. **BLOCKIERT — Remote Memory:** Der optionale Memory Gateway ist prozessgesund, aber sein Milvus-Ziel war mit `EHOSTUNREACH` nicht erreichbar.
+6. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
+7. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation:** Der Architektur-Scanner meldet 57 heuristische Treffer in 27 Dateien. Repräsentative aktive Pfade wurden als Online-LLM-zuerst mit Offline-Fallback oder als strukturierte Policy-/Codeklassifikation bestätigt. Die vollständige SHA-gebundene Reviewliste muss noch maschinenlesbar verankert werden, damit jede Dateiänderung den Kandidaten automatisch erneut öffnet.
 
 ## 24.3 Langfristig
 
@@ -1105,7 +1129,7 @@ Ein erster Release erfolgt nur, wenn:
 - keine bekannten P0-Fehler offen sind,
 - der Hauptpfad mehrfach erfolgreich belegt wurde,
 - kein Fake-Erfolg existiert,
-- kein Auto-Merge möglich ist,
+- kein unautorisierter oder gate-loser Merge möglich ist,
 - Credits serverseitig korrekt reserviert und abgerechnet werden,
 - Fehler verständlich sichtbar sind,
 - Android und Web den Hauptpfad bedienen,
@@ -1116,7 +1140,7 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT:** Ein vollständiger Release-Grünstatus wird aktuell nicht behauptet. PR #802 ist zwar vollständig grün gemergt, aber der produktive A2A-Live-Canary antwortet weiterhin mit HTTP 400, die verbleibende Backend-Spiegeldrift ist nicht beseitigt und der signierte Android-Artefakt- und Installationsnachweis fehlt.
+**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, LiteLLM-Kernrouten und signierte Android-Releaseartefakte sind inzwischen belegt. Der aktuelle harte interne Blocker ist jedoch der fehlgeschlagene post-install Gotenberg→Tika-Livecanary auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a`. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
 
 ---
 
@@ -1124,16 +1148,18 @@ Ein erster Release erfolgt nur, wenn:
 
 Evidence-Stand: 18. Juli 2026, vor diesem Dokumentcommit.
 
-- **BELEGT:** Baseline und installierte MCP-Revision entsprechen `b828e3b84367dda85d0b22cdec76de3bda1d78e2`.
-- **BELEGT:** Archiv-SHA, immutable Image-Digest, Image-ID und Revision sind verifiziert; MCP-Container und MCP-Protokoll sind bereit.
-- **BELEGT:** Control Plane und Broker melden `BROKER_READY`; Broker-RPC und Host-Command-Worker sind aktiv, eingehende Direktmutationen sind verboten.
+- **BELEGT:** Repository-Baseline vor dem Manifest-Update ist `c1921578bb29e554bcfdc7c29391d6caab85ff8a`.
+- **BELEGT:** Für diese Revision bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
-- **BELEGT:** Der jüngste persistierte Agents-SDK-Lauf `run-1f7ee714872445319bed247506cdd366` ist `COMPLETED` und endete mit `NO_FURTHER_ACTION_REQUIRED`.
-- **BELEGT:** PRs #798, #799, #800 und #801 wurden mit allen jeweils relevanten Pflichtchecks grün abgeschlossen und sind Bestandteil von `main`.
-- **BELEGT:** PR #802 wurde nach Reparatur des einzigen kausalen Test-Scope-Fehlers auf Head `c5b4668c13da592a370853815b1f14d6c0fb1f0b` vollständig grün und als Squash-Commit `c81af1ef295d102a887211e738e4b30ac4788944` gemergt.
-- **BLOCKIERT:** Der owner-scoped A2A-Live-Canary erreicht den produktiven Backendpfad, erhält jedoch HTTP 400. Der direkte Agents-SDK-Pfad erzeugt weiterhin persistierte Runs; damit ist der Fehler auf A2A-Einstieg, Vorbedingung oder Fehlerprojektion eingegrenzt. Eine Diagnoseänderung projiziert künftig ausschließlich die standardisierte A2A-Fehlerfamilie und keine sensible Fehlernachricht; 3/3 gezielte Python-Tests sind grün.
-- **TEILWEISE:** Die meisten Backendspiegel sind bytegleich; `app.py` und `r2_storage.py` weisen weiterhin Spiegeldrift auf.
-- **OFFEN:** Unabhängige Live-Evidence für alle GPT-Tools-/Code-Server-/Memory-Gateway-Funktionen sowie der signierte Android-Releasepfad fehlt.
+- **BELEGT:** A2A wurde mit AgentCard, Owner-Scope, persistiertem Run und `contextId`, Streaming, Resume und Controller-/Task-Endstatus live korreliert.
+- **BELEGT:** `scripts/sovereign-backend/app.py` ist die kanonische deployte Backend-App. `knowledge_library.py`, `r2_storage.py` und die übrigen echten Spiegel sind bytegleich.
+- **BELEGT:** Der generierte Endpoint-Snapshot enthält 156 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und vier separat klassifizierte nichtaktive Altflächen.
+- **BELEGT:** Das LiteLLM-Inventar enthielt 92 Provider-Modelle; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries.
+- **BELEGT:** APK- und AAB-Artefakte, Hashes, Signaturdiagnose, genau ein Signer, Zertifikat-Fingerprint und Alignment liegen als Release-Evidence vor.
+- **BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server liefen ohne Restart-/OOM-/Exitfehler; LiteLLM und seine PostgreSQL-Instanz waren healthy.
+- **BLOCKIERT:** Workflow `29649984723` scheiterte ausschließlich im post-install Job `Verify Gotenberg to Tika live canary`; Validation, Image, Digest und VPS-Bootstrap waren grün.
+- **BLOCKIERT:** Der optionale Memory Gateway war prozessgesund, konnte sein Milvus-Ziel jedoch wegen `EHOSTUNREACH` nicht erreichen.
+- **OFFEN:** Physischer Android-Geräte-Smoke, produktiver Action-Stream-Doppel-Append-Canary und vollständige SHA-gebundene Klassifikation der LLM-Boundary-Kandidaten.
 - Ein vollständig grüner Produkt- und Releasezustand wird daher nicht behauptet.
 
 ---
