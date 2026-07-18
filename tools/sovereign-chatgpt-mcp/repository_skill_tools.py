@@ -89,12 +89,13 @@ _FETCH_CALL = re.compile(
     r"(?P<tail>\s*,\s*\{.{0,600}?\})?\s*\)",
     re.I | re.S,
 )
+_SQL_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _SQL_CREATE_TABLE = re.compile(
-    r"\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"
+    r"^[ \t]*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"
     r"(?:(?P<schema_quote>[\"`]?)"
     r"(?P<schema>[A-Za-z_][\w]*)(?P=schema_quote)\.)?"
     r"(?P<table_quote>[\"`]?)(?P<table>[A-Za-z_][\w]*)(?P=table_quote)",
-    re.I,
+    re.I | re.M,
 )
 _INTENT_BOUNDARY_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     (
@@ -462,7 +463,11 @@ def _sql_table_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
         text = _safe_text(repo / relative)
         if text is None:
             continue
-        for match in _SQL_CREATE_TABLE.finditer(text):
+        searchable = _SQL_BLOCK_COMMENT.sub(
+            lambda match: "\n" * match.group(0).count("\n"),
+            text,
+        )
+        for match in _SQL_CREATE_TABLE.finditer(searchable):
             output.append({
                 "schema": match.group("schema") or "public",
                 "table": match.group("table"),
