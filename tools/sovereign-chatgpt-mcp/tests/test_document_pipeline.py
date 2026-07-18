@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from document_pipeline import MAX_PDF_BYTES, DocumentPipelineRuntime
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeResponse:
@@ -20,6 +24,11 @@ class FakeResponse:
         self.content = content
         self.text = text
         self.headers = headers or {}
+
+
+def test_mcp_image_packages_document_pipeline_module() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    assert "a2a_runtime_client.py document_pipeline.py owner_input_widget.py" in dockerfile
 
 
 def test_live_canary_correlates_real_pdf_generation_and_text_extraction(monkeypatch) -> None:
