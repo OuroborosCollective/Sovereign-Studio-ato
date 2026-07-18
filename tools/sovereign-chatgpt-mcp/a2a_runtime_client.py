@@ -128,6 +128,7 @@ class A2ARuntimeClient(ControllerRuntimeClient):
 
     @staticmethod
     def _task(payload: dict[str, Any]) -> dict[str, Any]:
+        """Accept the bounded task shapes used by A2A HTTP+JSON implementations."""
         task = payload.get("task")
         if isinstance(task, dict):
             return task
