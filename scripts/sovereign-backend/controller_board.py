@@ -28,6 +28,7 @@ from agent_runtime.cognitive_run_store import (
     create_agent_run,
     link_agent_run_job,
     read_agent_task_ids,
+    record_external_action_event,
     transition_agent_run,
 )
 from agent_runtime.cognitive_swarm_agents import SwarmExecutionError, classify_mission_intent
@@ -603,6 +604,60 @@ def register_controller_board_routes(
                 "approvals": [normalize(row) for row in approvals],
                 "protectedValuesReturned": False,
             })
+        finally:
+            _close(conn)
+
+    @app.route("/api/internal/controller/runs/<run_id>/events/external", methods=["POST"])
+    def operator_controller_external_event(run_id: str):
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        body = request.get_json(force=True) or {}
+        rendered = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 120_000:
+            return _operator_json({"error": "external event exceeds the bounded input limit"}, 400)
+        if _operator_contains_secret(rendered):
+            return _operator_json({"error": "secret-shaped material is forbidden in external event input"}, 400)
+        source = str(body.get("source") or "").strip().lower()
+        external_identity = str(body.get("externalIdentity") or "").strip()
+        event_type = str(body.get("eventType") or "").strip()
+        summary = str(body.get("summary") or "").strip()
+        payload = body.get("payload")
+        if not isinstance(payload, dict):
+            return _operator_json({"error": "payload must be an object"}, 400)
+
+        conn = get_connection()
+        try:
+            owner_id = _operator_owner_user_id(conn)
+            result = record_external_action_event(
+                conn,
+                user_id=owner_id,
+                run_id=run_id,
+                source=source,
+                external_identity=external_identity,
+                event_type=event_type,
+                summary=summary,
+                payload=payload,
+            )
+            return _operator_json({
+                "ok": True,
+                "event": result,
+                "protectedValuesReturned": False,
+            }, 201 if result["created"] else 200)
+        except LookupError:
+            return _operator_json({"error": "run not found"}, 404)
+        except ValueError as exc:
+            return _operator_json({"error": str(exc)[:240]}, 400)
+        except Exception as exc:
+            rollback = getattr(conn, "rollback", None)
+            if callable(rollback):
+                rollback()
+            return _operator_json({
+                "ok": False,
+                "error": "external action event persistence unavailable",
+                "blocker": "EXTERNAL_ACTION_EVENT_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(exc).__name__,
+                "protectedValuesReturned": False,
+            }, 503)
         finally:
             _close(conn)
 

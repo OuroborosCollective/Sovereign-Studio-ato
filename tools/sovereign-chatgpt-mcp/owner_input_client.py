@@ -6,6 +6,7 @@ owner enters them only in the authenticated backend owner surface.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import uuid
@@ -15,6 +16,8 @@ import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
+EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
 MAX_TEXT = 1000
 MAX_OPERATOR_MISSION = 20_000
 MAX_OPERATOR_EVIDENCE = 250_000
@@ -196,6 +199,54 @@ class ControllerRuntimeClient(OwnerInputClient):
         return {
             **payload,
             "status": "CONTROLLER_RUN_STATUS",
+            "protected_values_returned": False,
+        }
+
+    def record_external_event(
+        self,
+        run_id: str,
+        *,
+        source: str,
+        external_identity: str,
+        event_type: str,
+        summary: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        selected = self._run_id(run_id)
+        normalized_source = str(source or "").strip().lower()
+        normalized_identity = str(external_identity or "").strip()
+        normalized_type = str(event_type or "").strip()[:120]
+        normalized_summary = str(summary or "").strip()[:2000]
+        if normalized_source not in EXTERNAL_EVENT_SOURCES:
+            raise ValueError("source is not allowlisted for external events")
+        if not EXTERNAL_ID_RE.fullmatch(normalized_identity):
+            raise ValueError("external_identity is invalid")
+        if not normalized_type or not normalized_summary:
+            raise ValueError("event_type and summary are required")
+        if not isinstance(payload, dict):
+            raise ValueError("payload must be an object")
+        body = {
+            "source": normalized_source,
+            "externalIdentity": normalized_identity,
+            "eventType": normalized_type,
+            "summary": normalized_summary,
+            "payload": payload,
+        }
+        rendered = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 120_000:
+            raise ValueError("external event exceeds the bounded input limit")
+        if any(marker in rendered.casefold() for marker in OPERATOR_SECRET_MARKERS):
+            raise ValueError("secret-shaped material is forbidden in external events")
+        response = self._request(
+            "POST",
+            f"/api/internal/controller/runs/{selected}/events/external",
+            json_body=body,
+            expected=(200, 201),
+            timeout=30,
+        )
+        return {
+            **response,
+            "status": "CONTROLLER_EXTERNAL_EVENT_RECORDED",
             "protected_values_returned": False,
         }
 

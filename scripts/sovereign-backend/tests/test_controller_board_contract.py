@@ -81,6 +81,7 @@ def test_controller_board_is_registered_in_the_real_backend() -> None:
     assert '@app.route("/api/internal/controller/runs", methods=["GET"])' in controller
     assert '@app.route("/api/internal/controller/runs", methods=["POST"])' in controller
     assert '@app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])' in controller
+    assert '@app.route("/api/internal/controller/runs/<run_id>/events/external", methods=["POST"])' in controller
     assert '@app.route("/api/internal/controller/runs/<run_id>/resume", methods=["POST"])' in controller
 
 
@@ -134,13 +135,47 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "WHERE run_id=%s AND user_id=%s::uuid" in controller
     assert "create_agent_run(" in controller
     assert "claim_agent_run_for_resume(" in controller
+    assert "record_external_action_event(" in controller
     assert "execute_persisted_swarm(" in controller
     assert '"operatorBridge": True' in controller
     assert '"protectedValuesReturned": False' in controller
     assert "secret-shaped material is forbidden in operator input" in controller
     assert "secret-shaped material is forbidden in operator evidence" in controller
+    assert "secret-shaped material is forbidden in external event input" in controller
     assert "adminKey" not in controller.split('@app.route("/api/internal/controller/runs"', 1)[1].split('@app.route("/api/controller/overview"', 1)[0]
     assert "sovereign_session" not in controller
+
+
+def test_external_action_stream_is_idempotent_owner_scoped_and_state_neutral() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+    run_store = RUN_STORE.read_text("utf-8")
+
+    assert "EXTERNAL_ACTION_SOURCES" in run_store
+    for source in ("mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"):
+        assert f'"{source}"' in run_store.split("EXTERNAL_ACTION_SOURCES", 1)[1].split("})", 1)[0]
+    assert "def record_external_action_event(" in run_store
+    assert "ON CONFLICT (evidence_id) DO NOTHING" in run_store
+    assert "ON CONFLICT (event_id) DO NOTHING" in run_store
+    external_function = run_store.split("def record_external_action_event(", 1)[1].split("def transition_agent_run(", 1)[0]
+    assert "UPDATE agent_runs" not in external_function
+    assert "UPDATE agent_tasks" not in external_function
+    assert '"runStateChanged": False' in external_function
+    assert '"taskStateChanged": False' in external_function
+    assert '"activeBlockerChanged": False' in external_function
+    assert '"rawSecretsPersisted": False' in external_function
+
+    external_route = controller.split(
+        '@app.route("/api/internal/controller/runs/<run_id>/events/external"',
+        1,
+    )[1].split(
+        '@app.route("/api/internal/controller/runs/<run_id>/resume"',
+        1,
+    )[0]
+    assert "_service_authorized()" in external_route
+    assert "_operator_owner_user_id(conn)" in external_route
+    assert "record_external_action_event(" in external_route
+    assert '201 if result["created"] else 200' in external_route
+    assert '"protectedValuesReturned": False' in external_route
 
 
 def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> None:

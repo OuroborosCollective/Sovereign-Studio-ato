@@ -168,6 +168,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(openai_project_access_tools.openai_project_access_plan)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_runtime_evidence)' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
+    assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
     assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
     assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer
@@ -189,6 +190,7 @@ def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None
     assert "skill_supply_chain_tools.py" in workflow
     assert "openai_project_access_tools.py" in workflow
     assert "document_pipeline_live_canary" in workflow
+    assert "controller_run_external_event" in workflow
     assert 'server.broker.call(' in workflow
     assert '"DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"' in workflow
     assert "33 * 1024 * 1024" in workflow
