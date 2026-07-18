@@ -317,7 +317,7 @@ describe('loadPatternMemoryStoreFromStorage', () => {
         summary: 'Not server accepted',
         tags: [],
         vectorRef: null,
-        objectRef: PR_URL,
+        objectRef: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/legacy',
         verified: false,
         localExecutable: false,
         reuseCount: 0,
