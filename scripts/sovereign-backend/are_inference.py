@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Callable, Iterable
 import uuid
 
@@ -26,9 +27,10 @@ ARE_SCHEMA_VERSION = 1
 MAX_PROMPT_CHARS = 12_000
 MAX_RESPONSE_CHARS = 64_000
 MAX_CONTEXT_ITEMS = 8
-KNOWLEDGE_THRESHOLD = 0.84
-EXPERIENCE_THRESHOLD = 0.88
-MIN_CONTEXT_SIMILARITY = 0.55
+KAPPA_SCALE = 1_000_000
+KNOWLEDGE_THRESHOLD_KAPPA = 840_000
+EXPERIENCE_THRESHOLD_KAPPA = 880_000
+MIN_CONTEXT_SIMILARITY_KAPPA = 550_000
 LOCAL_SYNTHESIS_CAPABILITY = "local_code_synthesis"
 _SECRET_PATTERNS = (
     re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
@@ -51,7 +53,9 @@ def _sha256_text(value: str) -> str:
 
 
 def _canonical(value: Any) -> Any:
-    if value is None or isinstance(value, (bool, int, float, str)):
+    if isinstance(value, float):
+        raise ValueError("floats are forbidden in deterministic ARE state")
+    if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, dict):
         return {str(key): _canonical(value[key]) for key in sorted(value, key=lambda item: str(item))}
@@ -80,12 +84,22 @@ def _contains_secret_like(*values: str) -> bool:
     return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
 
 
-def _similarity(row: dict[str, Any]) -> float:
+def _similarity_kappa(row: dict[str, Any]) -> int:
+    raw = row.get("similarity")
+    if raw is None or isinstance(raw, bool):
+        return 0
     try:
-        value = float(row.get("similarity") or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
-    return max(0.0, min(1.0, value))
+        value = Decimal(str(raw).strip() or "0")
+    except (InvalidOperation, ValueError):
+        return 0
+    if not value.is_finite():
+        return 0
+    bounded = max(Decimal(0), min(Decimal(1), value))
+    return int((bounded * KAPPA_SCALE).to_integral_value(rounding=ROUND_DOWN))
+
+
+def _similarity_projection(kappa: int) -> float:
+    return float(Decimal(int(kappa)) / Decimal(KAPPA_SCALE))
 
 
 def _knowledge_id(row: dict[str, Any]) -> str:
@@ -98,7 +112,7 @@ def _experience_id(row: dict[str, Any]) -> str:
 
 def _stable_rows(rows: Iterable[dict[str, Any]], id_reader: Callable[[dict[str, Any]], str]) -> list[dict[str, Any]]:
     normalized = [dict(row) for row in rows]
-    normalized.sort(key=lambda row: (-_similarity(row), id_reader(row)))
+    normalized.sort(key=lambda row: (-_similarity_kappa(row), id_reader(row)))
     return normalized[:MAX_CONTEXT_ITEMS]
 
 
@@ -107,7 +121,7 @@ def _revision(rows: Iterable[dict[str, Any]], id_reader: Callable[[dict[str, Any
         {
             "id": id_reader(row),
             "content": str(row.get("contentSha256") or row.get("responseSha256") or ""),
-            "similarity": round(_similarity(row), 8),
+            "similarityKappa": _similarity_kappa(row),
         }
         for row in _stable_rows(rows, id_reader)
     ]
@@ -159,7 +173,7 @@ def _runtime_capabilities() -> list[str]:
 def _context_knowledge(rows: list[dict[str, Any]]) -> str:
     blocks = []
     for row in rows:
-        if _similarity(row) < MIN_CONTEXT_SIMILARITY:
+        if _similarity_kappa(row) < MIN_CONTEXT_SIMILARITY_KAPPA:
             continue
         source = str(row.get("sourceTitle") or row.get("sourceType") or "Reference")
         section = str(row.get("sectionTitle") or "Section")
@@ -174,7 +188,7 @@ def _context_knowledge(rows: list[dict[str, Any]]) -> str:
 def _context_experience(rows: list[dict[str, Any]]) -> str:
     blocks = []
     for row in rows:
-        if _similarity(row) < MIN_CONTEXT_SIMILARITY:
+        if _similarity_kappa(row) < MIN_CONTEXT_SIMILARITY_KAPPA:
             continue
         candidate = _experience_id(row)
         text = _bounded_text(row.get("patternText") or row.get("summary"), 4_000)
@@ -233,15 +247,15 @@ def evaluate_are_inference(
 
     knowledge_rows = [
         row for row in knowledge_rows
-        if _knowledge_id(row) and _similarity(row) >= MIN_CONTEXT_SIMILARITY
+        if _knowledge_id(row) and _similarity_kappa(row) >= MIN_CONTEXT_SIMILARITY_KAPPA
     ]
     experience_rows = [
         row for row in experience_rows
-        if _experience_id(row) and _similarity(row) >= MIN_CONTEXT_SIMILARITY
+        if _experience_id(row) and _similarity_kappa(row) >= MIN_CONTEXT_SIMILARITY_KAPPA
     ]
-    knowledge_confidence = max((_similarity(row) for row in knowledge_rows), default=0.0)
-    experience_confidence = max((_similarity(row) for row in experience_rows), default=0.0)
-    memory_confidence = max(knowledge_confidence, experience_confidence)
+    knowledge_confidence_kappa = max((_similarity_kappa(row) for row in knowledge_rows), default=0)
+    experience_confidence_kappa = max((_similarity_kappa(row) for row in experience_rows), default=0)
+    memory_confidence_kappa = max(knowledge_confidence_kappa, experience_confidence_kappa)
     local_synthesis_available = LOCAL_SYNTHESIS_CAPABILITY in capabilities
 
     reasons: list[str] = []
@@ -256,8 +270,8 @@ def evaluate_are_inference(
     if not repository["evidenceComplete"]:
         reasons.append("repository_evidence_incomplete")
 
-    has_reference = knowledge_confidence >= KNOWLEDGE_THRESHOLD
-    has_experience = experience_confidence >= EXPERIENCE_THRESHOLD
+    has_reference = knowledge_confidence_kappa >= KNOWLEDGE_THRESHOLD_KAPPA
+    has_experience = experience_confidence_kappa >= EXPERIENCE_THRESHOLD_KAPPA
     if local_synthesis_available and (has_reference or has_experience):
         decision = "local"
         if has_reference and has_experience:
@@ -292,6 +306,7 @@ def evaluate_are_inference(
         "knowledgeRevision": knowledge_revision,
         "experienceRevision": experience_revision,
         "embeddingModelHash": _sha256_text(EMBEDDING_MODEL),
+        "similarityScale": KAPPA_SCALE,
         "activeCapabilities": capabilities,
         "onlineAvailable": online_available,
     }
@@ -303,9 +318,12 @@ def evaluate_are_inference(
         "state": envelope,
         "decision": decision,
         "adapter": adapter,
-        "confidence": round(memory_confidence, 8),
-        "knowledgeConfidence": round(knowledge_confidence, 8),
-        "experienceConfidence": round(experience_confidence, 8),
+        "confidence": _similarity_projection(memory_confidence_kappa),
+        "confidenceKappa": memory_confidence_kappa,
+        "knowledgeConfidence": _similarity_projection(knowledge_confidence_kappa),
+        "knowledgeConfidenceKappa": knowledge_confidence_kappa,
+        "experienceConfidence": _similarity_projection(experience_confidence_kappa),
+        "experienceConfidenceKappa": experience_confidence_kappa,
         "selectedKnowledgeIds": [_knowledge_id(row) for row in knowledge_rows],
         "selectedPatternIds": [_experience_id(row) for row in experience_rows],
         "knowledgeContext": _context_knowledge(knowledge_rows),

@@ -26,6 +26,7 @@ export interface AreStateEnvelope {
   readonly knowledgeRevision: string;
   readonly experienceRevision: string;
   readonly embeddingModelHash: string;
+  readonly similarityScale: 1000000;
   readonly activeCapabilities: readonly string[];
   readonly onlineAvailable: boolean;
 }
@@ -56,8 +57,11 @@ export interface AreInferenceResult {
   readonly decision: AreInferenceDecision;
   readonly adapter: string;
   readonly confidence: number;
+  readonly confidenceKappa: number;
   readonly knowledgeConfidence: number;
+  readonly knowledgeConfidenceKappa: number;
   readonly experienceConfidence: number;
+  readonly experienceConfidenceKappa: number;
   readonly selectedKnowledgeIds: readonly string[];
   readonly selectedPatternIds: readonly string[];
   readonly knowledgeContext: string;
