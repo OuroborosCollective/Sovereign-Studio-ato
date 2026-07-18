@@ -6395,12 +6395,14 @@ register_knowledge_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+    audit_event=audit,
 )
 register_admin_knowledge_routes(
     app,
     require_admin=require_admin,
     get_connection=get_agent_runtime_connection,
     get_admin_user_id=get_current_admin_user_id,
+    audit_event=audit,
 )
 register_security_routes(
     app,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import re
 import sys
 from types import ModuleType, SimpleNamespace
 
@@ -250,15 +249,22 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
 
 def test_pnpm_action_setup_uses_package_manager_as_single_version_source() -> None:
     workflows = sorted((ROOT / ".github/workflows").glob("*.y*ml"))
-    duplicate_version = re.compile(
-        r"uses:\s*pnpm/action-setup@v4\s*\n\s+with:\s*\n(?:\s+[^\n]+\n)*?\s+version:",
-        re.MULTILINE,
-    )
     for workflow_path in workflows:
         source = read(workflow_path)
         assert "PNPM_VERSION: 10" not in source, workflow_path.name
         assert "PNPM_VERSION: \"10\"" not in source, workflow_path.name
-        assert not duplicate_version.search(source), workflow_path.name
+        lines = source.splitlines()
+        for index, line in enumerate(lines):
+            stripped = line.lstrip()
+            if not stripped.startswith("- uses: pnpm/action-setup@v4"):
+                continue
+            step_indent = len(line) - len(stripped)
+            for candidate in lines[index + 1:]:
+                candidate_stripped = candidate.lstrip()
+                candidate_indent = len(candidate) - len(candidate_stripped)
+                if candidate_stripped.startswith("- ") and candidate_indent == step_indent:
+                    break
+                assert not candidate_stripped.startswith("version:"), workflow_path.name
 
 
 def test_payment_and_credit_security_are_server_authoritative() -> None:

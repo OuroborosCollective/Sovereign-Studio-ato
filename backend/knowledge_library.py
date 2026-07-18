@@ -37,6 +37,7 @@ from r2_storage import (
 from vector_embedding import EMBEDDING_MODEL, EmbeddingUnavailable, embed_texts, vector_literal
 
 ConnectionFactory = Callable[[], Any]
+AuditRecorder = Callable[[str, str | None, dict[str, Any]], None]
 
 MAX_UPLOAD_BYTES = 33 * 1024 * 1024
 MAX_NON_PDF_UPLOAD_BYTES = 12 * 1024 * 1024
@@ -106,6 +107,61 @@ class GitHubKnowledgeAccessError(ValueError):
         self.blocker = blocker
         self.github_status = github_status
         self.response_status = response_status
+
+
+def _github_get(url: str, *, headers: dict[str, str]) -> Any:
+    """Run one bounded GitHub HTTPS request and classify transport failures."""
+    try:
+        return requests.get(url, headers=headers, timeout=25)
+    except requests.Timeout as exc:
+        raise GitHubKnowledgeAccessError(
+            "GitHub hat über HTTPS/443 nicht rechtzeitig geantwortet. Erneut versuchen; bei Wiederholung DNS, Firewall und Proxy der Backend-Runtime prüfen.",
+            blocker="github_api_timeout",
+            response_status=504,
+        ) from exc
+    except requests.exceptions.SSLError as exc:
+        raise GitHubKnowledgeAccessError(
+            "Die TLS-Verbindung zu GitHub über HTTPS/443 konnte nicht verifiziert werden. Zertifikat-, CA- und Proxy-Konfiguration der Backend-Runtime prüfen.",
+            blocker="github_tls_failure",
+            response_status=502,
+        ) from exc
+    except requests.ConnectionError as exc:
+        raise GitHubKnowledgeAccessError(
+            "GitHub ist aus der Backend-Runtime über HTTPS/443 nicht erreichbar. DNS, Firewall und ausgehenden Proxy prüfen.",
+            blocker="github_connection_unavailable",
+            response_status=502,
+        ) from exc
+    except requests.RequestException as exc:
+        raise GitHubKnowledgeAccessError(
+            "Der GitHub-Aufruf über HTTPS/443 ist auf Transportebene fehlgeschlagen. Den Backend-Netzwerkpfad prüfen.",
+            blocker="github_transport_error",
+            response_status=502,
+        ) from exc
+
+
+def _record_github_import_failure(
+    audit_event: AuditRecorder | None,
+    source_url: str,
+    error: GitHubKnowledgeAccessError,
+) -> None:
+    """Persist bounded failure evidence without storing the URL or exception text."""
+    if not callable(audit_event):
+        return
+    source_fingerprint = _sha256_text(str(source_url or "").strip())[:24]
+    try:
+        audit_event(
+            "knowledge:github_import_failed",
+            f"github:{source_fingerprint}",
+            {
+                "result": "blocked",
+                "blocker": error.blocker,
+                "githubHttpStatus": error.github_status,
+                "transportFailure": error.github_status is None,
+            },
+        )
+    except Exception:
+        # Audit availability must not hide the classified import blocker.
+        return
 
 
 def _github_headers() -> dict[str, str]:
@@ -192,10 +248,9 @@ def _github_json(
     private_headers = _github_headers()
     has_private_access = "Authorization" in private_headers
     authenticated = bool(auth_state.get("authenticated")) if auth_state is not None else False
-    response = requests.get(
+    response = _github_get(
         url,
         headers=private_headers if authenticated else _github_public_headers(),
-        timeout=25,
     )
     if (
         not response.ok
@@ -204,10 +259,9 @@ def _github_json(
         and response.status_code in {403, 404}
     ):
         public_status = response.status_code
-        private_response = requests.get(
+        private_response = _github_get(
             url,
             headers=private_headers,
-            timeout=25,
         )
         if private_response.ok:
             response = private_response
@@ -250,10 +304,9 @@ def _decode_github_content(payload: dict[str, Any]) -> str:
                 blocker="github_raw_url_rejected",
                 response_status=502,
             )
-        response = requests.get(
+        response = _github_get(
             download_url,
             headers={"User-Agent": "sovereign-knowledge-library/1.0"},
-            timeout=25,
         )
         if not response.ok:
             raise _github_access_error(response, authenticated=False)
@@ -993,7 +1046,13 @@ def _confirm_r2_upload(conn: Any, user_id: str, object_id: str) -> dict[str, Any
         raise
 
 
-def register_knowledge_routes(app: Any, *, require_session: Callable, get_connection: ConnectionFactory) -> None:
+def register_knowledge_routes(
+    app: Any,
+    *,
+    require_session: Callable,
+    get_connection: ConnectionFactory,
+    audit_event: AuditRecorder | None = None,
+) -> None:
     @app.route("/api/knowledge/sources", methods=["GET"])
     @require_session
     def knowledge_sources_list():
@@ -1029,6 +1088,11 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
                 _close(conn)
             return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
         except GitHubKnowledgeAccessError as exc:
+            _record_github_import_failure(
+                audit_event,
+                str(body.get("url") or ""),
+                exc,
+            )
             return jsonify({
                 "ok": False,
                 "error": str(exc),
@@ -1239,6 +1303,7 @@ def register_admin_knowledge_routes(
     require_admin: Callable,
     get_connection: ConnectionFactory,
     get_admin_user_id: Callable[[], str],
+    audit_event: AuditRecorder | None = None,
 ) -> None:
     """Expose the persistent knowledge runtime to an authenticated admin."""
 
@@ -1276,6 +1341,11 @@ def register_admin_knowledge_routes(
                 _close(conn)
             return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
         except GitHubKnowledgeAccessError as exc:
+            _record_github_import_failure(
+                audit_event,
+                str(body.get("url") or ""),
+                exc,
+            )
             return jsonify({
                 "ok": False,
                 "error": str(exc),
