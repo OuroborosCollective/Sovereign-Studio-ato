@@ -191,8 +191,12 @@ def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> 
     assert "async def classify_mission_intent(" in agents
     assert 'Literal["conversation", "read_only_analysis", "repository_execution"]' in agents
     assert "Understand the user's natural language" in agents
-    assert 'mission_intent = asyncio.run(classify_mission_intent(mission))' in controller
-    assert controller.index("received_state = create_agent_run(") < controller.index("mission_intent = asyncio.run(classify_mission_intent(mission))")
+    assert "stage_billing = AgentStageBilling(" in controller
+    assert "mission_intent = asyncio.run(classify_mission_intent(" in controller
+    assert "stage_billing=stage_billing" in controller
+    assert "_persist_billing_blocker(" in controller
+    assert controller.index("received_state = create_agent_run(") < controller.index("stage_billing = AgentStageBilling(")
+    assert controller.index("stage_billing = AgentStageBilling(") < controller.index("mission_intent = asyncio.run(classify_mission_intent(")
     assert "intent_classification_failure" in controller
     assert "link_agent_run_job(" in controller
     assert 'mission_intent.mode == "repository_execution"' in controller
@@ -227,8 +231,12 @@ def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> N
 
     assert 'def start_cognitive_swarm_run(' in routes
     assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
-    assert "mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))" in routes
-    assert routes.index("received_state = create_agent_run(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(normalized_mission, model=normalized_model))")
+    assert "mission_intent = asyncio.run(classify_mission_intent(" in routes
+    assert "normalized_mission," in routes
+    assert "model=normalized_model," in routes
+    assert "stage_billing=stage_billing," in routes
+    assert routes.index("received_state = create_agent_run(") < routes.index("stage_billing = AgentStageBilling(")
+    assert routes.index("stage_billing = AgentStageBilling(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(")
     assert "payload, status_code = start_cognitive_swarm_run(" in routes
     assert "payload, status_code = resume_cognitive_swarm_run(" in routes
     assert "start_run=start_cognitive_swarm_run" in routes

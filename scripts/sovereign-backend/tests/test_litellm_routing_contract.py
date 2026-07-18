@@ -46,7 +46,11 @@ def test_backend_routes_reserve_then_settle_from_runtime_usage() -> None:
         '"direct_provider_route_blocked"',
         '"litellm_unavailable"',
         "extract_litellm_evidence(resp, result)",
-        '"chargeBasis": "actual_usage" if total_tokens > 0 else "reserved_request_estimate"',
+        'charge_basis = "litellm_provider_cost"',
+        'charge_basis = "verified_usage_and_route_prices"',
+        'provider_cost_micros = provider_cost_usd_to_micros(',
+        'provider_cost_micros = provider_cost_micros_from_usage(',
+        '"chargeBasis": charge_basis',
         'provider_tx_id=f"{request_id}:refund"',
         '"blocker": "litellm_streaming_not_enabled"',
     )

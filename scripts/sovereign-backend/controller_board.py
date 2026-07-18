@@ -33,7 +33,8 @@ from agent_runtime.cognitive_run_store import (
 )
 from agent_runtime.cognitive_swarm_agents import SwarmExecutionError, classify_mission_intent
 from agent_runtime.cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
-from agent_runtime.cognitive_swarm_routes import execute_persisted_swarm
+from agent_runtime.cognitive_swarm_routes import _persist_billing_blocker, execute_persisted_swarm
+from agent_runtime.cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
 from security_oauth import _decrypt_token
 
@@ -340,7 +341,52 @@ def register_controller_board_routes(
             _close(conn)
 
         try:
-            mission_intent = asyncio.run(classify_mission_intent(mission))
+            stage_billing = AgentStageBilling(
+                get_connection=get_connection,
+                user_id=owner_id,
+                run_id=run_id,
+                trace_id=trace_id,
+            )
+            mission_intent = asyncio.run(classify_mission_intent(
+                mission,
+                stage_billing=stage_billing,
+            ))
+        except AgentBillingError as exc:
+            try:
+                intent_state = _persist_billing_blocker(
+                    get_connection=get_connection,
+                    user_id=owner_id,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    exc=exc,
+                )
+            except Exception as persistence_exc:
+                return _operator_json({
+                    "ok": False,
+                    "runtime": "openai-agents-sdk",
+                    "runId": run_id,
+                    "traceId": trace_id,
+                    "receivedEvidenceId": received_state["evidenceId"],
+                    "blocker": "AGENT_BILLING_BLOCKER_PERSISTENCE_UNAVAILABLE",
+                    "errorType": type(persistence_exc).__name__,
+                    "protectedValuesReturned": False,
+                }, 503)
+            return _operator_json({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": run_id,
+                "traceId": trace_id,
+                "status": intent_state["status"],
+                "source": intent_state["source"],
+                "evidenceId": intent_state["evidenceId"],
+                "receivedEvidenceId": received_state["evidenceId"],
+                "blocker": exc.family,
+                "reason": intent_state["reason"],
+                "nextAction": intent_state["nextAction"],
+                "requiredCredits": exc.required_credits,
+                "availableProviderFundedCredits": exc.available_credits,
+                "protectedValuesReturned": False,
+            }, exc.status_code)
         except SwarmExecutionError as exc:
             conn = get_connection()
             try:
@@ -504,6 +550,7 @@ def register_controller_board_routes(
             job_id=implementation_job.job_id if implementation_job else None,
             task_id=task_ids_by_agent.get("judge"),
             task_ids_by_agent=task_ids_by_agent,
+            stage_billing=stage_billing,
             response_context={
                 "sessionKey": session_key,
                 "resumed": False,
@@ -710,6 +757,54 @@ def register_controller_board_routes(
         finally:
             _close(conn)
 
+        try:
+            stage_billing = AgentStageBilling(
+                get_connection=get_connection,
+                user_id=owner_id,
+                run_id=claim.run.run_id,
+                trace_id=trace_id,
+            )
+        except AgentBillingError as exc:
+            try:
+                blocked_state = _persist_billing_blocker(
+                    get_connection=get_connection,
+                    user_id=owner_id,
+                    run_id=claim.run.run_id,
+                    trace_id=trace_id,
+                    exc=exc,
+                    task_id=claim.task_id,
+                    expected_lease_token=claim.lease_token,
+                )
+            except Exception as persistence_exc:
+                return _operator_json({
+                    "ok": False,
+                    "runtime": "openai-agents-sdk",
+                    "runId": claim.run.run_id,
+                    "traceId": trace_id,
+                    "resumeClaimEvidenceId": claim.evidence_id,
+                    "resumed": True,
+                    "blocker": "AGENT_BILLING_BLOCKER_PERSISTENCE_UNAVAILABLE",
+                    "errorType": type(persistence_exc).__name__,
+                    "protectedValuesReturned": False,
+                }, 503)
+            return _operator_json({
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": claim.run.run_id,
+                "traceId": trace_id,
+                "status": blocked_state["status"],
+                "source": blocked_state["source"],
+                "evidenceId": blocked_state["evidenceId"],
+                "resumeClaimEvidenceId": claim.evidence_id,
+                "resumed": True,
+                "blocker": exc.family,
+                "reason": blocked_state["reason"],
+                "nextAction": blocked_state["nextAction"],
+                "requiredCredits": exc.required_credits,
+                "availableProviderFundedCredits": exc.available_credits,
+                "protectedValuesReturned": False,
+            }, exc.status_code)
+
         task_ids_by_agent: dict[str, str] = {}
         repository_toolset = None
         if claim.run.job_id:
@@ -766,6 +861,7 @@ def register_controller_board_routes(
             repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
             job_id=claim.run.job_id,
             task_ids_by_agent=task_ids_by_agent,
+            stage_billing=stage_billing,
             response_context={
                 "sessionKey": claim.run.session_key,
                 "resumed": True,

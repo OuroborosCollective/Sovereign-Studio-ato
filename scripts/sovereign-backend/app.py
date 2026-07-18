@@ -43,6 +43,19 @@ from litellm_runtime import (
     litellm_completion_canary,
     litellm_readiness,
 )
+from llm_cost_policy import (
+    BillingPolicyError,
+    FREE_CATEGORY,
+    billed_credits_for_provider_cost,
+    category_minimum_multiplier,
+    normalize_billing_category,
+    normalized_multiplier,
+    provider_cost_micros_from_usage,
+    provider_cost_usd_to_micros,
+    reservation_credits,
+    route_billing_policy,
+    require_package_cash_buffer,
+)
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.routes import register_sovereign_agent_routes
@@ -805,52 +818,151 @@ def admin_delete_toolchain_tool(tid):
 
 # ── LLM routes ────────────────────────────────────────────────────────────────
 
+def _decimal_json(value):
+    return float(value) if value is not None else None
+
+
+def _admin_llm_route_payload(row) -> dict:
+    item = dict(row or {})
+    config = item.get("config") if isinstance(item.get("config"), dict) else {}
+    try:
+        policy = route_billing_policy({
+            "model_id": item.get("modelId") or item.get("model_id"),
+            "config": config,
+        })
+        policy_error = None
+    except BillingPolicyError as exc:
+        policy = {
+            "billingCategory": str(
+                config.get("billingCategory") or config.get("billingClass") or "premium"
+            ).strip().lower(),
+            "markupMultiplier": config.get("markupMultiplier"),
+            "inputUsdPerMillion": config.get("inputUsdPerMillion"),
+            "cachedInputUsdPerMillion": config.get("cachedInputUsdPerMillion"),
+            "outputUsdPerMillion": config.get("outputUsdPerMillion"),
+            "pricingVerified": False,
+            "pricingSource": config.get("pricingSource") or "unverified",
+        }
+        policy_error = str(exc)
+    category = str(policy.get("billingCategory") or "premium")
+    try:
+        minimum = category_minimum_multiplier(category)
+    except BillingPolicyError:
+        minimum = 8
+    return {
+        "id": str(item.get("id") or ""),
+        "modelId": str(item.get("modelId") or item.get("model_id") or ""),
+        "modelName": str(item.get("modelName") or item.get("model_name") or ""),
+        "provider": str(item.get("provider") or ""),
+        "creditsPerUnit": float(item.get("creditsPerUnit") or item.get("credits_per_unit") or 0),
+        "disabled": bool(item.get("disabled")),
+        "priority": int(item.get("priority") or 0),
+        "billingCategory": category,
+        "markupMultiplier": int(policy.get("markupMultiplier") or 0),
+        "minimumMultiplier": minimum,
+        "inputUsdPerMillion": _decimal_json(policy.get("inputUsdPerMillion")),
+        "cachedInputUsdPerMillion": _decimal_json(policy.get("cachedInputUsdPerMillion")),
+        "outputUsdPerMillion": _decimal_json(policy.get("outputUsdPerMillion")),
+        "pricingVerified": bool(policy.get("pricingVerified")),
+        "pricingSource": str(policy.get("pricingSource") or "unverified"),
+        "revolverEligible": category == FREE_CATEGORY and bool(policy.get("pricingVerified")),
+        "policyBlocker": policy_error,
+    }
+
+
 @app.route("/api/admin/llm/routes")
 @require_admin
 def admin_llm_routes():
     rows = query(
         """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                   provider, credits_per_unit AS "creditsPerUnit",
-                  disabled, priority
+                  disabled, priority, config
            FROM llm_routes
-           ORDER BY priority ASC"""
+           ORDER BY priority ASC, model_name ASC"""
     )
-    return jsonify({"routes": [dict(r) for r in rows]})
+    return jsonify({
+        "routes": [_admin_llm_route_payload(row) for row in (rows or [])],
+        "billingCategories": [
+            {"id": "free", "minimumMultiplier": 0, "revolverOnly": True},
+            {"id": "standard", "minimumMultiplier": 4, "revolverOnly": False},
+            {"id": "premium", "minimumMultiplier": 8, "revolverOnly": False},
+        ],
+        "manualCreditsPerUnitEditing": False,
+    })
 
 
 @app.route("/api/admin/llm/routes/<rid>", methods=["PATCH"])
 @require_admin
 def admin_update_llm_route(rid):
     body = request.get_json(force=True) or {}
-    activation_evidence = None
-    if body.get("disabled") is False:
-        route = query(
-            """SELECT model_id, provider FROM llm_routes
-               WHERE id::text=%s LIMIT 1""",
-            (rid,), one=True,
+    forbidden = {"creditsPerUnit", "credits_per_unit"} & set(body)
+    if forbidden:
+        return jsonify({
+            "error": "Credits pro Einheit werden aus echten Providerkosten und Multiplikator berechnet.",
+            "blocker": "manual_llm_price_editing_disabled",
+        }), 400
+
+    route = query(
+        """SELECT id::text, model_id, model_name, provider, disabled, priority,
+                  credits_per_unit, config
+           FROM llm_routes WHERE id::text=%s LIMIT 1""",
+        (rid,), one=True,
+    )
+    if not route:
+        return jsonify({"error": "Route nicht gefunden"}), 404
+    if str(route.get("provider") or "").strip().lower() != "litellm":
+        return jsonify({
+            "error": "Direkte Provider-Routen dürfen nicht verwaltet oder aktiviert werden.",
+            "blocker": "direct_provider_route_blocked",
+        }), 409
+
+    config = dict(route.get("config") or {})
+    try:
+        category = normalize_billing_category(
+            body.get("billingCategory")
+            or config.get("billingCategory")
+            or config.get("billingClass")
         )
-        if not route:
-            return jsonify({"error": "Route nicht gefunden"}), 404
-        if str(route.get("provider") or "").strip().lower() != "litellm":
-            return jsonify({
-                "error": "Direkte Provider-Routen dürfen nicht aktiviert werden",
-                "blocker": "direct_provider_route_blocked",
-            }), 409
+        multiplier = normalized_multiplier(
+            category,
+            body.get("markupMultiplier", config.get("markupMultiplier")),
+        )
+        priority = int(body.get("priority", route.get("priority") or 0))
+        if not -10_000 <= priority <= 10_000:
+            raise BillingPolicyError("priority liegt außerhalb des erlaubten Bereichs")
+        config.update({
+            "billingCategory": category,
+            "billingClass": category,
+            "markupMultiplier": multiplier,
+            "minimumMultiplier": category_minimum_multiplier(category),
+            "revolverEligible": category == FREE_CATEGORY,
+        })
+        policy = route_billing_policy({"model_id": route["model_id"], "config": config})
+    except (BillingPolicyError, TypeError, ValueError) as exc:
+        return jsonify({
+            "error": str(exc),
+            "blocker": "llm_billing_policy_invalid",
+            "routeRemainsDisabled": bool(route.get("disabled")),
+        }), 400
+
+    output_price = float(policy["outputUsdPerMillion"])
+    credits_per_unit = 0.0 if category == FREE_CATEGORY else output_price * multiplier
+    activation_evidence = None
+    requested_disabled = bool(body.get("disabled", route.get("disabled")))
+    if body.get("disabled") is False:
         canary = litellm_completion_canary(str(route.get("model_id") or ""))
         if not canary.get("ok"):
             blocker = str(canary.get("blocker") or "litellm_route_canary_failed")
-            if blocker == "provider_quota_exhausted":
-                status_code = 402
-            elif blocker in {
-                "provider_credentials_rejected",
-                "litellm_model_alias_missing",
-                "litellm_model_alias_invalid",
-            }:
-                status_code = 409
-            elif canary.get("health") == "degraded":
-                status_code = 503
-            else:
-                status_code = 502
+            status_code = (
+                402 if blocker == "provider_quota_exhausted"
+                else 409 if blocker in {
+                    "provider_credentials_rejected",
+                    "litellm_model_alias_missing",
+                    "litellm_model_alias_invalid",
+                }
+                else 503 if canary.get("health") == "degraded"
+                else 502
+            )
             return jsonify({
                 "ok": False,
                 "error": canary.get("error") or "Route bleibt deaktiviert, weil die LiteLLM-Canary fehlgeschlagen ist",
@@ -862,39 +974,62 @@ def admin_update_llm_route(rid):
                 "routeRemainsDisabled": True,
             }), status_code
         activation_evidence = canary.get("evidence") or {}
-    col_map = {
-        "creditsPerUnit": "credits_per_unit",
-        "disabled":       "disabled",
-        "priority":       "priority",
-    }
-    sets, vals = [], []
-    for k, v in body.items():
-        if k in col_map:
-            sets.append(f"{col_map[k]} = %s")
-            vals.append(v)
-    if not sets:
-        return jsonify({"error": "Keine Felder"}), 400
-    sets.append("updated_at = NOW()")
-    vals.append(rid)
+        if category == FREE_CATEGORY and activation_evidence.get("providerCostUsd") not in (0, 0.0):
+            return jsonify({
+                "ok": False,
+                "error": "Free-Route bleibt deaktiviert: Die echte Canary bestätigt keine Providerkosten von exakt 0.",
+                "blocker": "free_route_nonzero_or_unreported_cost",
+                "providerCostUsd": activation_evidence.get("providerCostUsd"),
+                "routeRemainsDisabled": True,
+            }), 409
+        requested_disabled = False
+
     query(
-        f"UPDATE llm_routes SET {', '.join(sets)} WHERE id = %s",
-        vals, write=True,
+        """UPDATE llm_routes
+           SET disabled=%s, priority=%s, tier=%s, credits_per_unit=%s,
+               config=%s::jsonb, updated_at=NOW()
+           WHERE id::text=%s""",
+        (
+            requested_disabled,
+            priority,
+            category,
+            credits_per_unit,
+            psycopg2.extras.Json(config),
+            rid,
+        ),
+        write=True,
     )
     audit("admin_update_llm_route", rid, {
-        **body,
+        "disabled": requested_disabled,
+        "priority": priority,
+        "billingCategory": category,
+        "markupMultiplier": multiplier,
+        "providerPrices": {
+            "inputUsdPerMillion": float(policy["inputUsdPerMillion"]),
+            "cachedInputUsdPerMillion": float(policy["cachedInputUsdPerMillion"]),
+            "outputUsdPerMillion": float(policy["outputUsdPerMillion"]),
+        },
         "canaryRequestId": (
             activation_evidence.get("upstreamRequestId")
             if isinstance(activation_evidence, dict)
             else None
         ),
-        "canaryTokens": (
-            activation_evidence.get("totalTokens")
+        "providerCostUsd": (
+            activation_evidence.get("providerCostUsd")
             if isinstance(activation_evidence, dict)
             else None
         ),
     })
+    updated = query(
+        """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
+                  provider, credits_per_unit AS "creditsPerUnit",
+                  disabled, priority, config
+           FROM llm_routes WHERE id::text=%s LIMIT 1""",
+        (rid,), one=True,
+    )
     return jsonify({
         "ok": True,
+        "route": _admin_llm_route_payload(updated),
         "activationVerified": body.get("disabled") is not False or bool(activation_evidence),
     })
 
@@ -1975,6 +2110,7 @@ def _apply_credit_delta(
     provider_tx_id: str | None = None,
     created_by: str | None = None,
     transaction_amount_eur: float | None = None,
+    provider_funded_delta: int | None = None,
     audit_action: str | None = None,
     audit_admin_email: str | None = None,
     audit_changes: dict | None = None,
@@ -1992,8 +2128,8 @@ def _apply_credit_delta(
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id::text, email, credits FROM admin_users "
-                "WHERE id = %s::uuid LIMIT 1 FOR UPDATE",
+                "SELECT id::text, email, credits, provider_funded_credits "
+                "FROM admin_users WHERE id = %s::uuid LIMIT 1 FOR UPDATE",
                 (user_id,),
             )
             user_row = cur.fetchone()
@@ -2026,7 +2162,11 @@ def _apply_credit_delta(
                     ):
                         raise CreditStateConflict("Provider-Receipt kollidiert mit anderem User oder Betrag")
                     conn.rollback()
-                    return {"newBalance": cached_balance, "duplicate": True}
+                    return {
+                        "newBalance": cached_balance,
+                        "newProviderFundedBalance": int(user_row["provider_funded_credits"]),
+                        "duplicate": True,
+                    }
                 cur.execute(
                     """INSERT INTO credit_receipts
                            (provider, provider_tx_id, user_id, credits)
@@ -2037,6 +2177,22 @@ def _apply_credit_delta(
             new_balance = cached_balance + amount
             if new_balance < 0:
                 raise InsufficientCredits(abs(amount), cached_balance)
+
+            funded_delta = (
+                int(provider_funded_delta)
+                if provider_funded_delta is not None
+                else amount
+                if ledger_type == "credit_purchase" and transaction_amount_eur is not None and amount > 0
+                else 0
+            )
+            current_funded = int(user_row["provider_funded_credits"])
+            new_funded = current_funded + funded_delta
+            if new_funded < 0:
+                raise InsufficientCredits(abs(funded_delta), current_funded)
+            if new_funded > new_balance:
+                raise CreditStateConflict(
+                    "Provider-finanziertes Guthaben darf das Gesamtguthaben nicht überschreiten"
+                )
 
             cur.execute(
                 """INSERT INTO credit_ledger
@@ -2053,9 +2209,12 @@ def _apply_credit_delta(
                 ),
             )
             cur.execute(
-                "UPDATE admin_users SET credits = %s, last_active_at = NOW() "
-                "WHERE id = %s::uuid",
-                (new_balance, user_id),
+                """UPDATE admin_users
+                   SET credits = %s,
+                       provider_funded_credits = %s,
+                       last_active_at = NOW()
+                   WHERE id = %s::uuid""",
+                (new_balance, new_funded, user_id),
             )
             if transaction_amount_eur is not None:
                 cur.execute(
@@ -2092,7 +2251,11 @@ def _apply_credit_delta(
                     ),
                 )
         conn.commit()
-        return {"newBalance": new_balance, "duplicate": False}
+        return {
+            "newBalance": new_balance,
+            "newProviderFundedBalance": new_funded,
+            "duplicate": False,
+        }
     except Exception:
         conn.rollback()
         raise
@@ -2312,6 +2475,29 @@ def admin_update_credit_package(pid):
             return jsonify({"error": "priceEur muss eine Zahl sein"}), 400
         if body["priceEur"] < 0:
             return jsonify({"error": "priceEur darf nicht negativ sein"}), 400
+    current = query(
+        """SELECT credits, price_eur::float AS price_eur, enabled
+           FROM credit_packages WHERE id=%s::uuid LIMIT 1""",
+        (pid,), one=True,
+    )
+    if not current:
+        return jsonify({"error": "Credit-Paket nicht gefunden"}), 404
+    candidate_credits = int(body.get("credits", current["credits"]))
+    candidate_price = body.get("priceEur", current["price_eur"])
+    candidate_enabled = bool(body.get("enabled", current["enabled"]))
+    if candidate_enabled:
+        try:
+            require_package_cash_buffer(
+                credits=candidate_credits,
+                price_eur=candidate_price,
+            )
+        except BillingPolicyError as exc:
+            return jsonify({
+                "error": str(exc),
+                "blocker": "credit_package_cash_buffer_required",
+                "minimumPolicy": "EUR 0.0016 pro Credit",
+            }), 409
+
     col_map = {
         "name":       "name",
         "credits":    "credits",
@@ -3086,44 +3272,66 @@ def user_purchase():
 
 # ── Public LLM Route endpoints (Issue #461) ──────────────────────────────────
 
+def _public_llm_route_payload(row) -> dict:
+    admin_payload = _admin_llm_route_payload(row)
+    return {
+        "id": admin_payload["id"],
+        "defaultModelId": admin_payload["modelId"],
+        "label": admin_payload["modelName"],
+        "description": admin_payload["modelName"],
+        "creditsPerKTokens": admin_payload["creditsPerUnit"],
+        "enabled": not admin_payload["disabled"],
+        "userKeyOverride": False,
+        "maxTokensPerRequest": 32_000,
+        "billingCategory": admin_payload["billingCategory"],
+        "markupMultiplier": admin_payload["markupMultiplier"],
+        "minimumMultiplier": admin_payload["minimumMultiplier"],
+        "providerPrices": {
+            "inputUsdPerMillion": admin_payload["inputUsdPerMillion"],
+            "cachedInputUsdPerMillion": admin_payload["cachedInputUsdPerMillion"],
+            "outputUsdPerMillion": admin_payload["outputUsdPerMillion"],
+        },
+        "pricingVerified": admin_payload["pricingVerified"],
+        "pricingSource": admin_payload["pricingSource"],
+        "revolverEligible": admin_payload["revolverEligible"],
+    }
+
+
 @app.route("/api/llm/routes")
 def public_llm_routes():
-    """Expose only private LiteLLM routes to frontend clients."""
+    """Expose only safe private LiteLLM route metadata; never provider secrets."""
     try:
         rows = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
-                      disabled, priority
+                      disabled, priority, config
                FROM llm_routes
                WHERE lower(provider)='litellm'
-               ORDER BY priority ASC"""
+               ORDER BY
+                 CASE COALESCE(config->>'billingCategory', config->>'billingClass')
+                   WHEN 'free' THEN 0 WHEN 'standard' THEN 1 ELSE 2 END,
+                 priority ASC, model_name ASC"""
         )
-        routes = []
-        for r in rows:
-            d = dict(r)
-            routes.append({
-                "id":                  d["id"],
-                "defaultModelId":      d["modelId"],
-                "label":               d["modelName"],
-                "description":         d["modelName"],
-                "creditsPerKTokens":   float(d["creditsPerUnit"]),
-                "enabled":             not d["disabled"],
-                "userKeyOverride":     False,
-                "maxTokensPerRequest": 32_000,
-            })
-        return jsonify({"routes": routes})
-    except Exception as exc:
-        return jsonify({"error": str(exc), "routes": []}), 500
+        return jsonify({
+            "routes": [_public_llm_route_payload(row) for row in (rows or [])],
+            "revolverPolicy": "free-first",
+        })
+    except Exception:
+        return jsonify({
+            "error": "LLM-Routenkatalog konnte nicht sicher gelesen werden",
+            "blocker": "llm_route_catalog_failed",
+            "routes": [],
+        }), 500
 
 
 @app.route("/api/llm/routes/<route_id>")
 def public_llm_route(route_id):
-    """Single LLM route by id — merged DB config for frontend clients."""
+    """Single safe LLM route by id without credentials or internal key material."""
     try:
         row = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
-                      disabled, priority
+                      disabled, priority, config
                FROM llm_routes
                WHERE id::text = %s AND lower(provider)='litellm'
                LIMIT 1""",
@@ -3131,19 +3339,12 @@ def public_llm_route(route_id):
         )
         if not row:
             return jsonify({"error": "Route nicht gefunden"}), 404
-        d = dict(row)
+        return jsonify(_public_llm_route_payload(row))
+    except Exception:
         return jsonify({
-            "id":                  d["id"],
-            "defaultModelId":      d["modelId"],
-            "label":               d["modelName"],
-            "description":         d["modelName"],
-            "creditsPerKTokens":   float(d["creditsPerUnit"]),
-            "enabled":             not d["disabled"],
-            "userKeyOverride":     False,
-            "maxTokensPerRequest": 32_000,
-        })
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+            "error": "LLM-Route konnte nicht sicher gelesen werden",
+            "blocker": "llm_route_read_failed",
+        }), 500
 
 
 # ── User Billing endpoints (Issue #458) ──────────────────────────────────────
@@ -3200,11 +3401,12 @@ def user_billing_deduct():
             "tool_repo_load": 3,
         }
         if route:
-            amount = _llm_usage_credit_cost(
-                float(route["credits_per_unit"]),
-                token_count,
-            )
-        elif cost_id in fixed_costs:
+            return jsonify({
+                "error": "LLM-Kosten dürfen nicht aus clientseitig gemeldeten Tokenzahlen abgezogen werden.",
+                "blocker": "llm_usage_requires_provider_settlement",
+                "requiredEndpoint": "/api/llm/chat",
+            }), 409
+        if cost_id in fixed_costs:
             amount = fixed_costs[cost_id]
         else:
             return jsonify({"error": "unknown_cost_id", "costId": cost_id}), 400
@@ -6759,45 +6961,55 @@ def public_llm_auto_route():
             "blocker": "credit_state_verification_failed",
             "creditStateVerified": False,
         }), 409
-    except Exception as exc:
-        return jsonify({"error": str(exc), "runtimeState": "failed"}), 500
+    except Exception:
+        return jsonify({
+            "error": "Credit-State konnte nicht verifiziert werden",
+            "blocker": "credit_state_verification_failed",
+        }), 500
 
     try:
-        routes = query("SELECT id::text, model_id, model_name, provider, base_url, credits_per_unit, priority FROM llm_routes WHERE disabled = false AND lower(provider) = 'litellm' ORDER BY priority ASC, credits_per_unit ASC LIMIT 20")
-        if not routes:
+        routes = query(
+            """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
+                      provider, credits_per_unit AS "creditsPerUnit",
+                      disabled, priority, config
+               FROM llm_routes
+               WHERE disabled=false AND lower(provider)='litellm'
+               ORDER BY
+                 CASE COALESCE(config->>'billingCategory', config->>'billingClass')
+                   WHEN 'free' THEN 0 WHEN 'standard' THEN 1 ELSE 2 END,
+                 priority ASC, model_name ASC
+               LIMIT 20"""
+        )
+        safe_routes = []
+        for row in routes or []:
+            payload = _public_llm_route_payload(row)
+            if payload["pricingVerified"]:
+                safe_routes.append(payload)
+        if not safe_routes:
             return jsonify({
-                "error": "Keine durch den Owner bestätigte LiteLLM-Route verfügbar",
+                "error": "Keine preisverifizierte LiteLLM-Route verfügbar",
                 "blocker": "llm_routes_empty",
-                "suggestion": "Im Admin eine LiteLLM-Route per Canary aktivieren",
+                "suggestion": "Im Admin ein LiteLLM-Modell auswählen, Kategorie setzen und die Canary ausführen.",
             }), 503
-        selected = routes[0]
-        provider = str(selected.get("provider") or "").strip().lower()
-        if provider == "litellm":
-            return jsonify({
-                "ok": True,
-                "selected": {
-                    "modelId": selected["model_id"],
-                    "modelName": selected["model_name"],
-                    "provider": "litellm",
-                    "baseUrl": "http://litellm:4000",
-                    "creditsPerUnit": float(selected["credits_per_unit"]),
-                    "routeType": "private-litellm",
-                },
-                "fallback": [],
-                "message": f"LiteLLM: {selected['model_name']}",
-            })
-        if provider == "cloudflare":
-            return jsonify({"ok": True, "selected": {"modelId": selected["model_id"], "modelName": selected["model_name"], "provider": provider, "baseUrl": selected["base_url"], "creditsPerUnit": float(selected["credits_per_unit"]), "routeType": "worker-ai"}, "fallback": [r for r in routes[1:5]] if len(routes) > 1 else [], "message": f"Worker AI: {selected['model_name']}"})
-        if provider in PROVIDER_MODELS:
-            available, _, _ = test_provider_available(provider)
-            if available:
-                return jsonify({"ok": True, "selected": {"modelId": selected["model_id"], "modelName": selected["model_name"], "provider": provider, "baseUrl": selected["base_url"], "creditsPerUnit": float(selected["credits_per_unit"]), "routeType": "gateway"}, "fallback": [r for r in routes[1:3]] if len(routes) > 1 else [], "message": f"AI Gateway: {selected['model_name']}"})
-        worker_routes = [r for r in routes if r.get("provider") == "cloudflare"]
-        if worker_routes:
-            return jsonify({"ok": True, "selected": {"modelId": worker_routes[0]["model_id"], "modelName": worker_routes[0]["model_name"], "provider": "cloudflare", "baseUrl": worker_routes[0]["base_url"], "creditsPerUnit": float(worker_routes[0]["credits_per_unit"]), "routeType": "worker-ai-fallback"}, "fallback": [], "message": "Fallback to Worker AI"})
-        return jsonify({"error": "Keine Route verfuegbar"}), 503
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        selected = safe_routes[0]
+        return jsonify({
+            "ok": True,
+            "selected": {
+                **selected,
+                "provider": "litellm",
+                "routeType": "private-litellm",
+            },
+            "fallback": safe_routes[1:5],
+            "revolverSelection": (
+                "free" if selected["billingCategory"] == FREE_CATEGORY else "paid-fallback"
+            ),
+            "message": f"LiteLLM: {selected['label']} · {selected['billingCategory']}",
+        })
+    except Exception:
+        return jsonify({
+            "error": "Automatische LiteLLM-Routenwahl ist fehlgeschlagen",
+            "blocker": "llm_auto_route_failed",
+        }), 500
 
 def _llm_usage_credit_cost(credits_per_unit: float, token_count: int) -> int:
     """Return the deterministic whole-credit charge for one bounded token estimate."""
@@ -6806,11 +7018,15 @@ def _llm_usage_credit_cost(credits_per_unit: float, token_count: int) -> int:
     return max(1, int(((normalized_tokens / 1000) * normalized_rate) + 0.999999))
 
 
-def _estimate_llm_request_tokens(messages: list, max_tokens: int) -> int:
-    """Reserve output plus a deterministic upper estimate for serialized input."""
+def _estimate_llm_input_token_upper_bound(messages: list) -> int:
+    """Fail-closed byte upper bound for user messages plus protocol framing."""
     serialized = _json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
-    input_estimate = max(1, (len(serialized) + 3) // 4)
-    return input_estimate + max_tokens
+    return max(1, len(serialized.encode("utf-8")) + 2_048)
+
+
+def _estimate_llm_request_tokens(messages: list, max_tokens: int) -> int:
+    """Persist a conservative total token bound for operator evidence."""
+    return _estimate_llm_input_token_upper_bound(messages) + max_tokens
 
 
 def _resolve_enabled_llm_route(model: str):
@@ -6819,7 +7035,7 @@ def _resolve_enabled_llm_route(model: str):
         return None
     route = query(
         """SELECT id::text, model_id, model_name, provider, base_url,
-                  credits_per_unit::float AS credits_per_unit, priority
+                  credits_per_unit::float AS credits_per_unit, priority, config
            FROM llm_routes
            WHERE disabled=false AND lower(provider)='litellm'
              AND (model_id=%s OR id::text=%s)
@@ -6827,6 +7043,12 @@ def _resolve_enabled_llm_route(model: str):
         (normalized, normalized),
         one=True,
     )
+    if not route:
+        return None
+    try:
+        route_billing_policy(route)
+    except BillingPolicyError:
+        return None
     return route
 
 
@@ -6881,10 +7103,17 @@ def _update_llm_usage_settlement(
     settled_credits: int | None = None,
     refunded_credits: int | None = None,
     prompt_tokens: int | None = None,
+    cached_prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
     upstream_request_id: str | None = None,
     provider_cost_usd: float | None = None,
+    provider_cost_usd_micros: int | None = None,
+    billed_value_usd_micros: int | None = None,
+    markup_multiplier: int | None = None,
+    billing_category: str | None = None,
+    funded_credits_reserved: int | None = None,
+    request_count: int | None = None,
     fallback_provider: str | None = None,
     fallback_model_id: str | None = None,
     error_code: str | None = None,
@@ -6896,6 +7125,7 @@ def _update_llm_usage_settlement(
         "settled_estimate",
         "refunded",
         "failed",
+        "reconciliation_required",
     }
     if status not in allowed_statuses:
         raise ValueError("Ungültiger Settlement-Status")
@@ -6904,10 +7134,18 @@ def _update_llm_usage_settlement(
         "settled_credits": settled_credits,
         "refunded_credits": refunded_credits,
         "prompt_tokens": prompt_tokens,
+        "cached_prompt_tokens": cached_prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,
         "upstream_request_id": upstream_request_id,
         "provider_cost_usd": provider_cost_usd,
+        "provider_cost_usd_micros": provider_cost_usd_micros,
+        "billed_value_usd_micros": billed_value_usd_micros,
+        "markup_multiplier": markup_multiplier,
+        "billing_category": billing_category,
+        "billing_class": billing_category,
+        "funded_credits_reserved": funded_credits_reserved,
+        "request_count": request_count,
         "fallback_provider": fallback_provider,
         "fallback_model_id": fallback_model_id,
         "error_code": error_code,
@@ -6918,7 +7156,7 @@ def _update_llm_usage_settlement(
         if value is not None:
             sets.append(f"{column} = %s")
             params.append(value)
-    if status in {"settled_usage", "settled_estimate", "refunded", "failed"}:
+    if status in {"settled_usage", "settled_estimate", "refunded", "failed", "reconciliation_required"}:
         sets.append("settled_at = NOW()")
     params.append(request_id)
     query(
@@ -6985,20 +7223,54 @@ def _call_existing_llm_route(route, payload: dict):
     return None, "route_provider_missing"
 
 
+def _reserve_provider_funded_llm_credits(
+    user_id: str,
+    amount: int,
+    *,
+    route_id: str,
+    request_id: str,
+    estimated_tokens: int,
+) -> dict:
+    if amount <= 0:
+        return {
+            "newBalance": _read_verified_credit_balance(user_id),
+            "newProviderFundedBalance": 0,
+            "duplicate": False,
+        }
+    return _apply_credit_delta(
+        user_id,
+        -amount,
+        ledger_type="llm_usage_reservation",
+        reason=(
+            f"LLM provider-funded reservation: {route_id}; "
+            f"estimated_tokens={estimated_tokens}; request_id={request_id}"
+        ),
+        provider="litellm",
+        provider_tx_id=f"{request_id}:reservation",
+        provider_funded_delta=-amount,
+    )
+
+
 def _refund_reserved_llm_credits(
     user_id: str,
     amount: int,
     route_id: str,
     request_id: str,
 ) -> tuple[str, int | None]:
+    if amount <= 0:
+        try:
+            return "", _read_verified_credit_balance(user_id)
+        except Exception:
+            return "refund_failed", None
     try:
         result = _apply_credit_delta(
             user_id,
             amount,
-            ledger_type="usage_refund",
-            reason=f"LLM runtime refund: {route_id}",
-            provider="runtime",
+            ledger_type="llm_usage_refund",
+            reason=f"LLM provider-funded refund: {route_id}",
+            provider="litellm",
             provider_tx_id=f"{request_id}:refund",
+            provider_funded_delta=amount,
         )
         return "", int(result["newBalance"])
     except Exception:
@@ -7016,20 +7288,118 @@ def _settle_llm_usage(
     fallback_route=None,
 ) -> tuple[dict | None, str]:
     prompt_tokens = max(0, int(evidence.get("promptTokens") or 0))
+    cached_prompt_tokens = min(
+        prompt_tokens,
+        max(0, int(evidence.get("cachedPromptTokens") or 0)),
+    )
     completion_tokens = max(0, int(evidence.get("completionTokens") or 0))
     total_tokens = max(0, int(evidence.get("totalTokens") or 0))
     billing_route = fallback_route or route
-    computed_credits = (
-        _llm_usage_credit_cost(
-            float(billing_route["credits_per_unit"]),
-            total_tokens,
-        )
-        if total_tokens > 0
-        else reserved_credits
+    try:
+        policy = route_billing_policy(billing_route)
+    except BillingPolicyError:
+        return None, "billing_policy_invalid"
+
+    provider_cost_micros = provider_cost_usd_to_micros(
+        evidence.get("providerCostUsd")
     )
-    settled_credits = min(reserved_credits, computed_credits)
-    refunded_credits = max(0, reserved_credits - settled_credits)
+    charge_basis = "litellm_provider_cost"
+    if provider_cost_micros is None:
+        if total_tokens <= 0:
+            try:
+                _update_llm_usage_settlement(
+                    request_id,
+                    status="reconciliation_required",
+                    reserved_credits=reserved_credits,
+                    settled_credits=reserved_credits,
+                    refunded_credits=0,
+                    markup_multiplier=int(policy["markupMultiplier"]),
+                    billing_category=str(policy["billingCategory"]),
+                    funded_credits_reserved=reserved_credits,
+                    error_code="provider_cost_and_usage_missing",
+                )
+            except Exception:
+                pass
+            return None, "provider_cost_and_usage_missing"
+        provider_cost_micros = provider_cost_micros_from_usage(
+            prompt_tokens=prompt_tokens,
+            cached_prompt_tokens=cached_prompt_tokens,
+            completion_tokens=completion_tokens,
+            policy=policy,
+        )
+        charge_basis = "verified_usage_and_route_prices"
+
+    billed_credits = billed_credits_for_provider_cost(
+        provider_cost_micros,
+        markup_multiplier=int(policy["markupMultiplier"]),
+    )
+    if policy["billingCategory"] == FREE_CATEGORY and (
+        provider_cost_micros != 0 or billed_credits != 0
+    ):
+        try:
+            _update_llm_usage_settlement(
+                request_id,
+                status="reconciliation_required",
+                reserved_credits=reserved_credits,
+                settled_credits=reserved_credits,
+                refunded_credits=0,
+                prompt_tokens=prompt_tokens,
+                cached_prompt_tokens=cached_prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                upstream_request_id=str(evidence.get("upstreamRequestId") or "").strip() or None,
+                provider_cost_usd=float(provider_cost_micros / 1_000_000),
+                provider_cost_usd_micros=provider_cost_micros,
+                billed_value_usd_micros=provider_cost_micros,
+                markup_multiplier=0,
+                billing_category=FREE_CATEGORY,
+                funded_credits_reserved=0,
+                error_code="free_route_reported_provider_cost",
+            )
+        except Exception:
+            pass
+        return None, "free_route_reported_provider_cost"
+
+    additional_credits = max(0, billed_credits - reserved_credits)
     new_balance = reserved_balance
+    if additional_credits > 0:
+        try:
+            adjustment = _apply_credit_delta(
+                user_id,
+                -additional_credits,
+                ledger_type="llm_usage_adjustment",
+                reason=f"LLM actual provider-cost adjustment: {route['model_id']}",
+                provider="litellm",
+                provider_tx_id=f"{request_id}:actual-cost-adjustment",
+                provider_funded_delta=-additional_credits,
+            )
+            new_balance = int(adjustment["newBalance"])
+        except Exception:
+            try:
+                _update_llm_usage_settlement(
+                    request_id,
+                    status="reconciliation_required",
+                    reserved_credits=reserved_credits,
+                    settled_credits=reserved_credits,
+                    refunded_credits=0,
+                    prompt_tokens=prompt_tokens,
+                    cached_prompt_tokens=cached_prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    upstream_request_id=str(evidence.get("upstreamRequestId") or "").strip() or None,
+                    provider_cost_usd=float(provider_cost_micros / 1_000_000),
+                    provider_cost_usd_micros=provider_cost_micros,
+                    billed_value_usd_micros=provider_cost_micros * int(policy["markupMultiplier"]),
+                    markup_multiplier=int(policy["markupMultiplier"]),
+                    billing_category=str(policy["billingCategory"]),
+                    funded_credits_reserved=reserved_credits,
+                    error_code="actual_cost_exceeded_reservation",
+                )
+            except Exception:
+                pass
+            return None, "actual_cost_exceeded_reservation"
+
+    refunded_credits = max(0, reserved_credits - billed_credits)
     if refunded_credits > 0:
         refund_error, refunded_balance = _refund_reserved_llm_credits(
             user_id,
@@ -7043,44 +7413,33 @@ def _settle_llm_usage(
         if refunded_balance is not None:
             new_balance = refunded_balance
 
-    status = (
-        "refunded"
-        if refunded_credits > 0
-        else "settled_usage"
-        if total_tokens > 0
-        else "settled_estimate"
-    )
+    status = "refunded" if refunded_credits > 0 else "settled_usage"
     try:
         _update_llm_usage_settlement(
             request_id,
             status=status,
-            settled_credits=settled_credits,
+            reserved_credits=reserved_credits,
+            settled_credits=billed_credits,
             refunded_credits=refunded_credits,
             prompt_tokens=prompt_tokens,
+            cached_prompt_tokens=cached_prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
-            upstream_request_id=(
-                str(evidence.get("upstreamRequestId") or "").strip() or None
-            ),
-            provider_cost_usd=evidence.get("providerCostUsd"),
-            fallback_provider=(
-                str(fallback_route.get("provider") or "") if fallback_route else None
-            ),
-            fallback_model_id=(
-                str(fallback_route.get("model_id") or "") if fallback_route else None
-            ),
-            error_code=(
-                "usage_missing"
-                if total_tokens <= 0
-                else "usage_exceeded_reservation"
-                if computed_credits > reserved_credits
-                else None
-            ),
+            upstream_request_id=str(evidence.get("upstreamRequestId") or "").strip() or None,
+            provider_cost_usd=float(provider_cost_micros / 1_000_000),
+            provider_cost_usd_micros=provider_cost_micros,
+            billed_value_usd_micros=provider_cost_micros * int(policy["markupMultiplier"]),
+            markup_multiplier=int(policy["markupMultiplier"]),
+            billing_category=str(policy["billingCategory"]),
+            funded_credits_reserved=reserved_credits,
+            request_count=max(1, int(evidence.get("requestCount") or 1)),
+            fallback_provider=str(fallback_route.get("provider") or "") if fallback_route else None,
+            fallback_model_id=str(fallback_route.get("model_id") or "") if fallback_route else None,
         )
     except Exception:
         return None, "settlement_failed"
     return {
-        "chargedCredits": settled_credits,
+        "chargedCredits": billed_credits,
         "reservedCredits": reserved_credits,
         "refundedCredits": refunded_credits,
         "newBalance": new_balance,
@@ -7088,18 +7447,21 @@ def _settle_llm_usage(
         "modelId": str(route["model_id"]),
         "requestId": request_id,
         "upstreamRequestId": str(evidence.get("upstreamRequestId") or ""),
+        "billingCategory": str(policy["billingCategory"]),
+        "markupMultiplier": int(policy["markupMultiplier"]),
+        "providerCostUsd": float(provider_cost_micros / 1_000_000),
+        "billedValueUsd": float(
+            provider_cost_micros * int(policy["markupMultiplier"]) / 1_000_000
+        ),
         "usage": {
             "promptTokens": prompt_tokens,
+            "cachedPromptTokens": cached_prompt_tokens,
             "completionTokens": completion_tokens,
             "totalTokens": total_tokens,
         },
-        "chargeBasis": "actual_usage" if total_tokens > 0 else "reserved_request_estimate",
-        "fallbackProvider": (
-            str(fallback_route.get("provider") or "") if fallback_route else None
-        ),
-        "fallbackModelId": (
-            str(fallback_route.get("model_id") or "") if fallback_route else None
-        ),
+        "chargeBasis": charge_basis,
+        "fallbackProvider": str(fallback_route.get("provider") or "") if fallback_route else None,
+        "fallbackModelId": str(fallback_route.get("model_id") or "") if fallback_route else None,
     }, ""
 
 
@@ -7181,36 +7543,49 @@ def public_llm_chat():
         route = _resolve_enabled_llm_route(model)
         if not route:
             return jsonify({
-                "error": "LLM Route nicht aktiv oder nicht vorhanden",
+                "error": "LLM Route nicht aktiv, nicht vorhanden oder nicht preisverifiziert",
                 "blocker": "llm_route_not_enabled",
             }), 404
+        try:
+            policy = route_billing_policy(route)
+        except BillingPolicyError as exc:
+            return jsonify({
+                "error": str(exc),
+                "blocker": "llm_billing_policy_invalid",
+            }), 409
 
-        estimated_tokens = _estimate_llm_request_tokens(messages, max_tokens)
-        reserved_cost = _llm_usage_credit_cost(
-            float(route["credits_per_unit"]),
-            estimated_tokens,
+        input_token_upper_bound = _estimate_llm_input_token_upper_bound(messages)
+        estimated_tokens = input_token_upper_bound + max_tokens
+        reserved_cost, provider_cost_upper_bound_micros = reservation_credits(
+            input_token_upper_bound=input_token_upper_bound,
+            output_token_limit=max_tokens,
+            request_upper_bound=1,
+            policy=policy,
         )
         reserved_route_id = str(route["id"])
-        step_up = consume_step_up_approval(
-            get_agent_runtime_connection,
-            user_id=user_id,
-            action="expensive_llm_route",
-            context={
-                "costId": reserved_route_id,
-                "modelId": route["model_id"],
-                "credits": reserved_cost,
-                "tokenCount": estimated_tokens,
-                "requestId": request_id,
-            },
-            token=request.headers.get("X-Step-Up-Token", "").strip() or None,
-        )
-        if not step_up.get("approved"):
-            return jsonify({
-                "error": "step_up_required",
-                "action": "expensive_llm_route",
-                "context": step_up.get("context"),
-                "reason": step_up.get("reason"),
-            }), 428
+        if reserved_cost > 0:
+            step_up = consume_step_up_approval(
+                get_agent_runtime_connection,
+                user_id=user_id,
+                action="expensive_llm_route",
+                context={
+                    "costId": reserved_route_id,
+                    "modelId": route["model_id"],
+                    "credits": reserved_cost,
+                    "tokenCount": estimated_tokens,
+                    "requestId": request_id,
+                    "billingCategory": policy["billingCategory"],
+                    "markupMultiplier": policy["markupMultiplier"],
+                },
+                token=request.headers.get("X-Step-Up-Token", "").strip() or None,
+            )
+            if not step_up.get("approved"):
+                return jsonify({
+                    "error": "step_up_required",
+                    "action": "expensive_llm_route",
+                    "context": step_up.get("context"),
+                    "reason": step_up.get("reason"),
+                }), 428
 
         try:
             created = _create_llm_usage_settlement(
@@ -7233,16 +7608,20 @@ def public_llm_chat():
             }), 409
 
         try:
-            balance = _apply_credit_delta(
-                user_id,
-                -reserved_cost,
-                ledger_type="usage",
-                reason=(
-                    f"LLM runtime reservation: {route['model_id']}; "
-                    f"estimated_tokens={estimated_tokens}; request_id={request_id}"
-                ),
-                provider="runtime",
-                provider_tx_id=f"{request_id}:reservation",
+            balance = (
+                _reserve_provider_funded_llm_credits(
+                    user_id,
+                    reserved_cost,
+                    route_id=reserved_route_id,
+                    request_id=request_id,
+                    estimated_tokens=estimated_tokens,
+                )
+                if reserved_cost > 0
+                else {
+                    "newBalance": _read_verified_credit_balance(user_id),
+                    "newProviderFundedBalance": 0,
+                    "duplicate": False,
+                }
             )
             reserved_balance = int(balance["newBalance"])
         except LookupError:
@@ -7274,6 +7653,14 @@ def public_llm_chat():
                 request_id,
                 status="reserved",
                 reserved_credits=reserved_cost,
+                funded_credits_reserved=reserved_cost,
+                provider_cost_usd_micros=provider_cost_upper_bound_micros,
+                billed_value_usd_micros=(
+                    provider_cost_upper_bound_micros * int(policy["markupMultiplier"])
+                ),
+                markup_multiplier=int(policy["markupMultiplier"]),
+                billing_category=str(policy["billingCategory"]),
+                request_count=1,
             )
         except Exception:
             return refund_failed_run("settlement_failed")

@@ -40,7 +40,7 @@ def test_live_chat_and_catalog_accept_only_private_litellm_routes() -> None:
     assert "WHERE lower(provider)='litellm'" in app
     assert "direct_provider_route_blocked" in app
     assert "litellm_unavailable" in app
-    assert "Keine durch den Owner bestätigte LiteLLM-Route verfügbar" in app
+    assert "Keine preisverifizierte LiteLLM-Route verfügbar" in app
     assert "Automatische Direktprovider-Routenerzeugung ist deaktiviert" in app
     assert '"status": "Always available (free)"' not in app
 
@@ -100,3 +100,41 @@ def test_frontend_online_adapter_never_constructs_direct_provider_routes() -> No
     assert "VITE_SOVEREIGN_LLM_PROXY_URL" not in config
     assert "projectouroboroscollective.workers.dev" not in config
     assert "gateway.ai.cloudflare.com" not in config
+
+
+def test_three_category_cost_policy_is_fail_closed() -> None:
+    policy = (BACKEND / "llm_cost_policy.py").read_text("utf-8")
+    billing = (BACKEND / "agent_runtime" / "cognitive_usage_billing.py").read_text("utf-8")
+    provider = (BACKEND / "llm_provider_runtime.py").read_text("utf-8")
+    app = (BACKEND / "app.py").read_text("utf-8")
+    migration = (BACKEND / "migrations" / "022_llm_cost_floor_and_funded_credits.sql").read_text("utf-8")
+
+    assert 'FREE_CATEGORY: Final[str] = "free"' in policy
+    assert 'STANDARD_CATEGORY: Final[str] = "standard"' in policy
+    assert 'PREMIUM_CATEGORY: Final[str] = "premium"' in policy
+    assert "STANDARD_MARKUP_MULTIPLIER" in policy
+    assert "PREMIUM_MARKUP_MULTIPLIER" in policy
+    assert "free routes require verified zero provider prices" in policy
+    assert "AGENTS_PROVIDER_MODEL: Final[str] = \"gpt-5.4-mini\"" in policy
+
+    assert "provider_funded_credits" in migration
+    assert "billing_category IN ('free', 'standard', 'premium')" in migration
+    assert "billing_category = 'standard' AND markup_multiplier >= 4" in migration
+    assert "billing_category = 'premium' AND markup_multiplier >= 8" in migration
+    assert "credit_packages_cash_buffer_check" in migration
+
+    assert "_load_agent_policy" in billing
+    assert "AGENTS_LITELLM_ALIAS_NOT_READY" in billing
+    assert "AGENTS_PROVIDER_MODEL_MISMATCH" in billing
+    assert "AGENTS_STANDARD_ROUTE_REQUIRED" in billing
+    assert "funded_credits_reserved" in billing
+
+    assert '"billingCategories": list(BILLING_CATEGORY_OPTIONS)' in provider
+    assert '"/api/admin/llm/model-catalog"' in provider
+    assert '"/api/admin/llm/model-catalog/attach"' in provider
+    assert "litellm_pricing_not_eligible" in provider
+    assert "free_route_nonzero_or_unreported_cost" in provider
+
+    assert "provider_funded_delta=-amount" in app
+    assert "billingCategory" in app
+    assert "markupMultiplier" in app

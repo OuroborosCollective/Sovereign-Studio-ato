@@ -41,14 +41,12 @@ def _configure_internal_litellm(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_default_model_uses_the_internal_litellm_alias() -> None:
-    assert DEFAULT_MODEL == "sovereign-balanced"
-    assert ALLOWED_LITELLM_MODEL_ALIASES == frozenset(
-        {"sovereign-fast", "sovereign-balanced"}
-    )
+    assert DEFAULT_MODEL == "sovereign-fast"
+    assert ALLOWED_LITELLM_MODEL_ALIASES == frozenset({"sovereign-fast"})
     production_agents = (
         PRODUCTION_BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
     ).read_text("utf-8")
-    assert 'DEFAULT_MODEL: Final[str] = "sovereign-balanced"' in production_agents
+    assert "DEFAULT_MODEL: Final[str] = AGENTS_LITELLM_ALIAS" in production_agents
     assert "ALLOWED_LITELLM_MODEL_ALIASES" in production_agents
 
 

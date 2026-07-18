@@ -59,7 +59,8 @@ def test_credit_grant_and_transaction_log_share_one_database_transaction() -> No
         assert "conn.rollback()" in helper
         assert "FOR UPDATE" in helper
         assert "INSERT INTO credit_ledger" in helper
-        assert "UPDATE admin_users SET credits = %s" in helper
+        assert "UPDATE admin_users" in helper
+        assert "SET credits = %s" in helper
         assert "INSERT INTO transactions" in helper
 
 

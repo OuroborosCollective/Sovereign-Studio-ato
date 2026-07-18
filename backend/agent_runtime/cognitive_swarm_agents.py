@@ -23,12 +23,15 @@ from .cognitive_swarm_manifest import (
     manifest_payload,
     max_active_specialists,
 )
+from .cognitive_usage_billing import AgentStageBilling
+from llm_cost_policy import AGENTS_LITELLM_ALIAS, AGENTS_PROVIDER_MODEL
 
 
-DEFAULT_MODEL: Final[str] = "sovereign-balanced"
-ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset(
-    {"sovereign-fast", "sovereign-balanced"}
-)
+DEFAULT_MODEL: Final[str] = AGENTS_LITELLM_ALIAS
+ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset({AGENTS_LITELLM_ALIAS})
+_AGENT_OUTPUT_TOKEN_LIMIT: Final[int] = 2_048
+_AGENT_WORKER_MAX_TURNS: Final[int] = 4
+_AGENT_SINGLE_STAGE_MAX_TURNS: Final[int] = 1
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 RELEASE_HUNT_SKILL_PATH: Final[Path] = (
     Path(__file__).parent
@@ -134,8 +137,20 @@ def ensure_openai_runtime_key() -> bool:
         _RUN_CONFIG_ERROR = "SDK_PROVIDER_CONFIGURATION_REJECTED"
         return False
     try:
+        model_settings_module = importlib.import_module("agents.model_settings")
+        model_settings_class = getattr(model_settings_module, "ModelSettings")
+        model_settings = model_settings_class(
+            max_tokens=_AGENT_OUTPUT_TOKEN_LIMIT,
+            include_usage=True,
+        )
+    except (AttributeError, ImportError, TypeError, ValueError):
+        _RUN_CONFIG_ERROR = "SDK_MODEL_SETTINGS_API_UNAVAILABLE"
+        return False
+    try:
         _RUN_CONFIG = run_config_class(
+            model=DEFAULT_MODEL,
             model_provider=provider,
+            model_settings=model_settings,
             tracing_disabled=True,
             trace_include_sensitive_data=False,
         )
@@ -249,17 +264,61 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
     )
 
 
-async def _run_stage(runner_class: Any, agent: Any, prompt: str, *, stage: str) -> Any:
+def _stage_max_turns(stage: str) -> int:
+    return _AGENT_WORKER_MAX_TURNS if ":worker:" in str(stage).casefold() else _AGENT_SINGLE_STAGE_MAX_TURNS
+
+
+async def _run_stage(
+    runner_class: Any,
+    agent: Any,
+    prompt: str,
+    *,
+    stage: str,
+    stage_billing: AgentStageBilling | None = None,
+) -> Any:
+    reservation = (
+        stage_billing.reserve(stage=stage, prompt=prompt)
+        if stage_billing is not None
+        else None
+    )
     try:
-        return await runner_class.run(
+        result = await runner_class.run(
             agent,
             prompt,
             run_config=_require_litellm_run_config(),
+            max_turns=_stage_max_turns(stage),
         )
     except SwarmExecutionError:
+        if reservation is not None:
+            stage_billing.mark_reconciliation_required(
+                reservation,
+                family="AGENTS_STAGE_FAILED_WITHOUT_USAGE",
+            )
         raise
     except Exception as exc:
+        if reservation is not None:
+            stage_billing.mark_reconciliation_required(
+                reservation,
+                family=type(exc).__name__,
+            )
         raise classify_swarm_exception(exc, stage=stage) from exc
+    if reservation is not None:
+        stage_billing.settle(reservation, result)
+    return result
+
+
+async def _run_billed_stage(
+    runner_class: Any,
+    agent: Any,
+    prompt: str,
+    *,
+    stage: str,
+    stage_billing: AgentStageBilling | None,
+) -> Any:
+    kwargs: dict[str, Any] = {"stage": stage}
+    if stage_billing is not None:
+        kwargs["stage_billing"] = stage_billing
+    return await _run_stage(runner_class, agent, prompt, **kwargs)
 
 
 try:
@@ -308,6 +367,7 @@ async def classify_mission_intent(
     mission: str,
     *,
     model: str | None = None,
+    stage_billing: AgentStageBilling | None = None,
 ) -> MissionIntent:
     """Let the routed LLM understand user language; runtime only validates the bounded action contract."""
 
@@ -322,7 +382,7 @@ async def classify_mission_intent(
             next_action="VERIFY_LITELLM_SERVICE_KEY",
             retryable=False,
         )
-    selected_model = (model or os.getenv("SOVEREIGN_AGENTS_MODEL") or DEFAULT_MODEL).strip()
+    selected_model = (model or DEFAULT_MODEL).strip()
     if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
         raise ValueError("A Sovereign LiteLLM model alias is required.")
     agent_class, runner_class = _require_agents_sdk()
@@ -339,11 +399,12 @@ async def classify_mission_intent(
         ),
         output_type=MissionIntent,
     )
-    result = await _run_stage(
+    result = await _run_billed_stage(
         runner_class,
         router,
         f"User mission:\n{normalized_mission}",
         stage="intent-router",
+        stage_billing=stage_billing,
     )
     intent = result.final_output
     if not isinstance(intent, MissionIntent):
@@ -461,7 +522,7 @@ def build_cognitive_swarm(
     *,
     repository_tool_factory: RepositoryToolFactory | None = None,
 ) -> CognitiveSwarm:
-    selected_model = (model or os.getenv("SOVEREIGN_AGENTS_MODEL") or DEFAULT_MODEL).strip()
+    selected_model = (model or DEFAULT_MODEL).strip()
     if not selected_model:
         raise ValueError("A model identifier is required.")
     if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
@@ -491,7 +552,7 @@ def build_cognitive_swarm(
                 tool_name=f"specialist_{role}",
                 tool_description=f"Analyze one bounded {role} work package and return evidence-backed findings.",
                 run_config=_require_litellm_run_config(),
-                max_turns=6,
+                max_turns=2,
             )
         )
 
@@ -608,6 +669,7 @@ async def run_cognitive_swarm(
     model: str | None = None,
     stage_observer: StageObserver | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
+    stage_billing: AgentStageBilling | None = None,
 ) -> dict[str, Any]:
     normalized_mission = mission.strip()
     if not normalized_mission:
@@ -642,11 +704,12 @@ async def run_cognitive_swarm(
         summary="Dispatcher started the evidence-bounded planning model call.",
         next_action="WAIT_FOR_DISPATCH_PLAN",
     )
-    plan_result = await _run_stage(
+    plan_result = await _run_billed_stage(
         runner_class,
         swarm.dispatcher,
         f"Mission:\n{normalized_mission}\n\nRuntime evidence:\n{evidence or '[no evidence supplied]'}",
         stage="dispatcher",
+        stage_billing=stage_billing,
     )
     plan = plan_result.final_output
     if not isinstance(plan, DispatchPlan):
@@ -680,7 +743,7 @@ async def run_cognitive_swarm(
                 next_action="WAIT_FOR_AGENT_REPORT",
                 loop=loop,
             )
-            result = await _run_stage(
+            result = await _run_billed_stage(
                 runner_class,
                 worker,
                 _worker_input(
@@ -692,6 +755,7 @@ async def run_cognitive_swarm(
                     prior_verdict=prior_verdict,
                 ),
                 stage=f"loop-{loop}:worker:{role}",
+                stage_billing=stage_billing,
             )
             report = result.final_output
             if not isinstance(report, WorkerReport):
@@ -733,7 +797,7 @@ async def run_cognitive_swarm(
             next_action="WAIT_FOR_JUDGE_VERDICT",
             loop=loop,
         )
-        judge_result = await _run_stage(
+        judge_result = await _run_billed_stage(
             runner_class,
             swarm.judge,
             _judge_input(
@@ -744,6 +808,7 @@ async def run_cognitive_swarm(
                 reports=reports,
             ),
             stage=f"loop-{loop}:judge",
+            stage_billing=stage_billing,
         )
         verdict = judge_result.final_output
         if not isinstance(verdict, JudgeVerdict):
