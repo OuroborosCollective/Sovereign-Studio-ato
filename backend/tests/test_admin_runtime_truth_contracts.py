@@ -52,7 +52,9 @@ def test_admin_knowledge_and_pdf_live_path_is_registered_and_visible() -> None:
         source = read(path)
         assert "def register_admin_knowledge_routes(" in source
         assert '"/api/admin/knowledge/sources/upload"' in source
-        assert "upload_document(uploaded.filename" in source
+        assert 'filename = uploaded.filename or "upload.txt"' in source
+        assert "payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)" in source
+        assert "document = upload_document(filename, payload)" in source
         assert '"/api/admin/knowledge/search"' in source
         assert '"/api/admin/knowledge/repair"' in source
         assert "repair_missing_knowledge_embeddings" in source
@@ -86,8 +88,12 @@ def test_credit_package_list_errors_are_not_false_empty_successes() -> None:
         assert '"runtimeState": "failed"}), 500' in source
 
 
-def test_backend_deploy_remote_shell_is_posix_safe() -> None:
+def test_backend_release_is_validation_only_and_queue_bound() -> None:
     workflow = read(ROOT / ".github/workflows/sovereign-agent-backend.yml")
+    assert "Queue-only Release Policy" in workflow
+    assert "permissions:\n  contents: read" in workflow
+    assert "Validation-only boundary verified" in workflow
+    assert "production release requires the Sovereign host-command queue" in workflow
     assert "capture_stdout: true" not in workflow
-    assert "set -euo pipefail\n            RELEASE_DIR=" not in workflow
-    assert workflow.count("script: |\n            set -eu") >= 3
+    for forbidden in ("apple" + "boy/", "ssh-" + "action", "scp-" + "action", "docker " + "build", "docker " + "run"):
+        assert forbidden not in workflow
