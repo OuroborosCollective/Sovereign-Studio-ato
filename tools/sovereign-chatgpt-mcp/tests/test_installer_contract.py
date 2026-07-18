@@ -177,6 +177,22 @@ def test_github_vps_pull_uses_ephemeral_package_read_auth() -> None:
     assert "docker login" not in install_step
 
 
+def test_github_vps_runtime_canaries_keep_socket_and_host_worker_contracts_separate() -> None:
+    workflow = (ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    install_step = workflow.split("- name: Install and verify private MCP on VPS", 1)[1].split(
+        "- name: Reverify deployed evidence in fresh SSH session",
+        1,
+    )[0]
+
+    assert 'failure_family") == "INBOUND_MUTATION_FORBIDDEN"' in installer
+    assert 'worker.get("status") == "HOST_WORKER_READY"' in installer
+    assert 'worker.get("execution_origin") == "host_worker"' in installer
+    assert "canary.get('status') == 'HOST_WORKER_READY'" in install_step
+    assert "canary.get('execution_origin') == 'host_worker'" in install_step
+    assert "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'" not in install_step
+
+
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
     script = (ROOT / "deploy" / "bootstrap-database.sh").read_text("utf-8")
 
