@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from document_pipeline import DocumentPipelineRuntime
+from document_pipeline import MAX_PDF_BYTES, DocumentPipelineRuntime
 
 
 class FakeResponse:
@@ -47,7 +47,10 @@ def test_live_canary_correlates_real_pdf_generation_and_text_extraction(monkeypa
 
     assert result["ok"] is True
     assert result["status"] == "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"
+    assert MAX_PDF_BYTES == 33 * 1024 * 1024
+    assert result["gotenberg"]["maxPdfBytes"] == MAX_PDF_BYTES
     assert result["gotenberg"]["pdfSha256"]
+    assert result["tika"]["maxPdfBytes"] == MAX_PDF_BYTES
     assert result["tika"]["markerVerified"] is True
     assert result["documentContentReturned"] is False
     assert result["secretValuesReturned"] is False
@@ -72,6 +75,54 @@ def test_live_canary_fails_closed_when_tika_does_not_return_marker(monkeypatch) 
 
     with pytest.raises(RuntimeError, match="TIKA_MARKER_NOT_EXTRACTED"):
         runtime.live_canary()
+
+
+def test_live_canary_accepts_pdf_at_exactly_33_mib(monkeypatch) -> None:
+    runtime = DocumentPipelineRuntime()
+    monkeypatch.setattr(runtime, "_first_reachable", lambda container, port, path: f"http://{container}:{port}")
+    prefix = b"%PDF-1.7\n"
+    monkeypatch.setattr(
+        "document_pipeline.requests.post",
+        lambda *args, **kwargs: FakeResponse(
+            200,
+            content=prefix + (b"x" * (MAX_PDF_BYTES - len(prefix))),
+            headers={"Content-Type": "application/pdf"},
+        ),
+    )
+    monkeypatch.setattr(
+        "document_pipeline.requests.put",
+        lambda *args, **kwargs: FakeResponse(200, text="SOVEREIGN_DOCUMENT_PIPELINE_CANARY"),
+    )
+
+    result = runtime.live_canary()
+
+    assert result["gotenberg"]["pdfBytes"] == MAX_PDF_BYTES
+    assert result["tika"]["markerVerified"] is True
+
+
+def test_live_canary_rejects_pdf_larger_than_33_mib_before_tika(monkeypatch) -> None:
+    runtime = DocumentPipelineRuntime()
+    monkeypatch.setattr(runtime, "_first_reachable", lambda container, port, path: f"http://{container}:{port}")
+    monkeypatch.setattr(
+        "document_pipeline.requests.post",
+        lambda *args, **kwargs: FakeResponse(
+            200,
+            content=b"%PDF-1.7\n" + (b"x" * MAX_PDF_BYTES),
+        ),
+    )
+
+    tika_called = False
+
+    def fake_put(*args, **kwargs):
+        nonlocal tika_called
+        tika_called = True
+        return FakeResponse(200, text="SOVEREIGN_DOCUMENT_PIPELINE_CANARY")
+
+    monkeypatch.setattr("document_pipeline.requests.put", fake_put)
+
+    with pytest.raises(RuntimeError, match="GOTENBERG_OUTPUT_SIZE_INVALID"):
+        runtime.live_canary()
+    assert tika_called is False
 
 
 def test_live_canary_rejects_unbounded_marker_before_network() -> None:

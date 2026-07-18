@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import io
 from pathlib import Path
 import sys
@@ -102,6 +103,15 @@ def test_r2_endpoint_and_bucket_are_restricted() -> None:
 
 def test_knowledge_upload_blocks_path_escape_wrong_mime_and_oversize() -> None:
     digest = "a" * 64
+    assert r2_storage.MAX_KNOWLEDGE_BYTES == 33 * 1024 * 1024
+    assert r2_storage.MAX_NON_PDF_KNOWLEDGE_BYTES == 12 * 1024 * 1024
+    accepted_pdf = r2_storage.validate_knowledge_upload(
+        "manual.pdf",
+        "application/pdf",
+        r2_storage.MAX_KNOWLEDGE_BYTES,
+        digest,
+    )
+    assert accepted_pdf.size_bytes == 33 * 1024 * 1024
     with pytest.raises(ValueError, match="filename"):
         r2_storage.validate_knowledge_upload("../", "text/plain", 10, digest)
     with pytest.raises(ValueError, match="content type"):
@@ -111,6 +121,13 @@ def test_knowledge_upload_blocks_path_escape_wrong_mime_and_oversize() -> None:
             "manual.pdf",
             "application/pdf",
             r2_storage.MAX_KNOWLEDGE_BYTES + 1,
+            digest,
+        )
+    with pytest.raises(ValueError, match="exceeds"):
+        r2_storage.validate_knowledge_upload(
+            "manual.md",
+            "text/markdown",
+            r2_storage.MAX_NON_PDF_KNOWLEDGE_BYTES + 1,
             digest,
         )
 
@@ -191,6 +208,39 @@ def test_migration_and_deploy_image_contain_r2_truth_contract() -> None:
     assert "job_id TEXT REFERENCES sovereign_agent_jobs" in migration
     assert "boto3" in requirements
     assert "COPY r2_storage.py ." in dockerfile
+
+
+def test_backend_and_production_r2_adapters_execute_same_pdf_limits() -> None:
+    spec = importlib.util.spec_from_file_location("deploy_r2_storage", DEPLOY / "r2_storage.py")
+    assert spec and spec.loader
+    deploy_r2 = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = deploy_r2
+    spec.loader.exec_module(deploy_r2)
+
+    digest = "d" * 64
+    for module in (r2_storage, deploy_r2):
+        assert module.MAX_KNOWLEDGE_BYTES == 33 * 1024 * 1024
+        assert module.MAX_NON_PDF_KNOWLEDGE_BYTES == 12 * 1024 * 1024
+        assert module.validate_knowledge_upload(
+            "manual.pdf",
+            "application/pdf",
+            33 * 1024 * 1024,
+            digest,
+        ).size_bytes == 33 * 1024 * 1024
+        with pytest.raises(ValueError, match="exceeds"):
+            module.validate_knowledge_upload(
+                "manual.pdf",
+                "application/pdf",
+                (33 * 1024 * 1024) + 1,
+                digest,
+            )
+        with pytest.raises(ValueError, match="exceeds"):
+            module.validate_knowledge_upload(
+                "manual.md",
+                "text/markdown",
+                (12 * 1024 * 1024) + 1,
+                digest,
+            )
 
 
 def test_backend_and_production_r2_adapters_expose_same_contract() -> None:
