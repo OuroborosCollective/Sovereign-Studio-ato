@@ -22,7 +22,9 @@ sys.modules.setdefault("psycopg2", psycopg2_stub)
 sys.modules.setdefault("psycopg2.extras", psycopg2_extras_stub)
 
 from are_inference import (
+    KAPPA_SCALE,
     _quarantine_candidate,
+    _similarity_kappa,
     canonical_json,
     deterministic_hash,
     evaluate_are_inference,
@@ -191,6 +193,46 @@ def test_empty_prompt_is_rejected() -> None:
         )
 
 
+def test_similarity_is_canonicalized_to_kappa_before_hashing() -> None:
+    first = _evaluate(
+        knowledge_rows=[{
+            "blockId": "block-a",
+            "contentSha256": "a" * 64,
+            "content": "same evidence",
+            "similarity": "0.9100009",
+        }],
+        experience_rows={"ok": True, "results": []},
+    )
+    second = _evaluate(
+        knowledge_rows=[{
+            "blockId": "block-a",
+            "contentSha256": "a" * 64,
+            "content": "same evidence",
+            "similarity": 0.9100001,
+        }],
+        experience_rows={"ok": True, "results": []},
+    )
+
+    assert KAPPA_SCALE == 1_000_000
+    assert first["stateHash"] == second["stateHash"]
+    assert first["state"]["similarityScale"] == KAPPA_SCALE
+    assert first["confidenceKappa"] == 910_000
+    assert first["knowledgeConfidenceKappa"] == 910_000
+    assert first["confidence"] == 0.91
+
+
+def test_similarity_kappa_clamps_and_rejects_non_finite_values() -> None:
+    assert _similarity_kappa({"similarity": "-0.1"}) == 0
+    assert _similarity_kappa({"similarity": "1.5"}) == KAPPA_SCALE
+    assert _similarity_kappa({"similarity": "NaN"}) == 0
+    assert _similarity_kappa({"similarity": True}) == 0
+
+
+def test_deterministic_state_rejects_floats() -> None:
+    with pytest.raises(ValueError, match="floats are forbidden"):
+        deterministic_hash({"confidence": 0.91})
+
+
 def test_canonical_hash_is_stable_for_sets_and_key_order() -> None:
     first = {"tags": {"beta", "alpha"}, "nested": {"b": 2, "a": 1}}
     second = {"nested": {"a": 1, "b": 2}, "tags": {"alpha", "beta"}}
@@ -316,7 +358,11 @@ def test_event_driven_repair_recomputes_only_selected_missing_vectors() -> None:
     def provider(texts: Any) -> SimpleNamespace:
         values = list(texts)
         assert values == ["PDF page one", "PDF page two"]
-        return SimpleNamespace(vectors=(vector, vector), provider="test-provider")
+        return SimpleNamespace(
+            vectors=(vector, vector),
+            provider="test-provider",
+            model="test-embedding-model",
+        )
 
     result = repair_missing_knowledge_embeddings(
         conn,
