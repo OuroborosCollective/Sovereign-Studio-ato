@@ -679,7 +679,7 @@ Jede Migration muss fail-closed laufen, Preview/Rollback-Evidence liefern und da
 
 Contributor-Submissions und shared-derived-pattern bleiben getrennt. User-Erasure entfernt nur owner-/contributor-gebundene Inhalte; geteilte, nicht personenbezogene abgeleitete Muster bleiben nach dem definierten Gateway-Vertrag bestehen.
 
-**BLOCKIERT:** PR #802 soll den sichtbaren Pattern-Memory-Pfad so ändern, dass nur akzeptierte serverseitige Learning-Evidence den Zustand „gelernt“ erzeugen darf. Der Draft PR ist mergebar, aber seine Head-SHA `88f5d453853be8a789a526ca426547ceeab38809` hat fehlgeschlagene Typecheck-/Test-/Build-, Runtime-/UX-, Android-, Release- und Code-Quality-Gates. Die Aufgabe ist daher nicht erledigt und darf nicht gemergt oder als produktiv behauptet werden.
+**BELEGT:** PR #802 erzwingt im sichtbaren Pattern-Memory-Pfad, dass ausschließlich akzeptierte serverseitige Learning-Evidence mit Candidate-ID und gespeichertem Vector den Zustand „gelernt“ erzeugen darf. Der zunächst rote Head enthielt einen einzelnen Test-Scope-Fehler (`PR_URL is not defined`); nach kausaler Reparatur bestand Head `c5b4668c13da592a370853815b1f14d6c0fb1f0b` sämtliche Typecheck-, Test-, Build-, Runtime-/UX-, Security-, Release- und Android-Gates und wurde SHA-gebunden als Squash-Commit `c81af1ef295d102a887211e738e4b30ac4788944` nach `main` gemergt.
 
 ---
 
@@ -1078,7 +1078,7 @@ GitHub Intent
 
 1. **TEILWEISE — doppelte Backend-Wahrheit:** `app.py` und `r2_storage.py` sind zwischen Quell- und Deploymentbaum noch nicht bytegleich.
 2. **OFFEN — A2A-Live-Canary:** Ein authentifizierter Produktionslauf über A2A mit persistiertem `a2aContextId` und anschließendem Task-/Controllervergleich fehlt.
-3. **BLOCKIERT — Pattern Memory:** PR #802 muss repariert und vollständig grün werden, bevor „gelernt“ ausschließlich aus akzeptierter Runtime-Evidence entstehen kann.
+3. **BELEGT — Pattern Memory:** PR #802 ist vollständig grün und als `c81af1ef295d102a887211e738e4b30ac4788944` gemergt; lokale Pattern-Projektion benötigt akzeptierte serverseitige Candidate- und Vector-Evidence.
 4. **OFFEN — Provider-Onboarding:** geschützter Key-Input, Inventar, Preise, Aliase, LiteLLM-Readiness, Completion-Canary und atomare Aktivierung/Rollback müssen als eine durchgängige Live-Kette belegt werden.
 5. **TEILWEISE — LiteLLM-Runtimekonsolidierung:** Datenbank-, Alias- und Routenkonzepte existieren; der vollständige automatische Provider-Lifecycle ist noch nicht releasebelegt.
 6. **OFFEN — vollständige Endpoint-Referenz:** automatisierte Generierung aus aktuellem Code, Protokollverträgen und OpenAPI-/Schemaquellen.
@@ -1116,7 +1116,7 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT:** Ein vollständiger Release-Grünstatus wird aktuell nicht behauptet. PR #802 besitzt reale fehlgeschlagene Pflichtchecks. Zusätzlich fehlen der produktive A2A-Live-Canary, die Beseitigung der verbleibenden Backend-Spiegeldrift sowie der signierte Android-Artefakt- und Installationsnachweis.
+**BLOCKIERT:** Ein vollständiger Release-Grünstatus wird aktuell nicht behauptet. PR #802 ist zwar vollständig grün gemergt, aber der produktive A2A-Live-Canary antwortet weiterhin mit HTTP 400, die verbleibende Backend-Spiegeldrift ist nicht beseitigt und der signierte Android-Artefakt- und Installationsnachweis fehlt.
 
 ---
 
@@ -1130,8 +1130,8 @@ Evidence-Stand: 18. Juli 2026, vor diesem Dokumentcommit.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
 - **BELEGT:** Der jüngste persistierte Agents-SDK-Lauf `run-1f7ee714872445319bed247506cdd366` ist `COMPLETED` und endete mit `NO_FURTHER_ACTION_REQUIRED`.
 - **BELEGT:** PRs #798, #799, #800 und #801 wurden mit allen jeweils relevanten Pflichtchecks grün abgeschlossen und sind Bestandteil von `main`.
-- **BLOCKIERT:** PR #802 ist offen und besitzt fehlgeschlagene Typecheck-/Test-/Build-, Runtime-/UX-, Android-, Release- und Code-Quality-Gates.
-- **TEILWEISE:** A2A ist auf `main` implementiert und CI-belegt; die Produktionsdatenbank zeigt jedoch `0` A2A-Runs bei insgesamt `27` Runs.
+- **BELEGT:** PR #802 wurde nach Reparatur des einzigen kausalen Test-Scope-Fehlers auf Head `c5b4668c13da592a370853815b1f14d6c0fb1f0b` vollständig grün und als Squash-Commit `c81af1ef295d102a887211e738e4b30ac4788944` gemergt.
+- **BLOCKIERT:** Der owner-scoped A2A-Live-Canary erreicht den produktiven Backendpfad, erhält jedoch HTTP 400. Der direkte Agents-SDK-Pfad erzeugt weiterhin persistierte Runs; damit ist der Fehler auf A2A-Einstieg, Vorbedingung oder Fehlerprojektion eingegrenzt. Eine Diagnoseänderung projiziert künftig ausschließlich die standardisierte A2A-Fehlerfamilie und keine sensible Fehlernachricht; 3/3 gezielte Python-Tests sind grün.
 - **TEILWEISE:** Die meisten Backendspiegel sind bytegleich; `app.py` und `r2_storage.py` weisen weiterhin Spiegeldrift auf.
 - **OFFEN:** Unabhängige Live-Evidence für alle GPT-Tools-/Code-Server-/Memory-Gateway-Funktionen sowie der signierte Android-Releasepfad fehlt.
 - Ein vollständig grüner Produkt- und Releasezustand wird daher nicht behauptet.

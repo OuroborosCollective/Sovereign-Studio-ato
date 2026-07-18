@@ -79,7 +79,23 @@ class A2ARuntimeClient(ControllerRuntimeClient):
         except requests.RequestException as exc:
             raise RuntimeError(f"A2A backend unavailable: {type(exc).__name__}") from exc
         if response.status_code not in expected:
-            raise RuntimeError(f"A2A backend returned HTTP {response.status_code}")
+            reason = ""
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {}
+            if isinstance(error_payload, dict):
+                error = error_payload.get("error")
+                if isinstance(error, dict):
+                    details = error.get("details")
+                    if isinstance(details, list) and details and isinstance(details[0], dict):
+                        reason = str(details[0].get("reason") or "").strip()
+                    if not reason:
+                        reason = str(error.get("status") or "").strip()
+            suffix = f" ({reason[:120]})" if reason else ""
+            raise RuntimeError(
+                f"A2A backend returned HTTP {response.status_code}{suffix}"
+            )
         try:
             payload = response.json()
         except ValueError as exc:
