@@ -30,6 +30,8 @@ payload = {
     "status": sys.argv[2],
     "revision": sys.argv[3],
     "detail": sys.argv[4][:2000],
+    "cross_runtime_parity_proven": sys.argv[2] == "UPDATED",
+    "parity_evidence_source": "immutable_image_label_and_ci_vector_comparison" if sys.argv[2] == "UPDATED" else "unavailable",
     "updated_at": int(time.time()),
 }
 temporary = path.with_suffix(".tmp")

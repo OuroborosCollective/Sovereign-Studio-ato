@@ -82,6 +82,7 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'name: Bootstrap MCP on VPS' in workflow
     assert "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'" in workflow
     assert "KAPPA_POS: '1000000'" in workflow
+    assert "CROSS_RUNTIME_PARITY: 'true'" in workflow
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
     assert '--sort=name' in workflow
     assert '--mtime="@${COMMIT_EPOCH}"' in workflow
@@ -108,6 +109,7 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'tags: ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}' in workflow
     assert 'org.opencontainers.image.revision=${{ github.sha }}' in workflow
     assert 'io.ouroboros.sovereign.kappa-pos=${{ env.KAPPA_POS }}' in workflow
+    assert 'io.ouroboros.sovereign.cross-runtime-parity=${{ env.CROSS_RUNTIME_PARITY }}' in workflow
     assert 'provenance: true' in workflow
     assert 'sbom: true' in workflow
     assert 'name: Verify published MCP digest' in workflow
@@ -115,10 +117,12 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'docker pull "$IMAGE_REFERENCE"' in workflow
     assert 'test "$REVISION_LABEL" = "$GITHUB_SHA"' in workflow
     assert 'test "$KAPPA_LABEL" = "$KAPPA_POS"' in workflow
+    assert 'test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"' in workflow
     assert 'needs: [validate, publish-mcp-image, verify-published-mcp-image]' in workflow
     assert 'test "$CONTAINER_IMAGE_REFERENCE" = "$EXPECTED_IMAGE_REFERENCE"' in workflow
     assert 'test "$INSTALLED_REVISION" = "$EXPECTED_REVISION"' in workflow
     assert 'test "$INSTALLED_KAPPA_POS" = "$KAPPA_POS"' in workflow
+    assert 'test "$INSTALLED_CROSS_RUNTIME_PARITY" = "$CROSS_RUNTIME_PARITY"' in workflow
     assert 'test "$CONTAINER_REPO_DIGEST" = "$EXPECTED_IMAGE_REFERENCE"' in workflow
     assert 'test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
     assert 'docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock' in workflow
@@ -138,6 +142,9 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert "'inbound_mutation_forbidden': inbound_mutation_state == 'forbidden'" in workflow
     assert "'tunnel_mode': 'disabled'" in workflow
     assert "'tunnel_not_required': tunnel_service_state == 'not_required'" in workflow
+    assert "'cross_runtime_parity_proven': True" in workflow
+    assert "'parity_evidence_source': 'immutable_image_label_and_ci_vector_comparison'" in workflow
+    assert "payload.get('cross_runtime_parity_proven') is True" in workflow
     assert "payload.get('tunnel_not_required') is True" in workflow
     assert "'ok': all(checks.values())" in workflow
     assert "'evidence_sha256': hashlib.sha256(canonical).hexdigest()" in workflow

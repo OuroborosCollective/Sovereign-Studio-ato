@@ -115,7 +115,8 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     return repo
 
 
-def test_registers_eight_read_only_tools(repository: Path) -> None:
+def test_registers_eight_read_only_tools(repository: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SOVEREIGN_CROSS_RUNTIME_PARITY_PROVEN", raising=False)
     mcp = FakeMCP()
     tools.register(mcp, FakeRuntime(repository))
 
@@ -132,6 +133,13 @@ def test_registers_eight_read_only_tools(repository: Path) -> None:
     inventory = tools.deterministic_tool_inventory()
     assert inventory["status"] == "DETERMINISTIC_ARCHITECTURE_TOOLS_READY"
     assert inventory["kappaScale"] == 1_000_000
+    assert inventory["crossRuntimeParityProven"] is False
+    assert inventory["parityEvidence"]["scope"] == "single_runtime_only"
+    monkeypatch.setenv("SOVEREIGN_CROSS_RUNTIME_PARITY_PROVEN", "1")
+    release_inventory = tools.deterministic_tool_inventory()
+    assert release_inventory["crossRuntimeParityProven"] is True
+    assert release_inventory["parityEvidence"]["scope"] == "installed_release"
+    assert release_inventory["parityEvidence"]["singleReplayStillProvesParity"] is False
     assert inventory["boundaries"]["secondStateMachineCreated"] is False
     assert inventory["boundaries"]["sqliteTruthStoreCreated"] is False
     assert all(item["mutates"] is False for item in inventory["tools"])

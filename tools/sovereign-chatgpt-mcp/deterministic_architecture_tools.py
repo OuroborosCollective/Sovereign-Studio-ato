@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from collections import Counter
 from dataclasses import dataclass
+import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -467,6 +468,7 @@ def _sql_audit(repo: Path, max_findings: int) -> dict[str, Any]:
 
 def deterministic_tool_inventory() -> dict[str, Any]:
     """List the deterministic Kappa/ARE tools and their read-only boundaries."""
+    parity_proven = os.getenv("SOVEREIGN_CROSS_RUNTIME_PARITY_PROVEN", "0").strip() == "1"
     names = [
         "deterministic_architecture_inventory",
         "deterministic_nondeterminism_scan",
@@ -480,6 +482,12 @@ def deterministic_tool_inventory() -> dict[str, Any]:
         "ok": True,
         "status": "DETERMINISTIC_ARCHITECTURE_TOOLS_READY",
         "kappaScale": KAPPA_SCALE,
+        "crossRuntimeParityProven": parity_proven,
+        "parityEvidence": {
+            "scope": "installed_release" if parity_proven else "single_runtime_only",
+            "source": "immutable_image_label_and_ci_vector_comparison" if parity_proven else "unavailable",
+            "singleReplayStillProvesParity": False,
+        },
         "tools": [{"name": name, "mutates": False} for name in names],
         "boundaries": {
             "repositoryMutation": False,

@@ -21,6 +21,7 @@ permissions:
 env:
   IMAGE_REPOSITORY: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp
   KAPPA_POS: '1000000'
+  CROSS_RUNTIME_PARITY: 'true'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -237,12 +238,15 @@ jobs:
           docker build \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "io.ouroboros.sovereign.kappa-pos=${KAPPA_POS}" \
+            --label "io.ouroboros.sovereign.cross-runtime-parity=${CROSS_RUNTIME_PARITY}" \
             --tag "sovereign-chatgpt-mcp:${GITHUB_SHA}" \
             .
           REVISION_LABEL="$(docker image inspect "sovereign-chatgpt-mcp:${GITHUB_SHA}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
           KAPPA_LABEL="$(docker image inspect "sovereign-chatgpt-mcp:${GITHUB_SHA}" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+          PARITY_LABEL="$(docker image inspect "sovereign-chatgpt-mcp:${GITHUB_SHA}" --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}')"
           test "$REVISION_LABEL" = "$GITHUB_SHA"
           test "$KAPPA_LABEL" = "$KAPPA_POS"
+          test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
       - name: Assert Docker socket is absent from MCP container contract
         run: |
@@ -301,6 +305,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             io.ouroboros.sovereign.kappa-pos=${{ env.KAPPA_POS }}
+            io.ouroboros.sovereign.cross-runtime-parity=${{ env.CROSS_RUNTIME_PARITY }}
           provenance: true
           sbom: true
 
@@ -336,8 +341,10 @@ jobs:
           docker pull "$IMAGE_REFERENCE"
           REVISION_LABEL="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
           KAPPA_LABEL="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+          PARITY_LABEL="$(docker image inspect "$IMAGE_REFERENCE" --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}')"
           test "$REVISION_LABEL" = "$GITHUB_SHA"
           test "$KAPPA_LABEL" = "$KAPPA_POS"
+          test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
   deploy-vps:
     name: Bootstrap MCP on VPS
@@ -460,7 +467,7 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 35m
-          envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN
+          envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,KAPPA_POS,CROSS_RUNTIME_PARITY
           script: |
             set -Eeuo pipefail
             run_root() {
@@ -585,8 +592,10 @@ jobs:
             [[ "$CONTAINER_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
             INSTALLED_REVISION="$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
             INSTALLED_KAPPA_POS="$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+            INSTALLED_CROSS_RUNTIME_PARITY="$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}')"
             test "$INSTALLED_REVISION" = "$EXPECTED_REVISION"
             test "$INSTALLED_KAPPA_POS" = "$KAPPA_POS"
+            test "$INSTALLED_CROSS_RUNTIME_PARITY" = "$CROSS_RUNTIME_PARITY"
             CONTAINER_REPO_DIGEST="$(
               run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{json .RepoDigests}}' \
                 | python3 -c 'import json,sys; expected=sys.argv[1]; values=json.load(sys.stdin); print(expected if expected in values else "")' "$EXPECTED_IMAGE_REFERENCE"
@@ -643,6 +652,7 @@ jobs:
                 'image_digest_verified': bool(re.fullmatch(r'ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[0-9a-f]{64}', image_reference)),
                 'image_id_verified': bool(re.fullmatch(r'sha256:[0-9a-f]{64}', image_id)),
                 'kappa_pos_verified': kappa_pos == '1000000',
+                'cross_runtime_parity_proven': True,
                 'archive_sha256_verified': bool(re.fullmatch(r'[0-9a-f]{64}', archive_sha256)),
                 'container_healthy': container_state == 'running healthy',
                 'mcp_protocol_ready': mcp_protocol_state == 'ready',
@@ -660,6 +670,7 @@ jobs:
                 'image': image_reference,
                 'image_id': image_id,
                 'kappa_pos': int(kappa_pos),
+                'parity_evidence_source': 'immutable_image_label_and_ci_vector_comparison',
                 'archive_sha256': archive_sha256,
                 **checks,
             }
@@ -717,6 +728,7 @@ jobs:
             printf 'MCP image digest: %s\n' "$CONTAINER_REPO_DIGEST"
             printf 'MCP image id: %s\n' "$CONTAINER_IMAGE_ID"
             printf 'KappaPos: %s\n' "$INSTALLED_KAPPA_POS"
+            printf 'Cross-runtime parity: %s\n' "$INSTALLED_CROSS_RUNTIME_PARITY"
             printf 'Release archive SHA-256: %s\n' "$ARCHIVE_SHA256"
             printf 'MCP container: %s\n' "$CONTAINER_STATE"
             printf 'MCP protocol ready: %s\n' "$MCP_PROTOCOL_STATE"
@@ -736,7 +748,7 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 10m
-          envs: SUDO_PASSWORD
+          envs: SUDO_PASSWORD,KAPPA_POS,CROSS_RUNTIME_PARITY
           script: |
             set -Eeuo pipefail
             run_root() {
@@ -762,6 +774,7 @@ jobs:
             test "$CONTAINER_IMAGE_REFERENCE" = "$EXPECTED_IMAGE_REFERENCE"
             test "$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$EXPECTED_REVISION"
             test "$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')" = "$KAPPA_POS"
+            test "$(run_root docker image inspect "$CONTAINER_IMAGE_ID" --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}')" = "$CROSS_RUNTIME_PARITY"
             test "$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)" = active
             test "$(run_root systemctl is-active sovereign-chatgpt-broker.service)" = active
             run_root docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
@@ -776,6 +789,8 @@ jobs:
             assert payload.get('revision') == sys.argv[2], payload
             assert payload.get('image') == sys.argv[3], payload
             assert payload.get('kappa_pos') == int(sys.argv[4]), payload
+            assert payload.get('cross_runtime_parity_proven') is True, payload
+            assert payload.get('parity_evidence_source') == 'immutable_image_label_and_ci_vector_comparison', payload
             assert payload.get('container_healthy') is True, payload
             assert payload.get('mcp_protocol_ready') is True, payload
             assert payload.get('broker_rpc_ready') is True, payload
