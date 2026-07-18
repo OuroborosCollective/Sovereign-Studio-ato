@@ -156,14 +156,17 @@ def test_github_vps_release_directory_uses_portable_bounded_creation() -> None:
 def test_github_vps_pull_uses_ephemeral_package_read_auth() -> None:
     workflow = (ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
     deploy_job = workflow.split("  deploy-vps:", 1)[1]
-    install_step = deploy_job.split("- name: Install and verify private MCP on VPS", 1)[1].split(
+    before_install, install_and_after = deploy_job.split("- name: Install and verify private MCP on VPS", 1)
+    install_step = install_and_after.split(
         "- name: Reverify deployed evidence in fresh SSH session",
         1,
     )[0]
 
     assert "permissions:\n      contents: read\n      packages: read" in deploy_job
-    assert "GHCR_USERNAME: ${{ github.actor }}" in deploy_job
-    assert "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in deploy_job
+    assert "GHCR_USERNAME:" not in before_install
+    assert "GHCR_TOKEN:" not in before_install
+    assert "GHCR_USERNAME: ${{ github.actor }}" in install_step
+    assert "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in install_step
     assert "envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN" in install_step
     assert 'DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"' in install_step
     assert "json.dumps({'auths': {'ghcr.io': {'auth': encoded}}}" in install_step
