@@ -90,6 +90,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'document_pipeline.py' in installer
     assert 'tool_extensions.py' in installer
     assert 'repository_skill_tools.py' in installer
+    assert 'skill_supply_chain_tools.py' in installer
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
@@ -104,6 +105,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'document_pipeline.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
+    assert 'skill_supply_chain_tools.py' in dockerfile
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'PyYAML==6.0.3' in requirements
@@ -111,6 +113,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'launcher.py' in dockerfile
     assert 'import repository_skill_tools' in launcher
     assert 'repository_skill_tools.register(server.mcp, server.runtime, server.database)' in launcher
+    assert 'import skill_supply_chain_tools' in launcher
+    assert 'skill_supply_chain_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import deterministic_architecture_tools' in launcher
     assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import openai_project_access_tools' in launcher
@@ -153,6 +157,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(repository_skill_tools.repository_architecture_snapshot)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_drift_report)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_runtime_drift_evidence)' in installer
+    assert 'callable(skill_supply_chain_tools.skill_supply_chain_inventory)' in installer
+    assert 'callable(skill_supply_chain_tools.template_generation_plan)' in installer
     assert 'deterministic_contract.KAPPA_SCALE == 1000000' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_tool_inventory)' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_replay_verify)' in installer
