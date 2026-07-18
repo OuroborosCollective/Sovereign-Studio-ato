@@ -48,6 +48,7 @@ MAX_PDF_PAGES = 500
 CHUNK_TARGET_CHARS = 1_800
 CHUNK_OVERLAP_CHARS = 220
 MAX_SEARCH_LIMIT = 20
+PROCESSING_STALE_SECONDS = 15 * 60
 
 _MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 _TEXT_EXTENSIONS = {
@@ -90,6 +91,23 @@ def _close(conn: Any) -> None:
         close()
 
 
+class GitHubKnowledgeAccessError(ValueError):
+    """Bounded GitHub import failure with an operator-safe blocker family."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        blocker: str,
+        github_status: int | None = None,
+        response_status: int = 502,
+    ) -> None:
+        super().__init__(message)
+        self.blocker = blocker
+        self.github_status = github_status
+        self.response_status = response_status
+
+
 def _github_headers() -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
@@ -105,15 +123,114 @@ def _github_headers() -> dict[str, str]:
     return headers
 
 
-def _github_json(path: str) -> Any:
+def _github_public_headers() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in _github_headers().items()
+        if key.lower() != "authorization"
+    }
+
+
+def _github_access_error(
+    response: Any,
+    *,
+    authenticated: bool,
+    public_retry_status: int | None = None,
+) -> GitHubKnowledgeAccessError:
+    status = int(getattr(response, "status_code", 0) or 0)
+    remaining = str(getattr(response, "headers", {}).get("x-ratelimit-remaining") or "").strip()
+    if status == 403 and remaining == "0":
+        return GitHubKnowledgeAccessError(
+            "GitHub API-Limit ist erschöpft. Nach Reset erneut versuchen oder einen gültigen Repository-Zugang hinterlegen.",
+            blocker="github_rate_limit_exhausted",
+            github_status=status,
+            response_status=429,
+        )
+    if authenticated and status in {401, 403}:
+        if public_retry_status == 404:
+            message = "Der hinterlegte GitHub-Zugang wurde abgelehnt und das Repository ist nicht öffentlich lesbar. Token-/App-Berechtigung für das Repository erneuern."
+            blocker = "github_private_repo_access_required"
+            response_status = 409
+        else:
+            message = "Der hinterlegte GitHub-Zugang wurde von GitHub abgelehnt. Token, GitHub-App-Berechtigung oder SSO-Freigabe erneuern."
+            blocker = "github_credentials_rejected"
+            response_status = 409
+        return GitHubKnowledgeAccessError(
+            message,
+            blocker=blocker,
+            github_status=status,
+            response_status=response_status,
+        )
+    if authenticated and status == 404:
+        return GitHubKnowledgeAccessError(
+            "Repository oder Pfad wurde nicht gefunden, oder der hinterlegte GitHub-Zugang besitzt keine Leseberechtigung.",
+            blocker="github_repository_not_accessible",
+            github_status=status,
+            response_status=404,
+        )
+    if status in {401, 403, 404}:
+        return GitHubKnowledgeAccessError(
+            "Repository ist nicht öffentlich lesbar. Für private Repositories ist ein bestätigter serverseitiger GitHub-Zugang erforderlich.",
+            blocker="github_private_repo_access_required",
+            github_status=status,
+            response_status=409 if status != 404 else 404,
+        )
+    return GitHubKnowledgeAccessError(
+        f"GitHub-Import ist mit HTTP {status or 'unknown'} fehlgeschlagen.",
+        blocker="github_api_unavailable",
+        github_status=status or None,
+        response_status=502,
+    )
+
+
+def _github_json(
+    path: str,
+    *,
+    auth_state: dict[str, bool] | None = None,
+) -> Any:
+    url = f"https://api.github.com{path}"
+    private_headers = _github_headers()
+    has_private_access = "Authorization" in private_headers
+    authenticated = bool(auth_state.get("authenticated")) if auth_state is not None else False
     response = requests.get(
-        f"https://api.github.com{path}",
-        headers=_github_headers(),
+        url,
+        headers=private_headers if authenticated else _github_public_headers(),
         timeout=25,
     )
+    if (
+        not response.ok
+        and not authenticated
+        and has_private_access
+        and response.status_code in {403, 404}
+    ):
+        public_status = response.status_code
+        private_response = requests.get(
+            url,
+            headers=private_headers,
+            timeout=25,
+        )
+        if private_response.ok:
+            response = private_response
+            authenticated = True
+            if auth_state is not None:
+                auth_state["authenticated"] = True
+        else:
+            raise _github_access_error(
+                private_response,
+                authenticated=True,
+                public_retry_status=public_status,
+            )
     if not response.ok:
-        raise ValueError(f"GitHub returned HTTP {response.status_code}")
-    return response.json()
+        raise _github_access_error(response, authenticated=authenticated)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise GitHubKnowledgeAccessError(
+            "GitHub lieferte keine gültige API-Antwort.",
+            blocker="github_invalid_response",
+            github_status=response.status_code,
+            response_status=502,
+        ) from exc
 
 
 def _decode_github_content(payload: dict[str, Any]) -> str:
@@ -122,9 +239,24 @@ def _decode_github_content(payload: dict[str, Any]) -> str:
         download_url = str(payload.get("download_url") or "")
         if not download_url:
             return ""
-        response = requests.get(download_url, headers=_github_headers(), timeout=25)
+        parsed_download = urlparse(download_url)
+        if parsed_download.scheme != "https" or (parsed_download.hostname or "").lower() not in {
+            "raw.githubusercontent.com",
+            "github.com",
+            "www.github.com",
+        }:
+            raise GitHubKnowledgeAccessError(
+                "GitHub lieferte eine nicht erlaubte Download-Adresse.",
+                blocker="github_raw_url_rejected",
+                response_status=502,
+            )
+        response = requests.get(
+            download_url,
+            headers={"User-Agent": "sovereign-knowledge-library/1.0"},
+            timeout=25,
+        )
         if not response.ok:
-            raise ValueError(f"GitHub raw content returned HTTP {response.status_code}")
+            raise _github_access_error(response, authenticated=False)
         return response.text
     raw = base64.b64decode(encoded)
     if len(raw) > MAX_GITHUB_FILE_BYTES:
@@ -152,7 +284,11 @@ def _github_document(url: str) -> KnowledgeDocument:
         raise ValueError("Only canonical github.com repository or file URLs are accepted")
 
     owner, repo = parts[0], parts[1].removesuffix(".git")
-    repo_info = _github_json(f"/repos/{quote(owner)}/{quote(repo)}")
+    auth_state = {"authenticated": False}
+    repo_info = _github_json(
+        f"/repos/{quote(owner)}/{quote(repo)}",
+        auth_state=auth_state,
+    )
     default_branch = str(repo_info.get("default_branch") or "main")
     branch = default_branch
     prefix = ""
@@ -168,7 +304,8 @@ def _github_document(url: str) -> KnowledgeDocument:
 
     if specific_file:
         payload = _github_json(
-            f"/repos/{quote(owner)}/{quote(repo)}/contents/{quote(specific_file, safe='/')}?ref={quote(branch)}"
+            f"/repos/{quote(owner)}/{quote(repo)}/contents/{quote(specific_file, safe='/')}?ref={quote(branch)}",
+            auth_state=auth_state,
         )
         if not isinstance(payload, dict) or payload.get("type") != "file":
             raise ValueError("GitHub URL does not resolve to a file")
@@ -189,7 +326,8 @@ def _github_document(url: str) -> KnowledgeDocument:
         )
 
     tree = _github_json(
-        f"/repos/{quote(owner)}/{quote(repo)}/git/trees/{quote(branch)}?recursive=1"
+        f"/repos/{quote(owner)}/{quote(repo)}/git/trees/{quote(branch)}?recursive=1",
+        auth_state=auth_state,
     )
     entries = tree.get("tree") if isinstance(tree, dict) else []
     candidates = []
@@ -215,7 +353,8 @@ def _github_document(url: str) -> KnowledgeDocument:
     imported_paths: list[str] = []
     for path, _size, _sha in candidates:
         payload = _github_json(
-            f"/repos/{quote(owner)}/{quote(repo)}/contents/{quote(path, safe='/')}?ref={quote(branch)}"
+            f"/repos/{quote(owner)}/{quote(repo)}/contents/{quote(path, safe='/')}?ref={quote(branch)}",
+            auth_state=auth_state,
         )
         if not isinstance(payload, dict) or payload.get("type") != "file":
             continue
@@ -419,7 +558,7 @@ def chunk_document(text: str) -> list[KnowledgeChunk]:
     return chunks
 
 
-def _insert_document(
+def _insert_document_unchecked(
     conn: Any,
     user_id: str,
     document: KnowledgeDocument,
@@ -563,6 +702,99 @@ def _insert_document(
         "contentSha256": source_hash,
         "blocker": embedding_blocker,
     }
+
+
+def _insert_document(
+    conn: Any,
+    user_id: str,
+    document: KnowledgeDocument,
+    *,
+    source_id_override: str | None = None,
+) -> dict[str, Any]:
+    """Persist one import and fail closed if work stops after the processing commit."""
+    source_hash = _sha256_text(document.text)
+    try:
+        return _insert_document_unchecked(
+            conn,
+            user_id,
+            document,
+            source_id_override=source_id_override,
+        )
+    except Exception as exc:
+        conn.rollback()
+        failure_type = re.sub(r"[^A-Za-z0-9_]", "", type(exc).__name__)[:80] or "Error"
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE knowledge_sources
+                   SET status='blocked', blocker=%s, updated_at=NOW()
+                   WHERE user_id=%s::uuid AND content_sha256=%s
+                     AND status='processing'""",
+                (f"knowledge_import_failed:{failure_type}", user_id, source_hash),
+            )
+        conn.commit()
+        raise
+
+
+def _reconcile_stale_processing_sources(conn: Any, user_id: str) -> int:
+    """Block abandoned zero-block imports without changing recent active work."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE knowledge_sources AS source
+               SET status='blocked', blocker='knowledge_import_interrupted', updated_at=NOW()
+               WHERE source.user_id=%s::uuid
+                 AND source.status='processing'
+                 AND source.updated_at < NOW() - (%s * INTERVAL '1 second')
+                 AND NOT EXISTS (
+                     SELECT 1 FROM knowledge_source_blocks AS link
+                     WHERE link.source_id=source.id
+                 )
+               RETURNING source.id""",
+            (user_id, PROCESSING_STALE_SECONDS),
+        )
+        reconciled = len(cur.fetchall())
+    conn.commit()
+    return reconciled
+
+
+def _knowledge_runtime_summary(conn: Any, user_id: str) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT COUNT(*)::integer AS sources,
+                      COUNT(*) FILTER (WHERE status='ready')::integer AS ready_sources,
+                      COUNT(*) FILTER (WHERE status='partial')::integer AS partial_sources,
+                      COUNT(*) FILTER (WHERE status='processing')::integer AS processing_sources,
+                      COUNT(*) FILTER (WHERE status='blocked')::integer AS blocked_sources,
+                      COALESCE(SUM(chunk_count),0)::integer AS source_chunks
+               FROM knowledge_sources WHERE user_id=%s::uuid""",
+            (user_id,),
+        )
+        source_state = dict(cur.fetchone())
+        cur.execute(
+            """SELECT COUNT(*)::integer AS unique_blocks,
+                      COUNT(embedding)::integer AS embedded_blocks,
+                      COUNT(*) FILTER (WHERE embedding IS NULL)::integer AS missing_embeddings
+               FROM knowledge_blocks WHERE user_id=%s::uuid""",
+            (user_id,),
+        )
+        block_state = dict(cur.fetchone())
+        cur.execute(
+            """SELECT COUNT(*)::integer AS orphan_links
+               FROM knowledge_source_blocks AS link
+               JOIN knowledge_sources AS source ON source.id=link.source_id
+               LEFT JOIN knowledge_blocks AS block ON block.id=link.block_id
+               WHERE source.user_id=%s::uuid AND block.id IS NULL""",
+            (user_id,),
+        )
+        orphan_state = dict(cur.fetchone())
+    summary = {**source_state, **block_state, **orphan_state}
+    summary["importsUsable"] = bool(
+        int(summary.get("ready_sources") or 0) + int(summary.get("partial_sources") or 0) > 0
+        and int(summary.get("missing_embeddings") or 0) == 0
+        and int(summary.get("orphan_links") or 0) == 0
+    )
+    summary["embeddingModel"] = EMBEDDING_MODEL
+    summary["storage"] = "postgres-pgvector"
+    return summary
 
 
 def _source_rows(conn: Any, user_id: str) -> list[dict[str, Any]]:
@@ -767,7 +999,12 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
     def knowledge_sources_list():
         conn = get_connection()
         try:
-            return jsonify({"sources": _source_rows(conn, request.session_user_id)})
+            reconciled = _reconcile_stale_processing_sources(conn, request.session_user_id)
+            return jsonify({
+                "sources": _source_rows(conn, request.session_user_id),
+                "runtime": _knowledge_runtime_summary(conn, request.session_user_id),
+                "reconciledStaleImports": reconciled,
+            })
         finally:
             _close(conn)
 
@@ -791,6 +1028,13 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
             finally:
                 _close(conn)
             return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
+        except GitHubKnowledgeAccessError as exc:
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+                "blocker": exc.blocker,
+                "githubHttpStatus": exc.github_status,
+            }), exc.response_status
         except (ValueError, RuntimeError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -1009,7 +1253,13 @@ def register_admin_knowledge_routes(
     def admin_knowledge_sources_list():
         conn = get_connection()
         try:
-            return jsonify({"sources": _source_rows(conn, admin_user_id())})
+            user_id = admin_user_id()
+            reconciled = _reconcile_stale_processing_sources(conn, user_id)
+            return jsonify({
+                "sources": _source_rows(conn, user_id),
+                "runtime": _knowledge_runtime_summary(conn, user_id),
+                "reconciledStaleImports": reconciled,
+            })
         finally:
             _close(conn)
 
@@ -1025,6 +1275,13 @@ def register_admin_knowledge_routes(
             finally:
                 _close(conn)
             return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
+        except GitHubKnowledgeAccessError as exc:
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+                "blocker": exc.blocker,
+                "githubHttpStatus": exc.github_status,
+            }), exc.response_status
         except (ValueError, RuntimeError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
         except Exception as exc:
