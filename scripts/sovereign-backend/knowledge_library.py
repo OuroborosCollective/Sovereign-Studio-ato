@@ -24,6 +24,8 @@ import psycopg2.extras
 import requests
 
 from r2_storage import (
+    MAX_KNOWLEDGE_BYTES,
+    MAX_PDF_KNOWLEDGE_BYTES,
     R2EvidenceMismatch,
     R2ObjectMissing,
     R2Storage,
@@ -700,20 +702,21 @@ def _confirm_r2_upload(conn: Any, user_id: str, object_id: str) -> dict[str, Any
 
     storage = R2Storage.from_env()
     try:
+        filename = str(row["object_key"]).rsplit("/", 1)[-1]
+        upload_limit = _upload_limit_bytes(filename)
         evidence = storage.verify_object(
             bucket=str(row["bucket_name"]),
             object_key=str(row["object_key"]),
             expected_sha256=str(row["sha256"]),
             expected_content_type=str(row["content_type"]),
             expected_size_bytes=int(row["size_bytes"]),
-            max_bytes=MAX_UPLOAD_BYTES,
+            max_bytes=upload_limit,
         )
         payload = storage.get_object_bytes(
             bucket=evidence.bucket,
             object_key=evidence.object_key,
-            max_bytes=MAX_UPLOAD_BYTES,
+            max_bytes=upload_limit,
         )
-        filename = evidence.object_key.rsplit("/", 1)[-1]
         document = upload_document(filename, payload)
         result = _insert_document(
             conn,

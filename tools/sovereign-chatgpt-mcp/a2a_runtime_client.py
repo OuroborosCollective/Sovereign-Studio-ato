@@ -132,16 +132,11 @@ class A2ARuntimeClient(ControllerRuntimeClient):
         task = payload.get("task")
         if isinstance(task, dict):
             return task
-
-        result = payload.get("result")
-        if isinstance(result, dict):
-            nested_task = result.get("task")
-            if isinstance(nested_task, dict):
-                return nested_task
-            if isinstance(result.get("status"), dict) and result.get("id"):
-                return result
-
-        if isinstance(payload.get("status"), dict) and payload.get("id"):
+        if (
+            isinstance(payload.get("id"), str)
+            and isinstance(payload.get("contextId"), str)
+            and isinstance(payload.get("status"), dict)
+        ):
             return payload
         raise RuntimeError("A2A response has no task")
 

@@ -87,8 +87,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     launcher = (ROOT / "launcher.py").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
+    assert 'document_pipeline.py' in installer
     assert 'tool_extensions.py' in installer
     assert 'repository_skill_tools.py' in installer
+    assert 'skill_supply_chain_tools.py' in installer
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
@@ -100,8 +102,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'openjdk-17-jdk-headless' not in dockerfile
     assert 'SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions' in dockerfile
     assert 'android_hardening.py' in dockerfile
+    assert 'document_pipeline.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
+    assert 'skill_supply_chain_tools.py' in dockerfile
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'PyYAML==6.0.3' in requirements
@@ -109,6 +113,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'launcher.py' in dockerfile
     assert 'import repository_skill_tools' in launcher
     assert 'repository_skill_tools.register(server.mcp, server.runtime, server.database)' in launcher
+    assert 'import skill_supply_chain_tools' in launcher
+    assert 'skill_supply_chain_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import deterministic_architecture_tools' in launcher
     assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import openai_project_access_tools' in launcher
@@ -151,6 +157,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(repository_skill_tools.repository_architecture_snapshot)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_drift_report)' in installer
     assert 'callable(repository_skill_tools.repository_architecture_runtime_drift_evidence)' in installer
+    assert 'callable(skill_supply_chain_tools.skill_supply_chain_inventory)' in installer
+    assert 'callable(skill_supply_chain_tools.template_generation_plan)' in installer
     assert 'deterministic_contract.KAPPA_SCALE == 1000000' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_tool_inventory)' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_replay_verify)' in installer
@@ -166,6 +174,24 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' in compose
     assert 'command_contract.py command_queue.py broker_client.py' in dockerfile
     assert '"running no-health"' not in installer
+
+
+def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+
+    assert "Verify Gotenberg to Tika live canary" in workflow
+    assert "document_pipeline.py" in workflow
+    assert "document_pipeline_live_canary" in workflow
+    assert 'server.broker.call(' in workflow
+    assert '"DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"' in workflow
+    assert "33 * 1024 * 1024" in workflow
+    assert 'result.get("sourcePersisted") is False' in workflow
+    assert 'result.get("outputPersisted") is False' in workflow
+    assert 'result.get("documentContentReturned") is False' in workflow
+    assert 'result.get("secretValuesReturned") is False' in workflow
+    assert 'summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()' in workflow
 
 
 def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> None:
