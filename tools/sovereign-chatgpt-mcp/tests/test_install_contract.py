@@ -93,6 +93,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'skill_supply_chain_tools.py' in installer
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
+    assert 'enterprise_backend_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
@@ -108,6 +109,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'skill_supply_chain_tools.py' in dockerfile
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
+    assert 'enterprise_backend_tools.py' in dockerfile
     assert 'PyYAML==6.0.3' in requirements
     assert 'openai_project_access_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
@@ -117,6 +119,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'skill_supply_chain_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import deterministic_architecture_tools' in launcher
     assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
+    assert 'import enterprise_backend_tools' in launcher
+    assert 'enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)' in launcher
     assert 'import openai_project_access_tools' in launcher
     assert 'openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
@@ -165,8 +169,16 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(deterministic_architecture_tools.deterministic_tool_inventory)' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_replay_verify)' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_transformation_plan)' in installer
+    assert 'callable(enterprise_backend_tools.backend_engineering_tool_inventory)' in installer
+    assert 'callable(enterprise_backend_tools.backend_architecture_assess)' in installer
+    assert 'callable(enterprise_backend_tools.backend_stack_select)' in installer
+    assert 'callable(enterprise_backend_tools.backend_delivery_plan)' in installer
+    assert 'callable(enterprise_backend_tools.backend_api_security_plan)' in installer
+    assert 'callable(enterprise_backend_tools.repository_revision_resolve)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_plan)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_runtime_evidence)' in installer
+    assert '"enterprise_backend_tools":true' in installer
+    assert '"repository_revision_resolver":true' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer

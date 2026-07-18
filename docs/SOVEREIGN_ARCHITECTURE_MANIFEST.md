@@ -4,7 +4,7 @@
 
 **Evidence-Stand:** 18. Juli 2026
 
-**Baseline-Revision vor diesem Manifest-Update:** `328c1ea9f63652494ca920b4ba7f9229f2a4e236`
+**Baseline-Revision vor diesem Manifest-Update:** `71e6e049e02a67f9c1bc1174c34323e79e155fb3`
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
 **Produkt:** Android-first NoCode-/AI-Service- und Agentenplattform  
@@ -488,12 +488,47 @@ Die Runtime-Grenzen schreiben unter anderem vor:
 - Diff,
 - Tests/Checks delegieren,
 - Draft PR,
+- owner-scoped PR-Status und SHA-/Gate-gebundener Merge,
 - Workflowstatus,
 - Runtime-/Container-Evidence,
 - PostgreSQL-/Vector-Canaries,
-- immutable Backend-Deployment.
+- immutable Backend-Deployment,
+- begrenzte statische Backend-/Architekturevidence,
+- constraints-basierte Stackauswahl,
+- test-, migrations- und rollback-gegatete Delivery-Roadmaps,
+- threat-getriebene API-Sicherheitspläne,
+- getrennte Auflösung von Workspace-, Base-, PR-, Merge-, CI- und deployter MCP-Revision.
 
-## 9.4 A2A-Adapter
+## 9.4 Enterprise-Backend- und Revisionswerkzeuge
+
+**BELEGT — Code-/Schema-Vertrag:** `enterprise_backend_tools.py` registriert sechs strukturierte MCP-Werkzeuge:
+
+1. `backend_engineering_tool_inventory`,
+2. `backend_architecture_assess`,
+3. `backend_stack_select`,
+4. `backend_delivery_plan`,
+5. `backend_api_security_plan`,
+6. `repository_revision_resolve`.
+
+Alle sechs sind read-only, nicht-destruktiv und idempotent. Nur der Revisionsresolver besitzt `openWorldHint=true`, weil er aktuelle GitHub-Base-, PR- und Check-Evidence liest. Eingaben sind durch Enums, Längen, Zahlenbereiche, Allowlisten und exakte 40-stellige SHA-Verträge begrenzt; Ergebnisse besitzen strukturierte Output-Schemas.
+
+Die fünf Backendwerkzeuge analysieren nur versionierte Repository-Dateien innerhalb harter Datei-, Einzeldatei-, Gesamtbyte- und Evidence-Grenzen. Secret-ähnliche Literale werden ausschließlich als Fundklasse und Pfad gemeldet; Werte werden nie ausgegeben. Stackbewertungen sind deterministische Empfehlungen aus beobachteter Repository-Evidence und expliziten Constraints. Ein modularer Monolith ist der Standard; Microservices, Event-Broker, Kubernetes, NoSQL, Cache oder dynamische Erweiterungen benötigen jeweils messbare Betriebs- und Ownership-Gates. Metadaten dürfen keine ausführbaren Routen oder SQL-Fragmente enthalten. Plugins laufen nur über signierte Capability-Manifeste in separaten Prozessen, Containern oder Wasm-Sandboxes.
+
+`repository_revision_resolve` trennt und vergleicht:
+
+- aktuellen Workspace-Head und Dirty-Tree,
+- gefetchten aktuellen Base-Head und Merge-Base,
+- PR-Head, PR-Base, Draft-/Mergezustand und Merge-SHA,
+- Check-Run-Head sowie terminale Failure-/Pending-Evidence,
+- vom Broker belegte deployte MCP-Revision.
+
+Revision, immutable Image-Referenz, Digest, Image-ID, Runtime-Evidence-Hash sowie MCP-/Container-/Broker-Readiness werden aus dem revisionsgebundenen Self-Update-Status getrennt rückgelesen; fehlende oder ungültige Werte bleiben als Evidence-Gap sichtbar. Dirty Tree, Remote-/Base-/PR-/Expected-SHA-Mismatch oder nicht auflösbare Authority führen zu `REVISION_CONFLICT` und `stop_and_resolve_revision_conflicts`. Das Tool behauptet bewusst keinen relevanten Grünstatus allein aus einer Check-Run-Liste und führt weder Merge, Deploy noch andere fachliche Mutation aus.
+
+**BELEGT — lokale Verträge:** Acht gezielte Modultests belegen Registrierung, FastMCP-Schemas, Sicherheitsannotationen, Secret-Redaktion, Stackauswahl, TSX-/Tenancy-/Plugin-/Release-Roadmap, Threat-Control-Plan sowie Revisionserfolg und fail-closed Dirty-/Mismatch-Pfade. Weitere 17 Installer-/Docker-Vertragstests belegen Packaging, Launcher-Registrierung und Runtime-Import-Canaries. Die vollständige lokal ausführbare MCP-Suite bestand mit `264 passed`; zwei unveränderte Broker-Tests wurden ausschließlich wegen des Sandbox-Verbots für Unix-Socket-Erzeugung lokal nicht ausgeführt und bleiben für GitHub Actions verpflichtend.
+
+**TEILWEISE — Runtime:** Dockerfile, Launcher, Installer, Releasearchiv-Check und GitHub-Workflow sind verdrahtet. Eine produktive Verfügbarkeit wird erst nach terminal grüner PR-Evidence, SHA-gebundenem Merge, immutable Image-Publish, Digestprüfung, VPS-Bootstrap und anschließendem Revisions-Readback als belegt geführt.
+
+## 9.5 A2A-Adapter
 
 **BELEGT:** Der Backendvertrag enthält eine AgentCard unter `/.well-known/agent-card.json`, A2A-Nachrichten-, Streaming-, Task-, Subscribe- und Cancel-Routen sowie owner-scoped Service-Authentisierung. Der Adapter startet und liest dieselbe persistierte Agents-SDK-Truth-Chain wie die direkten Swarm-Routen; er ist kein zweiter fachlicher Orchestrator.
 
@@ -1148,6 +1183,7 @@ GitHub Intent
 11. **BELEGT — GitHub-Knowledge- und Modell-Health-Wahrheit:** PR #818 bestand Release Gate, vollständigen Type-check/Test/Build, Security Audit, alle CodeQL-Pfade, OAuth-Live-Path, E2E Smoke, Android- und Runtime-/UX-Verträge und wurde SHA-gebunden als Squash-Commit `feae19e0965ff276eadc97e95fb2b5aadd046463` gemergt. Öffentliche GitHub-Imports sind credential-frei bevorzugt, verlassene Knowledge-Imports werden fail-closed reconciled und Modell-Health erfordert eine echte Completion statt bloßer Readiness.
 12. **BELEGT — dreistufiger LLM-Kostenvertrag im Code und Live-Schema:** `free`, `standard` und `premium` sind als Backend-Policy, Admin-Vertrag, Usage-Settlement-Felder, Provider-Pricing-Felder und PostgreSQL-Constraints abgebildet. Provider-finanzierte Credits trennen bezahlte Kaufkraft von Bonus-/Admin-Gutschriften.
 13. **BELEGT — GitHub-Knowledge-Transportvertrag im Code:** GitHub-Antwortstatus und HTTPS-Transportfehler werden getrennt behandelt. Timeout, TLS, Connection/DNS und sonstige `requests`-Fehler liefern sichere `github_*`-Blocker mit passender `502`-/`504`-Semantik. Der Fehlerpfad schreibt Audit-Evidence nur mit einem URL-Fingerprint; rohe URL-, Query-, Credential- oder Exceptiondetails werden weder zurückgegeben noch persistiert.
+14. **BELEGT — Enterprise-Backend-/Revisionswerkzeuge im Codevertrag:** Sechs bounded read-only MCP-Tools decken statische Architekturaufnahme, Stackentscheidung, Projekt-/Modernisierungsfahrplan, API-Sicherheitskonzept und die fail-closed Auflösung der vollständigen Repository-/PR-/CI-/Deployment-Revisionstupel ab. FastMCP-Output-Schemas, Eingabegrenzen und ToolAnnotations sind lokal geprüft.
 
 ## 24.2 Offen, teilweise oder blockiert
 
@@ -1159,6 +1195,7 @@ GitHub Intent
 6. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
 7. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation:** Der Architektur-Scanner meldet 57 heuristische Treffer in 27 Dateien. Repräsentative aktive Pfade wurden als Online-LLM-zuerst mit Offline-Fallback oder als strukturierte Policy-/Codeklassifikation bestätigt. Die vollständige SHA-gebundene Reviewliste muss noch maschinenlesbar verankert werden, damit jede Dateiänderung den Kandidaten automatisch erneut öffnet.
 8. **TEILWEISE — GitHub-Knowledge-Livecanary:** Der neue Codevertrag klassifiziert und auditiert HTTPS-443-Transportfehler sicher. Der vor dieser Änderung beobachtete Fehler hinterließ jedoch weder eine `knowledge_sources`-Zeile noch Audit-/Incident-Evidence; seine exakte DNS-, TLS-, Proxy- oder Connection-Unterursache ist deshalb rückwirkend nicht belegbar. Ein Livecanary nach einem separat freigegebenen immutable Backend-Deployment muss den realen GitHub-Import und den Auditblocker noch bestätigen.
+9. **TEILWEISE — Enterprise-Backend-/Revisionswerkzeuge im privaten MCP:** Modul, Launcher, Image, Installer, Workflow, Releasearchiv und lokale Verträge sind verdrahtet. Der immutable Post-Merge-Image-/VPS-Beweis und der erneute Abgleich von Merge-, laufender Revision und Image-Digest stehen bis zur terminal grünen PR und ihrer Releasekette noch aus.
 
 ## 24.3 Langfristig
 
@@ -1195,9 +1232,9 @@ Ein erster Release erfolgt nur, wenn:
 
 # 26. Aktueller Evidence-Snapshot
 
-Evidence-Stand: 18. Juli 2026. PR #820 wurde vom vollständig grünen Head `229a92bd1bb7eee42dc14fd428f0510e74e1f39f` als Merge-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc` in `main` übernommen. Die nachstehende GitHub-Knowledge-Transportänderung besitzt lokale Code-/Test-Evidence, ist aber noch nicht als immutable Backend-Release deployt.
+Evidence-Stand: 18. Juli 2026. PR #820 wurde vom vollständig grünen Head `229a92bd1bb7eee42dc14fd428f0510e74e1f39f` als Merge-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc` in `main` übernommen. Die GitHub-Knowledge-Transportänderung aus PR #821 ist in der aktuellen Repository-Baseline enthalten. Die nachstehende Enterprise-Backend-/Revisionswerkzeugänderung besitzt lokale Code-/Schema-/Test-Evidence, ist aber bis zur terminal grünen PR und immutable MCP-Releasekette nicht als produktiv deployt belegt.
 
-- **BELEGT:** Repository-Baseline für diese Folgearbeit ist der neu aufgelöste `main`-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc`.
+- **BELEGT:** Repository-Baseline für diese Folgearbeit ist der neu aufgelöste, beim Start mit `origin/main` identische Commit `71e6e049e02a67f9c1bc1174c34323e79e155fb3`.
 - **BELEGT:** Für die getrennte MCP-Release-Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
 - **BELEGT:** A2A wurde mit AgentCard, Owner-Scope, persistiertem Run und `contextId`, Streaming, Resume und Controller-/Task-Endstatus live korreliert.
@@ -1210,6 +1247,8 @@ Evidence-Stand: 18. Juli 2026. PR #820 wurde vom vollständig grünen Head `229a
 - **BELEGT:** PR #818 wurde nach vollständig grünen GitHub-Gates SHA-gebunden gemergt. Der neue Modell-Healthvertrag unterscheidet Quota, Rate-Limit, Credentials, Aliasfehler und Infrastruktur und setzt `completionVerified=true` für Grün voraus.
 - **BELEGT:** Der aktuelle Live-Readback enthält 38 Knowledge-Quellen: 37 `ready`, eine PDF-Quelle `processing`, 400 verknüpfte Chunks und keine persistierte GitHub-Quelle. In `audit_log` und `sovereign_toolchain_incidents` existiert für den früheren GitHub-443-Fehler keine passende Evidence; der Fehler lag damit vor dem bisherigen Quellen-Commit- und Auditpfad.
 - **BELEGT — Code/Test:** Der Folgecode klassifiziert GitHub-Timeout, TLS, Connection/DNS und sonstige Transportfehler in sichere Blocker, liefert keine rohen Exceptiondetails und persistiert nur einen URL-Fingerprint. Die vollständige Suite `scripts/sovereign-backend/tests` bestand lokal mit `119 passed`; der GitHub-PR- und Deploybeweis folgt getrennt.
+- **BELEGT — Enterprise-Backend-/Revisions-Codevertrag:** Sechs read-only MCP-Tools sind in Launcher, Dockerfile, VPS-Installer, Releasearchiv-Check, Workflow und Server-Instruktionen integriert. Acht gezielte Tooltests, 17 Installer-/Docker-Vertragstests und die vollständige lokal ausführbare MCP-Suite mit `264 passed` bestanden; strukturierte Output-Schemas, Eingabegrenzen, Secret-Redaktion und fail-closed Revisionskonflikte sind belegt. Zwei unveränderte Unix-Socket-Brokertests benötigen wegen der lokalen Sandbox GitHub Actions als Ausführungsumgebung.
+- **TEILWEISE — Enterprise-MCP-Runtime:** Der noch ausstehende terminal grüne PR-, Merge-, immutable Image-, Digest-, VPS- und erneute Revisionsbeweis wird nicht vorweggenommen.
 - **BELEGT:** Öffentliche GitHub-Wissensimporte laufen credential-frei zuerst; private Reads werden nur nach öffentlichem Nichtfund über den bestätigten Serverzugang versucht.
 - **BELEGT:** APK- und AAB-Artefakte, Hashes, Signaturdiagnose, genau ein Signer, Zertifikat-Fingerprint und Alignment liegen als Release-Evidence vor.
 - **BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server liefen ohne Restart-/OOM-/Exitfehler; LiteLLM und seine PostgreSQL-Instanz waren healthy.
