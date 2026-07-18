@@ -1,29 +1,42 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import pytest
 
-from document_pipeline import MAX_PDF_BYTES, DocumentPipelineRuntime
+from document_pipeline import MAX_PDF_BYTES, DocumentPipelineRuntime, _NETWORK_CANARY_SCRIPT
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class FakeResponse:
-    def __init__(
-        self,
-        status_code: int,
-        *,
-        content: bytes = b"",
-        text: str = "",
-        headers: dict[str, str] | None = None,
-    ) -> None:
-        self.status_code = status_code
-        self.content = content
-        self.text = text
-        self.headers = headers or {}
+def _verified_result(*, pdf_bytes: int = 4096) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "status": "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED",
+        "gotenberg": {
+            "container": "gpt-gotenberg",
+            "httpStatus": 200,
+            "contentType": "application/pdf",
+            "pdfBytes": pdf_bytes,
+            "maxPdfBytes": MAX_PDF_BYTES,
+            "pdfSha256": "a" * 64,
+        },
+        "tika": {
+            "container": "gpt-tika",
+            "httpStatus": 200,
+            "extractedCharacters": 96,
+            "maxPdfBytes": MAX_PDF_BYTES,
+            "markerVerified": True,
+        },
+        "sourcePersisted": False,
+        "outputPersisted": False,
+        "documentContentReturned": False,
+        "secretValuesReturned": False,
+    }
 
 
 def test_mcp_image_packages_document_pipeline_module() -> None:
@@ -31,98 +44,109 @@ def test_mcp_image_packages_document_pipeline_module() -> None:
     assert "a2a_runtime_client.py document_pipeline.py owner_input_widget.py" in dockerfile
 
 
-def test_live_canary_correlates_real_pdf_generation_and_text_extraction(monkeypatch) -> None:
+def test_live_canary_runs_fixed_node_probe_in_existing_gpt_tools_peer(monkeypatch) -> None:
     runtime = DocumentPipelineRuntime()
-    monkeypatch.setattr(runtime, "_first_reachable", lambda container, port, path: f"http://{container}:{port}")
-
     calls: list[dict[str, Any]] = []
 
-    def fake_post(url, files, timeout, proxies):
-        calls.append({"kind": "post", "url": url, "files": files, "timeout": timeout, "proxies": proxies})
-        return FakeResponse(
-            200,
-            content=b"%PDF-1.7\n" + (b"real-pdf-evidence" * 16),
-            headers={"Content-Type": "application/pdf"},
+    def fake_run(argv, *, capture_output, text, timeout, check):
+        calls.append({
+            "argv": argv,
+            "capture_output": capture_output,
+            "text": text,
+            "timeout": timeout,
+            "check": check,
+        })
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=json.dumps(_verified_result()) + "\n",
+            stderr="",
         )
 
-    def fake_put(url, data, headers, timeout, proxies):
-        calls.append({"kind": "put", "url": url, "data": data, "headers": headers, "timeout": timeout, "proxies": proxies})
-        return FakeResponse(200, text="SOVEREIGN_DOCUMENT_PIPELINE_CANARY\nGotenberg to Tika live evidence.")
-
-    monkeypatch.setattr("document_pipeline.requests.post", fake_post)
-    monkeypatch.setattr("document_pipeline.requests.put", fake_put)
+    monkeypatch.setattr("document_pipeline.subprocess.run", fake_run)
 
     result = runtime.live_canary()
 
     assert result["ok"] is True
     assert result["status"] == "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"
-    assert MAX_PDF_BYTES == 33 * 1024 * 1024
-    assert result["gotenberg"]["maxPdfBytes"] == MAX_PDF_BYTES
-    assert result["gotenberg"]["pdfSha256"]
-    assert result["tika"]["maxPdfBytes"] == MAX_PDF_BYTES
+    assert result["gotenberg"]["pdfSha256"] == "a" * 64
     assert result["tika"]["markerVerified"] is True
+    assert result["probe"] == {
+        "container": "gpt-browserless",
+        "execution": "fixed_node_network_peer",
+        "genericShellUsed": False,
+        "network": "gpt-tools-compose-network",
+    }
     assert result["documentContentReturned"] is False
     assert result["secretValuesReturned"] is False
-    assert calls[0]["url"].endswith("/forms/chromium/convert/html")
-    assert calls[0]["proxies"] == {"http": "", "https": "", "all": ""}
-    assert calls[1]["headers"]["Content-Type"] == "application/pdf"
-    assert calls[1]["proxies"] == {"http": "", "https": "", "all": ""}
+
+    command = calls[0]["argv"]
+    assert command[:2] == ["docker", "exec"]
+    assert "HTTP_PROXY=" in command
+    assert "HTTPS_PROXY=" in command
+    assert "ALL_PROXY=" in command
+    assert "NO_PROXY=*" in command
+    assert command[command.index("node") + 1] == "-e"
+    assert command[command.index("-e", command.index("node")) + 1] == _NETWORK_CANARY_SCRIPT
+    assert "SOVEREIGN_DOCUMENT_PIPELINE_CANARY" in command
+    assert "gpt-browserless" in command
+    assert "gpt-gotenberg" in command
+    assert "gpt-tika" in command
+    assert calls[0]["check"] is False
 
 
-def test_container_health_rejects_proxy_or_auth_responses_and_disables_env_proxies(monkeypatch) -> None:
+def test_network_probe_uses_only_fixed_service_urls_and_in_memory_artifacts() -> None:
+    assert "http://${gotenbergHost}:3000/forms/chromium/convert/html" in _NETWORK_CANARY_SCRIPT
+    assert "http://${tikaHost}:9998/tika" in _NETWORK_CANARY_SCRIPT
+    assert "new FormData()" in _NETWORK_CANARY_SCRIPT
+    assert "new Blob([html]" in _NETWORK_CANARY_SCRIPT
+    assert "writeFile" not in _NETWORK_CANARY_SCRIPT
+    assert "child_process" not in _NETWORK_CANARY_SCRIPT
+
+
+def test_live_canary_preserves_precise_network_peer_failure_family(monkeypatch) -> None:
     runtime = DocumentPipelineRuntime()
-    monkeypatch.setattr(runtime, "_inspect_networks", lambda container: ["172.18.0.7"])
-    calls: list[dict[str, Any]] = []
 
-    def fake_get(url, timeout, proxies):
-        calls.append({"url": url, "timeout": timeout, "proxies": proxies})
-        return FakeResponse(403)
-
-    monkeypatch.setattr("document_pipeline.requests.get", fake_get)
-
-    with pytest.raises(RuntimeError, match="DOCUMENT_SERVICE_HTTP_403"):
-        runtime._first_reachable("gpt-gotenberg", 3000, "/health")
-    assert calls == [{
-        "url": "http://172.18.0.7:3000/health",
-        "timeout": min(runtime.timeout_seconds, 15),
-        "proxies": {"http": "", "https": "", "all": ""},
-    }]
-
-
-def test_live_canary_fails_closed_when_tika_does_not_return_marker(monkeypatch) -> None:
-    runtime = DocumentPipelineRuntime()
-    monkeypatch.setattr(runtime, "_first_reachable", lambda container, port, path: f"http://{container}:{port}")
     monkeypatch.setattr(
-        "document_pipeline.requests.post",
-        lambda *args, **kwargs: FakeResponse(
-            200,
-            content=b"%PDF-1.7\n" + (b"real-pdf-evidence" * 16),
+        "document_pipeline.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr=json.dumps({"failureFamily": "GOTENBERG_NETWORK_PEER_UNREACHABLE"}) + "\n",
         ),
     )
+
+    with pytest.raises(RuntimeError, match="GOTENBERG_NETWORK_PEER_UNREACHABLE"):
+        runtime.live_canary()
+
+
+def test_live_canary_rejects_invalid_peer_result(monkeypatch) -> None:
+    runtime = DocumentPipelineRuntime()
     monkeypatch.setattr(
-        "document_pipeline.requests.put",
-        lambda *args, **kwargs: FakeResponse(200, text="different text"),
+        "document_pipeline.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout="not-json\n",
+            stderr="",
+        ),
     )
 
-    with pytest.raises(RuntimeError, match="TIKA_MARKER_NOT_EXTRACTED"):
+    with pytest.raises(RuntimeError, match="DOCUMENT_NETWORK_PEER_RESULT_INVALID"):
         runtime.live_canary()
 
 
 def test_live_canary_accepts_pdf_at_exactly_33_mib(monkeypatch) -> None:
     runtime = DocumentPipelineRuntime()
-    monkeypatch.setattr(runtime, "_first_reachable", lambda container, port, path: f"http://{container}:{port}")
-    prefix = b"%PDF-1.7\n"
     monkeypatch.setattr(
-        "document_pipeline.requests.post",
-        lambda *args, **kwargs: FakeResponse(
-            200,
-            content=prefix + (b"x" * (MAX_PDF_BYTES - len(prefix))),
-            headers={"Content-Type": "application/pdf"},
+        "document_pipeline.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout=json.dumps(_verified_result(pdf_bytes=MAX_PDF_BYTES)) + "\n",
+            stderr="",
         ),
-    )
-    monkeypatch.setattr(
-        "document_pipeline.requests.put",
-        lambda *args, **kwargs: FakeResponse(200, text="SOVEREIGN_DOCUMENT_PIPELINE_CANARY"),
     )
 
     result = runtime.live_canary()
@@ -131,35 +155,41 @@ def test_live_canary_accepts_pdf_at_exactly_33_mib(monkeypatch) -> None:
     assert result["tika"]["markerVerified"] is True
 
 
-def test_live_canary_rejects_pdf_larger_than_33_mib_before_tika(monkeypatch) -> None:
+def test_live_canary_rejects_peer_result_larger_than_33_mib(monkeypatch) -> None:
     runtime = DocumentPipelineRuntime()
-    monkeypatch.setattr(runtime, "_first_reachable", lambda container, port, path: f"http://{container}:{port}")
     monkeypatch.setattr(
-        "document_pipeline.requests.post",
-        lambda *args, **kwargs: FakeResponse(
-            200,
-            content=b"%PDF-1.7\n" + (b"x" * MAX_PDF_BYTES),
+        "document_pipeline.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout=json.dumps(_verified_result(pdf_bytes=MAX_PDF_BYTES + 1)) + "\n",
+            stderr="",
         ),
     )
 
-    tika_called = False
-
-    def fake_put(*args, **kwargs):
-        nonlocal tika_called
-        tika_called = True
-        return FakeResponse(200, text="SOVEREIGN_DOCUMENT_PIPELINE_CANARY")
-
-    monkeypatch.setattr("document_pipeline.requests.put", fake_put)
-
     with pytest.raises(RuntimeError, match="GOTENBERG_OUTPUT_SIZE_INVALID"):
         runtime.live_canary()
-    assert tika_called is False
 
 
-def test_live_canary_rejects_unbounded_marker_before_network() -> None:
+def test_live_canary_rejects_unbounded_marker_before_docker_exec(monkeypatch) -> None:
     runtime = DocumentPipelineRuntime()
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("docker exec must not run")
+
+    monkeypatch.setattr("document_pipeline.subprocess.run", fake_run)
     with pytest.raises(ValueError, match="1 to 160"):
         runtime.live_canary("x" * 161)
+    assert called is False
+
+
+def test_document_runtime_rejects_unsafe_container_names(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_DOCUMENT_PROBE_CONTAINER", "gpt-browserless;rm")
+    with pytest.raises(RuntimeError, match="safe container name"):
+        DocumentPipelineRuntime()
 
 
 def test_pdf_size_limit_accepts_33_mib_and_rejects_the_next_byte() -> None:
