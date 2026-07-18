@@ -103,6 +103,11 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
         "utf-8",
     )
     (repo / "backend" / "app.py").write_text(
+        "@app.get('/api/legacy-only')\n"
+        "def legacy_only():\n    return 'not deployed'\n",
+        "utf-8",
+    )
+    (repo / "scripts" / "sovereign-backend" / "app.py").write_text(
         "@app.route('/api/items/<item_id>', methods=['GET'])\n"
         "def item(item_id):\n    return item_id\n\n"
         "@app.post('/api/orders')\n"
@@ -114,6 +119,11 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
         "api.post('/api/orders');\n"
         "api.post(`/api/items/${itemId}`);\n"
         "api.delete('/api/missing');\n",
+        "utf-8",
+    )
+    (repo / "src" / "legacy.ts").write_text(
+        "// sovereign-endpoint-surface: legacy-unreferenced\n"
+        "fetch('/api/legacy-client');\n",
         "utf-8",
     )
     (repo / "scripts" / "sovereign-backend" / "migrations" / "001_create.sql").write_text(
@@ -223,6 +233,17 @@ def test_architecture_guardian_detects_cross_layer_drift_without_claiming_runtim
     assert valid_workflow["validYaml"] is True if valid_workflow["parserAvailable"] else valid_workflow["validYaml"] is None
     assert snapshot["truthBoundary"]["liveDatabaseAccessed"] is False
     assert snapshot["truthBoundary"]["vpsAccessed"] is False
+    assert snapshot["canonicalOwnership"] == [
+        {
+            "canonicalPath": "scripts/sovereign-backend/app.py",
+            "nonCanonicalPath": "backend/app.py",
+            "role": "production_backend_application",
+            "reason": "The immutable backend image builds exclusively from scripts/sovereign-backend.",
+            "byteEqualityRequired": False,
+            "endpointTruthSource": "canonical_only",
+        }
+    ]
+    assert not any(item["path"] == "/api/legacy-only" for item in snapshot["backendContracts"])
 
     families = {item["family"] for item in drift["findings"]}
     assert "CONTRACT_DRIFT" in families
@@ -252,10 +273,13 @@ def test_mirror_diff_and_endpoint_reference_are_precise_and_read_only(repository
 
     contracts = {(item["method"], item["path"]) for item in endpoints["endpoints"]}
     unmatched = {(item["method"], item["path"]) for item in endpoints["unmatchedFrontendCalls"]}
+    non_active = {(item["method"], item["path"], item["surfaceStatus"]) for item in endpoints["nonActiveFrontendCalls"]}
     assert ("GET", "/api/items/<p>") in contracts
     assert ("POST", "/api/orders") in contracts
     assert ("POST", "/api/items/<p>") in unmatched
     assert ("DELETE", "/api/missing") in unmatched
+    assert ("GET", "/api/legacy-client", "legacy-unreferenced") in non_active
+    assert endpoints["nonActiveFrontendCallCount"] == 1
     assert endpoints["generatedFromCurrentRepository"] is True
     assert endpoints["runtimeReachabilityProven"] is False
     assert endpoints["mutationPerformed"] is False
