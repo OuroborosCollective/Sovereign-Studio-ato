@@ -13,6 +13,7 @@ from typing import Any
 from admin_mode import PrivateAdminRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import is_mutating_action
+from document_pipeline import DocumentPipelineRuntime
 from github_admin import GitHubAdminRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
@@ -41,6 +42,7 @@ class BrokerRuntime:
         ).strip()
         self.operations = OperationsRuntime()
         self.browserless = BrowserlessReplayReader()
+        self.document_pipeline = DocumentPipelineRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
@@ -213,6 +215,9 @@ class BrokerRuntime:
             "container_status": self.container_status,
             "container_logs": self.container_logs,
             "manus_public_replay_read": self.read_manus_replay,
+            "document_pipeline_live_canary": lambda values: self.document_pipeline.live_canary(
+                marker=str(values.get("marker") or "SOVEREIGN_DOCUMENT_PIPELINE_CANARY"),
+            ),
             "resolve_backend_image": self.resolve_backend_image,
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
                 workspace_id=str(values.get("workspace_id") or ""),

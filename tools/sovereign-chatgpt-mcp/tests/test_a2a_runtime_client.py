@@ -116,7 +116,9 @@ def test_live_canary_correlates_start_stream_task_controller_and_resume(monkeypa
     assert result["finalControllerStatus"] == "COMPLETED"
     assert result["protectedValuesReturned"] is False
     assert session.calls[2]["headers"].get("X-Sovereign-Owner-Request-Key") is None
+    assert "model" not in session.calls[1]["json"]["message"]["metadata"]
     assert session.calls[6]["json"]["message"]["taskId"] == RUN_ID
+    assert "model" not in session.calls[6]["json"]["message"]["metadata"]
 
 
 def test_json_request_exposes_only_bounded_structured_a2a_error_reason(monkeypatch) -> None:

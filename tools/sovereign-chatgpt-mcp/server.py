@@ -11,6 +11,7 @@ from a2a_runtime_client import A2ARuntimeClient
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
+from document_pipeline import DocumentPipelineRuntime
 from owner_input_client import ControllerRuntimeClient, OwnerInputClient
 from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
 from runtime import OperatorRuntime
@@ -75,6 +76,7 @@ android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_c
 owner_input = OwnerInputClient()
 controller_runtime = ControllerRuntimeClient()
 a2a_runtime = A2ARuntimeClient()
+document_pipeline = DocumentPipelineRuntime()
 
 
 def _bounded_controller_text(value: Any, limit: int = 320) -> str:
@@ -237,6 +239,7 @@ mcp = FastMCP(
         "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
+        "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt über Gotenberg ein echtes flüchtiges PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
         "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_architecture_snapshot, repository_architecture_drift_report, repository_architecture_runtime_drift_evidence, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Architektur-Snapshot und statischer Drift liefern Kandidaten; repository_architecture_runtime_drift_evidence verbindet Repo-Migrationen ausschließlich mit read-only PostgreSQL-Schema- und Vector-Evidence. Keines dieser Werkzeuge behauptet LLM-Erfolg, mutiert die Datenbank oder erzeugt persisted Hunt-Ergebnisse. Für deterministische Architekturarbeit beginne mit deterministic_tool_inventory und deterministic_architecture_inventory, prüfe danach deterministic_nondeterminism_scan, deterministic_kappa_contract_audit und deterministic_sql_contract_audit. Nutze deterministic_transition_validate und deterministic_replay_verify nur als pure Vorschau ohne Persistenz- oder Laufzeiterfolgsbehauptung; TypeScript/Python-Bitparität erfordert weiterhin unabhängige Ausführung derselben kanonischen Vektoren. Parserfehler können Python-Grammatik-/Versionsdrift oder tatsächlich ungültigen Source bedeuten und müssen gegen die Repository-Zielversion geprüft werden. "
         "Für sichere OpenAI-Projektzugänge nutze openai_project_access_plan ausschließlich mit nicht-geheimen Metadaten. Nutze openai_project_access_runtime_evidence für Provider-Identität, Projektzuordnung, Modellinventar, private LiteLLM-Zustände und echte Completion-Canaries. Diese Tools erstellen, lesen, rotieren oder widerrufen keinen OpenAI-Schlüssel und führen keine OpenAI-Admin-Mutation aus. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
@@ -567,6 +570,18 @@ def a2a_live_canary(expected_revision: str = "") -> dict[str, Any]:
 def manus_public_replay_read(share_url: str) -> dict[str, Any]:
     """Render one public manus.im/share replay and return bounded visible-text evidence."""
     return broker.call("manus_public_replay_read", {"share_url": share_url}, timeout=90)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def document_pipeline_live_canary(
+    marker: str = "SOVEREIGN_DOCUMENT_PIPELINE_CANARY",
+) -> dict[str, Any]:
+    """Generate one ephemeral PDF with Gotenberg and verify its marker through Tika."""
+    return broker.call(
+        "document_pipeline_live_canary",
+        {"marker": marker},
+        timeout=120,
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)
