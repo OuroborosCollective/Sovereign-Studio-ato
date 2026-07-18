@@ -36,7 +36,8 @@ from vector_embedding import EMBEDDING_MODEL, EmbeddingUnavailable, embed_texts,
 
 ConnectionFactory = Callable[[], Any]
 
-MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+MAX_UPLOAD_BYTES = 33 * 1024 * 1024
+MAX_NON_PDF_UPLOAD_BYTES = 12 * 1024 * 1024
 MAX_SOURCE_TEXT_CHARS = 12_000_000
 MAX_GITHUB_FILES = 80
 MAX_GITHUB_FILE_BYTES = 512 * 1024
@@ -323,11 +324,16 @@ def _pdf_document(filename: str, payload: bytes) -> KnowledgeDocument:
     )
 
 
+def _upload_limit_bytes(filename: str) -> int:
+    return MAX_UPLOAD_BYTES if str(filename or "").lower().endswith(".pdf") else MAX_NON_PDF_UPLOAD_BYTES
+
+
 def upload_document(filename: str, payload: bytes) -> KnowledgeDocument:
     if not payload:
         raise ValueError("Uploaded file is empty")
-    if len(payload) > MAX_UPLOAD_BYTES:
-        raise ValueError(f"Uploaded file exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+    upload_limit = _upload_limit_bytes(filename)
+    if len(payload) > upload_limit:
+        raise ValueError(f"Uploaded file exceeds {upload_limit // (1024 * 1024)} MB")
     lower = filename.lower()
     if lower.endswith(".pdf"):
         return _pdf_document(filename, payload)
@@ -868,8 +874,9 @@ def register_knowledge_routes(app: Any, *, require_session: Callable, get_connec
         if uploaded is None:
             return jsonify({"ok": False, "error": "file is required"}), 400
         try:
-            payload = uploaded.stream.read(MAX_UPLOAD_BYTES + 1)
-            document = upload_document(uploaded.filename or "upload.txt", payload)
+            filename = uploaded.filename or "upload.txt"
+            payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)
+            document = upload_document(filename, payload)
             conn = get_connection()
             try:
                 result = _insert_document(conn, request.session_user_id, document)
@@ -1027,8 +1034,9 @@ def register_admin_knowledge_routes(
         if uploaded is None:
             return jsonify({"ok": False, "error": "file is required"}), 400
         try:
-            payload = uploaded.stream.read(MAX_UPLOAD_BYTES + 1)
-            document = upload_document(uploaded.filename or "upload.txt", payload)
+            filename = uploaded.filename or "upload.txt"
+            payload = uploaded.stream.read(_upload_limit_bytes(filename) + 1)
+            document = upload_document(filename, payload)
             conn = get_connection()
             try:
                 result = _insert_document(conn, admin_user_id(), document)

@@ -16,7 +16,8 @@ from urllib.parse import urlparse
 import uuid
 
 
-MAX_KNOWLEDGE_BYTES = 12 * 1024 * 1024
+MAX_KNOWLEDGE_BYTES = 33 * 1024 * 1024
+MAX_NON_PDF_KNOWLEDGE_BYTES = 12 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 512 * 1024 * 1024
 DEFAULT_PRESIGN_SECONDS = 900
 MAX_PRESIGN_SECONDS = 3600
@@ -208,13 +209,18 @@ def validate_knowledge_upload(
     size_bytes: Any,
     sha256: str,
 ) -> UploadSpec:
+    maximum = (
+        MAX_KNOWLEDGE_BYTES
+        if str(filename or "").lower().endswith(".pdf")
+        else MAX_NON_PDF_KNOWLEDGE_BYTES
+    )
     return _upload_spec(
         filename,
         content_type,
         size_bytes,
         sha256,
         allowed=_KNOWLEDGE_TYPES,
-        maximum=MAX_KNOWLEDGE_BYTES,
+        maximum=maximum,
     )
 
 
