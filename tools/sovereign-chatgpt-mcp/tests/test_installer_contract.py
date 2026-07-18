@@ -85,6 +85,9 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'docker compose build' not in installer
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
     assert 'org.opencontainers.image.revision' in installer
+    assert 'io.ouroboros.sovereign.cross-runtime-parity' in installer
+    assert 'MCP_IMAGE_CROSS_RUNTIME_PARITY' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_CROSS_RUNTIME_PARITY_PROVEN "1"' in installer
     assert 'SOVEREIGN_MCP_EXPECTED_REVISION' in installer
     assert 'set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"' in installer
     assert 'export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"' in installer
@@ -133,6 +136,8 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'if [[ "$SELF_UPDATE_TUNNEL_MODE" == "required" ]]; then' in updater
     assert 'systemctl is-active --quiet sovereign-openai-tunnel.service' in updater
     assert 'tunnel not required' in updater
+    assert '"cross_runtime_parity_proven": sys.argv[2] == "UPDATED"' in updater
+    assert 'immutable_image_label_and_ci_vector_comparison' in updater
     assert 'CURRENT_STAGE="completed"' in updater
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
 
@@ -167,7 +172,7 @@ def test_github_vps_pull_uses_ephemeral_package_read_auth() -> None:
     assert "GHCR_TOKEN:" not in before_install
     assert "GHCR_USERNAME: ${{ github.actor }}" in install_step
     assert "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in install_step
-    assert "envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN" in install_step
+    assert "envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,KAPPA_POS,CROSS_RUNTIME_PARITY" in install_step
     assert 'DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"' in install_step
     assert "json.dumps({'auths': {'ghcr.io': {'auth': encoded}}}" in install_step
     assert 'chmod 0600 "$DOCKER_AUTH_DIR/config.json"' in install_step
