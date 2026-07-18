@@ -14,6 +14,7 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "SOVEREIGN_MCP_ENABLE_PR_MERGE",
         "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL",
         "SOVEREIGN_MCP_ENABLE_SELF_UPDATE",
+        "SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE",
     ):
         monkeypatch.setenv(name, "1")
 
@@ -42,4 +43,5 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "repository_workflow_dispatch",
         "repository_rerun_failed_workflows",
         "mcp_self_update",
+        "managed_compose_write",
     }
