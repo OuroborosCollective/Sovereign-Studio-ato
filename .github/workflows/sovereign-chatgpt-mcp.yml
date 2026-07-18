@@ -342,6 +342,9 @@ jobs:
   deploy-vps:
     name: Bootstrap MCP on VPS
     needs: [validate, publish-mcp-image, verify-published-mcp-image]
+    permissions:
+      contents: read
+      packages: read
     runs-on: ubuntu-latest
     timeout-minutes: 40
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -449,13 +452,15 @@ jobs:
         uses: appleboy/ssh-action@v1.2.5
         env:
           SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 35m
-          envs: SUDO_PASSWORD
+          envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -Eeuo pipefail
             run_root() {
@@ -488,6 +493,7 @@ jobs:
             KAPPA_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.kappa-pos"
             CHECKSUM_FILE="$RELEASE_DIR/sovereign-chatgpt-mcp.sha256"
             WORK_DIR="$RELEASE_DIR/work"
+            DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"
             STATUS_DIR=/var/lib/sovereign-chatgpt-self-update
             STATUS_FILE="$STATUS_DIR/status.json"
 
@@ -543,7 +549,30 @@ jobs:
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
+            test -n "${GHCR_USERNAME:-}" || { echo 'GHCR username is unavailable on the VPS session.' >&2; exit 1; }
+            test -n "${GHCR_TOKEN:-}" || { echo 'GHCR package-read token is unavailable on the VPS session.' >&2; exit 1; }
+            install -d -m 0700 "$DOCKER_AUTH_DIR"
+            python3 - "$DOCKER_AUTH_DIR/config.json" <<'PY'
+            from pathlib import Path
+            import base64
+            import json
+            import os
+            import sys
+
+            username = os.environ.get('GHCR_USERNAME', '')
+            token = os.environ.get('GHCR_TOKEN', '')
+            if not username or not token:
+                raise SystemExit('ephemeral GHCR credentials are incomplete')
+            encoded = base64.b64encode(f'{username}:{token}'.encode('utf-8')).decode('ascii')
+            Path(sys.argv[1]).write_text(
+                json.dumps({'auths': {'ghcr.io': {'auth': encoded}}}, separators=(',', ':')) + '\n',
+                'utf-8',
+            )
+            PY
+            chmod 0600 "$DOCKER_AUTH_DIR/config.json"
+            unset GHCR_TOKEN
             run_root env \
+              DOCKER_CONFIG="$DOCKER_AUTH_DIR" \
               SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION" \
               SOVEREIGN_MCP_TUNNEL_MODE=disabled \
               bash "$SOURCE_DIR/deploy/install-on-vps.sh"
