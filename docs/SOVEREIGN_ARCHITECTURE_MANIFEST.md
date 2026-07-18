@@ -435,6 +435,8 @@ Request
 
 **BELEGT:** Agents-SDK-Aufrufe sind code-seitig auf den Alias `sovereign-fast` beschränkt. Dieser Alias muss auf `gpt-5.4-mini` zeigen, als Standardroute mit mindestens `×4` konfiguriert sein, aktiv sein und verifizierte Preis-Metadaten besitzen. Fehlt eine dieser Bedingungen, blockiert der Agents-SDK-Lauf vor Provider-Ausführung.
 
+**BELEGT:** Sowohl die sichtbare Swarm-Route als auch die owner-scoped Controller-Bridge erzeugen für Start und Resume denselben `AgentStageBilling`-Vertrag. Ein fehlender Alias oder ungeprüfter Preis wird als persistierter `BLOCKED`-Zustand mit konkreter `nextAction` zurückgegeben; bei Resume wird dabei die bereits beanspruchte Lease gebunden und freigegeben. Die Runtime-Contracts prüfen zusätzlich, dass in diesem Blockerpfad keine Usage-Reservation und damit keine Provider-Ausführung begonnen wurde.
+
 ## 8.5 Canary und Readiness
 
 - Liveliness beweist nur Prozessleben.

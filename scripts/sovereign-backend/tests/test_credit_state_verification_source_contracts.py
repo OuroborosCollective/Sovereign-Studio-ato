@@ -40,7 +40,8 @@ def test_credit_transition_verifies_ledger_cache_before_mutation() -> None:
         assert "ledger_balance != cached_balance" in helper
         assert "CreditStateConflict" in helper
         assert "INSERT INTO credit_ledger" in helper
-        assert "UPDATE admin_users SET credits = %s" in helper
+        assert "UPDATE admin_users" in helper
+        assert "SET credits = %s" in helper
         assert "conn.commit()" in helper
         assert "conn.rollback()" in helper
 

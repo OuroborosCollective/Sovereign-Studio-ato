@@ -25,6 +25,7 @@ def _install_agents_sdk_routing_stubs(monkeypatch) -> None:
     agents_module = types.ModuleType("agents")
     models_module = types.ModuleType("agents.models")
     provider_module = types.ModuleType("agents.models.openai_provider")
+    model_settings_module = types.ModuleType("agents.model_settings")
     run_config_module = types.ModuleType("agents.run_config")
 
     class OpenAIProvider:
@@ -37,19 +38,30 @@ def _install_agents_sdk_routing_stubs(monkeypatch) -> None:
         def __init__(
             self,
             *,
+            model,
             model_provider,
+            model_settings,
             tracing_disabled,
             trace_include_sensitive_data,
         ):
+            self.model = model
             self.model_provider = model_provider
+            self.model_settings = model_settings
             self.tracing_disabled = tracing_disabled
             self.trace_include_sensitive_data = trace_include_sensitive_data
 
+    class ModelSettings:
+        def __init__(self, *, max_tokens, include_usage):
+            self.max_tokens = max_tokens
+            self.include_usage = include_usage
+
     provider_module.OpenAIProvider = OpenAIProvider
+    model_settings_module.ModelSettings = ModelSettings
     run_config_module.RunConfig = RunConfig
     monkeypatch.setitem(sys.modules, "agents", agents_module)
     monkeypatch.setitem(sys.modules, "agents.models", models_module)
     monkeypatch.setitem(sys.modules, "agents.models.openai_provider", provider_module)
+    monkeypatch.setitem(sys.modules, "agents.model_settings", model_settings_module)
     monkeypatch.setitem(sys.modules, "agents.run_config", run_config_module)
 
 
@@ -112,7 +124,11 @@ def test_agents_sdk_loads_only_internal_litellm_service_key(monkeypatch, tmp_pat
     assert "OPENAI_API_KEY" not in os.environ
     assert "OPENAI_BASE_URL" not in os.environ
     assert type(swarm_runtime._RUN_CONFIG).__name__ == "RunConfig"
+    assert swarm_runtime._RUN_CONFIG.model == "sovereign-fast"
     assert type(swarm_runtime._RUN_CONFIG.model_provider).__name__ == "OpenAIProvider"
+    assert type(swarm_runtime._RUN_CONFIG.model_settings).__name__ == "ModelSettings"
+    assert swarm_runtime._RUN_CONFIG.model_settings.max_tokens == 2048
+    assert swarm_runtime._RUN_CONFIG.model_settings.include_usage is True
     assert swarm_runtime._RUN_CONFIG.tracing_disabled is True
     assert swarm_runtime._RUN_CONFIG.trace_include_sensitive_data is False
 
@@ -133,10 +149,11 @@ def test_agents_sdk_runner_receives_explicit_litellm_run_config(monkeypatch, tmp
 
     class CapturingRunner:
         @staticmethod
-        async def run(agent, prompt, *, run_config):
+        async def run(agent, prompt, *, run_config, max_turns):
             captured["agent"] = agent
             captured["prompt"] = prompt
             captured["run_config"] = run_config
+            captured["max_turns"] = max_turns
             return "ok"
 
     result = asyncio.run(
@@ -148,6 +165,7 @@ def test_agents_sdk_runner_receives_explicit_litellm_run_config(monkeypatch, tmp
         "agent": "agent",
         "prompt": "prompt",
         "run_config": swarm_runtime._RUN_CONFIG,
+        "max_turns": 1,
     }
 
 

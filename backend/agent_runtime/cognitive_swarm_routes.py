@@ -187,6 +187,102 @@ def _stored_run_to_api(run: Any) -> dict[str, object]:
     }
 
 
+def _billing_blocker_contract(exc: AgentBillingError) -> tuple[str, str]:
+    """Return a bounded reason/action pair without exposing provider details."""
+
+    contracts = {
+        "AGENTS_LITELLM_ALIAS_NOT_READY": (
+            "The Agents SDK LiteLLM alias is not active and ready for paid execution.",
+            "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE",
+        ),
+        "AGENTS_ROUTE_PRICING_UNVERIFIED": (
+            "The Agents SDK route has no verified provider pricing contract.",
+            "VERIFY_LITELLM_ROUTE_PRICING",
+        ),
+        "AGENTS_PROVIDER_MODEL_MISMATCH": (
+            "The Agents SDK route does not target the required provider model.",
+            "ATTACH_EXPECTED_LITELLM_PROVIDER_MODEL",
+        ),
+        "AGENTS_STANDARD_ROUTE_REQUIRED": (
+            "The Agents SDK route does not satisfy the standard cost-policy floor.",
+            "CONFIGURE_STANDARD_LITELLM_ROUTE",
+        ),
+        "AGENT_INPUT_COST_BOUND_EXCEEDED": (
+            "The Agents SDK input exceeds the bounded cost envelope.",
+            "REDUCE_AGENT_INPUT_OR_SPLIT_STAGE",
+        ),
+        "AGENT_BILLING_USER_NOT_FOUND": (
+            "The authenticated owner has no billable account state.",
+            "RESTORE_AGENT_BILLING_ACCOUNT",
+        ),
+        "CREDIT_STATE_VERIFICATION_FAILED": (
+            "The cached credit balance does not match the verified ledger balance.",
+            "RECONCILE_CREDIT_LEDGER_AND_CACHE",
+        ),
+        "PAID_CREDIT_PURCHASE_REQUIRED": (
+            "The Agents SDK route requires credits backed by a verified purchase.",
+            "PURCHASE_PAID_CREDITS",
+        ),
+        "INSUFFICIENT_PROVIDER_FUNDED_CREDITS": (
+            "The Agents SDK cost reservation is not backed by enough provider-funded credits.",
+            "PURCHASE_OR_REPLENISH_PROVIDER_FUNDED_CREDITS",
+        ),
+        "AGENT_ACTUAL_COST_EXCEEDED_RESERVATION": (
+            "The verified provider cost exceeded the reserved provider-funded credits.",
+            "PURCHASE_OR_REPLENISH_PROVIDER_FUNDED_CREDITS",
+        ),
+    }
+    return contracts.get(
+        exc.family,
+        (
+            "The Agents SDK billing contract blocked model execution.",
+            "REVIEW_AGENT_BILLING_CONFIGURATION",
+        ),
+    )
+
+
+def _persist_billing_blocker(
+    *,
+    get_connection: ConnectionFactory,
+    user_id: str,
+    run_id: str,
+    trace_id: str,
+    exc: AgentBillingError,
+    task_id: str | None = None,
+    expected_lease_token: str | None = None,
+) -> dict[str, str]:
+    reason, next_action = _billing_blocker_contract(exc)
+    provider_execution_prevented = exc.family != "AGENT_ACTUAL_COST_EXCEEDED_RESERVATION"
+    evidence_summary = (
+        "The model call was blocked before provider execution."
+        if provider_execution_prevented
+        else "The completed provider call requires billing reconciliation before the run may continue."
+    )
+    conn = get_connection()
+    try:
+        return transition_agent_run(
+            conn,
+            user_id=user_id,
+            run_id=run_id,
+            status="BLOCKED",
+            source="agents-sdk",
+            trace_id=trace_id,
+            reason=reason,
+            next_action=next_action,
+            evidence_kind="agent_billing_blocker",
+            evidence_summary=evidence_summary,
+            evidence_payload={
+                **exc.safe_payload(),
+                "providerExecutionPrevented": provider_execution_prevented,
+            },
+            agent_id="billing",
+            task_id=task_id,
+            expected_lease_token=expected_lease_token,
+        )
+    finally:
+        _close_connection(conn)
+
+
 def execute_persisted_swarm(
     *,
     get_connection: ConnectionFactory,
@@ -438,11 +534,12 @@ def execute_persisted_swarm(
     except Exception as exc:
         billing_failure = isinstance(exc, AgentBillingError)
         if billing_failure:
+            billing_reason, billing_next_action = _billing_blocker_contract(exc)
             failure = exc.safe_payload()
             failure.update({
                 "failureStage": "billing",
                 "errorType": type(exc).__name__,
-                "nextAction": "PURCHASE_OR_REPLENISH_PROVIDER_FUNDED_CREDITS",
+                "nextAction": billing_next_action,
                 "retryable": False,
                 "httpStatus": exc.status_code,
                 "requestId": None,
@@ -463,7 +560,11 @@ def execute_persisted_swarm(
         failure_family = str(failure["failureFamily"])
         failure_stage = str(failure["failureStage"])
         failure_next_action = str(failure["nextAction"])
-        failure_reason = f"Agents SDK execution failed at {failure_stage} ({failure_family})."
+        failure_reason = (
+            billing_reason
+            if billing_failure
+            else f"Agents SDK execution failed at {failure_stage} ({failure_family})."
+        )
         try:
             conn = get_connection()
             try:
@@ -607,37 +708,37 @@ def start_cognitive_swarm_run(
             "errorType": type(exc).__name__,
         }, 503
 
-    stage_billing = AgentStageBilling(
-        get_connection=get_connection,
-        user_id=user_id,
-        run_id=resolved_run_id,
-        trace_id=resolved_trace_id,
-    )
     try:
+        stage_billing = AgentStageBilling(
+            get_connection=get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+        )
         mission_intent = asyncio.run(classify_mission_intent(
             normalized_mission,
             model=normalized_model,
             stage_billing=stage_billing,
         ))
     except AgentBillingError as exc:
-        conn = get_connection()
         try:
-            intent_state = transition_agent_run(
-                conn,
+            intent_state = _persist_billing_blocker(
+                get_connection=get_connection,
                 user_id=user_id,
                 run_id=resolved_run_id,
-                status="BLOCKED",
-                source="agents-sdk",
                 trace_id=resolved_trace_id,
-                reason="The Agents SDK cost reservation was not backed by verified paid credits.",
-                next_action="PURCHASE_OR_REPLENISH_PROVIDER_FUNDED_CREDITS",
-                evidence_kind="agent_billing_blocker",
-                evidence_summary="The model call was blocked before provider execution.",
-                evidence_payload=exc.safe_payload(),
-                agent_id="billing",
+                exc=exc,
             )
-        finally:
-            _close_connection(conn)
+        except Exception as persistence_exc:
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": resolved_run_id,
+                "traceId": resolved_trace_id,
+                "receivedEvidenceId": received_state["evidenceId"],
+                "blocker": "AGENT_BILLING_BLOCKER_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(persistence_exc).__name__,
+            }, 503
         return {
             "ok": False,
             "runtime": "openai-agents-sdk",
@@ -1030,12 +1131,51 @@ def resume_cognitive_swarm_run(
         "New runtime evidence:\n"
         f"{normalized_evidence or '[no new evidence supplied]'}"
     )
-    stage_billing = AgentStageBilling(
-        get_connection=get_connection,
-        user_id=user_id,
-        run_id=claim.run.run_id,
-        trace_id=resolved_trace_id,
-    )
+    try:
+        stage_billing = AgentStageBilling(
+            get_connection=get_connection,
+            user_id=user_id,
+            run_id=claim.run.run_id,
+            trace_id=resolved_trace_id,
+        )
+    except AgentBillingError as exc:
+        try:
+            blocked_state = _persist_billing_blocker(
+                get_connection=get_connection,
+                user_id=user_id,
+                run_id=claim.run.run_id,
+                trace_id=resolved_trace_id,
+                exc=exc,
+                task_id=claim.task_id,
+                expected_lease_token=claim.lease_token,
+            )
+        except Exception as persistence_exc:
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": claim.run.run_id,
+                "traceId": resolved_trace_id,
+                "resumeClaimEvidenceId": claim.evidence_id,
+                "resumed": True,
+                "blocker": "AGENT_BILLING_BLOCKER_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(persistence_exc).__name__,
+            }, 503
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "traceId": resolved_trace_id,
+            "status": blocked_state["status"],
+            "source": blocked_state["source"],
+            "evidenceId": blocked_state["evidenceId"],
+            "resumeClaimEvidenceId": claim.evidence_id,
+            "resumed": True,
+            "blocker": exc.family,
+            "reason": blocked_state["reason"],
+            "nextAction": blocked_state["nextAction"],
+            "requiredCredits": exc.required_credits,
+            "availableProviderFundedCredits": exc.available_credits,
+        }, exc.status_code
     return execute_persisted_swarm(
         get_connection=get_connection,
         user_id=user_id,

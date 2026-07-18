@@ -18,7 +18,12 @@ from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
-async def _read_only_intent(mission: str, *, model: str | None = None) -> MissionIntent:
+async def _read_only_intent(
+    mission: str,
+    *,
+    model: str | None = None,
+    stage_billing: Any = None,
+) -> MissionIntent:
     return MissionIntent(
         mode="read_only_analysis",
         normalized_goal=mission.strip(),
@@ -56,6 +61,22 @@ class FakeCursor:
         self.factory.calls.append((self.last_sql, params))
 
     def fetchone(self):
+        if "FROM llm_routes" in self.last_sql:
+            if not self.factory.route_ready:
+                return None
+            return {
+                "model_id": "sovereign-fast",
+                "config": {
+                    "providerModel": "gpt-5.4-mini",
+                    "billingCategory": "standard",
+                    "markupMultiplier": 4,
+                    "inputUsdPerMillion": "0.25",
+                    "cachedInputUsdPerMillion": "0.025",
+                    "outputUsdPerMillion": "2.00",
+                    "pricingVerified": True,
+                    "pricingSource": "test-fixture",
+                },
+            }
         if self.factory.fetchone_rows:
             return self.factory.fetchone_rows.pop(0)
         if "RETURNING run_id" in self.last_sql:
@@ -85,8 +106,9 @@ class FakeConnection:
 
 
 class FakeConnectionFactory:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, route_ready: bool = True) -> None:
         self.fail = fail
+        self.route_ready = route_ready
         self.calls: list[tuple[str, Any]] = []
         self.connections: list[FakeConnection] = []
         self.fetchone_rows: list[dict[str, Any]] = []
@@ -157,7 +179,7 @@ def test_swarm_manifest_route_reports_exact_topology(monkeypatch) -> None:
     assert payload["manifest"]["coreAgentCount"] == 8
     assert payload["manifest"]["maxActiveSpecialists"] == 4
     assert payload["manifest"]["autoMerge"] is False
-    assert payload["allowedModels"] == ["sovereign-balanced"]
+    assert payload["allowedModels"] == ["sovereign-fast"]
 
 
 def test_allowed_models_drop_direct_provider_identifiers(monkeypatch) -> None:
@@ -189,6 +211,29 @@ def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
     assert factory.commits == 2
     assert any("INSERT INTO agent_runs" in sql for sql, _ in factory.calls)
     assert any("UPDATE agent_runs" in sql for sql, _ in factory.calls)
+
+
+def test_swarm_start_persists_route_blocker_before_provider_execution(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    factory = FakeConnectionFactory(route_ready=False)
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={"mission": "Inspect the configured Agents SDK route."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload["status"] == "BLOCKED"
+    assert payload["blocker"] == "AGENTS_LITELLM_ALIAS_NOT_READY"
+    assert payload["nextAction"] == "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE"
+    assert payload["receivedEvidenceId"].startswith("evidence-")
+    assert payload["evidenceId"].startswith("evidence-")
+    assert factory.commits == 2
+    assert any("FROM llm_routes" in sql for sql, _ in factory.calls)
+    assert any("UPDATE agent_runs" in sql for sql, _ in factory.calls)
+    assert not any("INSERT INTO llm_usage_settlements" in sql for sql, _ in factory.calls)
 
 
 def test_swarm_persists_core_agent_stage_events_for_chat_widget(monkeypatch) -> None:
@@ -341,6 +386,29 @@ def test_swarm_resume_claims_run_reconstructs_task_and_finishes_with_same_lease(
     assert sum("UPDATE agent_runs" in sql for sql, _ in factory.calls) == 2
     assert any("UPDATE agent_tasks" in sql for sql, _ in factory.calls)
     assert any("lease_token = %s" in sql for sql, _ in factory.calls)
+
+
+def test_swarm_resume_persists_route_blocker_with_claimed_lease(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    factory = FakeConnectionFactory(route_ready=False)
+    factory.fetchone_rows = [_stored_run_row()]
+    client = _app(factory).test_client()
+
+    response = client.post(
+        "/api/user/agent/swarm/runs/run-resumable/resume",
+        json={"evidence": "Resume only if the paid route is ready."},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 503
+    assert payload["status"] == "BLOCKED"
+    assert payload["resumed"] is True
+    assert payload["blocker"] == "AGENTS_LITELLM_ALIAS_NOT_READY"
+    assert payload["nextAction"] == "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE"
+    assert payload["resumeClaimEvidenceId"].startswith("evidence-")
+    assert factory.commits == 2
+    assert any("lease_token = %s" in sql for sql, _ in factory.calls)
+    assert not any("INSERT INTO llm_usage_settlements" in sql for sql, _ in factory.calls)
 
 
 def test_resume_repository_handoff_failure_persists_recoverable_state_with_same_lease(monkeypatch) -> None:
