@@ -87,6 +87,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     launcher = (ROOT / "launcher.py").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
+    assert 'document_pipeline.py' in installer
     assert 'tool_extensions.py' in installer
     assert 'repository_skill_tools.py' in installer
     assert 'deterministic_contract.py' in installer
@@ -100,6 +101,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'openjdk-17-jdk-headless' not in dockerfile
     assert 'SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions' in dockerfile
     assert 'android_hardening.py' in dockerfile
+    assert 'document_pipeline.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
     assert 'deterministic_contract.py' in dockerfile

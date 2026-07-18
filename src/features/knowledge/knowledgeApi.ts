@@ -3,6 +3,9 @@ const API_BASE = (
   || 'https://sovereign-backend.arelorian.de'
 ).replace(/\/$/, '');
 
+export const MAX_KNOWLEDGE_UPLOAD_BYTES = 12 * 1024 * 1024;
+export const MAX_PDF_UPLOAD_BYTES = 33 * 1024 * 1024;
+
 export type KnowledgeSourceType = 'github' | 'wikipedia' | 'pdf' | 'markdown' | 'text' | 'code';
 export type KnowledgeUploadStatus = 'preparing' | 'uploading' | 'verifying' | 'processing' | 'completed' | 'blocked';
 export type KnowledgeSourceStatus = 'processing' | 'ready' | 'partial' | 'blocked';
@@ -97,6 +100,13 @@ export async function uploadKnowledgeFile(
   onStatus?: (status: KnowledgeUploadStatus) => void,
 ): Promise<{ duplicate: boolean; source: KnowledgeSource; blocker?: string | null }> {
   onStatus?.('preparing');
+  const maximum = file.name.toLowerCase().endsWith('.pdf')
+    ? MAX_PDF_UPLOAD_BYTES
+    : MAX_KNOWLEDGE_UPLOAD_BYTES;
+  if (file.size > maximum) {
+    onStatus?.('blocked');
+    throw new Error(`Datei überschreitet das ${maximum / (1024 * 1024)}-MB-Limit.`);
+  }
   const sha256 = await fileSha256(file);
   const ticketResponse = await fetch(`${API_BASE}/api/knowledge/sources/upload-ticket`, {
     method: 'POST',
