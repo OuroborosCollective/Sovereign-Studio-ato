@@ -119,6 +119,24 @@ def test_live_canary_correlates_start_stream_task_controller_and_resume(monkeypa
     assert session.calls[6]["json"]["message"]["taskId"] == RUN_ID
 
 
+def test_json_request_exposes_only_bounded_structured_a2a_error_reason(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([
+        FakeResponse(400, {
+            "error": {
+                "status": "INVALID_ARGUMENT",
+                "message": "sensitive detail must not be projected",
+                "details": [{"reason": "INVALID_REQUEST"}],
+            }
+        }),
+    ])
+    client = A2ARuntimeClient(session=session)
+
+    with pytest.raises(RuntimeError, match=r"HTTP 400 \(INVALID_REQUEST\)") as exc:
+        client._json_request("POST", "/a2a/v1/message:send", body={})
+    assert "sensitive detail" not in str(exc.value)
+
+
 def test_live_canary_rejects_invalid_revision_before_network(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     session = FakeSession([])
