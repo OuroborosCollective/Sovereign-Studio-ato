@@ -77,63 +77,7 @@ export interface SovereignDraftPrPreparationResponse {
     canCreateDraftPr?: boolean;
     blockers: string[];
   };
-}
-
-export interface SovereignDraftPrCreateResponse {
-  ok: boolean;
-  jobId: string;
-  draftPrCreate: {
-    allowed: boolean;
-    status: string;
-    prUrl?: string;
-    blocker?: string;
-    summary?: string;
-  };
-}
-
-export interface SovereignDraftPrPreparationResponse {
   learningEvidence?: SovereignPatternLearningEvidence;
-}
-
-export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
-  evidenceText?: string;
-  provisionWorkspace?: boolean;
-  cloneRepo?: boolean;
-}
-
-export interface SovereignToolchainFailureFamily {
-  code: string;
-  title: string;
-  severity: string;
-  score: number;
-  checks: string[];
-}
-
-export interface SovereignToolchainFollowup {
-  fromFamily: string;
-  prediction: string;
-  checkNext: string;
-}
-
-export interface SovereignToolchainDiagnosis {
-  evidenceHash?: string;
-  failureFamilies: SovereignToolchainFailureFamily[];
-  nextLogicalFailures: SovereignToolchainFollowup[];
-}
-
-export interface SovereignDraftPrPreparationResponse {
-  ok: boolean;
-  jobId: string;
-  draftPrPreparation: {
-    allowed: boolean;
-    decision: string;
-    summary?: string;
-    headBranch?: string;
-    baseBranch?: string;
-    nextAction?: string;
-    canCreateDraftPr?: boolean;
-    blockers: string[];
-  };
 }
 
 export interface SovereignDraftPrCreateResponse {
