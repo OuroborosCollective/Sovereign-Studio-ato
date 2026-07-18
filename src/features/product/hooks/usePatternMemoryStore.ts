@@ -62,12 +62,16 @@ function lsSet<T>(key: string, value: T): void {
 export function loadPatternMemoryStoreFromStorage(): PatternMemoryStore {
   const candidate = lsGet<PatternMemoryStore>(PATTERN_MEMORY_LS_KEY);
   if (!candidate) return createPatternMemoryStore();
-  const report = validatePatternMemoryStore(candidate);
-  if (!report.valid) return createPatternMemoryStore();
-  const acceptedEntries = candidate.entries.filter((entry) => entry.verified && Boolean(entry.vectorRef));
-  return acceptedEntries.length === candidate.entries.length
-    ? candidate
-    : { ...candidate, entries: acceptedEntries };
+  try {
+    const report = validatePatternMemoryStore(candidate);
+    if (!report.valid) return createPatternMemoryStore();
+    const acceptedEntries = candidate.entries.filter((entry) => entry.verified && Boolean(entry.vectorRef));
+    return acceptedEntries.length === candidate.entries.length
+      ? candidate
+      : { ...candidate, entries: acceptedEntries };
+  } catch {
+    return createPatternMemoryStore();
+  }
 }
 
 // ── Public: structural type for appendChatLine ────────────────────────────────

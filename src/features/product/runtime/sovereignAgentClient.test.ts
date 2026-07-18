@@ -125,7 +125,6 @@ describe('SovereignAgentClient', () => {
       decision: 'accepted',
       vectorStored: true,
       vectorStorage: 'pgvector',
-      vectorReason: undefined,
     });
     expect(creation.draftPrCreate.prUrl).toContain('/pull/999');
     expect(finalJob.draftPrUrl).toContain('/pull/999');

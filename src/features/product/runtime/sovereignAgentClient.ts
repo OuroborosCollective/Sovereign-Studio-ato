@@ -309,14 +309,16 @@ function patternLearningEvidence(body: Record<string, unknown>): SovereignPatter
   const vector = isObject(body.vectorMemory) ? body.vectorMemory : undefined;
   const candidateId = stringValue(body.candidateId);
   if (!pattern && !vector && !candidateId) return undefined;
+  const vectorStorage = stringValue(vector?.storage);
+  const vectorReason = stringValue(vector?.reason);
   return {
-    candidateId,
     candidateCreated: body.candidateCreated === true,
     allowed: pattern?.allowed === true,
     decision: stringValue(pattern?.decision) || 'blocked',
     vectorStored: vector?.stored === true,
-    vectorStorage: stringValue(vector?.storage),
-    vectorReason: stringValue(vector?.reason),
+    ...(candidateId ? { candidateId } : {}),
+    ...(vectorStorage ? { vectorStorage } : {}),
+    ...(vectorReason ? { vectorReason } : {}),
   };
 }
 
