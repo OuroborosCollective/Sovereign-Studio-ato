@@ -129,9 +129,15 @@ class A2ARuntimeClient(ControllerRuntimeClient):
     @staticmethod
     def _task(payload: dict[str, Any]) -> dict[str, Any]:
         task = payload.get("task")
-        if not isinstance(task, dict):
-            raise RuntimeError("A2A response has no task")
-        return task
+        if isinstance(task, dict):
+            return task
+        if (
+            isinstance(payload.get("id"), str)
+            and isinstance(payload.get("contextId"), str)
+            and isinstance(payload.get("status"), dict)
+        ):
+            return payload
+        raise RuntimeError("A2A response has no task")
 
     @staticmethod
     def _state(task: dict[str, Any]) -> str:
