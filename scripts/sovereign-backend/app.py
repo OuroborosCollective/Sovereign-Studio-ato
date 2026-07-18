@@ -40,6 +40,7 @@ import requests
 from litellm_runtime import (
     extract_litellm_evidence,
     fetch_litellm,
+    litellm_completion_canary,
     litellm_readiness,
 )
 
@@ -835,30 +836,32 @@ def admin_update_llm_route(rid):
                 "error": "Direkte Provider-Routen dürfen nicht aktiviert werden",
                 "blocker": "direct_provider_route_blocked",
             }), 409
-        canary_response, canary_error = fetch_litellm(
-            "/v1/chat/completions",
-            method="POST",
-            json_data={
-                "model": str(route.get("model_id") or ""),
-                "messages": [{"role": "user", "content": "Reply with OK."}],
-                "temperature": 0,
-                "max_tokens": 8,
-                "stream": False,
-            },
-        )
-        if canary_error or canary_response is None or not canary_response.ok:
+        canary = litellm_completion_canary(str(route.get("model_id") or ""))
+        if not canary.get("ok"):
+            blocker = str(canary.get("blocker") or "litellm_route_canary_failed")
+            if blocker == "provider_quota_exhausted":
+                status_code = 402
+            elif blocker in {
+                "provider_credentials_rejected",
+                "litellm_model_alias_missing",
+                "litellm_model_alias_invalid",
+            }:
+                status_code = 409
+            elif canary.get("health") == "degraded":
+                status_code = 503
+            else:
+                status_code = 502
             return jsonify({
-                "error": "Route bleibt deaktiviert, weil die LiteLLM-Canary fehlgeschlagen ist",
-                "blocker": "litellm_route_canary_failed",
-            }), 502
-        try:
-            canary_payload = canary_response.json()
-        except ValueError:
-            return jsonify({"error": "LiteLLM-Canary lieferte kein gültiges JSON"}), 502
-        choices = canary_payload.get("choices", []) if isinstance(canary_payload, dict) else []
-        if not choices:
-            return jsonify({"error": "LiteLLM-Canary lieferte keine Modellantwort"}), 502
-        activation_evidence = extract_litellm_evidence(canary_response, canary_payload)
+                "ok": False,
+                "error": canary.get("error") or "Route bleibt deaktiviert, weil die LiteLLM-Canary fehlgeschlagen ist",
+                "blocker": blocker,
+                "health": canary.get("health") or "blocked",
+                "httpStatus": canary.get("httpStatus"),
+                "readinessVerified": bool(canary.get("readinessVerified")),
+                "completionVerified": False,
+                "routeRemainsDisabled": True,
+            }), status_code
+        activation_evidence = canary.get("evidence") or {}
     col_map = {
         "creditsPerUnit": "credits_per_unit",
         "disabled":       "disabled",
@@ -1636,138 +1639,57 @@ def admin_create_api_key():
 @app.route("/api/admin/llm/routes/<rid>/healthcheck", methods=["POST"])
 @require_admin
 def admin_llm_route_healthcheck(rid):
-    """Perform health check on an LLM route by actually pinging the endpoint."""
-    # Get route details (id is text, not uuid)
+    """Return provider-aware route evidence without reading route secret columns."""
     route = query(
         """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
-                  provider, base_url AS "baseUrl", api_key AS "apiKey"
+                  provider, disabled
            FROM llm_routes WHERE id = %s""",
         (rid,), one=True,
     )
-
     if not route:
         return jsonify({"error": "Route nicht gefunden"}), 404
 
-    provider = route.get("provider", "").lower()
-    base_url = route.get("baseUrl") or ""
-    model_name = route.get("modelName") or route.get("modelId") or "gpt-4"
-    health_status = "healthy"
-    blocker = None
-    response_time_ms = None
-    error_message = None
-
-    try:
-        # Build the appropriate health check request based on provider
-        headers = {"Content-Type": "application/json"}
-
-        if provider == "openai":
-            if not base_url:
-                base_url = "https://api.openai.com"
-            # Simple models list request for health check
-            url = f"{base_url.rstrip('/')}/v1/models"
-            if route.get("apiKey"):
-                headers["Authorization"] = f"Bearer {route['apiKey']}"
-            timeout = 10
-        elif provider == "anthropic":
-            if not base_url:
-                base_url = "https://api.anthropic.com"
-            # Health check via models endpoint
-            url = f"{base_url.rstrip('/')}/v1/models"
-            if route.get("apiKey"):
-                headers["x-api-key"] = route["apiKey"]
-                headers["anthropic-version"] = "2023-06-01"
-            timeout = 10
-        elif provider == "deepseek":
-            if not base_url:
-                base_url = "https://api.deepseek.com"
-            url = f"{base_url.rstrip('/')}/v1/models"
-            if route.get("apiKey"):
-                headers["Authorization"] = f"Bearer {route['apiKey']}"
-            timeout = 10
-        elif provider == "gemini":
-            if not base_url:
-                base_url = "https://generativelanguage.googleapis.com"
-            # Gemini health check via model list
-            url = f"{base_url.rstrip('/')}/v1beta1/models?pageSize=1"
-            if route.get("apiKey"):
-                headers["x-goog-api-key"] = route["apiKey"]
-            timeout = 10
-        elif provider == "mistral":
-            if not base_url:
-                base_url = "https://api.mistral.ai"
-            # Mistral health check via models endpoint
-            url = f"{base_url.rstrip('/')}/v1/models"
-            if route.get("apiKey"):
-                headers["Authorization"] = f"Bearer {route['apiKey']}"
-            timeout = 10
-        elif provider == "cloudflare":
-            # Cloudflare Worker AI health check
-            worker_url = WORKER_AI_BASE
-            url = f"{worker_url}/health"
-            timeout = 15
-        else:
-            # Generic health check for unknown providers
-            if not base_url:
-                health_status = "degraded"
-                blocker = "missing_base_url"
-                url = None
-            else:
-                url = f"{base_url.rstrip('/')}/health"
-                timeout = 10
-
-        if url:
-            start_time = time.time()
-            resp = requests.get(url, headers=headers, timeout=timeout)
-            response_time_ms = int((time.time() - start_time) * 1000)
-
-            if resp.status_code >= 500:
-                health_status = "degraded"
-                blocker = "server_error"
-                error_message = f"HTTP {resp.status_code}"
-            elif resp.status_code >= 400:
-                health_status = "degraded"
-                blocker = "client_error"
-                error_message = f"HTTP {resp.status_code}"
-            else:
-                health_status = "healthy"
-
-            # Validate response is JSON (API returned valid data)
-            content_type = resp.headers.get("content-type", "")
-            if "application/json" not in content_type and resp.status_code >= 400:
-                health_status = "degraded"
-                blocker = "invalid_response"
-                error_message = f"API Fehler: HTTP {resp.status_code} (erwartet JSON)"
-
-    except requests.exceptions.Timeout:
-        health_status = "degraded"
-        blocker = "timeout"
-        error_message = f"Request timeout after {timeout}s"
-    except requests.exceptions.ConnectionError as e:
-        health_status = "degraded"
-        blocker = "connection_error"
-        error_message = "Verbindung fehlgeschlagen"
-    except Exception as e:
-        health_status = "degraded"
-        blocker = "unknown_error"
-        error_message = str(e)[:100]
+    provider = str(route.get("provider") or "").strip().lower()
+    model_id = str(route.get("modelId") or "").strip()
+    model_name = str(route.get("modelName") or model_id or "").strip()
+    if provider == "litellm":
+        result = litellm_completion_canary(model_id)
+    else:
+        result = {
+            "ok": False,
+            "health": "blocked",
+            "blocker": "legacy_direct_provider_disabled",
+            "error": "Direkte Provider-Routen sind absichtlich deaktiviert. Nutzbar sind nur private LiteLLM-Routen.",
+            "httpStatus": None,
+            "responseTimeMs": None,
+            "readinessVerified": False,
+            "completionVerified": False,
+            "evidence": {},
+        }
 
     audit("admin_llm_healthcheck", rid, {
         "provider": provider,
-        "model": model_name,
-        "status": health_status,
-        "blocker": blocker,
-        "responseTimeMs": response_time_ms,
+        "model": model_id,
+        "status": result.get("health"),
+        "blocker": result.get("blocker"),
+        "httpStatus": result.get("httpStatus"),
+        "responseTimeMs": result.get("responseTimeMs"),
+        "routeDisabled": bool(route.get("disabled")),
     })
-
     return jsonify({
-        "ok": health_status == "healthy",
+        "ok": bool(result.get("ok")),
         "routeId": rid,
         "provider": provider,
         "model": model_name,
-        "health": health_status,
-        "blocker": blocker,
-        "error": error_message,
-        "responseTimeMs": response_time_ms,
+        "modelId": model_id,
+        "health": result.get("health") or "degraded",
+        "blocker": result.get("blocker"),
+        "error": result.get("error"),
+        "httpStatus": result.get("httpStatus"),
+        "responseTimeMs": result.get("responseTimeMs"),
+        "readinessVerified": bool(result.get("readinessVerified")),
+        "completionVerified": bool(result.get("completionVerified")),
+        "routeDisabled": bool(route.get("disabled")),
         "checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
 
@@ -5537,7 +5459,11 @@ async function loadKnowledge(){
   try{
     const data=await boundedFetch('/api/admin/knowledge/sources',{headers:hdr()});
     const sources=data.sources||[];
-    el.innerHTML=sources.length?sources.map(source=>`<div class="card"><div class="card-header"><span class="card-title">${esc(source.title)}</span><span class="badge ${source.status==='ready'?'on':'off'}">${esc(source.status)}</span></div><div style="color:var(--muted);font-size:12px;margin-top:8px">${esc(source.sourceType)} · ${source.chunkCount||0} Blöcke</div>${source.blocker?`<div style="color:var(--warn);font-size:11px">${esc(source.blocker)}</div>`:''}<button class="btn btn-danger" style="margin-top:8px" onclick="deleteKnowledgeAdmin('${source.id}')">Löschen</button></div>`).join(''):'<div style="color:var(--muted)">Noch keine Quellen.</div>';
+    const runtime=data.runtime||{};
+    const usable=runtime.importsUsable===true;
+    const summary=`<div class="card"><div class="card-header"><span class="card-title">Import- und Vectorstatus</span><span class="badge ${usable?'on':'off'}">${usable?'NUTZBAR':'PRÜFEN'}</span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;font-size:12px"><div>Bereit<br><strong>${Number(runtime.ready_sources||0)}</strong></div><div>Verarbeitung<br><strong>${Number(runtime.processing_sources||0)}</strong></div><div>Blockiert<br><strong>${Number(runtime.blocked_sources||0)}</strong></div><div>Vektoren<br><strong>${Number(runtime.embedded_blocks||0)}/${Number(runtime.unique_blocks||0)}</strong></div></div><div style="color:${Number(runtime.missing_embeddings||0)===0&&Number(runtime.orphan_links||0)===0?'var(--accent2)':'var(--warn)'};font-size:12px;margin-top:10px">Fehlende Embeddings: ${Number(runtime.missing_embeddings||0)} · Verwaiste Links: ${Number(runtime.orphan_links||0)} · ${esc(runtime.storage||'postgres-pgvector')}</div>${Number(data.reconciledStaleImports||0)>0?`<div style="color:var(--warn);font-size:12px;margin-top:8px">${Number(data.reconciledStaleImports)} unterbrochener Import wurde fail-closed als blockiert markiert und kann gezielt neu importiert werden.</div>`:''}</div>`;
+    const sourceCards=sources.length?sources.map(source=>`<div class="card"><div class="card-header"><span class="card-title">${esc(source.title)}</span><span class="badge ${source.status==='ready'||source.status==='partial'?'on':'off'}">${esc(source.status)}</span></div><div style="color:var(--muted);font-size:12px;margin-top:8px">${esc(source.sourceType)} · ${source.chunkCount||0} Blöcke</div>${source.blocker?`<div style="color:var(--warn);font-size:11px">${esc(source.blocker)}</div>`:''}<button class="btn btn-danger" style="margin-top:8px" onclick="deleteKnowledgeAdmin('${source.id}')">Löschen</button></div>`).join(''):'<div style="color:var(--muted)">Noch keine Quellen.</div>';
+    el.innerHTML=summary+sourceCards;
   }catch(error){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+esc(error.message)+' <button class="btn btn-ghost" onclick="loadKnowledge()">Erneut laden</button></div>'; }
 }
 function knowledgeMessage(text,ok){ const el=document.getElementById('knowledgeMsg'); el.textContent=text; el.className='msg '+(ok?'ok':'err'); el.style.display='block'; }
@@ -5851,10 +5777,9 @@ async function loadLLMRoutes(){
   const el = document.getElementById('llmList');
   el.innerHTML='<div style="color:var(--muted);font-size:14px">Lade… <span class="spin"></span></div>';
   try {
-    const r = await fetch(BASE+'/api/admin/llm/routes',{headers:hdr()});
-    const d = await r.json();
-    renderLLMRoutes(d);
-  } catch(e){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+e.message+'</div>'; }
+    const data = await boundedFetch('/api/admin/llm/routes',{headers:hdr()});
+    renderLLMRoutes(data);
+  } catch(error){ el.innerHTML='<div style="color:var(--danger)">Fehler: '+esc(error.message)+'</div>'; }
 }
 
 function renderLLMRoutes(d){
@@ -5905,8 +5830,17 @@ function toggleLLMCard(id){
 }
 
 async function toggleLLM(rid, disabled){
-  await fetch(BASE+'/api/admin/llm/routes/'+rid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})});
-  loadLLMRoutes();
+  let ok=false;
+  let message='Route gespeichert.';
+  try{
+    const result=await boundedFetch('/api/admin/llm/routes/'+rid,{method:'PATCH',headers:hdr(),body:JSON.stringify({disabled})},120000);
+    ok=Boolean(result.ok);
+    message=disabled?'Route deaktiviert.':'Route durch Completion-Canary bestätigt und aktiviert.';
+  }catch(error){
+    message=error.message;
+  }
+  await loadLLMRoutes();
+  showLLMMsg(rid,ok,message);
 }
 
 async function saveLLMCost(rid){
@@ -5932,24 +5866,31 @@ async function healthcheckLLM(rid){
   btn.innerHTML = '⏳ Teste…';
   status.textContent = '';
   try {
-    const r = await fetch(BASE+'/api/admin/llm/routes/'+rid+'/healthcheck',{method:'POST',headers:hdr()});
-    const d = await r.json();
-    if(d.health === 'healthy'){
-      status.textContent = '✓ Gesund';
-      status.style.color = 'var(--accent2)';
-    } else if(d.health === 'degraded'){
-      status.textContent = '⚠️ '+(d.blocker||'Beeinträchtigt');
-      status.style.color = 'var(--warn)';
-    } else {
-      status.textContent = '? Unbekannt';
-      status.style.color = 'var(--muted)';
+    const data=await boundedFetch('/api/admin/llm/routes/'+rid+'/healthcheck',{method:'POST',headers:hdr()},120000);
+    if(data.health==='healthy'&&data.completionVerified){
+      status.textContent='✓ Nutzbar';
+      status.style.color='var(--accent2)';
+    }else if(data.blocker==='provider_quota_exhausted'){
+      status.textContent='⛔ Provider-Kontingent erschöpft';
+      status.style.color='var(--danger)';
+    }else if(data.blocker==='legacy_direct_provider_disabled'){
+      status.textContent='⏸ Legacy-Direktroute absichtlich deaktiviert';
+      status.style.color='var(--muted)';
+    }else if(data.health==='blocked'){
+      status.textContent='⛔ '+(data.error||data.blocker||'Blockiert');
+      status.style.color='var(--danger)';
+    }else{
+      status.textContent='⚠️ '+(data.error||data.blocker||'Beeinträchtigt');
+      status.style.color='var(--warn)';
     }
-  } catch(e){
-    status.textContent = '✗ Fehler: '+e.message;
-    status.style.color = 'var(--danger)';
+    status.title=[data.blocker,data.httpStatus?'HTTP '+data.httpStatus:'',data.responseTimeMs!==null&&data.responseTimeMs!==undefined?data.responseTimeMs+' ms':''].filter(Boolean).join(' · ');
+  } catch(error){
+    status.textContent='✗ Healthcheck nicht ausführbar: '+error.message;
+    status.style.color='var(--danger)';
+  } finally {
+    btn.disabled=false;
+    btn.innerHTML='🔍 Healthcheck';
   }
-  btn.disabled = false;
-  btn.innerHTML = '🔍 Healthcheck';
 }
 
 /* ────── TOOLS ────── */

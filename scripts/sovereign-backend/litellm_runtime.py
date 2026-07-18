@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import time
 from typing import Any
 
 import requests
@@ -161,4 +162,202 @@ def extract_litellm_evidence(response: requests.Response, payload: Any) -> dict[
         **extract_litellm_usage(root),
         "upstreamRequestId": upstream_request_id,
         "providerCostUsd": provider_cost_usd,
+    }
+
+
+def _safe_error_material(payload: Any) -> tuple[str, str, str]:
+    root = payload if isinstance(payload, dict) else {}
+    error = root.get("error") if isinstance(root.get("error"), dict) else {}
+    code = str(error.get("code") or root.get("code") or "").strip().lower()[:120]
+    error_type = str(error.get("type") or root.get("type") or "").strip().lower()[:120]
+    message = str(error.get("message") or root.get("message") or "").strip().lower()[:500]
+    return code, error_type, message
+
+
+def classify_litellm_failure(
+    response: requests.Response | None,
+    transport_error: str = "",
+) -> dict[str, Any]:
+    """Map one failed internal request to a bounded non-secret operator state."""
+    normalized_transport = str(transport_error or "").strip()
+    if normalized_transport:
+        transport_map = {
+            "litellm_timeout": (
+                "degraded",
+                "litellm_timeout",
+                "LiteLLM hat nicht rechtzeitig geantwortet.",
+            ),
+            "litellm_unreachable": (
+                "degraded",
+                "litellm_unreachable",
+                "LiteLLM ist vom Backend derzeit nicht erreichbar.",
+            ),
+            "litellm_internal_key_unavailable": (
+                "blocked",
+                "litellm_internal_key_unavailable",
+                "Der interne LiteLLM-Servicezugang ist nicht verfügbar.",
+            ),
+            "litellm_request_failed": (
+                "degraded",
+                "litellm_request_failed",
+                "Der interne LiteLLM-Request ist fehlgeschlagen.",
+            ),
+        }
+        health, blocker, error = transport_map.get(
+            normalized_transport,
+            ("degraded", "litellm_request_failed", "Der interne LiteLLM-Request ist fehlgeschlagen."),
+        )
+        return {
+            "ok": False,
+            "health": health,
+            "blocker": blocker,
+            "error": error,
+            "httpStatus": None,
+        }
+
+    if response is None:
+        return {
+            "ok": False,
+            "health": "degraded",
+            "blocker": "litellm_request_failed",
+            "error": "Der interne LiteLLM-Request ist fehlgeschlagen.",
+            "httpStatus": None,
+        }
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    code, error_type, message = _safe_error_material(payload)
+    status = int(response.status_code)
+    combined = " ".join((code, error_type, message))
+
+    if status == 429 and ("insufficient_quota" in combined or "quota" in combined):
+        health, blocker, error = (
+            "blocked",
+            "provider_quota_exhausted",
+            "Das Provider-Kontingent ist erschöpft. Billing oder Guthaben beim Provider prüfen.",
+        )
+    elif status == 429:
+        health, blocker, error = (
+            "degraded",
+            "provider_rate_limited",
+            "Der Provider begrenzt Anfragen vorübergehend.",
+        )
+    elif status in {401, 403}:
+        health, blocker, error = (
+            "blocked",
+            "provider_credentials_rejected",
+            "Der Provider hat den hinterlegten Servicezugang abgelehnt.",
+        )
+    elif status == 404:
+        health, blocker, error = (
+            "blocked",
+            "litellm_model_alias_missing",
+            "Der konfigurierte Modellalias ist in LiteLLM nicht verfügbar.",
+        )
+    elif status >= 500:
+        health, blocker, error = (
+            "degraded",
+            "litellm_upstream_unavailable",
+            "LiteLLM oder der Upstream-Provider ist vorübergehend nicht bereit.",
+        )
+    else:
+        health, blocker, error = (
+            "blocked",
+            "provider_rejected",
+            "Der Provider hat den Modell-Canary abgelehnt.",
+        )
+    return {
+        "ok": False,
+        "health": health,
+        "blocker": blocker,
+        "error": error,
+        "httpStatus": status,
+    }
+
+
+def litellm_completion_canary(model_id: str) -> dict[str, Any]:
+    """Verify readiness plus one bounded completion without returning model content."""
+    normalized_model = str(model_id or "").strip()
+    if not normalized_model or len(normalized_model) > 200 or any(
+        character in normalized_model for character in ("\x00", "\n", "\r")
+    ):
+        return {
+            "ok": False,
+            "health": "blocked",
+            "blocker": "litellm_model_alias_invalid",
+            "error": "Der konfigurierte Modellalias ist ungültig.",
+            "httpStatus": None,
+            "responseTimeMs": None,
+            "readinessVerified": False,
+            "completionVerified": False,
+            "evidence": {},
+        }
+
+    readiness = litellm_readiness()
+    if not readiness.get("ok"):
+        return {
+            "ok": False,
+            "health": "degraded",
+            "blocker": str(readiness.get("errorCode") or "litellm_not_ready")[:120],
+            "error": "LiteLLM ist nicht bereit.",
+            "httpStatus": readiness.get("httpStatus"),
+            "responseTimeMs": None,
+            "readinessVerified": False,
+            "completionVerified": False,
+            "evidence": {},
+        }
+
+    started = time.monotonic()
+    response, transport_error = fetch_litellm(
+        "/v1/chat/completions",
+        method="POST",
+        json_data={
+            "model": normalized_model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "temperature": 0,
+            "max_tokens": 8,
+            "stream": False,
+        },
+    )
+    response_time_ms = max(0, int((time.monotonic() - started) * 1000))
+    if transport_error or response is None or not response.ok:
+        classified = classify_litellm_failure(response, transport_error)
+        return {
+            **classified,
+            "responseTimeMs": response_time_ms,
+            "readinessVerified": True,
+            "completionVerified": False,
+            "evidence": {},
+        }
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return {
+            "ok": False,
+            "health": "degraded",
+            "blocker": "litellm_invalid_completion_response",
+            "error": "LiteLLM lieferte keine verifizierbare Modellantwort.",
+            "httpStatus": response.status_code,
+            "responseTimeMs": response_time_ms,
+            "readinessVerified": True,
+            "completionVerified": False,
+            "evidence": extract_litellm_evidence(response, payload),
+        }
+
+    return {
+        "ok": True,
+        "health": "healthy",
+        "blocker": None,
+        "error": None,
+        "httpStatus": response.status_code,
+        "responseTimeMs": response_time_ms,
+        "readinessVerified": True,
+        "completionVerified": True,
+        "evidence": extract_litellm_evidence(response, payload),
     }
