@@ -66,6 +66,16 @@ describe('SovereignAgentClient', () => {
           canCreateDraftPr: true,
           blockers: [],
         },
+        candidateId: 'candidate-1',
+        candidateCreated: true,
+        patternLearning: {
+          allowed: true,
+          decision: 'accepted',
+        },
+        vectorMemory: {
+          stored: true,
+          storage: 'pgvector',
+        },
       },
       {
         ok: true,
@@ -108,6 +118,15 @@ describe('SovereignAgentClient', () => {
 
     expect(job.events.filter(event => event.stage === 'toolchain_predictive_handoff')).toHaveLength(4);
     expect(preparation.draftPrPreparation.allowed).toBe(true);
+    expect(preparation.learningEvidence).toEqual({
+      candidateId: 'candidate-1',
+      candidateCreated: true,
+      allowed: true,
+      decision: 'accepted',
+      vectorStored: true,
+      vectorStorage: 'pgvector',
+      vectorReason: undefined,
+    });
     expect(creation.draftPrCreate.prUrl).toContain('/pull/999');
     expect(finalJob.draftPrUrl).toContain('/pull/999');
     expect(JSON.parse(String(requestInits[0].body))).toMatchObject({

@@ -8,6 +8,7 @@ import { LlmAdapterProvider } from './features/product/contexts/LlmAdapterContex
 import {
   createSovereignAgentClient,
   type SovereignAgentStartJobInput,
+  type SovereignPatternLearningEvidence,
 } from './features/product/runtime/sovereignAgentClient';
 import {
   createSovereignAgentIdleSnapshot,
@@ -33,6 +34,9 @@ export default function App() {
     () => createSovereignAgentIdleSnapshot(),
   );
   const [janitorPreview, setJanitorPreview] = useState('');
+  const [patternLearningEvidence, setPatternLearningEvidence] = useState<
+    SovereignPatternLearningEvidence | undefined
+  >();
 
   useEffect(() => {
     if (!agentConfig.ready || agentJob.status !== 'idle') return;
@@ -102,6 +106,7 @@ export default function App() {
   const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
     setJanitorPreview('');
+    setPatternLearningEvidence(undefined);
     if (!agentConfig.ready) {
       setAgentJob({
         status: 'blocked',
@@ -286,7 +291,9 @@ export default function App() {
     }));
 
     try {
+      setPatternLearningEvidence(undefined);
       const preparation = await agentClient.prepareDraftPr(jobId);
+      setPatternLearningEvidence(preparation.learningEvidence);
       if (!preparation.ok || !preparation.draftPrPreparation.allowed) {
         throw new Error(
           preparation.draftPrPreparation.blockers.join('; ')
@@ -339,6 +346,7 @@ export default function App() {
           agentReady={agentConfig.ready}
           agentConfig={agentConfig}
           agentJob={agentJob}
+          patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning ? 'Sovereign Agent Auftrag läuft' : agentJob.lastError}
           agentIsRunning={agentIsRunning}
           onStartAgent={startChatOnlyTask}

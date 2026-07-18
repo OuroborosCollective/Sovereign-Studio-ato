@@ -2,13 +2,10 @@
  * Hook-level tests for usePatternMemoryStore — Issue #4
  *
  * Covers:
- *  - Sovereign Agent path: first draft_pr_ready saves pattern + appends chat line
- *  - Duplicate-guard: same PR URL never fires twice (within a session)
- *  - Second distinct PR URL fires again
- *  - Non-draft_pr_ready states are ignored
- *  - Null / missing draftPrUrl is ignored
- *  - Traditional publish path (publishedPrUrl prop) saves pattern
- *  - Duplicate-guard is shared across both paths (same URL = no double-save)
+ *  - Draft PR evidence alone never creates a learned pattern
+ *  - Accepted server candidate plus stored vector saves one verified cache entry
+ *  - Duplicate-guard uses candidate identity, not PR URL
+ *  - Agent and traditional publish paths share the same accepted evidence gate
  *  - localStorage is written whenever patternMemoryStore changes
  *  - loadPatternMemoryStoreFromStorage rehydrates a valid store
  *  - loadPatternMemoryStoreFromStorage falls back on corrupt data
@@ -71,6 +68,17 @@ function idleSnap(): AgentWorkSnapshot {
   return createIdleSnapshot('test-trace');
 }
 
+function acceptedLearning(candidateId = 'candidate-1') {
+  return {
+    candidateId,
+    candidateCreated: true,
+    allowed: true,
+    decision: 'accepted',
+    vectorStored: true,
+    vectorStorage: 'pgvector',
+  } as const;
+}
+
 function readySnap(prUrl: string): AgentWorkSnapshot {
   // Walk the evidence-backed state machine path to reach draft_pr_ready.
   const base = createIdleSnapshot('test-trace');
@@ -121,26 +129,26 @@ function makeOpts(overrides: Partial<UsePatternMemoryStoreOptions> = {}): {
 describe('Sovereign Agent path (agentWorkSnapshot)', () => {
   const PR_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/1';
 
-  it('saves a pattern when state transitions to draft_pr_ready', () => {
-    const { opts, stores } = makeOpts({ agentWorkSnapshot: readySnap(PR_URL) });
+  it('does not save from draft_pr_ready without accepted learning evidence', () => {
+    const { opts, stores, chatLines } = makeOpts({ agentWorkSnapshot: readySnap(PR_URL) });
     renderHook(() => usePatternMemoryStore(opts));
-    expect(stores.length).toBeGreaterThan(1);
-    expect(stores[stores.length - 1].entries).toHaveLength(1);
+    expect(stores).toHaveLength(1);
+    expect(chatLines).toHaveLength(0);
   });
 
-  it('appends exactly one assistant chat line', () => {
-    const { opts, chatLines } = makeOpts({ agentWorkSnapshot: readySnap(PR_URL) });
-    renderHook(() => usePatternMemoryStore(opts));
-    expect(chatLines).toHaveLength(1);
-    expect(chatLines[0].role).toBe('assistant');
-    expect(chatLines[0].text).toContain('✅');
-  });
-
-  it('saved pattern entry contains the PR URL as objectRef', () => {
-    const { opts, stores } = makeOpts({ agentWorkSnapshot: readySnap(PR_URL) });
+  it('saves one verified entry after the server confirms candidate and vector storage', () => {
+    const { opts, stores, chatLines } = makeOpts({
+      agentWorkSnapshot: readySnap(PR_URL),
+      learningEvidence: acceptedLearning(),
+    });
     renderHook(() => usePatternMemoryStore(opts));
     const entry = stores[stores.length - 1].entries[0];
     expect(entry.objectRef).toBe(PR_URL);
+    expect(entry.vectorRef).toBe('candidate-1');
+    expect(entry.verified).toBe(true);
+    expect(entry.localExecutable).toBe(false);
+    expect(chatLines).toHaveLength(1);
+    expect(chatLines[0].text).toContain('Serverseitig bestätigtes Pattern');
   });
 
   it('does nothing when state is idle', () => {
@@ -161,11 +169,14 @@ describe('Sovereign Agent path (agentWorkSnapshot)', () => {
 
 // ── Duplicate guard ──────────────────────────────────────────────────────────
 
-describe('Duplicate-guard (same PR URL)', () => {
+describe('Duplicate-guard (accepted candidate identity)', () => {
   const PR_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/10';
 
-  it('does not save a second time when snapshot re-renders with the same URL', () => {
-    const { opts, stores, chatLines } = makeOpts({ agentWorkSnapshot: readySnap(PR_URL) });
+  it('does not save a second time when the same candidate re-renders', () => {
+    const { opts, stores, chatLines } = makeOpts({
+      agentWorkSnapshot: readySnap(PR_URL),
+      learningEvidence: acceptedLearning('candidate-same'),
+    });
     const { rerender } = renderHook(
       (o: UsePatternMemoryStoreOptions) => usePatternMemoryStore(o),
       { initialProps: opts },
@@ -177,15 +188,22 @@ describe('Duplicate-guard (same PR URL)', () => {
     expect(chatLines).toHaveLength(1);           // only one chat line
   });
 
-  it('saves again when a different PR URL arrives', () => {
+  it('saves again only when a different accepted candidate arrives', () => {
     const PR2 = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/11';
-    const { opts, stores, chatLines } = makeOpts({ agentWorkSnapshot: readySnap(PR_URL) });
+    const { opts, stores, chatLines } = makeOpts({
+      agentWorkSnapshot: readySnap(PR_URL),
+      learningEvidence: acceptedLearning('candidate-10'),
+    });
     const { rerender } = renderHook(
       (o: UsePatternMemoryStoreOptions) => usePatternMemoryStore(o),
       { initialProps: opts },
     );
     act(() => {
-      rerender({ ...opts, agentWorkSnapshot: readySnap(PR2) });
+      rerender({
+        ...opts,
+        agentWorkSnapshot: readySnap(PR2),
+        learningEvidence: acceptedLearning('candidate-11'),
+      });
     });
     expect(chatLines).toHaveLength(2);
     expect(stores[stores.length - 1].entries).toHaveLength(2);
@@ -197,33 +215,35 @@ describe('Duplicate-guard (same PR URL)', () => {
 describe('Traditional publish path (publishedPrUrl)', () => {
   const PR_URL = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/99';
 
-  it('saves a pattern when publishedPrUrl is set', () => {
-    const { opts, stores } = makeOpts({
+  it('does not save when publishedPrUrl is the only signal', () => {
+    const { opts, stores, chatLines } = makeOpts({
       agentWorkSnapshot: idleSnap(),
       publishedPrUrl: PR_URL,
     });
     renderHook(() => usePatternMemoryStore(opts));
-    expect(stores[stores.length - 1].entries).toHaveLength(1);
+    expect(stores).toHaveLength(1);
+    expect(chatLines).toHaveLength(0);
   });
 
-  it('appends a chat line when publishedPrUrl is set', () => {
-    const { opts, chatLines } = makeOpts({
+  it('saves from the traditional path only with accepted learning evidence', () => {
+    const { opts, stores, chatLines } = makeOpts({
       agentWorkSnapshot: idleSnap(),
       publishedPrUrl: PR_URL,
+      learningEvidence: acceptedLearning('candidate-traditional'),
     });
     renderHook(() => usePatternMemoryStore(opts));
+    expect(stores[stores.length - 1].entries[0].vectorRef).toBe('candidate-traditional');
     expect(chatLines).toHaveLength(1);
-    expect(chatLines[0].role).toBe('assistant');
   });
 
-  it('does not save a second pattern when the same URL arrives via both paths', () => {
+  it('does not double-save when both paths carry the same accepted candidate', () => {
     const { opts, stores, chatLines } = makeOpts({
       agentWorkSnapshot: readySnap(PR_URL),
       publishedPrUrl: PR_URL,
+      learningEvidence: acceptedLearning('candidate-shared'),
     });
     renderHook(() => usePatternMemoryStore(opts));
-    // Both effects fire but the Set guard blocks the second one.
-    expect(stores.filter((s) => s.entries.length > 0).length).toBeGreaterThan(0);
+    expect(stores[stores.length - 1].entries).toHaveLength(1);
     expect(chatLines).toHaveLength(1);
   });
 
@@ -272,7 +292,7 @@ describe('loadPatternMemoryStoreFromStorage', () => {
     expect(store.entries).toHaveLength(0);
   });
 
-  it('rehydrates a valid store from localStorage', () => {
+  it('rehydrates a valid accepted-only store from localStorage', () => {
     const saved = { version: 1, entries: [], updatedAt: 99999 };
     lsStub.setItem(PATTERN_MEMORY_LS_KEY, JSON.stringify(saved));
     const store = loadPatternMemoryStoreFromStorage();
@@ -283,6 +303,38 @@ describe('loadPatternMemoryStoreFromStorage', () => {
     lsStub.setItem(PATTERN_MEMORY_LS_KEY, 'not-json{{{');
     const store = loadPatternMemoryStoreFromStorage();
     expect(store.entries).toHaveLength(0);
+  });
+
+  it('filters legacy entries without verified vector evidence', () => {
+    const saved = {
+      version: 1,
+      updatedAt: 99999,
+      entries: [{
+        patternId: 'pattern-old',
+        kind: 'solution_pattern',
+        title: 'Legacy URL-only pattern',
+        summary: 'Not server accepted',
+        tags: [],
+        problemClass: 'legacy',
+        problemFingerprint: 'fingerprint-old',
+        solutionFingerprint: 'solution-old',
+        solutionOutline: [],
+        riskNotes: [],
+        verificationSteps: [],
+        sourceTraceId: 'workflow:old',
+        confidence: 0.7,
+        confidenceRationale: 'old',
+        reusePolicy: 'suggest_only',
+        objectRef: PR_URL,
+        vectorRef: null,
+        verified: false,
+        localExecutable: false,
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+    };
+    lsStub.setItem(PATTERN_MEMORY_LS_KEY, JSON.stringify(saved));
+    expect(loadPatternMemoryStoreFromStorage().entries).toHaveLength(0);
   });
 
   it('falls back to an empty store when the stored object fails validation', () => {

@@ -13,6 +13,16 @@ export interface SovereignAgentClientOptions {
   now?: () => number;
 }
 
+export interface SovereignPatternLearningEvidence {
+  candidateId?: string;
+  candidateCreated: boolean;
+  allowed: boolean;
+  decision: string;
+  vectorStored: boolean;
+  vectorStorage?: string;
+  vectorReason?: string;
+}
+
 export interface SovereignStagedFile {
   path: string;
   content: string;
@@ -79,6 +89,10 @@ export interface SovereignDraftPrCreateResponse {
     blocker?: string;
     summary?: string;
   };
+}
+
+export interface SovereignDraftPrPreparationResponse {
+  learningEvidence?: SovereignPatternLearningEvidence;
 }
 
 export interface SovereignToolchainStartJobInput extends SovereignAgentStartJobInput {
@@ -290,6 +304,22 @@ async function requestObject(args: { url: string; init: RequestInit; fetcher: ty
   return body;
 }
 
+function patternLearningEvidence(body: Record<string, unknown>): SovereignPatternLearningEvidence | undefined {
+  const pattern = isObject(body.patternLearning) ? body.patternLearning : undefined;
+  const vector = isObject(body.vectorMemory) ? body.vectorMemory : undefined;
+  const candidateId = stringValue(body.candidateId);
+  if (!pattern && !vector && !candidateId) return undefined;
+  return {
+    candidateId,
+    candidateCreated: body.candidateCreated === true,
+    allowed: pattern?.allowed === true,
+    decision: stringValue(pattern?.decision) || 'blocked',
+    vectorStored: vector?.stored === true,
+    vectorStorage: stringValue(vector?.storage),
+    vectorReason: stringValue(vector?.reason),
+  };
+}
+
 function diagnosisValue(value: unknown): SovereignToolchainDiagnosis {
   const raw = isObject(value) ? value : {};
   const families = Array.isArray(raw.failureFamilies)
@@ -463,6 +493,7 @@ export class SovereignAgentClient {
         canCreateDraftPr: signal.canCreateDraftPr === true,
         blockers: stringArray(signal.blockers),
       },
+      learningEvidence: patternLearningEvidence(body),
     };
   }
   async createDraftPr(jobId: string, githubAccessToken?: string): Promise<SovereignDraftPrCreateResponse> {

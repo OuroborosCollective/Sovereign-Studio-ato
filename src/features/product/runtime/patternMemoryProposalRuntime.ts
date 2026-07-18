@@ -1,9 +1,9 @@
 /**
  * Pattern Memory Proposal Runtime — Issue #447
  *
- * Pure runtime logic for deriving a PatternMemoryIntake from a completed
- * workflow (e.g. after a Draft PR is pushed) and building the chat line text
- * that informs the user a pattern has been saved.
+ * Pure runtime logic for deriving a PatternMemoryIntake from workflow context
+ * after the caller has supplied accepted server-side learning evidence, and for
+ * building the bounded chat projection of that persisted result.
  *
  * No fake state. No mocks in this path. No side-effects — callers own storage.
  */
@@ -78,8 +78,8 @@ export interface WorkflowProposalContext {
 }
 
 /**
- * Derives a `PatternMemoryIntake` from a successfully completed workflow.
- * The result is ready to pass directly to `addPatternEntry`.
+ * Derives workflow context for an intake. This function does not prove that a
+ * learning candidate or vector was accepted; the caller must bind that evidence.
  */
 export function derivePatternIntakeFromWorkflow(
   ctx: WorkflowProposalContext,
@@ -118,8 +118,8 @@ export function derivePatternIntakeFromWorkflow(
 }
 
 /**
- * Builds the assistant chat message text that informs the user a pattern has
- * been automatically saved. German locale — consistent with the rest of the UI.
+ * Builds the assistant projection used only after server evidence confirms that
+ * the learning candidate and its vector were stored.
  */
 export function buildPatternSavedChatText(
   title: string,
@@ -131,7 +131,7 @@ export function buildPatternSavedChatText(
     repoOwner && repoName ? ` · ${repoOwner}/${repoName}` : '';
   const prLabel = prUrl ? `\nPR: ${prUrl}` : '';
   return (
-    `✅ Workflow als Pattern gespeichert: „${title}"${repoLabel}${prLabel}\n` +
-    `Dieses Muster steht für zukünftige ähnliche Aufgaben zur Verfügung.`
+    `✅ Serverseitig bestätigtes Pattern gespeichert: „${title}"${repoLabel}${prLabel}\n` +
+    `Lernkandidat und Vektor-Speicherung wurden durch Runtime-Evidence bestätigt.`
   );
 }

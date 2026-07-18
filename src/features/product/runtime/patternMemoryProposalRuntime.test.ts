@@ -145,8 +145,10 @@ describe('buildPatternSavedChatText', () => {
     expect(text.length).toBeGreaterThan(0);
   });
 
-  it('contains the German success marker', () => {
+  it('names the server and vector evidence behind the success projection', () => {
     const text = buildPatternSavedChatText('T', 'https://x.com', 'o', 'r');
     expect(text).toContain('✅');
+    expect(text).toContain('Serverseitig bestätigtes Pattern');
+    expect(text).toContain('Vektor-Speicherung');
   });
 });
