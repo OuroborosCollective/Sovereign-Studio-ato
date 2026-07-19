@@ -336,14 +336,16 @@ export function buildWorkerBlockerAnswer(args: {
     : "Einschätzung: Der letzte Fehler liegt wahrscheinlich in Worker-Konfiguration, Worker-Runtime oder Upstream-Provider und muss über Cloudflare/Bridge-Diagnose geprüft werden.";
 
   return [
-    "Ich wiederhole den kaputten Worker-Call nicht blind.",
+    "Die Online-Sprachdeutung ist derzeit nicht erreichbar.",
+    "Diese Nachricht wurde deshalb nicht semantisch beantwortet; es wurde keine Aktion gestartet.",
     explainDevChatWorkerDiagnostic(diagnostic),
     healthLine,
     repoLine,
     args.agentReady
-      ? "Sovereign Agent Runtime ist nur für echte Code-/Draft-PR-Aufträge zuständig und wurde für diese Chatfrage nicht gestartet."
-      : "Sovereign Agent Runtime ist nicht bereit; normale Chatfragen bleiben Worker-Route.",
+      ? "Sovereign Agent Runtime ist bereit, wurde ohne strukturierten Code-/Draft-PR-Intent aber nicht gestartet."
+      : "Sovereign Agent Runtime ist nicht bereit.",
     codeLine,
+    "Retry ist ausschließlich über den korrelierten Worker-Request in der Diagnose zulässig.",
   ].join("\n");
 }
 
@@ -392,7 +394,7 @@ export function composerRouteHint(args: {
       ? "Sovereign Agent blockiert · Worker erklärt zuerst"
       : "Sovereign Agent starten";
   if (args.workerBlocked && !isWorkerRetryIntent(clean))
-    return "Worker blockiert · lokale Diagnose statt blindem Retry";
+    return "Worker blockiert · keine lokale Sprachdeutung";
   if (args.workerBlocked && isWorkerRetryIntent(clean))
     return "Worker Retry · Diagnose wird aktualisiert";
   return "Worker Chat senden · Enter senden · Shift+Enter Zeilenumbruch";

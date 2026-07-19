@@ -117,27 +117,28 @@ describe('WorkerBlockerCard', () => {
     expect(onAgentInstead).not.toHaveBeenCalled();
   });
 
-  it('shows Sovereign Agent action when user has code intent', () => {
+  it('shows Sovereign Agent action only with structured permission', () => {
     render(
       <WorkerBlockerCard
         blocker={mockBlocker}
         onRetry={() => {}}
         onExplain={() => {}}
-        onAgentInstead={(msg) => {}}
+        onAgentInstead={() => {}}
         userMessage="fix this bug in the code"
+        allowAgentAction
       />
     );
     expect(screen.getByText(/Sovereign Agent für Code-Auftrag/i)).toBeTruthy();
   });
 
-  it('hides Sovereign Agent action when user has no code intent', () => {
+  it('does not infer Agent permission from code words in the user message', () => {
     render(
       <WorkerBlockerCard
         blocker={mockBlocker}
         onRetry={() => {}}
         onExplain={() => {}}
-        onAgentInstead={(msg) => {}}
-        userMessage="hello world"
+        onAgentInstead={() => {}}
+        userMessage="fix this bug in the code"
       />
     );
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
@@ -145,63 +146,8 @@ describe('WorkerBlockerCard', () => {
 });
 
 describe('WorkerDegradedBanner', () => {
-  it('renders offline message', () => {
-    render(<WorkerDegradedBanner blocker={mockBlocker} />);
-    expect(screen.getByText('Worker offline')).toBeTruthy();
-  });
-
-  it('shows a non-action state when no retriable request exists', () => {
-    render(<WorkerDegradedBanner blocker={mockBlocker} />);
-    expect(screen.getByTestId('worker-degraded-banner')).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByText('Kein Retry-Request')).toBeTruthy();
-  });
-
-  it('calls onRetry when clicked (legacy)', () => {
-    const onRetry = vi.fn();
-    render(<WorkerDegradedBanner blocker={mockBlocker} onRetry={onRetry} />);
-    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onRetryWithMessage when provided', () => {
-    const onRetryWithMessage = vi.fn();
-    render(
-      <WorkerDegradedBanner
-        blocker={mockBlocker}
-        onRetryWithMessage={onRetryWithMessage}
-        userMessage="retry this request"
-      />
-    );
-    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
-    expect(onRetryWithMessage).toHaveBeenCalledWith('retry this request');
-  });
-
-  it('falls back to onRetry when the supplied message is a diagnostic', () => {
-    const onRetry = vi.fn();
-    const onRetryWithMessage = vi.fn();
-    render(
-      <WorkerDegradedBanner
-        blocker={mockBlocker}
-        onRetry={onRetry}
-        onRetryWithMessage={onRetryWithMessage}
-        userMessage={diagnosticText}
-      />
-    );
-    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-    expect(onRetryWithMessage).not.toHaveBeenCalled();
-  });
-
-  it('falls back to onRetry when onRetryWithMessage not provided', () => {
-    const onRetry = vi.fn();
-    render(
-      <WorkerDegradedBanner
-        blocker={mockBlocker}
-        onRetry={onRetry}
-        userMessage="retry this request"
-      />
-    );
-    fireEvent.click(screen.getByTestId('worker-degraded-banner'));
-    expect(onRetry).toHaveBeenCalledTimes(1);
+  it('does not duplicate the actionable blocker card', () => {
+    const { container } = render(<WorkerDegradedBanner blocker={mockBlocker} />);
+    expect(container.firstChild).toBeNull();
   });
 });

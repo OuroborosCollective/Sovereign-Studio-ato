@@ -1057,7 +1057,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge für bessere UI?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeDefined());
     expect(screen.getAllByText(/HTTP 500/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/secret=ok/i)).toBeNull();
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
@@ -1082,7 +1082,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i),
+        screen.getByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i),
       ).toBeDefined(),
     );
 
@@ -1348,21 +1348,23 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("lets the LLM understand 'arbeitet er schon?' but answers only from the loaded repo job", async () => {
     const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({
         choices: [{
           message: {
             content: JSON.stringify({
               mode: "chat",
               intent: "status",
-              isStartup: true,
+              action_disposition: "review",
+              assistant_text: "Ja, ich schaue nach dem Status.",
+              action_title: "",
+              is_startup: true,
               confidence: 1.0,
-              assistantText: "Ja, ich schaue nach dem Status.",
-              model: "sovereign-fast",
+              language: "de",
             }),
           },
         }],
       }),
-      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
     );
     renderWithProviders(
       <BuilderContainer
@@ -1406,7 +1408,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeDefined());
     const callsAfterBlock = nonAuthFetchCalls(fetchMock).length;
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
