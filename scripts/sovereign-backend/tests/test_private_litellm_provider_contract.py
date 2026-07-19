@@ -13,6 +13,7 @@ def test_only_canonical_backend_is_built_for_production() -> None:
     assert "context: scripts/sovereign-backend" in workflow
     assert "file: scripts/sovereign-backend/Dockerfile" in workflow
     assert "COPY llm_provider_runtime.py ." in dockerfile
+    assert "COPY llm_cost_policy.py ." in dockerfile
     assert "context: backend" not in workflow
 
 
