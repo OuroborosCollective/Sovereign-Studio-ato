@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 from pathlib import Path
 
@@ -173,7 +174,9 @@ def test_pgbackweb_policy_accepts_loopback_and_blocks_public_port(tmp_path: Path
         )
 
 
-def test_patchmon_secret_env_and_redis_config_are_generated_without_secret_output(tmp_path: Path) -> None:
+def test_patchmon_secret_env_and_redis_config_are_generated_without_secret_output(tmp_path: Path, monkeypatch) -> None:
+    ownership: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(os, "chown", lambda path, uid, gid: ownership.append((str(path), uid, gid)))
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     stack = STACKS["patchmon-sovereign"]
     stack = type(stack)(
@@ -195,7 +198,10 @@ def test_patchmon_secret_env_and_redis_config_are_generated_without_secret_outpu
     assert result["created"] is True
     assert result["secretValuesReturned"] is False
     assert env_path.stat().st_mode & 0o777 == 0o600
-    assert redis_path.stat().st_mode & 0o777 == 0o600
+    assert redis_path.stat().st_mode & 0o777 == 0o400
+    assert result["additionalFiles"][0]["ownerUid"] == 999
+    assert result["additionalFiles"][0]["ownerGid"] == 1000
+    assert ownership == [(str(redis_path), 999, 1000)]
     assert len(values["POSTGRES_PASSWORD"]) == 64
     assert len(values["REDIS_PASSWORD"]) == 64
     assert len(values["JWT_SECRET"]) == 128
@@ -223,6 +229,7 @@ def test_patchmon_template_scopes_environment_without_nested_env_file() -> None:
     assert "JWT_SECRET: ${JWT_SECRET}" in template
     assert "AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY}" in template
     assert "127.0.0.1:32830:3000" in template
+    assert 'user: "999:1000"' in template
     assert "/var/run/docker.sock" not in template
 
 
@@ -242,6 +249,7 @@ def test_patchmon_policy_accepts_only_fixed_redis_command_and_loopback_port(tmp_
             },
             "redis": {
                 "image": "redis:7.4.7-alpine3.21",
+                "user": "999:1000",
                 "command": ["redis-server", "/usr/local/etc/redis/redis.conf"],
                 "volumes": [
                     {
@@ -260,6 +268,11 @@ def test_patchmon_policy_accepts_only_fixed_redis_command_and_loopback_port(tmp_
         "networks": {"patchmon-internal": {}, "patchmon-edge": {}},
     }
     runtime._validate_rendered(stack, rendered)
+
+    rendered["services"]["redis"]["user"] = "0:0"
+    with pytest.raises(RuntimeError, match="Nicht-Root-Identität"):
+        runtime._validate_rendered(stack, rendered)
+    rendered["services"]["redis"]["user"] = "999:1000"
 
     rendered["services"]["redis"]["command"] = ["sh", "-c", "echo blocked"]
     with pytest.raises(RuntimeError, match="Ausführungs-Override"):

@@ -17,6 +17,7 @@ from document_pipeline import DocumentPipelineRuntime
 from github_admin import GitHubAdminRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
+from patchmon_operator import PatchmonOperatorRuntime
 from policy import validate_container
 from self_update import SelfUpdateRuntime
 
@@ -44,6 +45,7 @@ class BrokerRuntime:
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
         self.managed_compose = ManagedComposeRuntime()
+        self.patchmon = PatchmonOperatorRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
@@ -283,6 +285,41 @@ class BrokerRuntime:
             "deploy_managed_compose_stack": lambda values: self.managed_compose.deploy(
                 stack_id=str(values.get("stack_id") or ""),
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+            ),
+            "patchmon_tool_inventory": lambda _values: self.patchmon.tool_inventory(),
+            "patchmon_runtime_inventory": lambda values: self.patchmon.runtime_inventory(
+                include_fleet=bool(values.get("include_fleet", True)),
+                max_fleet_containers=int(values.get("max_fleet_containers") or 100),
+            ),
+            "patchmon_database_inventory": lambda values: self.patchmon.database_inventory(
+                max_tables=int(values.get("max_tables") or 200),
+                max_columns=int(values.get("max_columns") or 2_000),
+            ),
+            "patchmon_query": lambda values: self.patchmon.query(
+                view=str(values.get("view") or ""),
+                limit=int(values.get("limit") or 50),
+                host_id=str(values.get("host_id") or ""),
+                status=str(values.get("status") or ""),
+            ),
+            "patchmon_brain_snapshot": lambda values: self.patchmon.brain_snapshot(
+                include_fleet=bool(values.get("include_fleet", True)),
+            ),
+            "patchmon_patch_action_plan": lambda values: self.patchmon.patch_action_plan(
+                action=str(values.get("action") or ""),
+                host_id=str(values.get("host_id") or ""),
+                run_id=str(values.get("run_id") or ""),
+                patch_type=str(values.get("patch_type") or "patch_all"),
+                package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
+                schedule_override=str(values.get("schedule_override") or ""),
+            ),
+            "patchmon_patch_action_apply": lambda values: self.patchmon.patch_action_apply(
+                action=str(values.get("action") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                host_id=str(values.get("host_id") or ""),
+                run_id=str(values.get("run_id") or ""),
+                patch_type=str(values.get("patch_type") or "patch_all"),
+                package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
+                schedule_override=str(values.get("schedule_override") or ""),
             ),
         }
         handler = handlers.get(action)

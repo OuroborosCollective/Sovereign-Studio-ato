@@ -132,6 +132,67 @@ def test_openai_project_runtime_evidence_dispatch_is_read_only(monkeypatch) -> N
     assert result["secretValuesExposed"] is False
 
 
+def test_patchmon_read_dispatch_is_allowlisted(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "brain_snapshot",
+        lambda **kwargs: {
+            "ok": True,
+            "status": "PATCHMON_BRAIN_READY",
+            "includeFleet": kwargs.get("include_fleet"),
+            "mutationPerformed": False,
+            "secretValuesExposed": False,
+        },
+    )
+
+    result = runtime.dispatch("patchmon_brain_snapshot", {"include_fleet": False})
+
+    assert result["status"] == "PATCHMON_BRAIN_READY"
+    assert result["includeFleet"] is False
+    assert result["mutationPerformed"] is False
+
+
+def test_patchmon_mutation_is_forbidden_on_inbound_broker_socket(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not execute")),
+    )
+
+    result = runtime.dispatch(
+        "patchmon_patch_action_apply",
+        {"action": "approve_run", "confirmation_sha256": "a" * 64},
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["failure_family"] == "INBOUND_MUTATION_FORBIDDEN"
+
+
+def test_patchmon_mutation_is_submitted_to_host_command_queue(monkeypatch, tmp_path: Path) -> None:
+    client = HostBrokerClient(
+        str(tmp_path / "socket-is-not-used.sock"),
+        queue_root=str(tmp_path / "queue"),
+    )
+    observed = {}
+
+    def submit(action, arguments, timeout):
+        observed.update(action=action, arguments=arguments, timeout=timeout)
+        return {"ok": True, "status": "IN_PROGRESS", "request_id": "request-1"}
+
+    monkeypatch.setattr(client.command_queue, "submit", submit)
+    result = client.call(
+        "patchmon_patch_action_apply",
+        {"action": "approve_run", "confirmation_sha256": "a" * 64},
+        timeout=123,
+    )
+
+    assert result["status"] == "IN_PROGRESS"
+    assert observed["action"] == "patchmon_patch_action_apply"
+    assert observed["timeout"] == 123
+
+
 def test_deploy_action_remains_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_DEPLOY", raising=False)
     runtime = BrokerRuntime()
