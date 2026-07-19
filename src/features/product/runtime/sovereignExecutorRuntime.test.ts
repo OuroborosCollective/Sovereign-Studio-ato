@@ -35,14 +35,17 @@ function workspaceScope(overrides: Partial<Parameters<typeof createSovereignWork
 }
 
 describe('sovereignExecutorRuntime', () => {
-  it('classifies common executor intents without starting a route', () => {
-    expect(classifyOfflineSovereignExecutorIntent('Was ist der Status?')).toBe('status');
-    expect(classifyOfflineSovereignExecutorIntent('Bitte README Titel ändern')).toBe('direct_patch');
-    expect(classifyOfflineSovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('code_execution');
-    expect(classifyOfflineSovereignExecutorIntent('Erstelle einen Draft PR')).toBe('draft_pr');
-    expect(classifyOfflineSovereignExecutorIntent('Warum ist das so?')).toBe('question');
-    expect(classifyOfflineSovereignExecutorIntent('Was ist ein Pull Request?')).toBe('question');
-    expect(classifyOfflineSovereignExecutorIntent('Wie funktioniert der README-Code?')).toBe('question');
+  it('accepts only explicit offline commands and never interprets free language', () => {
+    expect(classifyOfflineSovereignExecutorIntent('/status')).toBe('status');
+    expect(classifyOfflineSovereignExecutorIntent('/direct-patch README Titel ändern')).toBe('direct_patch');
+    expect(classifyOfflineSovereignExecutorIntent('/code Tests in src/foo.test.ts')).toBe('code_execution');
+    expect(classifyOfflineSovereignExecutorIntent('/agent Runtime reparieren')).toBe('code_execution');
+    expect(classifyOfflineSovereignExecutorIntent('/draft-pr')).toBe('draft_pr');
+    expect(classifyOfflineSovereignExecutorIntent('/question Warum ist das so?')).toBe('question');
+    expect(classifyOfflineSovereignExecutorIntent('Was ist der Status?')).toBe('unknown');
+    expect(classifyOfflineSovereignExecutorIntent('Bitte README Titel ändern')).toBe('unknown');
+    expect(classifyOfflineSovereignExecutorIntent('Implementiere Tests in src/foo.test.ts')).toBe('unknown');
+    expect(classifyOfflineSovereignExecutorIntent('Erstelle einen Draft PR')).toBe('unknown');
   });
 
   it('routes status questions locally and terminally', () => {
