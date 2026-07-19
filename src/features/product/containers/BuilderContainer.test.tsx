@@ -1358,6 +1358,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
               action_disposition: "review",
               assistant_text: "Ja, ich schaue nach dem Status.",
               action_title: "",
+              is_startup: true,
               confidence: 1.0,
               language: "de",
             }),

@@ -31,6 +31,7 @@ interface SovereignIntentEnvelope {
   readonly action_disposition?: unknown;
   readonly assistant_text?: unknown;
   readonly action_title?: unknown;
+  readonly is_startup?: unknown;
   readonly confidence?: unknown;
   readonly language?: unknown;
 }
@@ -122,6 +123,7 @@ function parseIntentEnvelope(
   const actionTitle = typeof payload.action_title === 'string'
     ? payload.action_title.trim()
     : '';
+  const isStartup = payload.is_startup === true;
   const confidenceValue = typeof payload.confidence === 'number'
     ? payload.confidence
     : Number(payload.confidence);
@@ -145,6 +147,7 @@ function parseIntentEnvelope(
     language,
     model,
     fallbackUsed,
+    isStartup,
   };
 }
 
@@ -277,11 +280,12 @@ function buildMessages(args: SovereignLiteLlmIntentRequest): readonly DevChatWor
     'Die Runtime entscheidet separat über Repo-, GitHub-, Workspace-, Tool-, Test- und Draft-PR-Gates.',
     'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
     'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","is_startup":false,"confidence":0.0,"language":"de|en|..."}',
     'Nutze mode=action nur, wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
     'Nutze action_disposition=execute nur bei einem ausdrücklichen sofortigen Ausführungsauftrag. Nutze review, wenn der erkannte Änderungsauftrag zuerst als Integrationsentwurf bestätigt werden soll.',
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
-    'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
+    'Bei intent=status setze is_startup=true nur wenn gefragt wird, ob eine Ausführung begonnen hat oder aktuell läuft; für fertig/abgeschlossen/Fortschritt bleibt is_startup=false.',
+    'Bei Unsicherheit: mode=chat, intent=unknown, is_startup=false, keine erfundene Aktion.',
     'Bewerte die Gesamtbedeutung, nicht einzelne Schlüsselwörter.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
     args.runtimeContext ? `Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung):\n${args.runtimeContext}` : 'Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung): keine zusätzlichen Fakten.',

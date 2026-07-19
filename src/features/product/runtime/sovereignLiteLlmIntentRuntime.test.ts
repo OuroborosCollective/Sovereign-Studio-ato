@@ -101,6 +101,40 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(request.model).toBe('deepseek-r1');
   });
 
+  it('preserves the LLM distinction between startup and completion status', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        routes: [{ id: 'status', defaultModelId: 'model-status', enabled: true }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [{ message: { content: JSON.stringify({
+          mode: 'chat',
+          intent: 'status',
+          action_disposition: 'review',
+          assistant_text: 'Ich prüfe, ob die Ausführung bereits läuft.',
+          action_title: '',
+          is_startup: true,
+          confidence: 0.99,
+          language: 'de',
+        }) } }],
+      }));
+
+    const result = await fetchSovereignLiteLlmInterpretation({
+      text: 'Arbeitet er schon?',
+      requestId: '00000000-0000-4000-8000-000000000106',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.interpretation).toMatchObject({
+      intent: 'status',
+      isStartup: true,
+    });
+    const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(request.messages[0].content).toContain('"is_startup":false');
+    expect(request.messages[0].content).toContain('begonnen hat oder aktuell läuft');
+  });
+
   it('rejects malformed provider text as action evidence', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
