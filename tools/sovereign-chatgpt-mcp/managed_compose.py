@@ -1004,13 +1004,22 @@ class ManagedComposeRuntime:
                     }
 
         states = self._verify_expected(stack)
+        transport_verified = (
+            self._patchmon_server_transport_ready(states.get(stack.anchor_container, {}))
+            if stack.stack_id == "patchmon-sovereign"
+            else True
+        )
         if stack.stack_id == "patchmon-sovereign":
             runtime_canary = self._patchmon_http_canary()
         elif stack.stack_id == "milvus-sovereign":
             runtime_canary = self._milvus_runtime_canary()
         else:
             runtime_canary = {"ok": True, "status": "NOT_REQUIRED"}
-        runtime_ok = all(state.get("running") for state in states.values()) and bool(runtime_canary.get("ok"))
+        runtime_ok = (
+            all(state.get("running") for state in states.values())
+            and bool(runtime_canary.get("ok"))
+            and transport_verified
+        )
         return {
             "ok": runtime_ok,
             "status": "DEPLOYED_VERIFIED" if runtime_ok else "DEPLOYED_UNVERIFIED",
