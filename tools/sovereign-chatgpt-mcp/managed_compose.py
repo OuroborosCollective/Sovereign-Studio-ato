@@ -248,6 +248,22 @@ class ManagedComposeRuntime:
             "publishedPorts": published,
         }
 
+    @staticmethod
+    def _patchmon_server_transport_ready(state: dict[str, Any]) -> bool:
+        bindings = state.get("publishedPorts", {}).get("3000/tcp", [])
+        loopback_ready = any(
+            str(binding.get("HostIp") or "") == "127.0.0.1"
+            and str(binding.get("HostPort") or "") == "32830"
+            for binding in bindings
+            if isinstance(binding, dict)
+        )
+        return (
+            bool(state.get("present"))
+            and bool(state.get("running"))
+            and "patchmon-sovereign_patchmon-edge" in set(state.get("networks") or [])
+            and loopback_ready
+        )
+
     def _template_files(self, stack: ManagedStack) -> tuple[list[tuple[str, bytes]], str]:
         root = self.template_root / stack.template_name
         if self.template_root.is_symlink() or root.is_symlink() or not root.is_dir():
@@ -927,7 +943,7 @@ class ManagedComposeRuntime:
         for name, payload in files:
             self._write_atomic(deploy_root / name, payload)
         compose_name = next(name for name, _ in files if name in {"docker-compose.yml", "compose.yml", "compose.yaml"})
-        argv = [
+        compose_argv = [
             "docker",
             "compose",
             "--project-name",
@@ -937,9 +953,9 @@ class ManagedComposeRuntime:
         ]
         env_path = deploy_root / ".env"
         if env_path.is_file() and not env_path.is_symlink():
-            argv.extend(["--env-file", str(env_path)])
-        argv.extend(["--file", str(deploy_root / compose_name), "up", "-d", "--remove-orphans"])
-        result = self._run(argv, timeout=600)
+            compose_argv.extend(["--env-file", str(env_path)])
+        compose_argv.extend(["--file", str(deploy_root / compose_name)])
+        result = self._run([*compose_argv, "up", "-d", "--remove-orphans"], timeout=600)
         if not result["ok"]:
             return {
                 "ok": False,
@@ -947,6 +963,46 @@ class ManagedComposeRuntime:
                 "stackId": stack.stack_id,
                 "deploy": {"ok": False, "exit_code": result["exit_code"], "error": "docker compose up failed"},
             }
+
+        transport_repair: dict[str, Any] = {
+            "attempted": False,
+            "reason": None,
+            "ok": True,
+        }
+        if stack.stack_id == "patchmon-sovereign":
+            server_state = self._inspect(stack.anchor_container)
+            if not self._patchmon_server_transport_ready(server_state):
+                repair_result = self._run(
+                    [
+                        *compose_argv,
+                        "up",
+                        "-d",
+                        "--no-deps",
+                        "--force-recreate",
+                        "server",
+                    ],
+                    timeout=600,
+                )
+                transport_repair = {
+                    "attempted": True,
+                    "reason": "PATCHMON_LOOPBACK_OR_EDGE_BINDING_MISSING",
+                    "ok": bool(repair_result["ok"]),
+                    "exitCode": int(repair_result["exit_code"]),
+                    "scope": "patchmon_server_only",
+                }
+                if not repair_result["ok"]:
+                    return {
+                        "ok": False,
+                        "status": "FAILED",
+                        "stackId": stack.stack_id,
+                        "deploy": {
+                            "ok": False,
+                            "exit_code": repair_result["exit_code"],
+                            "error": "PatchMon server transport repair failed",
+                        },
+                        "transportRepair": transport_repair,
+                    }
+
         states = self._verify_expected(stack)
         if stack.stack_id == "patchmon-sovereign":
             runtime_canary = self._patchmon_http_canary()
@@ -962,6 +1018,8 @@ class ManagedComposeRuntime:
             "project": stack.project_name,
             "templateBundleSha256": bundle_sha,
             "containers": states,
+            "transportVerified": transport_verified,
+            "transportRepair": transport_repair,
             "runtimeCanary": runtime_canary,
             "networkPreflight": network_preflight,
             "resourcePreflight": resource_preflight,
