@@ -54,6 +54,18 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
+    owner_capability_block = script.split(
+        'if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then',
+        1,
+    )[1].split("fi", 1)[0]
+    guarded_capability_block = script.split(
+        "for GUARDED_CAPABILITY in",
+        1,
+    )[1].split("done", 1)[0]
+    assert "SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE" not in owner_capability_block
+    assert "SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE" in guarded_capability_block
+    assert 'set_value "$MANAGED_ENV" "$GUARDED_CAPABILITY" "0"' in guarded_capability_block
+
 
 def test_android_hardening_runtime_and_validation_router_are_installed() -> None:
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")

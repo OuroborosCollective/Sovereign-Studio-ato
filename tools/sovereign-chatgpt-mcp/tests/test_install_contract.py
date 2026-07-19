@@ -83,16 +83,20 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/code-server-46bq' in worker_service
     assert '/opt/pgbackweb-wq5r' in worker_service
     assert '/opt/patchmon-sovereign' in worker_service
+    assert '/opt/milvus-sovereign' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
     assert 'templates/sovereign-litellm' in script
     assert 'templates/pgbackweb-wq5r' in script
     assert 'templates/patchmon-sovereign' in script
+    assert 'templates/milvus-sovereign' in script
     assert 'install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"' in script
     assert 'install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"' in script
+    assert 'install -m 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml"' in script
     assert '"pgbackweb-wq5r"' in script
     assert '"patchmon-sovereign"' in script
+    assert '"milvus-sovereign"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 
@@ -107,6 +111,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'document_pipeline.py' in installer
     assert 'tool_extensions.py' in installer
     assert 'repository_skill_tools.py' in installer
+    assert 'proven_learning_tools.py' in installer
     assert 'skill_supply_chain_tools.py' in installer
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
@@ -125,6 +130,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'patchmon_operator.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
+    assert 'proven_learning_tools.py' in dockerfile
     assert 'skill_supply_chain_tools.py' in dockerfile
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
@@ -133,7 +139,9 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'openai_project_access_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'import repository_skill_tools' in launcher
+    assert 'import proven_learning_tools' in launcher
     assert 'repository_skill_tools.register(server.mcp, server.runtime, server.database)' in launcher
+    assert 'proven_learning_tools.register(server.mcp, server.runtime, server.owner_input)' in launcher
     assert 'import skill_supply_chain_tools' in launcher
     assert 'skill_supply_chain_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import deterministic_architecture_tools' in launcher
@@ -218,6 +226,7 @@ def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None
     assert "Verify Gotenberg to Tika live canary" in workflow
     assert "document_pipeline.py" in workflow
     assert "repository_skill_tools.py" in workflow
+    assert "proven_learning_tools.py" in workflow
     assert "skill_supply_chain_tools.py" in workflow
     assert "openai_project_access_tools.py" in workflow
     assert "document_pipeline_live_canary" in workflow

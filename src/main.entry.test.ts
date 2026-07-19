@@ -50,6 +50,15 @@ describe('main app entry', () => {
     expect(app).toContain('onStartAgent={startChatOnlyTask}');
   });
 
+  it('feeds canonical reusable memory into normal agent starts without making recall a start blocker', () => {
+    const app = readSource('./App.tsx');
+
+    expect(app).toContain('searchReusableMemory(query, 6)');
+    expect(app).toContain('reusableMemoryContext(memory)');
+    expect(app).toContain('evidenceText = await evidenceWithReusableMemory(nextMission)');
+    expect(app).toContain('return query;');
+  });
+
   it('keeps the release shell styling contract in the Android web build', () => {
     const css = readSource('./index.css');
 

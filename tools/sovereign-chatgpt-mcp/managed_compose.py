@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
@@ -19,6 +21,12 @@ from litellm_stack import LiteLLMStackRuntime
 PATCHMON_REDIS_UID = 999
 PATCHMON_REDIS_GID = 1000
 PATCHMON_REDIS_USER = f"{PATCHMON_REDIS_UID}:{PATCHMON_REDIS_GID}"
+MILVUS_GATEWAY_NETWORK = "milvus-kg4i_default"
+MILVUS_GATEWAY_CONTAINER = "sovereign-memory-gateway"
+MILVUS_COMPATIBILITY_IP = "172.16.5.4"
+MILVUS_MIN_CPU_CORES = 4
+MILVUS_MIN_MEMORY_BYTES = 8 * 1024 * 1024 * 1024
+MILVUS_MIN_FREE_DISK_BYTES = 10 * 1024 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,17 @@ STACKS: dict[str, ManagedStack] = {
         allowed_networks=("default",),
         allowed_bind_roots=("/opt/pgbackweb-wq5r",),
         allowed_published_ports=("127.0.0.1:32829:8085",),
+    ),
+    "milvus-sovereign": ManagedStack(
+        stack_id="milvus-sovereign",
+        project_name="milvus-sovereign",
+        anchor_container="milvus-standalone",
+        expected_containers=("milvus-standalone", "milvus-etcd", "milvus-minio"),
+        allowed_services=("standalone", "etcd", "minio"),
+        deploy_root="/opt/milvus-sovereign",
+        template_name="milvus-sovereign",
+        allowed_networks=("milvus-storage", "memory-gateway"),
+        allowed_bind_roots=("/opt/milvus-sovereign",),
     ),
     "patchmon-sovereign": ManagedStack(
         stack_id="patchmon-sovereign",
@@ -300,7 +319,7 @@ class ManagedComposeRuntime:
             "secretValuesAccepted": False,
             "secretProvisioning": (
                 "generated_on_confirmed_deploy"
-                if stack.stack_id in {"pgbackweb-wq5r", "patchmon-sovereign"}
+                if stack.stack_id in {"pgbackweb-wq5r", "patchmon-sovereign", "milvus-sovereign"}
                 else "external_or_not_required"
             ),
         }
@@ -361,7 +380,22 @@ class ManagedComposeRuntime:
                 and service_name == "redis"
                 and command == ["redis-server", "/usr/local/etc/redis/redis.conf"]
             )
-            if command and not allowed_patchmon_redis_command:
+            allowed_milvus_commands = {
+                "etcd": [
+                    "etcd",
+                    "--advertise-client-urls=http://127.0.0.1:2379",
+                    "--listen-client-urls=http://0.0.0.0:2379",
+                    "--data-dir=/etcd",
+                ],
+                "minio": ["minio", "server", "/minio_data", "--console-address", ":9001"],
+                "standalone": ["milvus", "run", "standalone"],
+            }
+            allowed_milvus_command = (
+                stack.stack_id == "milvus-sovereign"
+                and service_name in allowed_milvus_commands
+                and command == allowed_milvus_commands[service_name]
+            )
+            if command and not (allowed_patchmon_redis_command or allowed_milvus_command):
                 raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
             image = str(service.get("image") or "")
             if image and (image.endswith(":latest") or ":latest@" in image):
@@ -452,7 +486,7 @@ class ManagedComposeRuntime:
             temporary.unlink(missing_ok=True)
 
     def _ensure_stack_secret_env(self, stack: ManagedStack) -> dict[str, Any]:
-        if stack.stack_id not in {"pgbackweb-wq5r", "patchmon-sovereign"}:
+        if stack.stack_id not in {"pgbackweb-wq5r", "patchmon-sovereign", "milvus-sovereign"}:
             return {
                 "required": False,
                 "created": False,
@@ -487,7 +521,7 @@ class ManagedComposeRuntime:
                 "PG_BACKWEB_ENCRYPTION_KEY": 64,
             }
             fixed_values: dict[str, str] = {}
-        else:
+        elif stack.stack_id == "patchmon-sovereign":
             required_lengths = {
                 "POSTGRES_PASSWORD": 64,
                 "REDIS_PASSWORD": 64,
@@ -513,6 +547,15 @@ class ManagedComposeRuntime:
                 "ENABLE_HSTS": "false",
                 "TZ": "Europe/Berlin",
                 "AGENT_UPDATE_BODY_LIMIT": "5mb",
+            }
+        else:
+            required_lengths = {
+                "MINIO_ACCESS_KEY_ID": 32,
+                "MINIO_SECRET_ACCESS_KEY": 64,
+            }
+            fixed_values = {
+                "MILVUS_GATEWAY_NETWORK": MILVUS_GATEWAY_NETWORK,
+                "MILVUS_COMPATIBILITY_IP": MILVUS_COMPATIBILITY_IP,
             }
 
         for key, expected_length in required_lengths.items():
@@ -585,6 +628,180 @@ class ManagedComposeRuntime:
                 break
             time.sleep(2)
         return states
+
+    @staticmethod
+    def _milvus_resource_preflight() -> dict[str, Any]:
+        cpu_cores = int(os.cpu_count() or 0)
+        try:
+            memory_bytes = int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_PHYS_PAGES"))
+        except (OSError, ValueError):
+            memory_bytes = 0
+        try:
+            free_disk_bytes = int(shutil.disk_usage("/opt").free)
+        except OSError:
+            free_disk_bytes = 0
+        checks = {
+            "cpu": cpu_cores >= MILVUS_MIN_CPU_CORES,
+            "memory": memory_bytes >= MILVUS_MIN_MEMORY_BYTES,
+            "disk": free_disk_bytes >= MILVUS_MIN_FREE_DISK_BYTES,
+        }
+        ok = all(checks.values())
+        return {
+            "ok": ok,
+            "status": "MILVUS_HOST_RESOURCES_VERIFIED" if ok else "MILVUS_HOST_RESOURCES_INSUFFICIENT",
+            "cpuCores": cpu_cores,
+            "minimumCpuCores": MILVUS_MIN_CPU_CORES,
+            "memoryBytes": memory_bytes,
+            "minimumMemoryBytes": MILVUS_MIN_MEMORY_BYTES,
+            "freeDiskBytes": free_disk_bytes,
+            "minimumFreeDiskBytes": MILVUS_MIN_FREE_DISK_BYTES,
+            "checks": checks,
+        }
+
+    def _milvus_network_preflight(self) -> dict[str, Any]:
+        result = self._run(
+            [
+                "docker",
+                "network",
+                "inspect",
+                MILVUS_GATEWAY_NETWORK,
+                "--format",
+                "{{json .IPAM.Config}}|{{json .Containers}}",
+            ],
+            timeout=30,
+        )
+        if not result["ok"]:
+            return {
+                "ok": False,
+                "status": "MILVUS_GATEWAY_NETWORK_MISSING",
+                "network": MILVUS_GATEWAY_NETWORK,
+            }
+        try:
+            ipam_raw, containers_raw = result["stdout"].strip().split("|", 1)
+            ipam = json.loads(ipam_raw) or []
+            containers = json.loads(containers_raw) or {}
+        except (ValueError, json.JSONDecodeError):
+            return {
+                "ok": False,
+                "status": "MILVUS_GATEWAY_NETWORK_INVALID",
+                "network": MILVUS_GATEWAY_NETWORK,
+            }
+        subnets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        try:
+            for item in ipam if isinstance(ipam, list) else []:
+                subnet = str(item.get("Subnet") or "") if isinstance(item, dict) else ""
+                if subnet:
+                    subnets.append(ipaddress.ip_network(subnet, strict=False))
+            compatibility_ip = ipaddress.ip_address(MILVUS_COMPATIBILITY_IP)
+        except ValueError:
+            return {
+                "ok": False,
+                "status": "MILVUS_GATEWAY_SUBNET_INVALID",
+                "network": MILVUS_GATEWAY_NETWORK,
+            }
+        if not any(compatibility_ip in subnet for subnet in subnets):
+            return {
+                "ok": False,
+                "status": "MILVUS_COMPATIBILITY_IP_OUTSIDE_NETWORK",
+                "network": MILVUS_GATEWAY_NETWORK,
+                "compatibilityIp": MILVUS_COMPATIBILITY_IP,
+            }
+
+        members: dict[str, str] = {}
+        for item in containers.values() if isinstance(containers, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("Name") or "")
+            address = str(item.get("IPv4Address") or "").split("/", 1)[0]
+            if name:
+                members[name] = address
+        allowed_members = {MILVUS_GATEWAY_CONTAINER, "milvus-standalone"}
+        unexpected_members = sorted(set(members) - allowed_members)
+        if unexpected_members:
+            return {
+                "ok": False,
+                "status": "MILVUS_GATEWAY_NETWORK_NOT_ISOLATED",
+                "network": MILVUS_GATEWAY_NETWORK,
+                "unexpectedMembers": unexpected_members,
+            }
+        if MILVUS_GATEWAY_CONTAINER not in members:
+            return {
+                "ok": False,
+                "status": "MILVUS_GATEWAY_NOT_ATTACHED",
+                "network": MILVUS_GATEWAY_NETWORK,
+            }
+        occupied_by = next(
+            (
+                name
+                for name, address in members.items()
+                if address == MILVUS_COMPATIBILITY_IP and name != "milvus-standalone"
+            ),
+            "",
+        )
+        if occupied_by:
+            return {
+                "ok": False,
+                "status": "MILVUS_COMPATIBILITY_IP_OCCUPIED",
+                "network": MILVUS_GATEWAY_NETWORK,
+                "occupiedBy": occupied_by,
+            }
+        return {
+            "ok": True,
+            "status": "MILVUS_GATEWAY_NETWORK_VERIFIED",
+            "network": MILVUS_GATEWAY_NETWORK,
+            "compatibilityIp": MILVUS_COMPATIBILITY_IP,
+            "members": sorted(members),
+            "externalPortsRequired": False,
+        }
+
+    def _milvus_runtime_canary(self) -> dict[str, Any]:
+        tcp_script = (
+            "const net=require('net');"
+            f"const socket=net.createConnection({{host:'{MILVUS_COMPATIBILITY_IP}',port:19530}});"
+            "const done=(code)=>{socket.destroy();process.exit(code)};"
+            "socket.setTimeout(5000);socket.on('connect',()=>done(0));"
+            "socket.on('timeout',()=>done(2));socket.on('error',()=>done(3));"
+        )
+        last_family = "unknown"
+        for _attempt in range(45):
+            health = self._run(
+                [
+                    "docker",
+                    "exec",
+                    "milvus-standalone",
+                    "curl",
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "http://127.0.0.1:9091/healthz",
+                ],
+                timeout=15,
+            )
+            gateway_path = self._run(
+                ["docker", "exec", MILVUS_GATEWAY_CONTAINER, "node", "-e", tcp_script],
+                timeout=15,
+            )
+            if health["ok"] and gateway_path["ok"]:
+                return {
+                    "ok": True,
+                    "status": "MILVUS_GATEWAY_PATH_READY",
+                    "milvusHealthz": True,
+                    "gatewayTcpReachable": True,
+                    "externalPortsPublished": False,
+                    "responseBodyReturned": False,
+                }
+            last_family = (
+                "milvus_healthz"
+                if not health["ok"]
+                else "gateway_tcp_path"
+            )
+            time.sleep(2)
+        return {
+            "ok": False,
+            "status": "MILVUS_GATEWAY_PATH_UNAVAILABLE",
+            "errorFamily": last_family,
+            "responseBodyReturned": False,
+        }
 
     @staticmethod
     def _patchmon_http_canary() -> dict[str, Any]:
@@ -672,6 +889,33 @@ class ManagedComposeRuntime:
         if confirmation_sha256 != bundle_sha:
             return {"ok": False, "status": "BLOCKED", "blocker": "Template-Bundle-Hash stimmt nicht", "expected": bundle_sha}
 
+        resource_preflight = (
+            self._milvus_resource_preflight()
+            if stack.stack_id == "milvus-sovereign"
+            else {"ok": True, "status": "NOT_REQUIRED"}
+        )
+        if not resource_preflight.get("ok"):
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "stackId": stack.stack_id,
+                "blocker": "Host-Ressourcen erfüllen die Milvus-Mindestanforderungen nicht",
+                "resourcePreflight": resource_preflight,
+            }
+        network_preflight = (
+            self._milvus_network_preflight()
+            if stack.stack_id == "milvus-sovereign"
+            else {"ok": True, "status": "NOT_REQUIRED"}
+        )
+        if not network_preflight.get("ok"):
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "stackId": stack.stack_id,
+                "blocker": "Milvus-Gateway-Netzwerk erfüllt den Sicherheitsvertrag nicht",
+                "networkPreflight": network_preflight,
+            }
+
         secret_env = self._ensure_stack_secret_env(stack)
         _compose_path, temporary, _rendered = self._render_template(stack, files)
         temporary.cleanup()
@@ -704,11 +948,12 @@ class ManagedComposeRuntime:
                 "deploy": {"ok": False, "exit_code": result["exit_code"], "error": "docker compose up failed"},
             }
         states = self._verify_expected(stack)
-        runtime_canary = (
-            self._patchmon_http_canary()
-            if stack.stack_id == "patchmon-sovereign"
-            else {"ok": True, "status": "NOT_REQUIRED"}
-        )
+        if stack.stack_id == "patchmon-sovereign":
+            runtime_canary = self._patchmon_http_canary()
+        elif stack.stack_id == "milvus-sovereign":
+            runtime_canary = self._milvus_runtime_canary()
+        else:
+            runtime_canary = {"ok": True, "status": "NOT_REQUIRED"}
         runtime_ok = all(state.get("running") for state in states.values()) and bool(runtime_canary.get("ok"))
         return {
             "ok": runtime_ok,
@@ -718,6 +963,8 @@ class ManagedComposeRuntime:
             "templateBundleSha256": bundle_sha,
             "containers": states,
             "runtimeCanary": runtime_canary,
+            "networkPreflight": network_preflight,
+            "resourcePreflight": resource_preflight,
             "secretEnvironment": secret_env,
             "secretValuesExposed": False,
         }

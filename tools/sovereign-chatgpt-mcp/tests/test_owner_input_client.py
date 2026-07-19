@@ -83,6 +83,46 @@ def test_status_returns_metadata_only(monkeypatch) -> None:
     assert session.calls[0]["method"] == "GET"
 
 
+def test_proven_learning_plan_and_apply_use_private_backend_only(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "33333333-3333-4333-8333-333333333333"
+    digest = "a" * 64
+    record = {"title": "Verified pattern"}
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "PROVEN_LEARNING_PLAN_READY",
+            "confirmationSha256": digest,
+            "record": record,
+        }),
+        FakeResponse(200, {
+            "ok": True,
+            "status": "PROVEN_LEARNING_PATTERN_STORED",
+            "candidateId": "pattern-1",
+        }),
+    ])
+    client = OwnerInputClient(session=session)
+
+    plan = client.plan_proven_learning(record)
+    applied = client.apply_proven_learning(
+        request_id=request_id,
+        confirmation_sha256=digest,
+        record=record,
+    )
+
+    assert plan["status"] == "PROVEN_LEARNING_PLAN_READY"
+    assert applied["status"] == "PROVEN_LEARNING_PATTERN_STORED"
+    assert session.calls[0]["url"] == "http://backend:8787/api/internal/proven-learning/plan"
+    assert session.calls[1]["url"] == "http://backend:8787/api/internal/proven-learning/apply"
+    assert session.calls[1]["json"] == {
+        "requestId": request_id,
+        "confirmationSha256": digest,
+        "record": record,
+    }
+    assert session.calls[1]["timeout"] == 120
+
+
 def test_client_requires_private_bridge_key(monkeypatch) -> None:
     monkeypatch.delenv("SOVEREIGN_OWNER_REQUEST_KEY", raising=False)
     client = OwnerInputClient(session=FakeSession([]))

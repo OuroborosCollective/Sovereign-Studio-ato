@@ -760,8 +760,8 @@ stdin, stdout, stderr = client.exec_command('docker exec sovereign-backend pytho
 | memory-gateway | 8088 | 127.0.0.1 only |
 | arelorian-engine | 3001 | 127.0.0.1 (MMORPG, NOT toolchain!) |
 | supabase-db | 5432 | Docker network |
-| milvus | 19530 | Docker network |
-| milvus-attu | 3000 | 32777 public |
+| milvus-standalone | 19530 | privates Gateway-Docker-Netz; kein Host-Port |
+| milvus-etcd / milvus-minio | 2379 / 9000 | internes `milvus-storage`-Netz; kein Host-Port |
 
 ### Docker Commands Reference
 ```bash
