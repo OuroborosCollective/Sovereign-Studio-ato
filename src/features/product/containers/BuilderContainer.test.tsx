@@ -1057,7 +1057,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge für bessere UI?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeDefined());
     expect(screen.getAllByText(/HTTP 500/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/secret=ok/i)).toBeNull();
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
@@ -1082,7 +1082,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i),
+        screen.getByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i),
       ).toBeDefined(),
     );
 
@@ -1406,7 +1406,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/Ich wiederhole den kaputten Worker-Call nicht blind/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Diese Nachricht wurde deshalb nicht semantisch beantwortet/i)).toBeDefined());
     const callsAfterBlock = nonAuthFetchCalls(fetchMock).length;
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
