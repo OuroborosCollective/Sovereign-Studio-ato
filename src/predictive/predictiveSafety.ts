@@ -15,6 +15,7 @@ export type SafetyLevel = 'safe' | 'warning' | 'danger' | 'critical';
 export interface ActionSafetyCheck {
   action: string;
   nodeId: string;
+  evidenceAvailable: boolean;
   safety: SafetyLevel;
   confidence: number;
   reason: string;
@@ -61,6 +62,7 @@ export function checkActionSafety(
     return {
       action,
       nodeId,
+      evidenceAvailable: false,
       safety: 'warning',
       confidence: 0,
       reason: 'Predictive layer has no runtime evidence yet. This is a neutral advisory signal, not proof of safety.',
@@ -90,6 +92,7 @@ export function checkActionSafety(
   return {
     action,
     nodeId,
+    evidenceAvailable: true,
     safety,
     confidence,
     reason: buildSafetyReason(safety, confidence, errorRate, similarFailures, snapshot),

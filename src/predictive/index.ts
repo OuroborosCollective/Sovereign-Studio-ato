@@ -82,7 +82,9 @@ export {
   createPublishPredictiveGuard,
   createDecisionPredictiveGuard,
   createSystemHealthPredictiveGuard,
+  createPredictiveGuardChainForAction,
   createPredictiveGuardChain,
+  type PredictiveGuardAction,
   type PredictiveRuntimeGuardOptions,
 } from './runtimeIntelligenceIntegration';
 

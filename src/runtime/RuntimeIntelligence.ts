@@ -55,6 +55,7 @@ import {
 import {
   PredictiveLayer,
   createPredictiveLayer,
+  getDefaultPredictiveLayer,
   type PredictiveLayerSnapshot,
   type PredictiveLayerConfig,
   type NeuralNode,
@@ -193,6 +194,11 @@ export interface RuntimeIntelligenceConfig {
   guardTimeoutMs?: number;
   circuitBreakerDefaults?: RuntimeCircuitBreakerDefaults;
   predictiveLayerConfig?: Partial<PredictiveLayerConfig>;
+  /**
+   * Optional composition-owned layer. Product runtime injects the shared default
+   * layer used by signal bridges; tests and isolated consumers keep fresh layers.
+   */
+  predictiveLayer?: PredictiveLayer;
   /** @deprecated Predictive layer is now enabled by default. Set to false to disable. */
   enablePredictiveLayer?: boolean;
   /** Explicitly disable predictive layer even if added to runtime flow */
@@ -1055,6 +1061,7 @@ export class RuntimeIntelligence {
       ...DEFAULT_PREDICTIVE_CONFIG,
       ...config.predictiveLayerConfig,
     };
+    this.predictiveLayer = config.predictiveLayer ?? null;
 
     // Initialize model health fallback config
     this.modelHealthFallbackConfig = {
@@ -1808,7 +1815,11 @@ export function createRuntimeIntelligence(config?: RuntimeIntelligenceConfig): R
   return new RuntimeIntelligence(config);
 }
 
-export const runtimeIntelligence = new RuntimeIntelligence();
+// Product-wide runtime and the session/tool/ARE bridges must observe one layer.
+// Isolated RuntimeIntelligence instances still create their own layer by default.
+export const runtimeIntelligence = new RuntimeIntelligence({
+  predictiveLayer: getDefaultPredictiveLayer(),
+});
 
 // ============================================================================
 // Observable Wrapper for React

@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import base64
 import hashlib
-import io
 import json
 import os
 import re
@@ -23,6 +22,7 @@ from flask import jsonify, request
 import psycopg2.extras
 import requests
 
+from document_ingestion import extract_uploaded_document, supported_office_extensions
 from r2_storage import (
     MAX_KNOWLEDGE_BYTES,
     MAX_PDF_KNOWLEDGE_BYTES,
@@ -45,13 +45,13 @@ MAX_SOURCE_TEXT_CHARS = 12_000_000
 MAX_GITHUB_FILES = 80
 MAX_GITHUB_FILE_BYTES = 512 * 1024
 MAX_GITHUB_TOTAL_BYTES = 6 * 1024 * 1024
-MAX_PDF_PAGES = 500
 CHUNK_TARGET_CHARS = 1_800
 CHUNK_OVERLAP_CHARS = 220
 MAX_SEARCH_LIMIT = 20
 PROCESSING_STALE_SECONDS = 15 * 60
 
 _MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
+_OFFICE_EXTENSIONS = set(supported_office_extensions())
 _TEXT_EXTENSIONS = {
     *_MARKDOWN_EXTENSIONS, ".txt", ".rst", ".json", ".yaml", ".yml", ".toml",
     ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".kts",
@@ -497,32 +497,34 @@ def fetch_url_document(url: str) -> KnowledgeDocument:
 
 
 def _pdf_document(filename: str, payload: bytes) -> KnowledgeDocument:
-    try:
-        from pypdf import PdfReader
-    except ImportError as exc:
-        raise RuntimeError("PDF import requires the pypdf backend dependency") from exc
-
-    reader = PdfReader(io.BytesIO(payload))
-    if len(reader.pages) > MAX_PDF_PAGES:
-        raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page limit")
-    pages: list[str] = []
-    for index, page in enumerate(reader.pages):
-        text = str(page.extract_text() or "").strip()
-        if text:
-            pages.append(f"# Page {index + 1}\n\n{text}")
-    if not pages:
-        raise ValueError("PDF contains no extractable text; scanned PDFs need preprocessing")
+    extraction = extract_uploaded_document(filename, payload)
     return KnowledgeDocument(
-        source_type="pdf",
+        source_type=extraction.source_type,
         title=_safe_title(filename, "Uploaded PDF"),
-        text="\n\n".join(pages)[:MAX_SOURCE_TEXT_CHARS],
+        text=extraction.text[:MAX_SOURCE_TEXT_CHARS],
         source_url=None,
-        metadata={"filename": filename, "pages": len(reader.pages)},
+        metadata=extraction.metadata,
+    )
+
+
+def _office_document(filename: str, payload: bytes) -> KnowledgeDocument:
+    extraction = extract_uploaded_document(filename, payload)
+    return KnowledgeDocument(
+        source_type=extraction.source_type,
+        title=_safe_title(filename, "Uploaded document"),
+        text=extraction.text[:MAX_SOURCE_TEXT_CHARS],
+        source_url=None,
+        metadata=extraction.metadata,
     )
 
 
 def _upload_limit_bytes(filename: str) -> int:
     return MAX_UPLOAD_BYTES if str(filename or "").lower().endswith(".pdf") else MAX_NON_PDF_UPLOAD_BYTES
+
+
+def upload_limit_bytes(filename: str) -> int:
+    """Public read-only upload limit contract used by routes and tests."""
+    return _upload_limit_bytes(filename)
 
 
 def upload_document(filename: str, payload: bytes) -> KnowledgeDocument:
@@ -536,8 +538,10 @@ def upload_document(filename: str, payload: bytes) -> KnowledgeDocument:
         return _pdf_document(filename, payload)
 
     suffix = "." + lower.rsplit(".", 1)[-1] if "." in lower else ""
+    if suffix in _OFFICE_EXTENSIONS:
+        return _office_document(filename, payload)
     if suffix not in _TEXT_EXTENSIONS:
-        raise ValueError("Unsupported upload type; use PDF, text, Markdown or source code")
+        raise ValueError("Unsupported upload type; use PDF, office, text, Markdown or source code")
     text = payload.decode("utf-8", errors="replace").lstrip("\ufeff").strip()
     if not text:
         raise ValueError("Uploaded file contains no readable text")
@@ -722,6 +726,43 @@ def _insert_document_unchecked(
                    ON CONFLICT (source_id, ordinal) DO NOTHING""",
                 (source_id, block_id, chunk.ordinal, chunk.section_title),
             )
+            cur.execute(
+                """INSERT INTO knowledge_learning_candidates
+                   (user_id, source_id, block_id, content_sha256, summary, provenance)
+                   VALUES (%s::uuid, %s::uuid, %s::uuid, %s, %s, %s::jsonb)
+                   ON CONFLICT (user_id, source_id, block_id) DO UPDATE SET
+                       summary=EXCLUDED.summary,
+                       provenance=EXCLUDED.provenance,
+                       updated_at=NOW()""",
+                (
+                    user_id,
+                    source_id,
+                    block_id,
+                    chunk.content_sha256,
+                    chunk.content[:500],
+                    json.dumps({
+                        "sourceType": document.source_type,
+                        "sourceTitle": document.title,
+                        "sourceUrl": document.source_url,
+                        "sectionTitle": chunk.section_title,
+                        "ordinal": chunk.ordinal,
+                        "documentPipeline": document.metadata.get("documentPipeline"),
+                        "authority": "reference-candidate",
+                    }, ensure_ascii=False),
+                ),
+            )
+            if vector is not None:
+                cur.execute(
+                    """INSERT INTO vector_index_outbox
+                       (user_id, entity_type, entity_id, content_sha256, embedding_model)
+                       VALUES (%s, 'knowledge_block', %s, %s, %s)
+                       ON CONFLICT (target_index, entity_type, entity_id, content_sha256, embedding_model)
+                       DO UPDATE SET status=CASE
+                           WHEN vector_index_outbox.status='indexed' THEN 'indexed'
+                           ELSE 'pending'
+                       END, updated_at=NOW(), last_error=NULL""",
+                    (user_id, block_id, chunk.content_sha256, EMBEDDING_MODEL),
+                )
 
         embedded_count = sum(vector is not None for vector in vectors)
         status = "ready" if embedded_count == len(chunks) else "partial"
