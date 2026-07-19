@@ -18,7 +18,7 @@ def _verified_result(*, pdf_bytes: int = 4096) -> dict[str, Any]:
         "ok": True,
         "status": "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED",
         "gotenberg": {
-            "container": "gpt-gotenberg",
+            "container": "gotenberg",
             "httpStatus": 200,
             "contentType": "application/pdf",
             "pdfBytes": pdf_bytes,
@@ -26,7 +26,7 @@ def _verified_result(*, pdf_bytes: int = 4096) -> dict[str, Any]:
             "pdfSha256": "a" * 64,
         },
         "tika": {
-            "container": "gpt-tika",
+            "container": "tika",
             "httpStatus": 200,
             "extractedCharacters": 96,
             "maxPdfBytes": MAX_PDF_BYTES,
@@ -44,7 +44,7 @@ def test_mcp_image_packages_document_pipeline_module() -> None:
     assert "a2a_runtime_client.py document_pipeline.py owner_input_widget.py" in dockerfile
 
 
-def test_live_canary_runs_fixed_node_probe_in_existing_gpt_tools_peer(monkeypatch) -> None:
+def test_live_canary_runs_fixed_node_probe_with_compose_service_dns(monkeypatch) -> None:
     runtime = DocumentPipelineRuntime()
     calls: list[dict[str, Any]] = []
 
@@ -90,9 +90,19 @@ def test_live_canary_runs_fixed_node_probe_in_existing_gpt_tools_peer(monkeypatc
     assert command[command.index("-e", command.index("node")) + 1] == _NETWORK_CANARY_SCRIPT
     assert "SOVEREIGN_DOCUMENT_PIPELINE_CANARY" in command
     assert "gpt-browserless" in command
-    assert "gpt-gotenberg" in command
-    assert "gpt-tika" in command
+    assert "gotenberg" in command
+    assert "tika" in command
+    assert "gpt-gotenberg" not in command
+    assert "gpt-tika" not in command
     assert calls[0]["check"] is False
+
+
+def test_document_runtime_defaults_to_stable_compose_service_aliases() -> None:
+    runtime = DocumentPipelineRuntime()
+
+    assert runtime.probe_container == "gpt-browserless"
+    assert runtime.gotenberg_container == "gotenberg"
+    assert runtime.tika_container == "tika"
 
 
 def test_network_probe_uses_only_fixed_service_urls_and_in_memory_artifacts() -> None:
