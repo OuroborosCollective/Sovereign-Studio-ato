@@ -2950,6 +2950,7 @@ export function BuilderContainer({
     () =>
       deriveWorkbenchStatusSlots({
         logs: statusLogs,
+        actionEvents: actionStream.events,
         workerBlocker,
         chatRepoError,
         agentJob: scopedAgentJob,
@@ -2960,6 +2961,7 @@ export function BuilderContainer({
       }),
     [
       statusLogs,
+      actionStream.events,
       workerBlocker,
       chatRepoError,
       scopedAgentJob,
