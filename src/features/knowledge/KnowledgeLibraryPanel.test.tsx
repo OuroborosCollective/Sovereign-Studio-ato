@@ -66,5 +66,25 @@ describe('KnowledgeLibraryPanel Markdown upload', () => {
 
     await waitFor(() => expect(api.uploadKnowledgeFile).toHaveBeenCalledWith(file, expect.any(Function)));
     expect(await screen.findByText('Gespeichert: runtime.markdown')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Gespeichert: runtime.markdown');
+  });
+
+  it('renders a correlated import failure as an alert without collapsing its evidence', async () => {
+    api.importKnowledgeUrl.mockRejectedValueOnce(new Error(
+      'Der serverseitige GitHub-Zugang wurde abgelehnt · GitHub HTTP 403.\n'
+      + 'Fehler-ID: 3b4cd00e-506b-41ce-8d95-1d0f18a1416b · Audit: gespeichert',
+    ));
+    render(<KnowledgeLibraryPanel onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText('GitHub- oder Wikipedia-URL'), {
+      target: { value: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Importieren' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('serverseitige GitHub-Zugang wurde abgelehnt');
+    expect(alert).toHaveTextContent('GitHub HTTP 403');
+    expect(alert).toHaveTextContent('Fehler-ID: 3b4cd00e-506b-41ce-8d95-1d0f18a1416b');
+    expect(alert).toHaveTextContent('Audit: gespeichert');
   });
 });
