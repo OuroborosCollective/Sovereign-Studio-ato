@@ -445,7 +445,7 @@ def test_milvus_template_is_private_pinned_and_agentmemory_free() -> None:
         / "docker-compose.yml"
     ).read_text("utf-8")
 
-    assert "milvusdb/milvus:v2.5.27" in template
+    assert "milvusdb/milvus:v2.6.20" in template
     assert "quay.io/coreos/etcd:v3.5.18" in template
     assert "minio/minio:RELEASE.2024-12-18T13-15-44Z" in template
     assert "ports:" not in template
@@ -506,7 +506,7 @@ def test_milvus_policy_accepts_only_fixed_commands_and_no_published_ports(tmp_pa
                 "networks": ["milvus-storage"],
             },
             "standalone": {
-                "image": "milvusdb/milvus:v2.5.27",
+                "image": "milvusdb/milvus:v2.6.20",
                 "command": ["milvus", "run", "standalone"],
                 "networks": {
                     "milvus-storage": {},

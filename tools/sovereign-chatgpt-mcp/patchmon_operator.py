@@ -586,6 +586,7 @@ class PatchmonOperatorRuntime:
             if state.get("state", {}).get("running")
             and state.get("state", {}).get("health") in {"healthy", "none"}
         )
+        server_state = states[PATCHMON_SERVER_CONTAINER]
         if not server_state.get("present"):
             http_health = {
                 "ok": False,
