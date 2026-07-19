@@ -48,6 +48,7 @@ jobs:
             scripts/sovereign-backend/vector_embedding.py \
             scripts/sovereign-backend/knowledge_library.py \
             scripts/sovereign-backend/are_inference.py \
+            scripts/sovereign-backend/enterprise_platform/*.py \
             scripts/sovereign-backend/agent_runtime/*.py \
             scripts/sovereign-backend/agent_runtime/tools/*.py
           bash -n scripts/sovereign-backend/auto-migrate.sh
@@ -71,6 +72,8 @@ jobs:
           file: scripts/sovereign-backend/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          build-args: |
+            SOVEREIGN_SOURCE_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

@@ -12,7 +12,10 @@ def test_only_canonical_backend_is_built_for_production() -> None:
     dockerfile = (BACKEND / "Dockerfile").read_text("utf-8")
     assert "context: scripts/sovereign-backend" in workflow
     assert "file: scripts/sovereign-backend/Dockerfile" in workflow
-    assert "COPY llm_provider_runtime.py ." in dockerfile
+    assert "COPY *.py ./" in dockerfile
+    assert "COPY agent_runtime/ ./agent_runtime/" in dockerfile
+    assert "COPY migrations ./migrations" in dockerfile
+    assert "COPY app.py ." not in dockerfile
     assert "context: backend" not in workflow
 
 

@@ -16,7 +16,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users, CreditCard, Grid, Cpu, FileText,
-  Key, CheckCircle, AlertTriangle, Wallet,
+  Key, CheckCircle, AlertTriangle, Wallet, ServerCog,
 } from 'lucide-react';
 import { AdminGate } from './AdminGate';
 import { UserTable } from './components/UserTable';
@@ -26,6 +26,7 @@ import { BillingStats } from './components/BillingStats';
 import { LauncherToolEditor } from './components/LauncherToolEditor';
 import { LlmRouteEditor } from './components/LlmRouteEditor';
 import { PaymentMethodEditor } from './components/PaymentMethodEditor';
+import { EnterpriseBackendPanel } from './components/EnterpriseBackendPanel';
 import {
   useAdminUsers,
   useAdminTransactions,
@@ -49,9 +50,10 @@ const C = {
   accent: '#00d9b1', text: '#cdd9e5', textSub: '#768390', danger: '#f87171',
 } as const;
 
-type Tab = 'users' | 'billing' | 'payments' | 'launcher' | 'llm' | 'audit';
+type Tab = 'platform' | 'users' | 'billing' | 'payments' | 'launcher' | 'llm' | 'audit';
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+  { id: 'platform', label: 'Platform',  icon: ServerCog },
   { id: 'users',    label: 'Nutzer',    icon: Users },
   { id: 'billing',  label: 'Billing',   icon: CreditCard },
   { id: 'payments', label: 'Zahlungen', icon: Wallet },
@@ -119,7 +121,7 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && void handleSave()}
-          style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.text, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
+          style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', minHeight: 48, fontSize: 12, color: C.text, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
         />
         {error && (
           <div style={{ background: '#f8717120', border: '1px solid #f8717140', borderRadius: 8, padding: '8px 12px', fontSize: 11, color: C.danger, display: 'flex', gap: 6 }}>
@@ -130,7 +132,7 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
           type="button"
           onClick={() => void handleSave()}
           disabled={testing || !input.trim()}
-          style={{ background: C.accent, border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 12, fontWeight: 700, color: '#000', cursor: (testing || !input.trim()) ? 'not-allowed' : 'pointer', opacity: (testing || !input.trim()) ? 0.6 : 1 }}
+          style={{ background: C.accent, border: 'none', borderRadius: 8, padding: '10px 0', minHeight: 48, fontSize: 12, fontWeight: 700, color: '#000', cursor: (testing || !input.trim()) ? 'not-allowed' : 'pointer', opacity: (testing || !input.trim()) ? 0.6 : 1 }}
         >
           {testing ? 'Verbinde…' : 'Verbinden & speichern'}
         </button>
@@ -178,7 +180,7 @@ function AuditLogView() {
 // AdminGate lives here — NOT around the whole panel.
 
 function ReadyContent() {
-  const [tab, setTab]           = useState<Tab>('users');
+  const [tab, setTab]           = useState<Tab>('platform');
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
 
   const usersApi      = useAdminUsers();
@@ -200,7 +202,7 @@ function ReadyContent() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: `2px solid ${active ? C.accent : 'transparent'}`, color: active ? C.accent : C.textSub, flexShrink: 0, minWidth: 56 }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '8px 14px', minHeight: 52, background: 'transparent', border: 'none', cursor: 'pointer', touchAction: 'manipulation', borderBottom: `2px solid ${active ? C.accent : 'transparent'}`, color: active ? C.accent : C.textSub, flexShrink: 0, minWidth: 72 }}
               >
                 <Icon size={14} />
                 <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.label}</span>
@@ -210,7 +212,8 @@ function ReadyContent() {
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: tab === 'platform' ? 0 : 14, overscrollBehavior: 'contain' }}>
+          {tab === 'platform' && <EnterpriseBackendPanel />}
           {tab === 'users'    && <UserTable api={usersApi} onEdit={setEditUser} />}
           {tab === 'billing'  && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

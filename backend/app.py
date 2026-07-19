@@ -40,6 +40,8 @@ import requests
 from litellm_runtime import (
     extract_litellm_evidence,
     fetch_litellm,
+    litellm_completion_canary,
+    litellm_readiness,
 )
 
 from agent_runtime.routes import register_sovereign_agent_routes
@@ -48,6 +50,7 @@ from agent_runtime.contracts import sanitize_agent_text, normalize_agent_path, i
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
+from enterprise_platform import register_enterprise_platform_routes
 
 # GitHub App integration (Marketplace)
 try:
@@ -382,6 +385,20 @@ def audit(action: str, target_id: str | None, changes: dict):
          psycopg2.extras.Json(changes)),
         write=True,
     )
+
+
+# Register the modular evidence-first admin platform after the existing
+# database, authentication and audit boundaries are available. The established
+# admin bearer key remains the only transport credential for these routes.
+enterprise_platform_service = register_enterprise_platform_routes(
+    app,
+    require_admin=require_admin,
+    query=query,
+    get_current_admin=get_current_admin,
+    audit=audit,
+    litellm_readiness=litellm_readiness,
+    litellm_completion_canary=litellm_completion_canary,
+)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -871,90 +888,10 @@ def admin_worker_ai_status():
 @app.route("/api/admin/system/health", methods=["GET"])
 @require_admin
 def admin_system_health():
-    """Comprehensive system health check for all components."""
-    health = {
-        "ok": True,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "components": {},
-    }
-    
-    # 1. Database check
-    try:
-        start = time.time()
-        result = query("SELECT 1 as test, NOW() as now", one=True)
-        db_time = int((time.time() - start) * 1000)
-        health["components"]["database"] = {
-            "status": "healthy",
-            "responseTimeMs": db_time,
-        }
-    except Exception as e:
-        health["ok"] = False
-        health["components"]["database"] = {
-            "status": "unhealthy",
-            "error": sanitize_agent_text(str(e))[:100],
-        }
-    
-    # 2. Worker AI check
-    try:
-        worker_url = WORKER_AI_BASE
-        start = time.time()
-        resp, _err = fetch_worker_ai("health")
-        if _err:
-            return jsonify({"status": "error", "error": _err, "configured": False, "availableModels": [], "modelCount": 0}), 500
-        start = time.time()
-        wai_time = int((time.time() - start) * 1000)
-        if resp.ok:
-            data = resp.json()
-            health["components"]["worker_ai"] = {
-                "status": data.get("status", "healthy"),
-                "configured": data.get("configured", False),
-                "modelCount": data.get("modelCount", 0),
-                "responseTimeMs": wai_time,
-            }
-        else:
-            health["ok"] = False
-            health["components"]["worker_ai"] = {
-                "status": "degraded",
-                "error": f"HTTP {resp.status_code}",
-                "responseTimeMs": wai_time,
-            }
-    except Exception as e:
-        health["ok"] = False
-        health["components"]["worker_ai"] = {
-            "status": "unhealthy",
-            "error": sanitize_agent_text(str(e))[:100],
-        }
-    
-    # 3. LLM Routes check
-    try:
-        routes = query("SELECT COUNT(*) as count FROM llm_routes WHERE disabled = false", one=True)
-        total = query("SELECT COUNT(*) as count FROM llm_routes", one=True)
-        active_routes = int(routes["count"] if routes else 0)
-        total_routes = int(total["count"] if total else 0)
-        routes_healthy = active_routes > 0
-        if not routes_healthy:
-            health["ok"] = False
-        health["components"]["llm_routes"] = {
-            "status": "healthy" if routes_healthy else "degraded",
-            "activeRoutes": active_routes,
-            "totalRoutes": total_routes,
-            "blocker": None if routes_healthy else "llm_routes_empty",
-        }
-    except Exception as e:
-        health["components"]["llm_routes"] = {
-            "status": "degraded",
-            "error": sanitize_agent_text(str(e))[:100],
-        }
-    
-    # 4. Config file check
-    config_file = _CONFIG_FILE
-    if config_file:
-        health["components"]["config"] = {
-            "status": "healthy" if os.path.exists(config_file) else "missing",
-            "path": config_file,
-        }
-    
-    return jsonify(health)
+    """Return the evidence-first platform health contract."""
+    overview = enterprise_platform_service.overview()
+    http_status = 503 if overview.get("status") == "blocked" else 200
+    return jsonify(overview), http_status
 
 
 @app.route("/api/admin/llm/worker-ai/sync", methods=["POST"])
@@ -1431,49 +1368,17 @@ def admin_validate_cors():
 @app.route("/api/admin/runtime/health")
 @require_admin
 def admin_runtime_health():
-    """Check runtime/worker health status with real checks."""
-    health_status = "healthy"
-    blockers = []
-    
-    # Check if config is valid
-    byok = _RUNTIME_CONFIG.get("byok_mode", "user-key")
-    if byok not in ("system-key", "user-key", "disabled"):
-        health_status = "degraded"
-        blockers.append("invalid_byok_config")
-    
-    # Check CORS origins count
-    cors_count = len(_RUNTIME_CONFIG.get("cors_origins", []))
-    if cors_count == 0:
-        health_status = "degraded"
-        blockers.append("no_cors_origins")
-    elif cors_count > 20:
-        health_status = "degraded"
-        blockers.append("too_many_cors_origins")
-    
-    # Check config file persistence
-    if not os.path.exists(_CONFIG_FILE):
-        health_status = "degraded"
-        blockers.append("config_not_persisted")
-    
-    # Check database connection
-    try:
-        test_query = query("SELECT 1 as test", one=True)
-        if not test_query:
-            health_status = "degraded"
-            blockers.append("db_connection_issue")
-    except Exception:
-        health_status = "degraded"
-        blockers.append("db_unavailable")
-    
+    """Compatibility route backed by the modular enterprise platform probes."""
+    overview = enterprise_platform_service.overview()
     return jsonify({
-        "ok": health_status == "healthy",
-        "health": health_status,
-        "byokMode": byok,
-        "corsOriginsCount": cors_count,
-        "blockers": blockers,
-        "configFile": _CONFIG_FILE,
-        "configPersisted": os.path.exists(_CONFIG_FILE),
-    })
+        "ok": overview.get("status") == "verified",
+        "health": overview.get("status"),
+        "runtime": overview.get("runtime"),
+        "integrations": overview.get("integrations"),
+        "statistics": overview.get("statistics"),
+        "generatedAt": overview.get("generatedAt"),
+        "truthNotice": overview.get("truthNotice"),
+    }), 503 if overview.get("status") == "blocked" else 200
 
 
 # ═════════════════════════════════════════════════════════════════════════════
