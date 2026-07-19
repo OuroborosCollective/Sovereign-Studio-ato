@@ -413,6 +413,40 @@ class TestRateLimiting:
         from security_oauth import _check_rate_limit
         assert callable(_check_rate_limit)
 
+    def test_rate_limit_deletes_empty_active_lists_instead_of_leaking(self):
+        """Identifikatoren ohne aktive Timestamps müssen aus dem Store gelöscht werden."""
+        from security_oauth import _rate_limit_store, _check_rate_limit
+        identifier = "temp_ip_eviction"
+
+        # Erstelle ein abgelaufenes Timestamp-Eintrag
+        _rate_limit_store[identifier] = [time.time() - 3600]
+
+        # Trigger Limit Check -> Sollte den abgelaufenen Eintrag säubern und den Key ganz löschen
+        allowed, remaining = _check_rate_limit(identifier, max_requests=10)
+
+        assert allowed is True
+        # Da wir den abgelaufenen Key gelöscht haben, wird er neu angelegt mit nur dem aktuellen Timestamp
+        assert identifier in _rate_limit_store
+        assert len(_rate_limit_store[identifier]) == 1
+
+    def test_rate_limit_memory_bounded_proactive_sweep(self):
+        """Der Store darf nicht unendlich wachsen; bei >1000 Einträgen wird proaktiv gefegt."""
+        from security_oauth import _rate_limit_store, _check_rate_limit
+
+        # Fülle den Store künstlich mit 1005 abgelaufenen Keys
+        for i in range(1005):
+            _rate_limit_store[f"old_ip_{i}"] = [time.time() - 3600]
+
+        assert len(_rate_limit_store) > 1000
+
+        # Trigger Limit Check -> Sollte proaktiv fegen
+        allowed, remaining = _check_rate_limit("new_active_ip", max_requests=10)
+
+        assert allowed is True
+        # Alle 1005 abgelaufenen Keys müssen entfernt worden sein, nur der neue und aktive verbleibt
+        assert len(_rate_limit_store) <= 5  # Erwartet: 1 (nur "new_active_ip")
+        assert "new_active_ip" in _rate_limit_store
+
 
 class TestAuditLogging:
     """Tests für Audit-Logging Funktion."""
