@@ -12,6 +12,8 @@ import type { RuntimeContext, RuntimeGuardResult, Guard } from '../runtime/Runti
 import type { PredictiveLayerSnapshot } from './types';
 import { checkActionSafety, getSystemSafetyStatus } from './predictiveSafety';
 
+export type PredictiveGuardAction = 'build' | 'publish';
+
 export interface PredictiveRuntimeGuardOptions {
   action: string;
   nodeId: string;
@@ -43,7 +45,9 @@ export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOpti
       try {
         const snapshot = getSnapshot?.() ?? null;
         const safetyCheck = checkActionSafety(snapshot, action, nodeId);
-        const pass = warnOnly || safetyCheck.confidence >= minConfidence;
+        // Missing predictive evidence is neutral advisory state. It is neither
+        // proof of safety nor sufficient reason to block a hard runtime action.
+        const pass = warnOnly || !safetyCheck.evidenceAvailable || safetyCheck.confidence >= minConfidence;
         const reason = `Predictive guard: ${safetyCheck.reason} | Action: ${action} | Confidence: ${(safetyCheck.confidence * 100).toFixed(0)}%`;
         const duration = performance.now() - startTime;
 
@@ -56,6 +60,7 @@ export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOpti
           riskReduction: pass ? 0.2 : 0.5,
           properties: {
             confidence: safetyCheck.confidence,
+            evidenceAvailable: safetyCheck.evidenceAvailable,
             safety: safetyCheck.safety,
             similarFailures: safetyCheck.similarFailures.length,
             warnOnly,
@@ -65,13 +70,20 @@ export function createPredictiveRuntimeGuard(options: PredictiveRuntimeGuardOpti
       } catch (error) {
         const duration = performance.now() - startTime;
         return {
-          pass: !warnOnly,
+          // Advisory guards may continue while exposing the error. Hard guards
+          // fail closed when their own safety evaluation cannot run.
+          pass: warnOnly,
           guardName,
           traceId,
           reason: `Predictive guard error: ${error instanceof Error ? error.message : String(error)}`,
           durationMs: duration,
           riskReduction: 0,
-          remediation: 'Check predictive layer initialization',
+          remediation: 'Check predictive layer initialization before relying on this advisory signal.',
+          properties: {
+            evidenceAvailable: false,
+            warnOnly,
+            guardError: true,
+          },
         };
       }
     },
@@ -153,6 +165,30 @@ export function createSystemHealthPredictiveGuard(getSnapshot?: () => Predictive
   };
 }
 
+export function createPredictiveGuardChainForAction(
+  action: PredictiveGuardAction,
+  getSnapshot?: () => PredictiveLayerSnapshot | null,
+): {
+  preFlight: Guard[];
+  main: Guard[];
+  postFlight: Guard[];
+} {
+  return {
+    preFlight: [createSystemHealthPredictiveGuard(getSnapshot)],
+    main: [
+      action === 'build'
+        ? createBuildPredictiveGuard(getSnapshot)
+        : createPublishPredictiveGuard(getSnapshot),
+    ],
+    postFlight: [],
+  };
+}
+
+/**
+ * Legacy aggregate chain retained for compatibility and diagnostics. Product
+ * action paths must use createPredictiveGuardChainForAction so build and publish
+ * evidence cannot be mixed.
+ */
 export function createPredictiveGuardChain(getSnapshot?: () => PredictiveLayerSnapshot | null): {
   preFlight: Guard[];
   main: Guard[];

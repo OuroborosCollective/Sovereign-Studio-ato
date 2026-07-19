@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -57,6 +58,22 @@ def persist_pattern_vector(
                        embedding=EXCLUDED.embedding,
                        embedding_model=EXCLUDED.embedding_model""",
                 (candidate_id, user_id, text, value, batch.model),
+            )
+            cur.execute(
+                """INSERT INTO vector_index_outbox
+                   (user_id, entity_type, entity_id, content_sha256, embedding_model)
+                   VALUES (%s, 'agent_pattern', %s, %s, %s)
+                   ON CONFLICT (target_index, entity_type, entity_id, content_sha256, embedding_model)
+                   DO UPDATE SET status=CASE
+                       WHEN vector_index_outbox.status='indexed' THEN 'indexed'
+                       ELSE 'pending'
+                   END, updated_at=NOW(), last_error=NULL""",
+                (
+                    user_id,
+                    candidate_id,
+                    hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    batch.model,
+                ),
             )
         conn.commit()
         return {

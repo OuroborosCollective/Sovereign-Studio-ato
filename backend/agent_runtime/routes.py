@@ -28,6 +28,7 @@ from .pattern_gateway import (
     persist_pattern_learning_candidate_once,
 )
 from .pattern_vector_memory import persist_pattern_vector, search_pattern_vectors
+from .reusable_memory import search_reusable_memory
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
@@ -195,6 +196,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
     - POST /api/user/agent/patterns/predict
+    - POST /api/user/agent/memory/search
     - GET  /api/user/agent/toolchain/manifest
     - POST /api/user/agent/toolchain/diagnose
     - POST /api/user/agent/toolchain/handoff
@@ -659,6 +661,30 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         conn = _connection()
         try:
             result = search_pattern_vectors(
+                conn,
+                user_id=user_id,
+                query_text=query_text,
+                limit=limit,
+            )
+            return jsonify({"runtime": "sovereign-agent", **result}), 200 if result.get("ok") else 503
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/memory/search", methods=["POST"])
+    @require_session
+    def user_search_reusable_memory():
+        user_id = _current_session_user_id()
+        body = request.get_json(force=True) or {}
+        query_text = str(body.get("query") or "").strip()
+        if not query_text:
+            return jsonify({"error": "query is required"}), 400
+        try:
+            limit = max(1, min(int(body.get("limit", 8)), 20))
+        except (TypeError, ValueError):
+            limit = 8
+        conn = _connection()
+        try:
+            result = search_reusable_memory(
                 conn,
                 user_id=user_id,
                 query_text=query_text,
