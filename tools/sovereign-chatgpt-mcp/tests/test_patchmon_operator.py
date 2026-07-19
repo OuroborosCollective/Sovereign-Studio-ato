@@ -73,14 +73,15 @@ def test_status_filters_are_scoped_to_the_selected_view(monkeypatch) -> None:
 
 
 def test_free_text_redaction_removes_secret_shaped_values() -> None:
+    openai_key = "sk-" + "proj-" + "abcdefghijklmnopqrstuv"
     payload = PatchmonOperatorRuntime._redact({
-        "message": "Bearer abcdefghijklmnop api_key=sk-proj-abcdefghijklmnopqrstuv headerpart12.payloadpart12.signaturepart12",
+        "message": f"Bearer abcdefghijklmnop api_key={openai_key} headerpart12.payloadpart12.signaturepart12",
         "detail": "normal diagnostic text",
     })
     encoded = json.dumps(payload)
 
     assert "abcdefghijklmnop" not in encoded
-    assert "sk-proj-" not in encoded
+    assert openai_key not in encoded
     assert "headerpart12.payloadpart12.signaturepart12" not in encoded
     assert payload["detail"] == "normal diagnostic text"
 

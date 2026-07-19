@@ -82,6 +82,7 @@ services:
 
   redis:
     image: redis:7.4.7-alpine3.21
+    user: "999:1000"
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}

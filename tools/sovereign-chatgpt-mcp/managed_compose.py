@@ -16,6 +16,11 @@ from typing import Any, Callable
 from litellm_stack import LiteLLMStackRuntime
 
 
+PATCHMON_REDIS_UID = 999
+PATCHMON_REDIS_GID = 1000
+PATCHMON_REDIS_USER = f"{PATCHMON_REDIS_UID}:{PATCHMON_REDIS_GID}"
+
+
 @dataclass(frozen=True)
 class ManagedStack:
     stack_id: str
@@ -339,6 +344,9 @@ class ManagedComposeRuntime:
         for service_name, service in services.items():
             if not isinstance(service, dict):
                 raise RuntimeError(f"Service ist ungültig: {service_name}")
+            if stack.stack_id == "patchmon-sovereign" and service_name == "redis":
+                if str(service.get("user") or "") != PATCHMON_REDIS_USER:
+                    raise RuntimeError("PatchMon Redis muss mit der gepinnten Nicht-Root-Identität laufen")
             if service.get("privileged"):
                 raise RuntimeError(f"privileged ist gesperrt: {service_name}")
             if service.get("network_mode") == "host" or service.get("pid") == "host" or service.get("ipc") == "host":
@@ -546,9 +554,17 @@ class ManagedComposeRuntime:
                 "port 6379\n"
                 f"requirepass {values['REDIS_PASSWORD']}\n"
             ).encode("utf-8")
-            self._write_atomic(redis_path, redis_payload, mode=0o600)
-            os.chmod(redis_path, 0o600)
-            additional_files.append({"path": str(redis_path), "mode": "0600"})
+            self._write_atomic(redis_path, redis_payload, mode=0o400)
+            os.chown(redis_path, PATCHMON_REDIS_UID, PATCHMON_REDIS_GID)
+            os.chmod(redis_path, 0o400)
+            additional_files.append(
+                {
+                    "path": str(redis_path),
+                    "mode": "0400",
+                    "ownerUid": PATCHMON_REDIS_UID,
+                    "ownerGid": PATCHMON_REDIS_GID,
+                }
+            )
 
         return {
             "required": True,
