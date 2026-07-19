@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import secrets
 import subprocess
 import tempfile
 import time
@@ -80,6 +82,18 @@ STACKS: dict[str, ManagedStack] = {
         allowed_bind_roots=("/opt/code-server-46bq",),
         allowed_published_ports=("127.0.0.1:32782:8443", "32782:8443"),
     ),
+    "pgbackweb-wq5r": ManagedStack(
+        stack_id="pgbackweb-wq5r",
+        project_name="pgbackweb-wq5r",
+        anchor_container="pgbackweb-wq5r-pgbackweb-1",
+        expected_containers=("pgbackweb-wq5r-pgbackweb-1", "pgbackweb-wq5r-db-1"),
+        allowed_services=("pgbackweb", "db"),
+        deploy_root="/opt/pgbackweb-wq5r",
+        template_name="pgbackweb-wq5r",
+        allowed_networks=("default",),
+        allowed_bind_roots=("/opt/pgbackweb-wq5r",),
+        allowed_published_ports=("127.0.0.1:32829:8085",),
+    ),
 }
 
 FORBIDDEN_BIND_SOURCES = {
@@ -95,6 +109,8 @@ FORBIDDEN_BIND_SOURCES = {
 }
 MAX_TEMPLATE_FILES = 20
 MAX_TEMPLATE_BYTES = 500_000
+MAX_STACK_ENV_BYTES = 64_000
+_SECRET_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]{32,160}$")
 
 
 def _sha256(payload: bytes) -> str:
@@ -259,6 +275,11 @@ class ManagedComposeRuntime:
             "arbitraryYamlAccepted": False,
             "arbitraryCommandAccepted": False,
             "secretValuesAccepted": False,
+            "secretProvisioning": (
+                "generated_on_confirmed_deploy"
+                if stack.stack_id == "pgbackweb-wq5r"
+                else "external_or_not_required"
+            ),
         }
 
     @staticmethod
@@ -396,6 +417,65 @@ class ManagedComposeRuntime:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def _ensure_stack_secret_env(self, stack: ManagedStack) -> dict[str, Any]:
+        if stack.stack_id != "pgbackweb-wq5r":
+            return {
+                "required": False,
+                "created": False,
+                "secretValuesReturned": False,
+            }
+
+        deploy_root = Path(stack.deploy_root)
+        if deploy_root.is_symlink():
+            raise RuntimeError("Deploy-Root darf kein Symlink sein")
+        deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
+        os.chmod(deploy_root, 0o750)
+        env_path = deploy_root / ".env"
+        if env_path.is_symlink() or (env_path.exists() and not env_path.is_file()):
+            raise RuntimeError("Stack-Secret-Datei ist ungültig")
+
+        existing_lines: list[str] = []
+        values: dict[str, str] = {}
+        if env_path.is_file():
+            payload = env_path.read_bytes()
+            if len(payload) > MAX_STACK_ENV_BYTES or b"\0" in payload:
+                raise RuntimeError("Stack-Secret-Datei ist ungültig")
+            existing_lines = payload.decode("utf-8").splitlines()
+            for line in existing_lines:
+                if not line or line.lstrip().startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                values[key.strip()] = value.strip()
+
+        required = ("PG_BACKWEB_DB_PASSWORD", "PG_BACKWEB_ENCRYPTION_KEY")
+        for key in required:
+            current = values.get(key, "")
+            if current and not _SECRET_VALUE_RE.fullmatch(current):
+                raise RuntimeError(f"Vorhandenes {key} erfüllt den Secret-Vertrag nicht")
+
+        created = False
+        for key in required:
+            if not values.get(key):
+                values[key] = secrets.token_hex(32)
+                created = True
+
+        retained = [
+            line
+            for line in existing_lines
+            if not any(line.startswith(key + "=") for key in required)
+        ]
+        rendered = retained + [f"{key}={values[key]}" for key in required]
+        self._write_atomic(env_path, ("\n".join(rendered).rstrip() + "\n").encode("utf-8"), mode=0o600)
+        os.chmod(env_path, 0o600)
+        return {
+            "required": True,
+            "created": created,
+            "path": str(env_path),
+            "mode": "0600",
+            "keysPresent": list(required),
+            "secretValuesReturned": False,
+        }
+
     def _verify_expected(self, stack: ManagedStack) -> dict[str, Any]:
         states: dict[str, Any] = {}
         for _attempt in range(45):
@@ -458,6 +538,7 @@ class ManagedComposeRuntime:
         if confirmation_sha256 != bundle_sha:
             return {"ok": False, "status": "BLOCKED", "blocker": "Template-Bundle-Hash stimmt nicht", "expected": bundle_sha}
 
+        secret_env = self._ensure_stack_secret_env(stack)
         _compose_path, temporary, _rendered = self._render_template(stack, files)
         temporary.cleanup()
         deploy_root = Path(stack.deploy_root)
@@ -497,5 +578,6 @@ class ManagedComposeRuntime:
             "project": stack.project_name,
             "templateBundleSha256": bundle_sha,
             "containers": states,
+            "secretEnvironment": secret_env,
             "secretValuesExposed": False,
         }

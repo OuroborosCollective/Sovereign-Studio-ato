@@ -20,6 +20,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "sovereign-backend",
         "gpt-tools",
         "code-server-46bq",
+        "pgbackweb-wq5r",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("litellm_model_aliases_activate") is True
@@ -112,6 +113,61 @@ def test_security_policy_blocks_privilege_latest_and_docker_socket(tmp_path: Pat
                         "volumes": [{"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"}],
                     }
                 }
+            },
+        )
+
+
+def test_pgbackweb_secret_env_is_generated_without_returning_values(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    stack = STACKS["pgbackweb-wq5r"]
+    stack = type(stack)(
+        **{
+            **stack.__dict__,
+            "deploy_root": str(tmp_path / "deploy"),
+        }
+    )
+
+    result = runtime._ensure_stack_secret_env(stack)
+    env_path = Path(result["path"])
+    text = env_path.read_text("utf-8")
+
+    assert result["created"] is True
+    assert result["secretValuesReturned"] is False
+    assert env_path.stat().st_mode & 0o777 == 0o600
+    assert "PG_BACKWEB_DB_PASSWORD=" in text
+    assert "PG_BACKWEB_ENCRYPTION_KEY=" in text
+    assert all(len(line.split("=", 1)[1]) == 64 for line in text.splitlines())
+    assert not any(value in str(result) for value in (line.split("=", 1)[1] for line in text.splitlines()))
+
+
+def test_pgbackweb_policy_accepts_loopback_and_blocks_public_port(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    stack = STACKS["pgbackweb-wq5r"]
+    runtime._validate_rendered(
+        stack,
+        {
+            "services": {
+                "pgbackweb": {
+                    "image": "eduardolat/pgbackweb:0.5.1",
+                    "ports": [{"host_ip": "127.0.0.1", "published": 32829, "target": 8085}],
+                },
+                "db": {"image": "postgres:18-bookworm"},
+            },
+            "networks": {"default": {}},
+        },
+    )
+    with pytest.raises(RuntimeError, match="Nicht freigegebene Portbindung"):
+        runtime._validate_rendered(
+            stack,
+            {
+                "services": {
+                    "pgbackweb": {
+                        "image": "eduardolat/pgbackweb:0.5.1",
+                        "ports": [{"host_ip": "0.0.0.0", "published": 32829, "target": 8085}],
+                    },
+                    "db": {"image": "postgres:18-bookworm"},
+                },
+                "networks": {"default": {}},
             },
         )
 
