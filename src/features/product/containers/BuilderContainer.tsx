@@ -524,6 +524,7 @@ function ModuleLamps({
                 cursor: "pointer",
                 flexShrink: 0,
                 minWidth: 44,
+                minHeight: 44,
                 marginTop: isTab ? 0 : 2,
               }}
               aria-label={m.id}
@@ -580,7 +581,6 @@ function TopBar({
   panelOpen,
   onPanelToggle,
   palTier,
-  palSavings,
   credits,
   userAvatar,
   userInitials,
@@ -605,7 +605,6 @@ function TopBar({
   panelOpen: boolean;
   onPanelToggle: () => void;
   palTier: string | null;
-  palSavings: number | null;
   credits?: number;
   userAvatar?: string | null;
   userInitials?: string;
@@ -646,8 +645,8 @@ function TopBar({
           aria-label="Menü"
           title="Menü"
           style={{
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             borderRadius: 10,
             background: C.bg,
             border: `1px solid ${C.border}`,
@@ -708,8 +707,7 @@ function TopBar({
                   border: `1px solid ${palTier === "fast" ? C.green : palTier === "smart" ? C.sky : C.violet}33`,
                 }}
               >
-                {palTier.toUpperCase()}
-                {palSavings !== null ? " · sparsam" : ""}
+                {palTier.toUpperCase()} · zuletzt
               </span>
             )}
           </div>
@@ -757,7 +755,7 @@ function TopBar({
             aria-label={userLoggedIn ? 'Profil' : 'Anmelden'}
             title={userLoggedIn ? 'Profil' : 'Anmelden'}
             style={{
-              width: 32, height: 32, borderRadius: '50%',
+              width: 44, height: 44, borderRadius: '50%',
               background: userLoggedIn ? `${C.accent}22` : C.bg,
               border: `1px solid ${userLoggedIn ? `${C.accent}55` : C.border}`,
               color: userLoggedIn ? C.accent : C.textSub,
@@ -788,6 +786,7 @@ function TopBar({
             display: "flex",
             alignItems: "center",
             gap: 5,
+            minHeight: 44,
             padding: "6px 10px",
             borderRadius: 8,
             background: C.bg,
@@ -824,7 +823,9 @@ function TopBar({
             color: C.textMuted,
             fontSize: 12,
             cursor: "pointer",
-            padding: "4px",
+            minWidth: 44,
+            minHeight: 44,
+            padding: 0,
             borderRadius: 6,
           }}
         >
@@ -903,7 +904,7 @@ function StatusPanel({
             onClick={() => setTab(t)}
             style={{
               flex: 1,
-              height: 28,
+              height: 44,
               background: "transparent",
               border: "none",
               borderBottom: `2px solid ${tab === t ? C.green : "transparent"}`,
@@ -927,8 +928,9 @@ function StatusPanel({
             style={{
               position: "absolute",
               right: 8,
-              height: 28,
-              padding: "0 8px",
+              width: 44,
+              height: 44,
+              padding: 0,
               background: "transparent",
               border: "none",
               color: C.textMuted,
@@ -1982,7 +1984,9 @@ function SideDrawer({
               color: C.textMuted,
               fontSize: 16,
               cursor: "pointer",
-              padding: "4px",
+              minWidth: 44,
+              minHeight: 44,
+              padding: 0,
               borderRadius: 6,
             }}
           >
@@ -2043,12 +2047,12 @@ function SideDrawer({
                 marginBottom: 4,
               }}
             >
-              PAL Router
+              PAL Verlauf
             </div>
             <div
               style={{ fontFamily: "monospace", fontSize: 10, color: C.green }}
             >
-              sparsame Route aktiv
+              {palStats.total} belegte {palStats.total === 1 ? "Entscheidung" : "Entscheidungen"}
             </div>
             <div
               style={{
@@ -2057,57 +2061,10 @@ function SideDrawer({
                 color: C.textMuted,
               }}
             >
-              {palStats.total} Calls · {DEV_CHAT_WORKER_MODELS.length} Modelle
-              verfügbar
+              Referenzschätzung: {palStats.savings}% ggü. Faktor 30 · {DEV_CHAT_WORKER_MODELS.length} Modelle konfiguriert
             </div>
           </div>
         )}
-
-        {/* Cloudflare info (verbatim v3) */}
-        <div
-          style={{
-            margin: "8px 12px 0",
-            padding: "10px 12px",
-            borderRadius: 10,
-            background: C.bg,
-            border: `1px solid ${C.border}`,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "monospace",
-              fontSize: 9,
-              color: C.textMuted,
-              marginBottom: 4,
-            }}
-          >
-            Cloudflare Workers
-          </div>
-          <div
-            style={{
-              fontFamily: "monospace",
-              fontSize: 8,
-              color: C.textMuted,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {SOVEREIGN_WORKER_CHAT}
-          </div>
-          <div
-            style={{
-              fontFamily: "monospace",
-              fontSize: 8,
-              color: C.textMuted,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {SOVEREIGN_WORKER_KV}
-          </div>
-        </div>
 
         {/* Runtime-bound tools — same surfaces as the compact launcher */}
         <div
@@ -2127,13 +2084,13 @@ function SideDrawer({
               marginBottom: 8,
             }}
           >
-            Werkzeuge · echte Flächen
+            Werkzeuge
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {[
-              { label: "⬡ Alle Tools", status: "Launcher", action: onOpenAllTools },
-              { label: chatRepoSnapshot ? "⎇ Repo öffnen" : "⎇ Repo laden", status: chatRepoSnapshot ? "bereit" : "Setup", action: onOpenRepo },
-              { label: "≡ Runtime Logs", status: "Evidence", action: onOpenRuntimeLogs },
+              { label: "⬡ Alle Tools", status: "öffnen", action: onOpenAllTools },
+              { label: chatRepoSnapshot ? "⎇ Repo öffnen" : "⎇ Repo laden", status: chatRepoSnapshot ? "bereit" : "einrichten", action: onOpenRepo },
+              { label: "≡ Runtime Logs", status: "belegte Ereignisse", action: onOpenRuntimeLogs },
               {
                 label: "🔑 GitHub Access",
                 status: githubAccessState === 'ready' ? "validiert" : githubAccessState === 'validating' || githubAccessState === 'requested' ? "prüft" : "fehlt",
@@ -2233,7 +2190,7 @@ function SideDrawer({
               textAlign: "left",
             }}
           >
-            🔍 Interne Prüfung
+            🔍 Auftrag analysieren
           </button>
           <button
             type="button"
@@ -2427,8 +2384,8 @@ function Composer({
             aria-label="Eingabe löschen"
             title="Eingabe löschen"
             style={{
-              width: 32,
-              height: 40,
+              width: 44,
+              height: 44,
               flexShrink: 0,
               background: "transparent",
               border: "none",
@@ -2455,8 +2412,8 @@ function Composer({
           data-role={SOVEREIGN_ACTION_START_TASK.dataRole}
           data-testid={SOVEREIGN_ACTION_START_TASK.testId}
           style={{
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             borderRadius: 12,
             flexShrink: 0,
             background: disabled || loading ? C.surface : C.orange,
@@ -5920,7 +5877,6 @@ Das echte Repo-Setup wurde geöffnet.`,
         panelOpen={panelOpen}
         onPanelToggle={() => setPanelOpen((v) => !v)}
         palTier={lastPal?.tier ?? null}
-        palSavings={palStats?.savings ?? null}
         credits={credits}
         userLoggedIn={!!authUser}
         userAvatar={authUser?.avatarUrl ?? null}
