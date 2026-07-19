@@ -31,6 +31,7 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
+    "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 
 
@@ -147,6 +148,46 @@ class OwnerInputClient:
             "request": request_payload,
             "protected_value_returned": False,
         }
+
+    def plan_proven_learning(self, record: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(record, dict):
+            raise ValueError("record muss ein Objekt sein")
+        return self._request(
+            "POST",
+            "/api/internal/proven-learning/plan",
+            json_body={"record": record},
+        )
+
+    def apply_proven_learning(
+        self,
+        *,
+        request_id: str,
+        confirmation_sha256: str,
+        record: dict[str, Any],
+    ) -> dict[str, Any]:
+        selected_request = str(request_id or "").strip()
+        selected_hash = str(confirmation_sha256 or "").strip().lower()
+        if not REQUEST_ID_RE.fullmatch(selected_request):
+            raise ValueError("request_id ist ungültig")
+        try:
+            uuid.UUID(selected_request)
+        except ValueError as exc:
+            raise ValueError("request_id ist ungültig") from exc
+        if not re.fullmatch(r"[0-9a-f]{64}", selected_hash):
+            raise ValueError("confirmation_sha256 ist ungültig")
+        if not isinstance(record, dict):
+            raise ValueError("record muss ein Objekt sein")
+        return self._request(
+            "POST",
+            "/api/internal/proven-learning/apply",
+            json_body={
+                "requestId": selected_request,
+                "confirmationSha256": selected_hash,
+                "record": record,
+            },
+            expected=(200,),
+            timeout=120,
+        )
 
 
 class ControllerRuntimeClient(OwnerInputClient):

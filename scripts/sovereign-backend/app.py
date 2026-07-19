@@ -63,6 +63,7 @@ from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
+from proven_learning_runtime import register_proven_learning_routes
 from llm_provider_runtime import register_llm_provider_routes
 from controller_board import register_controller_board_routes
 
@@ -6415,6 +6416,10 @@ register_owner_input_routes(
     require_admin=require_admin,
     get_connection=get_agent_runtime_connection,
     get_current_admin=get_current_admin,
+)
+register_proven_learning_routes(
+    app,
+    get_connection=get_agent_runtime_connection,
 )
 register_llm_provider_routes(
     app,

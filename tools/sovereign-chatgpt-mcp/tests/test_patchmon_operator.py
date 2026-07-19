@@ -87,7 +87,8 @@ def test_free_text_redaction_removes_secret_shaped_values() -> None:
 
 
 def test_runtime_inventory_does_not_return_container_environment_or_mount_sources(monkeypatch) -> None:
-    network_name = "patchmon-sovereign_patchmon-edge"
+    internal_network = "patchmon-sovereign_patchmon-internal"
+    edge_network = "patchmon-sovereign_patchmon-edge"
 
     def runner(argv, **kwargs):
         if argv[:2] == ["docker", "inspect"]:
@@ -98,6 +99,14 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
                 if service == "server"
                 else {}
             )
+            attached_networks = {
+                internal_network: {"IPAddress": "172.31.0.2", "GlobalIPv6Address": ""}
+            }
+            if service == "server":
+                attached_networks[edge_network] = {
+                    "IPAddress": "172.32.0.2",
+                    "GlobalIPv6Address": "",
+                }
             payload = [{
                 "Id": "a" * 64,
                 "Name": "/" + name,
@@ -123,7 +132,7 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
                     "Health": {"Status": "healthy"},
                 },
                 "NetworkSettings": {
-                    "Networks": {network_name: {"IPAddress": "172.31.0.2", "GlobalIPv6Address": ""}},
+                    "Networks": attached_networks,
                     "Ports": published,
                 },
                 "Mounts": [{
@@ -135,24 +144,41 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
                 "HostConfig": {
                     "Privileged": False,
                     "ReadonlyRootfs": False,
-                    "NetworkMode": network_name,
+                    "NetworkMode": internal_network,
                 },
                 "RestartCount": 0,
             }]
             return _completed(argv, json.dumps(payload))
         if argv[:3] == ["docker", "network", "ls"]:
-            return _completed(argv, json.dumps({"Name": network_name}) + "\n")
+            return _completed(
+                argv,
+                "\n".join(
+                    (
+                        json.dumps({"Name": internal_network}),
+                        json.dumps({"Name": edge_network}),
+                    )
+                ) + "\n",
+            )
         if argv[:3] == ["docker", "network", "inspect"]:
+            network_name = argv[3]
+            if network_name == internal_network:
+                member_names = PATCHMON_CONTAINERS
+                internal = True
+            elif network_name == edge_network:
+                member_names = (PATCHMON_CONTAINERS[0],)
+                internal = False
+            else:
+                raise AssertionError(f"unexpected network: {network_name}")
             members = {
                 str(index): {"Name": name, "IPv4Address": f"172.31.0.{index + 2}/16", "IPv6Address": ""}
-                for index, name in enumerate(PATCHMON_CONTAINERS)
+                for index, name in enumerate(member_names)
             }
             payload = [{
                 "Id": "c" * 64,
                 "Name": network_name,
                 "Driver": "bridge",
                 "Scope": "local",
-                "Internal": False,
+                "Internal": internal,
                 "Attachable": False,
                 "Ingress": False,
                 "Labels": {"com.docker.compose.project": "patchmon-sovereign"},
@@ -168,7 +194,7 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
                     "Image": "ghcr.io/patchmon/patchmon-server:2.0.2",
                     "State": "running",
                     "Status": "Up 10 minutes (healthy)",
-                    "Networks": network_name,
+                    "Networks": f"{internal_network},{edge_network}",
                     "Ports": "127.0.0.1:32830->3000/tcp",
                 }) + "\n",
             )
@@ -200,43 +226,106 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
     }]
 
 
-def test_runtime_inventory_does_not_probe_foreign_listener_without_verified_transport(monkeypatch) -> None:
+def test_runtime_inventory_blocks_network_mode_and_attachment_drift(monkeypatch) -> None:
+    internal_network = "patchmon-sovereign_patchmon-internal"
+    edge_network = "patchmon-sovereign_patchmon-edge"
+    services = {
+        "patchmon-sovereign-server-1": "server",
+        "patchmon-sovereign-database-1": "database",
+        "patchmon-sovereign-redis-1": "redis",
+        "patchmon-sovereign-guacd-1": "guacd",
+    }
     runtime = PatchmonOperatorRuntime()
 
-    def inspect_container(name: str) -> dict:
-        service = name.removeprefix("patchmon-sovereign-").removesuffix("-1")
+    def inspect_container(name: str):
+        networks = [{"name": internal_network}]
+        if services[name] in {"server", "database"}:
+            networks.append({"name": edge_network})
         return {
             "present": True,
             "container": name,
             "project": "patchmon-sovereign",
-            "service": service,
-            "state": {
-                "running": True,
-                "health": "healthy",
-            },
-            "security": {
-                "privileged": False,
-            },
-            "networks": [{
-                "name": "patchmon-sovereign_patchmon-internal",
-            }],
+            "service": services[name],
+            "state": {"running": True, "health": "healthy"},
+            "security": {"privileged": False},
+            "networks": networks,
             "publishedPorts": [],
         }
 
-    def unexpected_http_probe() -> dict:
-        raise AssertionError("foreign loopback listener must not be probed as PatchMon")
-
     monkeypatch.setattr(runtime, "_inspect_container", inspect_container)
-    monkeypatch.setattr(runtime, "_network_inventory", lambda _states: [])
-    monkeypatch.setattr(runtime, "_http_health", unexpected_http_probe)
+    monkeypatch.setattr(
+        runtime,
+        "_network_inventory",
+        lambda _states: [
+            {
+                "name": internal_network,
+                "present": True,
+                "driver": "bridge",
+                "internal": False,
+                "members": [{"name": name} for name in PATCHMON_CONTAINERS],
+            },
+            {
+                "name": edge_network,
+                "present": True,
+                "driver": "bridge",
+                "internal": False,
+                "members": [
+                    {"name": "patchmon-sovereign-server-1"},
+                    {"name": "patchmon-sovereign-database-1"},
+                ],
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_fleet_inventory",
+        lambda _limit: {"ok": True, "status": "DOCKER_FLEET_INVENTORIED", "containers": []},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_http_health",
+        lambda: {"ok": True, "status": "PATCHMON_HTTP_HEALTH_READY", "httpStatus": 200},
+    )
 
-    result = runtime.runtime_inventory(include_fleet=False)
-    codes = {violation["code"] for violation in result["boundaryViolations"]}
+    result = runtime.runtime_inventory()
+    violations = result["boundaryViolations"]
 
     assert result["status"] == "PATCHMON_RUNTIME_DEGRADED"
-    assert result["httpHealth"]["status"] == "PATCHMON_HTTP_SKIPPED_UNVERIFIED_TRANSPORT"
-    assert "PATCHMON_SERVER_EDGE_NETWORK_MISSING" in codes
-    assert "PATCHMON_SERVER_LOOPBACK_BINDING_MISSING" in codes
+    assert {
+        "code": "PATCHMON_NETWORK_INTERNAL_MODE_MISMATCH",
+        "network": internal_network,
+        "expectedInternal": True,
+        "actualInternal": False,
+    } in violations
+    assert {
+        "code": "PATCHMON_CONTAINER_NETWORK_UNEXPECTED",
+        "container": "patchmon-sovereign-database-1",
+        "network": edge_network,
+    } in violations
+    assert {
+        "code": "UNEXPECTED_PATCHMON_NETWORK_MEMBER",
+        "network": edge_network,
+        "container": "patchmon-sovereign-database-1",
+    } in violations
+
+    monkeypatch.setattr(
+        runtime,
+        "_network_inventory",
+        lambda _states: [
+            {
+                "name": edge_network,
+                "present": True,
+                "driver": "bridge",
+                "internal": False,
+                "members": [{"name": "patchmon-sovereign-server-1"}],
+            }
+        ],
+    )
+    missing_network = runtime.runtime_inventory()
+    assert {
+        "code": "REQUIRED_PATCHMON_NETWORK_MISSING",
+        "network": internal_network,
+    } in missing_network["boundaryViolations"]
 
 
 def test_pending_approval_plan_is_state_bound_and_never_claims_host_execution(monkeypatch) -> None:

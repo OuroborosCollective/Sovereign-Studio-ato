@@ -1,7 +1,7 @@
 import React from 'react';
 import { Provider } from 'react-redux';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { store } from './store';
 
@@ -16,6 +16,16 @@ const agent = vi.hoisted(() => ({
   runJanitor: vi.fn(),
   prepareDraftPr: vi.fn(),
   createDraftPr: vi.fn(),
+}));
+
+const memory = vi.hoisted(() => ({
+  searchReusableMemory: vi.fn(),
+  reusableMemoryContext: vi.fn(),
+}));
+
+vi.mock('./features/knowledge/knowledgeApi', () => ({
+  searchReusableMemory: memory.searchReusableMemory,
+  reusableMemoryContext: memory.reusableMemoryContext,
 }));
 
 vi.mock('./features/product/runtime/sovereignAgentClient', () => ({
@@ -84,6 +94,11 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+beforeEach(() => {
+  memory.searchReusableMemory.mockResolvedValue([]);
+  memory.reusableMemoryContext.mockReturnValue('');
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -214,13 +229,16 @@ describe('App Draft-PR runtime flow', () => {
     render(<Provider store={store}><App /></Provider>);
     fireEvent.click(screen.getByRole('button', { name: 'Publish staged' }));
 
-    // wait for the UI to reflect the PR URL
-    const prUrlEl = await screen.findByTestId('flow-pr-url');
-    expect(prUrlEl).toHaveTextContent('/pull/11');
+    // The reusable-memory lookup adds one fail-soft async boundary before
+    // staging. Wait for the observable outcome rather than only for the
+    // already-mounted element to exist.
+    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/11'));
 
+    expect(memory.searchReusableMemory).toHaveBeenCalledWith('Update README', 6);
     expect(agent.startToolchainJob).toHaveBeenCalledTimes(1);
     expect(agent.startToolchainJob).toHaveBeenCalledWith(expect.objectContaining({
       repoUrl: 'https://github.com/acme/repo',
+      evidenceText: 'Update README',
       cloneRepo: true,
       provisionWorkspace: true,
       stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],

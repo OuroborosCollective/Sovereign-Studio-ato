@@ -15,6 +15,9 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_input_client.py" in dockerfile
     assert "owner_input_client.py" in installer
     assert "owner_input_client.py" in workflow
+    assert "proven_learning_tools.py" in dockerfile
+    assert "proven_learning_tools.py" in installer
+    assert "proven_learning_tools.py" in workflow
     assert "a2a_runtime_client.py" in dockerfile
     assert "a2a_runtime_client.py" in installer
     assert "owner_input_widget.py" in dockerfile
@@ -106,6 +109,9 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "secret" not in open_signature.lower()
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
+    assert '"proven_learning_confirmation": "Exakter Learning-Plan-Hash"' in client
+    assert "def plan_proven_learning(" in client
+    assert "def apply_proven_learning(" in client
     assert "openhands_api_key" not in client
     assert "OpenHands API-Key" not in client
     assert '"targetId": selected_target' in client

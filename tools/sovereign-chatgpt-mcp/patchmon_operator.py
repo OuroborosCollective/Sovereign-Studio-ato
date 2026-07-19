@@ -26,6 +26,22 @@ PATCHMON_CONTAINERS = (
     PATCHMON_GUACD_CONTAINER,
 )
 PATCHMON_SERVICES = ("server", "database", "redis", "guacd")
+PATCHMON_INTERNAL_NETWORK = f"{PATCHMON_PROJECT}_patchmon-internal"
+PATCHMON_EDGE_NETWORK = f"{PATCHMON_PROJECT}_patchmon-edge"
+PATCHMON_EXPECTED_CONTAINER_NETWORKS = {
+    PATCHMON_SERVER_CONTAINER: frozenset({PATCHMON_INTERNAL_NETWORK, PATCHMON_EDGE_NETWORK}),
+    PATCHMON_DATABASE_CONTAINER: frozenset({PATCHMON_INTERNAL_NETWORK}),
+    PATCHMON_REDIS_CONTAINER: frozenset({PATCHMON_INTERNAL_NETWORK}),
+    PATCHMON_GUACD_CONTAINER: frozenset({PATCHMON_INTERNAL_NETWORK}),
+}
+PATCHMON_EXPECTED_NETWORK_MEMBERS = {
+    PATCHMON_INTERNAL_NETWORK: frozenset(PATCHMON_CONTAINERS),
+    PATCHMON_EDGE_NETWORK: frozenset({PATCHMON_SERVER_CONTAINER}),
+}
+PATCHMON_EXPECTED_NETWORK_INTERNAL = {
+    PATCHMON_INTERNAL_NETWORK: True,
+    PATCHMON_EDGE_NETWORK: False,
+}
 PATCHMON_DATABASE_USER = "patchmon_user"
 PATCHMON_DATABASE_NAME = "patchmon_db"
 PATCHMON_LOOPBACK_HOST = "127.0.0.1"
@@ -481,49 +497,86 @@ class PatchmonOperatorRuntime:
                             "binding": binding,
                         }
                     )
-
-        server_state = states[PATCHMON_SERVER_CONTAINER]
-        server_networks = {
-            str(network.get("name") or "")
-            for network in server_state.get("networks", [])
-            if isinstance(network, dict)
+        network_by_name = {
+            str(network.get("name") or ""): network
+            for network in networks
+            if str(network.get("name") or "")
         }
-        server_bindings = server_state.get("publishedPorts", [])
-        if server_state.get("present"):
-            if "patchmon-sovereign_patchmon-edge" not in server_networks:
+        for network_name, expected_members in PATCHMON_EXPECTED_NETWORK_MEMBERS.items():
+            network = network_by_name.get(network_name)
+            if not network or not network.get("present"):
                 violations.append(
                     {
-                        "code": "PATCHMON_SERVER_EDGE_NETWORK_MISSING",
-                        "container": PATCHMON_SERVER_CONTAINER,
+                        "code": "REQUIRED_PATCHMON_NETWORK_MISSING",
+                        "network": network_name,
                     }
                 )
-            if not any(
-                str(binding.get("containerPort") or "") == "3000/tcp"
-                and str(binding.get("hostIp") or "") == "127.0.0.1"
-                and str(binding.get("hostPort") or "") == "32830"
-                for binding in server_bindings
-                if isinstance(binding, dict)
-            ):
-                violations.append(
-                    {
-                        "code": "PATCHMON_SERVER_LOOPBACK_BINDING_MISSING",
-                        "container": PATCHMON_SERVER_CONTAINER,
-                    }
-                )
-        expected_names = set(PATCHMON_CONTAINERS)
-        for network in networks:
-            if not network.get("present"):
                 continue
-            for member in network.get("members", []):
-                member_name = str(member.get("name") or "")
-                if member_name and member_name not in expected_names:
-                    violations.append(
-                        {
-                            "code": "UNEXPECTED_PATCHMON_NETWORK_MEMBER",
-                            "network": network.get("name"),
-                            "container": member_name,
-                        }
-                    )
+            if bool(network.get("internal")) != PATCHMON_EXPECTED_NETWORK_INTERNAL[network_name]:
+                violations.append(
+                    {
+                        "code": "PATCHMON_NETWORK_INTERNAL_MODE_MISMATCH",
+                        "network": network_name,
+                        "expectedInternal": PATCHMON_EXPECTED_NETWORK_INTERNAL[network_name],
+                        "actualInternal": bool(network.get("internal")),
+                    }
+                )
+            if network.get("driver") != "bridge":
+                violations.append(
+                    {
+                        "code": "PATCHMON_NETWORK_DRIVER_MISMATCH",
+                        "network": network_name,
+                        "expectedDriver": "bridge",
+                        "actualDriver": network.get("driver"),
+                    }
+                )
+            observed_members = {
+                str(member.get("name") or "")
+                for member in network.get("members", [])
+                if isinstance(member, dict) and str(member.get("name") or "")
+            }
+            for container in sorted(expected_members - observed_members):
+                violations.append(
+                    {
+                        "code": "PATCHMON_NETWORK_MEMBER_MISSING",
+                        "network": network_name,
+                        "container": container,
+                    }
+                )
+            for container in sorted(observed_members - expected_members):
+                violations.append(
+                    {
+                        "code": "UNEXPECTED_PATCHMON_NETWORK_MEMBER",
+                        "network": network_name,
+                        "container": container,
+                    }
+                )
+
+        for container, state in states.items():
+            if not state.get("present"):
+                continue
+            observed_networks = {
+                str(network.get("name") or "")
+                for network in state.get("networks", [])
+                if isinstance(network, dict) and str(network.get("name") or "")
+            }
+            expected_networks = PATCHMON_EXPECTED_CONTAINER_NETWORKS[container]
+            for network_name in sorted(expected_networks - observed_networks):
+                violations.append(
+                    {
+                        "code": "PATCHMON_CONTAINER_NETWORK_MISSING",
+                        "container": container,
+                        "network": network_name,
+                    }
+                )
+            for network_name in sorted(observed_networks - expected_networks):
+                violations.append(
+                    {
+                        "code": "PATCHMON_CONTAINER_NETWORK_UNEXPECTED",
+                        "container": container,
+                        "network": network_name,
+                    }
+                )
 
         present = sum(1 for state in states.values() if state.get("present"))
         running = sum(1 for state in states.values() if state.get("state", {}).get("running"))
