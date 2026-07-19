@@ -62,72 +62,27 @@ export interface SovereignExecutorRouteInput {
   readonly candidatePath?: string;
 }
 
-const STATUS_TOKENS = [
-  'status',
-  'was ist der status',
-  'bist du fertig',
-  'fertig?',
-  'warum passiert nichts',
-  'läuft',
-  'laeuft',
-];
+const OFFLINE_EXACT_COMMANDS: Readonly<Record<string, SovereignExecutorIntentKind>> = {
+  '/status': 'status',
+  '/question': 'question',
+  '/direct-patch': 'direct_patch',
+  '/code': 'code_execution',
+  '/agent': 'code_execution',
+  '/draft-pr': 'draft_pr',
+};
 
-const QUESTION_TOKENS = [
-  'was ist',
-  'wie funktioniert',
-  'warum',
-  'erklär',
-  'erklaer',
-  'explain',
-  'how does',
-  '?',
-];
-
-const DIRECT_PATCH_TOKENS = [
-  'readme',
-  'docs',
-  'dokumentation',
-  'changelog',
-  'titel',
-  'überschrift',
-  'ueberschrift',
-];
-
-const CODE_EXECUTION_TOKENS = [
-  'baue',
-  'bauen',
-  'implementiere',
-  'implementieren',
-  'fixe',
-  'repariere',
-  'ändere datei',
-  'aendere datei',
-  'code',
-  'test',
-  'refactor',
-  'workflow',
-  'backend',
-  'frontend',
-];
-
-const DRAFT_PR_TOKENS = ['draft pr', 'pull request', 'pr erstellen', 'create pr'];
-
-function includesAny(value: string, tokens: readonly string[]): boolean {
-  return tokens.some((token) => value.includes(token));
-}
-
-/** Offline/degraded-only fallback. Online routes must pass structured LLM intent evidence. */
+/**
+ * Offline/degraded fallback for explicit machine controls only.
+ *
+ * Free user language must remain `unknown` until an online LLM returns structured
+ * intent evidence. This runtime deliberately does not infer meaning from words,
+ * punctuation or language-specific token lists.
+ */
 export function classifyOfflineSovereignExecutorIntent(text: string): SovereignExecutorIntentKind {
   const clean = text.trim().toLowerCase();
   if (!clean) return 'unknown';
-  if (includesAny(clean, STATUS_TOKENS)) return 'status';
-  // Offline fallback only: a real question must stay advisory even when it
-  // mentions action nouns such as README, code or Pull Request.
-  if (includesAny(clean, QUESTION_TOKENS)) return 'question';
-  if (includesAny(clean, DRAFT_PR_TOKENS)) return 'draft_pr';
-  if (includesAny(clean, DIRECT_PATCH_TOKENS) && !includesAny(clean, CODE_EXECUTION_TOKENS)) return 'direct_patch';
-  if (includesAny(clean, CODE_EXECUTION_TOKENS)) return 'code_execution';
-  return 'unknown';
+  const command = clean.split(/\s+/, 1)[0];
+  return OFFLINE_EXACT_COMMANDS[command] ?? 'unknown';
 }
 
 function event(args: {

@@ -149,6 +149,50 @@ def test_knowledge_url_allowlist_blocks_ssrf_and_plain_http() -> None:
         knowledge_library.fetch_url_document("https://example.com/private")
 
 
+def test_github_import_failure_returns_auditable_non_secret_correlation() -> None:
+    recorded: list[tuple[str, str | None, dict[str, object]]] = []
+    source_url = "https://github.com/OuroborosCollective/Sovereign-Studio-ato"
+    error = knowledge_library.GitHubKnowledgeAccessError(
+        "credentials rejected",
+        blocker="github_credentials_rejected",
+        github_status=403,
+        response_status=409,
+    )
+
+    correlation_id, audit_recorded = knowledge_library._record_github_import_failure(
+        lambda action, target, changes: recorded.append((action, target, changes)),
+        source_url,
+        error,
+    )
+
+    assert str(knowledge_library.uuid.UUID(correlation_id)) == correlation_id
+    assert audit_recorded is True
+    assert recorded[0][0] == "knowledge:github_import_failed"
+    assert recorded[0][1] != source_url
+    assert recorded[0][1].startswith("github:")
+    assert recorded[0][2]["blocker"] == "github_credentials_rejected"
+    assert recorded[0][2]["githubHttpStatus"] == 403
+    assert recorded[0][2]["correlationId"] == correlation_id
+
+
+def test_github_import_failure_marks_missing_audit_without_hiding_blocker() -> None:
+    error = knowledge_library.GitHubKnowledgeAccessError(
+        "rate limited",
+        blocker="github_rate_limit_exhausted",
+        github_status=403,
+        response_status=429,
+    )
+
+    correlation_id, audit_recorded = knowledge_library._record_github_import_failure(
+        None,
+        "https://github.com/example/private",
+        error,
+    )
+
+    assert str(knowledge_library.uuid.UUID(correlation_id)) == correlation_id
+    assert audit_recorded is False
+
+
 def test_source_upload_classifies_code_without_executing_it() -> None:
     doc = knowledge_library.upload_document("example.cpp", b"int main(){ return 0; }")
     assert doc.source_type == "code"

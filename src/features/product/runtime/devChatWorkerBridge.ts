@@ -809,6 +809,7 @@ function parseWorkerInterpretationContent(
   const actionTitle = typeof record.action_title === 'string'
     ? record.action_title.trim()
     : '';
+  const isStartup = record.is_startup === true;
   const confidenceValue = typeof record.confidence === 'number'
     ? record.confidence
     : Number(record.confidence);
@@ -832,6 +833,7 @@ function parseWorkerInterpretationContent(
     language,
     model,
     fallbackUsed,
+    isStartup,
   };
 }
 
@@ -856,11 +858,12 @@ export async function fetchDevChatWorkerInterpretation(args: {
     'Die Runtime entscheidet nach deiner Deutung separat über Repo-, GitHub-, Workspace- und Draft-PR-Gates.',
     'Antworte ausschließlich als einzelnes JSON-Objekt ohne Markdown.',
     'Schema:',
-    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","confidence":0.0,"language":"de|en|..."}',
+    '{"mode":"chat|action","intent":"free_chat|status|direct_patch|code_execution|draft_pr|workflow_watch|repair_workflow|load_repo|unknown","action_disposition":"review|execute","assistant_text":"Antwort in Sprache des Users oder kurze Verständnisbestätigung","action_title":"konkreter Aktionsauftrag oder leer","is_startup":false,"confidence":0.0,"language":"de|en|..."}',
     'Nutze mode=action nur wenn der User tatsächlich etwas verändern, ausführen, reparieren, erstellen, prüfen oder als Draft PR vorbereiten lassen will.',
     'Nutze action_disposition=execute nur bei einem ausdrücklichen sofortigen Ausführungsauftrag. Nutze review für einen erkannten Änderungsvorschlag, der zuerst als Integrationsentwurf bestätigt werden soll.',
     'Nutze mode=chat für Fragen, Erklärungen, Diskussionen und Beratung.',
-    'Bei Unsicherheit: mode=chat, intent=unknown, keine erfundene Aktion.',
+    'Bei intent=status setze is_startup=true nur wenn gefragt wird, ob eine Ausführung begonnen hat oder aktuell läuft; für fertig/abgeschlossen/Fortschritt bleibt is_startup=false.',
+    'Bei Unsicherheit: mode=chat, intent=unknown, is_startup=false, keine erfundene Aktion.',
     args.repoContext ? `Runtime-Repo-Kontext: ${args.repoContext}` : 'Runtime-Repo-Kontext: nicht geladen.',
     args.runtimeContext ? `Belegte Runtime-Fakten (nur Fakten, keine Sprachdeutung):\n${args.runtimeContext}` : '',
     args.memoryContext ? `Evidence-geprüfter Memory-Kontext:\n${args.memoryContext}` : '',

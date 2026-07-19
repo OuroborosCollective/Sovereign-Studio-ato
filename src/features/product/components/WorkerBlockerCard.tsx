@@ -20,8 +20,10 @@ export interface WorkerBlockerCardProps {
   onRetryWithMessage?: (message: string) => void;
   onExplain: () => void;
   onAgentInstead?: (message: string) => void;
-  /** Used to gate Sovereign Agent action behind real code intent */
+  /** Last correlated user request; never interpreted locally. */
   userMessage?: string;
+  /** Structured LLM/runtime decision that explicitly permits the Agent handoff. */
+  allowAgentAction?: boolean;
 }
 
 const C = {
@@ -63,19 +65,6 @@ function normalizeActionMessage(message: string | undefined): string | undefined
   return trimmed;
 }
 
-// Check if message contains real code/Draft-PR intent
-function hasCodeIntent(message: string): boolean {
-  const codeSignals = [
-    'code', 'fix', 'bug', 'feature', 'implement', 'refactor',
-    'pr', 'pull request', 'draft', 'publish', 'build', 'test',
-    'function', 'class', 'component', 'api', 'error', 'exception',
-    '//', 'import', 'export', 'const ', 'function ', 'async ',
-    'erstelle', 'baue', 'generiere', 'paket', 'pr ',
-  ];
-  const lower = message.toLowerCase();
-  return codeSignals.some(signal => lower.includes(signal));
-}
-
 function formatScope(diagnostic: DevChatWorkerDiagnostic): string {
   // Use type-safe scope checks
   const scope = diagnostic.scope;
@@ -105,10 +94,11 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   onExplain,
   onAgentInstead,
   userMessage,
+  allowAgentAction = false,
 }) => {
   const { diagnostic, health } = blocker;
   const actionMessage = normalizeActionMessage(userMessage);
-  const canAgent = Boolean(actionMessage && hasCodeIntent(actionMessage));
+  const canAgent = Boolean(allowAgentAction && actionMessage && onAgentInstead);
   const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
   
   // A visible retry action is enabled only when a real retry callback exists.
@@ -170,6 +160,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
           disabled={!canRetry}
           aria-disabled={!canRetry}
           style={{
+            minHeight: 44,
             padding: '8px 16px',
             borderRadius: 8,
             background: C.rose + '20',
@@ -189,6 +180,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
           type="button"
           onClick={onExplain}
           style={{
+            minHeight: 44,
             padding: '8px 16px',
             borderRadius: 8,
             background: C.amber + '15',
@@ -208,6 +200,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
             type="button"
             onClick={handleAgent}
             style={{
+              minHeight: 44,
               padding: '8px 16px',
               borderRadius: 8,
               background: C.sky + '15',
@@ -246,50 +239,9 @@ export interface WorkerDegradedBannerProps {
   userMessage?: string;
 }
 
-export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = ({
-  blocker,
-  onRetry,
-  onRetryWithMessage,
-  userMessage,
-}) => {
-  const scope = formatScope(blocker.diagnostic);
-  const actionMessage = normalizeActionMessage(userMessage);
-  const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
-
-  const handleClick = useCallback(() => {
-    if (onRetryWithMessage && actionMessage) {
-      onRetryWithMessage(actionMessage);
-    } else if (onRetry) {
-      onRetry();
-    }
-  }, [onRetry, onRetryWithMessage, actionMessage]);
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid="worker-degraded-banner"
-      onClick={canRetry ? handleClick : undefined}
-      aria-disabled={!canRetry}
-      style={{
-        padding: '6px 16px',
-        background: C.rose + '20',
-        borderBottom: `1px solid ${C.rose}40`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        cursor: canRetry ? 'pointer' : 'default',
-        opacity: canRetry ? 1 : 0.75,
-        fontSize: 12,
-        color: C.rose,
-      }}
-    >
-      <span>Worker offline</span>
-      <span style={{ color: C.textSub }}>·</span>
-      <span>scope={scope}</span>
-      <span style={{ color: C.textSub }}>·</span>
-      <span>{canRetry ? 'Retry' : 'Kein Retry-Request'}</span>
-    </div>
-  );
-};
+/**
+ * Compatibility no-op. The actionable WorkerBlockerCard is the single visible
+ * recovery surface; rendering a second clickable banner duplicated status and
+ * allowed accidental retries on mobile.
+ */
+export const WorkerDegradedBanner: React.FC<WorkerDegradedBannerProps> = () => null;
