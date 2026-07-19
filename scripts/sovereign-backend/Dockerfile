@@ -16,23 +16,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py .
-COPY litellm_runtime.py .
-COPY runner.py .
-COPY security_oauth.py .
-COPY security_runtime.py .
-COPY owner_input_runtime.py .
-COPY proven_learning_runtime.py .
-COPY llm_cost_policy.py .
-COPY llm_provider_runtime.py .
-COPY controller_board.py .
-COPY vector_embedding.py .
-COPY r2_storage.py .
-COPY knowledge_library.py .
-COPY are_inference.py .
+COPY *.py ./
 COPY agent_runtime/ ./agent_runtime/
 COPY migrations ./migrations
-COPY migration_ledger_adapter.py ./migration_ledger_adapter.py
 COPY auto-migrate.sh /docker-entrypoint.d/auto-migrate.sh
 RUN chmod +x /docker-entrypoint.d/auto-migrate.sh
 
