@@ -372,8 +372,9 @@ for src, dst in files.items():
 | arelorian-engine | 3001 | 127.0.0.1:3001 | blocked | MMORPG (NOT toolchain!) |
 | openhands-enterprise | 8000 | 0.0.0.0:8000 | via proxy | OpenHands |
 | supabase-db | 5432 | via Docker network | blocked | PostgreSQL |
-| milvus-standalone | 19530 | via Docker network | 32776 | Vector DB |
-| milvus-attu | 3000 | via Docker network | 32777 | Milvus UI |
+| milvus-standalone | 19530 | private Gateway-Docker-Netz | none | optionale Milvus-Projektion; nur allowlisteter Managed-Compose-Stack |
+| milvus-etcd | 2379 | internes `milvus-storage`-Netz | none | Milvus-Metadaten |
+| milvus-minio | 9000 | internes `milvus-storage`-Netz | none | Milvus-Objektspeicher |
 
 ### Fixing Containerized Python Applications
 
@@ -488,7 +489,8 @@ git push --set-upstream origin "$BRANCH"  # then open a Draft PR
 - `/api/user/agent/jobs/<job_id>/patterns/learn` route registered
 - Endpoint requires JWT session cookie (not X-User-Id header)
 - `pattern_gateway.py` functions: `evaluate_pattern_learning()`, `persist_pattern_learning_candidate()`
-- Milvus running on port 32776
+- PostgreSQL/pgvector bleibt kanonisch; Milvus ist eine optionale Outbox-Projektion ohne Host-Port
+- Milvus-Erfolg nur nach Container-Health und nachgewiesenem Gateway-Pfad behaupten
 
 ### DB Constraints for Sovereign Agent Jobs
 ```sql

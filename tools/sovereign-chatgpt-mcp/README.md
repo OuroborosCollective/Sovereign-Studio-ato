@@ -86,6 +86,33 @@ Der PatchMon-Operator bildet einen geschlossenen Wahrnehmungs- und Steuerungspfa
 
 Der PatchMon-Admin-JWT liegt ausschließlich als reguläre, root-eigene Datei ohne Gruppen-/Weltrechte unter `/opt/patchmon-sovereign/mcp-admin.jwt`. Er wird weder in den MCP-Container gemountet noch in Tool-Argumenten, Antworten oder Logs ausgegeben. Der MCP-Container erhält weiterhin keinen Docker-Socket; Docker- und PatchMon-Zugriffe erfolgen nur über feste Broker-Aktionen.
 
+## Belegte Lernmuster und Projektlogbuch
+
+Der wiederverwendbare Lernpfad ist absichtlich in Plan, Zustimmung, Persistenz und Repository-Protokoll getrennt:
+
+- `proven_learning_pattern_plan` normalisiert ausschließlich erfolgreiche, revisions- und receipt-gebundene Integrationen, Fixes, Datenbankaktionen oder Merge-Ergebnisse. Der Plan schreibt weder Datenbank noch Dateien.
+- `proven_learning_owner_approval_request` bindet einen exakten Plan-Hash an eine frische, authentifizierte Owner-Freigabe.
+- `proven_learning_pattern_apply` schreibt idempotent und transaktional in PostgreSQL/pgvector, erzeugt den bestehenden Milvus-Outbox-Eintrag und meldet Erfolg erst nach Kandidaten- und Vektor-Readback.
+- `repository_learning_logbook_update` aktualisiert den menschenlesbaren Eintrag unter `docs/SOVEREIGN_LEARNING_LOGBOOK.md` sowie den Hash-Snapshot wichtiger Projektmanifeste unter `.sovereign/proven-learning-manifest.json` in der geprüften Arbeitsbranch.
+- Normale Agent-Starts fragen `/api/user/agent/memory/search` fail-soft ab. Treffer werden als nicht vertrauenswürdiger, erneut zu prüfender Erfahrungskontext markiert und nicht als Anweisung behandelt.
+
+Eine nachgewiesene erfolgreiche Aktion allein ist keine stillschweigende Berechtigung für einen produktiven Datenbank-Write. Ohne frische Owner-Freigabe bleibt es beim read-only Plan und dem überprüfbaren Repository-Eintrag.
+
+## Privater Milvus-Stack
+
+Der feste Managed-Compose-Stack `milvus-sovereign` stellt Milvus 2.5.27 mit gepinntem etcd und MinIO bereit. Er veröffentlicht keine Host-Ports und installiert weder Attu noch AgentMemory.
+
+etcd und MinIO liegen ausschließlich im internen `milvus-storage`-Netz. Nur `milvus-standalone` wird zusätzlich mit dem bestehenden `sovereign-memory-gateway` verbunden. Vor jedem Deploy prüft der Broker fail-closed:
+
+- mindestens vier CPU-Kerne, 8 GiB RAM und 10 GiB freien Datenträgerplatz,
+- das erwartete Subnetz und die Kompatibilitätsadresse `172.16.5.4`,
+- die Belegung dieser Adresse,
+- dass das Gateway angeschlossen ist,
+- dass keine fremden Container im Gateway-Netz hängen,
+- und den exakten Template-Bundle-Hash.
+
+MinIO-Zugangsdaten werden erst beim bestätigten Deploy lokal erzeugt, mit Modus `0600` gespeichert und nie zurückgegeben. Der Deploy gilt erst als verifiziert, wenn Milvus `/healthz` antwortet und der TCP-Pfad vom bestehenden Memory-Gateway zu Port `19530` funktioniert.
+
 ## Docker- und VPS-Trennung
 
 Der MCP-Container erhält **keinen Docker-Socket**. Dadurch kann ein Fehler im MCP-Prozess nicht unmittelbar beliebige Host-Container starten oder Produktions-Admin-Zugangsdaten lesen.

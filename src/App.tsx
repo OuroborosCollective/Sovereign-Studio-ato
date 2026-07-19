@@ -16,6 +16,10 @@ import {
   summarizeSovereignAgentJob,
   type SovereignAgentJobSnapshot,
 } from './features/product/runtime/sovereignAgentRuntime';
+import {
+  reusableMemoryContext,
+  searchReusableMemory,
+} from './features/knowledge/knowledgeApi';
 
 const CHAT_ONLY_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -103,6 +107,18 @@ export default function App() {
     };
   }, [agentClient, agentConfig.ready, agentJob.jobId, agentJob.status]);
 
+  const evidenceWithReusableMemory = async (query: string): Promise<string> => {
+    try {
+      const memory = await searchReusableMemory(query, 6);
+      const context = reusableMemoryContext(memory);
+      return context ? `${query}\n\n${context}` : query;
+    } catch {
+      // Login, embeddings or memory may be unavailable. Recall must never
+      // prevent a real agent job from starting.
+      return query;
+    }
+  };
+
   const startChatOnlyTask = async (nextMission: string, input?: Partial<SovereignAgentStartJobInput>) => {
     setMission(nextMission);
     setJanitorPreview('');
@@ -133,11 +149,12 @@ export default function App() {
       events: [{ at: Date.now(), level: 'info', stage: 'agent-request', message: 'Auftrag an die Sovereign Agent Runtime übergeben.' }],
     });
     try {
+      const evidenceText = await evidenceWithReusableMemory(nextMission);
       const snapshot = await agentClient.startToolchainJob({
         repoUrl: input.repoUrl,
         branch: input.branch,
         mission: nextMission,
-        evidenceText: nextMission,
+        evidenceText,
         provisionWorkspace: true,
         cloneRepo: false,
         githubAccessToken: input.githubAccessToken,
@@ -242,11 +259,12 @@ export default function App() {
 
     if (!jobId && input?.changes && input.changes.length > 0) {
       try {
+        const evidenceText = await evidenceWithReusableMemory(input.mission);
         const snapshot = await agentClient.startToolchainJob({
           repoUrl: input.repoUrl,
           branch: input.branch,
           mission: input.mission,
-          evidenceText: input.mission,
+          evidenceText,
           provisionWorkspace: true,
           cloneRepo: true,
           stagedFiles: input.changes,

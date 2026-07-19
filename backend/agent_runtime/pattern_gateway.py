@@ -206,6 +206,7 @@ def persist_pattern_learning_candidate_once(
     *,
     user_id: str,
     result: PatternLearningResult,
+    commit: bool = True,
 ) -> tuple[str | None, bool]:
     """Persist one accepted evidence-backed pattern exactly once per job/kind/mission digest."""
 
@@ -238,10 +239,21 @@ def persist_pattern_learning_candidate_once(
         existing = cur.fetchone()
     if existing:
         return str(existing["candidate_id"]), False
-    return persist_pattern_learning_candidate(conn, user_id=user_id, result=result), True
+    return persist_pattern_learning_candidate(
+        conn,
+        user_id=user_id,
+        result=result,
+        commit=commit,
+    ), True
 
 
-def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: PatternLearningResult) -> str:
+def persist_pattern_learning_candidate(
+    conn: Any,
+    *,
+    user_id: str,
+    result: PatternLearningResult,
+    commit: bool = True,
+) -> str:
     """Persist a pattern gateway decision locally.
 
     This is a local runtime record only. It is not a Remote Memory write.
@@ -274,5 +286,6 @@ def persist_pattern_learning_candidate(conn: Any, *, user_id: str, result: Patte
                 result.predictive_signal,
             ),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
     return candidate_id

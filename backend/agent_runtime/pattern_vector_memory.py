@@ -11,6 +11,9 @@ from vector_embedding import EMBEDDING_MODEL, EmbeddingUnavailable, embed_texts,
 
 def pattern_text(result: Any) -> str:
     payload = result.payload if hasattr(result, "payload") else dict(result or {})
+    structured = str(payload.get("embeddingText") or "").strip()
+    if structured:
+        return structured[:8_000]
     return "\n".join(
         part for part in (
             f"Kind: {payload.get('kind') or 'unknown'}",
@@ -29,6 +32,7 @@ def persist_pattern_vector(
     candidate_id: str,
     user_id: str,
     result: Any,
+    commit: bool = True,
 ) -> dict[str, Any]:
     if not getattr(result, "allowed", False) or not getattr(result, "remote_memory_allowed", False):
         return {
@@ -75,7 +79,8 @@ def persist_pattern_vector(
                     batch.model,
                 ),
             )
-        conn.commit()
+        if commit:
+            conn.commit()
         return {
             "stored": True,
             "storage": "postgres-pgvector",

@@ -70,7 +70,11 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
     targets = runtime._target_map()
 
-    assert set(targets) == {"openai_api_key", "litellm_provider_key"}
+    assert set(targets) == {
+        "openai_api_key",
+        "litellm_provider_key",
+        "proven_learning_confirmation",
+    }
 
     openai_target = targets["openai_api_key"]
     assert openai_target["path"] == (tmp_path / "openai_api_key.txt").resolve()
@@ -83,6 +87,12 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert provider_target["label"] == "Einmaliger Fremdprovider-Zugang für LiteLLM"
     assert provider_target["fieldLabel"] == "Provider API-Key"
     assert provider_target["maxBytes"] == 8192
+
+    learning_target = targets["proven_learning_confirmation"]
+    assert learning_target["path"] == (tmp_path / "proven_learning_confirmation.txt").resolve()
+    assert learning_target["fieldLabel"] == "Exakten 64-stelligen Plan-Hash eingeben"
+    assert learning_target["maxBytes"] == 80
+    assert learning_target["kind"] == "approval_receipt"
 
 
 def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypatch, tmp_path: Path) -> None:
