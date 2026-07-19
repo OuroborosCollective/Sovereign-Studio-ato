@@ -9,6 +9,7 @@ type PredictiveGuardContext = RuntimeContext & {
 import {
   createBuildPredictiveGuard,
   createPredictiveGuardChain,
+  createPredictiveGuardChainForAction,
   createPublishPredictiveGuard,
   createSystemHealthPredictiveGuard,
 } from './runtimeIntelligenceIntegration';
@@ -49,7 +50,17 @@ describe('predictive RuntimeIntelligence integration', () => {
     expect(result.properties?.warnOnly).toBe(true);
   });
 
-  it('blocks publish guard when predictive confidence is below the hard threshold', async () => {
+  it('keeps missing predictive evidence neutral for publish without claiming safety', async () => {
+    const guard = createPublishPredictiveGuard(() => null);
+    const result = await guard.check(runtimeContext('trace-publish-neutral'));
+
+    expect(result.pass).toBe(true);
+    expect(result.properties?.evidenceAvailable).toBe(false);
+    expect(result.properties?.confidence).toBe(0);
+    expect(result.reason).toContain('neutral advisory signal, not proof of safety');
+  });
+
+  it('blocks publish guard when real predictive evidence is below the hard threshold', async () => {
     const guard = createPublishPredictiveGuard(() => snapshot({ avgConfidence: 0.22, errorRate: 0.05 }));
     const result = await guard.check(runtimeContext('trace-publish'));
 
@@ -59,6 +70,19 @@ describe('predictive RuntimeIntelligence integration', () => {
     expect(result.properties?.confidence).toBe(0.22);
     expect(result.properties?.warnOnly).toBe(false);
     expect(result.reason).toContain('Action: publish');
+  });
+
+  it('keeps advisory guard errors visible but fails hard guard errors closed', async () => {
+    const failingSnapshot = () => {
+      throw new Error('snapshot unavailable');
+    };
+    const buildResult = await createBuildPredictiveGuard(failingSnapshot).check(runtimeContext('trace-build-error'));
+    const publishResult = await createPublishPredictiveGuard(failingSnapshot).check(runtimeContext('trace-publish-error'));
+
+    expect(buildResult.pass).toBe(true);
+    expect(buildResult.properties?.guardError).toBe(true);
+    expect(publishResult.pass).toBe(false);
+    expect(publishResult.properties?.guardError).toBe(true);
   });
 
   it('fails system health guard on critical predictive error rate', async () => {
@@ -73,7 +97,17 @@ describe('predictive RuntimeIntelligence integration', () => {
     expect(result.properties?.errorRate).toBe(0.5);
   });
 
-  it('creates a guard chain wired for preflight, build and publish checks', () => {
+  it('creates action-specific chains without mixing build and publish guards', () => {
+    const buildChain = createPredictiveGuardChainForAction('build', () => snapshot());
+    const publishChain = createPredictiveGuardChainForAction('publish', () => snapshot());
+
+    expect(buildChain.main.map((guard) => guard.name)).toEqual(['predictive_build_guard']);
+    expect(publishChain.main.map((guard) => guard.name)).toEqual(['predictive_publish_guard']);
+    expect(buildChain.preFlight.map((guard) => guard.name)).toEqual(['predictive_system_health_guard']);
+    expect(publishChain.preFlight.map((guard) => guard.name)).toEqual(['predictive_system_health_guard']);
+  });
+
+  it('retains the legacy aggregate chain for compatibility diagnostics', () => {
     const chain = createPredictiveGuardChain(() => snapshot());
 
     expect(chain.preFlight.map((guard) => guard.name)).toEqual([

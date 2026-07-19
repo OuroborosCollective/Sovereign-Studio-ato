@@ -45,8 +45,20 @@ describe('Runtime Intelligence integration contract', () => {
     expect(text).toContain("from '../runtime/RuntimeIntelligence'");
     expect(text).toContain('createPredictiveRuntimeGuard');
     expect(text).toContain('createSystemHealthPredictiveGuard');
+    expect(text).toContain('createPredictiveGuardChainForAction');
     expect(text).toContain('createPredictiveGuardChain');
     expect(text).toContain('checkActionSafety(snapshot, action, nodeId)');
     expect(text).toContain('getSystemSafetyStatus(snapshot)');
+  });
+
+  it('binds the product RuntimeIntelligence singleton to the same predictive layer as runtime bridges', () => {
+    const runtimeText = source('src/runtime/RuntimeIntelligence.ts');
+    const sessionBridgeText = source('src/features/product/runtime/sovereignSessionIntelligenceBridge.ts');
+    const areBridgeText = source('src/features/inference/arePredictiveBridge.ts');
+
+    expect(runtimeText).toContain('predictiveLayer?: PredictiveLayer');
+    expect(runtimeText).toContain('predictiveLayer: getDefaultPredictiveLayer()');
+    expect(sessionBridgeText).toContain('getDefaultPredictiveLayer');
+    expect(areBridgeText).toContain('getDefaultPredictiveLayer');
   });
 });
