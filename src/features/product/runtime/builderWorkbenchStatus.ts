@@ -14,6 +14,7 @@ import type { WorkerRuntimeBlocker } from './builderContainerTypes';
 import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 import { deriveBlockerNextAction } from './sovereignBlockerRegistry';
 import type { GitHubAccessState } from './githubAccessRuntime';
+import type { SovereignActionEvent, SovereignActionKind } from './sovereignActionStreamRuntime';
 
 export type WorkbenchStatusSlotId = 'actions' | 'files' | 'logs' | 'errors' | 'draftPr';
 export type WorkbenchStatusTone = 'neutral' | 'positive' | 'warning' | 'error';
@@ -39,6 +40,7 @@ export interface WorkbenchStatusSlot {
 /** Extended input for Issue #504 honest status display */
 export interface WorkbenchStatusInput {
   readonly logs: readonly WorkbenchStatusLogEntry[];
+  readonly actionEvents?: readonly SovereignActionEvent[];
   readonly workerBlocker: WorkerRuntimeBlocker | null;
   readonly chatRepoError: string | null;
   readonly agentJob?: SovereignAgentJobSnapshot;
@@ -51,43 +53,44 @@ export interface WorkbenchStatusInput {
   readonly patchRouteAvailable?: boolean;
 }
 
-const TAB_NAVIGATION_PREFIX = 'Tab → ';
+const WORKBENCH_OPERATIONAL_ACTION_KINDS: ReadonlySet<SovereignActionKind> = new Set([
+  'repo_context_loaded',
+  'llm_request_started',
+  'patch_generated',
+  'patch_validating',
+  'executor_started',
+  'draft_pr_ready',
+  'agent_job_requested',
+  'agent_job_created',
+  'agent_workspace_provisioning',
+  'agent_workspace_ready',
+  'agent_tool_started',
+  'agent_tool_finished',
+  'agent_diff_ready',
+  'agent_tests_finished',
+  'agent_result_validating',
+  'agent_result_ready',
+  'agent_workspace_cleanup_started',
+  'agent_workspace_cleaned',
+]);
 
-function isTabNavigationLog(msg: string): boolean {
-  return msg.startsWith(TAB_NAVIGATION_PREFIX);
-}
-
-function isSignalLog(level: string): boolean {
-  return level === 'signal';
-}
-
-function isNoiseLevel(level: string): boolean {
-  return level === 'error' || level === 'warn';
+function actionEntry(event: SovereignActionEvent): string {
+  return event.detail?.trim() ? `${event.label} · ${event.detail.trim()}` : event.label;
 }
 
 /**
- * Returns true when a log entry should be suppressed because it describes a GitHub
- * access problem that has since been resolved.
- *
- * Previously this function scanned unstructured log message text for semantic phrases
- * (e.g. "github write access missing") — that is runtime pre-interpretation and has
- * been removed. The structured `githubState` field is the authoritative source.
- *
- * TODO: add a `kind: string` field to WorkbenchStatusLogEntry so log entries can be
- * tagged at emission time (e.g. `kind: 'github-access'`) and filtered here without
- * any message-content scanning.
+ * System Actions are projected only from explicitly operational Action-Stream kinds.
+ * Input, intent, route selection, context collection, answers, diagnostics and generic
+ * status events remain evidence/logs and never inflate the action counter.
  */
-function isResolvedGithubAccessLog(_input: WorkbenchStatusInput, _msg: string): boolean {
-  // No message-text scanning. Suppression based on log content is forbidden
-  // by the Manifest. Use a structured log kind field for filtering.
-  return false;
-}
-
-/** System Actions: real started/executed actions, excluding tab navigation and raw signal noise. */
 export function deriveSystemActionEntries(input: WorkbenchStatusInput): string[] {
-  return input.logs
-    .filter((log) => !isTabNavigationLog(log.msg) && !isSignalLog(log.level) && !isNoiseLevel(log.level))
-    .map((log) => `${log.ts} · ${log.msg}`);
+  return (input.actionEvents ?? [])
+    .filter((event) =>
+      WORKBENCH_OPERATIONAL_ACTION_KINDS.has(event.kind)
+      && event.state !== 'blocked'
+      && event.state !== 'failed'
+    )
+    .map(actionEntry);
 }
 
 /** Edited Files: only real Sovereign Agent changed files, never invented paths. */
@@ -100,12 +103,15 @@ export function deriveLogEntries(input: WorkbenchStatusInput): string[] {
   return input.logs.map((log) => `${log.ts} · [${log.level}] ${log.msg}`);
 }
 
-/** Errors: worker blocker, repo load failure, failed/blocked Sovereign Agent job and log-level errors/warnings.
- * Issue #504: Deduplicates by normalized message to prevent repeated blockers from inflating count.
+/**
+ * Errors: current canonical blockers, failed/blocked Agent state and structured
+ * failed Action-Stream events. Text logs remain exclusively in Logs so one runtime
+ * failure cannot inflate Errors through a second mirrored log line.
  */
 export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
   const entries: string[] = [];
   const seenMessages = new Set<string>();
+  const seenActionFailures = new Set<string>();
 
   function addUniqueEntry(msg: string) {
     // Normalize for deduplication: lowercase, remove timestamps, collapse whitespace
@@ -128,10 +134,15 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
   if (input.agentJob?.status === 'blocked') {
     addUniqueEntry(`Sovereign Agent Job blockiert${input.agentJob.lastError ? ` · ${input.agentJob.lastError}` : ''}`);
   }
-  for (const log of input.logs) {
-    if (isNoiseLevel(log.level) && !isResolvedGithubAccessLog(input, log.msg)) {
-      addUniqueEntry(`${log.ts} · ${log.msg}`);
-    }
+  for (const event of input.actionEvents ?? []) {
+    if (event.state !== 'failed') continue;
+    if (event.route === 'worker' && input.workerBlocker) continue;
+    if (event.route === 'repo' && input.chatRepoError) continue;
+    if (event.route === 'agent-job' && input.agentJob?.status === 'failed') continue;
+    const key = [event.route, event.kind, event.sourceId ?? '', event.target ?? '', event.label].join(':');
+    if (seenActionFailures.has(key)) continue;
+    seenActionFailures.add(key);
+    addUniqueEntry(actionEntry(event));
   }
   return entries;
 }
