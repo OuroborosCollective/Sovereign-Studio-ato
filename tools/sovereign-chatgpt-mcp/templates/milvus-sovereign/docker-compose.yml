@@ -54,7 +54,7 @@ services:
 
   standalone:
     container_name: milvus-standalone
-    image: milvusdb/milvus:v2.5.27
+    image: milvusdb/milvus:v2.6.20
     command:
       - milvus
       - run
