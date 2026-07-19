@@ -214,9 +214,10 @@ describe('App Draft-PR runtime flow', () => {
     render(<Provider store={store}><App /></Provider>);
     fireEvent.click(screen.getByRole('button', { name: 'Publish staged' }));
 
-    // wait for the UI to reflect the PR URL
-    const prUrlEl = await screen.findByTestId('flow-pr-url');
-    expect(prUrlEl).toHaveTextContent('/pull/11');
+    // The reusable-memory lookup adds one fail-soft async boundary before
+    // staging. Wait for the observable outcome rather than only for the
+    // already-mounted element to exist.
+    await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/11'));
 
     expect(agent.startToolchainJob).toHaveBeenCalledTimes(1);
     expect(agent.startToolchainJob).toHaveBeenCalledWith(expect.objectContaining({
