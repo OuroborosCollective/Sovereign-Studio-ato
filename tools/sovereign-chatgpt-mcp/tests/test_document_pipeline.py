@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -28,6 +29,7 @@ class _DockerFixture:
         addresses: dict[str, str] | None = None,
         labels: dict[str, str] | None = None,
         inspect_output: dict[str, str] | None = None,
+        environment: dict[str, list[str]] | None = None,
     ) -> None:
         self.names = names or {
             "gotenberg": ["gotenberg-acya-gotenberg-1"],
@@ -42,6 +44,13 @@ class _DockerFixture:
             "apache-tika-2l6t-tika-1": "tika",
         }
         self.inspect_output = inspect_output or {}
+        self.environment = environment or {
+            "gotenberg-acya-gotenberg-1": [
+                "GOTENBERG_API_BASIC_AUTH_USERNAME=user",
+                "GOTENBERG_API_BASIC_AUTH_PASSWORD=pass",
+                "UNRELATED_RUNTIME_SETTING=value",
+            ]
+        }
         self.calls: list[list[str]] = []
 
     def __call__(self, argv, *, capture_output, text, timeout, check):
@@ -57,6 +66,13 @@ class _DockerFixture:
             return subprocess.CompletedProcess(argv, 0, stdout=stdout + ("\n" if stdout else ""), stderr="")
         if argv[:2] == ["docker", "inspect"]:
             container = argv[-1]
+            if "{{json .Config.Env}}" in argv:
+                return subprocess.CompletedProcess(
+                    argv,
+                    0,
+                    stdout=json.dumps(self.environment.get(container, [])) + "\n",
+                    stderr="",
+                )
             if container in self.inspect_output:
                 stdout = self.inspect_output[container]
             else:
@@ -112,7 +128,7 @@ class _Connection:
             "method": method,
             "path": path,
             "body": body,
-            "headers": headers,
+            "headers": dict(headers),
         })
 
     def getresponse(self) -> _Response:
@@ -166,6 +182,7 @@ def test_live_canary_discovers_current_compose_services_and_uses_private_endpoin
     assert result["status"] == "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"
     assert result["gotenberg"]["container"] == "gotenberg-acya-gotenberg-1"
     assert result["gotenberg"]["pdfSha256"] == hashlib.sha256(PDF).hexdigest()
+    assert result["gotenberg"]["basicAuthApplied"] is True
     assert result["tika"]["container"] == "apache-tika-2l6t-tika-1"
     assert result["tika"]["markerVerified"] is True
     assert result["probe"] == {
@@ -187,6 +204,9 @@ def test_live_canary_discovers_current_compose_services_and_uses_private_endpoin
     assert connections.requests[0]["method"] == "POST"
     assert connections.requests[0]["path"] == "/forms/chromium/convert/html"
     assert MARKER.encode() in connections.requests[0]["body"]
+    assert connections.requests[0]["headers"]["Authorization"] == (
+        "Basic " + base64.b64encode(b"user:pass").decode("ascii")
+    )
     assert connections.requests[1]["host"] == "172.31.0.2"
     assert connections.requests[1]["port"] == 9998
     assert connections.requests[1]["method"] == "PUT"
@@ -195,6 +215,10 @@ def test_live_canary_discovers_current_compose_services_and_uses_private_endpoin
     assert all(connection.closed for connection in connections.connections)
     assert all(command[:2] in (["docker", "ps"], ["docker", "inspect"]) for command in docker.calls)
     assert not any("exec" in command or "port" in command for command in docker.calls)
+    serialized_result = json.dumps(result)
+    assert "user" not in serialized_result
+    assert "pass" not in serialized_result
+    assert connections.requests[0]["headers"]["Authorization"] not in serialized_result
 
 
 def test_service_discovery_is_bounded_to_exact_compose_labels() -> None:
@@ -230,6 +254,29 @@ def test_live_canary_blocks_public_container_endpoint() -> None:
 
     with pytest.raises(RuntimeError, match="GOTENBERG_PRIVATE_ENDPOINT_NOT_FOUND"):
         runtime.live_canary()
+
+
+def test_live_canary_blocks_incomplete_gotenberg_basic_auth() -> None:
+    docker = _DockerFixture(environment={
+        "gotenberg-acya-gotenberg-1": [
+            "GOTENBERG_API_BASIC_AUTH_USERNAME=user",
+        ]
+    })
+    runtime = DocumentPipelineRuntime(runner=docker, connection_factory=_success_connections())
+
+    with pytest.raises(RuntimeError, match="GOTENBERG_BASIC_AUTH_INCOMPLETE"):
+        runtime.live_canary()
+
+
+def test_live_canary_allows_gotenberg_without_basic_auth_configuration() -> None:
+    docker = _DockerFixture(environment={"gotenberg-acya-gotenberg-1": []})
+    connections = _success_connections()
+    runtime = DocumentPipelineRuntime(runner=docker, connection_factory=connections)
+
+    result = runtime.live_canary()
+
+    assert result["gotenberg"]["basicAuthApplied"] is False
+    assert "Authorization" not in connections.requests[0]["headers"]
 
 
 def test_live_canary_preserves_gotenberg_network_failure_family() -> None:
