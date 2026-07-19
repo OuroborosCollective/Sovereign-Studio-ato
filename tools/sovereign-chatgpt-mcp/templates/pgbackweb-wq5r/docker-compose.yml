@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pgbackweb
+      POSTGRES_USER: pgbackweb
+      POSTGRES_PASSWORD: ${PG_BACKWEB_DB_PASSWORD:?PG_BACKWEB_DB_PASSWORD is required}
+    volumes:
+      - pgbackweb_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgbackweb -d pgbackweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+
+  pgbackweb:
+    image: eduardolat/pgbackweb:0.5.1
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PBW_ENCRYPTION_KEY: ${PG_BACKWEB_ENCRYPTION_KEY:?PG_BACKWEB_ENCRYPTION_KEY is required}
+      PBW_POSTGRES_CONN_STRING: postgresql://pgbackweb:${PG_BACKWEB_DB_PASSWORD}@db:5432/pgbackweb?sslmode=disable
+      TZ: Europe/Berlin
+    ports:
+      - "127.0.0.1:32829:8085"
+    volumes:
+      - pgbackweb_backups:/backups
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://127.0.0.1:8085"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+
+volumes:
+  pgbackweb_db_data:
+    name: sovereign-pgbackweb-db-v1
+  pgbackweb_backups:
+    name: sovereign-pgbackweb-backups-v1
+
+networks:
+  default:
+    name: pgbackweb-wq5r-private

@@ -59,6 +59,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "sovereign-litellm-litellm-1" in script
     assert "sovereign-litellm-db-1" in script
     assert "code-server-46bq-code-server-1" in script
+    assert "pgbackweb-wq5r-pgbackweb-1" in script
+    assert "pgbackweb-wq5r-db-1" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
@@ -73,9 +75,13 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/sovereign-backend' in worker_service
     assert '/opt/gpt-tools' in worker_service
     assert '/opt/code-server-46bq' in worker_service
+    assert '/opt/pgbackweb-wq5r' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert 'templates/sovereign-litellm' in script
+    assert 'templates/pgbackweb-wq5r' in script
+    assert 'install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"' in script
+    assert '"pgbackweb-wq5r"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 

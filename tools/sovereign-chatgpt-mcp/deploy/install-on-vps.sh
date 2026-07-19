@@ -8,6 +8,8 @@ BROKER_DIR="$INSTALL_ROOT/broker"
 COMPOSE_TEMPLATE_ROOT="$INSTALL_ROOT/templates"
 LITELLM_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-litellm"
 LITELLM_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-litellm"
+PGBACKWEB_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/pgbackweb-wq5r"
+PGBACKWEB_TEMPLATE_SOURCE="$SOURCE_DIR/templates/pgbackweb-wq5r"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
@@ -295,12 +297,13 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "sovereign-litellm compose template is missing"
 [[ -f "$LITELLM_TEMPLATE_SOURCE/config.yaml" ]] || fail "sovereign-litellm config template is missing"
 [[ -f "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" ]] || fail "sovereign-litellm entrypoint template is missing"
+[[ -f "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "pgbackweb compose template is missing"
 bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
   || fail "source self-update wrapper has invalid bash syntax"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$LITELLM_TEMPLATE_DIR"
-for MANAGED_COMPOSE_ROOT in /opt/sovereign-litellm /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq; do
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$LITELLM_TEMPLATE_DIR" "$PGBACKWEB_TEMPLATE_DIR"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-litellm /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
       || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
@@ -355,6 +358,7 @@ done
 backup_control_plane_file "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$LITELLM_TEMPLATE_DIR/config.yaml"
 backup_control_plane_file "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
+backup_control_plane_file "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report; do
   backup_control_plane_file "$BIN_DIR/$file"
 done
@@ -385,6 +389,7 @@ install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py
 install -m 0640 "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$LITELLM_TEMPLATE_SOURCE/config.yaml" "$LITELLM_TEMPLATE_DIR/config.yaml"
 install -m 0640 "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
+install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 install -m 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database"
@@ -513,7 +518,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle sovereign-litellm-litellm-1 sovereign-litellm-db-1 code-server-46bq-code-server-1; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle sovereign-litellm-litellm-1 sovereign-litellm-db-1 code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -723,4 +728,4 @@ unset TUNNEL_CONFIGURED
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"enterprise_backend_tools":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"managed_compose_stacks":["sovereign-litellm","sovereign-backend","gpt-tools","code-server-46bq"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"enterprise_backend_tools":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"managed_compose_stacks":["sovereign-litellm","sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

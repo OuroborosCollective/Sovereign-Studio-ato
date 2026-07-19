@@ -124,9 +124,29 @@ jobs:
           test -f templates/sovereign-litellm/docker-compose.yml
           test -f templates/sovereign-litellm/config.yaml
           test -f templates/sovereign-litellm/sovereign-entrypoint.py
+          test -f templates/pgbackweb-wq5r/docker-compose.yml
           cmp templates/sovereign-litellm/docker-compose.yml ../../deploy/sovereign-litellm/docker-compose.yml
           cmp templates/sovereign-litellm/config.yaml ../../deploy/sovereign-litellm/config.yaml
           cmp templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+          printf 'PG_BACKWEB_DB_PASSWORD=%064d\nPG_BACKWEB_ENCRYPTION_KEY=%064d\n' 0 1 > /tmp/pgbackweb-test.env
+          docker compose --project-name pgbackweb-wq5r --env-file /tmp/pgbackweb-test.env --file templates/pgbackweb-wq5r/docker-compose.yml config --format json > /tmp/pgbackweb-rendered.json
+          python - /tmp/pgbackweb-rendered.json <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          rendered = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+          services = rendered.get('services') or {}
+          web_ports = (services.get('pgbackweb') or {}).get('ports') or []
+          db_ports = (services.get('db') or {}).get('ports') or []
+          assert len(web_ports) == 1, web_ports
+          port = web_ports[0]
+          assert str(port.get('host_ip') or '') == '127.0.0.1', port
+          assert str(port.get('published') or '') == '32829', port
+          assert str(port.get('target') or '') == '8085', port
+          assert db_ports == [], db_ports
+          PY
+          rm -f /tmp/pgbackweb-test.env /tmp/pgbackweb-rendered.json
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py$' deploy/sovereign-chatgpt-command-worker.service
@@ -579,7 +599,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
