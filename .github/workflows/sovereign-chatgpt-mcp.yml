@@ -129,13 +129,24 @@ jobs:
           cmp templates/sovereign-litellm/config.yaml ../../deploy/sovereign-litellm/config.yaml
           cmp templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
           printf 'PG_BACKWEB_DB_PASSWORD=%064d\nPG_BACKWEB_ENCRYPTION_KEY=%064d\n' 0 1 > /tmp/pgbackweb-test.env
-          docker compose --project-name pgbackweb-wq5r --env-file /tmp/pgbackweb-test.env --file templates/pgbackweb-wq5r/docker-compose.yml config > /tmp/pgbackweb-rendered.yml
-          grep -q '127.0.0.1' /tmp/pgbackweb-rendered.yml
-          if grep -q '0.0.0.0' /tmp/pgbackweb-rendered.yml; then
-            echo 'pgBackWeb template exposes a public bind' >&2
-            exit 1
-          fi
-          rm -f /tmp/pgbackweb-test.env /tmp/pgbackweb-rendered.yml
+          docker compose --project-name pgbackweb-wq5r --env-file /tmp/pgbackweb-test.env --file templates/pgbackweb-wq5r/docker-compose.yml config --format json > /tmp/pgbackweb-rendered.json
+          python - /tmp/pgbackweb-rendered.json <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          rendered = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+          services = rendered.get('services') or {}
+          web_ports = (services.get('pgbackweb') or {}).get('ports') or []
+          db_ports = (services.get('db') or {}).get('ports') or []
+          assert len(web_ports) == 1, web_ports
+          port = web_ports[0]
+          assert str(port.get('host_ip') or '') == '127.0.0.1', port
+          assert str(port.get('published') or '') == '32829', port
+          assert str(port.get('target') or '') == '8085', port
+          assert db_ports == [], db_ports
+          PY
+          rm -f /tmp/pgbackweb-test.env /tmp/pgbackweb-rendered.json
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py$' deploy/sovereign-chatgpt-command-worker.service
