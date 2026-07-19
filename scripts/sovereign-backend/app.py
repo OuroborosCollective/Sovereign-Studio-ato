@@ -7931,6 +7931,8 @@ def public_llm_chat():
                 method="POST",
                 json_data=payload,
             )
+            if err or resp is None:
+                return refund_failed_run("litellm_unavailable")
             result = _safe_upstream_json(resp)
             evidence = (
                 extract_litellm_evidence(resp, result)
