@@ -48,6 +48,8 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.append("mcp_self_update")
     if os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() == "1":
         capabilities.append("managed_compose_write")
+    if os.getenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "0").strip() == "1":
+        capabilities.append("patchmon_patch_write")
     return capabilities
 
 
@@ -243,6 +245,7 @@ mcp = FastMCP(
         "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_architecture_snapshot, repository_architecture_drift_report, repository_architecture_runtime_drift_evidence, repository_mirror_diff_report, repository_endpoint_reference, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Architektur-Snapshot und statischer Drift liefern Kandidaten; repository_architecture_runtime_drift_evidence verbindet Repo-Migrationen ausschließlich mit read-only PostgreSQL-Schema- und Vector-Evidence. Keines dieser Werkzeuge behauptet LLM-Erfolg, mutiert die Datenbank oder erzeugt persisted Hunt-Ergebnisse. Für deterministische Architekturarbeit beginne mit deterministic_tool_inventory und deterministic_architecture_inventory, prüfe danach deterministic_nondeterminism_scan, deterministic_kappa_contract_audit und deterministic_sql_contract_audit. Nutze deterministic_transition_validate und deterministic_replay_verify nur als pure Vorschau ohne Persistenz- oder Laufzeiterfolgsbehauptung; TypeScript/Python-Bitparität erfordert weiterhin unabhängige Ausführung derselben kanonischen Vektoren. Parserfehler können Python-Grammatik-/Versionsdrift oder tatsächlich ungültigen Source bedeuten und müssen gegen die Repository-Zielversion geprüft werden. "
         "Für professionelle Backend- und Systemarchitektur beginne mit backend_engineering_tool_inventory. Nutze backend_architecture_assess für begrenzte statische Evidence, backend_stack_select für eine constraints-basierte Stack-Entscheidung, backend_delivery_plan für einen testgegateden Greenfield- oder Modernisierungsfahrplan und backend_api_security_plan für ein Threat-/Control-/Verifikationsmodell. Nutze repository_revision_resolve vor der Arbeit und erneut nach Merge, Rebase, Update-Branch, Force-Push, Branchwechsel oder Base-Advance; bei Revisionskonflikten muss die Arbeit stoppen. Diese read-only Tools mutieren weder Repository noch Datenbank, führen keinen beliebigen Code aus und behaupten ohne echte Gates weder Runtime-Erfolg noch Compliance. Für autorisierte Implementierung bleiben die vorhandenen Repository-Werkzeuge zuständig. "
         "Für sichere OpenAI-Projektzugänge nutze openai_project_access_plan ausschließlich mit nicht-geheimen Metadaten. Nutze openai_project_access_runtime_evidence für Provider-Identität, Projektzuordnung, Modellinventar, private LiteLLM-Zustände und echte Completion-Canaries. Diese Tools erstellen, lesen, rotieren oder widerrufen keinen OpenAI-Schlüssel und führen keine OpenAI-Admin-Mutation aus. "
+        "Für PatchMon beginne mit patchmon_tool_inventory und patchmon_brain_snapshot. Vertiefe ausschließlich mit patchmon_runtime_inventory, patchmon_database_inventory oder den festen patchmon_query-Views; freies Shell, freies SQL, beliebige HTTP-Ziele und ein Docker-Socket im MCP sind nicht erlaubt. Patch-Aktionen erfordern immer patchmon_patch_action_plan gegen den aktuellen Datenbankzustand und anschließend dessen exakten confirmation_sha256. submit_for_approval führt noch keinen Host-Patch aus; approve_run kann einen echten Patch-Lauf auslösen. PATCHMON_ACTION_ACCEPTED belegt nur die Annahme durch PatchMon, niemals den Abschluss der Patches; prüfe den Lauf danach erneut. Das Root-only PatchMon-Admin-JWT darf weder in Chat noch in Tool-Argumenten erscheinen. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
         "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
         "Socket-Namespace, Pfadtyp, Rechte, Verbindungsverweigerung, Timeout und Protokollantwort. Wiederhole nicht denselben generischen Fix, solange die vorherige Fehlerfamilie nicht durch ihre "
@@ -654,6 +657,103 @@ def deploy_managed_compose_stack(stack_id: str, confirmation_sha256: str) -> dic
         "deploy_managed_compose_stack",
         {"stack_id": stack_id, "confirmation_sha256": confirmation_sha256},
         timeout=720,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_tool_inventory() -> dict[str, Any]:
+    """List the fixed PatchMon operator tools and their enforced safety boundaries."""
+    return broker.call("patchmon_tool_inventory", {})
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_runtime_inventory(include_fleet: bool = True, max_fleet_containers: int = 100) -> dict[str, Any]:
+    """Inspect PatchMon containers, networks, loopback bindings and bounded Docker-fleet metadata without secrets."""
+    return broker.call(
+        "patchmon_runtime_inventory",
+        {"include_fleet": include_fleet, "max_fleet_containers": max_fleet_containers},
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_database_inventory(max_tables: int = 200, max_columns: int = 2_000) -> dict[str, Any]:
+    """Inspect PatchMon PostgreSQL schema, migration and approximate-size metadata without returning row data."""
+    return broker.call(
+        "patchmon_database_inventory",
+        {"max_tables": max_tables, "max_columns": max_columns},
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_query(
+    view: str,
+    limit: int = 50,
+    host_id: str = "",
+    status: str = "",
+) -> dict[str, Any]:
+    """Run one allowlisted, bounded, secret-safe PatchMon view; arbitrary SQL is never accepted."""
+    return broker.call(
+        "patchmon_query",
+        {"view": view, "limit": limit, "host_id": host_id, "status": status},
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_brain_snapshot(include_fleet: bool = True) -> dict[str, Any]:
+    """Correlate PatchMon runtime, network, database and Docker-fleet evidence into a bounded risk snapshot."""
+    return broker.call("patchmon_brain_snapshot", {"include_fleet": include_fleet}, timeout=180)
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_patch_action_plan(
+    action: str,
+    host_id: str = "",
+    run_id: str = "",
+    patch_type: str = "patch_all",
+    package_names: list[str] | None = None,
+    schedule_override: str = "",
+) -> dict[str, Any]:
+    """Plan one allowlisted PatchMon action against current database state and return an exact confirmation hash."""
+    return broker.call(
+        "patchmon_patch_action_plan",
+        {
+            "action": action,
+            "host_id": host_id,
+            "run_id": run_id,
+            "patch_type": patch_type,
+            "package_names": package_names or [],
+            "schedule_override": schedule_override,
+        },
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def patchmon_patch_action_apply(
+    action: str,
+    confirmation_sha256: str,
+    host_id: str = "",
+    run_id: str = "",
+    patch_type: str = "patch_all",
+    package_names: list[str] | None = None,
+    schedule_override: str = "",
+) -> dict[str, Any]:
+    """Submit one exact, state-bound PatchMon action through the host queue and the fixed loopback API."""
+    return broker.call(
+        "patchmon_patch_action_apply",
+        {
+            "action": action,
+            "confirmation_sha256": confirmation_sha256,
+            "host_id": host_id,
+            "run_id": run_id,
+            "patch_type": patch_type,
+            "package_names": package_names or [],
+            "schedule_override": schedule_override,
+        },
+        timeout=300,
     )
 
 

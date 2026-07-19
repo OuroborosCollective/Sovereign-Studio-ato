@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
+import re
+import secrets
 import subprocess
 import tempfile
 import time
@@ -11,6 +14,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from litellm_stack import LiteLLMStackRuntime
+
+
+PATCHMON_REDIS_UID = 999
+PATCHMON_REDIS_GID = 1000
+PATCHMON_REDIS_USER = f"{PATCHMON_REDIS_UID}:{PATCHMON_REDIS_GID}"
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,35 @@ STACKS: dict[str, ManagedStack] = {
         allowed_bind_roots=("/opt/code-server-46bq",),
         allowed_published_ports=("127.0.0.1:32782:8443", "32782:8443"),
     ),
+    "pgbackweb-wq5r": ManagedStack(
+        stack_id="pgbackweb-wq5r",
+        project_name="pgbackweb-wq5r",
+        anchor_container="pgbackweb-wq5r-pgbackweb-1",
+        expected_containers=("pgbackweb-wq5r-pgbackweb-1", "pgbackweb-wq5r-db-1"),
+        allowed_services=("pgbackweb", "db"),
+        deploy_root="/opt/pgbackweb-wq5r",
+        template_name="pgbackweb-wq5r",
+        allowed_networks=("default",),
+        allowed_bind_roots=("/opt/pgbackweb-wq5r",),
+        allowed_published_ports=("127.0.0.1:32829:8085",),
+    ),
+    "patchmon-sovereign": ManagedStack(
+        stack_id="patchmon-sovereign",
+        project_name="patchmon-sovereign",
+        anchor_container="patchmon-sovereign-server-1",
+        expected_containers=(
+            "patchmon-sovereign-server-1",
+            "patchmon-sovereign-database-1",
+            "patchmon-sovereign-redis-1",
+            "patchmon-sovereign-guacd-1",
+        ),
+        allowed_services=("server", "database", "redis", "guacd"),
+        deploy_root="/opt/patchmon-sovereign",
+        template_name="patchmon-sovereign",
+        allowed_networks=("patchmon-internal", "patchmon-edge"),
+        allowed_bind_roots=("/opt/patchmon-sovereign",),
+        allowed_published_ports=("127.0.0.1:32830:3000",),
+    ),
 }
 
 FORBIDDEN_BIND_SOURCES = {
@@ -95,6 +132,8 @@ FORBIDDEN_BIND_SOURCES = {
 }
 MAX_TEMPLATE_FILES = 20
 MAX_TEMPLATE_BYTES = 500_000
+MAX_STACK_ENV_BYTES = 64_000
+_SECRET_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]{32,160}$")
 
 
 def _sha256(payload: bytes) -> str:
@@ -259,6 +298,11 @@ class ManagedComposeRuntime:
             "arbitraryYamlAccepted": False,
             "arbitraryCommandAccepted": False,
             "secretValuesAccepted": False,
+            "secretProvisioning": (
+                "generated_on_confirmed_deploy"
+                if stack.stack_id in {"pgbackweb-wq5r", "patchmon-sovereign"}
+                else "external_or_not_required"
+            ),
         }
 
     @staticmethod
@@ -300,13 +344,24 @@ class ManagedComposeRuntime:
         for service_name, service in services.items():
             if not isinstance(service, dict):
                 raise RuntimeError(f"Service ist ungültig: {service_name}")
+            if stack.stack_id == "patchmon-sovereign" and service_name == "redis":
+                if str(service.get("user") or "") != PATCHMON_REDIS_USER:
+                    raise RuntimeError("PatchMon Redis muss mit der gepinnten Nicht-Root-Identität laufen")
             if service.get("privileged"):
                 raise RuntimeError(f"privileged ist gesperrt: {service_name}")
             if service.get("network_mode") == "host" or service.get("pid") == "host" or service.get("ipc") == "host":
                 raise RuntimeError(f"Host-Namespace ist gesperrt: {service_name}")
             if service.get("devices") or service.get("cap_add"):
                 raise RuntimeError(f"Geräte oder zusätzliche Capabilities sind gesperrt: {service_name}")
-            if service.get("entrypoint") or service.get("command") or service.get("build") or service.get("extra_hosts"):
+            if service.get("entrypoint") or service.get("build") or service.get("extra_hosts"):
+                raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
+            command = service.get("command")
+            allowed_patchmon_redis_command = (
+                stack.stack_id == "patchmon-sovereign"
+                and service_name == "redis"
+                and command == ["redis-server", "/usr/local/etc/redis/redis.conf"]
+            )
+            if command and not allowed_patchmon_redis_command:
                 raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
             image = str(service.get("image") or "")
             if image and (image.endswith(":latest") or ":latest@" in image):
@@ -396,6 +451,132 @@ class ManagedComposeRuntime:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def _ensure_stack_secret_env(self, stack: ManagedStack) -> dict[str, Any]:
+        if stack.stack_id not in {"pgbackweb-wq5r", "patchmon-sovereign"}:
+            return {
+                "required": False,
+                "created": False,
+                "secretValuesReturned": False,
+            }
+
+        deploy_root = Path(stack.deploy_root)
+        if deploy_root.is_symlink():
+            raise RuntimeError("Deploy-Root darf kein Symlink sein")
+        deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
+        os.chmod(deploy_root, 0o750)
+        env_path = deploy_root / ".env"
+        if env_path.is_symlink() or (env_path.exists() and not env_path.is_file()):
+            raise RuntimeError("Stack-Secret-Datei ist ungültig")
+
+        existing_lines: list[str] = []
+        values: dict[str, str] = {}
+        if env_path.is_file():
+            payload = env_path.read_bytes()
+            if len(payload) > MAX_STACK_ENV_BYTES or b"\0" in payload:
+                raise RuntimeError("Stack-Secret-Datei ist ungültig")
+            existing_lines = payload.decode("utf-8").splitlines()
+            for line in existing_lines:
+                if not line or line.lstrip().startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                values[key.strip()] = value.strip()
+
+        if stack.stack_id == "pgbackweb-wq5r":
+            required_lengths = {
+                "PG_BACKWEB_DB_PASSWORD": 64,
+                "PG_BACKWEB_ENCRYPTION_KEY": 64,
+            }
+            fixed_values: dict[str, str] = {}
+        else:
+            required_lengths = {
+                "POSTGRES_PASSWORD": 64,
+                "REDIS_PASSWORD": 64,
+                "JWT_SECRET": 128,
+                "SESSION_SECRET": 128,
+                "AI_ENCRYPTION_KEY": 64,
+            }
+            fixed_values = {
+                "POSTGRES_HOST": "database",
+                "POSTGRES_USER": "patchmon_user",
+                "POSTGRES_DB": "patchmon_db",
+                "REDIS_HOST": "redis",
+                "REDIS_PORT": "6379",
+                "REDIS_DB": "0",
+                "GUACD_ADDRESS": "guacd:4822",
+                "CORS_ORIGIN": "http://127.0.0.1:32830",
+                "SERVER_PROTOCOL": "http",
+                "SERVER_HOST": "127.0.0.1",
+                "SERVER_PORT": "32830",
+                "PORT": "3000",
+                "APP_ENV": "production",
+                "TRUST_PROXY": "false",
+                "ENABLE_HSTS": "false",
+                "TZ": "Europe/Berlin",
+                "AGENT_UPDATE_BODY_LIMIT": "5mb",
+            }
+
+        for key, expected_length in required_lengths.items():
+            current = values.get(key, "")
+            if current and (not _SECRET_VALUE_RE.fullmatch(current) or len(current) != expected_length):
+                raise RuntimeError(f"Vorhandenes {key} erfüllt den Secret-Vertrag nicht")
+
+        created = False
+        for key, expected_length in required_lengths.items():
+            if not values.get(key):
+                values[key] = secrets.token_hex(expected_length // 2)
+                created = True
+
+        if stack.stack_id == "patchmon-sovereign":
+            fixed_values["DATABASE_URL"] = (
+                "postgresql://patchmon_user:"
+                + values["POSTGRES_PASSWORD"]
+                + "@database:5432/patchmon_db"
+            )
+
+        managed_keys = tuple(required_lengths) + tuple(fixed_values)
+        retained = [
+            line
+            for line in existing_lines
+            if not any(line.startswith(key + "=") for key in managed_keys)
+        ]
+        rendered = retained + [f"{key}={values[key]}" for key in required_lengths]
+        rendered.extend(f"{key}={value}" for key, value in fixed_values.items())
+        self._write_atomic(env_path, ("\n".join(rendered).rstrip() + "\n").encode("utf-8"), mode=0o600)
+        os.chmod(env_path, 0o600)
+
+        additional_files: list[dict[str, Any]] = []
+        if stack.stack_id == "patchmon-sovereign":
+            redis_path = deploy_root / "redis.conf"
+            redis_payload = (
+                "appendonly yes\n"
+                "protected-mode yes\n"
+                "bind 0.0.0.0\n"
+                "port 6379\n"
+                f"requirepass {values['REDIS_PASSWORD']}\n"
+            ).encode("utf-8")
+            self._write_atomic(redis_path, redis_payload, mode=0o400)
+            os.chown(redis_path, PATCHMON_REDIS_UID, PATCHMON_REDIS_GID)
+            os.chmod(redis_path, 0o400)
+            additional_files.append(
+                {
+                    "path": str(redis_path),
+                    "mode": "0400",
+                    "ownerUid": PATCHMON_REDIS_UID,
+                    "ownerGid": PATCHMON_REDIS_GID,
+                }
+            )
+
+        return {
+            "required": True,
+            "created": created,
+            "path": str(env_path),
+            "mode": "0600",
+            "keysPresent": list(required_lengths),
+            "managedNonSecretKeys": sorted(fixed_values),
+            "additionalFiles": additional_files,
+            "secretValuesReturned": False,
+        }
+
     def _verify_expected(self, stack: ManagedStack) -> dict[str, Any]:
         states: dict[str, Any] = {}
         for _attempt in range(45):
@@ -404,6 +585,39 @@ class ManagedComposeRuntime:
                 break
             time.sleep(2)
         return states
+
+    @staticmethod
+    def _patchmon_http_canary() -> dict[str, Any]:
+        last_error = ""
+        for _attempt in range(30):
+            connection: http.client.HTTPConnection | None = None
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", 32830, timeout=5)
+                connection.request("GET", "/")
+                response = connection.getresponse()
+                status = int(response.status)
+                response.read(4096)
+                if 200 <= status < 400:
+                    return {
+                        "ok": True,
+                        "status": "PATCHMON_HTTP_READY",
+                        "httpStatus": status,
+                        "url": "http://127.0.0.1:32830/",
+                        "responseBodyReturned": False,
+                    }
+                last_error = f"HTTP {status}"
+            except (OSError, http.client.HTTPException) as exc:
+                last_error = type(exc).__name__
+            finally:
+                if connection is not None:
+                    connection.close()
+            time.sleep(2)
+        return {
+            "ok": False,
+            "status": "PATCHMON_HTTP_UNAVAILABLE",
+            "errorFamily": last_error or "unknown",
+            "responseBodyReturned": False,
+        }
 
     def litellm_provider_model_inventory(self) -> dict[str, Any]:
         return self.litellm.provider_model_inventory()
@@ -458,6 +672,7 @@ class ManagedComposeRuntime:
         if confirmation_sha256 != bundle_sha:
             return {"ok": False, "status": "BLOCKED", "blocker": "Template-Bundle-Hash stimmt nicht", "expected": bundle_sha}
 
+        secret_env = self._ensure_stack_secret_env(stack)
         _compose_path, temporary, _rendered = self._render_template(stack, files)
         temporary.cleanup()
         deploy_root = Path(stack.deploy_root)
@@ -489,7 +704,12 @@ class ManagedComposeRuntime:
                 "deploy": {"ok": False, "exit_code": result["exit_code"], "error": "docker compose up failed"},
             }
         states = self._verify_expected(stack)
-        runtime_ok = all(state.get("running") for state in states.values())
+        runtime_canary = (
+            self._patchmon_http_canary()
+            if stack.stack_id == "patchmon-sovereign"
+            else {"ok": True, "status": "NOT_REQUIRED"}
+        )
+        runtime_ok = all(state.get("running") for state in states.values()) and bool(runtime_canary.get("ok"))
         return {
             "ok": runtime_ok,
             "status": "DEPLOYED_VERIFIED" if runtime_ok else "DEPLOYED_UNVERIFIED",
@@ -497,5 +717,7 @@ class ManagedComposeRuntime:
             "project": stack.project_name,
             "templateBundleSha256": bundle_sha,
             "containers": states,
+            "runtimeCanary": runtime_canary,
+            "secretEnvironment": secret_env,
             "secretValuesExposed": False,
         }

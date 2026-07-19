@@ -76,7 +76,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py openai_project_access_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py openai_project_access_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -119,14 +119,100 @@ jobs:
           grep -q 'SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE' deploy/install-on-vps.sh
+          grep -q 'SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE' deploy/install-on-vps.sh
+          grep -q 'PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt' deploy/install-on-vps.sh
           grep -q 'litellm_stack.py' deploy/install-on-vps.sh
           grep -q 'managed_compose.py' deploy/install-on-vps.sh
+          grep -q 'patchmon_operator.py' deploy/install-on-vps.sh
           test -f templates/sovereign-litellm/docker-compose.yml
           test -f templates/sovereign-litellm/config.yaml
           test -f templates/sovereign-litellm/sovereign-entrypoint.py
+          test -f templates/pgbackweb-wq5r/docker-compose.yml
+          test -f templates/patchmon-sovereign/docker-compose.yml
           cmp templates/sovereign-litellm/docker-compose.yml ../../deploy/sovereign-litellm/docker-compose.yml
           cmp templates/sovereign-litellm/config.yaml ../../deploy/sovereign-litellm/config.yaml
           cmp templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+          printf 'PG_BACKWEB_DB_PASSWORD=%064d\nPG_BACKWEB_ENCRYPTION_KEY=%064d\n' 0 1 > /tmp/pgbackweb-test.env
+          docker compose --project-name pgbackweb-wq5r --env-file /tmp/pgbackweb-test.env --file templates/pgbackweb-wq5r/docker-compose.yml config --format json > /tmp/pgbackweb-rendered.json
+          python - /tmp/pgbackweb-rendered.json <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          rendered = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+          services = rendered.get('services') or {}
+          web_ports = (services.get('pgbackweb') or {}).get('ports') or []
+          db_ports = (services.get('db') or {}).get('ports') or []
+          assert len(web_ports) == 1, web_ports
+          port = web_ports[0]
+          assert str(port.get('host_ip') or '') == '127.0.0.1', port
+          assert str(port.get('published') or '') == '32829', port
+          assert str(port.get('target') or '') == '8085', port
+          assert db_ports == [], db_ports
+          PY
+          rm -f /tmp/pgbackweb-test.env /tmp/pgbackweb-rendered.json
+          python - <<'PY'
+          from pathlib import Path
+
+          postgres_password = '0' * 64
+          redis_password = '1' * 64
+          values = {
+              'POSTGRES_PASSWORD': postgres_password,
+              'REDIS_PASSWORD': redis_password,
+              'JWT_SECRET': '2' * 128,
+              'SESSION_SECRET': '3' * 128,
+              'AI_ENCRYPTION_KEY': '4' * 64,
+              'POSTGRES_HOST': 'database',
+              'POSTGRES_USER': 'patchmon_user',
+              'POSTGRES_DB': 'patchmon_db',
+              'DATABASE_URL': f'postgresql://patchmon_user:{postgres_password}@database:5432/patchmon_db',
+              'REDIS_HOST': 'redis',
+              'REDIS_PORT': '6379',
+              'REDIS_DB': '0',
+              'GUACD_ADDRESS': 'guacd:4822',
+              'CORS_ORIGIN': 'http://127.0.0.1:32830',
+              'SERVER_PROTOCOL': 'http',
+              'SERVER_HOST': '127.0.0.1',
+              'SERVER_PORT': '32830',
+              'PORT': '3000',
+              'APP_ENV': 'production',
+              'TRUST_PROXY': 'false',
+              'ENABLE_HSTS': 'false',
+              'TZ': 'Europe/Berlin',
+              'AGENT_UPDATE_BODY_LIMIT': '5mb',
+          }
+          Path('/tmp/patchmon-test.env').write_text(
+              ''.join(f'{key}={value}\n' for key, value in values.items()),
+              'utf-8',
+          )
+          PY
+          docker compose --project-name patchmon-sovereign --env-file /tmp/patchmon-test.env --file templates/patchmon-sovereign/docker-compose.yml config --format json > /tmp/patchmon-rendered.json
+          python - /tmp/patchmon-rendered.json <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          rendered = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+          services = rendered.get('services') or {}
+          assert set(services) == {'server', 'database', 'redis', 'guacd'}, services
+          server = services['server']
+          server_ports = server.get('ports') or []
+          assert len(server_ports) == 1, server_ports
+          port = server_ports[0]
+          assert str(port.get('host_ip') or '') == '127.0.0.1', port
+          assert str(port.get('published') or '') == '32830', port
+          assert str(port.get('target') or '') == '3000', port
+          assert (services['database'].get('ports') or []) == []
+          assert (services['redis'].get('ports') or []) == []
+          assert (services['guacd'].get('ports') or []) == []
+          assert services['redis'].get('command') == ['redis-server', '/usr/local/etc/redis/redis.conf']
+          for service in services.values():
+              assert not str(service.get('image') or '').endswith(':latest'), service
+          networks = rendered.get('networks') or {}
+          assert set(networks) == {'patchmon-internal', 'patchmon-edge'}, networks
+          assert networks['patchmon-internal'].get('internal') is True
+          PY
+          rm -f /tmp/patchmon-test.env /tmp/patchmon-rendered.json
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/broker.py$' deploy/sovereign-chatgpt-broker.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py$' deploy/sovereign-chatgpt-command-worker.service
@@ -579,7 +665,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"

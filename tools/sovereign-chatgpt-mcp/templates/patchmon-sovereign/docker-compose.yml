@@ -1,0 +1,153 @@
+name: patchmon-sovereign
+
+services:
+  server:
+    image: ghcr.io/patchmon/patchmon-server:2.0.2
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: ${REDIS_DB}
+      GUACD_ADDRESS: ${GUACD_ADDRESS}
+      JWT_SECRET: ${JWT_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      SERVER_PROTOCOL: ${SERVER_PROTOCOL}
+      SERVER_HOST: ${SERVER_HOST}
+      SERVER_PORT: ${SERVER_PORT}
+      PORT: ${PORT}
+      APP_ENV: ${APP_ENV}
+      TRUST_PROXY: ${TRUST_PROXY}
+      ENABLE_HSTS: ${ENABLE_HSTS}
+      TZ: ${TZ}
+      AGENT_UPDATE_BODY_LIMIT: ${AGENT_UPDATE_BODY_LIMIT}
+    ports:
+      - "127.0.0.1:32830:3000"
+    networks:
+      - patchmon-internal
+      - patchmon-edge
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      guacd:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  database:
+    image: postgres:17.10-alpine3.23
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TZ}
+    volumes:
+      - patchmon_postgres_data:/var/lib/postgresql/data
+    networks:
+      - patchmon-internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:7.4.7-alpine3.21
+    user: "999:1000"
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: ${TZ}
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+    volumes:
+      - patchmon_redis_data:/data
+      - /opt/patchmon-sovereign/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - patchmon-internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli --no-auth-warning -a "$${REDIS_PASSWORD}" ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - patchmon-internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - nc -z 127.0.0.1 4822 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: "1.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  patchmon_postgres_data:
+  patchmon_redis_data:
+
+networks:
+  patchmon-internal:
+    driver: bridge
+    internal: true
+  patchmon-edge:
+    driver: bridge

@@ -44,6 +44,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
     assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
     assert "SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE" in script
+    assert "SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE" in script
+    assert "PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt" in script
     assert "SOVEREIGN_MCP_PRIVATE_OWNER_MODE" in script
     assert 'PRIVATE_OWNER_MODE="1"' in script
     assert 'set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"' in script
@@ -59,6 +61,12 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "sovereign-litellm-litellm-1" in script
     assert "sovereign-litellm-db-1" in script
     assert "code-server-46bq-code-server-1" in script
+    assert "pgbackweb-wq5r-pgbackweb-1" in script
+    assert "pgbackweb-wq5r-db-1" in script
+    assert "patchmon-sovereign-server-1" in script
+    assert "patchmon-sovereign-database-1" in script
+    assert "patchmon-sovereign-redis-1" in script
+    assert "patchmon-sovereign-guacd-1" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
@@ -73,9 +81,18 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/sovereign-backend' in worker_service
     assert '/opt/gpt-tools' in worker_service
     assert '/opt/code-server-46bq' in worker_service
+    assert '/opt/pgbackweb-wq5r' in worker_service
+    assert '/opt/patchmon-sovereign' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
     assert 'templates/sovereign-litellm' in script
+    assert 'templates/pgbackweb-wq5r' in script
+    assert 'templates/patchmon-sovereign' in script
+    assert 'install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"' in script
+    assert 'install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"' in script
+    assert '"pgbackweb-wq5r"' in script
+    assert '"patchmon-sovereign"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 
@@ -95,6 +112,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'deterministic_architecture_tools.py' in installer
     assert 'enterprise_backend_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
+    assert 'patchmon_operator.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
     assert 'install -d -m 0755 "$ANDROID_SDK_DIR"' in installer
@@ -104,6 +122,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions' in dockerfile
     assert 'android_hardening.py' in dockerfile
     assert 'document_pipeline.py' in dockerfile
+    assert 'patchmon_operator.py' in dockerfile
     assert 'tool_extensions.py' in dockerfile
     assert 'repository_skill_tools.py' in dockerfile
     assert 'skill_supply_chain_tools.py' in dockerfile
