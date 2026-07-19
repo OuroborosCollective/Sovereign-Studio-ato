@@ -5,31 +5,19 @@
  * Used by BuilderContainer and can be unit tested directly.
  */
 
-// German + English keywords for intent detection.
-// Sovereign is not a generic chatbot inside a connected repository. A normal
-// non-question message is treated as an implementation/integration request by
-// default, unless it is clearly repo loading, status, retry, diagnostic, or a
-// small-talk/greeting phrase. Questions still stay advisory, but the Worker
-// prompt must answer them as repo-specific integration guidance.
+// Free language belongs to the online LLM. These legacy context tokens are used
+// only after an explicit machine control such as /confirm; they must never decide
+// the route of a fresh natural-language message.
 const SOVEREIGN_AGENT_EXECUTION_TOKENS = [
   'sovereign agent', 'sovereign-agent', 'sovereign_agent', 'draft pr', 'draft-pr', 'pull request', 'pr erstellen',
   'push', 'commit', 'repo schreiben', 'github schreiben', 'branch erstellen',
 ];
 
-const CODE_GENERATION_TOKENS = [
-  'baue', 'bauen', 'implementiere', 'implementieren', 'fixe', 'repariere',
-  'patch', 'ändere datei', 'datei ändern', 'ersatzdatei', 'runtime-check',
-  'tests ergänzen', 'test ergänzen', 'code ändern', 'feature einbauen',
-  'schreibe code', 'code schreiben', 'integration', 'integriere',
-  'einbauen', 'umsetzen', 'umsetzung', 'stabilisiere', 'härte', 'haerte',
-];
-
-const WORKER_RETRY_TOKENS = ['retry', 'erneut', 'nochmal', 'noch mal', 'wiederholen', 'testen', 'versuch'];
-
-const WORKER_DIAGNOSTIC_TOKENS = [
-  'warum', 'wieso', 'weshalb', 'hilfe', 'hilf', 'help', 'erklär', 'erklaer',
-  'diagnose', 'fehler', '500', 'worker', 'cloudflare', 'blockiert', 'kaputt',
-];
+const EXACT_CODE_COMMANDS = ['/code', '/fix', '/implement'] as const;
+const EXACT_AGENT_COMMANDS = ['/agent', '/draft-pr'] as const;
+const EXACT_RETRY_COMMANDS = ['retry', '/retry'] as const;
+const EXACT_DIAGNOSTIC_COMMANDS = ['diagnose', '/diagnose'] as const;
+const EXACT_STATUS_COMMANDS = ['/status'] as const;
 
 // Delegation tokens: explicit handover to executor. Includes the confirmation
 // vocabulary emitted by the Integration-Draft UX: user confirms by saying
@@ -74,24 +62,6 @@ const ALTERNATIVE_WRITE_ROUTE_TOKENS = [
   'github direkt',
 ];
 
-// Executor status question tokens: user asks if/what the executor is doing
-const EXECUTOR_STATUS_TOKENS = [
-  'arbeitet er schon',
-  'läuft das',
-  'läuft er',
-  'was macht er',
-  'sehe nichts bei replit',
-  'status?',
-  'ist er fertig',
-  'hat er angefangen',
-  'warum passiert nichts',
-  'macht er was',
-  'tut er was',
-  'ist er gestartet',
-  'passiert etwas',
-  'passiert gerade',
-];
-
 // Code/repo context tokens that make delegation meaningful
 const CODE_CONTEXT_TOKENS = [
   'readme', 'datei', 'code', 'patch', 'commit', 'pr', 'pull request',
@@ -103,41 +73,13 @@ const CODE_CONTEXT_TOKENS = [
   'sovereign agent', 'sovereign-agent', 'draft pr', 'einbauen', 'umsetzen', 'umsetzung',
 ];
 
-const GREETING_OR_SMALLTALK_TOKENS = [
-  'hallo', 'hello', 'hey', 'guten morgen', 'guten tag', 'danke',
-  'thanks', 'thank you', 'wie geht es dir', 'how are you',
-];
-
-function hasAnyToken(text: string, tokens: readonly string[]): boolean {
-  const lower = text.toLowerCase();
-  return tokens.some((token) => lower.includes(token));
-}
-
-function isGithubRepoUrl(text: string): boolean {
-  return /^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(text.trim());
-}
-
-function isQuestionText(text: string): boolean {
-  return /\?\s*$/.test(text.trim());
-}
-
 /**
- * Runtime default: inside this product, a non-question user sentence is presumed
- * to be a repository integration request, not advice/small talk. This function
- * deliberately stays conservative around questions, status checks, retry,
- * diagnostics and greetings so those routes remain honest.
+ * Free language is never presumed to be an implementation request.
+ * The online LLM must return structured intent evidence; offline runtime stays
+ * fail-closed and only accepts explicit controls in the dedicated helpers below.
  */
-export function isLikelyIntegrationImplementationIntent(text: string): boolean {
-  const clean = text.trim();
-  if (clean.length < 4) return false;
-  if (clean.startsWith('/')) return false;
-  if (isGithubRepoUrl(clean)) return false;
-  if (isQuestionText(clean)) return false;
-  if (hasAnyToken(clean, GREETING_OR_SMALLTALK_TOKENS)) return false;
-  if (hasAnyToken(clean, EXECUTOR_STATUS_TOKENS)) return false;
-  if (hasAnyToken(clean, WORKER_RETRY_TOKENS)) return false;
-  if (hasAnyToken(clean, ALTERNATIVE_WRITE_ROUTE_TOKENS)) return false;
-  return true;
+export function isLikelyIntegrationImplementationIntent(_text: string): boolean {
+  return false;
 }
 
 /**
@@ -145,9 +87,8 @@ export function isLikelyIntegrationImplementationIntent(text: string): boolean {
  * Generic implementation text stays code-route until a confirmed executor handoff.
  */
 export function isSovereignAgentExecutionIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  if (ALTERNATIVE_WRITE_ROUTE_TOKENS.some((token) => lower.includes(token))) return false;
-  return SOVEREIGN_AGENT_EXECUTION_TOKENS.some((token) => lower.includes(token));
+  const command = text.trim().toLowerCase().split(/\s+/, 1)[0];
+  return EXACT_AGENT_COMMANDS.some((candidate) => candidate === command);
 }
 
 /**
@@ -155,9 +96,8 @@ export function isSovereignAgentExecutionIntent(text: string): boolean {
  * before any external executor is considered.
  */
 export function isCodeGenerationIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  return CODE_GENERATION_TOKENS.some((token) => lower.includes(token)) ||
-    isLikelyIntegrationImplementationIntent(text);
+  const command = text.trim().toLowerCase().split(/\s+/, 1)[0];
+  return EXACT_CODE_COMMANDS.some((candidate) => candidate === command);
 }
 
 /**
@@ -165,8 +105,8 @@ export function isCodeGenerationIntent(text: string): boolean {
  * These messages should trigger a retry of the failed Worker request.
  */
 export function isWorkerRetryIntent(text: string): boolean {
-  const lower = text.toLowerCase();
-  return WORKER_RETRY_TOKENS.some((token) => lower.includes(token));
+  const clean = text.trim().toLowerCase();
+  return EXACT_RETRY_COMMANDS.some((candidate) => candidate === clean);
 }
 
 /**
@@ -174,8 +114,8 @@ export function isWorkerRetryIntent(text: string): boolean {
  * These messages should get a local diagnostic answer without retry.
  */
 export function isWorkerDiagnosticQuestion(text: string): boolean {
-  const lower = text.toLowerCase();
-  return WORKER_DIAGNOSTIC_TOKENS.some((token) => lower.includes(token));
+  const clean = text.trim().toLowerCase();
+  return EXACT_DIAGNOSTIC_COMMANDS.some((candidate) => candidate === clean);
 }
 
 /**
@@ -245,8 +185,8 @@ export function isAlternativeWriteRouteIntent(text: string): boolean {
  * These messages should be answered locally from agentWorkSnapshot, not sent to Worker.
  */
 export function isExecutorStatusQuestion(text: string): boolean {
-  const lower = text.toLowerCase();
-  return EXECUTOR_STATUS_TOKENS.some((token) => lower.includes(token));
+  const clean = text.trim().toLowerCase();
+  return EXACT_STATUS_COMMANDS.some((candidate) => candidate === clean);
 }
 
 export type ExecutorStatusArgs = {
@@ -387,7 +327,7 @@ export function getWorkerActionHint(args: {
     return 'Code-LLM Route · Patch erzeugen';
   }
   if (args.workerBlocked && !isWorkerRetryIntent(clean)) {
-    return 'Worker blockiert · lokale Diagnose statt blindem Retry';
+    return 'Worker blockiert · keine lokale Sprachdeutung';
   }
   if (args.workerBlocked && isWorkerRetryIntent(clean)) {
     return 'Worker Retry · Diagnose wird aktualisiert';

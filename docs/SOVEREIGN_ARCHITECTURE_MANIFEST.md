@@ -2,9 +2,9 @@
 
 **Status:** Lebendes Architekturhandbuch  
 
-**Evidence-Stand:** 18. Juli 2026
+**Evidence-Stand:** 19. Juli 2026
 
-**Baseline-Revision vor diesem Manifest-Update:** `328c1ea9f63652494ca920b4ba7f9229f2a4e236`
+**Baseline-Revision vor diesem Manifest-Update:** `2892776d6d3710ac5a4d40211e2fc09ee0866db3`
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
 **Produkt:** Android-first NoCode-/AI-Service- und Agentenplattform  
@@ -468,7 +468,7 @@ Der private Sovereign ChatGPT MCP verbindet ChatGPT mit kontrollierten Repositor
 
 ## 9.2 Belegter Control-Plane-Stand
 
-**BELEGT:** Die Control Plane meldete `BROKER_READY`. Für Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden Validation, Veröffentlichung des immutable MCP-Images, Digestprüfung und VPS-Bootstrap. Revision, Archiv, Image-Digest, Image-ID, Containerzustand, MCP-Protokoll, Broker-RPC, Host-Command-Worker und Python-/TypeScript-Cross-Runtime-Parität werden revisionsgebunden geprüft. Direkte eingehende Mutationen bleiben verboten.
+**BELEGT:** Die Control Plane meldete `BROKER_READY`. PR #824 wurde vom vollständig grünen Head `7b15d7241597bd40a7f8228733ce5b58f3859545` als Squash-Commit `018e2eee49396a811c9a4539d652053d0d035047` übernommen. PR #825 wurde vom vollständig grünen Head `56564f206ac18a093cd2a101f9df1d6e1f446965` als Squash-Commit `afe3e7fb0415b7de9d201491655e85a7417e4aad` übernommen. PR #826 wurde vom vollständig grünen Head `a5d3fecdb446232149e199c1b2270092bffe0a3a` als Squash-Commit `e2442e4f3c63a1638aa30b7a4339e6a83c2a7f6b` übernommen. PR #827 wurde vom vollständig grünen Head `0e3bc930132cb8f4c57ef991cae1a0e6655f8b71` als Squash-Commit `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117` übernommen. Für die aktuelle Revision bestanden Validation, Veröffentlichung des immutable MCP-Images, Digestprüfung und VPS-Bootstrap. Der Live-Readback meldet dieselbe Revision, den immutable Image-Digest und die Image-ID `sha256:9c9ae2101ff4930f6ecf68f1e7a4fd99b4e769656db9c51787d411e20aa9ee76`, den Archiv-Hash `1be8706177bf96d6771ca6fee5f4e320373f724d1336e96dadd80102afa1228b` sowie den Runtime-Evidence-Hash `cede9cdbb8a7d642c2089934bbfe5b03d48232bf6f9009ee4ce0233cda54f68d`. Container, MCP-Protokoll, Broker-RPC, Host-Command-Worker und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bereit; direkte eingehende Mutationen bleiben verboten.
 
 Die Runtime-Grenzen schreiben unter anderem vor:
 
@@ -488,12 +488,47 @@ Die Runtime-Grenzen schreiben unter anderem vor:
 - Diff,
 - Tests/Checks delegieren,
 - Draft PR,
+- owner-scoped PR-Status und SHA-/Gate-gebundener Merge,
 - Workflowstatus,
 - Runtime-/Container-Evidence,
 - PostgreSQL-/Vector-Canaries,
-- immutable Backend-Deployment.
+- immutable Backend-Deployment,
+- begrenzte statische Backend-/Architekturevidence,
+- constraints-basierte Stackauswahl,
+- test-, migrations- und rollback-gegatete Delivery-Roadmaps,
+- threat-getriebene API-Sicherheitspläne,
+- getrennte Auflösung von Workspace-, Base-, PR-, Merge-, CI- und deployter MCP-Revision.
 
-## 9.4 A2A-Adapter
+## 9.4 Enterprise-Backend- und Revisionswerkzeuge
+
+**BELEGT — Code-/Schema-Vertrag:** `enterprise_backend_tools.py` registriert sechs strukturierte MCP-Werkzeuge:
+
+1. `backend_engineering_tool_inventory`,
+2. `backend_architecture_assess`,
+3. `backend_stack_select`,
+4. `backend_delivery_plan`,
+5. `backend_api_security_plan`,
+6. `repository_revision_resolve`.
+
+Alle sechs sind read-only, nicht-destruktiv und idempotent. Nur der Revisionsresolver besitzt `openWorldHint=true`, weil er aktuelle GitHub-Base-, PR- und Check-Evidence liest. Eingaben sind durch Enums, Längen, Zahlenbereiche, Allowlisten und exakte 40-stellige SHA-Verträge begrenzt; Ergebnisse besitzen strukturierte Output-Schemas.
+
+Die fünf Backendwerkzeuge analysieren nur versionierte Repository-Dateien innerhalb harter Datei-, Einzeldatei-, Gesamtbyte- und Evidence-Grenzen. Secret-ähnliche Literale werden ausschließlich als Fundklasse und Pfad gemeldet; Werte werden nie ausgegeben. Stackbewertungen sind deterministische Empfehlungen aus beobachteter Repository-Evidence und expliziten Constraints. Ein modularer Monolith ist der Standard; Microservices, Event-Broker, Kubernetes, NoSQL, Cache oder dynamische Erweiterungen benötigen jeweils messbare Betriebs- und Ownership-Gates. Metadaten dürfen keine ausführbaren Routen oder SQL-Fragmente enthalten. Plugins laufen nur über signierte Capability-Manifeste in separaten Prozessen, Containern oder Wasm-Sandboxes.
+
+`repository_revision_resolve` trennt und vergleicht:
+
+- aktuellen Workspace-Head und Dirty-Tree,
+- gefetchten aktuellen Base-Head und Merge-Base,
+- PR-Head, PR-Base, Draft-/Mergezustand und Merge-SHA,
+- Check-Run-Head sowie terminale Failure-/Pending-Evidence,
+- vom Broker belegte deployte MCP-Revision.
+
+Revision, immutable Image-Referenz, Digest, Image-ID, Runtime-Evidence-Hash sowie MCP-/Container-/Broker-Readiness werden aus dem revisionsgebundenen Self-Update-Status getrennt rückgelesen; fehlende oder ungültige Werte bleiben als Evidence-Gap sichtbar. Dirty Tree, Remote-/Base-/PR-/Expected-SHA-Mismatch oder nicht auflösbare Authority führen zu `REVISION_CONFLICT` und `stop_and_resolve_revision_conflicts`. Das Tool behauptet bewusst keinen relevanten Grünstatus allein aus einer Check-Run-Liste und führt weder Merge, Deploy noch andere fachliche Mutation aus.
+
+**BELEGT — lokale Verträge:** Acht gezielte Modultests belegen Registrierung, FastMCP-Schemas, Sicherheitsannotationen, Secret-Redaktion, Stackauswahl, TSX-/Tenancy-/Plugin-/Release-Roadmap, Threat-Control-Plan sowie Revisionserfolg und fail-closed Dirty-/Mismatch-Pfade. Weitere 17 Installer-/Docker-Vertragstests belegen Packaging, Launcher-Registrierung und Runtime-Import-Canaries. Die vollständige lokal ausführbare MCP-Suite bestand mit `264 passed`; zwei unveränderte Broker-Tests wurden ausschließlich wegen des Sandbox-Verbots für Unix-Socket-Erzeugung lokal nicht ausgeführt und bleiben für GitHub Actions verpflichtend.
+
+**BELEGT — Runtime:** Dockerfile, Launcher, Installer, Releasearchiv-Check und GitHub-Workflow sind verdrahtet. Alle acht fachlich relevanten PR-Workflows von PR #824 waren am unveränderten Head grün. Nach dem SHA-gebundenen Merge wurden immutable Image-Publish, Digestprüfung und VPS-Bootstrap über den offiziellen Workflow ausgeführt. Der aktuelle Self-Update- und Control-Plane-Readback bestätigt laufende und Image-Revision `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117` sowie den immutable Digest `sha256:9c9ae2101ff4930f6ecf68f1e7a4fd99b4e769656db9c51787d411e20aa9ee76`. Die sechs Werkzeuge sind damit im privaten MCP produktiv verfügbar; der separate Dokumentpipeline-Fachcanary ist unter 12.1 belegt.
+
+## 9.5 A2A-Adapter
 
 **BELEGT:** Der Backendvertrag enthält eine AgentCard unter `/.well-known/agent-card.json`, A2A-Nachrichten-, Streaming-, Task-, Subscribe- und Cancel-Routen sowie owner-scoped Service-Authentisierung. Der Adapter startet und liest dieselbe persistierte Agents-SDK-Truth-Chain wie die direkten Swarm-Routen; er ist kein zweiter fachlicher Orchestrator.
 
@@ -547,7 +582,7 @@ Dozzle ist keine Runtime-Wahrheitsquelle und kein Orchestrator.
 
 **BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server wurden unabhängig als laufende Container ohne Restart-, OOM- oder Exitfehler geprüft. LiteLLM und seine PostgreSQL-Instanz meldeten zusätzlich einen gesunden Healthzustand ohne Failing Streak.
 
-**TEILWEISE:** Prozess- und Health-Evidence beweisen nicht automatisch jede Fachfunktion. Der Gotenberg→Tika-End-to-End-Canary ist weiterhin separat blockiert und wird in Abschnitt 12 geführt.
+**TEILWEISE:** Prozess- und Health-Evidence beweisen nicht automatisch jede Fachfunktion. Der Gotenberg→Tika-End-to-End-Canary erreicht die laufenden Peer-Container unter der bisherigen Adressierung nicht und wird als eigene Fehlerfamilie in Abschnitt 12 geführt.
 
 **BLOCKIERT:** Der Memory-Gateway-Prozess ist HTTP-seitig gesund, sein optionales Milvus-Backend war jedoch mit der Fehlerfamilie `EHOSTUNREACH` nicht erreichbar. Remote Memory ist deshalb funktional blockiert und bleibt eine optionale Synchronisationsschicht, nicht die kanonische Produktwahrheit.
 
@@ -599,9 +634,9 @@ OCR darf nur als gekennzeichnete Extraktionsstufe auftreten. Extrahierter Text i
 
 ## 12.1 Aktueller Live-Status
 
-**BLOCKIERT:** Auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden im Workflow `29649984723` die MCP-Validation, Veröffentlichung des immutable Images, Digestprüfung und VPS-Bootstrap. Ausschließlich der Job `Verify Gotenberg to Tika live canary` schlug im Schritt `Generate PDF with Gotenberg and extract marker with Tika` fehl.
+**BELEGT — produktiver Fachcanary:** PR #827 bestand am unveränderten Head `0e3bc930132cb8f4c57ef991cae1a0e6655f8b71` alle acht relevanten Workflows und wurde als Squash-Commit `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117` gemergt. Die offizielle Post-Merge-Kette installierte das revisions- und digestverifizierte immutable Image `sha256:9c9ae2101ff4930f6ecf68f1e7a4fd99b4e769656db9c51787d411e20aa9ee76`. Der danach auf exakt dieser Runtime ausgeführte Fachcanary lieferte `DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED`: Gotenberg antwortete authentisiert mit HTTP `200`, `application/pdf`, `16.244` PDF-Bytes und SHA-256 `8e3342b5fa36e119ff69c0e7275d50b84a4cad1810c1cceda904ebf30c5c702b`; Tika antwortete mit HTTP `200`, extrahierte `72` Zeichen und bestätigte den eindeutigen Marker.
 
-Der aktuelle Code führt den Canary als festen, speicherlosen Node-Prozess im vorhandenen `gpt-browserless`-Netzwerk-Peer aus, adressiert Gotenberg und Tika über feste Docker-DNS-Namen, leert Proxyvariablen und validiert PDF-Signatur, Größe, SHA-256, HTTP-Status und Marker erneut in Python. Die zugehörigen Dokument-, Installer- und vollständigen MCP-Tests sind grün. Trotzdem gilt die Dokumentpipeline erst nach einem erfolgreichen post-install Live-Canary als produktiv belegt.
+**BELEGT — Sicherheitsgrenzen:** Der Host-Broker wertet aus dem bereits service- und containerverifizierten Gotenberg-Objekt ausschließlich die zwei benannten Basic-Auth-Werte für den flüchtigen Authorization-Header aus. Werte, Header, übrige Container-Umgebung und Dokumentinhalt werden weder ausgegeben noch persistiert; die lokale Headerstruktur wird nach dem Request geleert. Fehlende, nur teilweise vorhandene, übergroße oder kontrollzeichenhaltige Werte blockieren fail-closed. Der private Pfad bleibt speicherlos und größenbegrenzt und verwendet weder generische Shell, `docker exec`, veröffentlichte Hostports noch Netzwerkmutation. Vierzehn gezielte Tests, die lokal ausführbare MCP-Suite mit `268 passed, 2 deselected`, acht grüne PR-Workflows und der erfolgreiche Livecanary bilden die vollständige Evidence-Kette.
 
 ---
 
@@ -1144,21 +1179,24 @@ GitHub Intent
 7. **BELEGT — historischer LiteLLM-Kernpfad:** 92 Provider-Modelle wurden inventarisiert; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries. Der davon getrennte aktuelle Quota-Blocker wird unter 24.2 geführt.
 8. **BELEGT — Android-Releaseartefakte:** APK und AAB, SHA-256, Signaturdiagnose, ein Signer, Zertifikat-Fingerprint und Alignment wurden im Releaseworkflow belegt.
 9. **BELEGT — externe Action-Stream-Brücke im Codevertrag:** owner-scoped, idempotente externe Events mit deterministischen IDs und ohne Run-, Task- oder Blockermutation sind über Store, Backendroute, MCP-Client und MCP-Tool verdrahtet und getestet.
-10. **BELEGT — MCP-Releasebasis:** Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap bestanden für `c1921578bb29e554bcfdc7c29391d6caab85ff8a`.
+10. **BELEGT — MCP-Releasebasis:** Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap bestanden für `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117`; der Live-Readback bestätigte dieselbe Revision und den immutable Digest `sha256:9c9ae2101ff4930f6ecf68f1e7a4fd99b4e769656db9c51787d411e20aa9ee76`.
 11. **BELEGT — GitHub-Knowledge- und Modell-Health-Wahrheit:** PR #818 bestand Release Gate, vollständigen Type-check/Test/Build, Security Audit, alle CodeQL-Pfade, OAuth-Live-Path, E2E Smoke, Android- und Runtime-/UX-Verträge und wurde SHA-gebunden als Squash-Commit `feae19e0965ff276eadc97e95fb2b5aadd046463` gemergt. Öffentliche GitHub-Imports sind credential-frei bevorzugt, verlassene Knowledge-Imports werden fail-closed reconciled und Modell-Health erfordert eine echte Completion statt bloßer Readiness.
 12. **BELEGT — dreistufiger LLM-Kostenvertrag im Code und Live-Schema:** `free`, `standard` und `premium` sind als Backend-Policy, Admin-Vertrag, Usage-Settlement-Felder, Provider-Pricing-Felder und PostgreSQL-Constraints abgebildet. Provider-finanzierte Credits trennen bezahlte Kaufkraft von Bonus-/Admin-Gutschriften.
 13. **BELEGT — GitHub-Knowledge-Transportvertrag im Code:** GitHub-Antwortstatus und HTTPS-Transportfehler werden getrennt behandelt. Timeout, TLS, Connection/DNS und sonstige `requests`-Fehler liefern sichere `github_*`-Blocker mit passender `502`-/`504`-Semantik. Der Fehlerpfad schreibt Audit-Evidence nur mit einem URL-Fingerprint; rohe URL-, Query-, Credential- oder Exceptiondetails werden weder zurückgegeben noch persistiert.
+14. **BELEGT — Enterprise-Backend-/Revisionswerkzeuge in Code und Runtime:** Sechs bounded read-only MCP-Tools decken statische Architekturaufnahme, Stackentscheidung, Projekt-/Modernisierungsfahrplan, API-Sicherheitskonzept und die fail-closed Auflösung der vollständigen Repository-/PR-/CI-/Deployment-Revisionstupel ab. FastMCP-Output-Schemas, Eingabegrenzen und ToolAnnotations sind geprüft; PR #824 war vollständig grün, wurde SHA-gebunden gemergt und ist über den revisions- und digestverifizierten privaten MCP produktiv verfügbar.
+15. **BELEGT — Dokumentpipeline:** Der private Gotenberg→PDF→Tika-Pfad ist über zwei SHA-gebundene Reparaturstufen, lokale Tests, acht grüne PR-Workflows, immutable Deployment und einen erfolgreichen Produktionscanary belegt. Marker, PDF-Typ und -Hash sowie beide HTTP-Status wurden geprüft; Dokument- und Secretwerte wurden weder zurückgegeben noch persistiert.
+16. **BELEGT — KI-Coach-Integration-Workflow:** PR #828 reparierte den joblosen Konfigurationsfehler durch vier statische `needs.<job>.result`-Prüfungen, ergänzte einen zentralen Regression-Guard und band den Logikcheck an die kanonische Funktion `realStopper`. Am unveränderten Head `e8dbf51ea2330babd10c03c99e7a74f95a5ef604` bestanden neun Workflows; der KI-Coach-Lauf `29668564537` erzeugte und bestand alle sechs Jobs einschließlich Unit-, TypeScript-, Build-, Playwright- und Abschlussreport-Gates. Der Head wurde als Squash-Commit `2892776d6d3710ac5a4d40211e2fc09ee0866db3` übernommen.
 
 ## 24.2 Offen, teilweise oder blockiert
 
-1. **BLOCKIERT — Dokumentpipeline:** Der post-install Gotenberg→Tika-Livecanary des Workflows `29649984723` ist trotz grüner Validation, Image-, Digest- und Bootstrap-Jobs fehlgeschlagen.
-2. **TEILWEISE — Action Stream:** Implementierung und Tests sind belegt; ein echter doppelter externer Append-Canary muss noch Idempotenz und unveränderten Run-/Blockerstatus in der Produktionsdatenbank bestätigen.
-3. **BLOCKIERT/TEILWEISE — Provider-Onboarding und `gpt-5.4-mini`-Route:** Das geschützte Inventar belegt `gpt-5.4-mini`, aber die Aktivierung der Aliasroute bestand die echten Completion-Canaries nicht. `sovereign-fast` ist code-seitig der einzige Agents-SDK-Alias, darf jedoch erst genutzt werden, wenn die Route aktiv, preisverifiziert und canary-bestanden ist. Zusätzlich fehlt der vollständige automatische Lifecycle für beliebige neue Provider inklusive Preisen, atomarer Aktivierung und Rollback als durchgängiger Produktionsbeweis.
-4. **TEILWEISE — Betriebsbeweise:** Browserless, Tika, Gotenberg, Dozzle, Code Server, LiteLLM und LiteLLM-PostgreSQL besitzen Prozess-/Health-Evidence. Fachliche End-to-End-Canaries bleiben je Funktion separat erforderlich.
-5. **BLOCKIERT — Remote Memory:** Der optionale Memory Gateway ist prozessgesund, aber sein Milvus-Ziel war mit `EHOSTUNREACH` nicht erreichbar.
-6. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
-7. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation:** Der Architektur-Scanner meldet 57 heuristische Treffer in 27 Dateien. Repräsentative aktive Pfade wurden als Online-LLM-zuerst mit Offline-Fallback oder als strukturierte Policy-/Codeklassifikation bestätigt. Die vollständige SHA-gebundene Reviewliste muss noch maschinenlesbar verankert werden, damit jede Dateiänderung den Kandidaten automatisch erneut öffnet.
-8. **TEILWEISE — GitHub-Knowledge-Livecanary:** Der neue Codevertrag klassifiziert und auditiert HTTPS-443-Transportfehler sicher. Der vor dieser Änderung beobachtete Fehler hinterließ jedoch weder eine `knowledge_sources`-Zeile noch Audit-/Incident-Evidence; seine exakte DNS-, TLS-, Proxy- oder Connection-Unterursache ist deshalb rückwirkend nicht belegbar. Ein Livecanary nach einem separat freigegebenen immutable Backend-Deployment muss den realen GitHub-Import und den Auditblocker noch bestätigen.
+1. **TEILWEISE — Action Stream:** Implementierung und Tests sind belegt; ein echter doppelter externer Append-Canary muss noch Idempotenz und unveränderten Run-/Blockerstatus in der Produktionsdatenbank bestätigen.
+2. **BLOCKIERT/TEILWEISE — Provider-Onboarding und `gpt-5.4-mini`-Route:** Das geschützte Inventar belegt `gpt-5.4-mini`, aber die Aktivierung der Aliasroute bestand die echten Completion-Canaries nicht. `sovereign-fast` ist code-seitig der einzige Agents-SDK-Alias, darf jedoch erst genutzt werden, wenn die Route aktiv, preisverifiziert und canary-bestanden ist. Zusätzlich fehlt der vollständige automatische Lifecycle für beliebige neue Provider inklusive Preisen, atomarer Aktivierung und Rollback als durchgängiger Produktionsbeweis.
+3. **TEILWEISE — Betriebsbeweise:** Browserless, Tika, Gotenberg, Dozzle, Code Server, LiteLLM und LiteLLM-PostgreSQL besitzen Prozess-/Health-Evidence; der Dokumentpipeline-End-to-End-Canary ist belegt. Andere Fachfunktionen benötigen weiterhin jeweils eigene Canaries.
+4. **BLOCKIERT — Remote Memory:** Der optionale Memory Gateway ist prozessgesund, aber sein Milvus-Ziel war mit `EHOSTUNREACH` nicht erreichbar.
+5. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
+6. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation:** Der Architektur-Scanner meldet 57 heuristische Treffer in 27 Dateien. Repräsentative aktive Pfade wurden als Online-LLM-zuerst mit Offline-Fallback oder als strukturierte Policy-/Codeklassifikation bestätigt. Die vollständige SHA-gebundene Reviewliste muss noch maschinenlesbar verankert werden, damit jede Dateiänderung den Kandidaten automatisch erneut öffnet.
+7. **TEILWEISE — GitHub-Knowledge-Livecanary:** Der neue Codevertrag klassifiziert und auditiert HTTPS-443-Transportfehler sicher. Der vor dieser Änderung beobachtete Fehler hinterließ jedoch weder eine `knowledge_sources`-Zeile noch Audit-/Incident-Evidence; seine exakte DNS-, TLS-, Proxy- oder Connection-Unterursache ist deshalb rückwirkend nicht belegbar. Ein Livecanary nach einem separat freigegebenen immutable Backend-Deployment muss den realen GitHub-Import und den Auditblocker noch bestätigen.
+8. **Überprüfung ob Code-Server bereits aktiv als Interne Architektur verwendet wurde und Git Clone soweit funktioniert und in workspace des Users auch das Repository Clone und bearbeitet sowie test aller relevanten tools und Arbeitsabläufe sowie gh Funktionen bestätigt testen und abklären ob user workspace lokal vps scharf erfolgreich erstellt wurd und ob die Erstellung in form eines dockerfile erfolg oder anders und ggf auf Docker-Container Docker-Netzwerk umstellen und prüfen ob wir ggf Docker-Netzwerk Verteilung intern im backend erstellen sollten.
 
 ## 24.3 Langfristig
 
@@ -1189,16 +1227,16 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, die grundsätzlich funktionsfähige LiteLLM-Kette, Knowledge-Integrität und signierte Android-Releaseartefakte sind belegt. Aktuelle harte Blocker sind der fehlgeschlagene post-install Gotenberg→Tika-Livecanary auf Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` sowie die aktuell fehlschlagenden echten LiteLLM-Completion-Canaries. Der geschützte Diagnosepfad liefert für den aktuellen Versuch keine belastbar feinere Providerursache; eine Kontingent-, Credential- oder andere Providerdiagnose wird daher nicht als heutige Wahrheit behauptet. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
+**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, Knowledge-Integrität, signierte Android-Releaseartefakte, die produktive Enterprise-MCP-Werkzeugkette, der Gotenberg→Tika-Produktionscanary und der KI-Coach-Integrationsworkflow sind belegt. Aktueller harter Blocker sind die fehlschlagenden echten LiteLLM-Completion-Canaries. Der geschützte Providerdiagnosepfad liefert für den aktuellen Modellversuch keine belastbar feinere Ursache; eine Kontingent-, Credential- oder andere Providerdiagnose wird daher nicht als heutige Wahrheit behauptet. Zusätzlich fehlen der physische Android-Geräte-Smoke, der produktive Action-Stream-Doppel-Append-Canary und ein erreichbares optionales Milvus-Backend.
 
 ---
 
 # 26. Aktueller Evidence-Snapshot
 
-Evidence-Stand: 18. Juli 2026. PR #820 wurde vom vollständig grünen Head `229a92bd1bb7eee42dc14fd428f0510e74e1f39f` als Merge-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc` in `main` übernommen. Die nachstehende GitHub-Knowledge-Transportänderung besitzt lokale Code-/Test-Evidence, ist aber noch nicht als immutable Backend-Release deployt.
+Evidence-Stand: 19. Juli 2026. PR #820 und die GitHub-Knowledge-Transportänderung aus PR #821 sind in der aktuellen Repository-Baseline enthalten. PR #824 brachte die Enterprise-Backend-/Revisionswerkzeuge über die offizielle immutable MCP-Releasekette produktiv online. PR #825 widerlegte nach vollständig grünem Merge und Deployment die netzübergreifende Aliasannahme. PR #826 reparierte über einen bounded Host-Broker-Pfad die private Service-Erreichbarkeit. PR #827 bestand am unveränderten Head `0e3bc930132cb8f4c57ef991cae1a0e6655f8b71` acht Workflows, wurde als Squash-Commit `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117` gemergt und immutable deployt und reparierte die Gotenberg-Authentisierung. Der reale Gotenberg→PDF→Tika-Fachcanary ist auf genau dieser Runtime vollständig grün. PR #828 bestand am unveränderten Head `e8dbf51ea2330babd10c03c99e7a74f95a5ef604` neun Workflows und alle sechs KI-Coach-Jobs und wurde als Squash-Commit `2892776d6d3710ac5a4d40211e2fc09ee0866db3` gemergt.
 
-- **BELEGT:** Repository-Baseline für diese Folgearbeit ist der neu aufgelöste `main`-Commit `451247994afa448b501c1e0a6c19bcf55f7f66bc`.
-- **BELEGT:** Für die getrennte MCP-Release-Revision `c1921578bb29e554bcfdc7c29391d6caab85ff8a` bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Direkte eingehende Mutationen bleiben verboten.
+- **BELEGT:** Repository-Baseline für diese Folgearbeit ist der neu aufgelöste Main- und Merge-Commit `2892776d6d3710ac5a4d40211e2fc09ee0866db3`. Die davon getrennte produktive MCP-Revision bleibt mangels MCP-Pfadänderung korrekt auf `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117`.
+- **BELEGT:** Für MCP-Release-Revision `7cdb4d2f1d9a39881ae4b0a3d61f2c5118d8b117` bestanden MCP-Validation, immutable Image-Publish, Digestprüfung und VPS-Bootstrap. Der Live-Readback bestätigte Revision, Image-Revision und Image-ID mit Digest `sha256:9c9ae2101ff4930f6ecf68f1e7a4fd99b4e769656db9c51787d411e20aa9ee76`; direkte eingehende Mutationen bleiben verboten.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
 - **BELEGT:** A2A wurde mit AgentCard, Owner-Scope, persistiertem Run und `contextId`, Streaming, Resume und Controller-/Task-Endstatus live korreliert.
 - **BELEGT:** `scripts/sovereign-backend/app.py` ist die kanonische deployte Backend-App. `knowledge_library.py`, `r2_storage.py` und die übrigen echten Spiegel sind bytegleich.
@@ -1210,10 +1248,12 @@ Evidence-Stand: 18. Juli 2026. PR #820 wurde vom vollständig grünen Head `229a
 - **BELEGT:** PR #818 wurde nach vollständig grünen GitHub-Gates SHA-gebunden gemergt. Der neue Modell-Healthvertrag unterscheidet Quota, Rate-Limit, Credentials, Aliasfehler und Infrastruktur und setzt `completionVerified=true` für Grün voraus.
 - **BELEGT:** Der aktuelle Live-Readback enthält 38 Knowledge-Quellen: 37 `ready`, eine PDF-Quelle `processing`, 400 verknüpfte Chunks und keine persistierte GitHub-Quelle. In `audit_log` und `sovereign_toolchain_incidents` existiert für den früheren GitHub-443-Fehler keine passende Evidence; der Fehler lag damit vor dem bisherigen Quellen-Commit- und Auditpfad.
 - **BELEGT — Code/Test:** Der Folgecode klassifiziert GitHub-Timeout, TLS, Connection/DNS und sonstige Transportfehler in sichere Blocker, liefert keine rohen Exceptiondetails und persistiert nur einen URL-Fingerprint. Die vollständige Suite `scripts/sovereign-backend/tests` bestand lokal mit `119 passed`; der GitHub-PR- und Deploybeweis folgt getrennt.
+- **BELEGT — Enterprise-Backend-/Revisions-Code und Runtime:** Sechs read-only MCP-Tools sind in Launcher, Dockerfile, VPS-Installer, Releasearchiv-Check, Workflow und Server-Instruktionen integriert. Acht gezielte Tooltests, 17 Installer-/Docker-Vertragstests und die vollständige lokal ausführbare MCP-Suite mit `264 passed` bestanden auf PR #824; GitHub Actions führte auch die zwei lokal sandboxblockierten Unix-Socket-Verträge aus. Alle acht PR-Workflows waren am unveränderten Head grün. Merge-, laufende und Image-Revision sowie immutable Digest stimmen im Produktions-Readback überein.
 - **BELEGT:** Öffentliche GitHub-Wissensimporte laufen credential-frei zuerst; private Reads werden nur nach öffentlichem Nichtfund über den bestätigten Serverzugang versucht.
 - **BELEGT:** APK- und AAB-Artefakte, Hashes, Signaturdiagnose, genau ein Signer, Zertifikat-Fingerprint und Alignment liegen als Release-Evidence vor.
 - **BELEGT:** Browserless, Tika, Gotenberg, Dozzle und Code Server liefen ohne Restart-/OOM-/Exitfehler; LiteLLM und seine PostgreSQL-Instanz waren healthy.
-- **BLOCKIERT:** Workflow `29649984723` scheiterte ausschließlich im post-install Job `Verify Gotenberg to Tika live canary`; Validation, Image, Digest und VPS-Bootstrap waren grün.
+- **BELEGT:** Der Dokumentcanary erzeugte über den authentisierten privaten Gotenberg-Pfad ein `16.244` Byte großes PDF, prüfte dessen SHA-256, übergab es an Tika und bestätigte dort HTTP `200` sowie den eindeutigen Marker. Quell- und Ausgabedokument, Dokumentinhalt und Secretwerte wurden nicht persistiert oder zurückgegeben.
+- **BELEGT:** Der historische KI-Coach-Push-Run `29666014826` scheiterte vor der Joberzeugung. PR #828 beseitigte nacheinander den dynamischen `needs`-Zugriff und den veralteten Symbolcheck. Am finalen unveränderten Head bestanden neun Workflows; KI-Coach-Run `29668564537` bestand seine sechs erzeugten Jobs. Der SHA-gebundene Squash-Merge ist `2892776d6d3710ac5a4d40211e2fc09ee0866db3`.
 - **BLOCKIERT:** Der optionale Memory Gateway war prozessgesund, konnte sein Milvus-Ziel jedoch wegen `EHOSTUNREACH` nicht erreichen.
 - **OFFEN:** Physischer Android-Geräte-Smoke, produktiver Action-Stream-Doppel-Append-Canary und vollständige SHA-gebundene Klassifikation der LLM-Boundary-Kandidaten.
 - Ein vollständig grüner Produkt- und Releasezustand wird daher nicht behauptet.

@@ -49,7 +49,7 @@ export function WorkbenchStatusChips({
               display: "flex",
               alignItems: "center",
               gap: 5,
-              minHeight: 40,
+              minHeight: 44,
               padding: "8px 11px",
               borderRadius: 999,
               background: `${color}14`,

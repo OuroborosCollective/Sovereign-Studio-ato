@@ -206,6 +206,19 @@ const WORKFLOW_INDICATOR_PATHS = [
   '.circleci/',
 ];
 
+// Hoisted CONFIG_NAMES array constant to the module level to avoid re-allocating on every check.
+const CONFIG_NAMES = [
+  'package.json',
+  'tsconfig',
+  'vite.config',
+  'webpack.config',
+  'jest.config',
+  'eslint',
+  'prettier',
+  '.gitignore',
+  '.env',
+];
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -246,35 +259,30 @@ function getRiskFromExtension(path: string): InsightRisk {
   return 'niedrig';
 }
 
-function isRuntimePath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return RUNTIME_INDICATOR_PATHS.some((indicator) => lower.includes(indicator));
+// Accepts pre-lowercased file paths to eliminate redundant internal lowercasing operations in loop iteration.
+function isRuntimePath(lowerPath: string): boolean {
+  return RUNTIME_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
 }
 
-function isMobilePath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return MOBILE_INDICATOR_PATHS.some((indicator) => lower.includes(indicator));
+function isMobilePath(lowerPath: string): boolean {
+  return MOBILE_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
 }
 
-function isComponentPath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return COMPONENT_INDICATOR_PATHS.some((indicator) => lower.includes(indicator));
+function isComponentPath(lowerPath: string): boolean {
+  return COMPONENT_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
 }
 
-function isTestPath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return TEST_INDICATOR_PATHS.some((indicator) => lower.includes(indicator));
+function isTestPath(lowerPath: string): boolean {
+  return TEST_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
 }
 
-function isWorkflowPath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return WORKFLOW_INDICATOR_PATHS.some((indicator) => lower.includes(indicator));
+function isWorkflowPath(lowerPath: string): boolean {
+  return WORKFLOW_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
 }
 
-function isConfigPath(path: string): boolean {
-  const name = path.split('/').pop() ?? path;
-  const configNames = ['package.json', 'tsconfig', 'vite.config', 'webpack.config', 'jest.config', 'eslint', 'prettier', '.gitignore', '.env'];
-  return configNames.some((config) => name.toLowerCase().includes(config));
+function isConfigPath(lowerPath: string): boolean {
+  const name = lowerPath.split('/').pop() ?? lowerPath;
+  return CONFIG_NAMES.some((config) => name.includes(config));
 }
 
 function getNestingDepth(path: string): number {
@@ -310,8 +318,21 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
   let hasWorkflows = false;
 
   for (const file of files) {
-    const path = file.path.toLowerCase();
-    const ext = extractFileExtension(file.path);
+    const filePath = file.path;
+    const path = filePath.toLowerCase();
+
+    // Process the path split, nesting depth, folder name, and extensions in a single pass to reduce redundant string splits & arrays.
+    const parts = filePath.split('/');
+    const partsLen = parts.length;
+
+    let depth = 0;
+    for (let j = 0; j < partsLen; j++) {
+      if (parts[j]) depth++;
+    }
+
+    const name = parts[partsLen - 1] || '';
+    const dotIndex = name.lastIndexOf('.');
+    const ext = dotIndex >= 0 ? name.slice(dotIndex) : '';
 
     // Count by extension
     if (ext) {
@@ -319,43 +340,43 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
     }
 
     // Count by folder
-    const folder = extractFolderFromPath(file.path);
+    const folder = partsLen > 1 ? parts.slice(0, -1).join('/') || '/' : '/';
     byFolder[folder] = (byFolder[folder] ?? 0) + 1;
 
     // Check deep nesting (more than 6 levels)
-    if (getNestingDepth(file.path) > 6) {
-      deepNesting.push(file.path);
+    if (depth > 6) {
+      deepNesting.push(filePath);
     }
 
-    // Categorize files
-    if (isMobilePath(file.path)) {
-      if (path.includes('android')) androidFiles.push(file.path);
-      if (path.includes('webview') || path.includes('webview')) hasWebView = true;
+    // Categorize files using pre-lowercased file paths
+    if (isMobilePath(path)) {
+      if (path.includes('android')) androidFiles.push(filePath);
+      if (path.includes('webview')) hasWebView = true;
       hasAndroid = true;
     }
 
-    if (isRuntimePath(file.path)) {
-      runtimeFiles.push(file.path);
+    if (isRuntimePath(path)) {
+      runtimeFiles.push(filePath);
       hasRuntime = true;
     }
 
-    if (isComponentPath(file.path)) {
-      componentFiles.push(file.path);
+    if (isComponentPath(path)) {
+      componentFiles.push(filePath);
       hasComponents = true;
     }
 
-    if (isTestPath(file.path)) {
-      testFiles.push(file.path);
+    if (isTestPath(path)) {
+      testFiles.push(filePath);
       hasTests = true;
     }
 
-    if (isWorkflowPath(file.path)) {
-      workflowFiles.push(file.path);
+    if (isWorkflowPath(path)) {
+      workflowFiles.push(filePath);
       hasWorkflows = true;
     }
 
-    if (isConfigPath(file.path)) {
-      configFiles.push(file.path);
+    if (isConfigPath(path)) {
+      configFiles.push(filePath);
     }
 
     // Check for README

@@ -14,55 +14,59 @@ import {
 } from './workerIntentDetector';
 
 describe('integration intent default', () => {
-  it('treats normal non-question text as implementation intent without forcing executor-only routing', () => {
-    const text = 'Die Oberflaeche soll ruhiger und eindeutiger werden';
-    expect(isLikelyIntegrationImplementationIntent(text)).toBe(true);
-    expect(isSovereignAgentExecutionIntent(text)).toBe(false);
-    expect(isCodeGenerationIntent(text)).toBe(true);
+  it('keeps free language unknown until the online LLM returns structured intent', () => {
+    const implementationText = 'Die Oberflaeche soll ruhiger und eindeutiger werden';
+    const questionText = 'Wie sollte die Oberflaeche besser werden?';
+    expect(isLikelyIntegrationImplementationIntent(implementationText)).toBe(false);
+    expect(isCodeGenerationIntent(implementationText)).toBe(false);
+    expect(isLikelyIntegrationImplementationIntent(questionText)).toBe(false);
+    expect(isCodeGenerationIntent(questionText)).toBe(false);
   });
 
-  it('keeps questions advisory instead of auto-executing', () => {
-    const text = 'Wie sollte die Oberflaeche besser werden?';
-    expect(isLikelyIntegrationImplementationIntent(text)).toBe(false);
-    expect(isSovereignAgentExecutionIntent(text)).toBe(false);
-    expect(isCodeGenerationIntent(text)).toBe(false);
-  });
-
-  it('keeps commands, greetings, retry and alternate route text out of default execution', () => {
-    expect(isLikelyIntegrationImplementationIntent('/repo owner/name')).toBe(false);
+  it('accepts explicit code controls without interpreting surrounding language', () => {
+    expect(isCodeGenerationIntent('/code Die Oberflaeche soll klarer werden')).toBe(true);
+    expect(isCodeGenerationIntent('/fix src/App.tsx')).toBe(true);
+    expect(isCodeGenerationIntent('/implement tests')).toBe(true);
+    expect(isCodeGenerationIntent('/repo owner/name')).toBe(false);
     expect(isLikelyIntegrationImplementationIntent('Hallo')).toBe(false);
     expect(isLikelyIntegrationImplementationIntent('retry')).toBe(false);
-    expect(isLikelyIntegrationImplementationIntent('ohne Sovereign Agent bitte')).toBe(false);
   });
 });
 
 describe('explicit executor intent', () => {
-  it('detects explicit executor and PR wording only', () => {
-    expect(isSovereignAgentExecutionIntent('Use Sovereign Agent to fix this')).toBe(true);
-    expect(isSovereignAgentExecutionIntent('Create a draft PR')).toBe(true);
-    expect(isSovereignAgentExecutionIntent('push to main')).toBe(true);
-    expect(isSovereignAgentExecutionIntent('commit the changes')).toBe(true);
+  it('accepts only explicit executor controls', () => {
+    expect(isSovereignAgentExecutionIntent('/agent fix this')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('/draft-pr create')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('Use Sovereign Agent to fix this')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('Create a draft PR')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('push to main')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('commit the changes')).toBe(false);
   });
 
-  it('keeps generic build and fix text in code route', () => {
+  it('keeps generic build and fix text out of offline code routing', () => {
     expect(isSovereignAgentExecutionIntent('baue die app')).toBe(false);
     expect(isSovereignAgentExecutionIntent('implementiere feature')).toBe(false);
     expect(isSovereignAgentExecutionIntent('fixe den bug')).toBe(false);
-    expect(isCodeGenerationIntent('baue die app')).toBe(true);
+    expect(isCodeGenerationIntent('baue die app')).toBe(false);
+    expect(isCodeGenerationIntent('/code baue die app')).toBe(true);
   });
 });
 
 describe('retry, diagnostics and status', () => {
-  it('detects retry and diagnostic wording', () => {
+  it('accepts only exact retry and diagnostic controls', () => {
     expect(isWorkerRetryIntent('retry')).toBe(true);
-    expect(isWorkerRetryIntent('nochmal')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('Warum funktioniert das nicht?')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('Error 500')).toBe(true);
+    expect(isWorkerRetryIntent('/retry')).toBe(true);
+    expect(isWorkerRetryIntent('nochmal')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('diagnose')).toBe(true);
+    expect(isWorkerDiagnosticQuestion('/diagnose')).toBe(true);
+    expect(isWorkerDiagnosticQuestion('Warum funktioniert das nicht?')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('Error 500')).toBe(false);
   });
 
-  it('detects executor status questions and reports runtime state honestly', () => {
-    expect(isExecutorStatusQuestion('arbeitet er schon?')).toBe(true);
-    expect(isExecutorStatusQuestion('warum passiert nichts?')).toBe(true);
+  it('accepts only the explicit status control and reports runtime state honestly', () => {
+    expect(isExecutorStatusQuestion('/status')).toBe(true);
+    expect(isExecutorStatusQuestion('arbeitet er schon?')).toBe(false);
+    expect(isExecutorStatusQuestion('warum passiert nichts?')).toBe(false);
     expect(buildExecutorStatusAnswer({ agentState: 'idle' })).toContain('nicht');
     expect(buildExecutorStatusAnswer({ agentState: 'executor_running', changedFiles: 2 })).toContain('2');
   });
@@ -102,13 +106,15 @@ describe('delegation and confirmation', () => {
 });
 
 describe('worker action hints', () => {
-  it('returns code-route hint for implementation requests', () => {
+  it('returns code-route hint only for an explicit offline code control', () => {
     expect(getWorkerActionHint({ submittedText: 'Die Oberflaeche soll klarer werden', workerBlocked: false }))
+      .toBe('');
+    expect(getWorkerActionHint({ submittedText: '/code Die Oberflaeche soll klarer werden', workerBlocked: false }))
       .toBe('Code-LLM Route · Patch erzeugen');
   });
 
-  it('returns diagnostic hint when worker is blocked and no retry intent', () => {
+  it('reports the blocked online language path without local interpretation', () => {
     expect(getWorkerActionHint({ submittedText: 'Hello world', workerBlocked: true }))
-      .toBe('Worker blockiert · lokale Diagnose statt blindem Retry');
+      .toBe('Worker blockiert · keine lokale Sprachdeutung');
   });
 });

@@ -8,12 +8,26 @@ import {
   deriveWorkbenchStatusSlots,
   type WorkbenchStatusInput,
 } from './builderWorkbenchStatus';
+import type { SovereignActionEvent } from './sovereignActionStreamRuntime';
 
 function baseInput(overrides: Partial<WorkbenchStatusInput> = {}): WorkbenchStatusInput {
   return {
     logs: [],
+    actionEvents: [],
     workerBlocker: null,
     chatRepoError: null,
+    ...overrides,
+  };
+}
+
+function actionEvent(overrides: Partial<SovereignActionEvent> = {}): SovereignActionEvent {
+  return {
+    id: 'event-1',
+    createdAt: 1,
+    kind: 'input_received',
+    route: 'runtime',
+    label: 'Eingabe empfangen',
+    state: 'done',
     ...overrides,
   };
 }
@@ -33,17 +47,51 @@ describe('builderWorkbenchStatus', () => {
     }
   });
 
-  it('counts system actions but excludes tab navigation noise and raw signal logs', () => {
-    const input = baseInput({
+  it('counts only explicitly operational Action-Stream events', () => {
+    const actions = deriveSystemActionEntries(baseInput({
       logs: [
-        { ts: '10:00:00', level: 'info', msg: 'Tab → chat (manual)', tabId: 'chat' },
+        { ts: '10:00:00', level: 'info', msg: 'Worker retry requested by user', tabId: 'router' },
         { ts: '10:00:01', level: 'signal', msg: 'Signal[router] → active', tabId: 'router' },
-        { ts: '10:00:02', level: 'info', msg: 'Worker retry requested by user', tabId: 'router' },
       ],
-    });
-    const actions = deriveSystemActionEntries(input);
-    expect(actions).toHaveLength(1);
-    expect(actions[0]).toContain('Worker retry requested by user');
+      actionEvents: [
+        actionEvent({ id: 'input', kind: 'input_received', label: 'Eingabe empfangen' }),
+        actionEvent({ id: 'route', kind: 'route_selected', label: 'Route gewählt', state: 'running' }),
+        actionEvent({
+          id: 'request',
+          kind: 'llm_request_started',
+          route: 'worker',
+          label: 'LLM Request gestartet',
+          state: 'running',
+        }),
+        actionEvent({
+          id: 'response',
+          kind: 'llm_response_received',
+          route: 'worker',
+          label: 'LLM Response empfangen',
+          state: 'done',
+        }),
+        actionEvent({
+          id: 'patch',
+          kind: 'patch_generated',
+          route: 'github-patch',
+          label: 'Patch generiert',
+          detail: 'src/App.tsx',
+          state: 'done',
+        }),
+        actionEvent({
+          id: 'failed',
+          kind: 'agent_tool_finished',
+          route: 'agent-job',
+          label: 'Tool fehlgeschlagen',
+          state: 'failed',
+        }),
+      ],
+    }));
+
+    expect(actions).toEqual([
+      'LLM Request gestartet',
+      'Patch generiert · src/App.tsx',
+    ]);
   });
 
   it('derives edited files only from real Sovereign Agent changed files', () => {
@@ -86,19 +134,60 @@ describe('builderWorkbenchStatus', () => {
     expect(errors.some((e) => e.includes('boom'))).toBe(true);
   });
 
-  it('reports all warning logs as errors, as keyword-based filtering of resolved blockers is forbidden by the Manifest', () => {
-    const errors = deriveErrorEntries(baseInput({
-      githubState: 'ready',
+  it('keeps warning and error text in Logs and counts only structured failed events', () => {
+    const input = baseInput({
       logs: [
-        { ts: '10:00:00', level: 'warn', msg: 'Write intent blocked: GitHub write access missing', tabId: 'router' },
-        { ts: '10:00:01', level: 'warn', msg: 'Other active blocker', tabId: 'router' },
+        { ts: '10:00:00', level: 'warn', msg: 'GitHub access missing', tabId: 'router' },
+        { ts: '10:00:01', level: 'error', msg: 'Worker request failed', tabId: 'router' },
+      ],
+      actionEvents: [
+        actionEvent({
+          id: 'failed-patch',
+          kind: 'failed',
+          route: 'direct-github-patch',
+          label: 'Direct Patch fehlgeschlagen',
+          detail: 'Patch rejected',
+          state: 'failed',
+        }),
+        actionEvent({
+          id: 'blocked',
+          kind: 'patch_blocked',
+          route: 'github-patch',
+          label: 'Patch wartet',
+          state: 'blocked',
+        }),
+      ],
+    });
+
+    expect(deriveLogEntries(input)).toEqual([
+      '10:00:00 · [warn] GitHub access missing',
+      '10:00:01 · [error] Worker request failed',
+    ]);
+    expect(deriveErrorEntries(input)).toEqual([
+      'Direct Patch fehlgeschlagen · Patch rejected',
+    ]);
+  });
+
+  it('does not duplicate a structured worker failure when a canonical blocker exists', () => {
+    const errors = deriveErrorEntries(baseInput({
+      workerBlocker: {
+        message: 'Worker HTTP 500',
+        diagnostic: { scope: 'worker' } as never,
+        createdAt: Date.now(),
+      },
+      actionEvents: [
+        actionEvent({
+          id: 'worker-failed',
+          kind: 'failed',
+          route: 'worker',
+          label: 'Worker blockiert',
+          detail: 'Worker HTTP 500',
+          state: 'failed',
+        }),
       ],
     }));
 
-    expect(errors).toEqual([
-      '10:00:00 · Write intent blocked: GitHub write access missing',
-      '10:00:01 · Other active blocker'
-    ]);
+    expect(errors).toEqual(['Worker blockiert · Worker HTTP 500']);
   });
 
   it('reports Draft PR as bereit only when a real PR url exists', () => {

@@ -12,18 +12,14 @@ import {
 } from '../runtime/workerIntentDetector';
 
 describe('isSovereignAgentExecutionIntent', () => {
-  it('detects Sovereign Agent keyword', () => {
-    expect(isSovereignAgentExecutionIntent('Use Sovereign Agent to fix this')).toBe(true);
-  });
-
-  it('detects draft PR intent', () => {
-    expect(isSovereignAgentExecutionIntent('Create a draft PR')).toBe(true);
-    expect(isSovereignAgentExecutionIntent('pr erstellen')).toBe(true);
-  });
-
-  it('detects push/commit intent', () => {
-    expect(isSovereignAgentExecutionIntent('push to main')).toBe(true);
-    expect(isSovereignAgentExecutionIntent('commit the changes')).toBe(true);
+  it('accepts only explicit executor controls', () => {
+    expect(isSovereignAgentExecutionIntent('/agent fix this')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('/draft-pr create')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('Use Sovereign Agent to fix this')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('Create a draft PR')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('pr erstellen')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('push to main')).toBe(false);
+    expect(isSovereignAgentExecutionIntent('commit the changes')).toBe(false);
   });
 
   it('keeps generic build/implement intent out of Sovereign Agent-only routing', () => {
@@ -41,18 +37,21 @@ describe('isSovereignAgentExecutionIntent', () => {
     expect(isSovereignAgentExecutionIntent('What is this project about?')).toBe(false);
   });
 
-  it('is case insensitive', () => {
-    expect(isSovereignAgentExecutionIntent('sovereign-agent')).toBe(true);
-    expect(isSovereignAgentExecutionIntent('SOVEREIGN_AGENT')).toBe(true);
+  it('is case insensitive for explicit controls', () => {
+    expect(isSovereignAgentExecutionIntent('/AGENT task')).toBe(true);
+    expect(isSovereignAgentExecutionIntent('/DRAFT-PR task')).toBe(true);
   });
 });
 
 describe('isCodeGenerationIntent', () => {
-  it('detects generic code-generation intent without forcing Sovereign Agent', () => {
-    expect(isCodeGenerationIntent('baue die app')).toBe(true);
-    expect(isCodeGenerationIntent('implementiere feature')).toBe(true);
-    expect(isCodeGenerationIntent('fixe den bug')).toBe(true);
-    expect(isCodeGenerationIntent('repariere den server')).toBe(true);
+  it('accepts only explicit code controls', () => {
+    expect(isCodeGenerationIntent('/code baue die app')).toBe(true);
+    expect(isCodeGenerationIntent('/implement feature')).toBe(true);
+    expect(isCodeGenerationIntent('/fix den bug')).toBe(true);
+    expect(isCodeGenerationIntent('baue die app')).toBe(false);
+    expect(isCodeGenerationIntent('implementiere feature')).toBe(false);
+    expect(isCodeGenerationIntent('fixe den bug')).toBe(false);
+    expect(isCodeGenerationIntent('repariere den server')).toBe(false);
   });
 
   it('does not treat ordinary chat as code-generation intent', () => {
@@ -67,16 +66,14 @@ describe('isWorkerRetryIntent', () => {
     expect(isWorkerRetryIntent('Retry')).toBe(true);
   });
 
-  it('detects german retry words', () => {
-    expect(isWorkerRetryIntent('erneut')).toBe(true);
-    expect(isWorkerRetryIntent('nochmal')).toBe(true);
-    expect(isWorkerRetryIntent('noch mal')).toBe(true);
-    expect(isWorkerRetryIntent('wiederholen')).toBe(true);
-  });
-
-  it('detects try/test words', () => {
-    expect(isWorkerRetryIntent('testen')).toBe(true);
-    expect(isWorkerRetryIntent('versuch es nochmal')).toBe(true);
+  it('rejects natural-language retry wording', () => {
+    expect(isWorkerRetryIntent('/retry')).toBe(true);
+    expect(isWorkerRetryIntent('erneut')).toBe(false);
+    expect(isWorkerRetryIntent('nochmal')).toBe(false);
+    expect(isWorkerRetryIntent('noch mal')).toBe(false);
+    expect(isWorkerRetryIntent('wiederholen')).toBe(false);
+    expect(isWorkerRetryIntent('testen')).toBe(false);
+    expect(isWorkerRetryIntent('versuch es nochmal')).toBe(false);
   });
 
   it('returns false for unrelated text', () => {
@@ -86,23 +83,16 @@ describe('isWorkerRetryIntent', () => {
 });
 
 describe('isWorkerDiagnosticQuestion', () => {
-  it('detects why questions', () => {
-    expect(isWorkerDiagnosticQuestion('Warum funktioniert das nicht?')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('Wieso ist der Worker down?')).toBe(true);
-  });
-
-  it('detects help keywords', () => {
-    expect(isWorkerDiagnosticQuestion('Hilfe, der Worker geht nicht')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('help me')).toBe(true);
-  });
-
-  it('detects technical error keywords', () => {
-    expect(isWorkerDiagnosticQuestion('Error 500')).toBe(true);
-    expect(isWorkerDiagnosticQuestion('Cloudflare worker blocked')).toBe(true);
-  });
-
-  it('detects explain keywords', () => {
-    expect(isWorkerDiagnosticQuestion('Erkläre mir den Fehler')).toBe(true);
+  it('accepts only explicit diagnostic controls', () => {
+    expect(isWorkerDiagnosticQuestion('diagnose')).toBe(true);
+    expect(isWorkerDiagnosticQuestion('/diagnose')).toBe(true);
+    expect(isWorkerDiagnosticQuestion('Warum funktioniert das nicht?')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('Wieso ist der Worker down?')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('Hilfe, der Worker geht nicht')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('help me')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('Error 500')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('Cloudflare worker blocked')).toBe(false);
+    expect(isWorkerDiagnosticQuestion('Erkläre mir den Fehler')).toBe(false);
   });
 
   it('returns false for unrelated text', () => {
@@ -112,24 +102,24 @@ describe('isWorkerDiagnosticQuestion', () => {
 });
 
 describe('getWorkerActionHint', () => {
-  it('returns executor write-route hint for explicit executor intent', () => {
+  it('returns executor write-route hint for an explicit executor control', () => {
     expect(getWorkerActionHint({
-      submittedText: 'Use Sovereign Agent to fix',
+      submittedText: '/agent fix',
       workerBlocked: false,
     })).toBe('Executor-Schreibroute starten');
   });
 
   it('returns blocked executor hint when agent disabled', () => {
     expect(getWorkerActionHint({
-      submittedText: 'sovereign-agent do something',
+      submittedText: '/agent do something',
       workerBlocked: true,
       agentDisabled: true,
     })).toBe('Executor blockiert · Code-Route prüft zuerst');
   });
 
-  it('returns code-LLM hint for generic code-generation intent', () => {
+  it('returns code-LLM hint for an explicit code control', () => {
     expect(getWorkerActionHint({
-      submittedText: 'baue die app',
+      submittedText: '/code baue die app',
       workerBlocked: false,
     })).toBe('Code-LLM Route · Patch erzeugen');
   });
@@ -138,12 +128,12 @@ describe('getWorkerActionHint', () => {
     expect(getWorkerActionHint({
       submittedText: 'Hello world',
       workerBlocked: true,
-    })).toBe('Worker blockiert · lokale Diagnose statt blindem Retry');
+    })).toBe('Worker blockiert · keine lokale Sprachdeutung');
   });
 
   it('returns retry hint when worker blocked and retry intent', () => {
     expect(getWorkerActionHint({
-      submittedText: 'retry the request',
+      submittedText: 'retry',
       workerBlocked: true,
     })).toBe('Worker Retry · Diagnose wird aktualisiert');
   });

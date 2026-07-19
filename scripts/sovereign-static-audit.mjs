@@ -28,6 +28,8 @@ const releaseRuntimeConfigFiles = [
   'src/features/product/runtime/remoteMemoryContainerRuntime.ts',
 ];
 
+const kiCoachWorkflowPath = '.github/workflows/ki-coach-integration.yml';
+
 const strictCapacitorMajor = process.env.SOVEREIGN_STRICT_CAPACITOR_MAJOR === '1';
 let ok = true;
 
@@ -120,6 +122,24 @@ for (const file of releaseRuntimeConfigFiles) {
 
   if (/allowSelfHostedHttp\s*:\s*true/.test(source)) {
     fail(`${file} must not enable allowSelfHostedHttp=true in release runtime defaults.`);
+  }
+}
+
+if (existsSync(kiCoachWorkflowPath)) {
+  const workflow = read(kiCoachWorkflowPath);
+  if (workflow.includes('needs.$job.result')) {
+    fail(`${kiCoachWorkflowPath} must use statically addressable needs results.`);
+  }
+
+  for (const job of [
+    'ki-coach-logic',
+    'ki-coach-smoke-test',
+    'self-learning-validation',
+    'draft-pr-validation',
+  ]) {
+    if (!workflow.includes(`needs.${job}.result`)) {
+      fail(`${kiCoachWorkflowPath} must include the explicit ${job} result in its integration gate.`);
+    }
   }
 }
 
