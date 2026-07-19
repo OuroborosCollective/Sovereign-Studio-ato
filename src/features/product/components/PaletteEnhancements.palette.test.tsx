@@ -7,6 +7,9 @@ import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { Sidebar } from './Sidebar';
 import { AgentQuestionCard } from './AgentQuestionCard';
 import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
+import { PatchDiffEvidenceSheet } from './PatchDiffEvidenceSheet';
+import { RuntimeEvidenceLogSheet } from './RuntimeEvidenceLogSheet';
+import { buildGeneratedFileDiffReport } from '../runtime/generatedFileDiffPreview';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -193,6 +196,35 @@ describe('Palette Accessibility Enhancements', () => {
         LLM_PROVIDERS.length = 0;
         LLM_PROVIDERS.push(...originalProviders);
       }
+    });
+  });
+
+  describe('PatchDiffEvidenceSheet and RuntimeEvidenceLogSheet Enhancements', () => {
+    it('PatchDiffEvidenceSheet close button has matching title and aria-label', () => {
+      const mockReport = buildGeneratedFileDiffReport([], []);
+      render(
+        <PatchDiffEvidenceSheet
+          report={mockReport}
+          confirmed={false}
+          onConfirm={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+      const closeButton = screen.getByRole('button', { name: 'Patch Diff schließen' });
+      expect(closeButton).toHaveAttribute('aria-label', 'Patch Diff schließen');
+      expect(closeButton).toHaveAttribute('title', 'Patch Diff schließen');
+    });
+
+    it('RuntimeEvidenceLogSheet close button has matching title and aria-label', () => {
+      render(
+        <RuntimeEvidenceLogSheet
+          entries={[]}
+          onClose={vi.fn()}
+        />
+      );
+      const closeButton = screen.getByRole('button', { name: 'Runtime Logs schließen' });
+      expect(closeButton).toHaveAttribute('aria-label', 'Runtime Logs schließen');
+      expect(closeButton).toHaveAttribute('title', 'Runtime Logs schließen');
     });
   });
 });

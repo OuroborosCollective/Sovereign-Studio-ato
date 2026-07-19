@@ -13,3 +13,7 @@
 ## 2025-07-19 - [Accessible Input Association in Provider Card Lists]
 **Learning:** In dynamically generated card lists (such as API keys or settings lists) where inputs are wrapped inside custom containers without visible labels next to them, screen readers fail to associate the fields with their parent providers. Relying on visual context alone causes inputs to have blank accessible names.
 **Action:** Always provide an explicit, programmatically constructible `aria-label` attribute (e.g. `aria-label={`${provider.name} API-Key`}`) on credentials or technical fields rendered inside custom grid/card rows.
+
+## 2025-07-20 - [Accessibility and Hover Tooltips for Modal Close Buttons]
+**Learning:** Icon-only overlay controls (like '×' close buttons in bottom sheet sheets or modal dialogues) must have consistent hover tooltips via the 'title' attribute in addition to 'aria-label' so that non-screen reader users can discover their specific functions effortlessly.
+**Action:** Ensure all close/dismiss icon buttons in slide-overs, panels, or custom sheet dialogs consistently specify both 'aria-label' and matching 'title' tooltips.
