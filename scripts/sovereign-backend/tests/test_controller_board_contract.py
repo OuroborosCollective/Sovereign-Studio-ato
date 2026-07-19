@@ -74,7 +74,7 @@ def test_controller_board_is_registered_in_the_real_backend() -> None:
     assert 'from controller_board import register_controller_board_routes' in app
     assert 'register_controller_board_routes(' in app
     assert 'require_session=require_session' in app
-    assert 'COPY controller_board.py .' in DOCKERFILE.read_text("utf-8")
+    assert 'COPY *.py ./' in DOCKERFILE.read_text("utf-8")
     assert '@app.route("/controller")' in controller
     assert '@app.route("/api/controller/overview", methods=["GET"])' in controller
     assert '@app.route("/api/controller/github", methods=["GET"])' in controller

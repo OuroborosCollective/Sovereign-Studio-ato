@@ -165,7 +165,7 @@ def test_container_start_path_uses_runtime_adapter_and_refreshes_layout() -> Non
     assert "python3 /app/migration_ledger_adapter.py" in migrate
     assert "current_ledger_columns=\"$(read_ledger_columns)\"" in migrate
     assert migrate.count("current_ledger_columns=\"$(read_ledger_columns)\"") == 2
-    assert "COPY migration_ledger_adapter.py ./migration_ledger_adapter.py" in dockerfile
+    assert "COPY *.py ./" in dockerfile
 
 
 def test_confirmed_migration_008_remains_byte_for_byte_unchanged() -> None:
