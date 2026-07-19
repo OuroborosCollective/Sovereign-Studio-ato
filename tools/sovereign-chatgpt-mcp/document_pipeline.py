@@ -114,11 +114,11 @@ class DocumentPipelineRuntime:
 
     def __init__(self) -> None:
         self.tika_container = self._container_name(
-            os.getenv("SOVEREIGN_TIKA_CONTAINER", "gpt-tika"),
+            os.getenv("SOVEREIGN_TIKA_CONTAINER", "tika"),
             "SOVEREIGN_TIKA_CONTAINER",
         )
         self.gotenberg_container = self._container_name(
-            os.getenv("SOVEREIGN_GOTENBERG_CONTAINER", "gpt-gotenberg"),
+            os.getenv("SOVEREIGN_GOTENBERG_CONTAINER", "gotenberg"),
             "SOVEREIGN_GOTENBERG_CONTAINER",
         )
         self.probe_container = self._container_name(
