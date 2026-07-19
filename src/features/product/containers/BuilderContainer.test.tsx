@@ -535,13 +535,15 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
   });
 
-  it("opens the DevChat side menu as overlay without changing the shell structure", () => {
+  it("opens the DevChat side menu without duplicating raw runtime endpoints", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     expect(screen.queryByText("Sovereign Studio")).toBeNull();
     fireEvent.click(screen.getByLabelText("Menü"));
+    const sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
     expect(screen.getByText("Sovereign Studio")).toBeDefined();
-    expect(screen.getByText(/Cloudflare Workers/i)).toBeDefined();
-    expect(screen.getByRole("dialog", { name: "Sovereign Seitenmenü" })).toBeDefined();
+    expect(within(sideMenu).queryByText(/Cloudflare Workers/i)).toBeNull();
+    expect(within(sideMenu).queryByText(/workers\.dev/i)).toBeNull();
+    expect(within(sideMenu).getByText(/Auftrag analysieren/i)).toBeDefined();
   });
 
   it("side menu exposes the registered launcher and does not offer an empty chat export", () => {
@@ -582,15 +584,20 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Noch keine Runtime-Ereignisse.")).toBeDefined();
   });
 
-  it("side menu disables Draft PR when a repo exists but no change evidence exists", async () => {
+  it("side menu reports PAL history without claiming an active route and disables Draft PR without change evidence", async () => {
     const props = baseProps();
     mockFetchSequence(jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }));
     renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
     await loadRepoFromChat();
 
     fireEvent.click(screen.getByLabelText("Menü"));
-    const draftButton = within(screen.getByRole("dialog", { name: "Sovereign Seitenmenü" }))
-      .getByTestId("builder__draft-pr");
+    const sideMenu = screen.getByRole("dialog", { name: "Sovereign Seitenmenü" });
+    expect(within(sideMenu).getByText(/1 belegte Entscheidung/i)).toBeDefined();
+    expect(within(sideMenu).getByText(/Referenzschätzung:/i)).toBeDefined();
+    expect(within(sideMenu).getByText(/Modelle konfiguriert/i)).toBeDefined();
+    expect(within(sideMenu).queryByText(/sparsame Route aktiv/i)).toBeNull();
+
+    const draftButton = within(sideMenu).getByTestId("builder__draft-pr");
     expect(draftButton).toBeDisabled();
     expect(draftButton).toHaveAttribute("data-gate-state", "evidence-required");
     expect(props.onPublishDraftPr).not.toHaveBeenCalled();
@@ -1243,6 +1250,21 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(chatField().value).toContain("Package summary");
     expect(props.onMissionChange).not.toHaveBeenCalled();
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
+  });
+
+  it("keeps primary Android controls at least 44px", () => {
+    renderWithProviders(<BuilderContainer {...baseProps()} />);
+
+    expect(screen.getByLabelText("Menü")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(screen.getByLabelText("Anmelden")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(screen.getByRole("button", { name: /RT.*Runtime Quelle/i })).toHaveStyle({ minHeight: "44px" });
+    expect(screen.getByLabelText("Panel öffnen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
+    expect(screen.getByRole("button", { name: /^Actions:/ })).toHaveStyle({ minHeight: "44px" });
+    expect(screen.getByLabelText("Eingabe löschen")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(sendButton()).toHaveStyle({ width: "44px", height: "44px" });
+
+    fireEvent.click(screen.getByLabelText("Menü"));
+    expect(screen.getByLabelText("Menü schließen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
   });
 
   it("uses a responsive tablet/phone shell width instead of a hard phone-only cap", () => {
