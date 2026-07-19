@@ -209,6 +209,23 @@ def test_patchmon_secret_env_and_redis_config_are_generated_without_secret_outpu
         assert values[secret_key] not in str(result)
 
 
+def test_patchmon_template_scopes_environment_without_nested_env_file() -> None:
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "templates"
+        / "patchmon-sovereign"
+        / "docker-compose.yml"
+    ).read_text("utf-8")
+
+    assert "env_file:" not in template
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}" in template
+    assert "REDIS_PASSWORD: ${REDIS_PASSWORD}" in template
+    assert "JWT_SECRET: ${JWT_SECRET}" in template
+    assert "AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY}" in template
+    assert "127.0.0.1:32830:3000" in template
+    assert "/var/run/docker.sock" not in template
+
+
 def test_patchmon_policy_accepts_only_fixed_redis_command_and_loopback_port(tmp_path: Path) -> None:
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     stack = STACKS["patchmon-sovereign"]
