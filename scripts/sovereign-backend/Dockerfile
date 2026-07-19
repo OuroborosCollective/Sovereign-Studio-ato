@@ -23,6 +23,7 @@ COPY security_oauth.py .
 COPY security_runtime.py .
 COPY owner_input_runtime.py .
 COPY proven_learning_runtime.py .
+COPY llm_cost_policy.py .
 COPY llm_provider_runtime.py .
 COPY controller_board.py .
 COPY vector_embedding.py .
