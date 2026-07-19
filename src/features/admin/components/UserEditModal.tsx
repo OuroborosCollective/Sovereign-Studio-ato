@@ -23,7 +23,7 @@ export function UserEditModal({ user, api, onClose }: Props) {
   const [error,  setError]  = useState<string | null>(null);
   const [ok,     setOk]     = useState<string | null>(null);
 
-  const field: React.CSSProperties = { background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:'7px 10px', fontSize:12, color:C.text, outline:'none', width:'100%', boxSizing:'border-box' };
+  const field: React.CSSProperties = { background:C.bg, border:`1px solid ${C.border}`, borderRadius:8, padding:'7px 10px', minHeight:48, fontSize:12, color:C.text, outline:'none', width:'100%', boxSizing:'border-box' };
   const lbl:   React.CSSProperties = { fontSize:10, color:C.textSub, marginBottom:4, display:'block', textTransform:'uppercase', letterSpacing:'0.06em' };
 
   const handleProfile = async () => {
@@ -45,11 +45,11 @@ export function UserEditModal({ user, api, onClose }: Props) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:300, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)', zIndex:301, width:340, background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px rgba(0,0,0,0.6)' }}>
+      <button type="button" tabIndex={-1} aria-label="Dialog schließen" onClick={onClose} style={{ position:'fixed', inset:0, width:'100%', height:'100%', padding:0, border:'none', background:'rgba(0,0,0,0.6)', zIndex:300, backdropFilter:'blur(2px)' }} />
+      <div role="dialog" aria-modal="true" aria-label={`Nutzer ${user.displayName} bearbeiten`} style={{ position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)', zIndex:301, width:'min(420px, calc(100vw - 32px))', maxHeight:'calc(100dvh - 32px)', background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px rgba(0,0,0,0.6)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 16px', borderBottom:`1px solid ${C.border}` }}>
           <div><div style={{ fontSize:13, fontWeight:700, color:C.text }}>{user.displayName}</div><div style={{ fontSize:10, color:C.textSub }}>{user.email}</div></div>
-          <button type="button" onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', color:C.textSub }}><X size={15} /></button>
+          <button type="button" aria-label="Schließen" onClick={onClose} style={{ width:48, height:48, display:'grid', placeItems:'center', background:'transparent', border:'none', cursor:'pointer', color:C.textSub }}><X size={18} /></button>
         </div>
 
         <div style={{ padding:16, display:'flex', flexDirection:'column', gap:14, overflowY:'auto' }}>
@@ -66,11 +66,11 @@ export function UserEditModal({ user, api, onClose }: Props) {
               <select value={sub} onChange={e => setSub(e.target.value as AdminUser['subscriptionStatus'])} style={field}>
                 <option value="free">Free</option><option value="trialing">Trialing</option><option value="active">Active</option><option value="canceled">Canceled</option><option value="past_due">Past Due</option>
               </select></div>
-            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:12, color:banned?C.danger:C.text }}>
+            <label style={{ display:'flex', alignItems:'center', gap:10, minHeight:48, cursor:'pointer', fontSize:12, color:banned?C.danger:C.text }}>
               <input type="checkbox" checked={banned} onChange={e => setBanned(e.target.checked)} style={{ accentColor:C.danger, width:14, height:14 }} />
               Account sperren
             </label>
-            <button type="button" onClick={handleProfile} disabled={saving} style={{ background:C.accent, border:'none', borderRadius:8, padding:'8px 0', fontSize:12, fontWeight:700, color:'#000', cursor:saving?'not-allowed':'pointer', opacity:saving?0.6:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+            <button type="button" onClick={handleProfile} disabled={saving} style={{ background:C.accent, border:'none', borderRadius:8, padding:'8px 0', minHeight:48, fontSize:12, fontWeight:700, color:'#000', cursor:saving?'not-allowed':'pointer', opacity:saving?0.6:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
               <Save size={13} /> Profil speichern
             </button>
           </div>
@@ -84,7 +84,7 @@ export function UserEditModal({ user, api, onClose }: Props) {
               <input type="number" placeholder="100 oder -50" value={delta} onChange={e => setDelta(e.target.value)} style={field} /></div>
             <div><label style={lbl}>Grund (Audit-Log)</label>
               <input type="text" placeholder="Testgutschrift, Fehlerkorrektur…" value={reason} onChange={e => setReason(e.target.value)} style={field} /></div>
-            <button type="button" onClick={handleCredits} disabled={saving||!delta||!reason} style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 0', fontSize:12, fontWeight:700, color:C.text, cursor:(saving||!delta||!reason)?'not-allowed':'pointer', opacity:(saving||!delta||!reason)?0.5:1 }}>
+            <button type="button" onClick={handleCredits} disabled={saving||!delta||!reason} style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 0', minHeight:48, fontSize:12, fontWeight:700, color:C.text, cursor:(saving||!delta||!reason)?'not-allowed':'pointer', opacity:(saving||!delta||!reason)?0.5:1 }}>
               Credits anpassen
             </button>
           </div>

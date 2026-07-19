@@ -104,6 +104,92 @@ export interface CreditPackage {
   sortOrder: number;
 }
 
+export type EnterprisePlatformStatus =
+  | 'verified'
+  | 'degraded'
+  | 'blocked'
+  | 'defined_not_run'
+  | 'isolated';
+
+export interface EnterpriseRuntimeIdentity {
+  runtimeId: string;
+  startedAt: string;
+  sourceRevision: string;
+  sourceRevisionVerified: boolean;
+  imageDigest: string;
+  imageDigestVerified: boolean;
+  environment: string;
+}
+
+export interface EnterpriseIntegration {
+  id: string;
+  label: string;
+  status: EnterprisePlatformStatus;
+  required: boolean;
+  boundary: string;
+  evidence: Record<string, unknown>;
+  blocker: string | null;
+  latencyMs: number | null;
+  checkedAt: string;
+}
+
+export interface EnterpriseStatistics {
+  status: EnterprisePlatformStatus;
+  users: { total: number; active30d: number; banned: number } | null;
+  agents: { total: number; completed: number; blockedOrFailed: number } | null;
+  knowledge: { sources: number; vectors: number } | null;
+  llm24h: {
+    requests: number;
+    tokens: number;
+    providerCostUsd: number;
+    activeRoutes: number;
+  } | null;
+  evidence: { total: number; latestAt: string | null } | null;
+  database: { latestMigration: number } | null;
+  calculatedAt: string;
+  blocker?: string;
+}
+
+export interface EnterprisePlatformOverview {
+  ok: boolean;
+  status: EnterprisePlatformStatus;
+  schemaVersion: string;
+  mode: 'PROTOTYPE_TO_PLATFORM';
+  requestId: string;
+  runtime: EnterpriseRuntimeIdentity;
+  statistics: EnterpriseStatistics;
+  integrations: EnterpriseIntegration[];
+  generatedAt: string;
+  truthNotice: string;
+}
+
+export interface EnterpriseEvidenceReceipt {
+  id: string;
+  requestId: string;
+  actorId: string | null;
+  scope: 'readiness' | 'completion';
+  status: EnterprisePlatformStatus;
+  sourceRevision: string;
+  runtimeIdentity: string;
+  evidenceSha256: string;
+  evidence: Record<string, unknown>;
+  observedAt: string;
+}
+
+export interface EnterpriseCanaryResult {
+  ok: boolean;
+  status: EnterprisePlatformStatus;
+  requestId: string;
+  scope: 'readiness' | 'completion';
+  evidence: Record<string, unknown>;
+  receipt: {
+    id: string;
+    evidenceSha256: string;
+    observedAt: string;
+    readbackVerified: true;
+  };
+}
+
 // ── Key management ────────────────────────────────────────────────────────────
 
 export function getAdminKey(): string {
@@ -118,23 +204,48 @@ export function clearAdminKey(): void {
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
-async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function req<T>(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = 15_000,
+): Promise<T> {
   const key = getAdminKey();
   if (!key) throw new Error('Admin-API-Key fehlt. Bitte im Panel eintragen.');
 
-  const res = await fetch(`${ADMIN_API_BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-      ...(options.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(`${ADMIN_API_BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+      credentials: 'omit',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        ...(options.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Backend-Zeitüberschreitung nach ${Math.ceil(timeoutMs / 1000)} Sekunden.`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) clearAdminKey();
-    const body = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+    const body = await res.json().catch(() => ({})) as {
+      error?: string | { message?: string; code?: string };
+      message?: string;
+    };
+    const message = typeof body.error === 'string'
+      ? body.error
+      : body.error?.message ?? body.message;
+    throw new Error(message ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
@@ -145,6 +256,35 @@ export const adminApiClient = {
 
   ping() {
     return req<AdminUser & { ok: true; authMode: string }>('/api/admin/ping');
+  },
+
+  getEnterprisePlatformOverview() {
+    return req<EnterprisePlatformOverview>('/api/admin/platform/v1/overview');
+  },
+
+  getEnterprisePlatformEvidence(limit = 30) {
+    const bounded = Math.max(1, Math.min(Math.trunc(limit), 100));
+    return req<{ ok: true; evidence: EnterpriseEvidenceReceipt[]; count: number }>(
+      `/api/admin/platform/v1/evidence?limit=${bounded}`,
+    );
+  },
+
+  runEnterprisePlatformCanary(
+    scope: 'readiness' | 'completion',
+    modelId?: string,
+  ) {
+    return req<EnterpriseCanaryResult>('/api/admin/platform/v1/canaries', {
+      method: 'POST',
+      body: JSON.stringify({
+        scope,
+        ...(modelId ? { modelId } : {}),
+        confirmed: scope === 'completion',
+      }),
+    }, scope === 'completion' ? 120_000 : 30_000);
+  },
+
+  getEnterprisePlatformOpenApi() {
+    return req<Record<string, unknown>>('/api/admin/platform/v1/openapi.json');
   },
 
   getUsers(p?: { page?: number; search?: string; limit?: number }) {

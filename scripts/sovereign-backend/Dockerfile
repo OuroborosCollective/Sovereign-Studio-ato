@@ -1,5 +1,12 @@
 FROM python:3.11-slim
 
+ARG SOVEREIGN_SOURCE_REVISION=unverified
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    SOVEREIGN_SOURCE_REVISION=${SOVEREIGN_SOURCE_REVISION} \
+    SOVEREIGN_RUNTIME_ENVIRONMENT=production
+
 WORKDIR /app
 
 # Install system dependencies
@@ -17,13 +24,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY *.py ./
+COPY enterprise_platform/ ./enterprise_platform/
 COPY agent_runtime/ ./agent_runtime/
 COPY migrations ./migrations
 COPY auto-migrate.sh /docker-entrypoint.d/auto-migrate.sh
 RUN chmod +x /docker-entrypoint.d/auto-migrate.sh
 
-# Expose port
+# Expose only the container port. Compose owns the loopback-only host binding.
 EXPOSE 8787
+STOPSIGNAL SIGTERM
 
 # Run migrations on startup, then start bounded threaded gunicorn workers.
 # Agents SDK requests may hold one request slot for a complete double loop, so
