@@ -87,6 +87,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
               aria-checked={isSelected}
               disabled={disabled}
               onClick={() => setSelected(option.id)}
+              title={option.label}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -137,6 +138,7 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
         type="button"
         disabled={!selected || disabled}
         onClick={handleConfirm}
+        title={disabled ? 'Rückfrage bereits beantwortet' : !selected ? 'Bitte wählen Sie zuerst eine Option aus' : 'Ausgewählte Antwort an den Agenten senden'}
         style={{
           padding: '9px 16px',
           borderRadius: 8,
@@ -149,7 +151,6 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
           alignSelf: 'flex-end',
           transition: 'background 0.15s',
         }}
-        aria-label="An Agent senden"
       >
         An Agent senden
       </button>
