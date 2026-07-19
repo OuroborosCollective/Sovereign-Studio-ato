@@ -87,9 +87,9 @@ jobs:
           echo "## Validating Error Detection"
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if grep -q "hasRealStopper" src/mobile-operator-coach.ts 2>/dev/null; then
+          if grep -Eq '^function realStopper\(' src/mobile-operator-coach.ts 2>/dev/null; then
             echo "  ✅ Real stopper detection function exists"
-            echo "- Error detection: ✅ \`hasRealStopper\` function found" >> $GITHUB_STEP_SUMMARY
+            echo "- Error detection: ✅ \`realStopper\` function found" >> $GITHUB_STEP_SUMMARY
             
             # Check for error patterns
             ERRORS_FOUND=$(grep -E "(validation_failed|draft pr failed|build failed|workflow failed|critical blocker)" src/mobile-operator-coach.ts | wc -l)
@@ -103,7 +103,7 @@ jobs:
           else
             echo "  ❌ Real stopper detection function MISSING"
             ERRORS=$((ERRORS + 1))
-            echo "- Error detection: ❌ **MISSING** - hasRealStopper not found" >> $GITHUB_STEP_SUMMARY
+            echo "- Error detection: ❌ **MISSING** - realStopper not found" >> $GITHUB_STEP_SUMMARY
           fi
           
           # Validate learning integration
