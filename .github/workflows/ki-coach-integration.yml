@@ -443,11 +443,12 @@ jobs:
           
           # Overall status
           OVERALL_SUCCESS="true"
-          for job in ki-coach-logic ki-coach-smoke-test self-learning-validation draft-pr-validation; do
-            if [ "${{ needs.$job.result }}" != "success" ]; then
-              OVERALL_SUCCESS="false"
-            fi
-          done
+          if [ "${{ needs.ki-coach-logic.result }}" != "success" ] || \
+             [ "${{ needs.ki-coach-smoke-test.result }}" != "success" ] || \
+             [ "${{ needs.self-learning-validation.result }}" != "success" ] || \
+             [ "${{ needs.draft-pr-validation.result }}" != "success" ]; then
+            OVERALL_SUCCESS="false"
+          fi
           
           if [ "$OVERALL_SUCCESS" == "true" ]; then
             echo "## ✅ ALL INTEGRATION CHECKS PASSED" >> $GITHUB_STEP_SUMMARY
