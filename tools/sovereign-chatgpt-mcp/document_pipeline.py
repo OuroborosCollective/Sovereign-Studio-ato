@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 import hashlib
 import html
@@ -15,6 +16,7 @@ from typing import Any, Callable
 MIN_PDF_BYTES = 200
 MAX_PDF_BYTES = 33 * 1024 * 1024
 MAX_EXTRACTED_TEXT_BYTES = 2 * 1024 * 1024
+MAX_DOCKER_ENV_METADATA_BYTES = 256 * 1024
 _CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -188,6 +190,54 @@ class DocumentPipelineRuntime:
             raise RuntimeError(f"{failure_family}_RESPONSE_TOO_LARGE")
         return status, content_type, payload
 
+    def _gotenberg_auth_headers(self, container: str) -> dict[str, str]:
+        raw = self._docker(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{json .Config.Env}}",
+                container,
+            ],
+            "GOTENBERG_AUTH_METADATA_UNAVAILABLE",
+        ).strip()
+        if len(raw.encode("utf-8")) > MAX_DOCKER_ENV_METADATA_BYTES:
+            raise RuntimeError("GOTENBERG_AUTH_METADATA_TOO_LARGE")
+        try:
+            environment = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("GOTENBERG_AUTH_METADATA_INVALID") from exc
+        if not isinstance(environment, list) or len(environment) > 512:
+            raise RuntimeError("GOTENBERG_AUTH_METADATA_INVALID")
+
+        required = {
+            "GOTENBERG_API_BASIC_AUTH_USERNAME": "",
+            "GOTENBERG_API_BASIC_AUTH_PASSWORD": "",
+        }
+        for entry in environment:
+            if not isinstance(entry, str):
+                raise RuntimeError("GOTENBERG_AUTH_METADATA_INVALID")
+            key, separator, value = entry.partition("=")
+            if separator and key in required:
+                required[key] = value
+        username = required["GOTENBERG_API_BASIC_AUTH_USERNAME"]
+        password = required["GOTENBERG_API_BASIC_AUTH_PASSWORD"]
+        if not username and not password:
+            return {}
+        if not username or not password:
+            raise RuntimeError("GOTENBERG_BASIC_AUTH_INCOMPLETE")
+        if (
+            len(username) > 512
+            or len(password) > 1024
+            or ":" in username
+            or any(ord(character) < 32 for character in username + password)
+        ):
+            raise RuntimeError("GOTENBERG_BASIC_AUTH_INVALID")
+        credential = f"{username}:{password}".encode("utf-8")
+        return {
+            "Authorization": "Basic " + base64.b64encode(credential).decode("ascii"),
+        }
+
     @staticmethod
     def _gotenberg_body(marker: str) -> tuple[str, bytes]:
         boundary = "----sovereign-document-canary"
@@ -222,19 +272,25 @@ class DocumentPipelineRuntime:
             family="TIKA",
         )
         boundary, conversion_body = self._gotenberg_body(normalized_marker)
-        gotenberg_status, gotenberg_content_type, pdf = self._request(
-            endpoint=gotenberg_endpoint,
-            method="POST",
-            path="/forms/chromium/convert/html",
-            body=conversion_body,
-            headers={
-                "Accept": "application/pdf",
-                "Content-Type": f"multipart/form-data; boundary={boundary}",
-                "Content-Length": str(len(conversion_body)),
-            },
-            maximum_response_bytes=MAX_PDF_BYTES,
-            failure_family="GOTENBERG_NETWORK_PEER_UNREACHABLE",
-        )
+        gotenberg_headers = {
+            "Accept": "application/pdf",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(conversion_body)),
+            **self._gotenberg_auth_headers(gotenberg_endpoint.container),
+        }
+        gotenberg_auth_applied = "Authorization" in gotenberg_headers
+        try:
+            gotenberg_status, gotenberg_content_type, pdf = self._request(
+                endpoint=gotenberg_endpoint,
+                method="POST",
+                path="/forms/chromium/convert/html",
+                body=conversion_body,
+                headers=gotenberg_headers,
+                maximum_response_bytes=MAX_PDF_BYTES,
+                failure_family="GOTENBERG_NETWORK_PEER_UNREACHABLE",
+            )
+        finally:
+            gotenberg_headers.clear()
         if gotenberg_status != 200:
             raise RuntimeError(f"GOTENBERG_CONVERSION_HTTP_{gotenberg_status}")
         if not pdf.startswith(b"%PDF-"):
@@ -273,6 +329,7 @@ class DocumentPipelineRuntime:
                 "pdfBytes": len(pdf),
                 "maxPdfBytes": MAX_PDF_BYTES,
                 "pdfSha256": pdf_sha256,
+                "basicAuthApplied": gotenberg_auth_applied,
             },
             "tika": {
                 "container": tika_endpoint.container,
