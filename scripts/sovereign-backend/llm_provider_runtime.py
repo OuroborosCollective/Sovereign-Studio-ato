@@ -357,6 +357,7 @@ def register_llm_provider_routes(
         credits_per_unit = int(
             (output_price * Decimal(multiplier)).to_integral_value(rounding=ROUND_CEILING)
         ) if multiplier else 0
+        route_id = f"litellm-catalog-{hashlib.sha256(model_id.encode()).hexdigest()[:24]}"
         config = {
             "routingOwner": "litellm",
             "managedBy": "sovereign-admin",
@@ -372,9 +373,11 @@ def register_llm_provider_routes(
             "pricingSource": model["pricingSource"],
             "usdMicrosPerCredit": 1000,
             "revolverEligible": category == FREE_CATEGORY,
+            "quotaScope": (
+                f"litellm:route:{hashlib.sha256(route_id.encode()).hexdigest()[:24]}"
+            ),
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
         }
-        route_id = f"litellm-catalog-{hashlib.sha256(model_id.encode()).hexdigest()[:24]}"
         connection = get_connection()
         try:
             with connection.cursor() as cursor:
@@ -504,6 +507,10 @@ def register_llm_provider_routes(
                     "pricingSource": "pending-litellm-registration",
                     "usdMicrosPerCredit": 1000,
                     "revolverEligible": config["billingCategory"] == FREE_CATEGORY,
+                    "quotaScope": (
+                        "litellm:route:"
+                        + hashlib.sha256(config["routeId"].encode()).hexdigest()[:24]
+                    ),
                 }
                 cursor.execute(
                     """INSERT INTO llm_routes
@@ -728,6 +735,13 @@ def register_llm_provider_routes(
             credits_per_unit = int(
                 (output_price * Decimal(multiplier)).to_integral_value(rounding=ROUND_CEILING)
             ) if multiplier else 0
+            key_fingerprint = hashlib.sha256(secret_text.encode()).hexdigest()
+            quota_material = (
+                f"{deployment['provider_prefix']}:{key_fingerprint}".encode()
+            )
+            quota_scope = (
+                f"litellm:key:{hashlib.sha256(quota_material).hexdigest()[:24]}"
+            )
             route_config = {
                 "providerModel": catalog_model["providerModel"],
                 "billingCategory": category,
@@ -741,9 +755,9 @@ def register_llm_provider_routes(
                 "pricingSource": catalog_model["pricingSource"],
                 "usdMicrosPerCredit": 1000,
                 "revolverEligible": category == FREE_CATEGORY,
+                "quotaScope": quota_scope,
                 "canaryRequestId": evidence.get("upstreamRequestId") or None,
             }
-            key_fingerprint = hashlib.sha256(secret_text.encode()).hexdigest()
             key_hint = f"…{secret_text[-4:]}"
             secret_text = ""
 

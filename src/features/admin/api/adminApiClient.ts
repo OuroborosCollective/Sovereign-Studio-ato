@@ -60,6 +60,17 @@ export interface LauncherToolOverride {
   sortOrder: number;
 }
 
+export type LlmBillingCategory = 'free' | 'standard' | 'premium';
+
+export interface LlmRevolverState {
+  status: 'ready' | 'cooldown' | 'blocked';
+  consecutiveFailures: number;
+  cooldownUntil: string | null;
+  lastHttpStatus: number | null;
+  lastBlocker: string | null;
+  lastAttemptAt: string | null;
+}
+
 export interface LlmRoute {
   id: string;
   modelId: string;
@@ -68,7 +79,49 @@ export interface LlmRoute {
   creditsPerUnit: number;
   disabled: boolean;
   priority: number;
+  billingCategory: LlmBillingCategory;
+  markupMultiplier: number;
+  minimumMultiplier: number;
+  inputUsdPerMillion: number | null;
+  cachedInputUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+  pricingVerified: boolean;
+  pricingSource: string;
+  revolverEligible: boolean;
+  quotaScope: string;
+  revolverState: LlmRevolverState;
+  policyBlocker: string | null;
 }
+
+export interface LlmBillingCategoryOption {
+  id: LlmBillingCategory;
+  minimumMultiplier: number;
+  revolverOnly: boolean;
+}
+
+export interface LlmRevolverStats {
+  attempts24h: number;
+  successes24h: number;
+  rotations24h: number;
+  blockedOrCoolingScopes: number;
+}
+
+export interface LlmModelCatalogEntry {
+  modelId: string;
+  providerModel: string;
+  provider: string | null;
+  inputUsdPerMillion: number | null;
+  cachedInputUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+  pricingVerified: boolean;
+  pricingSource: string;
+  freeEligible: boolean;
+}
+
+export type LlmRouteUpdate = Partial<Pick<
+  LlmRoute,
+  'disabled' | 'priority' | 'billingCategory' | 'markupMultiplier' | 'quotaScope'
+>>;
 
 export interface AuditEntry {
   id: string;
@@ -302,9 +355,20 @@ export const adminApiClient = {
     });
   },
 
-  adjustCredits(id: string, amount: number, reason: string) {
-    return req<{ ok: boolean }>(`/api/admin/users/${id}/credit-adjustment`, {
+  adjustCredits(
+    id: string,
+    amount: number,
+    reason: string,
+    idempotencyKey = crypto.randomUUID(),
+  ) {
+    return req<{
+      ok: true;
+      newBalance: number;
+      duplicate: boolean;
+      idempotencyKey: string;
+    }>(`/api/admin/users/${id}/credit-adjustment`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ amount, reason }),
     });
   },
@@ -334,14 +398,48 @@ export const adminApiClient = {
   },
 
   getLlmRoutes() {
-    return req<{ routes: LlmRoute[] }>('/api/admin/llm/routes');
+    return req<{
+      routes: LlmRoute[];
+      billingCategories: LlmBillingCategoryOption[];
+      revolverStats: LlmRevolverStats;
+      manualCreditsPerUnitEditing: false;
+    }>('/api/admin/llm/routes');
   },
 
-  updateLlmRoute(id: string, changes: Partial<Pick<LlmRoute, 'creditsPerUnit' | 'disabled' | 'priority'>>) {
-    return req<{ ok: boolean }>(`/api/admin/llm/routes/${id}`, {
+  updateLlmRoute(id: string, changes: LlmRouteUpdate) {
+    return req<{ ok: boolean; route: LlmRoute }>(`/api/admin/llm/routes/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(changes),
     });
+  },
+
+  resetLlmRouteRevolver(id: string) {
+    return req<{ ok: true; routeId: string; quotaScope: string; status: 'ready' }>(
+      `/api/admin/llm/routes/${id}/revolver-reset`,
+      { method: 'POST', body: '{}' },
+    );
+  },
+
+  getLlmModelCatalog() {
+    return req<{
+      models: LlmModelCatalogEntry[];
+      billingCategories: LlmBillingCategoryOption[];
+      pricingAuthority: string;
+    }>('/api/admin/llm/model-catalog');
+  },
+
+  attachLlmModel(input: {
+    modelId: string;
+    displayName?: string;
+    billingCategory: LlmBillingCategory;
+    markupMultiplier: number;
+    priority: number;
+  }) {
+    return req<{ ok: true; routeId: string; modelId: string }>(
+      '/api/admin/llm/model-catalog/attach',
+      { method: 'POST', body: JSON.stringify(input) },
+      120_000,
+    );
   },
 
   getAuditLog(p?: { page?: number; limit?: number }) {

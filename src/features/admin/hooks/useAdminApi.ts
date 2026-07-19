@@ -11,6 +11,11 @@ import {
   type BillingStats,
   type LauncherToolOverride,
   type LlmRoute,
+  type LlmRouteUpdate,
+  type LlmBillingCategory,
+  type LlmBillingCategoryOption,
+  type LlmModelCatalogEntry,
+  type LlmRevolverStats,
   type AuditEntry,
   type PaymentMethod,
 } from '../api/adminApiClient';
@@ -165,33 +170,101 @@ export function useAdminLauncherTools(): UseAdminLauncherToolsResult {
 
 export interface UseAdminLlmRoutesResult {
   routes: LlmRoute[];
+  billingCategories: LlmBillingCategoryOption[];
+  revolverStats: LlmRevolverStats | null;
+  catalog: LlmModelCatalogEntry[];
+  catalogError: string | null;
   loading: boolean;
   error: string | null;
-  updateRoute: (id: string, changes: Partial<Pick<LlmRoute, 'creditsPerUnit' | 'disabled' | 'priority'>>) => Promise<void>;
+  reload: () => void;
+  updateRoute: (id: string, changes: LlmRouteUpdate) => Promise<void>;
+  resetRevolver: (id: string) => Promise<void>;
+  attachModel: (
+    modelId: string,
+    billingCategory: LlmBillingCategory,
+    markupMultiplier: number,
+    priority: number,
+  ) => Promise<void>;
 }
 
 export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
   const [routes, setRoutes] = useState<LlmRoute[]>([]);
+  const [billingCategories, setBillingCategories] = useState<LlmBillingCategoryOption[]>([]);
+  const [revolverStats, setRevolverStats] = useState<LlmRevolverStats | null>(null);
+  const [catalog, setCatalog] = useState<LlmModelCatalogEntry[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [tick, setTick]       = useState(0);
+  const reload = useCallback(() => setTick(value => value + 1), []);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    adminApiClient.getLlmRoutes()
-      .then(r => { if (!cancelled) setRoutes(r.routes); })
-      .catch(e => { if (!cancelled) setError(String(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    setError(null);
+    setCatalogError(null);
+    Promise.allSettled([
+      adminApiClient.getLlmRoutes(),
+      adminApiClient.getLlmModelCatalog(),
+    ]).then(([routesResult, catalogResult]) => {
+      if (cancelled) return;
+      if (routesResult.status === 'fulfilled') {
+        setRoutes(routesResult.value.routes);
+        setBillingCategories(routesResult.value.billingCategories);
+        setRevolverStats(routesResult.value.revolverStats);
+      } else {
+        setError(String(routesResult.reason));
+      }
+      if (catalogResult.status === 'fulfilled') {
+        setCatalog(catalogResult.value.models);
+      } else {
+        setCatalog([]);
+        setCatalogError(String(catalogResult.reason));
+      }
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => { cancelled = true; };
   }, [tick]);
 
-  const updateRoute = useCallback(async (id: string, changes: Partial<Pick<LlmRoute, 'creditsPerUnit' | 'disabled' | 'priority'>>) => {
+  const updateRoute = useCallback(async (id: string, changes: LlmRouteUpdate) => {
     await adminApiClient.updateLlmRoute(id, changes);
-    setTick(t => t + 1);
-  }, []);
+    reload();
+  }, [reload]);
 
-  return { routes, loading, error, updateRoute };
+  const resetRevolver = useCallback(async (id: string) => {
+    await adminApiClient.resetLlmRouteRevolver(id);
+    reload();
+  }, [reload]);
+
+  const attachModel = useCallback(async (
+    modelId: string,
+    billingCategory: LlmBillingCategory,
+    markupMultiplier: number,
+    priority: number,
+  ) => {
+    await adminApiClient.attachLlmModel({
+      modelId,
+      billingCategory,
+      markupMultiplier,
+      priority,
+    });
+    reload();
+  }, [reload]);
+
+  return {
+    routes,
+    billingCategories,
+    revolverStats,
+    catalog,
+    catalogError,
+    loading,
+    error,
+    reload,
+    updateRoute,
+    resetRevolver,
+    attachModel,
+  };
 }
 
 // ── useAdminPaymentMethods ────────────────────────────────────────────────────
