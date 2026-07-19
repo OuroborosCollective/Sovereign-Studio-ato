@@ -76,7 +76,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py openai_project_access_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -112,6 +112,7 @@ jobs:
           grep -q 'proven_learning_tools.py' deploy/install-on-vps.sh
           grep -q 'skill_supply_chain_tools.py' deploy/install-on-vps.sh
           grep -q 'enterprise_backend_tools.py' deploy/install-on-vps.sh
+          grep -q 'freemium_product_architect_tools.py' deploy/install-on-vps.sh
           grep -q 'openai_project_access_tools.py' deploy/install-on-vps.sh
           grep -q 'launcher.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_ADMIN_SQL' deploy/install-on-vps.sh
@@ -281,6 +282,7 @@ jobs:
           python - <<'PY'
           import launcher
           import enterprise_backend_tools
+          import freemium_product_architect_tools
           import server
           import self_heal
           import tool_extensions
@@ -330,6 +332,14 @@ jobs:
               'repository_revision_resolve',
           ):
               assert callable(getattr(enterprise_backend_tools, name)), name
+          for name in (
+              'freemium_product_tool_inventory',
+              'freemium_market_opportunity_score',
+              'freemium_offer_contract_build',
+              'freemium_product_contract_validate',
+              'freemium_product_bundle_manifest',
+          ):
+              assert callable(getattr(freemium_product_architect_tools, name)), name
           tool_names = {tool.name for tool in server.mcp._tool_manager.list_tools()}
           assert {
               'backend_engineering_tool_inventory',
@@ -338,6 +348,13 @@ jobs:
               'backend_delivery_plan',
               'backend_api_security_plan',
               'repository_revision_resolve',
+          }.issubset(tool_names)
+          assert {
+              'freemium_product_tool_inventory',
+              'freemium_market_opportunity_score',
+              'freemium_offer_contract_build',
+              'freemium_product_contract_validate',
+              'freemium_product_bundle_manifest',
           }.issubset(tool_names)
           resource_uris = {str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}
           assert 'sovereign_cognitive_architecture_status' in tool_names
@@ -666,7 +683,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
