@@ -58,10 +58,84 @@ export interface KnowledgeSearchResult {
   similarity: number;
 }
 
+type KnowledgeErrorPayload = {
+  error?: string;
+  blocker?: string;
+  githubHttpStatus?: number | null;
+  correlationId?: string;
+  auditRecorded?: boolean;
+};
+
+export class KnowledgeApiError extends Error {
+  readonly responseStatus: number;
+  readonly blocker?: string;
+  readonly githubHttpStatus?: number;
+  readonly correlationId?: string;
+  readonly auditRecorded?: boolean;
+
+  constructor(args: {
+    message: string;
+    responseStatus: number;
+    blocker?: string;
+    githubHttpStatus?: number | null;
+    correlationId?: string;
+    auditRecorded?: boolean;
+  }) {
+    super(args.message);
+    this.name = 'KnowledgeApiError';
+    this.responseStatus = args.responseStatus;
+    this.blocker = args.blocker;
+    this.githubHttpStatus = typeof args.githubHttpStatus === 'number'
+      ? args.githubHttpStatus
+      : undefined;
+    this.correlationId = args.correlationId?.trim() || undefined;
+    this.auditRecorded = args.auditRecorded;
+  }
+}
+
+function knowledgeFailureMessage(payload: KnowledgeErrorPayload, responseStatus: number): string {
+  const upstream = typeof payload.githubHttpStatus === 'number'
+    ? ` · GitHub HTTP ${payload.githubHttpStatus}`
+    : '';
+  switch (payload.blocker) {
+    case 'github_rate_limit_exhausted':
+      return `GitHub API-Limit ist erschöpft${upstream}. Nach dem Reset erneut versuchen oder einen gültigen serverseitigen Repository-Zugang prüfen.`;
+    case 'github_credentials_rejected':
+      return `Der serverseitige GitHub-Zugang wurde abgelehnt${upstream}. GitHub-App/PAT, SSO-Freigabe und Repository-Berechtigung prüfen.`;
+    case 'github_private_repo_access_required':
+      return `Das Repository ist nicht öffentlich lesbar${upstream}. Für private Quellen ist bestätigter serverseitiger GitHub-Zugang erforderlich.`;
+    case 'github_repository_not_accessible':
+      return `Repository oder Pfad ist nicht erreichbar${upstream}. URL, Branch und serverseitige Leseberechtigung prüfen.`;
+    case 'github_api_timeout':
+    case 'github_connection_unavailable':
+    case 'github_tls_failure':
+    case 'github_transport_error':
+      return `${payload.error || 'Der GitHub-Netzwerkpfad ist fehlgeschlagen.'}${upstream}`;
+    default:
+      if (payload.error) return payload.error;
+      if (payload.blocker) return `Import blockiert: ${payload.blocker}${upstream}`;
+      if (responseStatus === 403) {
+        return 'Der Backend-Endpunkt hat den Import mit HTTP 403 abgelehnt, aber keinen GitHub-Ursachenblocker geliefert. Sitzung, Berechtigung, Proxy und deployed Backend-Revision prüfen.';
+      }
+      return `Import fehlgeschlagen: HTTP ${responseStatus}`;
+  }
+}
+
 async function parse<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => ({})) as T & { error?: string; blocker?: string };
+  const payload = await response.json().catch(() => ({})) as T & KnowledgeErrorPayload;
   if (!response.ok) {
-    throw new Error(payload.error || payload.blocker || `HTTP ${response.status}`);
+    const correlationId = payload.correlationId?.trim();
+    const correlationLine = correlationId
+      ? `\nFehler-ID: ${correlationId} · Audit: ${payload.auditRecorded ? 'gespeichert' : 'nicht bestätigt'}`
+      : '';
+    throw new KnowledgeApiError({
+      message: `${knowledgeFailureMessage(payload, response.status)}${correlationLine}`,
+      responseStatus: response.status,
+      blocker: payload.blocker,
+      githubHttpStatus: payload.githubHttpStatus,
+      correlationId,
+      auditRecorded: payload.auditRecorded,
+    });
   }
   return payload;
 }

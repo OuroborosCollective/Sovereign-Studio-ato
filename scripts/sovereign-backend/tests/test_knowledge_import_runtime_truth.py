@@ -308,8 +308,14 @@ def test_github_import_failure_audit_is_bounded_and_url_fingerprinted() -> None:
     def record(action, target_id, changes):
         recorded.append({"action": action, "target_id": target_id, "changes": changes})
 
-    knowledge_library._record_github_import_failure(record, raw_url, error)
+    correlation_id, audit_recorded = knowledge_library._record_github_import_failure(
+        record,
+        raw_url,
+        error,
+    )
 
+    assert audit_recorded is True
+    assert str(knowledge_library.uuid.UUID(correlation_id)) == correlation_id
     assert len(recorded) == 1
     evidence = recorded[0]
     assert evidence["action"] == "knowledge:github_import_failed"
@@ -319,6 +325,7 @@ def test_github_import_failure_audit_is_bounded_and_url_fingerprinted() -> None:
         "blocker": "github_connection_unavailable",
         "githubHttpStatus": None,
         "transportFailure": True,
+        "correlationId": correlation_id,
     }
     assert "private-owner" not in str(evidence)
     assert "secret-value" not in str(evidence)

@@ -143,10 +143,11 @@ def _record_github_import_failure(
     audit_event: AuditRecorder | None,
     source_url: str,
     error: GitHubKnowledgeAccessError,
-) -> None:
-    """Persist bounded failure evidence without storing the URL or exception text."""
+) -> tuple[str, bool]:
+    """Persist bounded failure evidence and return its non-secret correlation state."""
+    correlation_id = str(uuid.uuid4())
     if not callable(audit_event):
-        return
+        return correlation_id, False
     source_fingerprint = _sha256_text(str(source_url or "").strip())[:24]
     try:
         audit_event(
@@ -157,11 +158,13 @@ def _record_github_import_failure(
                 "blocker": error.blocker,
                 "githubHttpStatus": error.github_status,
                 "transportFailure": error.github_status is None,
+                "correlationId": correlation_id,
             },
         )
+        return correlation_id, True
     except Exception:
         # Audit availability must not hide the classified import blocker.
-        return
+        return correlation_id, False
 
 
 def _github_headers() -> dict[str, str]:
@@ -1088,7 +1091,7 @@ def register_knowledge_routes(
                 _close(conn)
             return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
         except GitHubKnowledgeAccessError as exc:
-            _record_github_import_failure(
+            correlation_id, audit_recorded = _record_github_import_failure(
                 audit_event,
                 str(body.get("url") or ""),
                 exc,
@@ -1098,6 +1101,8 @@ def register_knowledge_routes(
                 "error": str(exc),
                 "blocker": exc.blocker,
                 "githubHttpStatus": exc.github_status,
+                "correlationId": correlation_id,
+                "auditRecorded": audit_recorded,
             }), exc.response_status
         except (ValueError, RuntimeError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
@@ -1341,7 +1346,7 @@ def register_admin_knowledge_routes(
                 _close(conn)
             return jsonify({"ok": True, **result}), 200 if result["duplicate"] else 201
         except GitHubKnowledgeAccessError as exc:
-            _record_github_import_failure(
+            correlation_id, audit_recorded = _record_github_import_failure(
                 audit_event,
                 str(body.get("url") or ""),
                 exc,
@@ -1351,6 +1356,8 @@ def register_admin_knowledge_routes(
                 "error": str(exc),
                 "blocker": exc.blocker,
                 "githubHttpStatus": exc.github_status,
+                "correlationId": correlation_id,
+                "auditRecorded": audit_recorded,
             }), exc.response_status
         except (ValueError, RuntimeError) as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
