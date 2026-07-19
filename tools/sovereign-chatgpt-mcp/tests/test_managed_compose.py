@@ -286,6 +286,128 @@ def test_patchmon_policy_accepts_only_fixed_redis_command_and_loopback_port(tmp_
         runtime._validate_rendered(stack, rendered)
 
 
+def test_patchmon_deploy_repairs_partial_server_transport_with_targeted_recreate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "1")
+    original = STACKS["patchmon-sovereign"]
+    stack = type(original)(
+        **{
+            **original.__dict__,
+            "deploy_root": str(tmp_path / "deploy"),
+        }
+    )
+    monkeypatch.setitem(STACKS, "patchmon-sovereign", stack)
+
+    template_root = tmp_path / "templates"
+    template_dir = template_root / "patchmon-sovereign"
+    template_dir.mkdir(parents=True)
+    (template_dir / "docker-compose.yml").write_text(
+        "services:\n  server:\n    image: example.invalid/patchmon:v1\n",
+        "utf-8",
+    )
+
+    commands: list[list[str]] = []
+    repaired = False
+
+    def runner(argv, **kwargs):
+        nonlocal repaired
+        commands.append(argv)
+        if "--force-recreate" in argv:
+            repaired = True
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(template_root))
+    monkeypatch.setattr(
+        runtime,
+        "_ensure_stack_secret_env",
+        lambda _stack: {
+            "required": True,
+            "created": False,
+            "secretValuesReturned": False,
+        },
+    )
+
+    class Temporary:
+        def cleanup(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        runtime,
+        "_render_template",
+        lambda _stack, _files: (
+            template_dir / "docker-compose.yml",
+            Temporary(),
+            {},
+        ),
+    )
+
+    def inspect(container: str) -> dict:
+        state = {
+            "present": True,
+            "container": container,
+            "running": True,
+            "status": "running",
+            "health": "healthy",
+            "project": "patchmon-sovereign",
+            "service": container.removeprefix("patchmon-sovereign-").removesuffix("-1"),
+            "workingDir": str(stack.deploy_root),
+            "configFiles": str(Path(stack.deploy_root) / "docker-compose.yml"),
+            "networks": ["patchmon-sovereign_patchmon-internal"],
+            "publishedPorts": {},
+        }
+        if container == stack.anchor_container and repaired:
+            state["networks"].append("patchmon-sovereign_patchmon-edge")
+            state["publishedPorts"] = {
+                "3000/tcp": [{
+                    "HostIp": "127.0.0.1",
+                    "HostPort": "32830",
+                }]
+            }
+        return state
+
+    monkeypatch.setattr(runtime, "_inspect", inspect)
+    monkeypatch.setattr(
+        runtime,
+        "_patchmon_http_canary",
+        lambda: {
+            "ok": True,
+            "status": "PATCHMON_HTTP_READY",
+        },
+    )
+
+    plan = runtime.plan("patchmon-sovereign")
+    result = runtime.deploy(
+        "patchmon-sovereign",
+        plan["templateBundleSha256"],
+    )
+    repair_commands = [
+        command
+        for command in commands
+        if "--force-recreate" in command
+    ]
+
+    assert result["status"] == "DEPLOYED_VERIFIED"
+    assert result["transportVerified"] is True
+    assert result["transportRepair"] == {
+        "attempted": True,
+        "reason": "PATCHMON_LOOPBACK_OR_EDGE_BINDING_MISSING",
+        "ok": True,
+        "exitCode": 0,
+        "scope": "patchmon_server_only",
+    }
+    assert len(repair_commands) == 1
+    assert repair_commands[0][-5:] == [
+        "up",
+        "-d",
+        "--no-deps",
+        "--force-recreate",
+        "server",
+    ]
+
+
 def test_security_policy_blocks_unknown_services_networks_and_ports(tmp_path: Path) -> None:
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     stack = STACKS["sovereign-backend"]

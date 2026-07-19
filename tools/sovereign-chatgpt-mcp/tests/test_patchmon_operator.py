@@ -200,6 +200,45 @@ def test_runtime_inventory_does_not_return_container_environment_or_mount_source
     }]
 
 
+def test_runtime_inventory_does_not_probe_foreign_listener_without_verified_transport(monkeypatch) -> None:
+    runtime = PatchmonOperatorRuntime()
+
+    def inspect_container(name: str) -> dict:
+        service = name.removeprefix("patchmon-sovereign-").removesuffix("-1")
+        return {
+            "present": True,
+            "container": name,
+            "project": "patchmon-sovereign",
+            "service": service,
+            "state": {
+                "running": True,
+                "health": "healthy",
+            },
+            "security": {
+                "privileged": False,
+            },
+            "networks": [{
+                "name": "patchmon-sovereign_patchmon-internal",
+            }],
+            "publishedPorts": [],
+        }
+
+    def unexpected_http_probe() -> dict:
+        raise AssertionError("foreign loopback listener must not be probed as PatchMon")
+
+    monkeypatch.setattr(runtime, "_inspect_container", inspect_container)
+    monkeypatch.setattr(runtime, "_network_inventory", lambda _states: [])
+    monkeypatch.setattr(runtime, "_http_health", unexpected_http_probe)
+
+    result = runtime.runtime_inventory(include_fleet=False)
+    codes = {violation["code"] for violation in result["boundaryViolations"]}
+
+    assert result["status"] == "PATCHMON_RUNTIME_DEGRADED"
+    assert result["httpHealth"]["status"] == "PATCHMON_HTTP_SKIPPED_UNVERIFIED_TRANSPORT"
+    assert "PATCHMON_SERVER_EDGE_NETWORK_MISSING" in codes
+    assert "PATCHMON_SERVER_LOOPBACK_BINDING_MISSING" in codes
+
+
 def test_pending_approval_plan_is_state_bound_and_never_claims_host_execution(monkeypatch) -> None:
     runtime = PatchmonOperatorRuntime()
     monkeypatch.setattr(

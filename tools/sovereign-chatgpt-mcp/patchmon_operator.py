@@ -380,6 +380,27 @@ class PatchmonOperatorRuntime:
             "truncated": total > limit,
         }
 
+    @staticmethod
+    def _server_transport_ready(state: dict[str, Any]) -> bool:
+        bindings = state.get("publishedPorts", [])
+        loopback_ready = any(
+            str(binding.get("containerPort") or "") == "3000/tcp"
+            and str(binding.get("hostIp") or "") == "127.0.0.1"
+            and str(binding.get("hostPort") or "") == "32830"
+            for binding in bindings
+            if isinstance(binding, dict)
+        )
+        network_names = {
+            str(network.get("name") or "")
+            for network in state.get("networks", [])
+            if isinstance(network, dict)
+        }
+        return (
+            bool(state.get("state", {}).get("running"))
+            and "patchmon-sovereign_patchmon-edge" in network_names
+            and loopback_ready
+        )
+
     def _http_health(self) -> dict[str, Any]:
         connection: http.client.HTTPConnection | None = None
         try:
@@ -442,7 +463,15 @@ class PatchmonOperatorRuntime:
                 violations.append({"code": "SERVICE_LABEL_UNEXPECTED", "container": name})
             if state.get("security", {}).get("privileged"):
                 violations.append({"code": "PRIVILEGED_CONTAINER", "container": name})
-            for binding in state.get("publishedPorts", []):
+            published_ports = state.get("publishedPorts", [])
+            if name != PATCHMON_SERVER_CONTAINER and published_ports:
+                violations.append(
+                    {
+                        "code": "PATCHMON_INTERNAL_SERVICE_PUBLISHED",
+                        "container": name,
+                    }
+                )
+            for binding in published_ports:
                 host_ip = str(binding.get("hostIp") or "")
                 if host_ip not in {"127.0.0.1", "::1"}:
                     violations.append(
@@ -452,6 +481,35 @@ class PatchmonOperatorRuntime:
                             "binding": binding,
                         }
                     )
+
+        server_state = states[PATCHMON_SERVER_CONTAINER]
+        server_networks = {
+            str(network.get("name") or "")
+            for network in server_state.get("networks", [])
+            if isinstance(network, dict)
+        }
+        server_bindings = server_state.get("publishedPorts", [])
+        if server_state.get("present"):
+            if "patchmon-sovereign_patchmon-edge" not in server_networks:
+                violations.append(
+                    {
+                        "code": "PATCHMON_SERVER_EDGE_NETWORK_MISSING",
+                        "container": PATCHMON_SERVER_CONTAINER,
+                    }
+                )
+            if not any(
+                str(binding.get("containerPort") or "") == "3000/tcp"
+                and str(binding.get("hostIp") or "") == "127.0.0.1"
+                and str(binding.get("hostPort") or "") == "32830"
+                for binding in server_bindings
+                if isinstance(binding, dict)
+            ):
+                violations.append(
+                    {
+                        "code": "PATCHMON_SERVER_LOOPBACK_BINDING_MISSING",
+                        "container": PATCHMON_SERVER_CONTAINER,
+                    }
+                )
         expected_names = set(PATCHMON_CONTAINERS)
         for network in networks:
             if not network.get("present"):
@@ -475,10 +533,19 @@ class PatchmonOperatorRuntime:
             if state.get("state", {}).get("running")
             and state.get("state", {}).get("health") in {"healthy", "none"}
         )
-        http_health = self._http_health() if states[PATCHMON_SERVER_CONTAINER].get("present") else {
-            "ok": False,
-            "status": "PATCHMON_NOT_DEPLOYED",
-        }
+        if not server_state.get("present"):
+            http_health = {
+                "ok": False,
+                "status": "PATCHMON_NOT_DEPLOYED",
+            }
+        elif not self._server_transport_ready(server_state):
+            http_health = {
+                "ok": False,
+                "status": "PATCHMON_HTTP_SKIPPED_UNVERIFIED_TRANSPORT",
+                "reason": "expected PatchMon loopback binding and edge network are not both active",
+            }
+        else:
+            http_health = self._http_health()
         ready = (
             present == len(PATCHMON_CONTAINERS)
             and running == len(PATCHMON_CONTAINERS)
