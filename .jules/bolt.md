@@ -17,3 +17,7 @@
 ## 2026-07-03 - [1-Slot Memoization for High-Frequency Logic]
 **Learning:** In high-frequency update loops (e.g., 55ms chat pacing), even $O(N)$ operations like word counting or array allocations (like regex pattern arrays) can accumulate significant CPU time and GC pressure. 1-slot memoization for pure functions based on input strings and hoisting allocation-heavy arrays to module scope provide immediate, low-risk wins.
 **Action:** Implement simple 1-slot memoization for pure utility functions used in frequent render/effect ticks. Hoist not just regexes, but also the arrays/objects that contain them if they are static.
+
+## 2026-07-04 - [Single-Pass Multi-Attribute Processing and Early Slicing]
+**Learning:** Performing multiple independent O(N) array mapping or filtering loops over large repository file structures is highly inefficient and creates substantial memory allocation/GC pressure. Accumulating metadata like duplicate file name counts on-the-fly during a main single pass, reusing pre-computed results like extensions (`byExtension`), and slicing arrays *before* mapping paths (`slice(0, 50).map()`) provides a massive performance and memory efficiency boost.
+**Action:** Always process and accumulate multiple structural attributes in a single traversal where possible. When mapping, filtering, or slicing large collections, prefer slicing or filtering *prior* to map projections to avoid allocating large unused intermediate arrays.

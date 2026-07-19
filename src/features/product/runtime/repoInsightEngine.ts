@@ -308,6 +308,8 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
   const testFiles: string[] = [];
   const workflowFiles: string[] = [];
   const configFiles: string[] = [];
+  // Initialize nameCounts to accumulate file name occurrences during the single pass over files.
+  const nameCounts: Record<string, number> = {};
 
   let hasReadme = false;
   let hasTests = false;
@@ -342,6 +344,12 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
     // Count by folder
     const folder = partsLen > 1 ? parts.slice(0, -1).join('/') || '/' : '/';
     byFolder[folder] = (byFolder[folder] ?? 0) + 1;
+
+    // Accumulate file name counts on the fly using the pre-split name to eliminate a redundant files.map pass.
+    const lowerName = name.toLowerCase();
+    if (lowerName) {
+      nameCounts[lowerName] = (nameCounts[lowerName] ?? 0) + 1;
+    }
 
     // Check deep nesting (more than 6 levels)
     if (depth > 6) {
@@ -391,11 +399,6 @@ function analyzeRepoStructure(files: RepoFile[]): RepoStructureAnalysis {
   const missingWorkflows = !hasWorkflows;
 
   // Detect potential dead code (duplicate names in different folders)
-  const fileNames = files.map((f) => f.path.split('/').pop()?.toLowerCase() ?? '');
-  const nameCounts: Record<string, number> = {};
-  for (const name of fileNames) {
-    nameCounts[name] = (nameCounts[name] ?? 0) + 1;
-  }
   const duplicateLogic = Object.entries(nameCounts)
     .filter(([, count]) => count > 2)
     .map(([name]) => `* ${name}`);
@@ -524,23 +527,28 @@ function generateFixSuggestions(
 function generatePatternMatches(
   patternStore: SolutionPatternStore | null | undefined,
   repoFiles: RepoFile[],
+  byExtension?: Record<string, number>,
 ): SolutionPatternMatch[] {
   if (!patternStore || patternStore.patterns.length === 0) {
     return [];
   }
 
   // Build context from repo structure
-  const repoExtensions = new Set(
-    repoFiles
-      .map((f) => {
-        const name = f.path.split('/').pop() ?? '';
-        const idx = name.lastIndexOf('.');
-        return idx >= 0 ? name.slice(idx) : '';
-      })
-      .filter(Boolean)
-  );
+  // Optimization: Use pre-computed extensions from analysis if available to avoid redundant O(N) mapping, splitting, and filtering.
+  const repoExtensions = byExtension
+    ? new Set(Object.keys(byExtension))
+    : new Set(
+        repoFiles
+          .map((f) => {
+            const name = f.path.split('/').pop() ?? '';
+            const idx = name.lastIndexOf('.');
+            return idx >= 0 ? name.slice(idx) : '';
+          })
+          .filter(Boolean)
+      );
 
-  const repoPaths = repoFiles.map((f) => f.path);
+  // Optimization: Slice the file array first to at most 50 elements before mapping paths to prevent O(N) array allocation on large repos.
+  const repoPaths = repoFiles.slice(0, 50).map((f) => f.path);
 
   // Match patterns using multiple queries for better coverage
   const allMatches: SolutionPatternMatch[] = [];
@@ -556,7 +564,7 @@ function generatePatternMatches(
 
   // Query by repo paths
   const pathMatches = matchSolutionPatterns(patternStore, {
-    contextSignals: repoPaths.slice(0, 50),
+    contextSignals: repoPaths,
     limit: 10,
   });
   allMatches.push(...pathMatches);
@@ -965,7 +973,7 @@ export function createRepoInsightSuggestions(
     const blockers = detectBlockers(activeFindings, workflowReport ?? null, repoFiles);
 
     // Generate pattern matches from learned solution patterns (Hebbian-style learning)
-    const patternMatches = generatePatternMatches(solutionPatternStore, repoFiles);
+    const patternMatches = generatePatternMatches(solutionPatternStore, repoFiles, structure.byExtension);
 
     // Generate suggestion groups
     const fixSuggestions = generateFixSuggestions(structure, activeFindings, workflowReport ?? null);
