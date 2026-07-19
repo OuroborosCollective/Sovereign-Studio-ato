@@ -14,6 +14,8 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - im explizit aktivierten privaten Owner-Modus einen mergefähigen PR nur am bestätigten Head und nach den konfigurierten Check-Gates freigeben und mergen
 - allowlistete Docker-Container inspizieren und begrenzte Logs lesen
 - Postgres- und pgvector-Canaries ausführen
+- PatchMon-Container, Docker-Netze, Datenbankschema, Flottenzustand, Updates, Patch-Läufe, Warnungen und Compliance secret-sicher korrelieren
+- PatchMon-Dry-Runs, Freigabevorlagen, Approval, Validierungs-Retries und Stop-Anfragen über zustandsgebundene Plan-Hashes steuern
 - Migrationen gegen eine separate Preview-Datenbank ausführen und garantiert zurückrollen
 - bestätigte Migrationen nach erneuter Host-Broker-Prüfung produktiv anwenden
 - ein Backend-Image anhand des vollständigen Commit-SHA auflösen und dessen unveränderlichen Digest prüfen
@@ -68,6 +70,22 @@ Die sechs zusätzlichen Werkzeuge sind read-only, idempotent und liefern struktu
 
 Die Planwerkzeuge implementieren nichts selbst und behaupten weder Laufzeiterfolg noch Compliance. Autorisierte Codeänderungen verwenden weiterhin die vorhandenen exakten Repository-Patchwerkzeuge. `repository_revision_resolve` muss vor Arbeit, Review und Merge sowie nach Merge, Rebase, Update-Branch, Force-Push, Branchwechsel oder Base-Advance erneut ausgeführt werden; bei Dirty-Tree- oder SHA-Konflikten lautet das Ergebnis fail-closed.
 
+## PatchMon-Operator
+
+Der PatchMon-Operator bildet einen geschlossenen Wahrnehmungs- und Steuerungspfad für den festen Stack `patchmon-sovereign`:
+
+- `patchmon_tool_inventory` beschreibt Werkzeuge und Grenzen.
+- `patchmon_runtime_inventory` liest die vier erwarteten PatchMon-Container, deren Netzwerke, Loopback-Portbindung und begrenzte Metadaten der Docker-Flotte.
+- `patchmon_database_inventory` liest nur Schema-, Migrations- und Größenevidence; keine Tabellenzeilen.
+- `patchmon_query` bietet ausschließlich die festen Views `fleet_summary`, `hosts`, `pending_updates`, `patch_runs`, `docker_assets`, `alerts` und `compliance`.
+- `patchmon_brain_snapshot` korreliert Runtime-, Netzwerk-, Datenbank- und Flottenevidence mit expliziten Risiken.
+- `patchmon_patch_action_plan` bindet eine erlaubte Aktion an den aktuellen PatchMon-Datenbankzustand und erzeugt den exakten Bestätigungs-Hash.
+- `patchmon_patch_action_apply` wird ausschließlich über die Host-Command-Queue ausgeführt und ruft nur PatchMons fest verdrahtete Loopback-API auf.
+
+`submit_for_approval` legt nur einen `pending_approval`-Lauf an und führt auf dem Zielhost nichts aus. Erst `approve_run` kann einen echten Patch-Lauf anstoßen. Eine erfolgreiche HTTP-Annahme ist ausdrücklich kein Beleg für abgeschlossene Patches; der neue Lauf muss bis zu einem terminalen Datenbankstatus erneut gelesen werden.
+
+Der PatchMon-Admin-JWT liegt ausschließlich als reguläre, root-eigene Datei ohne Gruppen-/Weltrechte unter `/opt/patchmon-sovereign/mcp-admin.jwt`. Er wird weder in den MCP-Container gemountet noch in Tool-Argumenten, Antworten oder Logs ausgegeben. Der MCP-Container erhält weiterhin keinen Docker-Socket; Docker- und PatchMon-Zugriffe erfolgen nur über feste Broker-Aktionen.
+
 ## Docker- und VPS-Trennung
 
 Der MCP-Container erhält **keinen Docker-Socket**. Dadurch kann ein Fehler im MCP-Prozess nicht unmittelbar beliebige Host-Container starten oder Produktions-Admin-Zugangsdaten lesen.
@@ -86,6 +104,7 @@ Der Broker akzeptiert nur:
 - Auflösen eines revisionsgebundenen Backend-Images
 - verifizierte Migration mit erneuter Pfad-, Hash-, SQL- und Rollback-Preview-Prüfung
 - verifizierter Deploy beziehungsweise Rollback
+- feste PatchMon-Runtime-/Datenbankabfragen und zustandsgebundene PatchMon-Aktionen
 
 Ein Action-Name wie `shell` oder ein frei formulierter SQL-Auftrag wird geblockt.
 

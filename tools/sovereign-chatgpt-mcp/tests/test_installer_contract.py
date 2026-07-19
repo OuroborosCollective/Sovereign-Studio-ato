@@ -32,6 +32,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
     assert "SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL" in script
     assert "SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE" in script
+    assert "SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE" in script
+    assert "PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt" in script
     assert "SOVEREIGN_MCP_ALLOWED_WORKFLOWS" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
@@ -49,6 +51,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/code-server-46bq' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 
@@ -64,6 +67,7 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
     assert 'enterprise_backend_tools.py' in installer
+    assert 'patchmon_operator.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
     assert 'install -d -m 0755 "$ANDROID_SDK_DIR"' in installer
@@ -77,6 +81,7 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'enterprise_backend_tools.py' in dockerfile
+    assert 'patchmon_operator.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'android_validation_router.install(server.android, server.runtime, server.broker)' in launcher
