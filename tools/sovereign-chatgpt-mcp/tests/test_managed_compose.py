@@ -21,6 +21,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "gpt-tools",
         "code-server-46bq",
         "pgbackweb-wq5r",
+        "patchmon-sovereign",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("litellm_model_aliases_activate") is True
@@ -170,6 +171,106 @@ def test_pgbackweb_policy_accepts_loopback_and_blocks_public_port(tmp_path: Path
                 "networks": {"default": {}},
             },
         )
+
+
+def test_patchmon_secret_env_and_redis_config_are_generated_without_secret_output(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    stack = STACKS["patchmon-sovereign"]
+    stack = type(stack)(
+        **{
+            **stack.__dict__,
+            "deploy_root": str(tmp_path / "patchmon"),
+        }
+    )
+
+    result = runtime._ensure_stack_secret_env(stack)
+    env_path = Path(result["path"])
+    redis_path = Path(result["additionalFiles"][0]["path"])
+    values = dict(
+        line.split("=", 1)
+        for line in env_path.read_text("utf-8").splitlines()
+        if line and "=" in line
+    )
+
+    assert result["created"] is True
+    assert result["secretValuesReturned"] is False
+    assert env_path.stat().st_mode & 0o777 == 0o600
+    assert redis_path.stat().st_mode & 0o777 == 0o600
+    assert len(values["POSTGRES_PASSWORD"]) == 64
+    assert len(values["REDIS_PASSWORD"]) == 64
+    assert len(values["JWT_SECRET"]) == 128
+    assert len(values["SESSION_SECRET"]) == 128
+    assert len(values["AI_ENCRYPTION_KEY"]) == 64
+    assert values["DATABASE_URL"].startswith("postgresql://patchmon_user:")
+    assert values["CORS_ORIGIN"] == "http://127.0.0.1:32830"
+    assert values["AGENT_UPDATE_BODY_LIMIT"] == "5mb"
+    assert f"requirepass {values['REDIS_PASSWORD']}" in redis_path.read_text("utf-8")
+    for secret_key in result["keysPresent"]:
+        assert values[secret_key] not in str(result)
+
+
+def test_patchmon_template_scopes_environment_without_nested_env_file() -> None:
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "templates"
+        / "patchmon-sovereign"
+        / "docker-compose.yml"
+    ).read_text("utf-8")
+
+    assert "env_file:" not in template
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}" in template
+    assert "REDIS_PASSWORD: ${REDIS_PASSWORD}" in template
+    assert "JWT_SECRET: ${JWT_SECRET}" in template
+    assert "AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY}" in template
+    assert "127.0.0.1:32830:3000" in template
+    assert "/var/run/docker.sock" not in template
+
+
+def test_patchmon_policy_accepts_only_fixed_redis_command_and_loopback_port(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    stack = STACKS["patchmon-sovereign"]
+    rendered = {
+        "services": {
+            "server": {
+                "image": "ghcr.io/patchmon/patchmon-server:2.0.2",
+                "ports": [{"host_ip": "127.0.0.1", "published": 32830, "target": 3000}],
+                "networks": ["patchmon-internal", "patchmon-edge"],
+            },
+            "database": {
+                "image": "postgres:17.10-alpine3.23",
+                "networks": ["patchmon-internal"],
+            },
+            "redis": {
+                "image": "redis:7.4.7-alpine3.21",
+                "command": ["redis-server", "/usr/local/etc/redis/redis.conf"],
+                "volumes": [
+                    {
+                        "type": "bind",
+                        "source": "/opt/patchmon-sovereign/redis.conf",
+                        "target": "/usr/local/etc/redis/redis.conf",
+                    }
+                ],
+                "networks": ["patchmon-internal"],
+            },
+            "guacd": {
+                "image": "guacamole/guacd:1.6.0",
+                "networks": ["patchmon-internal"],
+            },
+        },
+        "networks": {"patchmon-internal": {}, "patchmon-edge": {}},
+    }
+    runtime._validate_rendered(stack, rendered)
+
+    rendered["services"]["redis"]["command"] = ["sh", "-c", "echo blocked"]
+    with pytest.raises(RuntimeError, match="Ausführungs-Override"):
+        runtime._validate_rendered(stack, rendered)
+
+    rendered["services"]["redis"]["command"] = ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    rendered["services"]["server"]["ports"] = [
+        {"host_ip": "0.0.0.0", "published": 32830, "target": 3000}
+    ]
+    with pytest.raises(RuntimeError, match="Nicht freigegebene Portbindung"):
+        runtime._validate_rendered(stack, rendered)
 
 
 def test_security_policy_blocks_unknown_services_networks_and_ports(tmp_path: Path) -> None:
