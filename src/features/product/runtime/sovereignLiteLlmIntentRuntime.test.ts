@@ -133,6 +133,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(request.messages[0].content).toContain('"is_startup":false');
     expect(request.messages[0].content).toContain('begonnen hat oder aktuell läuft');
+    expect(request.messages[0].content).toContain('für fertig/abgeschlossen/Fortschritt bleibt is_startup=false');
   });
 
   it('rejects malformed provider text as action evidence', async () => {
