@@ -129,17 +129,17 @@ def proven_learning_owner_approval_request(
 
 
 def proven_learning_pattern_apply(
-    request_id: str,
-    confirmation_sha256: str,
-    record: dict[str, Any],
+    request_id: str = "",
+    confirmation_sha256: str = "",
+    record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Use this after Owner approval to idempotently persist one exact pattern and verify pgvector readback."""
+    """Persist one exact pattern using standing Owner policy or an optional fresh approval, then verify pgvector readback."""
     if _OWNER_INPUT is None:
         raise RuntimeError("Owner-input backend client is unavailable")
     return _OWNER_INPUT.apply_proven_learning(
         request_id=request_id,
         confirmation_sha256=confirmation_sha256,
-        record=record,
+        record=record or {},
     )
 
 

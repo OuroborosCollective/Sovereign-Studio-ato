@@ -192,18 +192,19 @@ class OwnerInputClient:
     def apply_proven_learning(
         self,
         *,
-        request_id: str,
+        request_id: str = "",
         confirmation_sha256: str,
         record: dict[str, Any],
     ) -> dict[str, Any]:
         selected_request = str(request_id or "").strip()
         selected_hash = str(confirmation_sha256 or "").strip().lower()
-        if not REQUEST_ID_RE.fullmatch(selected_request):
-            raise ValueError("request_id ist ungültig")
-        try:
-            uuid.UUID(selected_request)
-        except ValueError as exc:
-            raise ValueError("request_id ist ungültig") from exc
+        if selected_request:
+            if not REQUEST_ID_RE.fullmatch(selected_request):
+                raise ValueError("request_id ist ungültig")
+            try:
+                uuid.UUID(selected_request)
+            except ValueError as exc:
+                raise ValueError("request_id ist ungültig") from exc
         if not re.fullmatch(r"[0-9a-f]{64}", selected_hash):
             raise ValueError("confirmation_sha256 ist ungültig")
         if not isinstance(record, dict):
