@@ -1528,15 +1528,19 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(actionStream.querySelector('[data-route="agent-job"][data-state="running"]')).not.toBeNull();
   });
 
-  it("Repo shortcut opens a real setup surface and never an empty inspector", () => {
+  it("Repo shortcut opens a real setup surface and closes it with Escape", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
     fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Repo" }));
 
     expect(screen.getByRole("dialog", { name: "Repo Setup" })).toBeDefined();
-    expect(screen.getByLabelText("GitHub Repository URL")).toBeDefined();
+    const repoUrlInput = screen.getByLabelText("GitHub Repository URL");
+    expect(repoUrlInput).toBeDefined();
     expect(screen.queryByRole("dialog", { name: "Repo Inspector" })).toBeNull();
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" })).toHaveTextContent("Repo-Setup geöffnet");
+
+    fireEvent.keyDown(repoUrlInput, { key: "Escape", code: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Repo Setup" })).toBeNull();
   });
 
   it("Files shortcut preserves its own intent and opens the confirmed file explorer", async () => {
