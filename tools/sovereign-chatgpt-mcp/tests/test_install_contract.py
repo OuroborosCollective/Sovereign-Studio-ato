@@ -117,6 +117,12 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'deterministic_architecture_tools.py' in installer
     assert 'enterprise_backend_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
+    assert 'operational_governance_tools.py' in installer
+    assert 'operational_assurance_tools.py' in installer
+    assert 'skills/sovereign-operational-governance/SKILL.md' in installer
+    assert '/app/skills/sovereign-operational-governance/SKILL.md' in installer
+    assert 'skills/sovereign-operational-assurance/SKILL.md' in installer
+    assert '/app/skills/sovereign-operational-assurance/SKILL.md' in installer
     assert 'patchmon_operator.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
@@ -135,6 +141,11 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'enterprise_backend_tools.py' in dockerfile
+    assert 'operational_governance_tools.py' in dockerfile
+    assert 'operational_assurance_tools.py' in dockerfile
+    assert 'COPY skills /app/skills' in dockerfile
+    assert (ROOT / 'skills' / 'sovereign-operational-governance' / 'SKILL.md').is_file()
+    assert (ROOT / 'skills' / 'sovereign-operational-assurance' / 'SKILL.md').is_file()
     assert 'PyYAML==6.0.3' in requirements
     assert 'openai_project_access_tools.py' in dockerfile
     assert 'launcher.py' in dockerfile
@@ -150,6 +161,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)' in launcher
     assert 'import openai_project_access_tools' in launcher
     assert 'openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)' in launcher
+    assert 'import operational_governance_tools' in launcher
+    assert 'operational_governance_tools.register(server.mcp, server.runtime, server.database, server.broker)' in launcher
+    assert 'import operational_assurance_tools' in launcher
+    assert 'operational_assurance_tools.register(server.mcp, server.runtime, server.database, server.broker)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
     assert 'docker compose build' not in installer
@@ -204,7 +219,24 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(enterprise_backend_tools.repository_revision_resolve)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_plan)' in installer
     assert 'callable(openai_project_access_tools.openai_project_access_runtime_evidence)' in installer
+    assert 'callable(operational_governance_tools.operational_skill_inventory)' in installer
+    assert 'callable(operational_governance_tools.tool_recommend_for_mission)' in installer
+    assert 'callable(operational_governance_tools.mcp_registry_snapshot_verify)' in installer
+    assert 'callable(operational_governance_tools.evidence_graph_build)' in installer
+    assert 'callable(operational_governance_tools.runtime_runbook_generate)' in installer
+    assert 'callable(operational_governance_tools.compliance_evidence_export)' in installer
+    assert 'callable(operational_assurance_tools.operational_assurance_skill_inventory)' in installer
+    assert 'callable(operational_assurance_tools.vps_capacity_resource_pressure_assess)' in installer
+    assert 'callable(operational_assurance_tools.runtime_dependency_health_matrix)' in installer
+    assert 'callable(operational_assurance_tools.data_integrity_invariant_audit)' in installer
+    assert 'callable(operational_assurance_tools.mcp_schema_compatibility_audit)' in installer
+    assert 'callable(operational_assurance_tools.secret_literal_triage)' in installer
+    assert 'callable(operational_assurance_tools.authentication_chaos_negative_test_assess)' in installer
+    assert 'assurance=operational_assurance_tools.operational_assurance_skill_inventory()' in installer
+    assert 'registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False)' in installer
     assert '"enterprise_backend_tools":true' in installer
+    assert '"operational_governance_tools":true' in installer
+    assert '"operational_assurance_tools":true' in installer
     assert '"repository_revision_resolver":true' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
@@ -249,6 +281,13 @@ def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None
     assert "proven_learning_tools.py" in workflow
     assert "skill_supply_chain_tools.py" in workflow
     assert "openai_project_access_tools.py" in workflow
+    assert "operational_governance_tools.py" in workflow
+    assert "operational_assurance_tools.py" in workflow
+    assert "skills/sovereign-operational-governance/SKILL.md" in workflow
+    assert "/app/skills/sovereign-operational-governance/SKILL.md" in workflow
+    assert "skills/sovereign-operational-assurance/SKILL.md" in workflow
+    assert "/app/skills/sovereign-operational-assurance/SKILL.md" in workflow
+    assert "runtime_capacity_snapshot" in workflow
     assert "document_pipeline_live_canary" in workflow
     assert "controller_run_external_event" in workflow
     assert 'server.broker.call(' in workflow

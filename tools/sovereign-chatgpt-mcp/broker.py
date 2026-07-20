@@ -7,6 +7,7 @@ import re
 import socketserver
 import stat
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +131,171 @@ class BrokerRuntime:
             "stderr": result["stderr"],
         }
 
+    @staticmethod
+    def _read_meminfo() -> dict[str, int]:
+        values: dict[str, int] = {}
+        try:
+            for line in Path("/proc/meminfo").read_text("utf-8").splitlines():
+                name, raw = line.split(":", 1)
+                number = int(raw.strip().split()[0])
+                values[name] = number * 1024
+        except (OSError, ValueError, IndexError):
+            return {}
+        return values
+
+    @staticmethod
+    def _filesystem_snapshot(path: str) -> dict[str, Any]:
+        target = Path(path)
+        if not target.exists():
+            return {"path": path, "present": False}
+        try:
+            stats = os.statvfs(target)
+        except OSError as exc:
+            return {"path": path, "present": True, "ok": False, "failureFamily": type(exc).__name__}
+        total = int(stats.f_blocks) * int(stats.f_frsize)
+        available = int(stats.f_bavail) * int(stats.f_frsize)
+        used = max(0, total - available)
+        inode_total = int(stats.f_files)
+        inode_available = int(stats.f_favail)
+        inode_used = max(0, inode_total - inode_available)
+        return {
+            "path": path,
+            "present": True,
+            "ok": True,
+            "totalBytes": total,
+            "availableBytes": available,
+            "usedBytes": used,
+            "usedPpm": used * 1_000_000 // total if total else 0,
+            "inodeTotal": inode_total,
+            "inodeAvailable": inode_available,
+            "inodeUsed": inode_used,
+            "inodeUsedPpm": inode_used * 1_000_000 // inode_total if inode_total else 0,
+        }
+
+    def runtime_capacity_snapshot(self, _arguments: dict[str, Any]) -> dict[str, Any]:
+        meminfo = self._read_meminfo()
+        total_memory = int(meminfo.get("MemTotal") or 0)
+        available_memory = int(meminfo.get("MemAvailable") or meminfo.get("MemFree") or 0)
+        used_memory = max(0, total_memory - available_memory)
+        total_swap = int(meminfo.get("SwapTotal") or 0)
+        free_swap = int(meminfo.get("SwapFree") or 0)
+        used_swap = max(0, total_swap - free_swap)
+        try:
+            load_1m, load_5m, load_15m = os.getloadavg()
+        except OSError:
+            load_1m = load_5m = load_15m = 0.0
+
+        stats_result = self._run(
+            ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
+            timeout=60,
+        )
+        stats_by_name: dict[str, dict[str, Any]] = {}
+        if stats_result.get("ok"):
+            for line in str(stats_result.get("stdout") or "").splitlines():
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                name = str(row.get("Name") or "")
+                if name:
+                    stats_by_name[name] = {
+                        "cpuPercent": str(row.get("CPUPerc") or "")[:40],
+                        "memoryUsage": str(row.get("MemUsage") or "")[:120],
+                        "memoryPercent": str(row.get("MemPerc") or "")[:40],
+                        "pids": str(row.get("PIDs") or "")[:40],
+                        "blockIo": str(row.get("BlockIO") or "")[:120],
+                        "networkIo": str(row.get("NetIO") or "")[:120],
+                    }
+
+        containers: list[dict[str, Any]] = []
+        list_result = self._run(["docker", "ps", "-a", "--format", "{{.Names}}"], timeout=30)
+        names = [item.strip() for item in str(list_result.get("stdout") or "").splitlines() if item.strip()][:300]
+        for name in names:
+            inspect = self._run(
+                [
+                    "docker",
+                    "inspect",
+                    "--format",
+                    "{{json .State}}|{{json .HostConfig}}",
+                    name,
+                ],
+                timeout=30,
+            )
+            if not inspect.get("ok"):
+                continue
+            raw = str(inspect.get("stdout") or "").strip()
+            try:
+                state_raw, host_raw = raw.split("|", 1)
+                state = json.loads(state_raw)
+                host_config = json.loads(host_raw)
+            except (ValueError, json.JSONDecodeError):
+                continue
+            containers.append(
+                {
+                    "name": name,
+                    "running": bool(state.get("Running")),
+                    "status": str(state.get("Status") or "unknown"),
+                    "oomKilled": bool(state.get("OOMKilled")),
+                    "restartCount": int(state.get("RestartCount") or 0),
+                    "memoryLimitBytes": int(host_config.get("Memory") or 0),
+                    "nanoCpus": int(host_config.get("NanoCpus") or 0),
+                    "pidsLimit": int(host_config.get("PidsLimit") or 0),
+                    "stats": stats_by_name.get(name, {}),
+                }
+            )
+
+        queue_path = Path(
+            os.getenv(
+                "SOVEREIGN_MCP_COMMAND_QUEUE",
+                "/opt/sovereign-chatgpt-tools/command-queue",
+            )
+        )
+        pending_files: list[Path] = []
+        if queue_path.is_dir():
+            for pattern in ("*.json", "*.request", "*.pending"):
+                pending_files.extend(path for path in queue_path.glob(pattern) if path.is_file())
+        now = time.time()
+        oldest_age = 0
+        if pending_files:
+            try:
+                oldest_age = int(max(0.0, now - min(path.stat().st_mtime for path in pending_files)))
+            except OSError:
+                oldest_age = 0
+
+        filesystems = [self._filesystem_snapshot(path) for path in ("/", "/opt", "/var/lib/docker")]
+        ready = bool(total_memory and stats_result.get("ok") and list_result.get("ok"))
+        return {
+            "ok": ready,
+            "status": "RUNTIME_CAPACITY_SNAPSHOT_READY" if ready else "RUNTIME_CAPACITY_SNAPSHOT_DEGRADED",
+            "host": {
+                "cpuCount": int(os.cpu_count() or 0),
+                "load1mMilli": int(load_1m * 1000),
+                "load5mMilli": int(load_5m * 1000),
+                "load15mMilli": int(load_15m * 1000),
+                "memory": {
+                    "totalBytes": total_memory,
+                    "availableBytes": available_memory,
+                    "usedBytes": used_memory,
+                },
+                "swap": {
+                    "totalBytes": total_swap,
+                    "freeBytes": free_swap,
+                    "usedBytes": used_swap,
+                },
+            },
+            "filesystems": filesystems,
+            "containers": containers,
+            "hostCommandQueue": {
+                "path": str(queue_path),
+                "present": queue_path.is_dir(),
+                "pending": len(set(pending_files)),
+                "oldestAgeSeconds": oldest_age,
+            },
+            "dockerStatsAvailable": bool(stats_result.get("ok")),
+            "mutationPerformed": False,
+            "secretValuesExposed": False,
+        }
+
     def read_manus_replay(self, arguments: dict[str, Any]) -> dict[str, Any]:
         return self.browserless.read_manus_replay(str(arguments.get("share_url") or ""))
 
@@ -216,6 +382,7 @@ class BrokerRuntime:
             },
             "container_status": self.container_status,
             "container_logs": self.container_logs,
+            "runtime_capacity_snapshot": self.runtime_capacity_snapshot,
             "manus_public_replay_read": self.read_manus_replay,
             "document_pipeline_live_canary": lambda values: self.document_pipeline.live_canary(
                 marker=str(values.get("marker") or "SOVEREIGN_DOCUMENT_PIPELINE_CANARY"),
