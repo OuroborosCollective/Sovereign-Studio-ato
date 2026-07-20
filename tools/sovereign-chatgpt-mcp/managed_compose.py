@@ -27,6 +27,22 @@ MILVUS_COMPATIBILITY_IP = "172.16.5.4"
 MILVUS_MIN_CPU_CORES = 4
 MILVUS_MIN_MEMORY_BYTES = 8 * 1024 * 1024 * 1024
 MILVUS_MIN_FREE_DISK_BYTES = 10 * 1024 * 1024 * 1024
+CODE_SERVER_CONTAINER = "code-server-46bq-code-server-1"
+CODE_SERVER_IMAGE = "lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441"
+CODE_SERVER_CONFIG_VOLUME = "code-server-46bq_code-server-config"
+CODE_SERVER_REPOSITORY = "https://github.com/OuroborosCollective/Sovereign-Studio-ato.git"
+CODE_SERVER_ENV_KEYS = (
+    "PUID",
+    "PGID",
+    "TZ",
+    "PASSWORD",
+    "HASHED_PASSWORD",
+    "SUDO_PASSWORD",
+    "SUDO_PASSWORD_HASH",
+    "PROXY_DOMAIN",
+    "DEFAULT_WORKSPACE",
+)
+CODE_SERVER_AUTH_KEYS = ("PASSWORD", "HASHED_PASSWORD")
 
 
 @dataclass(frozen=True)
@@ -94,7 +110,7 @@ STACKS: dict[str, ManagedStack] = {
         template_name="code-server-46bq",
         allowed_networks=("default", "code-server-46bq_default", "sovereign-private"),
         allowed_bind_roots=("/opt/code-server-46bq",),
-        allowed_published_ports=("127.0.0.1:32782:8443", "32782:8443"),
+        allowed_published_ports=("127.0.0.1:32782:8443",),
     ),
     "pgbackweb-wq5r": ManagedStack(
         stack_id="pgbackweb-wq5r",
@@ -378,7 +394,9 @@ class ManagedComposeRuntime:
             "arbitraryCommandAccepted": False,
             "secretValuesAccepted": False,
             "secretProvisioning": (
-                "generated_on_confirmed_deploy"
+                "preserved_from_running_container"
+                if stack.stack_id == "code-server-46bq"
+                else "generated_on_confirmed_deploy"
                 if stack.stack_id in {"pgbackweb-wq5r", "patchmon-sovereign", "milvus-sovereign"}
                 else "external_or_not_required"
             ),
@@ -545,7 +563,100 @@ class ManagedComposeRuntime:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def _bounded_env_value(value: str) -> str:
+        if "\x00" in value or "\n" in value or "\r" in value or len(value) > 4096:
+            raise RuntimeError("Code-Server-Umgebungswert verletzt den begrenzten Secret-Vertrag")
+        return value
+
+    @classmethod
+    def _decode_code_server_env_value(cls, raw: str) -> str:
+        if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'"):
+            inner = raw[1:-1]
+            output: list[str] = []
+            index = 0
+            while index < len(inner):
+                if inner[index] == "\\" and index + 1 < len(inner):
+                    index += 1
+                output.append(inner[index])
+                index += 1
+            return cls._bounded_env_value("".join(output))
+        return cls._bounded_env_value(raw)
+
+    @classmethod
+    def _code_server_env_line(cls, key: str, value: str) -> str:
+        bounded = cls._bounded_env_value(value)
+        escaped = bounded.replace("\\", "\\\\").replace("'", "\\'")
+        return f"{key}='{escaped}'"
+
+    def _ensure_code_server_env(self, stack: ManagedStack) -> dict[str, Any]:
+        deploy_root = Path(stack.deploy_root)
+        if deploy_root.is_symlink():
+            raise RuntimeError("Deploy-Root darf kein Symlink sein")
+        deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
+        os.chmod(deploy_root, 0o750)
+        env_path = deploy_root / ".env"
+        if env_path.is_symlink() or (env_path.exists() and not env_path.is_file()):
+            raise RuntimeError("Code-Server-Secret-Datei ist ungültig")
+
+        values: dict[str, str] = {}
+        source = "existing_managed_env" if env_path.is_file() else "running_container"
+        if env_path.is_file():
+            payload = env_path.read_bytes()
+            if len(payload) > MAX_STACK_ENV_BYTES or b"\0" in payload:
+                raise RuntimeError("Code-Server-Secret-Datei ist ungültig")
+            for line in payload.decode("utf-8").splitlines():
+                if not line or line.lstrip().startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                selected = key.strip()
+                if selected in CODE_SERVER_ENV_KEYS:
+                    values[selected] = self._decode_code_server_env_value(value)
+
+        if not any(values.get(key) for key in CODE_SERVER_AUTH_KEYS):
+            inspected = self._run(
+                ["docker", "inspect", "--format", "{{json .Config.Env}}", stack.anchor_container],
+                timeout=30,
+            )
+            if not inspected.get("ok"):
+                raise RuntimeError("Bestehende Code-Server-Authentisierung kann nicht sicher übernommen werden")
+            try:
+                raw_env = json.loads(inspected.get("stdout", "")) or []
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("Bestehende Code-Server-Umgebung ist ungültig") from exc
+            for item in raw_env if isinstance(raw_env, list) else []:
+                if not isinstance(item, str) or "=" not in item:
+                    continue
+                key, value = item.split("=", 1)
+                if key in CODE_SERVER_ENV_KEYS and key not in values:
+                    values[key] = self._bounded_env_value(value)
+            source = "running_container"
+
+        if not any(values.get(key) for key in CODE_SERVER_AUTH_KEYS):
+            raise RuntimeError("Code-Server-Authentisierung fehlt; eine ungeschützte Neuerstellung ist gesperrt")
+
+        values.setdefault("PUID", "1000")
+        values.setdefault("PGID", "1000")
+        values.setdefault("TZ", "Europe/Berlin")
+        values.setdefault("DEFAULT_WORKSPACE", "/config/workspace")
+        rendered = [self._code_server_env_line(key, values.get(key, "")) for key in CODE_SERVER_ENV_KEYS]
+        self._write_atomic(env_path, ("\n".join(rendered) + "\n").encode("utf-8"), mode=0o600)
+        os.chmod(env_path, 0o600)
+        auth_mode = "hashed_password" if values.get("HASHED_PASSWORD") else "password"
+        return {
+            "required": True,
+            "created": source == "running_container",
+            "path": str(env_path),
+            "mode": "0600",
+            "keysPresent": [key for key in CODE_SERVER_ENV_KEYS if values.get(key)],
+            "authMode": auth_mode,
+            "source": source,
+            "secretValuesReturned": False,
+        }
+
     def _ensure_stack_secret_env(self, stack: ManagedStack) -> dict[str, Any]:
+        if stack.stack_id == "code-server-46bq":
+            return self._ensure_code_server_env(stack)
         if stack.stack_id not in {"pgbackweb-wq5r", "patchmon-sovereign", "milvus-sovereign"}:
             return {
                 "required": False,
@@ -864,6 +975,111 @@ class ManagedComposeRuntime:
         }
 
     @staticmethod
+    def _code_server_transport_ready(state: dict[str, Any]) -> bool:
+        bindings = state.get("publishedPorts", {}).get("8443/tcp", [])
+        loopback_only = (
+            len(bindings) == 1
+            and str(bindings[0].get("HostIp") or "") == "127.0.0.1"
+            and str(bindings[0].get("HostPort") or "") == "32782"
+        ) if isinstance(bindings, list) and bindings else False
+        config_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict) and item.get("destination") == "/config"
+        ]
+        volume_ready = (
+            len(config_mounts) == 1
+            and config_mounts[0].get("type") == "volume"
+            and config_mounts[0].get("name") == CODE_SERVER_CONFIG_VOLUME
+            and config_mounts[0].get("rw") is True
+        )
+        digest_ready = CODE_SERVER_IMAGE in set(state.get("repoDigests") or [])
+        return bool(state.get("present") and state.get("running") and loopback_only and volume_ready and digest_ready)
+
+    def _code_server_runtime_canary(self) -> dict[str, Any]:
+        http_status = 0
+        last_error = ""
+        for _attempt in range(30):
+            connection: http.client.HTTPConnection | None = None
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", 32782, timeout=5)
+                connection.request("GET", "/healthz")
+                response = connection.getresponse()
+                http_status = int(response.status)
+                response.read(4096)
+                if 200 <= http_status < 400:
+                    break
+                last_error = f"HTTP {http_status}"
+            except (OSError, http.client.HTTPException) as exc:
+                last_error = type(exc).__name__
+            finally:
+                if connection is not None:
+                    connection.close()
+            time.sleep(2)
+
+        token = secrets.token_hex(8)
+        workspace = f"/config/workspace/.sovereign-clone-canary-{token}"
+        git_version = self._run(
+            ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "git", "--version"],
+            timeout=30,
+        )
+        mkdir = self._run(
+            ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "mkdir", "-p", "/config/workspace"],
+            timeout=30,
+        )
+        clone = self._run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "abc",
+                CODE_SERVER_CONTAINER,
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                "main",
+                CODE_SERVER_REPOSITORY,
+                workspace,
+            ],
+            timeout=240,
+        ) if git_version.get("ok") and mkdir.get("ok") else {"ok": False, "stderr": "git_or_workspace_unavailable"}
+        revision = self._run(
+            ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "git", "-C", workspace, "rev-parse", "HEAD"],
+            timeout=30,
+        ) if clone.get("ok") else {"ok": False, "stdout": ""}
+        cleanup = self._run(
+            ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "rm", "-rf", workspace],
+            timeout=30,
+        )
+        cloned_revision = str(revision.get("stdout") or "").strip()
+        revision_verified = bool(re.fullmatch(r"[0-9a-f]{40}", cloned_revision))
+        ok = bool(
+            200 <= http_status < 400
+            and git_version.get("ok")
+            and mkdir.get("ok")
+            and clone.get("ok")
+            and revision.get("ok")
+            and revision_verified
+            and cleanup.get("ok")
+        )
+        return {
+            "ok": ok,
+            "status": "CODE_SERVER_WORKSPACE_CANARY_VERIFIED" if ok else "CODE_SERVER_WORKSPACE_CANARY_FAILED",
+            "httpStatus": http_status,
+            "authenticationEndpointReachable": 200 <= http_status < 400,
+            "gitAvailable": bool(git_version.get("ok")),
+            "workspaceWritable": bool(mkdir.get("ok")),
+            "repositoryCloneVerified": bool(clone.get("ok") and revision_verified),
+            "clonedRevision": cloned_revision if revision_verified else None,
+            "temporaryCloneRemoved": bool(cleanup.get("ok")),
+            "errorFamily": None if ok else (last_error or str(clone.get("stderr") or "workspace_canary_failed").strip().splitlines()[-1]),
+            "repositoryContentReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    @staticmethod
     def _patchmon_http_canary() -> dict[str, Any]:
         last_error = ""
         for _attempt in range(30):
@@ -1168,15 +1384,34 @@ const call = async (names, payload) => {
                     }
 
         states = self._verify_expected(stack)
-        transport_verified = (
-            self._patchmon_server_transport_ready(states.get(stack.anchor_container, {}))
-            if stack.stack_id == "patchmon-sovereign"
-            else True
-        )
+        if stack.stack_id == "patchmon-sovereign":
+            transport_verified = self._patchmon_server_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "code-server-46bq":
+            transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
+        else:
+            transport_verified = True
+
         if stack.stack_id == "patchmon-sovereign":
             runtime_canary = self._patchmon_http_canary()
         elif stack.stack_id == "milvus-sovereign":
-            runtime_canary = self._milvus_runtime_canary()
+            transport_canary = self._milvus_runtime_canary()
+            collection_canary = (
+                self.memory_gateway_collection_canary()
+                if transport_canary.get("ok")
+                else {"ok": False, "status": "SKIPPED_TRANSPORT_UNAVAILABLE"}
+            )
+            runtime_canary = {
+                "ok": bool(transport_canary.get("ok") and collection_canary.get("ok")),
+                "status": (
+                    "MILVUS_TRANSPORT_AND_COLLECTION_VERIFIED"
+                    if transport_canary.get("ok") and collection_canary.get("ok")
+                    else "MILVUS_COLLECTION_RUNTIME_UNVERIFIED"
+                ),
+                "transport": transport_canary,
+                "collection": collection_canary,
+            }
+        elif stack.stack_id == "code-server-46bq":
+            runtime_canary = self._code_server_runtime_canary()
         else:
             runtime_canary = {"ok": True, "status": "NOT_REQUIRED"}
         runtime_ok = (
