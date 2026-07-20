@@ -46,3 +46,26 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Gotenberg Tika document canary (runtime_readback, SHA-256 e27c36974947d7ea4ca3f209dbee6e6ae83f974f138e2d4c58bd6bbde336fa28): Gotenberg generated a PDF and Tika extracted the exact private canary marker.
 - Milvus collection runtime canary (runtime_readback, SHA-256 fcec7cbf57dc84602ae841fe981528ac576f89dd7003c83bda529fc0aab31de4): Private Milvus path created a collection, inserted, queried, searched and removed it.
 
+<!-- proven-learning:55ffd93ae01bc44cd139bc6b1de37ef6a5fe054ae30b718bba16bd69294ee30f -->
+## Dokument-Canaries müssen denselben Konvertierungspfad wie die Produktions-Ingestion ausführen
+
+- Zeitpunkt: 2026-07-20T16:57:13Z
+- Vorgang: integration
+- Inhalts-Hash: sha256:55ffd93ae01bc44cd139bc6b1de37ef6a5fe054ae30b718bba16bd69294ee30f
+- Quellrevision: 9929a0d1460e916736197724745ea87f12e6831e
+- Merge-Ziel: main
+- Erwarteter PR-Head: wird beim PR-Gate gebunden
+- Geänderte Pfade: tools/sovereign-chatgpt-mcp/document_pipeline.py, tools/sovereign-chatgpt-mcp/server.py, tools/sovereign-chatgpt-mcp/tests/test_document_pipeline.py
+- Problem: Der bisherige Gotenberg/Tika-Canary war technisch grün, prüfte aber Chromium HTML→PDF, während der Wissens- und Learning-Pfad Office-Dateien über Gotenbergs LibreOffice-Endpunkt in PDF umwandelt. Dadurch konnte ein grüner Canary den produktionsrelevanten Office-Pfad nicht belegen.
+- Lösung: Erzeuge ein minimales deterministisches DOCX flüchtig im Speicher, sende es an `/forms/libreoffice/convert`, validiere PDF-Signatur, Größenlimit und SHA-256, übergebe das PDF an Tika und verifiziere ausschließlich den Marker. Binde den Canary an die immutable MCP-Merge-Revision und bestätige zusätzlich Gotenbergs echten LibreOffice-Access-Log sowie die private Transportgrenze.
+- Gültigkeit: Für Dokument-Ingestion-, OCR-, Rendering- und Transformationspipelines, bei denen Healthchecks oder vereinfachte Canaries von der tatsächlichen Produktionsroute abweichen könnten.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@9929a0d1460e916736197724745ea87f12e6831e:.github/workflows/sovereign-chatgpt-mcp.yml; OuroborosCollective/Sovereign-Studio-ato@9929a0d1460e916736197724745ea87f12e6831e:tools/sovereign-chatgpt-mcp/document_pipeline.py; OuroborosCollective/Sovereign-Studio-ato@9929a0d1460e916736197724745ea87f12e6831e:tools/sovereign-chatgpt-mcp/tests/test_document_pipeline.py
+
+### Nachweise
+
+- Immutable MCP main workflow (github_actions, SHA-256 29a03bc55fd2a890b867a6580e7bc46d88ee980de4d0a9d2189ac9cea9a22453): Workflow run 29761310076 passed validation, image publish, digest verification, VPS bootstrap and both live canaries on the exact merge SHA.
+- Targeted document pipeline tests (repository_check, SHA-256 aa81ec25a8dbc5d5ceb4e933c835b00f893a3cf689b5bfe36b50d8ee8d31cf61): The targeted MCP document-pipeline suite completed with 15 passed tests.
+- Installed MCP runtime identity (runtime_readback, SHA-256 541b3e636fa27df7cf51d61b3f8386fb257483af39749ebada9d2a9282842ca9): The private MCP runs the immutable digest for merge revision 9929a0d with broker, protocol and worker ready.
+- Milvus collection lifecycle canary (runtime_readback, SHA-256 1af5bab266494d9e44f1653549f47963e23247f5b78d19d335ad8e3683891b62): The private gateway created, wrote, queried, vector-searched and removed an ephemeral Milvus collection.
+- Office document live canary (runtime_readback, SHA-256 01026049ee852a62f0ea4ae4e6adbac2f4d70d6063bfdb612c110844462b3c35): An ephemeral DOCX was converted through Gotenberg LibreOffice to PDF and its marker was extracted by Tika without persistence.
+
