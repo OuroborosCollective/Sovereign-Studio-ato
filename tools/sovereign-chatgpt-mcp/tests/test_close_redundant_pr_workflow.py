@@ -16,6 +16,15 @@ def test_exact_pr_close_workflow_is_owner_and_revision_bound() -> None:
     assert "pull-requests: write" in WORKFLOW
     assert "contents: read" in WORKFLOW
     assert "actions/github-script@v7" in WORKFLOW
+    assert "PR_NUMBER: ${{ inputs.pr_number }}" in WORKFLOW
+    assert "EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}" in WORKFLOW
+    assert "CLOSURE_REASON: ${{ inputs.closure_reason }}" in WORKFLOW
+    assert "OWNER_APPROVED: ${{ inputs.owner_approved }}" in WORKFLOW
+    assert "process.env.PR_NUMBER" in WORKFLOW
+    assert "process.env.EXPECTED_HEAD_SHA" in WORKFLOW
+    assert "process.env.CLOSURE_REASON" in WORKFLOW
+    assert "process.env.OWNER_APPROVED" in WORKFLOW
+    assert "core.getInput(" not in WORKFLOW
     assert "expected_head_sha" in WORKFLOW
     assert "/^[0-9a-f]{40}$/" in WORKFLOW
     assert "ownerApproved !== 'true'" in WORKFLOW
