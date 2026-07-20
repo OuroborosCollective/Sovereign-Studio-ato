@@ -12,33 +12,55 @@ interface Env {
   CACHE: KVNamespace;
   ANALYTICS?: AnalyticsEngineDataset;
   CACHE_TTL_SECONDS: string;
+  CACHE_API_KEY?: string;
 }
 
 const DEFAULT_TTL = 1800; // 30 minutes in seconds
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
+  'Access-Control-Max-Age': '86400',
+};
 
 // Simple hash for cache key validation
 function isValidKey(key: string): boolean {
   return /^[a-z0-9_]{1,128}$/.test(key);
 }
 
-// JSON parse with error handling
-function safeJsonParse<T>(text: string): T | null {
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
+function validateAuth(request: Request, env: Env): boolean {
+  if (!env.CACHE_API_KEY) {
+    return true;
   }
+  const authHeader = request.headers.get('Authorization');
+  const apiKeyHeader = request.headers.get('X-API-Key');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : apiKeyHeader;
+  return token === env.CACHE_API_KEY;
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    // Authenticate all operations if CACHE_API_KEY is configured
+    if (!validateAuth(request, env)) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const url = new URL(request.url);
     const path = url.pathname;
 
     // Health check endpoint
     if (path === '/health') {
       return new Response(JSON.stringify({ ok: true, timestamp: Date.now() }), {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -47,7 +69,7 @@ export default {
     if (!cacheMatch) {
       return new Response(JSON.stringify({ error: 'Invalid path' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -55,7 +77,7 @@ export default {
     if (!isValidKey(key)) {
       return new Response(JSON.stringify({ error: 'Invalid cache key' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -66,11 +88,11 @@ export default {
         const cached = await env.CACHE.get(key, 'json');
         if (!cached) {
           return new Response(JSON.stringify({ hit: false }), {
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
         return new Response(JSON.stringify({ hit: true, data: cached }), {
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
@@ -81,17 +103,18 @@ export default {
             createdAt: Date.now(),
             ttl,
           };
-          // Store data with metadata
+          // Store data with metadata, ensuring expirationTtl is at least 60 seconds
+          const expirationTtl = Math.max(60, Math.floor(ttl / 1000));
           await env.CACHE.put(key, JSON.stringify({ metadata, data: body }), {
-            expirationTtl: Math.floor(ttl / 1000),
+            expirationTtl,
           });
           return new Response(JSON.stringify({ ok: true, key }), {
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         } catch {
           return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
             status: 400,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
       }
@@ -99,14 +122,14 @@ export default {
       case 'DELETE': {
         await env.CACHE.delete(key);
         return new Response(JSON.stringify({ ok: true, key }), {
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       default:
         return new Response(JSON.stringify({ error: 'Method not allowed' }), {
           status: 405,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }
   },
