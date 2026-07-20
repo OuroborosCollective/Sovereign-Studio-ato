@@ -13,6 +13,7 @@ REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 WORKFLOW_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.ya?ml$")
 INPUT_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ALLOWED_MERGE_METHODS = {"merge", "squash", "rebase"}
+ALLOWED_CLOSE_REASONS = {"redundant", "superseded"}
 SUCCESSFUL_CHECK_CONCLUSIONS = {"success", "neutral", "skipped"}
 RERUN_FAILED_CONCLUSIONS = {"failure"}
 RERUN_ALL_CONCLUSIONS = {"cancelled", "timed_out", "action_required", "stale"}
@@ -516,4 +517,83 @@ class GitHubAdminRuntime:
             "ready_transition": ready_transition,
             "ignored_pending_checks": ignored_pending_checks,
             "self_update": update_result,
+        }
+
+    def close_pr(
+        self,
+        *,
+        pr_number: int,
+        expected_head_sha: str,
+        closure_reason: str = "redundant",
+        owner_approved: bool = False,
+    ) -> dict[str, Any]:
+        """Close one exact open PR without merging it and verify GitHub readback."""
+        if not _enabled("SOVEREIGN_MCP_ENABLE_PR_MERGE"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "PR-Administration ist nicht aktiviert"}
+        if not self.private_owner_mode or not owner_approved:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Schließen erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",
+            }
+
+        number = self._pr_number(pr_number)
+        expected = str(expected_head_sha or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(expected):
+            raise ValueError("expected_head_sha muss ein vollständiger Commit-SHA sein")
+        reason = str(closure_reason or "redundant").strip().lower()
+        if reason not in ALLOWED_CLOSE_REASONS:
+            raise ValueError("closure_reason muss redundant oder superseded sein")
+
+        status = self.pr_status(pr_number=number)
+        if status["base_ref"] != "main":
+            return {"ok": False, "status": "BLOCKED", "blocker": "PR zielt nicht auf main", "pr": status}
+        if status["head_sha"] != expected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Head stimmt nicht mit der Bestätigung überein",
+                "actual_head_sha": status["head_sha"],
+                "expected_head_sha": expected,
+            }
+        if status["state"] == "closed":
+            return {
+                "ok": True,
+                "status": "ALREADY_CLOSED",
+                "pr_number": number,
+                "head_sha": expected,
+                "closure_reason": reason,
+                "owner_approved": True,
+            }
+        if status["state"] != "open":
+            return {"ok": False, "status": "BLOCKED", "blocker": "PR ist nicht offen", "pr": status}
+
+        payload = self._request(
+            "PATCH",
+            f"/repos/{self.repository}/pulls/{number}",
+            json_body={"state": "closed"},
+            expected=(200,),
+            timeout=60,
+        )
+        if not isinstance(payload, dict) or str(payload.get("state") or "") != "closed":
+            raise RuntimeError("GitHub bestätigte den geschlossenen PR-Zustand nicht")
+
+        readback = self._pull(number)
+        readback_head = str((readback.get("head") or {}).get("sha") or "").strip().lower()
+        readback_base = str((readback.get("base") or {}).get("ref") or "").strip()
+        if (
+            str(readback.get("state") or "") != "closed"
+            or readback_head != expected
+            or readback_base != "main"
+        ):
+            raise RuntimeError("GitHub PR-Readback stimmt nicht mit dem bestätigten Close-Vertrag überein")
+        return {
+            "ok": True,
+            "status": "CLOSED",
+            "pr_number": number,
+            "head_sha": expected,
+            "closure_reason": reason,
+            "owner_approved": True,
+            "url": str(readback.get("html_url") or payload.get("html_url") or ""),
+            "merge_performed": False,
         }

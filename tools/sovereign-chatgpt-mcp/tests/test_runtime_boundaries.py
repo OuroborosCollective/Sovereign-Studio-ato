@@ -41,6 +41,7 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "postgres_admin_sql",
         "repository_push_main",
         "repository_merge_pr",
+        "repository_close_pr",
         "repository_workflow_dispatch",
         "repository_rerun_failed_workflows",
         "mcp_self_update",

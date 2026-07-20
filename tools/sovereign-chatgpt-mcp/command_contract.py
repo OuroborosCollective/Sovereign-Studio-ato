@@ -10,6 +10,7 @@ MUTATING_ACTIONS = frozenset(
         "github_rerun_failed_workflows",
         "github_workflow_dispatch",
         "github_merge_pr",
+        "github_close_pr",
         "mcp_self_update_schedule",
         "deploy_verified_release",
         "rollback_release",
