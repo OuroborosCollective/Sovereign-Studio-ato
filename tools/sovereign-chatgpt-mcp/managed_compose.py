@@ -214,7 +214,7 @@ class ManagedComposeRuntime:
                 "docker",
                 "inspect",
                 "--format",
-                "{{json .State}}|{{json .Config.Labels}}|{{json .NetworkSettings.Networks}}|{{json .NetworkSettings.Ports}}",
+                "{{json .State}}|{{json .Config.Labels}}|{{json .NetworkSettings.Networks}}|{{json .NetworkSettings.Ports}}|{{json .Config.Image}}|{{json .Image}}|{{json .Mounts}}",
                 container,
             ],
             timeout=30,
@@ -222,11 +222,22 @@ class ManagedComposeRuntime:
         if not result["ok"]:
             return {"present": False, "container": container}
         try:
-            state_raw, labels_raw, networks_raw, ports_raw = result["stdout"].strip().split("|", 3)
+            (
+                state_raw,
+                labels_raw,
+                networks_raw,
+                ports_raw,
+                image_reference_raw,
+                image_id_raw,
+                mounts_raw,
+            ) = result["stdout"].strip().split("|", 6)
             state = json.loads(state_raw)
             labels = json.loads(labels_raw) or {}
             networks = json.loads(networks_raw) or {}
             ports = json.loads(ports_raw) or {}
+            image_reference = json.loads(image_reference_raw) or ""
+            image_id = json.loads(image_id_raw) or ""
+            mounts = json.loads(mounts_raw) or []
         except (ValueError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"Docker-Inspect ist ungültig: {container}: {exc}") from exc
         published = {
@@ -234,6 +245,17 @@ class ManagedComposeRuntime:
             for key, value in ports.items()
             if isinstance(value, list) and value
         }
+        safe_mounts = [
+            {
+                "type": str(item.get("Type") or ""),
+                "name": str(item.get("Name") or ""),
+                "source": str(item.get("Source") or ""),
+                "destination": str(item.get("Destination") or ""),
+                "rw": bool(item.get("RW")),
+            }
+            for item in mounts
+            if isinstance(item, dict)
+        ]
         return {
             "present": True,
             "container": container,
@@ -244,8 +266,12 @@ class ManagedComposeRuntime:
             "service": str(labels.get("com.docker.compose.service") or ""),
             "workingDir": str(labels.get("com.docker.compose.project.working_dir") or ""),
             "configFiles": str(labels.get("com.docker.compose.project.config_files") or ""),
+            "imageReference": str(image_reference),
+            "imageId": str(image_id),
+            "mounts": safe_mounts,
             "networks": sorted(networks.keys()),
             "publishedPorts": published,
+            "environmentReturned": False,
         }
 
     @staticmethod
@@ -850,6 +876,126 @@ class ManagedComposeRuntime:
             "status": "PATCHMON_HTTP_UNAVAILABLE",
             "errorFamily": last_error or "unknown",
             "responseBodyReturned": False,
+        }
+
+    def memory_gateway_collection_canary(self) -> dict[str, Any]:
+        script = r"""
+const crypto = require('crypto');
+const { MilvusClient, DataType } = require('@zilliz/milvus2-sdk-node');
+const address = process.env.MILVUS_ADDRESS || process.env.MILVUS_HOST || '172.16.5.4:19530';
+const marker = `SOVEREIGN_MEMORY_CANARY_${crypto.randomBytes(12).toString('hex')}`;
+const collection = `sovereign_canary_${crypto.randomBytes(8).toString('hex')}`;
+const markerSha256 = crypto.createHash('sha256').update(marker).digest('hex');
+const client = new MilvusClient({ address });
+let created = false;
+let cleanup = false;
+const containsMarker = (value) => JSON.stringify(value || {}).includes(marker);
+const call = async (names, payload) => {
+  for (const name of names) {
+    if (typeof client[name] === 'function') return await client[name](payload);
+  }
+  throw new Error(`Missing Milvus SDK method: ${names.join('/')}`);
+};
+(async () => {
+  try {
+    await call(['createCollection'], {
+      collection_name: collection,
+      fields: [
+        { name: 'id', data_type: DataType.Int64, is_primary_key: true, autoID: false },
+        { name: 'embedding', data_type: DataType.FloatVector, dim: 4 },
+        { name: 'marker', data_type: DataType.VarChar, max_length: 160 },
+      ],
+    });
+    created = true;
+    await call(['createIndex'], {
+      collection_name: collection,
+      field_name: 'embedding',
+      index_type: 'AUTOINDEX',
+      metric_type: 'COSINE',
+      params: {},
+    });
+    await call(['loadCollectionSync', 'loadCollection'], { collection_name: collection });
+    await call(['insert'], {
+      collection_name: collection,
+      fields_data: [{ id: 1, embedding: [1, 0, 0, 0], marker }],
+    });
+    await call(['flushSync', 'flush'], { collection_names: [collection] });
+    const query = await call(['query'], {
+      collection_name: collection,
+      expr: 'id == 1',
+      output_fields: ['id', 'marker'],
+    });
+    const search = await call(['search'], {
+      collection_name: collection,
+      data: [[1, 0, 0, 0]],
+      anns_field: 'embedding',
+      limit: 1,
+      metric_type: 'COSINE',
+      output_fields: ['id', 'marker'],
+    });
+    if (!containsMarker(query) || !containsMarker(search)) {
+      throw new Error('Milvus canary readback marker missing');
+    }
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      created: true,
+      inserted: true,
+      queried: true,
+      searched: true,
+      markerSha256,
+    }) + '\n');
+  } finally {
+    if (created) {
+      try {
+        await call(['dropCollection'], { collection_name: collection });
+        cleanup = true;
+      } catch (_error) {
+        cleanup = false;
+      }
+    }
+    process.stdout.write(JSON.stringify({ cleanup }) + '\n');
+  }
+})().catch((error) => {
+  process.stderr.write(`${error && error.name ? error.name : 'Error'}\n`);
+  process.exitCode = 1;
+});
+"""
+        result = self._run(
+            ["docker", "exec", MILVUS_GATEWAY_CONTAINER, "node", "-e", script],
+            timeout=180,
+        )
+        lines = [line for line in result.get("stdout", "").splitlines() if line.strip()]
+        receipts: list[dict[str, Any]] = []
+        for line in lines[-4:]:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                receipts.append(value)
+        canary = next((item for item in receipts if item.get("ok") is True), {})
+        cleanup = next((item for item in reversed(receipts) if "cleanup" in item), {})
+        ok = bool(
+            result.get("ok")
+            and canary.get("created")
+            and canary.get("inserted")
+            and canary.get("queried")
+            and canary.get("searched")
+            and cleanup.get("cleanup") is True
+        )
+        return {
+            "ok": ok,
+            "status": "MEMORY_COLLECTION_CANARY_VERIFIED" if ok else "MEMORY_COLLECTION_CANARY_FAILED",
+            "gatewayContainer": MILVUS_GATEWAY_CONTAINER,
+            "collectionCreated": bool(canary.get("created")),
+            "recordInserted": bool(canary.get("inserted")),
+            "queryReadbackVerified": bool(canary.get("queried")),
+            "vectorSearchVerified": bool(canary.get("searched")),
+            "collectionDropped": cleanup.get("cleanup") is True,
+            "markerSha256": str(canary.get("markerSha256") or ""),
+            "errorFamily": None if ok else (result.get("stderr", "").strip().splitlines()[-1:] or ["unknown"])[0],
+            "responseContentReturned": False,
+            "secretValuesReturned": False,
         }
 
     def litellm_provider_model_inventory(self) -> dict[str, Any]:

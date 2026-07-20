@@ -26,6 +26,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "milvus-sovereign",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
+    assert is_mutating_action("memory_gateway_collection_canary") is True
     assert is_mutating_action("litellm_model_aliases_activate") is True
     assert is_mutating_action("litellm_provider_model_inventory") is False
     assert is_mutating_action("openai_project_runtime_evidence") is False
@@ -46,6 +47,40 @@ def test_unregistered_stack_template_is_reported_without_write(tmp_path: Path) -
     assert result["arbitraryYamlAccepted"] is False
     assert result["arbitraryCommandAccepted"] is False
     assert result["secretValuesAccepted"] is False
+
+
+def test_managed_stack_inspect_returns_mount_and_image_metadata_without_environment(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        if argv[:3] == ["docker", "inspect", "--format"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                '{"Running":true,"Status":"running"}|'
+                '{"com.docker.compose.project":"code-server-46bq","com.docker.compose.service":"code-server"}|'
+                '{"code-server-46bq_default":{}}|'
+                '{"8443/tcp":[{"HostIp":"0.0.0.0","HostPort":"32782"}]}|'
+                '"lscr.io/linuxserver/code-server:4.128.0-ls351"|'
+                '"sha256:abc"|'
+                '[{"Type":"bind","Source":"/docker/code-server-46bq/config","Destination":"/config","RW":true}]',
+                "",
+            )
+        return subprocess.CompletedProcess(argv, 1, "", "not found")
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    result = runtime.plan("code-server-46bq")
+    anchor = result["anchor"]
+
+    assert anchor["imageReference"] == "lscr.io/linuxserver/code-server:4.128.0-ls351"
+    assert anchor["imageId"] == "sha256:abc"
+    assert anchor["mounts"] == [{
+        "type": "bind",
+        "name": "",
+        "source": "/docker/code-server-46bq/config",
+        "destination": "/config",
+        "rw": True,
+    }]
+    assert anchor["environmentReturned"] is False
+    assert "PASSWORD" not in str(anchor)
 
 
 def test_deploy_is_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
@@ -598,11 +633,58 @@ def test_milvus_network_preflight_blocks_unexpected_member(tmp_path: Path) -> No
     assert result["unexpectedMembers"] == ["foreign-service"]
 
 
+def test_memory_collection_canary_requires_write_query_search_and_cleanup(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        if argv[:4] == ["docker", "exec", "sovereign-memory-gateway", "node"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                '{"ok":true,"created":true,"inserted":true,"queried":true,"searched":true,"markerSha256":"' + ('a' * 64) + '"}\n'
+                '{"cleanup":true}\n',
+                "",
+            )
+        return subprocess.CompletedProcess(argv, 1, "", "not found")
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    result = runtime.memory_gateway_collection_canary()
+
+    assert result["status"] == "MEMORY_COLLECTION_CANARY_VERIFIED"
+    assert result["collectionCreated"] is True
+    assert result["recordInserted"] is True
+    assert result["queryReadbackVerified"] is True
+    assert result["vectorSearchVerified"] is True
+    assert result["collectionDropped"] is True
+    assert result["markerSha256"] == "a" * 64
+    assert result["responseContentReturned"] is False
+    assert result["secretValuesReturned"] is False
+
+
+def test_memory_collection_canary_fails_closed_when_cleanup_is_missing(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            '{"ok":true,"created":true,"inserted":true,"queried":true,"searched":true,"markerSha256":"' + ('b' * 64) + '"}\n'
+            '{"cleanup":false}\n',
+            "",
+        )
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    result = runtime.memory_gateway_collection_canary()
+
+    assert result["ok"] is False
+    assert result["status"] == "MEMORY_COLLECTION_CANARY_FAILED"
+    assert result["collectionDropped"] is False
+
+
 def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     root = Path(__file__).resolve().parents[1]
     server = (root / "server.py").read_text("utf-8")
     broker = (root / "broker.py").read_text("utf-8")
 
+    assert "def memory_gateway_collection_canary()" in server
+    assert 'broker.call("memory_gateway_collection_canary", {}, timeout=240)' in server
+    assert '"memory_gateway_collection_canary": lambda _values:' in broker
     assert "def litellm_provider_model_inventory()" in server
     assert "def litellm_model_aliases_activate(" in server
     assert 'broker.call("litellm_provider_model_inventory", {}, timeout=90)' in server
