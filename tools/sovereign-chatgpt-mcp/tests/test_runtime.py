@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 
@@ -50,6 +52,39 @@ def test_search_reads_real_workspace_files(repo_runtime) -> None:
     assert result["results"] == [
         {"path": "README.md", "line": 1, "text": "Sovereign runtime truth"}
     ]
+
+
+def test_code_server_workspace_descriptor_is_bounded_and_sdcard_truthful(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    monkeypatch.setenv("SOVEREIGN_CODE_SERVER_PUBLIC_URL", "https://code.arelorian.de")
+
+    result = runtime.code_server_workspace_descriptor(workspace_id)
+    assert result["ok"] is True
+    assert result["hostRepoPath"] == str(repo)
+    assert result["editorFolder"] == f"/config/sovereign-workspaces/{workspace_id}/repo"
+    assert "folder=%2Fconfig%2Fsovereign-workspaces%2F" in result["openUrl"]
+    assert result["storage"]["directRemoteMountClaimed"] is False
+    assert result["credentialsReturned"] is False
+
+    marker = hashlib.sha256(b"android-sdcard-grant").hexdigest()
+    mirrored = runtime.code_server_workspace_descriptor(
+        workspace_id,
+        sdcard_enabled=True,
+        sdcard_marker_sha256=marker,
+    )
+    assert mirrored["storage"]["mode"] == "android_external_storage_mirror"
+    assert mirrored["storage"]["nativeBridgeRequired"] is True
+    assert mirrored["storage"]["syncMarkerSha256"] == marker
+
+    with pytest.raises(ValueError, match="SHA-256-Marker"):
+        runtime.code_server_workspace_descriptor(workspace_id, sdcard_enabled=True)
+
+
+def test_code_server_workspace_descriptor_rejects_unsafe_public_url(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, _ = repo_runtime
+    monkeypatch.setenv("SOVEREIGN_CODE_SERVER_PUBLIC_URL", "http://code.arelorian.de")
+    with pytest.raises(ValueError, match="HTTPS"):
+        runtime.code_server_workspace_descriptor(workspace_id)
 
 
 def test_check_is_allowlisted(repo_runtime) -> None:

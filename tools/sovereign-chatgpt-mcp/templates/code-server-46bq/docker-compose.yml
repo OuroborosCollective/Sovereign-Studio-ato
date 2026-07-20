@@ -3,17 +3,20 @@ services:
     image: lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441
     restart: unless-stopped
     environment:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
+      PUID: ${PUID:-10001}
+      PGID: ${PGID:-10001}
       TZ: ${TZ:-Europe/Berlin}
       PASSWORD: ${PASSWORD:-}
       HASHED_PASSWORD: ${HASHED_PASSWORD:-}
       SUDO_PASSWORD: ${SUDO_PASSWORD:-}
       SUDO_PASSWORD_HASH: ${SUDO_PASSWORD_HASH:-}
       PROXY_DOMAIN: ${PROXY_DOMAIN:-}
-      DEFAULT_WORKSPACE: ${DEFAULT_WORKSPACE:-/config/workspace}
+      DEFAULT_WORKSPACE: ${DEFAULT_WORKSPACE:-/config/sovereign-workspaces}
     volumes:
       - code-server-config:/config
+      - type: bind
+        source: /opt/sovereign-chatgpt-tools/workspaces
+        target: /config/sovereign-workspaces
     ports:
       - "127.0.0.1:32782:8443"
 
