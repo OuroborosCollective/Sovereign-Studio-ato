@@ -14,7 +14,12 @@ import time
 from typing import Literal
 
 from .contracts import SovereignAgentEvent, sanitize_agent_text
-from .workspace_policy import WorkspacePolicyError, repo_dir_for_workspace, safe_workspace_path
+from .workspace_policy import (
+    WorkspacePolicyError,
+    normalize_workspace_permissions,
+    repo_dir_for_workspace,
+    safe_workspace_path,
+)
 
 WorkspaceStatus = Literal["created", "exists", "blocked", "cleaned"]
 
@@ -54,6 +59,7 @@ def create_agent_workspace(workspace_id: str, root: Path | None = None) -> Works
                 blocker="Workspace already exists for this job.",
             )
         repo_path.mkdir(parents=True, exist_ok=False)
+        normalize_workspace_permissions(workspace, root or workspace.parent)
         return WorkspaceProvisionResult(
             workspace_id=workspace_id,
             status="created",

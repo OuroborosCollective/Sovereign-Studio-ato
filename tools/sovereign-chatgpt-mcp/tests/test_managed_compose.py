@@ -105,14 +105,15 @@ def test_code_server_template_is_digest_pinned_loopback_only_and_preserves_volum
     assert "127.0.0.1:32782:8443" in template
     assert "0.0.0.0:32782" not in template
     assert "code-server-46bq_code-server-config" in template
-    assert "/opt/sovereign-chatgpt-tools/workspaces" in template
-    assert "/config/sovereign-workspaces" in template
+    assert "/opt/sovereign-agent-workspaces" in template
+    assert "/config/sovereign-agent-workspaces" in template
     assert "PUID: ${PUID:-10001}" in template
     assert "PGID: ${PGID:-10001}" in template
     assert "/var/run/docker.sock" not in template
 
 
-def test_code_server_env_is_preserved_without_returning_values(tmp_path: Path) -> None:
+def test_code_server_env_is_preserved_without_returning_values(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("managed_compose.BACKEND_WORKSPACE_HOST_ROOT", str(tmp_path / "backend-workspaces"))
     password = "existing $owner#pass'word"
 
     def runner(argv, **kwargs):
@@ -138,12 +139,13 @@ def test_code_server_env_is_preserved_without_returning_values(tmp_path: Path) -
     assert "PASSWORD='existing $owner#pass\\'word'" in env_text
     assert "PUID='10001'" in env_text
     assert "PGID='10001'" in env_text
-    assert "DEFAULT_WORKSPACE='/config/sovereign-workspaces'" in env_text
+    assert "DEFAULT_WORKSPACE='/config/sovereign-agent-workspaces'" in env_text
     assert password not in str(result)
     assert runtime._decode_code_server_env_value("'existing $owner#pass\\'word'") == password
 
 
-def test_code_server_env_blocks_unauthenticated_recreation(tmp_path: Path) -> None:
+def test_code_server_env_blocks_unauthenticated_recreation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("managed_compose.BACKEND_WORKSPACE_HOST_ROOT", str(tmp_path / "backend-workspaces"))
     def runner(argv, **kwargs):
         if argv[:3] == ["docker", "inspect", "--format"] and "Config.Env" in argv[3]:
             return subprocess.CompletedProcess(argv, 0, '["PUID=1000","PGID=1000"]', "")
@@ -174,8 +176,8 @@ def test_code_server_transport_requires_loopback_digest_and_exact_volume(tmp_pat
             {
                 "type": "bind",
                 "name": "",
-                "source": "/opt/sovereign-chatgpt-tools/workspaces",
-                "destination": "/config/sovereign-workspaces",
+                "source": "/opt/sovereign-agent-workspaces",
+                "destination": "/config/sovereign-agent-workspaces",
                 "rw": True,
             },
         ],
@@ -842,5 +844,5 @@ def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     assert '"litellm_provider_model_inventory": lambda _values:' in broker
     assert '"openai_project_runtime_evidence": lambda _values:' in broker
     assert '"litellm_model_aliases_activate": lambda values:' in broker
-    assert "def code_server_workspace_open(" in server
-    assert 'broker.call("managed_compose_stack_plan", {"stack_id": "code-server-46bq"}' in server
+    assert "def code_server_workspace_open(" not in server
+    assert "code_server_workspace_descriptor" not in server

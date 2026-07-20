@@ -41,6 +41,7 @@ from .universal_toolchain import (
     validate_migration_for_rollback_preview,
 )
 from .workspace import cleanup_agent_workspace
+from .workspace_editor import WorkspaceEditorAccessError, build_workspace_editor_descriptor
 
 
 ConnectionFactory = Callable[[], Any]
@@ -187,6 +188,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - GET  /api/user/agent/jobs/<job_id>
     - POST /api/user/agent/jobs/<job_id>/cancel
     - POST /api/user/agent/jobs/<job_id>/cleanup
+    - POST /api/user/agent/jobs/<job_id>/editor/open
     - POST /api/user/agent/jobs/<job_id>/tools/file
     - POST /api/user/agent/jobs/<job_id>/tools/git-status
     - POST /api/user/agent/jobs/<job_id>/tools/diff
@@ -430,6 +432,41 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/editor/open", methods=["POST"])
+    @require_session
+    def user_open_sovereign_agent_workspace_editor(job_id: str):
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True) or {}
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            try:
+                descriptor = build_workspace_editor_descriptor(
+                    user_id=user_id,
+                    workspace_id=job.workspace_id or job.job_id,
+                    workspace_root=_workspace_root(),
+                    sdcard_enabled=bool(body.get("sdcardEnabled", False)),
+                    sdcard_marker_sha256=str(body.get("sdcardMarkerSha256") or ""),
+                )
+            except WorkspaceEditorAccessError as exc:
+                reason = str(exc)
+                status_code = 403 if "owner-only" in reason else 409
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "workspaceAuthority": "sovereign-backend",
+                    "error": reason,
+                }), status_code
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "editor": descriptor,
+            })
         finally:
             _close(conn)
 
