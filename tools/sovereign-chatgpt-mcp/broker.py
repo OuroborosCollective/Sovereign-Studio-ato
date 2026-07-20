@@ -275,6 +275,9 @@ class BrokerRuntime:
             "managed_compose_stack_plan": lambda values: self.managed_compose.plan(
                 stack_id=str(values.get("stack_id") or ""),
             ),
+            "remote_memory_collection_live_canary": lambda _values: (
+                self.managed_compose.remote_memory_collection_live_canary()
+            ),
             "litellm_provider_model_inventory": lambda _values: self.managed_compose.litellm_provider_model_inventory(),
             "openai_project_runtime_evidence": lambda _values: self.managed_compose.openai_project_runtime_evidence(),
             "litellm_model_aliases_activate": lambda values: self.managed_compose.activate_litellm_model_aliases(

@@ -14,6 +14,7 @@ MUTATING_ACTIONS = frozenset(
         "deploy_verified_release",
         "rollback_release",
         "deploy_managed_compose_stack",
+        "remote_memory_collection_live_canary",
         "litellm_model_aliases_activate",
         "patchmon_patch_action_apply",
     }

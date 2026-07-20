@@ -26,6 +26,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "milvus-sovereign",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
+    assert is_mutating_action("remote_memory_collection_live_canary") is True
     assert is_mutating_action("litellm_model_aliases_activate") is True
     assert is_mutating_action("litellm_provider_model_inventory") is False
     assert is_mutating_action("openai_project_runtime_evidence") is False
@@ -596,6 +597,85 @@ def test_milvus_network_preflight_blocks_unexpected_member(tmp_path: Path) -> No
     assert result["ok"] is False
     assert result["status"] == "MILVUS_GATEWAY_NETWORK_NOT_ISOLATED"
     assert result["unexpectedMembers"] == ["foreign-service"]
+
+
+def test_remote_memory_collection_canary_verifies_write_retrieval_and_cleanup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    calls: list[tuple[str, str, dict | None]] = []
+    written_item_id = ""
+    marker = ""
+    search_count = 0
+
+    def request(method: str, path: str, payload: dict | None = None) -> dict:
+        nonlocal written_item_id, marker, search_count
+        calls.append((method, path, payload))
+        base = {
+            "ok": True,
+            "status": "MEMORY_GATEWAY_RESPONSE",
+            "httpStatus": 200,
+            "responseBytes": 42,
+            "bodySha256": "a" * 64,
+            "bodyReturned": False,
+        }
+        if path == "/health":
+            return {**base, "body": {"ok": True}}
+        if path == "/api/sovereign-memory/monitoring":
+            return {**base, "body": {"milvusConnected": True}}
+        if path == "/api/sovereign-memory/sync":
+            written_item_id = str(payload["items"][0]["id"])
+            marker = str(payload["items"][0]["text"]).rsplit(" ", 1)[-1]
+            return {**base, "body": {"accepted": True, "imported": 1}}
+        if path == "/api/sovereign-memory/delete-user-data":
+            return {**base, "body": {"deleted": True, "deletedItems": 1}}
+        if path == "/api/sovereign-memory/search":
+            search_count += 1
+            return {
+                **base,
+                "body": {
+                    "items": (
+                        [{"id": written_item_id, "text": marker}]
+                        if search_count == 1
+                        else []
+                    )
+                },
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(runtime, "_memory_gateway_request", request)
+    result = runtime.remote_memory_collection_live_canary()
+
+    assert result["ok"] is True
+    assert result["status"] == "REMOTE_MEMORY_COLLECTION_LIVE_CANARY_VERIFIED"
+    assert result["collectionCreateOrReuseVerified"] is True
+    assert result["writeVerified"] is True
+    assert result["retrievalVerified"] is True
+    assert result["contributorCleanupVerified"] is True
+    assert result["postDeleteAbsenceVerified"] is True
+    assert result["persistentCanaryDataRemaining"] is False
+    assert result["contentReturned"] is False
+    assert result["secretValuesExposed"] is False
+    assert marker not in str(result)
+    assert [path for _method, path, _payload in calls] == [
+        "/health",
+        "/api/sovereign-memory/monitoring",
+        "/api/sovereign-memory/sync",
+        "/api/sovereign-memory/search",
+        "/api/sovereign-memory/delete-user-data",
+        "/api/sovereign-memory/search",
+    ]
+
+
+def test_remote_memory_canary_is_broker_bounded() -> None:
+    root = Path(__file__).resolve().parents[1]
+    server = (root / "server.py").read_text("utf-8")
+    broker = (root / "broker.py").read_text("utf-8")
+
+    assert "def remote_memory_collection_live_canary()" in server
+    assert 'broker.call("remote_memory_collection_live_canary", {}, timeout=240)' in server
+    assert '"remote_memory_collection_live_canary": lambda _values:' in broker
 
 
 def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:

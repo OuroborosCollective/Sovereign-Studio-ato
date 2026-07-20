@@ -626,6 +626,12 @@ def managed_compose_stack_plan(stack_id: str) -> dict[str, Any]:
     return broker.call("managed_compose_stack_plan", {"stack_id": stack_id}, timeout=60)
 
 
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def remote_memory_collection_live_canary() -> dict[str, Any]:
+    """Verify one ephemeral gateway-to-Milvus write, retrieval, cleanup and absence cycle."""
+    return broker.call("remote_memory_collection_live_canary", {}, timeout=240)
+
+
 @mcp.tool(annotations=NETWORK_READ)
 def litellm_provider_model_inventory() -> dict[str, Any]:
     """Return bounded model-id metadata from the protected OpenAI project without returning its key."""

@@ -27,6 +27,10 @@ MILVUS_COMPATIBILITY_IP = "172.16.5.4"
 MILVUS_MIN_CPU_CORES = 4
 MILVUS_MIN_MEMORY_BYTES = 8 * 1024 * 1024 * 1024
 MILVUS_MIN_FREE_DISK_BYTES = 10 * 1024 * 1024 * 1024
+MEMORY_GATEWAY_HOST = "127.0.0.1"
+MEMORY_GATEWAY_PORT = 8088
+MEMORY_GATEWAY_COLLECTION = "sovereign_logic_patterns"
+MEMORY_GATEWAY_MAX_RESPONSE_BYTES = 262_144
 
 
 @dataclass(frozen=True)
@@ -817,6 +821,301 @@ class ManagedComposeRuntime:
             "status": "MILVUS_GATEWAY_PATH_UNAVAILABLE",
             "errorFamily": last_family,
             "responseBodyReturned": False,
+        }
+
+    @staticmethod
+    def _memory_gateway_request(
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        connection: http.client.HTTPConnection | None = None
+        encoded = b""
+        try:
+            if payload is not None:
+                encoded = json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            headers = {"Accept": "application/json"}
+            if payload is not None:
+                headers["Content-Type"] = "application/json"
+            connection = http.client.HTTPConnection(
+                MEMORY_GATEWAY_HOST,
+                MEMORY_GATEWAY_PORT,
+                timeout=20,
+            )
+            connection.request(method, path, body=encoded or None, headers=headers)
+            response = connection.getresponse()
+            body = response.read(MEMORY_GATEWAY_MAX_RESPONSE_BYTES + 1)
+            if len(body) > MEMORY_GATEWAY_MAX_RESPONSE_BYTES:
+                return {
+                    "ok": False,
+                    "status": "MEMORY_GATEWAY_RESPONSE_TOO_LARGE",
+                    "httpStatus": int(response.status),
+                    "responseBytes": len(body),
+                    "bodyReturned": False,
+                }
+            parsed: dict[str, Any] = {}
+            if body:
+                try:
+                    candidate = json.loads(body.decode("utf-8"))
+                    parsed = candidate if isinstance(candidate, dict) else {}
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    parsed = {}
+            return {
+                "ok": 200 <= int(response.status) < 300,
+                "status": "MEMORY_GATEWAY_RESPONSE",
+                "httpStatus": int(response.status),
+                "responseBytes": len(body),
+                "bodySha256": _sha256(body),
+                "body": parsed,
+                "bodyReturned": False,
+            }
+        except (OSError, http.client.HTTPException) as exc:
+            return {
+                "ok": False,
+                "status": "MEMORY_GATEWAY_UNAVAILABLE",
+                "errorFamily": type(exc).__name__,
+                "bodyReturned": False,
+            }
+        finally:
+            if connection is not None:
+                connection.close()
+
+    @staticmethod
+    def _memory_gateway_items(body: dict[str, Any]) -> list[dict[str, Any]]:
+        raw = body.get("items") if isinstance(body.get("items"), list) else body.get("results")
+        if not isinstance(raw, list):
+            return []
+        return [item for item in raw[:100] if isinstance(item, dict)]
+
+    @staticmethod
+    def _memory_gateway_count(value: Any) -> int:
+        try:
+            return max(0, min(int(value or 0), 1_000_000))
+        except (TypeError, ValueError):
+            return 0
+
+    def remote_memory_collection_live_canary(self) -> dict[str, Any]:
+        """Write, retrieve and remove one unique summary through the real gateway/Milvus path."""
+        token = secrets.token_hex(12)
+        marker = f"SOVEREIGN_MEMORY_CANARY_{token}"
+        workspace_id = f"canary-{token[:12]}"
+        contributor_id = f"canary-{token[12:24]}"
+        item_id = f"memory-canary-{token}"
+        now_ms = int(time.time() * 1000)
+        responses: dict[str, dict[str, Any]] = {}
+        may_have_written = False
+
+        sync_payload = {
+            "schemaVersion": 1,
+            "client": "sovereign-studio",
+            "workspaceId": workspace_id,
+            "collectionName": MEMORY_GATEWAY_COLLECTION,
+            "contributorId": contributor_id,
+            "contributionScope": "user-submitted-summary",
+            "createdAt": now_ms,
+            "redaction": "summary-only-no-source-files",
+            "retrievalProfile": "hybrid-dense-sparse-graph",
+            "clientAccessKeyPresent": False,
+            "items": [
+                {
+                    "id": item_id,
+                    "kind": "solution-pattern",
+                    "title": "Sovereign remote memory live canary",
+                    "text": f"Deterministic runtime retrieval marker {marker}",
+                    "tags": ["runtime-canary", "remote-memory"],
+                    "metadata": {
+                        "contributorId": contributor_id,
+                        "contributionScope": "user-submitted-summary",
+                        "canary": True,
+                    },
+                }
+            ],
+        }
+        search_payload = {
+            "schemaVersion": 1,
+            "client": "sovereign-studio",
+            "redaction": "summary-only-no-source-files",
+            "workspaceId": workspace_id,
+            "collectionName": MEMORY_GATEWAY_COLLECTION,
+            "contributorId": contributor_id,
+            "includeSharedPatterns": True,
+            "query": marker,
+            "limit": 8,
+        }
+        delete_payload = {
+            "schemaVersion": 1,
+            "client": "sovereign-studio",
+            "redaction": "summary-only-no-source-files",
+            "workspaceId": workspace_id,
+            "collectionName": MEMORY_GATEWAY_COLLECTION,
+            "contributorId": contributor_id,
+            "requestedAt": now_ms,
+            "confirmDelete": True,
+            "confirmationText": "DELETE_REMOTE_MEMORY",
+            "scope": "contributor-submissions",
+            "preserveSharedPatterns": True,
+        }
+
+        health = self._memory_gateway_request("GET", "/health")
+        responses["health"] = health
+        if not health.get("ok"):
+            return {
+                "ok": False,
+                "status": "REMOTE_MEMORY_CANARY_BLOCKED",
+                "failureFamily": "gateway_health",
+                "responses": self._memory_gateway_response_evidence(responses),
+                "persistentCanaryDataRemaining": False,
+                "contentReturned": False,
+                "secretValuesExposed": False,
+            }
+
+        monitoring = self._memory_gateway_request("GET", "/api/sovereign-memory/monitoring")
+        responses["monitoring"] = monitoring
+        monitoring_body = monitoring.get("body") if isinstance(monitoring.get("body"), dict) else {}
+        monitoring_data = (
+            monitoring_body.get("monitoring")
+            if isinstance(monitoring_body.get("monitoring"), dict)
+            else monitoring_body
+        )
+        milvus_connected = bool(monitoring_data.get("milvusConnected"))
+        if not monitoring.get("ok") or not milvus_connected:
+            return {
+                "ok": False,
+                "status": "REMOTE_MEMORY_CANARY_BLOCKED",
+                "failureFamily": "gateway_milvus_monitoring",
+                "milvusConnected": milvus_connected,
+                "responses": self._memory_gateway_response_evidence(responses),
+                "persistentCanaryDataRemaining": False,
+                "contentReturned": False,
+                "secretValuesExposed": False,
+            }
+
+        sync = self._memory_gateway_request("POST", "/api/sovereign-memory/sync", sync_payload)
+        responses["sync"] = sync
+        may_have_written = bool(sync.get("ok"))
+        sync_body = sync.get("body") if isinstance(sync.get("body"), dict) else {}
+        write_verified = bool(sync.get("ok")) and bool(sync_body.get("accepted", sync_body.get("success")))
+        imported = self._memory_gateway_count(sync_body.get("imported"))
+        write_verified = write_verified and imported >= 1
+
+        retrieval_verified = False
+        matching_before_delete = 0
+        if write_verified:
+            search = self._memory_gateway_request("POST", "/api/sovereign-memory/search", search_payload)
+            responses["search"] = search
+            items = self._memory_gateway_items(
+                search.get("body") if isinstance(search.get("body"), dict) else {}
+            )
+            matching_before_delete = sum(
+                1
+                for item in items
+                if str(item.get("id") or "") == item_id
+                or marker in str(item.get("title") or "")
+                or marker in str(item.get("text") or "")
+            )
+            retrieval_verified = bool(search.get("ok")) and matching_before_delete >= 1
+
+        cleanup_verified = False
+        post_delete_absence_verified = False
+        deleted_items = 0
+        if may_have_written:
+            delete = self._memory_gateway_request(
+                "POST",
+                "/api/sovereign-memory/delete-user-data",
+                delete_payload,
+            )
+            responses["delete"] = delete
+            delete_body = delete.get("body") if isinstance(delete.get("body"), dict) else {}
+            deleted_items = self._memory_gateway_count(delete_body.get("deletedItems"))
+            cleanup_verified = bool(delete.get("ok")) and bool(
+                delete_body.get("deleted", delete_body.get("success"))
+            ) and deleted_items >= 1
+            post_delete_search = self._memory_gateway_request(
+                "POST",
+                "/api/sovereign-memory/search",
+                search_payload,
+            )
+            responses["postDeleteSearch"] = post_delete_search
+            post_items = self._memory_gateway_items(
+                post_delete_search.get("body")
+                if isinstance(post_delete_search.get("body"), dict)
+                else {}
+            )
+            matching_after_delete = sum(
+                1
+                for item in post_items
+                if str(item.get("id") or "") == item_id
+                or marker in str(item.get("title") or "")
+                or marker in str(item.get("text") or "")
+            )
+            post_delete_absence_verified = bool(post_delete_search.get("ok")) and matching_after_delete == 0
+
+        ok = all(
+            (
+                write_verified,
+                retrieval_verified,
+                cleanup_verified,
+                post_delete_absence_verified,
+            )
+        )
+        if not write_verified:
+            failure_family = "collection_write"
+        elif not retrieval_verified:
+            failure_family = "collection_retrieval"
+        elif not cleanup_verified:
+            failure_family = "contributor_cleanup"
+        elif not post_delete_absence_verified:
+            failure_family = "post_delete_absence"
+        else:
+            failure_family = None
+        return {
+            "ok": ok,
+            "status": (
+                "REMOTE_MEMORY_COLLECTION_LIVE_CANARY_VERIFIED"
+                if ok
+                else "REMOTE_MEMORY_COLLECTION_LIVE_CANARY_FAILED"
+            ),
+            "failureFamily": failure_family,
+            "gatewayHealthVerified": bool(health.get("ok")),
+            "milvusConnected": milvus_connected,
+            "collection": MEMORY_GATEWAY_COLLECTION,
+            "collectionCreateOrReuseVerified": write_verified,
+            "writeVerified": write_verified,
+            "retrievalVerified": retrieval_verified,
+            "matchingItemsBeforeDelete": matching_before_delete,
+            "contributorCleanupVerified": cleanup_verified,
+            "deletedItems": deleted_items,
+            "postDeleteAbsenceVerified": post_delete_absence_verified,
+            "persistentCanaryDataRemaining": may_have_written and not (
+                cleanup_verified and post_delete_absence_verified
+            ),
+            "responses": self._memory_gateway_response_evidence(responses),
+            "canaryIdentitySha256": _sha256(
+                f"{workspace_id}:{contributor_id}:{item_id}".encode("utf-8")
+            ),
+            "contentReturned": False,
+            "secretValuesExposed": False,
+        }
+
+    @staticmethod
+    def _memory_gateway_response_evidence(
+        responses: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        return {
+            name: {
+                "ok": bool(response.get("ok")),
+                "status": str(response.get("status") or ""),
+                "httpStatus": response.get("httpStatus"),
+                "responseBytes": response.get("responseBytes"),
+                "bodySha256": str(response.get("bodySha256") or ""),
+                "errorFamily": str(response.get("errorFamily") or ""),
+                "bodyReturned": False,
+            }
+            for name, response in responses.items()
         }
 
     @staticmethod
