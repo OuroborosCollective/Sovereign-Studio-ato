@@ -3,35 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
-import types
 
-flask_stub = types.ModuleType("flask")
-flask_stub.jsonify = lambda payload: payload
-flask_stub.request = types.SimpleNamespace(headers={}, args={}, get_data=lambda: b"", get_json=lambda: {})
-flask_stub.Response = object
-sys.modules.setdefault("flask", flask_stub)
+import pytest
 
-jwt_stub = types.ModuleType("jwt")
-jwt_stub.encode = lambda *_args, **_kwargs: "stub-jwt"
-sys.modules.setdefault("jwt", jwt_stub)
+pytest.importorskip("flask")
+pytest.importorskip("jwt")
+from flask import Flask
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
 import github_app
-
-
-class FakeApp:
-    def __init__(self):
-        self.rules: set[str] = set()
-        self.handlers: dict[str, object] = {}
-
-    def route(self, rule, **_kwargs):
-        def decorator(function):
-            self.rules.add(rule)
-            self.handlers[rule] = function
-            return function
-        return decorator
 
 
 class Cursor:
@@ -82,41 +64,40 @@ def test_app_injects_real_pooled_connection_factory() -> None:
     assert "GitHub App routes registration failed" not in source
 
 
-def test_routes_register_without_database_access() -> None:
-    app = FakeApp()
-
-    def require_admin(function):
-        return function
-
-    github_app.register_github_app_routes(
-        app,
-        require_admin=require_admin,
-        get_connection=lambda: Connection(None),
-    )
-
-    assert "/api/webhooks/github-app" in app.rules
-    assert "/api/github-app/installations" in app.rules
-    assert "/api/github-app/installations/<int:installation_id>/credits" in app.rules
-
-
-def test_callback_never_claims_unperformed_oauth_exchange() -> None:
-    app = FakeApp()
+def _registered_app() -> Flask:
+    app = Flask(__name__)
     github_app.register_github_app_routes(
         app,
         require_admin=lambda function: function,
         get_connection=lambda: Connection(None),
     )
-    callback = app.handlers["/api/auth/github-app/callback"]
+    return app
 
-    github_app.request.args = {"code": "unexchanged-code"}
-    payload, status = callback()
-    assert status == 501
+
+def test_routes_register_without_database_access() -> None:
+    app = _registered_app()
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+
+    assert "/api/webhooks/github-app" in rules
+    assert "/api/github-app/installations" in rules
+    assert "/api/github-app/installations/<int:installation_id>/credits" in rules
+
+
+def test_callback_never_claims_unperformed_oauth_exchange() -> None:
+    client = _registered_app().test_client()
+
+    response = client.get("/api/auth/github-app/callback?code=unexchanged-code")
+    payload = response.get_json()
+    assert response.status_code == 501
     assert payload["ok"] is False
     assert payload["blocker"] == "github_app_oauth_exchange_unavailable"
     assert payload["authenticationEstablished"] is False
 
-    github_app.request.args = {"setup_action": "install", "installation_id": "42"}
-    payload = callback()
+    response = client.get(
+        "/api/auth/github-app/callback?setup_action=install&installation_id=42"
+    )
+    payload = response.get_json()
+    assert response.status_code == 200
     assert payload["status"] == "installation_redirect_received"
     assert payload["installation_id"] == 42
     assert payload["authenticationEstablished"] is False
@@ -264,13 +245,10 @@ def test_suspension_is_persisted_and_blocks_credit_use() -> None:
 
 
 def test_configured_status_requires_all_secret_families() -> None:
-    app = FakeApp()
-    github_app.register_github_app_routes(
-        app,
-        require_admin=lambda function: function,
-        get_connection=lambda: Connection(None),
-    )
-    payload = app.handlers["/api/github-app/configured"]()
+    response = _registered_app().test_client().get("/api/github-app/configured")
+    payload = response.get_json()
+
+    assert response.status_code == 200
     assert payload["configured"] is False
     assert payload["apiConfigured"] is False
     assert payload["oauthConfigured"] is False
