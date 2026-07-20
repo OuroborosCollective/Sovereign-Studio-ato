@@ -47,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onChange={(e) => setRepoUrl(e.target.value)}
           placeholder="https://github.com/user/repo"
           className="w-full p-2 text-[10px] border border-indigo-200 rounded focus:outline-none focus:border-indigo-500 bg-white shadow-inner"
+          aria-label="GitHub Repository URL"
         />
         <div className="flex items-center justify-between mt-2">
           <p className="text-[9px] text-indigo-700 flex-1">PAT Token optional in Einstellungen</p>
@@ -79,6 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onChange={(event) => setBlueprint(event.target.value)}
           rows={4}
           className="w-full p-2 text-[11px] border border-stone-300 rounded focus:outline-none focus:border-indigo-500 resize-none shadow-inner"
+          aria-label="Idee oder Auftrag"
         />
         <div className="flex gap-2 mt-2">
           <button
@@ -115,7 +117,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="p-2 bg-indigo-50/50 border-b border-stone-200 flex items-center gap-2 shrink-0">
-        <input placeholder="Datei suchen" className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner" />
+        <input
+          placeholder="Datei suchen"
+          className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner"
+          aria-label="Datei suchen"
+        />
         <button onClick={() => log('Dateisuche vorbereitet.')} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold uppercase shrink-0">Suche</button>
       </div>
 
@@ -124,6 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             key={file.path}
             onClick={() => { setSelectedFile(file); setWorkView('editor'); log(`Datei gewaehlt: ${file.path}`); }}
+            title={file.path}
             className={`w-full p-3 border-b border-stone-100 text-[13px] flex items-center gap-2 text-left hover:bg-stone-50 ${selectedFile.path === file.path ? 'bg-teal-50 text-teal-700 border-l-4 border-l-teal-600 font-semibold' : 'text-stone-600'}`}
           >
             <span>{file.icon}</span>
