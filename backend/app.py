@@ -33,7 +33,7 @@ from security_oauth import (
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request, make_response, g
+from flask import Flask, jsonify, request, make_response, redirect, g
 from flask_cors import CORS
 import requests
 
@@ -6116,10 +6116,11 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 @app.route("/admin")
 @app.route("/admin/")
 def admin_panel():
-    resp = make_response(_ADMIN_PANEL_HTML)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
+    """Expose the single React admin truth; the backend no longer renders a second admin UI."""
+    target = os.getenv("SOVEREIGN_ADMIN_UI_URL", "https://chat.arelorian.de/admin").strip()
+    response = redirect(target, code=302)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 

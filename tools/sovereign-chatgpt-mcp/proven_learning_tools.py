@@ -129,9 +129,9 @@ def proven_learning_owner_approval_request(
 
 
 def proven_learning_pattern_apply(
-    request_id: str,
-    confirmation_sha256: str,
-    record: dict[str, Any],
+    request_id: str = "",
+    confirmation_sha256: str = "",
+    record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Use this after Owner approval to idempotently persist one exact pattern and verify pgvector readback."""
     if _OWNER_INPUT is None:

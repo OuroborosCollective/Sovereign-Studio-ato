@@ -246,8 +246,8 @@ def plan_proven_learning(record: Any) -> dict[str, Any]:
         "record": normalized,
         "databaseAccessed": False,
         "embeddingGenerated": False,
-        "ownerApprovalRequired": True,
-        "protectedValueTransport": "authenticated_owner_ui_only",
+        "ownerApprovalRequired": "unless-standing-owner-policy-active",
+        "protectedValueTransport": "authenticated_owner_ui_only_for_one_time_fallback",
     }
 
 
@@ -286,6 +286,36 @@ def _remove_approval_hash() -> None:
         path.unlink(missing_ok=True)
     except OSError as exc:
         raise ProvenLearningBlocked("Stored pattern is safe, but the one-time confirmation could not be removed", http_status=500, code="OWNER_CONFIRMATION_CLEANUP_FAILED") from exc
+
+
+def _standing_learning_policy(conn: Any, *, confidence: float) -> dict[str, Any] | None:
+    """Return one active, persisted Owner directive that still satisfies all safety gates."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT owner_admin_id::text AS owner_admin_id,
+                      auto_accept_proven_patterns,
+                      require_evidence,
+                      reject_duplicates,
+                      minimum_confidence::float AS minimum_confidence,
+                      directive_source
+               FROM sovereign_owner_learning_policies
+               WHERE auto_accept_proven_patterns=TRUE
+                 AND revoked_at IS NULL
+               ORDER BY enabled_at ASC NULLS LAST, updated_at ASC
+               LIMIT 1"""
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    policy = dict(row)
+    if not policy.get("owner_admin_id") or not policy.get("require_evidence") or not policy.get("reject_duplicates"):
+        return None
+    if float(confidence) < float(policy.get("minimum_confidence") or 0.0):
+        raise ProvenLearningBlocked(
+            "Pattern confidence is below the persisted Owner policy threshold",
+            code="LEARNING_CONFIDENCE_BELOW_POLICY",
+        )
+    return policy
 
 
 def _pattern_readback(conn: Any, *, user_id: str, digest: str) -> dict[str, Any] | None:
@@ -344,38 +374,47 @@ def _learning_result(normalized: dict[str, Any], digest: str) -> PatternLearning
 def apply_proven_learning(
     conn: Any,
     *,
-    request_id: str,
-    confirmation_sha256: str,
-    record: Any,
+    request_id: str = "",
+    confirmation_sha256: str = "",
+    record: Any = None,
 ) -> dict[str, Any]:
-    try:
-        selected_request_id = str(uuid.UUID(str(request_id or "").strip()))
-    except ValueError as exc:
-        raise ValueError("request_id is invalid") from exc
     plan = plan_proven_learning(record)
     digest = plan["confirmationSha256"]
     supplied_digest = _clean_text(confirmation_sha256, 80).casefold()
     if not _HEX_64.fullmatch(supplied_digest) or not hmac.compare_digest(digest, supplied_digest):
         raise ProvenLearningBlocked("Apply payload does not match the approved plan", code="PLAN_HASH_MISMATCH")
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT id::text, target_id, status, owner_admin_id::text AS owner_admin_id,
-                      result_code, resolved_at
-               FROM owner_input_requests
-               WHERE id=%s::uuid
-               LIMIT 1""",
-            (selected_request_id,),
-        )
-        row = cur.fetchone()
-    if not row:
-        raise ProvenLearningBlocked("Owner approval request was not found", http_status=404, code="OWNER_REQUEST_NOT_FOUND")
-    approval = dict(row)
-    user_id = str(approval.get("owner_admin_id") or "")
-    if approval.get("target_id") != _APPROVAL_TARGET or not user_id:
-        raise ProvenLearningBlocked("Owner approval is not bound to this learning plan", code="OWNER_REQUEST_MISMATCH")
+    standing_policy = _standing_learning_policy(
+        conn,
+        confidence=float(plan["record"].get("confidence") or 0.0),
+    )
+    selected_request_id = ""
+    approval: dict[str, Any] = {}
+    if standing_policy:
+        user_id = str(standing_policy["owner_admin_id"])
+    else:
+        try:
+            selected_request_id = str(uuid.UUID(str(request_id or "").strip()))
+        except ValueError as exc:
+            raise ValueError("request_id is invalid and no standing Owner policy is active") from exc
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id::text, target_id, status, owner_admin_id::text AS owner_admin_id,
+                          result_code, resolved_at
+                   FROM owner_input_requests
+                   WHERE id=%s::uuid
+                   LIMIT 1""",
+                (selected_request_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            raise ProvenLearningBlocked("Owner approval request was not found", http_status=404, code="OWNER_REQUEST_NOT_FOUND")
+        approval = dict(row)
+        user_id = str(approval.get("owner_admin_id") or "")
+        if approval.get("target_id") != _APPROVAL_TARGET or not user_id:
+            raise ProvenLearningBlocked("Owner approval is not bound to this learning plan", code="OWNER_REQUEST_MISMATCH")
 
-    if approval.get("result_code") == "proven_learning_applied":
+    if not standing_policy and approval.get("result_code") == "proven_learning_applied":
         existing = _pattern_readback(conn, user_id=user_id, digest=digest)
         if not existing or not existing["vectorStored"]:
             raise ProvenLearningBlocked("Applied approval has no canonical vector readback", http_status=500, code="PERSISTENCE_READBACK_FAILED")
@@ -392,23 +431,24 @@ def apply_proven_learning(
             "ownerApprovalConsumed": True,
         }
 
-    if approval.get("status") != "consumed" or approval.get("result_code") != "target_updated":
-        raise ProvenLearningBlocked("Fresh authenticated owner approval has not been completed", code="OWNER_CONFIRMATION_REQUIRED")
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT EXISTS (
-                   SELECT 1 FROM owner_input_requests
-                   WHERE id=%s::uuid
-                     AND resolved_at >= NOW() - INTERVAL '15 minutes'
-               ) AS fresh""",
-            (selected_request_id,),
-        )
-        freshness = cur.fetchone()
-    if not freshness or not bool(freshness["fresh"]):
-        raise ProvenLearningBlocked("Owner approval is no longer fresh", code="OWNER_CONFIRMATION_EXPIRED")
-    approved_digest = _read_approval_hash()
-    if not hmac.compare_digest(approved_digest, digest):
-        raise ProvenLearningBlocked("Owner confirmation does not match the exact plan", code="OWNER_CONFIRMATION_MISMATCH")
+    if not standing_policy:
+        if approval.get("status") != "consumed" or approval.get("result_code") != "target_updated":
+            raise ProvenLearningBlocked("Fresh authenticated owner approval has not been completed", code="OWNER_CONFIRMATION_REQUIRED")
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT EXISTS (
+                       SELECT 1 FROM owner_input_requests
+                       WHERE id=%s::uuid
+                         AND resolved_at >= NOW() - INTERVAL '15 minutes'
+                   ) AS fresh""",
+                (selected_request_id,),
+            )
+            freshness = cur.fetchone()
+        if not freshness or not bool(freshness["fresh"]):
+            raise ProvenLearningBlocked("Owner approval is no longer fresh", code="OWNER_CONFIRMATION_EXPIRED")
+        approved_digest = _read_approval_hash()
+        if not hmac.compare_digest(approved_digest, digest):
+            raise ProvenLearningBlocked("Owner confirmation does not match the exact plan", code="OWNER_CONFIRMATION_MISMATCH")
 
     result = _learning_result(plan["record"], digest)
     candidate_id, created = persist_pattern_learning_candidate_once(
@@ -436,21 +476,23 @@ def apply_proven_learning(
     if not readback or not readback["vectorStored"]:
         raise ProvenLearningBlocked("Canonical pattern/vector readback failed", http_status=500, code="PERSISTENCE_READBACK_FAILED")
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE owner_input_requests
-               SET result_code='proven_learning_applied', consumed_at=COALESCE(consumed_at, NOW())
-               WHERE id=%s::uuid
-                 AND target_id=%s
-                 AND status='consumed'
-                 AND result_code='target_updated'""",
-            (selected_request_id, _APPROVAL_TARGET),
-        )
-        if cur.rowcount != 1:
-            conn.rollback()
-            raise ProvenLearningBlocked("Owner approval lifecycle changed during apply", code="OWNER_REQUEST_RACE")
+    if not standing_policy:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE owner_input_requests
+                   SET result_code='proven_learning_applied', consumed_at=COALESCE(consumed_at, NOW())
+                   WHERE id=%s::uuid
+                     AND target_id=%s
+                     AND status='consumed'
+                     AND result_code='target_updated'""",
+                (selected_request_id, _APPROVAL_TARGET),
+            )
+            if cur.rowcount != 1:
+                conn.rollback()
+                raise ProvenLearningBlocked("Owner approval lifecycle changed during apply", code="OWNER_REQUEST_RACE")
     conn.commit()
-    _remove_approval_hash()
+    if not standing_policy:
+        _remove_approval_hash()
     return {
         "ok": True,
         "status": "PROVEN_LEARNING_PATTERN_STORED",
@@ -462,7 +504,9 @@ def apply_proven_learning(
         "embeddingModel": vector.get("embeddingModel"),
         "embeddingProvider": vector.get("provider"),
         "readbackVerified": True,
-        "ownerApprovalConsumed": True,
+        "ownerApprovalConsumed": not bool(standing_policy),
+        "standingOwnerPolicyUsed": bool(standing_policy),
+        "standingOwnerPolicySource": standing_policy.get("directive_source") if standing_policy else None,
     }
 
 
