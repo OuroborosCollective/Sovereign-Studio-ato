@@ -118,6 +118,7 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     billing = (BACKEND / "agent_runtime" / "cognitive_usage_billing.py").read_text("utf-8")
     provider = (BACKEND / "llm_provider_runtime.py").read_text("utf-8")
     app = (BACKEND / "app.py").read_text("utf-8")
+    ui = (BACKEND / "enterprise_admin_ui.py").read_text("utf-8")
     migration = (BACKEND / "migrations" / "022_llm_cost_floor_and_funded_credits.sql").read_text("utf-8")
 
     assert 'FREE_CATEGORY: Final[str] = "free"' in policy
@@ -152,18 +153,18 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "free_route_nonzero_or_unreported_cost" in provider
 
     assert "provider_funded_delta=-amount" in app
-    assert "providerBillingCategory" in app
-    assert "providerFundingMode" in app
-    assert "providerMarkupMultiplier" in app
-    assert "billingCategory:document.getElementById('providerBillingCategory').value" in app
-    assert "fundingMode:document.getElementById('providerFundingMode').value" in app
-    assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||0)" in app
-    assert "refreshProviderOwnerInput" in app
-    assert "providerCredentialLabel" in app
-    assert "lastErrorCode" in app
-    assert "billingCategory" in app
-    assert "markupMultiplier" in app
-    assert "llm_route_attempts" in app
-    assert "llm_route_revolver_state" in app
-    assert "manual_llm_price_editing_disabled" in app
-    assert "free_route_user_charge_nonzero" in app
+    assert "providerBillingCategory" in ui
+    assert "providerFundingMode" in ui
+    assert "providerMarkupMultiplier" in ui
+    assert "billingCategory:document.getElementById('providerBillingCategory').value" in ui
+    assert "fundingMode:document.getElementById('providerFundingMode').value" in ui
+    assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||0)" in ui
+    assert "refreshProviderOwnerInput" in ui
+    assert "providerCredentialLabel" in ui
+    assert "lastErrorCode" in ui
+    assert "billingCategory" in ui
+    assert "markupMultiplier" in ui
+    assert "llm_route_attempts" in ui
+    assert "llm_route_revolver_state" in ui
+    assert "manual_llm_price_editing_disabled" in ui
+    assert "free_route_user_charge_nonzero" in ui

@@ -168,12 +168,13 @@ def test_runtime_summary_requires_embeddings_and_link_integrity() -> None:
 
 
 def test_admin_ui_exposes_import_and_vector_truth() -> None:
-    app = (BACKEND / "app.py").read_text("utf-8")
-    assert "Import- und Vectorstatus" in app
-    assert "reconciledStaleImports" in app
-    assert "Fehlende Embeddings" in app
-    assert "Verwaiste Links" in app
-    assert "unterbrochener Import wurde fail-closed" in app
+    ui = (BACKEND / "enterprise_admin_ui.py").read_text("utf-8")
+    assert "Import- und Vectorstatus" in ui
+    assert "reconciledStaleImports" in ui
+    assert "Fehlende Embeddings" in ui
+    assert "Verwaiste Links" in ui
+    assert "unterbrochener Import wurde fail-closed" in ui
+    assert "boundedFetch('/api/admin/knowledge/sources')" in ui
 
 
 def test_github_public_repo_ignores_rejected_private_access(monkeypatch) -> None:

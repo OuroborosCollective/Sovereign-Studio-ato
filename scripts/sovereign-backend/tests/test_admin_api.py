@@ -306,6 +306,27 @@ class TestHealthcheckArchitecture(unittest.TestCase):
         self.assertNotIn("openhands_api_key.txt", content)
 
 
+class TestAdminRuntimeTruth(unittest.TestCase):
+    """Tests ensuring /admin serves only the enterprise UI truth."""
+
+    def test_legacy_admin_panel_html_literal_absent(self):
+        """The historical _ADMIN_PANEL_HTML literal must not exist."""
+        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
+        with open(app_path) as f:
+            content = f.read()
+        self.assertNotIn("_ADMIN_PANEL_HTML = r\"\"\"", content)
+        self.assertNotIn("_ADMIN_PANEL_HTML = ENTERPRISE_ADMIN_HTML", content)
+
+    def test_admin_route_uses_enterprise_html_only(self):
+        """/admin must return ENTERPRISE_ADMIN_HTML and not refer to legacy sources."""
+        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
+        with open(app_path) as f:
+            content = f.read()
+        self.assertIn("ENTERPRISE_ADMIN_HTML", content)
+        self.assertIn("def admin_panel", content)
+        self.assertNotIn("_ADMIN_PANEL_HTML", content)
+
+
 class TestAppRunPlacement(unittest.TestCase):
     """Tests for app.run placement at end of file."""
     
