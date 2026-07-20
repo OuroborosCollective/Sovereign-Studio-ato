@@ -165,6 +165,37 @@ describe('Palette Accessibility Enhancements', () => {
       expect(settingsButton).toHaveAttribute('aria-label', 'Einstellungen');
       expect(settingsButton).toHaveAttribute('title', 'Einstellungen');
     });
+
+    it('Input fields and file buttons have correct accessibility and hover attributes', () => {
+      const sidebarProps = {
+        settings: { repoMode: 'single', packageManager: 'npm', linter: 'eslint', maxFixLoops: 3, specialization: '' },
+        buildProduct: vi.fn(),
+        blueprint: 'Test blueprint text',
+        setBlueprint: vi.fn(),
+        addCard: vi.fn(),
+        log: vi.fn(),
+        selectedFile: { path: 'src/App.tsx', icon: 'TS' },
+        setSelectedFile: vi.fn(),
+        setWorkView: vi.fn(),
+        repoUrl: 'https://github.com/test/repo',
+        setRepoUrl: vi.fn(),
+        setShowSettings: vi.fn(),
+      };
+      render(<Sidebar {...sidebarProps as any} />);
+
+      const repoInput = screen.getByLabelText('GitHub Repository URL');
+      expect(repoInput).toHaveValue('https://github.com/test/repo');
+
+      const blueprintTextarea = screen.getByLabelText('Idee oder Auftrag');
+      expect(blueprintTextarea).toHaveValue('Test blueprint text');
+
+      const searchInput = screen.getByLabelText('Datei suchen');
+      expect(searchInput).toBeInTheDocument();
+
+      const fileButtons = screen.getAllByRole('button');
+      const appFileButton = fileButtons.find(btn => btn.getAttribute('title') === 'src/App.tsx');
+      expect(appFileButton).toBeDefined();
+    });
   });
 
   describe('AgentQuestionCard Enhancements', () => {
