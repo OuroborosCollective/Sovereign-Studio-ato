@@ -84,6 +84,11 @@ def test_android_admin_surface_uses_real_api_and_large_touch_contracts() -> None
     assert "window.confirm(" in panel
     assert "activeModelIds" in panel
     assert "Runtime Control Center" in panel
+    assert "pgvector-Wissensvektoren" in panel
+    assert "Milvus-Projektion" in panel
+    assert "milvusProjected" in client
+    assert "milvusIndexed" in client
+    assert "milvusPending" in client
     assert "min-height: 48px" in css
     assert "@media (min-width: 620px)" in css
     assert "@media (min-width: 980px)" in css

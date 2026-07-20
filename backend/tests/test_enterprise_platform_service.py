@@ -48,6 +48,40 @@ class QueryDouble:
                 "database": "sovereign",
                 "migration_id": 25,
                 "evidence_table": True,
+                "revolver_attempts": True,
+                "revolver_state": True,
+                "package_uniqueness": True,
+                "transaction_receipts": True,
+            }
+        if "platform:probe:milvus:tables" in statement:
+            return {"outbox_table": True, "candidate_table": True}
+        if "platform:probe:milvus:counts" in statement:
+            return {
+                "total": 7,
+                "indexed": 4,
+                "pending": 2,
+                "syncing": 1,
+                "blocked": 0,
+                "knowledge_blocks": 6,
+                "agent_patterns": 1,
+            }
+        if "platform:statistics" in statement:
+            return {
+                "users_total": 3,
+                "users_banned": 0,
+                "users_active_30d": 2,
+                "agent_runs_total": 5,
+                "agent_runs_completed": 4,
+                "agent_runs_blocked": 1,
+                "knowledge_sources": 9,
+                "knowledge_vectors": 400,
+                "active_llm_routes": 2,
+                "llm_requests_24h": 11,
+                "llm_tokens_24h": 1200,
+                "provider_cost_usd_24h": 0.25,
+                "evidence_total": 6,
+                "latest_evidence_at": "2026-07-20T12:00:00Z",
+                "latest_migration": 27,
             }
         if "platform:evidence:insert" in statement:
             assert write is True
@@ -201,5 +235,32 @@ def test_litellm_probe_exposes_only_active_aliases_and_no_credentials() -> None:
     serialized = str(result).lower()
     assert "api_key" not in serialized
     assert "secret_access_key" not in serialized
+
+
+def test_milvus_projection_counts_are_visible_without_claiming_direct_readback() -> None:
+    query = QueryDouble()
+    subject = service(query)
+
+    probe = subject._milvus_probe()
+    stats = subject.statistics()
+
+    assert probe["status"] == "defined_not_run"
+    assert probe["blocker"] == "milvus_projection_pending"
+    assert probe["evidence"]["indexed"] == 4
+    assert probe["evidence"]["pending"] == 2
+    assert probe["evidence"]["syncing"] == 1
+    assert probe["evidence"]["directCollectionReadback"] is False
+    assert stats["knowledge"] == {
+        "sources": 9,
+        "vectors": 400,
+        "pgvectorVectors": 400,
+        "milvusProjected": 7,
+        "milvusIndexed": 4,
+        "milvusPending": 2,
+        "milvusSyncing": 1,
+        "milvusBlocked": 0,
+        "milvusKnowledgeBlocks": 6,
+        "milvusAgentPatterns": 1,
+    }
 
 

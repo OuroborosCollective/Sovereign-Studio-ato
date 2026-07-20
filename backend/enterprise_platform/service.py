@@ -355,37 +355,98 @@ class EnterprisePlatformService:
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),
         )
 
+    def _milvus_projection_counts(self) -> dict[str, Any]:
+        table_state = self._query(
+            """/* platform:probe:milvus:tables */
+               SELECT to_regclass('public.vector_index_outbox') IS NOT NULL AS outbox_table,
+                      to_regclass('public.knowledge_learning_candidates') IS NOT NULL AS candidate_table""",
+            one=True,
+        ) or {}
+        outbox_present = bool(table_state.get("outbox_table"))
+        candidate_present = bool(table_state.get("candidate_table"))
+        if not outbox_present:
+            return {
+                "outboxTablePresent": False,
+                "candidateTablePresent": candidate_present,
+                "total": 0,
+                "indexed": 0,
+                "pending": 0,
+                "syncing": 0,
+                "blocked": 0,
+                "knowledgeBlocks": 0,
+                "agentPatterns": 0,
+            }
+        row = self._query(
+            """/* platform:probe:milvus:counts */
+               SELECT COUNT(*) AS total,
+                      COUNT(*) FILTER (WHERE status='indexed') AS indexed,
+                      COUNT(*) FILTER (WHERE status='pending') AS pending,
+                      COUNT(*) FILTER (WHERE status='syncing') AS syncing,
+                      COUNT(*) FILTER (WHERE status='blocked') AS blocked,
+                      COUNT(*) FILTER (WHERE entity_type='knowledge_block') AS knowledge_blocks,
+                      COUNT(*) FILTER (WHERE entity_type='agent_pattern') AS agent_patterns
+               FROM vector_index_outbox
+               WHERE target_index='milvus'""",
+            one=True,
+        ) or {}
+        return {
+            "outboxTablePresent": True,
+            "candidateTablePresent": candidate_present,
+            "total": bounded_int(row.get("total")),
+            "indexed": bounded_int(row.get("indexed")),
+            "pending": bounded_int(row.get("pending")),
+            "syncing": bounded_int(row.get("syncing")),
+            "blocked": bounded_int(row.get("blocked")),
+            "knowledgeBlocks": bounded_int(row.get("knowledge_blocks")),
+            "agentPatterns": bounded_int(row.get("agent_patterns")),
+        }
+
     def _milvus_probe(self) -> dict[str, Any]:
         started = time.monotonic()
         try:
-            row = self._query(
-                """/* platform:probe:milvus */
-                   SELECT to_regclass('public.vector_index_outbox') IS NOT NULL AS outbox_table,
-                          to_regclass('public.knowledge_learning_candidates') IS NOT NULL AS candidate_table""",
-                one=True,
-            )
-            outbox_present = bool(row and row.get("outbox_table"))
-            candidate_present = bool(row and row.get("candidate_table"))
+            counts = self._milvus_projection_counts()
         except Exception:
-            outbox_present = False
-            candidate_present = False
-        status = STATUS_DEFINED_NOT_RUN if outbox_present and candidate_present else STATUS_BLOCKED
+            counts = {
+                "outboxTablePresent": False,
+                "candidateTablePresent": False,
+                "total": 0,
+                "indexed": 0,
+                "pending": 0,
+                "syncing": 0,
+                "blocked": 0,
+                "knowledgeBlocks": 0,
+                "agentPatterns": 0,
+            }
+        outbox_present = bool(counts["outboxTablePresent"])
+        candidate_present = bool(counts["candidateTablePresent"])
+        blocked = bounded_int(counts.get("blocked"))
+        pending = bounded_int(counts.get("pending"))
+        syncing = bounded_int(counts.get("syncing"))
+        if not outbox_present or not candidate_present:
+            status = STATUS_BLOCKED
+            blocker = "milvus_outbox_migration_missing"
+        elif blocked > 0:
+            status = STATUS_DEGRADED
+            blocker = "milvus_projection_blocked"
+        else:
+            status = STATUS_DEFINED_NOT_RUN
+            blocker = (
+                "milvus_projection_pending"
+                if pending > 0 or syncing > 0
+                else "milvus_collection_readback_not_probed"
+            )
         return self._integration(
             integration_id="milvus",
             label="Milvus Projection",
             status=status,
             required=False,
-            boundary="outbox projection only; pgvector remains canonical",
+            boundary="outbox projection receipts; pgvector remains canonical",
             evidence={
-                "outboxTablePresent": outbox_present,
-                "candidateTablePresent": candidate_present,
+                **counts,
                 "directDatabaseAccess": False,
+                "directCollectionReadback": False,
             },
-            blocker=(
-                "milvus_consumer_runtime_not_probed"
-                if status == STATUS_DEFINED_NOT_RUN
-                else "milvus_outbox_migration_missing"
-            ),
+            blocker=blocker,
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),
         )
 
@@ -453,6 +514,18 @@ class EnterprisePlatformService:
                      END AS latest_migration""",
                 one=True,
             ) or {}
+            try:
+                milvus = self._milvus_projection_counts()
+            except Exception:
+                milvus = {
+                    "total": 0,
+                    "indexed": 0,
+                    "pending": 0,
+                    "syncing": 0,
+                    "blocked": 0,
+                    "knowledgeBlocks": 0,
+                    "agentPatterns": 0,
+                }
             return {
                 "status": STATUS_VERIFIED,
                 "users": {
@@ -468,6 +541,14 @@ class EnterprisePlatformService:
                 "knowledge": {
                     "sources": bounded_int(row.get("knowledge_sources")),
                     "vectors": bounded_int(row.get("knowledge_vectors")),
+                    "pgvectorVectors": bounded_int(row.get("knowledge_vectors")),
+                    "milvusProjected": bounded_int(milvus.get("total")),
+                    "milvusIndexed": bounded_int(milvus.get("indexed")),
+                    "milvusPending": bounded_int(milvus.get("pending")),
+                    "milvusSyncing": bounded_int(milvus.get("syncing")),
+                    "milvusBlocked": bounded_int(milvus.get("blocked")),
+                    "milvusKnowledgeBlocks": bounded_int(milvus.get("knowledgeBlocks")),
+                    "milvusAgentPatterns": bounded_int(milvus.get("agentPatterns")),
                 },
                 "llm24h": {
                     "requests": bounded_int(row.get("llm_requests_24h")),

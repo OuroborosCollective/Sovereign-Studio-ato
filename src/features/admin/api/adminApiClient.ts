@@ -190,7 +190,18 @@ export interface EnterpriseStatistics {
   status: EnterprisePlatformStatus;
   users: { total: number; active30d: number; banned: number } | null;
   agents: { total: number; completed: number; blockedOrFailed: number } | null;
-  knowledge: { sources: number; vectors: number } | null;
+  knowledge: {
+    sources: number;
+    vectors: number;
+    pgvectorVectors: number;
+    milvusProjected: number;
+    milvusIndexed: number;
+    milvusPending: number;
+    milvusSyncing: number;
+    milvusBlocked: number;
+    milvusKnowledgeBlocks: number;
+    milvusAgentPatterns: number;
+  } | null;
   llm24h: {
     requests: number;
     tokens: number;

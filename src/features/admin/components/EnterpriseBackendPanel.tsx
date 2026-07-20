@@ -202,9 +202,18 @@ export function EnterpriseBackendPanel() {
       icon: Sparkles,
     },
     {
-      label: 'Knowledge-Vektoren',
-      value: number(stats.knowledge?.vectors),
-      detail: number(stats.knowledge?.sources) + ' Quellen',
+      label: 'pgvector-Wissensvektoren',
+      value: number(stats.knowledge?.pgvectorVectors ?? stats.knowledge?.vectors),
+      detail: number(stats.knowledge?.sources) + ' Quellen · kanonisch',
+      icon: Database,
+    },
+    {
+      label: 'Milvus-Projektion',
+      value: number(stats.knowledge?.milvusIndexed),
+      detail:
+        number(stats.knowledge?.milvusProjected) + ' gesamt · ' +
+        number((stats.knowledge?.milvusPending ?? 0) + (stats.knowledge?.milvusSyncing ?? 0)) + ' offen · ' +
+        number(stats.knowledge?.milvusBlocked) + ' blockiert',
       icon: Database,
     },
     {
