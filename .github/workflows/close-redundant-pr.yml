@@ -44,12 +44,17 @@ jobs:
       - name: Validate exact PR identity and close
         id: close
         uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          CLOSURE_REASON: ${{ inputs.closure_reason }}
+          OWNER_APPROVED: ${{ inputs.owner_approved }}
         with:
           script: |
-            const prNumberText = String(core.getInput('pr_number') || '').trim();
-            const expectedHead = String(core.getInput('expected_head_sha') || '').trim().toLowerCase();
-            const closureReason = String(core.getInput('closure_reason') || '').trim().toLowerCase();
-            const ownerApproved = String(core.getInput('owner_approved') || '').trim().toLowerCase();
+            const prNumberText = String(process.env.PR_NUMBER || '').trim();
+            const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+            const closureReason = String(process.env.CLOSURE_REASON || '').trim().toLowerCase();
+            const ownerApproved = String(process.env.OWNER_APPROVED || '').trim().toLowerCase();
 
             if (!/^[1-9][0-9]*$/.test(prNumberText)) {
               core.setFailed('pr_number must be a positive integer');
