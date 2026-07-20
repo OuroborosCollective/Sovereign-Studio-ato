@@ -317,6 +317,7 @@ jobs:
               'controller_run_resume',
               'a2a_live_canary',
               'document_pipeline_live_canary',
+              'memory_gateway_collection_canary',
               'managed_compose_stack_plan',
               'deploy_managed_compose_stack',
           ):
@@ -929,6 +930,91 @@ jobs:
             assert payload.get('tunnel_not_required') is True, payload
             assert re.fullmatch(r'[0-9a-f]{64}', str(payload.get('evidence_sha256', ''))), payload
             print({'fresh_session_runtime_evidence': True, 'revision': payload['revision'], 'image': payload['image'], 'kappa_pos': payload['kappa_pos']})
+            PY
+
+  verify-memory-collection:
+    name: Verify Memory Gateway to Milvus collection canary
+    needs: deploy-vps
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      EXPECTED_REVISION: ${{ github.sha }}
+    steps:
+      - name: Run ephemeral Milvus collection lifecycle
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 8m
+          envs: SUDO_PASSWORD,EXPECTED_REVISION
+          script: |
+            set -Eeuo pipefail
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable for memory canary.' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+            [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+            run_root docker exec -i sovereign-chatgpt-mcp python - "$EXPECTED_REVISION" <<'PY'
+            import hashlib
+            import json
+            import re
+            import sys
+
+            import server
+
+            revision = sys.argv[1]
+            result = server.broker.call(
+                "memory_gateway_collection_canary",
+                {},
+                timeout=240,
+            )
+            assert result.get("ok") is True, result
+            assert result.get("status") == "MEMORY_COLLECTION_CANARY_VERIFIED", result
+            assert result.get("collectionCreated") is True, result
+            assert result.get("recordInserted") is True, result
+            assert result.get("queryReadbackVerified") is True, result
+            assert result.get("vectorSearchVerified") is True, result
+            assert result.get("collectionDropped") is True, result
+            marker_sha256 = str(result.get("markerSha256") or "")
+            assert re.fullmatch(r"[0-9a-f]{64}", marker_sha256), result
+            assert result.get("responseContentReturned") is False, result
+            assert result.get("secretValuesReturned") is False, result
+            summary = {
+                "status": result["status"],
+                "revision": revision,
+                "collectionCreated": True,
+                "recordInserted": True,
+                "queryReadbackVerified": True,
+                "vectorSearchVerified": True,
+                "collectionDropped": True,
+                "markerSha256": marker_sha256,
+                "responseContentReturned": False,
+                "secretValuesReturned": False,
+            }
+            canonical = json.dumps(summary, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()
+            print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
             PY
 
   verify-document-pipeline:

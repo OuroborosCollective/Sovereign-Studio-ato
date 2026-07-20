@@ -218,6 +218,25 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"running no-health"' not in installer
 
 
+def test_main_workflow_runs_real_memory_collection_post_install_canary() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+
+    assert "Verify Memory Gateway to Milvus collection canary" in workflow
+    assert "memory_gateway_collection_canary" in workflow
+    assert '"MEMORY_COLLECTION_CANARY_VERIFIED"' in workflow
+    assert 'result.get("collectionCreated") is True' in workflow
+    assert 'result.get("recordInserted") is True' in workflow
+    assert 'result.get("queryReadbackVerified") is True' in workflow
+    assert 'result.get("vectorSearchVerified") is True' in workflow
+    assert 'result.get("collectionDropped") is True' in workflow
+    assert 'result.get("responseContentReturned") is False' in workflow
+    assert 'result.get("secretValuesReturned") is False' in workflow
+    assert 're.fullmatch(r"[0-9a-f]{64}", marker_sha256)' in workflow
+    assert 'summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()' in workflow
+
+
 def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None:
     workflow = (
         ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
