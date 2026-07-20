@@ -9,6 +9,10 @@ CONTAINER="sovereign-backend"
 TARGET_IMAGE=""
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"
+WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
+WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"
+WORKSPACE_UID="10001"
+WORKSPACE_GID="10001"
 
 fail() {
   printf 'rollback blocked: %s\n' "$*" >&2
@@ -29,6 +33,16 @@ fi
 chmod 0700 "$OWNER_INPUT_HOST_ROOT"
 [[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]] \
   || fail "owner input host root is not writable and searchable"
+if [[ -e "$WORKSPACE_HOST_ROOT" || -L "$WORKSPACE_HOST_ROOT" ]]; then
+  [[ -d "$WORKSPACE_HOST_ROOT" && ! -L "$WORKSPACE_HOST_ROOT" ]] \
+    || fail "workspace host root is not a regular directory"
+else
+  mkdir -p "$WORKSPACE_HOST_ROOT"
+fi
+chown "$WORKSPACE_UID:$WORKSPACE_GID" "$WORKSPACE_HOST_ROOT"
+chmod 0770 "$WORKSPACE_HOST_ROOT"
+[[ -w "$WORKSPACE_HOST_ROOT" && -x "$WORKSPACE_HOST_ROOT" ]] \
+  || fail "workspace host root is not writable and searchable"
 
 TARGET_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
 docker pull "$TARGET_IMAGE" >/dev/null
@@ -47,9 +61,13 @@ docker run -d \
   --restart unless-stopped \
   --env-file "$ENV_FILE" \
   --env-file "$MANAGED_ENV_FILE" \
+  --env "SOVEREIGN_AGENT_WORKSPACE_ROOT=$WORKSPACE_CONTAINER_ROOT" \
+  --env "SOVEREIGN_AGENT_WORKSPACE_UID=$WORKSPACE_UID" \
+  --env "SOVEREIGN_AGENT_WORKSPACE_GID=$WORKSPACE_GID" \
   --network supabase_default \
   --volume /opt/secure:/opt/secure:ro \
   --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
+  --volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw" \
   --label "org.opencontainers.image.revision=$REVISION" \
   -p 127.0.0.1:8788:8787 \
   "$TARGET_IMAGE" >/dev/null

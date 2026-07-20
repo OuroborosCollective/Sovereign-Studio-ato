@@ -322,3 +322,51 @@ def test_janitor_scan_is_user_scoped_read_only_and_keeps_job_running(tmp_path, m
         json={"mode": "scan"},
     )
     assert other_user.status_code == 404
+
+
+def test_workspace_editor_open_is_backend_owned_and_user_scoped(tmp_path, monkeypatch):
+    conn = FakeConnection()
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOVEREIGN_OWNER_ADMIN_ID", "user-1")
+    monkeypatch.setenv("SOVEREIGN_CODE_SERVER_PUBLIC_URL", "https://code.arelorian.de")
+    seed_job(conn, "user-1", "agent-editor", status="running")
+    (tmp_path / "agent-editor" / "repo" / ".git").mkdir(parents=True)
+    app = create_test_app(conn)
+
+    opened = app.test_client().post(
+        "/api/user/agent/jobs/agent-editor/editor/open",
+        headers={"X-Test-User": "user-1"},
+        json={},
+    )
+    other = app.test_client().post(
+        "/api/user/agent/jobs/agent-editor/editor/open",
+        headers={"X-Test-User": "user-2"},
+        json={},
+    )
+
+    assert opened.status_code == 200
+    payload = opened.get_json()
+    assert payload["editor"]["workspaceAuthority"] == "sovereign-backend"
+    assert payload["editor"]["mcpWorkspaceAuthority"] is False
+    assert payload["editor"]["editorFolder"] == "/config/sovereign-agent-workspaces/agent-editor/repo"
+    assert other.status_code == 404
+
+
+def test_workspace_editor_shared_runtime_blocks_non_owner(tmp_path, monkeypatch):
+    conn = FakeConnection()
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOVEREIGN_OWNER_ADMIN_ID", "owner-1")
+    monkeypatch.setenv("SOVEREIGN_CODE_SERVER_PUBLIC_URL", "https://code.arelorian.de")
+    seed_job(conn, "user-2", "agent-editor-user", status="running")
+    (tmp_path / "agent-editor-user" / "repo" / ".git").mkdir(parents=True)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-editor-user/editor/open",
+        headers={"X-Test-User": "user-2"},
+        json={},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["workspaceAuthority"] == "sovereign-backend"
+    assert "owner-only" in response.get_json()["error"]

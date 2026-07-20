@@ -11,12 +11,12 @@ services:
       SUDO_PASSWORD: ${SUDO_PASSWORD:-}
       SUDO_PASSWORD_HASH: ${SUDO_PASSWORD_HASH:-}
       PROXY_DOMAIN: ${PROXY_DOMAIN:-}
-      DEFAULT_WORKSPACE: ${DEFAULT_WORKSPACE:-/config/sovereign-workspaces}
+      DEFAULT_WORKSPACE: ${DEFAULT_WORKSPACE:-/config/sovereign-agent-workspaces}
     volumes:
       - code-server-config:/config
       - type: bind
-        source: /opt/sovereign-chatgpt-tools/workspaces
-        target: /config/sovereign-workspaces
+        source: /opt/sovereign-agent-workspaces
+        target: /config/sovereign-agent-workspaces
     ports:
       - "127.0.0.1:32782:8443"
 

@@ -164,11 +164,11 @@ jobs:
           volumes = service.get('volumes') or []
           assert len(volumes) == 2, volumes
           config_mount = next((item for item in volumes if str(item.get('target') or '') == '/config'), None)
-          workspace_mount = next((item for item in volumes if str(item.get('target') or '') == '/config/sovereign-workspaces'), None)
+          workspace_mount = next((item for item in volumes if str(item.get('target') or '') == '/config/sovereign-agent-workspaces'), None)
           assert config_mount is not None, volumes
           assert workspace_mount is not None, volumes
           assert str(workspace_mount.get('type') or '') == 'bind', workspace_mount
-          assert str(workspace_mount.get('source') or '') == '/opt/sovereign-chatgpt-tools/workspaces', workspace_mount
+          assert str(workspace_mount.get('source') or '') == '/opt/sovereign-agent-workspaces', workspace_mount
           named = rendered.get('volumes') or {}
           assert (named.get('code-server-config') or {}).get('name') == 'code-server-46bq_code-server-config', named
           assert service.get('environment', {}).get('PASSWORD') == 'ci-only-password', service.get('environment')
@@ -262,6 +262,8 @@ jobs:
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py$' deploy/sovereign-chatgpt-command-worker.service
           grep -q '^Environment=SOVEREIGN_MCP_COMMAND_QUEUE=/opt/sovereign-chatgpt-tools/command-queue$' deploy/sovereign-chatgpt-command-worker.service
+          grep -q '^ReadWritePaths=.* /opt/sovereign-agent-workspaces ' deploy/sovereign-chatgpt-command-worker.service
+          grep -q 'BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' deploy/install-on-vps.sh
           grep -q '^RuntimeDirectoryPreserve=yes$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
@@ -364,7 +366,6 @@ jobs:
               'document_pipeline_live_canary',
               'memory_gateway_collection_canary',
               'managed_compose_stack_plan',
-              'code_server_workspace_open',
               'deploy_managed_compose_stack',
           ):
               assert callable(getattr(server, name)), name

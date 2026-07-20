@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import stat
 import re
 from urllib.parse import urlparse
 
 from .contracts import is_valid_github_repo_url, normalize_agent_path
 
-_DEFAULT_WORKSPACE_ROOT = "/tmp/sovereign-agent/workspaces"
+_DEFAULT_WORKSPACE_ROOT = "/var/lib/sovereign-agent/workspaces"
+_DEFAULT_WORKSPACE_UID = 10001
+_DEFAULT_WORKSPACE_GID = 10001
 _SAFE_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 _SAFE_BRANCH = re.compile(r"^[\w./-]{1,160}$")
 _SECRET_URL_TOKENS = ("@", "token=", "password=", "secret=", "api_key=", "apikey=")
@@ -25,6 +28,39 @@ class WorkspacePolicyError(ValueError):
 
 def workspace_root() -> Path:
     return Path(os.getenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", _DEFAULT_WORKSPACE_ROOT)).expanduser().resolve()
+
+
+def workspace_runtime_identity() -> tuple[int, int]:
+    try:
+        uid = int(os.getenv("SOVEREIGN_AGENT_WORKSPACE_UID", str(_DEFAULT_WORKSPACE_UID)))
+        gid = int(os.getenv("SOVEREIGN_AGENT_WORKSPACE_GID", str(_DEFAULT_WORKSPACE_GID)))
+    except ValueError as exc:
+        raise WorkspacePolicyError("workspace runtime identity is invalid") from exc
+    if uid < 1 or gid < 1 or uid > 2_147_483_647 or gid > 2_147_483_647:
+        raise WorkspacePolicyError("workspace runtime identity is outside the allowed range")
+    return uid, gid
+
+
+def normalize_workspace_permissions(path: Path, root: Path | None = None) -> None:
+    base = (root or workspace_root()).resolve()
+    target = path.resolve()
+    if target != base and base not in target.parents:
+        raise WorkspacePolicyError("workspace permission target escapes the workspace root")
+    uid, gid = workspace_runtime_identity()
+    candidates = [target]
+    if target.is_dir():
+        candidates.extend(sorted(target.rglob("*")))
+    for candidate in candidates:
+        if candidate.is_symlink():
+            continue
+        mode = candidate.stat().st_mode
+        if os.geteuid() == 0:
+            os.chown(candidate, uid, gid)
+        if candidate.is_dir():
+            candidate.chmod(0o2770)
+        elif candidate.is_file():
+            execute_bits = mode & (stat.S_IXUSR | stat.S_IXGRP)
+            candidate.chmod(0o660 | execute_bits)
 
 
 def assert_safe_workspace_id(workspace_id: str) -> str:

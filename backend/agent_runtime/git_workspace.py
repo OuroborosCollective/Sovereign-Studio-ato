@@ -20,6 +20,7 @@ import uuid
 from .contracts import SovereignAgentEvent, normalize_agent_paths, sanitize_agent_text
 from .workspace_policy import (
     WorkspacePolicyError,
+    normalize_workspace_permissions,
     repo_dir_for_workspace,
     safe_workspace_path,
     validate_repo_url_for_workspace,
@@ -172,6 +173,7 @@ def clone_repo_into_workspace(
                 blocker=sanitize_agent_text(completed.stderr or completed.stdout or "git clone failed", 1200),
                 exit_code=completed.returncode,
             )
+        normalize_workspace_permissions(workspace, root or workspace.parent)
         return GitWorkspaceResult(
             status="done",
             command=command[:6] + ("[repo-url-redacted]", str(repo_path)),

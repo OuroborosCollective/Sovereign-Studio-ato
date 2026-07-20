@@ -11,7 +11,6 @@ import time
 import uuid
 import zipfile
 from dataclasses import dataclass
-from urllib.parse import urlencode, urlparse
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -173,65 +172,6 @@ class OperatorRuntime:
         }
         self._write_metadata(workspace_id, metadata)
         return metadata
-
-    @staticmethod
-    def _code_server_public_url(value: str) -> str:
-        candidate = value.strip().rstrip("/")
-        if not candidate:
-            raise RuntimeError("SOVEREIGN_CODE_SERVER_PUBLIC_URL ist nicht konfiguriert")
-        parsed = urlparse(candidate)
-        local = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
-        if parsed.scheme not in ({"http", "https"} if local else {"https"}):
-            raise ValueError("Code-Server-URL muss außerhalb localhost HTTPS verwenden")
-        if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError("Code-Server-URL enthält nicht erlaubte Bestandteile")
-        return candidate
-
-    def code_server_workspace_descriptor(
-        self,
-        workspace_id: str,
-        *,
-        sdcard_enabled: bool = False,
-        sdcard_marker_sha256: str = "",
-        public_base_url: str = "",
-    ) -> dict[str, Any]:
-        repo = self._repo(workspace_id)
-        metadata = self._read_metadata(workspace_id)
-        public_url = self._code_server_public_url(
-            public_base_url
-            or os.getenv("SOVEREIGN_CODE_SERVER_PUBLIC_URL", "").strip()
-            or "http://127.0.0.1:32782"
-        )
-        editor_path = f"/config/sovereign-workspaces/{workspace_id}/repo"
-        marker = sdcard_marker_sha256.strip().lower()
-        if sdcard_enabled and not re.fullmatch(r"[0-9a-f]{64}", marker):
-            raise ValueError("Aktivierter SD-Karten-Mirror benötigt einen bestätigten SHA-256-Marker")
-        storage = {
-            "mode": "android_external_storage_mirror" if sdcard_enabled else "server_workspace",
-            "sdcardEnabled": bool(sdcard_enabled),
-            "directRemoteMountClaimed": False,
-            "nativeBridgeRequired": bool(sdcard_enabled),
-            "syncMarkerSha256": marker if sdcard_enabled else None,
-            "truthBoundary": (
-                "External storage is a user-enabled native sync mirror; the VPS never claims direct Android SD-card access."
-                if sdcard_enabled
-                else "The editor works directly on the isolated server workspace."
-            ),
-        }
-        return {
-            "ok": True,
-            "status": "CODE_SERVER_WORKSPACE_DESCRIPTOR_READY",
-            "workspaceId": workspace_id,
-            "repository": metadata.get("repository"),
-            "branch": metadata.get("branch"),
-            "hostRepoPath": str(repo),
-            "editorFolder": editor_path,
-            "openUrl": f"{public_url}/?{urlencode({'folder': editor_path})}",
-            "storage": storage,
-            "credentialsReturned": False,
-            "arbitraryHostPathAccepted": False,
-            "publicUrlSource": "tool_argument" if public_base_url else "configured_or_loopback_default",
-        }
 
     def read_file(self, workspace_id: str, path: str, max_bytes: int = MAX_FILE_BYTES) -> dict[str, Any]:
         file_path = safe_repo_path(self._repo(workspace_id), path, must_exist=True)
