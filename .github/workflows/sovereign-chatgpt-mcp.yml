@@ -262,6 +262,8 @@ jobs:
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py$' deploy/sovereign-chatgpt-command-worker.service
           grep -q '^Environment=SOVEREIGN_MCP_COMMAND_QUEUE=/opt/sovereign-chatgpt-tools/command-queue$' deploy/sovereign-chatgpt-command-worker.service
+          grep -q '^ReadWritePaths=.* /opt/sovereign-agent-workspaces ' deploy/sovereign-chatgpt-command-worker.service
+          grep -q 'BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' deploy/install-on-vps.sh
           grep -q '^RuntimeDirectoryPreserve=yes$' deploy/sovereign-chatgpt-broker.service
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/self-update-chatgpt-mcp$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
