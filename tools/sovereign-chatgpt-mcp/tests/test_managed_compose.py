@@ -64,6 +64,13 @@ def test_managed_stack_inspect_returns_mount_and_image_metadata_without_environm
                 '[{"Type":"bind","Source":"/docker/code-server-46bq/config","Destination":"/config","RW":true}]',
                 "",
             )
+        if argv[:4] == ["docker", "image", "inspect", "--format"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                '["lscr.io/linuxserver/code-server@sha256:' + ('d' * 64) + '"]',
+                "",
+            )
         return subprocess.CompletedProcess(argv, 1, "", "not found")
 
     runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
@@ -72,6 +79,7 @@ def test_managed_stack_inspect_returns_mount_and_image_metadata_without_environm
 
     assert anchor["imageReference"] == "lscr.io/linuxserver/code-server:4.128.0-ls351"
     assert anchor["imageId"] == "sha256:abc"
+    assert anchor["repoDigests"] == ["lscr.io/linuxserver/code-server@sha256:" + ("d" * 64)]
     assert anchor["mounts"] == [{
         "type": "bind",
         "name": "",

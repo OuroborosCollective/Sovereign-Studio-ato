@@ -256,6 +256,23 @@ class ManagedComposeRuntime:
             for item in mounts
             if isinstance(item, dict)
         ]
+        repo_digests: list[str] = []
+        if image_id:
+            digest_result = self._run(
+                ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", str(image_id)],
+                timeout=30,
+            )
+            if digest_result.get("ok"):
+                try:
+                    raw_digests = json.loads(digest_result.get("stdout", "")) or []
+                except json.JSONDecodeError:
+                    raw_digests = []
+                repo_digests = sorted(
+                    value
+                    for value in raw_digests
+                    if isinstance(value, str)
+                    and re.fullmatch(r"[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}", value)
+                )
         return {
             "present": True,
             "container": container,
@@ -268,6 +285,7 @@ class ManagedComposeRuntime:
             "configFiles": str(labels.get("com.docker.compose.project.config_files") or ""),
             "imageReference": str(image_reference),
             "imageId": str(image_id),
+            "repoDigests": repo_digests,
             "mounts": safe_mounts,
             "networks": sorted(networks.keys()),
             "publishedPorts": published,
