@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": null,
+  "expectedPrHeadSha": "e02346fdabcf43ff82dab5c0c69283ab6ac5bf50",
   "generatedAt": "2026-07-20T16:57:13Z",
-  "generatedFromRepositoryRevision": "9929a0d1460e916736197724745ea87f12e6831e",
+  "generatedFromRepositoryRevision": "e02346fdabcf43ff82dab5c0c69283ab6ac5bf50",
   "importantManifestFiles": [
     {
       "bytes": 14520,
