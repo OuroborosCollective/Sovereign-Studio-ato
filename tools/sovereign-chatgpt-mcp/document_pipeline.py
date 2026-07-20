@@ -5,12 +5,14 @@ from dataclasses import dataclass
 import hashlib
 import html
 import http.client
+import io
 import ipaddress
 import json
 import os
 import re
 import subprocess
 from typing import Any, Callable
+import zipfile
 
 
 MIN_PDF_BYTES = 200
@@ -239,19 +241,54 @@ class DocumentPipelineRuntime:
         }
 
     @staticmethod
-    def _gotenberg_body(marker: str) -> tuple[str, bytes]:
+    def _office_docx(marker: str) -> bytes:
+        escaped_marker = html.escape(marker, quote=False)
+        files = {
+            "[Content_Types].xml": (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                '<Default Extension="xml" ContentType="application/xml"/>'
+                '<Override PartName="/word/document.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                "</Types>"
+            ),
+            "_rels/.rels": (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+                'Target="word/document.xml"/>'
+                "</Relationships>"
+            ),
+            "word/document.xml": (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                "<w:body><w:p><w:r><w:t>"
+                f"{escaped_marker}"
+                "</w:t></w:r></w:p><w:p><w:r><w:t>"
+                "Gotenberg LibreOffice to Tika live evidence."
+                "</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"
+            ),
+        }
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path, content in sorted(files.items()):
+                entry = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                entry.external_attr = 0o600 << 16
+                archive.writestr(entry, content.encode("utf-8"))
+        return output.getvalue()
+
+    @classmethod
+    def _gotenberg_body(cls, marker: str) -> tuple[str, bytes]:
         boundary = "----sovereign-document-canary"
-        page = (
-            '<!doctype html><html><head><meta charset="utf-8">'
-            "<title>Sovereign document canary</title></head><body><h1>"
-            f"{html.escape(marker, quote=True)}"
-            "</h1><p>Gotenberg to Tika live evidence.</p></body></html>"
-        ).encode("utf-8")
+        document = cls._office_docx(marker)
         body = (
             f"--{boundary}\r\n"
-            'Content-Disposition: form-data; name="files"; filename="index.html"\r\n'
-            "Content-Type: text/html; charset=utf-8\r\n\r\n"
-        ).encode("ascii") + page + f"\r\n--{boundary}--\r\n".encode("ascii")
+            'Content-Disposition: form-data; name="files"; filename="sovereign-canary.docx"\r\n'
+            "Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n"
+        ).encode("ascii") + document + f"\r\n--{boundary}--\r\n".encode("ascii")
         return boundary, body
 
     def live_canary(self, marker: str = "SOVEREIGN_DOCUMENT_PIPELINE_CANARY") -> dict[str, Any]:
@@ -283,7 +320,7 @@ class DocumentPipelineRuntime:
             gotenberg_status, gotenberg_content_type, pdf = self._request(
                 endpoint=gotenberg_endpoint,
                 method="POST",
-                path="/forms/chromium/convert/html",
+                path="/forms/libreoffice/convert",
                 body=conversion_body,
                 headers=gotenberg_headers,
                 maximum_response_bytes=MAX_PDF_BYTES,
@@ -324,6 +361,8 @@ class DocumentPipelineRuntime:
             "status": "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED",
             "gotenberg": {
                 "container": gotenberg_endpoint.container,
+                "conversionMode": "office_docx_to_pdf",
+                "requestPath": "/forms/libreoffice/convert",
                 "httpStatus": gotenberg_status,
                 "contentType": gotenberg_content_type,
                 "pdfBytes": len(pdf),

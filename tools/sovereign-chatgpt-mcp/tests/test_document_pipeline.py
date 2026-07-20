@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
 from typing import Any
+import zipfile
 
 import pytest
 
@@ -181,6 +183,8 @@ def test_live_canary_discovers_current_compose_services_and_uses_private_endpoin
     assert result["ok"] is True
     assert result["status"] == "DOCUMENT_PIPELINE_LIVE_CANARY_VERIFIED"
     assert result["gotenberg"]["container"] == "gotenberg-acya-gotenberg-1"
+    assert result["gotenberg"]["conversionMode"] == "office_docx_to_pdf"
+    assert result["gotenberg"]["requestPath"] == "/forms/libreoffice/convert"
     assert result["gotenberg"]["pdfSha256"] == hashlib.sha256(PDF).hexdigest()
     assert result["gotenberg"]["basicAuthApplied"] is True
     assert result["tika"]["container"] == "apache-tika-2l6t-tika-1"
@@ -202,8 +206,9 @@ def test_live_canary_discovers_current_compose_services_and_uses_private_endpoin
     assert connections.requests[0]["host"] == "172.30.0.2"
     assert connections.requests[0]["port"] == 3000
     assert connections.requests[0]["method"] == "POST"
-    assert connections.requests[0]["path"] == "/forms/chromium/convert/html"
-    assert MARKER.encode() in connections.requests[0]["body"]
+    assert connections.requests[0]["path"] == "/forms/libreoffice/convert"
+    assert b'filename="sovereign-canary.docx"' in connections.requests[0]["body"]
+    assert b"application/vnd.openxmlformats-officedocument.wordprocessingml.document" in connections.requests[0]["body"]
     assert connections.requests[0]["headers"]["Authorization"] == (
         "Basic " + base64.b64encode(b"user:pass").decode("ascii")
     )
@@ -219,6 +224,21 @@ def test_live_canary_discovers_current_compose_services_and_uses_private_endpoin
     assert "user" not in serialized_result
     assert "pass" not in serialized_result
     assert connections.requests[0]["headers"]["Authorization"] not in serialized_result
+
+
+def test_office_docx_contains_marker_and_required_package_parts() -> None:
+    document = DocumentPipelineRuntime._office_docx(MARKER)
+
+    assert document.startswith(b"PK")
+    with zipfile.ZipFile(io.BytesIO(document)) as archive:
+        assert set(archive.namelist()) == {
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "word/document.xml",
+        }
+        content = archive.read("word/document.xml").decode("utf-8")
+    assert MARKER in content
+    assert "Gotenberg LibreOffice to Tika live evidence." in content
 
 
 def test_service_discovery_is_bounded_to_exact_compose_labels() -> None:
