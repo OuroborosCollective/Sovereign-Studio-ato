@@ -616,39 +616,124 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         github_token = normalize_ephemeral_github_token(raw_github_token)
         if raw_github_token is not None and github_token is None:
             return jsonify({"error": "githubAccessToken has an invalid format"}), 400
+
+        credit_cost = 10
         conn = _connection()
         try:
-            # Manifest: credits = permission. Every write action costs 10 credits.
+            # One job can cross the GitHub side-effect boundary only once at a time.
+            # Holding the transaction-scoped lock lets a retry recover an existing
+            # Draft PR before one atomic job-state + credit settlement commit.
             with conn.cursor() as cur:
-                cur.execute("SELECT credits, role FROM admin_users WHERE id = %s::uuid LIMIT 1", (user_id,))
-                user_row = cur.fetchone()
-                if not user_row:
-                    return jsonify({"error": "User nicht gefunden"}), 404
-                
-                is_admin = user_row.get("role") in ("admin", "superadmin")
-                if not is_admin:
-                    if int(user_row.get("credits") or 0) < 10:
-                        return jsonify({"error": "Nicht genügend Credits (10 erforderlich)"}), 402
-                    # Deduct credits
-                    cur.execute("UPDATE admin_users SET credits = credits - 10 WHERE id = %s::uuid", (user_id,))
-                    cur.execute("""INSERT INTO credit_ledger (user_id, amount, description, type, reference_id) 
-                                   VALUES (%s::uuid, %s, %s, 'usage', %s)""", 
-                                (user_id, -10, f"Agent PR: {job_id}", "usage", f"agent-pr:{job_id}"))
-                    conn.commit()
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                    (f"agent-draft-pr:{job_id}",),
+                )
 
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
+                conn.rollback()
                 return jsonify({"error": "Job nicht gefunden"}), 404
+
+            if job.pr_state == "created" and (job.pr_url or job.draft_pr_url):
+                result = create_draft_pr_for_job(job, token=github_token)
+                conn.rollback()
+                return jsonify({
+                    "ok": result.allowed,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "draftPrCreate": draft_pr_create_signal(result),
+                    "creditSettlement": {
+                        "chargedCredits": 0,
+                        "duplicate": True,
+                    },
+                }), 200 if result.allowed else 400
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT credits, role FROM admin_users WHERE id = %s::uuid FOR UPDATE",
+                    (user_id,),
+                )
+                user_row = cur.fetchone()
+            if not user_row:
+                conn.rollback()
+                return jsonify({"error": "User nicht gefunden"}), 404
+
+            is_admin = str(user_row.get("role") or "") in ("admin", "superadmin")
+            available_credits = int(user_row.get("credits") or 0)
+            if not is_admin and available_credits < credit_cost:
+                conn.rollback()
+                return jsonify({
+                    "error": f"Nicht genügend Credits ({credit_cost} erforderlich)",
+                    "availableCredits": available_credits,
+                }), 402
+
             result = create_draft_pr_for_job(job, token=github_token)
-            if result.allowed and result.pr_url:
-                mark_draft_pr_created(conn, job_id=job_id, pr_url=result.pr_url)
-                conn.commit()
+            if not result.allowed or not result.pr_url:
+                conn.rollback()
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "draftPrCreate": draft_pr_create_signal(result),
+                    "creditSettlement": {
+                        "chargedCredits": 0,
+                        "duplicate": False,
+                    },
+                }), 400
+
+            remaining_credits: int | None = None
+            charged_credits = 0
+            if not is_admin:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE admin_users
+                           SET credits = credits - %s
+                           WHERE id = %s::uuid AND credits >= %s
+                           RETURNING credits""",
+                        (credit_cost, user_id, credit_cost),
+                    )
+                    updated_user = cur.fetchone()
+                    if not updated_user:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Credit-Stand änderte sich während der Draft-PR-Erstellung",
+                            "blocker": "credit_settlement_race",
+                        }), 409
+                    remaining_credits = int(updated_user.get("credits") or 0)
+                    cur.execute(
+                        """INSERT INTO credit_ledger
+                               (user_id, type, amount, reason, provider, provider_tx_id)
+                           VALUES (%s::uuid, 'usage', %s, %s, 'sovereign-agent', %s)""",
+                        (
+                            user_id,
+                            -credit_cost,
+                            f"Agent Draft PR: {job_id}",
+                            f"agent-pr:{job_id}",
+                        ),
+                    )
+                charged_credits = credit_cost
+
+            mark_draft_pr_created(
+                conn,
+                job_id=job_id,
+                pr_url=result.pr_url,
+                commit=False,
+            )
+            conn.commit()
             return jsonify({
-                "ok": result.allowed,
+                "ok": True,
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "draftPrCreate": draft_pr_create_signal(result),
-            }), 200 if result.allowed else 400
+                "creditSettlement": {
+                    "chargedCredits": charged_credits,
+                    "remainingCredits": remaining_credits,
+                    "duplicate": False,
+                },
+            }), 200
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             _close(conn)
 

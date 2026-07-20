@@ -21,6 +21,8 @@ AGENTS_PROVIDER_MODEL: Final[str] = "gpt-5.4-mini"
 FREE_CATEGORY: Final[str] = "free"
 STANDARD_CATEGORY: Final[str] = "standard"
 PREMIUM_CATEGORY: Final[str] = "premium"
+FREE_FUNDING_VERIFIED_ZERO_COST: Final[str] = "verified_zero_cost"
+FREE_FUNDING_PROVIDER_QUOTA: Final[str] = "provider_free_quota"
 BILLING_CATEGORIES: Final[frozenset[str]] = frozenset(
     {FREE_CATEGORY, STANDARD_CATEGORY, PREMIUM_CATEGORY}
 )
@@ -65,6 +67,18 @@ def category_minimum_multiplier(category: Any) -> int:
     return CATEGORY_MINIMUM_MULTIPLIERS[normalize_billing_category(category)]
 
 
+def normalize_funding_mode(category: Any, configured: Any = None) -> str:
+    normalized_category = normalize_billing_category(category)
+    if normalized_category != FREE_CATEGORY:
+        return "provider_priced"
+    mode = str(configured or FREE_FUNDING_VERIFIED_ZERO_COST).strip().lower()
+    if mode not in {FREE_FUNDING_VERIFIED_ZERO_COST, FREE_FUNDING_PROVIDER_QUOTA}:
+        raise BillingPolicyError(
+            "free fundingMode must be verified_zero_cost or provider_free_quota"
+        )
+    return mode
+
+
 def normalized_multiplier(category: Any, configured: Any = None) -> int:
     normalized_category = normalize_billing_category(category)
     minimum = category_minimum_multiplier(normalized_category)
@@ -104,6 +118,7 @@ def route_billing_policy(route: Any) -> dict[str, Any]:
         config.get("billingCategory") or config.get("billingClass")
     )
     multiplier = normalized_multiplier(category, config.get("markupMultiplier"))
+    funding_mode = normalize_funding_mode(category, config.get("fundingMode"))
     prices = _route_prices(config, provider_model)
     pricing_verified = bool(config.get("pricingVerified"))
 
@@ -112,8 +127,13 @@ def route_billing_policy(route: Any) -> dict[str, Any]:
     if prices["cachedInput"] > prices["input"]:
         raise BillingPolicyError("cached input price cannot exceed input price")
     if category == FREE_CATEGORY:
-        if any(price != 0 for price in prices.values()):
-            raise BillingPolicyError("free routes require verified zero provider prices")
+        if funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST:
+            if any(price != 0 for price in prices.values()):
+                raise BillingPolicyError("free routes require verified zero provider prices")
+        elif prices["input"] <= 0 or prices["output"] <= 0:
+            raise BillingPolicyError(
+                "provider_free_quota routes require positive verified provider list prices"
+            )
     elif prices["input"] <= 0 or prices["output"] <= 0:
         raise BillingPolicyError("paid routes require positive input and output prices")
     if not pricing_verified:
@@ -124,6 +144,7 @@ def route_billing_policy(route: Any) -> dict[str, Any]:
         "billingClass": category,
         "providerModel": provider_model,
         "markupMultiplier": multiplier,
+        "fundingMode": funding_mode,
         "inputUsdPerMillion": prices["input"],
         "cachedInputUsdPerMillion": prices["cachedInput"],
         "outputUsdPerMillion": prices["output"],

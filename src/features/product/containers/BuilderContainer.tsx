@@ -428,8 +428,7 @@ import {
   isAlternativeWriteRouteIntent,
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
-import { buildDirectPatchPlanWithContentLoad, detectDirectPatchTarget } from "../runtime/directGithubPatchRuntime";
-import { buildGeneratedFileDiffReport, type GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
+import type { GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
 import {
   buildSovereignInspectionResultEvent,
   buildSovereignRuntimeEvidenceLog,
@@ -2744,9 +2743,9 @@ export function BuilderContainer({
     [effectiveGitHubAccessState, githubAccessState],
   );
   
-  // #501: Store validated token in memory for Direct Patch content loading
-  // Token is kept only for the current session (component lifetime)
-  // SECURITY: Never persisted to sessionStorage/localStorage
+  // Temporary compatibility bridge: the token remains memory-only and may be
+  // forwarded to the backend executor. Browser-side repository reads, patch
+  // generation and GitHub writes are forbidden.
   const githubTokenRef = useRef<string | null>(null);
   const previousRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
   const arePreviousStateRef = useRef<ArePreviousState | null>(null);
@@ -2877,27 +2876,6 @@ export function BuilderContainer({
     setStatusLogs((prev) => [...prev.slice(-199), { ts, level, msg, tabId }]);
   }, []);
 
-  const stageGeneratedPatch = useCallback((args: {
-    readonly path: string;
-    readonly proposedContent: string;
-    readonly baseContent: string;
-    readonly summary: string;
-  }) => {
-    const report = buildGeneratedFileDiffReport(
-      [{ path: args.path, content: args.proposedContent, reason: args.summary || 'Direct GitHub Patch generiert' }],
-      [{ path: args.path, content: args.baseContent, found: true }],
-    );
-    setPatchDiffReport(report);
-    setStagedChanges([{
-      path: args.path,
-      content: args.proposedContent,
-      baseContent: args.baseContent,
-    }]);
-    setPatchPreviewReady(true);
-    setPatchConfirmed(false);
-    setShowPatchDiffEvidence(true);
-  }, []);
-
   const [actionStream, setActionStream] = useState(() => createSovereignActionStreamState());
   const appendActionEvent = useCallback((event: SovereignActionEventInput) => {
     setActionStream((current) => appendSovereignActionEvent(current, event));
@@ -2957,7 +2935,7 @@ export function BuilderContainer({
         publishedPrUrl: scopedPublishedPrUrl,
         githubState: effectiveGitHubAccessState,
         agentConfigured: sovereignAgentStartAvailable,
-        patchRouteAvailable: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
+        patchRouteAvailable: false,
       }),
     [
       statusLogs,
@@ -4518,7 +4496,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       repoReady: effectiveRepoReady,
       githubAccessState: effectiveGitHubAccessState,
       agentReady: agentReady ?? false,
-      directGitHubPatchReady: Boolean(githubWriteAllowed && chatRepoSnapshot && githubTokenRef.current),
+      directGitHubPatchReady: false,
       workspaceReady: false, // Workspace executor not yet integrated
       hasActiveWorkerBlocker: Boolean(routingWorkerBlocker),
       hasPackage: Boolean(scopedAgentJob?.changedFiles?.length),
@@ -4762,7 +4740,8 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         state: 'running',
       });
       if (agentDisabled) {
-        // Use the Runtime Bridge to determine if Sovereign Internal Operator can handle this
+        // The browser may select a bounded route, but repository inspection and
+        // mutation remain backend-owned. No local target-file inference is used.
         const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
           intent: classifyOfflineSovereignExecutorIntent(submittedText),
           taskComplexity: buildOfflineCapabilityLanguageEvidence(submittedText).complexity,
@@ -4770,16 +4749,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
             repoReady: effectiveRepoReady,
             githubAccessState: effectiveGitHubAccessState,
             githubTokenPresent: Boolean(githubTokenRef.current),
-            directPatchSupported: Boolean(chatRepoSnapshot),
+            directPatchSupported: false,
             agentConfigured: sovereignAgentStartAvailable,
             workerAvailable: !routingWorkerBlocker,
-            workspaceConfigured: false,
+            workspaceConfigured: sovereignAgentStartAvailable,
             draftPrSupported: true,
             activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
           }),
-          candidatePath: chatRepoSnapshot
-            ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
-            : undefined,
+          candidatePath: undefined,
         });
 
         // Always log the bridge decision
@@ -4796,128 +4773,14 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         }
 
         if (executorBridgeDecision.bridgeRoute === 'executor_runtime' && executorBridgeDecision.state === 'allowed') {
-          const tokenForDirectPatch = githubTokenRef.current;
-          if (chatRepoSnapshot && tokenForDirectPatch) {
-            const patchScopeKey = currentRepoScopeKey;
-            clearPatchEvidence();
-            const directPatchResult = await buildDirectPatchPlanWithContentLoad({
-              repoContext: {
-                owner: chatRepoSnapshot.owner,
-                name: chatRepoSnapshot.repo,
-                branch: chatRepoSnapshot.branch,
-                filePaths: chatRepoSnapshot.filePaths ?? [],
-              },
-              instruction: submittedText,
-              githubAccessReady: true,
-              token: tokenForDirectPatch,
-              fetcher: globalThis.fetch,
-            });
-
-            if (!isCurrentRepoScope(patchScopeKey)) {
-              appendActionEvent(buildBlockedActionEvent({
-                route: 'direct-github-patch',
-                label: 'Patch-Ergebnis verworfen',
-                detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
-                kind: 'blocked',
-              }));
-              return;
-            }
-
-            if ('result' in directPatchResult && directPatchResult.result.ok) {
-              const res = directPatchResult.result;
-              appendActionEvent({
-                kind: 'route_selected',
-                route: 'direct-github-patch',
-                label: 'Direct GitHub Patch Route gewählt',
-                detail: `Zieldatei: ${res.targetPath}`,
-                state: 'running',
-              });
-              
-              // Diff-Preview in Action Stream einspeisen
-              appendActionEvent({
-                kind: 'done',
-                route: 'github-patch',
-                label: 'Patch-Vorschau generiert',
-                detail: res.patchSummary,
-                state: 'done',
-              });
-
-              appendChatLine({
-                role: 'system',
-                text: `Direct GitHub Patch Route verfügbar für ${res.targetPath}.
-
-Patch-Vorschlag:
-${res.patchSummary}
-
-Nächste Aktion: ${res.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
-              });
-              
-              stageGeneratedPatch({
-                path: res.targetPath,
-                proposedContent: res.proposedContent,
-                baseContent: res.baseContent,
-                summary: res.patchSummary,
-              });
-              setLastAnswerWasLocal(true);
-              addLog('info', 'Write intent routed through Direct GitHub Patch Route with diff preview', 'router');
-              return;
-            }
-
-            if ('capability' in directPatchResult && !directPatchResult.capability.available) {
-              appendActionEvent(buildBlockedActionEvent({
-                route: 'github-patch',
-                label: 'Direct Patch nicht verfügbar',
-                detail: `Route erlaubt; Direct Patch noch nicht verfügbar: ${directPatchResult.capability.reason}`,
-                kind: 'patch_blocked',
-              }));
-              appendChatLine({
-                role: 'system',
-                text: `Runtime-Schreibaktion autorisiert.
-${executorBridgeDecision.reason}
-
-Route ist erlaubt, aber Direct Patch konnte noch keinen Patchplan erzeugen.
-Grund: ${directPatchResult.capability.reason}
-
-Es wurde noch keine Datei geändert. Nächste Aktion: Zielpfad präzisieren oder Executor verbinden.`,
-              });
-              addLog('info', 'Write intent bridge allowed; direct patch not available: ' + directPatchResult.capability.reason, 'router');
-              return;
-            }
-
-            // Runtime-Truth: Handle Direct Patch failure (result.ok === false)
-            if ('result' in directPatchResult && !directPatchResult.result.ok) {
-              const failureResult = directPatchResult.result;
-              const errorMessage = 'reason' in failureResult ? failureResult.reason : 'Direct Patch fehlgeschlagen';
-              appendActionEvent({
-                kind: 'failed',
-                route: 'direct-github-patch',
-                label: 'Direct Patch fehlgeschlagen',
-                detail: errorMessage,
-                state: 'failed',
-              });
-              appendRuntimeNotice(`Direct GitHub Patch fehlgeschlagen: ${errorMessage}`);
-              addLog('error', 'Direct patch failed: ' + errorMessage, 'router');
-              return;
-            }
-          }
-
-          appendActionEvent({
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'agent-job',
+            label: 'Backend-Workspace-Executor nicht startbereit',
+            detail: 'Der aktuelle Agent-Pfad ist blockiert oder bereits beschäftigt. Browserseitige Repository-Lese-, Patch- und GitHub-Schreibpfade bleiben gesperrt.',
             kind: 'patch_blocked',
-            route: 'github-patch',
-            label: 'Patch/Draft-PR Route geprüft — wartet auf Zielpfad',
-            detail: 'Route erlaubt; kein Patch/Diff erzeugt — Zielpfad oder Executor erforderlich.',
-            state: 'blocked',
-          });
-          appendChatLine({
-            role: 'system',
-            text: `Runtime-Schreibaktion autorisiert.
-${executorBridgeDecision.reason}
-
-Route ist erlaubt, aber es wurde noch kein Patch/Diff erzeugt.
-Nächste Aktion: Zielpfad nennen oder Executor verbinden.
-Es wurde noch keine Datei geändert.`,
-          });
-          addLog('info', 'Write intent bridge allowed without patch result: ' + executorBridgeDecision.reason, 'router');
+          }));
+          appendRuntimeNotice('Schreibaktion blockiert: Der backend-eigene Workspace-Executor ist nicht startbereit. Es wurde kein paralleler Job gestartet und der Browser hat keine Repository-Datei gelesen.');
+          addLog('warn', 'Write route blocked: backend executor is disabled or busy', 'router');
           return;
         }
 
@@ -4947,22 +4810,9 @@ Es wurde noch keine Datei geändert.`,
     // (see Issue #522 P2 Fix 2 & 3 above) to ensure they don't create integration drafts.
     // These questions must be answered from runtime state, not forwarded to Sovereign Agent.
     if (isAlternativeWriteRouteIntent(submittedText)) {
-      // #501: Calculate directPatchAvailable honestly
-      // Direct Patch is available in principle (route exists) but requires:
-      // - githubWriteAllowed (validated token)
-      // - chatRepoSnapshot (repo loaded)
-      // - target file exists in repo
-      // - token in memory for content loading
-      const targetPath = chatRepoSnapshot 
-        ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? [])
-        : null;
-      const tokenAvailable = Boolean(githubTokenRef.current);
-      const directPatchAvailable = Boolean(
-        githubWriteAllowed && 
-        chatRepoSnapshot && 
-        targetPath !== null &&
-        tokenAvailable
-      );
+      // Browser-side direct patch is intentionally unavailable. The only write
+      // route is the authenticated backend workspace/executor contract.
+      const directPatchAvailable = false;
       const altRouteAnswer = buildAlternativeRouteStatusAnswer({
         githubAccessReady: githubWriteAllowed,
         githubAccessState: effectiveGitHubAccessState,
@@ -4970,7 +4820,7 @@ Es wurde noch keine Datei geändert.`,
         directPatchAvailable,
       });
       appendChatLine({ role: 'assistant', text: altRouteAnswer });
-      addLog('info', 'Alternative route question answered locally · githubAccessReady=' + githubWriteAllowed + ' · tokenAvailable=' + tokenAvailable + ' · target=' + targetPath, 'router');
+      addLog('info', 'Alternative route question answered locally · browserDirectPatch=false · backendExecutor=' + sovereignAgentStartAvailable, 'router');
       return;
     }
 
@@ -5008,7 +4858,8 @@ Es wurde noch keine Datei geändert.`,
         }
         return;
       }
-      // agentDisabled === true: Use Runtime Bridge to check Sovereign Internal Operator availability
+      // A disabled backend executor cannot be replaced by browser-side repository
+      // inspection or mutation. The bridge remains fail-closed.
       const executorBridgeDecision = decideSovereignExecutorBridgeRoute({
         intent: classifyOfflineSovereignExecutorIntent(submittedText),
         taskComplexity: buildOfflineCapabilityLanguageEvidence(submittedText).complexity,
@@ -5016,16 +4867,14 @@ Es wurde noch keine Datei geändert.`,
           repoReady: effectiveRepoReady,
           githubAccessState: effectiveGitHubAccessState,
           githubTokenPresent: Boolean(githubTokenRef.current),
-          directPatchSupported: Boolean(chatRepoSnapshot),
+          directPatchSupported: false,
           agentConfigured: sovereignAgentStartAvailable,
           workerAvailable: !routingWorkerBlocker,
-          workspaceConfigured: false,
+          workspaceConfigured: sovereignAgentStartAvailable,
           draftPrSupported: true,
           activeExecutorStatus: scopedAgentIsRunning ? "running" : "idle",
         }),
-        candidatePath: chatRepoSnapshot
-          ? detectDirectPatchTarget(submittedText, chatRepoSnapshot.filePaths ?? []) ?? undefined
-          : undefined,
+        candidatePath: undefined,
       });
 
       // Always log the bridge decision
@@ -6040,10 +5889,10 @@ Das echte Repo-Setup wurde geöffnet.`,
                   repoReady: effectiveRepoReady,
                   githubAccessState: effectiveGitHubAccessState,
                   githubTokenPresent: Boolean(githubTokenRef.current),
-                  directPatchSupported: Boolean(chatRepoSnapshot && githubWriteAllowed && githubTokenRef.current),
+                  directPatchSupported: false,
                   agentConfigured: sovereignAgentStartAvailable,
                   workerAvailable: !workerBlocker,
-                  workspaceConfigured: false,
+                  workspaceConfigured: sovereignAgentStartAvailable,
                   draftPrSupported: githubWriteAllowed,
                   activeExecutorStatus:
                     scopedAgentIsRunning ||
@@ -6075,7 +5924,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                 };
 
                 // canExecute from runtime truth
-                const canExecute = capabilities.directPatch.canStart || capabilities.agent.canStart;
+                const canExecute = capabilities.agent.canStart;
                 const confirmCheck = canConfirmIntegrationIntentDraft(draft, gateSnapshot);
 
                 return (
@@ -6093,9 +5942,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                         taskComplexity: intent === 'direct_patch' ? 'simple' : intent === 'code_execution' ? 'complex' : 'unknown',
                         capabilities,
                         workspaceScope: workspaceScope ?? undefined,
-                        candidatePath: chatRepoSnapshot
-                          ? detectDirectPatchTarget(draft.originalText, chatRepoSnapshot.filePaths ?? []) ?? undefined
-                          : undefined,
+                        candidatePath: undefined,
                       });
 
                       // Preserve the exact LLM-understood mission for execution and
@@ -6157,108 +6004,18 @@ Das echte Repo-Setup wurde geöffnet.`,
                           break;
 
                         case 'direct_patch':
-                          // Direct Patch route via proper runtime
-                          // Runtime-Truth: All result types must be terminal-handled
-                          if (!chatRepoSnapshot) break;
-                          addLog('info', `Integration confirmed: ${decision.reason}`, 'router');
-                          const patchScopeKey = currentRepoScopeKey;
-                          clearPatchEvidence();
-                          buildDirectPatchPlanWithContentLoad({
-                            repoContext: {
-                              owner: chatRepoSnapshot.owner,
-                              name: chatRepoSnapshot.repo,
-                              branch: chatRepoSnapshot.branch,
-                              filePaths: chatRepoSnapshot.filePaths ?? [],
-                            },
-                            instruction: draft.originalText,
-                            githubAccessReady: true,
-                            token: githubTokenRef.current!,
-                            fetcher: globalThis.fetch,
-                          }).then((result) => {
-                            if (!isCurrentRepoScope(patchScopeKey)) {
-                              appendActionEvent(buildBlockedActionEvent({
-                                route: 'direct-github-patch',
-                                label: 'Patch-Ergebnis verworfen',
-                                detail: 'Das Repo oder der Branch hat sich während der Patch-Erzeugung geändert.',
-                                kind: 'blocked',
-                              }));
-                              setIntentDraftState({ status: 'idle' });
-                              return;
-                            }
-
-                            // Terminal state: clear draft only after result
-                            setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-
-                            if ('result' in result && result.result.ok) {
-                              // Success: Patch preview generated
-                              appendActionEvent({
-                                kind: 'route_selected',
-                                route: 'direct-github-patch',
-                                label: 'Direct GitHub Patch Route gewählt',
-                                detail: `Zieldatei: ${result.result.targetPath}`,
-                                state: 'running',
-                              });
-                              appendActionEvent({
-                                kind: 'done',
-                                route: 'direct-github-patch',
-                                label: 'Patch-Vorschau generiert',
-                                detail: result.result.patchSummary,
-                                state: 'done',
-                              });
-                              appendChatLine({
-                                role: 'system',
-                                text: `Direct GitHub Patch Route verfügbar für ${result.result.targetPath}.\n\nPatch-Vorschlag:\n${result.result.patchSummary}\n\nNächste Aktion: ${result.result.nextAction === 'preview_diff' ? 'Diff-Vorschau prüfen' : 'Draft PR erstellen'}`,
-                              });
-                              stageGeneratedPatch({
-                                path: result.result.targetPath,
-                                proposedContent: result.result.proposedContent,
-                                baseContent: result.result.baseContent,
-                                summary: result.result.patchSummary,
-                              });
-                              setLastAnswerWasLocal(true);
-                              return;
-                            }
-
-                            // Terminal failure: capability unavailable
-                            if ('capability' in result && !result.capability.available) {
-                              appendActionEvent({
-                                kind: 'patch_blocked',
-                                route: 'direct-github-patch',
-                                label: 'Direct Patch nicht verfügbar',
-                                detail: result.capability.reason,
-                                state: 'blocked',
-                              });
-                              appendRuntimeNotice(`Direct GitHub Patch nicht möglich: ${result.capability.reason}`);
-                              return;
-                            }
-
-                            // Terminal failure: error state (result.ok === false)
-                            if ('result' in result && !result.result.ok) {
-                              const failureResult = result.result;
-                              const errorMessage = 'reason' in failureResult ? failureResult.reason : 'Unknown error';
-                              appendActionEvent({
-                                kind: 'failed',
-                                route: 'direct-github-patch',
-                                label: 'Direct Patch fehlgeschlagen',
-                                detail: errorMessage,
-                                state: 'failed',
-                              });
-                              appendRuntimeNotice(`Direct GitHub Patch fehlgeschlagen: ${errorMessage}`);
-                              return;
-                            }
-                          }).catch((err) => {
-                            // Terminal failure: promise rejection
-                            setTimeout(() => setIntentDraftState({ status: 'idle' }), 100);
-                            const errMsg = err instanceof Error ? err.message : String(err);
-                            appendActionEvent({
-                              kind: 'failed',
-                              route: 'direct-github-patch',
-                              label: 'Direct Patch Ausnahme',
-                              detail: errMsg,
-                              state: 'failed',
-                            });
-                            appendRuntimeNotice(`Direct GitHub Patch fehlgeschlagen: ${errMsg}`);
-                          });
+                          if (!sovereignAgentStartAvailable || !onStartAgent) {
+                            appendActionEvent(buildBlockedActionEvent({
+                              route: 'agent-job',
+                              label: 'Backend-Workspace-Executor nicht verfügbar',
+                              detail: 'Der bestätigte Direct-Patch-Auftrag darf nicht im Browser ausgeführt werden.',
+                              kind: 'patch_blocked',
+                            }));
+                            appendRuntimeNotice('Direct Patch blockiert: Ein bestätigter backend-eigener Workspace-Executor ist erforderlich. Der Browser hat keine Repository-Datei gelesen und keinen Patch erzeugt.');
+                            break;
+                          }
+                          addLog('info', `Integration delegated to backend workspace: ${decision.reason}`, 'router');
+                          void startAgentFromText(draft.originalText, 'code_execution');
                           break;
 
                         case 'sovereign-agent':

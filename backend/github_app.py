@@ -11,6 +11,8 @@ import hashlib
 import hmac
 import json
 import time
+import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -214,13 +216,28 @@ def list_installations() -> list[Installation]:
 
 # ── Credit Management ────────────────────────────────────────────────────────
 
+
+def _row_value(row: Any, key: str, index: int) -> Any:
+    """Read both RealDictCursor rows and sequence rows without path-dependent behavior."""
+    if isinstance(row, Mapping):
+        return row.get(key)
+    if isinstance(row, Sequence) and not isinstance(row, (str, bytes, bytearray)):
+        return row[index]
+    raise TypeError("database row is neither a mapping nor a sequence")
+
+
 @dataclass(frozen=True)
 class CreditBalance:
     installation_id: int
     account_login: str
     credits: int
     plan: str
+    status: str
     updated_at: datetime
+
+
+class GitHubAppCreditConflict(RuntimeError):
+    """One idempotency identity was reused with different credit semantics."""
 
 
 def get_installation_credits(
@@ -232,85 +249,135 @@ def get_installation_credits(
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT installation_id, account_login, credits, plan, updated_at
+                SELECT installation_id, account_login, credits, plan, status, updated_at
                 FROM github_app_credits
                 WHERE installation_id = %s
             """, (installation_id,))
             row = cur.fetchone()
             if row:
                 return CreditBalance(
-                    installation_id=row[0],
-                    account_login=row[1],
-                    credits=row[2],
-                    plan=row[3],
-                    updated_at=row[4],
+                    installation_id=int(_row_value(row, "installation_id", 0)),
+                    account_login=str(_row_value(row, "account_login", 1) or ""),
+                    credits=int(_row_value(row, "credits", 2)),
+                    plan=str(_row_value(row, "plan", 3) or "free"),
+                    status=str(_row_value(row, "status", 4) or "suspended"),
+                    updated_at=_row_value(row, "updated_at", 5),
                 )
+            return None
     finally:
-        conn.close()
-    return None
+        try:
+            conn.rollback()
+        finally:
+            conn.close()
 
 
 def deduct_credits(
     installation_id: int,
     amount: int,
     action: str,
+    idempotency_key: str,
     get_connection: Callable,
-) -> bool:
-    """Deduct credits from an installation."""
+) -> dict[str, Any]:
+    """Deduct credits exactly once from one locked installation account."""
+    if installation_id <= 0 or amount <= 0 or not action or not idempotency_key:
+        raise ValueError("installation, positive amount, action and idempotency key are required")
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # Check current balance
-            cur.execute("""
-                SELECT credits FROM github_app_credits
-                WHERE installation_id = %s
-                FOR UPDATE
-            """, (installation_id,))
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"github-app-credit:{idempotency_key}",),
+            )
+            cur.execute(
+                """SELECT installation_id, amount, action
+                   FROM github_app_credit_transactions
+                   WHERE idempotency_key = %s::uuid
+                   LIMIT 1""",
+                (idempotency_key,),
+            )
+            existing = cur.fetchone()
+            if existing:
+                same_request = (
+                    int(_row_value(existing, "installation_id", 0)) == installation_id
+                    and int(_row_value(existing, "amount", 1)) == -amount
+                    and str(_row_value(existing, "action", 2) or "") == action
+                )
+                conn.rollback()
+                if not same_request:
+                    raise GitHubAppCreditConflict(
+                        "Idempotency-Key belongs to another GitHub App credit mutation"
+                    )
+                return {"ok": True, "duplicate": True, "remainingCredits": None}
+
+            cur.execute(
+                """SELECT credits, status FROM github_app_credits
+                   WHERE installation_id = %s
+                   FOR UPDATE""",
+                (installation_id,),
+            )
             row = cur.fetchone()
-            
-            if not row or row[0] < amount:
-                return False
-            
-            # Deduct credits
-            cur.execute("""
-                UPDATE github_app_credits
-                SET credits = credits - %s, updated_at = NOW()
-                WHERE installation_id = %s
-            """, (amount, installation_id))
-            
-            # Log transaction
-            cur.execute("""
-                INSERT INTO github_app_credit_transactions
-                (installation_id, amount, action, created_at)
-                VALUES (%s, %s, %s, NOW())
-            """, (installation_id, -amount, action))
-            
+            current_credits = int(_row_value(row, "credits", 0)) if row else 0
+            account_status = str(_row_value(row, "status", 1) or "suspended") if row else "missing"
+            if not row or account_status != "active" or current_credits < amount:
+                conn.rollback()
+                return {
+                    "ok": False,
+                    "duplicate": False,
+                    "remainingCredits": current_credits if row else None,
+                }
+
+            remaining_credits = current_credits - amount
+            cur.execute(
+                """UPDATE github_app_credits
+                   SET credits = %s, updated_at = NOW()
+                   WHERE installation_id = %s""",
+                (remaining_credits, installation_id),
+            )
+            cur.execute(
+                """INSERT INTO github_app_credit_transactions
+                       (idempotency_key, installation_id, amount, action, created_at)
+                   VALUES (%s::uuid, %s, %s, %s, NOW())""",
+                (idempotency_key, installation_id, -amount, action),
+            )
         conn.commit()
-        return True
+        return {
+            "ok": True,
+            "duplicate": False,
+            "remainingCredits": remaining_credits,
+        }
+    except GitHubAppCreditConflict:
+        raise
     except Exception:
         conn.rollback()
-        return False
+        raise
     finally:
         conn.close()
 
 
 def create_credit_account(
     installation_id: int,
+    account_id: int,
     account_login: str,
     get_connection: Callable,
     plan: str = "free",
     initial_credits: int = 10,
 ) -> bool:
     """Create a credit account for a new installation."""
+    if installation_id <= 0 or account_id <= 0 or not account_login or initial_credits < 0:
+        return False
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO github_app_credits
-                (installation_id, account_login, credits, plan, updated_at)
-                VALUES (%s, %s, %s, %s, NOW())
-                ON CONFLICT (installation_id) DO NOTHING
-            """, (installation_id, account_login, initial_credits, plan))
+                (installation_id, account_id, account_login, credits, plan, updated_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (installation_id) DO UPDATE SET
+                    account_id=EXCLUDED.account_id,
+                    account_login=EXCLUDED.account_login,
+                    status='active',
+                    updated_at=NOW()
+            """, (installation_id, account_id, account_login, initial_credits, plan))
         conn.commit()
         return True
     except Exception:
@@ -340,14 +407,21 @@ def handle_installation_event(
         # Check for Pro/Team plan
         # This would come from marketplace purchase
         
-        create_credit_account(
-            installation_id=installation_id,
+        created = create_credit_account(
+            installation_id=int(installation_id or 0),
+            account_id=int(installation.get("account", {}).get("id") or 0),
             account_login=account_login,
             plan=plan,
             initial_credits=initial_credits,
             get_connection=get_connection,
         )
-        
+        if not created:
+            return {
+                "ok": False,
+                "action": "installation_account_create_failed",
+                "installation_id": installation_id,
+                "account": account_login,
+            }
         return {
             "ok": True,
             "action": "installation_created",
@@ -367,6 +441,9 @@ def handle_installation_event(
                     WHERE installation_id = %s
                 """, (installation_id,))
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         
@@ -376,18 +453,37 @@ def handle_installation_event(
             "installation_id": installation_id,
         }
     
-    elif action == "suspended":
+    elif action in {"suspended", "unsuspended"}:
+        target_status = "suspended" if action == "suspended" else "active"
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE github_app_credits
+                       SET status=%s, updated_at=NOW()
+                       WHERE installation_id=%s
+                       RETURNING installation_id""",
+                    (target_status, installation_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    conn.rollback()
+                    return {
+                        "ok": False,
+                        "action": "installation_not_found",
+                        "installation_id": installation_id,
+                    }
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
         return {
             "ok": True,
-            "action": "installation_suspended",
+            "action": f"installation_{action}",
             "installation_id": installation_id,
-        }
-    
-    elif action == "unsuspended":
-        return {
-            "ok": True,
-            "action": "installation_unsuspended",
-            "installation_id": installation_id,
+            "status": target_status,
         }
     
     return {
@@ -403,7 +499,9 @@ def handle_marketplace_purchase(
     get_connection: Callable,
 ) -> dict:
     """Handle marketplace purchase events."""
-    account_login = marketplace_purchase.get("account", {}).get("login", "")
+    account = marketplace_purchase.get("account", {})
+    account_login = str(account.get("login") or "")
+    account_id = int(account.get("id") or 0)
     plan = marketplace_purchase.get("plan", {}).get("name", "free")
     unit_count = marketplace_purchase.get("unit_count", 1)
     
@@ -418,29 +516,34 @@ def handle_marketplace_purchase(
     credits = plan_credits.get(plan.lower(), 10) * unit_count
     
     if action == "purchased" or action == "changed":
-        # Find or create credit account by account_login
+        if account_id <= 0 or not account_login:
+            return {
+                "ok": False,
+                "action": "marketplace_account_invalid",
+                "account": account_login,
+            }
         conn = get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE github_app_credits
-                    SET plan = %s, updated_at = NOW()
-                    WHERE account_login = %s
+                    SET account_login = %s, plan = %s, updated_at = NOW()
+                    WHERE account_id = %s
                     RETURNING installation_id
-                """, (plan, account_login))
+                """, (account_login, plan, account_id))
                 row = cur.fetchone()
-                
                 if not row:
-                    # Create new account
-                    cur.execute("""
-                        INSERT INTO github_app_credits
-                        (installation_id, account_login, credits, plan, updated_at)
-                        SELECT 
-                            COALESCE(MAX(installation_id), 0) + 1,
-                            %s, %s, %s, NOW()
-                        FROM github_app_credits
-                    """, (account_login, credits, plan))
+                    conn.rollback()
+                    return {
+                        "ok": False,
+                        "action": "installation_required",
+                        "account": account_login,
+                        "account_id": account_id,
+                    }
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
         
@@ -448,8 +551,10 @@ def handle_marketplace_purchase(
             "ok": True,
             "action": "plan_updated",
             "account": account_login,
+            "account_id": account_id,
             "plan": plan,
-            "credits": credits,
+            "plan_credit_allowance": credits,
+            "credits_applied": 0,
         }
     
     return {"ok": True, "action": "ignored"}
@@ -479,7 +584,7 @@ def register_github_app_routes(
                 installation=installation,
                 get_connection=get_connection,
             )
-            return jsonify(result)
+            return jsonify(result), 200 if result.get("ok") else 409
         
         elif event == "marketplace_purchase":
             result = handle_marketplace_purchase(
@@ -487,7 +592,7 @@ def register_github_app_routes(
                 marketplace_purchase=payload.get("marketplace_purchase", {}),
                 get_connection=get_connection,
             )
-            return jsonify(result)
+            return jsonify(result), 200 if result.get("ok") else 409
         
         elif event == "pull_request":
             # Handle PR events if needed
@@ -551,6 +656,7 @@ def register_github_app_routes(
                 "account": balance.account_login,
                 "balance": balance.credits,
                 "plan": balance.plan,
+                "status": balance.status,
                 "updated_at": balance.updated_at.isoformat(),
             },
         })
@@ -560,23 +666,41 @@ def register_github_app_routes(
     def github_app_deduct_credits(installation_id: int):
         """Deduct credits from an installation."""
         body = request.get_json() or {}
-        amount = int(body.get("amount", 0))
-        action = str(body.get("action", "unknown"))
-        
-        if amount <= 0:
-            return jsonify({"error": "Amount must be positive"}), 400
-        
-        success = deduct_credits(
-            installation_id=installation_id,
-            amount=amount,
-            action=action,
-            get_connection=get_connection,
-        )
-        
-        if not success:
-            return jsonify({"error": "Insufficient credits"}), 402
-        
-        return jsonify({"ok": True, "deducted": amount, "action": action})
+        try:
+            amount = int(body.get("amount", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Amount must be an integer"}), 400
+        action = str(body.get("action") or "").strip()[:160]
+        raw_idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
+        try:
+            idempotency_key = str(uuid.UUID(raw_idempotency_key))
+        except (ValueError, AttributeError, TypeError):
+            return jsonify({"error": "Idempotency-Key must be a UUID"}), 400
+        if amount <= 0 or not action:
+            return jsonify({"error": "Positive amount and action are required"}), 400
+        try:
+            result = deduct_credits(
+                installation_id=installation_id,
+                amount=amount,
+                action=action,
+                idempotency_key=idempotency_key,
+                get_connection=get_connection,
+            )
+        except GitHubAppCreditConflict as exc:
+            return jsonify({"error": str(exc), "blocker": "idempotency_conflict"}), 409
+        if not result["ok"]:
+            return jsonify({
+                "error": "Insufficient credits or installation not found",
+                "remainingCredits": result.get("remainingCredits"),
+            }), 402
+        return jsonify({
+            "ok": True,
+            "deducted": 0 if result["duplicate"] else amount,
+            "duplicate": bool(result["duplicate"]),
+            "remainingCredits": result.get("remainingCredits"),
+            "action": action,
+            "idempotencyKey": idempotency_key,
+        })
     
     @app.route("/api/auth/github-app/callback", methods=["GET"])
     def github_app_oauth_callback():
@@ -586,36 +710,52 @@ def register_github_app_routes(
         setup_action = request.args.get("setup_action", "")
         
         if setup_action == "install":
-            # Installation completed
+            try:
+                parsed_installation_id = int(installation_id)
+            except (TypeError, ValueError):
+                parsed_installation_id = 0
+            if parsed_installation_id <= 0:
+                return jsonify({
+                    "ok": False,
+                    "error": "GitHub installation_id is required",
+                    "blocker": "github_app_installation_id_missing",
+                }), 400
             return jsonify({
                 "ok": True,
-                "message": "Installation successful",
-                "redirect_url": f"https://sovereign-studio.arelorian.de/dashboard?installed=true",
+                "status": "installation_redirect_received",
+                "installation_id": parsed_installation_id,
+                "authenticationEstablished": False,
+                "nextAction": "Wait for the signed installation webhook before enabling the installation.",
+                "redirect_url": "https://chat.arelorian.de/?github_app_installed=pending",
             })
-        
         if code:
-            # Exchange code for access token
-            # This would typically involve the OAuth flow
             return jsonify({
-                "ok": True,
-                "message": "OAuth flow initiated",
-                "redirect_url": "https://sovereign-studio.arelorian.de",
-            })
-        
-        return jsonify({"ok": True, "message": "Callback received"})
+                "ok": False,
+                "error": "GitHub App OAuth code exchange is not implemented on this route",
+                "blocker": "github_app_oauth_exchange_unavailable",
+                "authenticationEstablished": False,
+            }), 501
+        return jsonify({
+            "ok": False,
+            "error": "GitHub App callback has no verifiable installation action",
+            "blocker": "github_app_callback_unverified",
+            "authenticationEstablished": False,
+        }), 400
     
     @app.route("/api/github-app/configured", methods=["GET"])
     def github_app_configured():
         """Check if GitHub App is configured."""
-        configured = all([
-            GITHUB_APP_ID,
-            GITHUB_APP_CLIENT_ID,
-            GITHUB_APP_CLIENT_SECRET,
-        ])
-        
+        api_configured = bool(GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_B64)
+        oauth_configured = bool(GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET)
+        webhook_configured = bool(GITHUB_APP_WEBHOOK_SECRET)
         return jsonify({
-            "configured": configured,
+            "configured": bool(api_configured and oauth_configured and webhook_configured),
+            "apiConfigured": api_configured,
+            "oauthConfigured": oauth_configured,
+            "webhookConfigured": webhook_configured,
             "app_id": bool(GITHUB_APP_ID),
             "client_id": bool(GITHUB_APP_CLIENT_ID),
-            "webhook_secret": bool(GITHUB_APP_WEBHOOK_SECRET),
+            "client_secret": bool(GITHUB_APP_CLIENT_SECRET),
+            "private_key": bool(GITHUB_APP_PRIVATE_KEY_B64),
+            "webhook_secret": webhook_configured,
         })
