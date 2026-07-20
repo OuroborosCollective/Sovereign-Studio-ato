@@ -162,8 +162,13 @@ jobs:
           assert str(ports[0].get('published') or '') == '32782', ports[0]
           assert str(ports[0].get('target') or '') == '8443', ports[0]
           volumes = service.get('volumes') or []
-          assert len(volumes) == 1, volumes
-          assert str(volumes[0].get('target') or '') == '/config', volumes[0]
+          assert len(volumes) == 2, volumes
+          config_mount = next((item for item in volumes if str(item.get('target') or '') == '/config'), None)
+          workspace_mount = next((item for item in volumes if str(item.get('target') or '') == '/config/sovereign-workspaces'), None)
+          assert config_mount is not None, volumes
+          assert workspace_mount is not None, volumes
+          assert str(workspace_mount.get('type') or '') == 'bind', workspace_mount
+          assert str(workspace_mount.get('source') or '') == '/opt/sovereign-chatgpt-tools/workspaces', workspace_mount
           named = rendered.get('volumes') or {}
           assert (named.get('code-server-config') or {}).get('name') == 'code-server-46bq_code-server-config', named
           assert service.get('environment', {}).get('PASSWORD') == 'ci-only-password', service.get('environment')
@@ -359,6 +364,7 @@ jobs:
               'document_pipeline_live_canary',
               'memory_gateway_collection_canary',
               'managed_compose_stack_plan',
+              'code_server_workspace_open',
               'deploy_managed_compose_stack',
           ):
               assert callable(getattr(server, name)), name
