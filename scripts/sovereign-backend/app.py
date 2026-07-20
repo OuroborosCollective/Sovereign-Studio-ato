@@ -1980,6 +1980,8 @@ def health_ready():
                    to_regclass('llm_route_attempts') IS NOT NULL AS revolver_attempts,
                    to_regclass('llm_route_revolver_state') IS NOT NULL AS revolver_state,
                    to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
+                   to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
+                   to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
                        WHERE table_schema=current_schema()
@@ -2007,6 +2009,8 @@ def health_ready():
             "revolver_attempts",
             "revolver_state",
             "package_uniqueness",
+            "github_app_credits",
+            "github_app_credit_transactions",
             "transaction_receipts",
             "receipt_fingerprints",
         ))
@@ -2015,6 +2019,7 @@ def health_ready():
             "requiredMigrations": [
                 "026_llm_free_route_revolver.sql",
                 "027_billing_idempotency_and_package_uniqueness.sql",
+                "029_github_app_credit_runtime.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -5256,11 +5261,11 @@ if HAS_GITHUB_APP and register_github_app_routes:
         register_github_app_routes(
             app,
             require_admin=require_admin,
-            get_connection=get_connection,
+            get_connection=get_agent_runtime_connection,
         )
         print("✓ GitHub App routes registered")
-    except Exception as e:
-        print(f"⚠ GitHub App routes registration failed: {e}")
+    except Exception as exc:
+        raise RuntimeError("GitHub App route registration failed") from exc
 
 # ── Embedded Sovereign Universal Toolchain ────────────────────────────────────
 # Safe diagnosis runs inside this Flask/PostgreSQL runtime. Execution stays in

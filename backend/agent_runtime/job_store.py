@@ -300,7 +300,13 @@ def mark_draft_pr_prepared(
     conn.commit()
 
 
-def mark_draft_pr_created(conn: Any, *, job_id: str, pr_url: str) -> None:
+def mark_draft_pr_created(
+    conn: Any,
+    *,
+    job_id: str,
+    pr_url: str,
+    commit: bool = True,
+) -> None:
     safe_pr_url = pr_url.strip() if pr_url.startswith("https://github.com/") and "/pull/" in pr_url else ""
     if not safe_pr_url:
         raise ValueError("valid GitHub pull request URL required")
@@ -317,7 +323,8 @@ def mark_draft_pr_created(conn: Any, *, job_id: str, pr_url: str) -> None:
             """,
             (safe_pr_url, safe_pr_url, job_id),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def read_agent_job(conn: Any, *, user_id: str, job_id: str) -> StoredSovereignAgentJob | None:

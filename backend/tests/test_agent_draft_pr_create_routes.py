@@ -21,8 +21,22 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         self.conn.executed.append((sql, params))
+        self.last_result = None
         normalized = " ".join(sql.upper().split())
-        if normalized.startswith("INSERT INTO SOVEREIGN_AGENT_JOBS"):
+        if normalized.startswith("SELECT PG_ADVISORY_XACT_LOCK"):
+            self.last_result = {"locked": True}
+        elif normalized.startswith("SELECT CREDITS, ROLE FROM ADMIN_USERS"):
+            user_id = params[0]
+            self.last_result = self.conn.users.get(user_id)
+        elif normalized.startswith("UPDATE ADMIN_USERS") and "RETURNING CREDITS" in normalized:
+            amount, user_id, minimum = params
+            user = self.conn.users.get(user_id)
+            if user and int(user.get("credits") or 0) >= int(minimum):
+                user["credits"] = int(user["credits"]) - int(amount)
+                self.last_result = {"credits": user["credits"]}
+        elif normalized.startswith("INSERT INTO CREDIT_LEDGER"):
+            self.conn.credit_ledger.append(params)
+        elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_JOBS"):
             self.conn.jobs[params[1]] = {
                 "user_id": params[0],
                 "job_id": params[1],
@@ -109,13 +123,22 @@ class FakeConnection:
         self.executed = []
         self.jobs = {}
         self.events = []
+        self.users = {
+            "user-1": {"credits": 100, "role": "admin"},
+            "user-2": {"credits": 100, "role": "admin"},
+        }
+        self.credit_ledger = []
         self.commits = 0
+        self.rollbacks = 0
 
     def cursor(self):
         return FakeCursor(self)
 
     def commit(self):
         self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
 
     def close(self):
         pass
@@ -285,6 +308,99 @@ def test_draft_pr_create_persists_created_state(monkeypatch):
     assert conn.jobs["agent-1"]["pr_state"] == "created"
     assert conn.jobs["agent-1"]["pr_url"].endswith("/pull/123")
     assert "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456" not in repr(conn.jobs)
+    assert payload["creditSettlement"]["chargedCredits"] == 0
+    assert payload["creditSettlement"]["duplicate"] is False
+
+
+def test_non_admin_is_not_charged_when_github_creation_fails(monkeypatch):
+    import agent_runtime.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "create_draft_pr_for_job",
+        lambda *_args, **_kwargs: DraftPrCreateResult(
+            allowed=False,
+            status="blocked",
+            blocker="GitHub unavailable",
+            summary="Draft PR create blocked.",
+            predictive_signal="agent_draft_pr_create_blocked",
+        ),
+    )
+    conn = FakeConnection()
+    conn.users["user-1"] = {"credits": 20, "role": "user"}
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={"githubAccessToken": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 400
+    assert payload["creditSettlement"]["chargedCredits"] == 0
+    assert conn.users["user-1"]["credits"] == 20
+    assert conn.credit_ledger == []
+    assert conn.jobs["agent-1"]["pr_state"] == "ready"
+    assert conn.rollbacks >= 1
+
+
+def test_non_admin_success_charges_once_and_uses_real_ledger_columns(monkeypatch):
+    import agent_runtime.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "create_draft_pr_for_job",
+        lambda *_args, **_kwargs: DraftPrCreateResult(
+            allowed=True,
+            status="created",
+            pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/124",
+            summary="GitHub Draft PR created.",
+            predictive_signal="agent_draft_pr_created",
+        ),
+    )
+    conn = FakeConnection()
+    conn.users["user-1"] = {"credits": 20, "role": "user"}
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={"githubAccessToken": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["creditSettlement"] == {
+        "chargedCredits": 10,
+        "remainingCredits": 10,
+        "duplicate": False,
+    }
+    assert conn.users["user-1"]["credits"] == 10
+    assert conn.credit_ledger == [
+        ("user-1", -10, "Agent Draft PR: agent-1", "agent-pr:agent-1")
+    ]
+    ledger_sql = next(sql for sql, _params in conn.executed if "INSERT INTO credit_ledger" in sql)
+    assert "reason" in ledger_sql
+    assert "provider" in ledger_sql
+    assert "provider_tx_id" in ledger_sql
+    assert "description" not in ledger_sql
+    assert "reference_id" not in ledger_sql
+
+    repeated = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={"githubAccessToken": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"},
+    )
+    assert repeated.status_code == 200
+    assert repeated.get_json()["creditSettlement"] == {
+        "chargedCredits": 0,
+        "duplicate": True,
+    }
+    assert conn.users["user-1"]["credits"] == 10
+    assert len(conn.credit_ledger) == 1
 
 
 def test_draft_pr_create_rejects_invalid_ephemeral_token_before_creator(monkeypatch):

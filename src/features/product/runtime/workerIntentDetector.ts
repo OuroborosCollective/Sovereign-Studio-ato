@@ -225,7 +225,7 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
     // #500: Fix next action based on actual blocker type
     const nextAction = reason.includes('GitHub')
       ? 'Sicheren GitHub-Zugang öffnen.'
-      : 'Sovereign Agent Backend verbinden oder Direct GitHub Patch Route nutzen.';
+      : 'Sovereign Agent Backend und isolierten Workspace verbinden.';
     return `Nein, Sovereign Agent läuft nicht.\nStatus: blockiert.\nGrund: ${reason}\nNächste Aktion: ${nextAction}`;
   }
   if (agentState === 'failed' || agentStatus === 'failed') {
@@ -248,7 +248,7 @@ export function buildExecutorStatusAnswer(args: ExecutorStatusArgs): string {
     if (isGithubBlocker) {
       return 'Auftrag erkannt. Sovereign Agent wurde noch nicht gestartet.\nGrund: GitHub-Schreibzugang erforderlich.\nNächste Aktion: Sicheren GitHub-Zugang öffnen.';
     }
-    return 'Auftrag erkannt. Sovereign Agent wurde noch nicht gestartet.\nGrund: Executor nicht bereit.\nNächste Aktion: Sovereign Agent Backend verbinden oder Direct GitHub Patch Route nutzen.';
+    return 'Auftrag erkannt. Sovereign Agent wurde noch nicht gestartet.\nGrund: Executor nicht bereit.\nNächste Aktion: Sovereign Agent Backend und isolierten Workspace verbinden.';
   }
   return 'Executor-Status wird ermittelt. Bitte kurz warten.';
 }
@@ -291,9 +291,9 @@ export function buildAlternativeRouteStatusAnswer(args: {
     return [
       'GitHub-Zugang ist bereit.',
       'Sovereign Agent Backend ist nicht verbunden.',
-      'Für einfache README-/Docs-Änderungen könnte eine Direct GitHub Patch Route genutzt werden, wenn verfügbar.',
-      'Für große Multi-Datei-/Test-Aufträge braucht es einen Workspace-Executor.',
-      'Nächste Aktion: Sovereign Agent Backend verbinden oder Direct GitHub Patch Runtime aktivieren.',
+      'Auch einfache README-/Docs-Änderungen müssen über den backend-eigenen isolierten Workspace ausgeführt werden.',
+      'Für Multi-Datei-/Test-Aufträge ist derselbe Workspace-Executor erforderlich.',
+      'Nächste Aktion: Sovereign Agent Backend und isolierten Workspace verbinden.',
     ].join('\n');
   }
 
@@ -301,8 +301,8 @@ export function buildAlternativeRouteStatusAnswer(args: {
     return [
       'GitHub-Zugang ist bereit.',
       'Sovereign Agent Backend ist nicht verbunden.',
-      'Direct GitHub Patch Route ist verfügbar für einfache Änderungen.',
-      'Für große Multi-Datei-/Test-Aufträge braucht es einen Workspace-Executor.',
+      'Der backend-eigene Workspace-Executor ist für einfache Änderungen verfügbar.',
+      'Für Multi-Datei-/Test-Aufträge wird derselbe kontrollierte Executor verwendet.',
     ].join('\n');
   }
 
