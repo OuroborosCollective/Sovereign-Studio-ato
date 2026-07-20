@@ -47,12 +47,19 @@ class FakeSelfUpdate:
         return {"ok": True, "status": "SCHEDULED", "expected_revision": expected_revision}
 
 
-def _pull(head: str, *, draft: bool = False, mergeable: bool = True, base: str = "main") -> dict[str, Any]:
+def _pull(
+    head: str,
+    *,
+    draft: bool = False,
+    mergeable: bool = True,
+    base: str = "main",
+    state: str = "open",
+) -> dict[str, Any]:
     return {
         "number": 7,
         "node_id": "PR_node_7",
         "title": "Test PR",
-        "state": "open",
+        "state": state,
         "draft": draft,
         "mergeable": mergeable,
         "mergeable_state": "clean",
@@ -133,6 +140,59 @@ def test_merge_requires_exact_head_green_checks_and_schedules_mcp_reload(monkeyp
     assert result["merge_commit_sha"] == merge_sha
     assert result["touches_private_mcp"] is True
     assert update.calls == [{"expected_revision": merge_sha, "reason": "merged_pr_7"}]
+
+
+def test_close_pr_requires_exact_head_owner_approval_and_verifies_readback(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    head = "9" * 40
+    check_runs, legacy = _green_checks()
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, draft=True)),
+                FakeResponse(200, _pull(head, draft=True, state="closed")),
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [check_runs],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [legacy],
+            ("PATCH", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, draft=True, state="closed"))
+            ],
+        },
+    )
+
+    result = runtime.close_pr(
+        pr_number=7,
+        expected_head_sha=head,
+        closure_reason="redundant",
+        owner_approved=True,
+    )
+
+    assert result["status"] == "CLOSED"
+    assert result["head_sha"] == head
+    assert result["closure_reason"] == "redundant"
+    assert result["merge_performed"] is False
+    patch_call = next(call for call in session.calls if call["method"] == "PATCH")
+    assert patch_call["json"] == {"state": "closed"}
+    assert not any(call["path"].endswith("/merge") for call in session.calls)
+
+
+def test_close_pr_blocks_without_private_owner_approval(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime, _update, session = _runtime(monkeypatch, {})
+
+    result = runtime.close_pr(
+        pr_number=7,
+        expected_head_sha="8" * 40,
+        closure_reason="superseded",
+        owner_approved=False,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert "Owner-Freigabe" in result["blocker"]
+    assert session.calls == []
 
 
 def test_merge_blocks_draft_even_when_checks_are_green(monkeypatch) -> None:

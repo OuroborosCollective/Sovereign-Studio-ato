@@ -41,7 +41,7 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
         capabilities.append("repository_push_main")
     if os.getenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "0").strip() == "1":
-        capabilities.append("repository_merge_pr")
+        capabilities.extend(("repository_merge_pr", "repository_close_pr"))
     if os.getenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "0").strip() == "1":
         capabilities.extend(("repository_workflow_dispatch", "repository_rerun_failed_workflows"))
     if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
@@ -234,7 +234,7 @@ mcp = FastMCP(
         "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
         "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
         "Draft-PR bleibt verfügbar. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
-        "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
+        "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. repository_close_pr darf ausschließlich mit privatem Owner-Modus, ausdrücklicher Owner-Freigabe, exaktem Head-SHA und einem begrenzten Redundanzgrund schließen; es führt niemals einen Merge aus. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
@@ -372,6 +372,26 @@ def repository_merge_pr(
             "allow_unrelated_android_pending": allow_unrelated_android_pending,
         },
         timeout=180,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_close_pr(
+    pr_number: int,
+    expected_head_sha: str,
+    closure_reason: str = "redundant",
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Close one exact redundant or superseded PR without merging it."""
+    return broker.call(
+        "github_close_pr",
+        {
+            "pr_number": pr_number,
+            "expected_head_sha": expected_head_sha,
+            "closure_reason": closure_reason,
+            "owner_approved": owner_approved,
+        },
+        timeout=120,
     )
 
 

@@ -28,6 +28,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("memory_gateway_collection_canary") is True
     assert is_mutating_action("litellm_model_aliases_activate") is True
+    assert is_mutating_action("github_close_pr") is True
     assert is_mutating_action("litellm_provider_model_inventory") is False
     assert is_mutating_action("openai_project_runtime_evidence") is False
     assert is_mutating_action("managed_compose_stack_plan") is False
@@ -795,6 +796,16 @@ def test_memory_collection_canary_returns_bounded_failure_diagnostics(tmp_path: 
     assert result["responseContentReturned"] is False
     assert result["secretValuesReturned"] is False
     assert "raw provider error" not in str(result)
+
+
+def test_repository_close_pr_is_broker_bounded() -> None:
+    root = Path(__file__).resolve().parents[1]
+    server = (root / "server.py").read_text("utf-8")
+    broker = (root / "broker.py").read_text("utf-8")
+
+    assert "def repository_close_pr(" in server
+    assert 'broker.call(\n        "github_close_pr"' in server
+    assert '"github_close_pr": lambda values:' in broker
 
 
 def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
