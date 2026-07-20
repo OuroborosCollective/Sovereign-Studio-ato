@@ -110,24 +110,42 @@ class EnterprisePlatformService:
             row = self._query(
                 """/* platform:probe:postgresql */
                    SELECT current_database() AS database,
-                          COALESCE((SELECT MAX(id) FROM schema_migrations), 0) AS migration_id,
-                          to_regclass('public.platform_runtime_evidence') IS NOT NULL AS evidence_table""",
+                          to_regclass('public.platform_runtime_evidence') IS NOT NULL AS evidence_table,
+                          to_regclass('public.llm_route_attempts') IS NOT NULL AS revolver_attempts,
+                          to_regclass('public.llm_route_revolver_state') IS NOT NULL AS revolver_state,
+                          to_regclass('public.uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
+                          EXISTS (
+                              SELECT 1 FROM information_schema.columns
+                              WHERE table_schema=current_schema()
+                                AND table_name='transactions'
+                                AND column_name='provider_tx_id'
+                          ) AS transaction_receipts""",
                 one=True,
             )
             latency = max(0, int((time.monotonic() - started) * 1000))
             evidence_table = bool(row and row.get("evidence_table"))
+            release_schema_ready = bool(
+                row
+                and evidence_table
+                and row.get("revolver_attempts")
+                and row.get("revolver_state")
+                and row.get("package_uniqueness")
+                and row.get("transaction_receipts")
+            )
+            migration_contract = 27 if release_schema_ready else 25 if evidence_table else 0
             return self._integration(
                 integration_id="postgresql",
                 label="PostgreSQL / Supabase",
-                status=STATUS_VERIFIED if row and evidence_table else STATUS_BLOCKED,
+                status=STATUS_VERIFIED if release_schema_ready else STATUS_BLOCKED,
                 required=True,
                 boundary="transactional source of truth",
                 evidence={
                     "database": bounded_text((row or {}).get("database"), maximum=80),
-                    "latestMigration": bounded_int((row or {}).get("migration_id"), maximum=100_000),
+                    "latestMigration": migration_contract,
                     "evidenceTablePresent": evidence_table,
+                    "releaseSchemaVerified": release_schema_ready,
                 },
-                blocker=None if row and evidence_table else "platform_evidence_migration_missing",
+                blocker=None if release_schema_ready else "platform_schema_contract_incomplete",
                 latency_ms=latency,
             )
         except Exception:
@@ -418,7 +436,21 @@ class EnterprisePlatformService:
                      (SELECT COALESCE(SUM(provider_cost_usd), 0) FROM llm_usage_settlements WHERE created_at >= NOW() - INTERVAL '24 hours') AS provider_cost_usd_24h,
                      (SELECT COUNT(*) FROM platform_runtime_evidence) AS evidence_total,
                      (SELECT MAX(observed_at) FROM platform_runtime_evidence) AS latest_evidence_at,
-                     (SELECT COALESCE(MAX(id), 0) FROM schema_migrations) AS latest_migration""",
+                     CASE
+                       WHEN to_regclass('public.llm_route_attempts') IS NOT NULL
+                        AND to_regclass('public.llm_route_revolver_state') IS NOT NULL
+                        AND to_regclass('public.uq_credit_packages_name') IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema=current_schema()
+                              AND table_name='transactions'
+                              AND column_name='provider_tx_id'
+                        )
+                       THEN 27
+                       WHEN to_regclass('public.platform_runtime_evidence') IS NOT NULL
+                       THEN 25
+                       ELSE 0
+                     END AS latest_migration""",
                 one=True,
             ) or {}
             return {

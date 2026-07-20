@@ -42,7 +42,8 @@ def test_live_chat_and_catalog_accept_only_private_litellm_routes() -> None:
     app = (BACKEND / "app.py").read_text("utf-8")
     assert "WHERE lower(provider)='litellm'" in app
     assert "direct_provider_route_blocked" in app
-    assert "litellm_unavailable" in app
+    assert "classify_litellm_failure" in app
+    assert "free_route_revolver_exhausted" in app
     assert "Keine preisverifizierte LiteLLM-Route verfügbar" in app
     assert "Automatische Direktprovider-Routenerzeugung ist deaktiviert" in app
     assert '"status": "Always available (free)"' not in app
@@ -63,7 +64,9 @@ def test_readiness_and_litellm_dynamic_model_persistence_are_required() -> None:
     stack = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "litellm_stack.py").read_text("utf-8")
 
     assert '@app.route("/health/ready")' in app
-    assert "migration21" in app
+    assert "026_llm_free_route_revolver.sql" in app
+    assert "027_billing_idempotency_and_package_uniqueness.sql" in app
+    assert "uq_credit_packages_name" in app
     assert "invalidDirectRoutes" in app
     assert "/health/ready" in backend_compose
     assert 'STORE_MODEL_IN_DB: "True"' in deploy_compose
@@ -141,3 +144,6 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "provider_funded_delta=-amount" in app
     assert "billingCategory" in app
     assert "markupMultiplier" in app
+    assert "llm_route_attempts" in app
+    assert "llm_route_revolver_state" in app
+    assert "manual_llm_price_editing_disabled" in app

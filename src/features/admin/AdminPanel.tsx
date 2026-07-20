@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import './AdminPanel.css';
 import {
   Users, CreditCard, Grid, Cpu, FileText,
   Key, CheckCircle, AlertTriangle, Wallet, ServerCog,
@@ -105,38 +106,47 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 24, background: C.bg }}>
-      <Key size={32} color={C.accent} style={{ opacity: 0.8 }} />
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>Admin API-Key</div>
-        <div style={{ fontSize: 11, color: C.textSub, maxWidth: 260 }}>
-          Der Key bleibt nur während dieser geöffneten App-Sitzung im Arbeitsspeicher.<br />
-          Nach einem Reload muss er erneut bestätigt werden.
+    <div className="admin-auth-shell">
+      <section className="admin-auth-card" aria-labelledby="admin-auth-title">
+        <div className="admin-auth-card__mark" aria-hidden="true">
+          <Key size={28} />
         </div>
-      </div>
-      <div style={{ width: '100%', maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <input
-          type="password"
-          placeholder="8516ae6b…"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && void handleSave()}
-          style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', minHeight: 48, fontSize: 12, color: C.text, outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
-        />
-        {error && (
-          <div style={{ background: '#f8717120', border: '1px solid #f8717140', borderRadius: 8, padding: '8px 12px', fontSize: 11, color: C.danger, display: 'flex', gap: 6 }}>
-            <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />{error}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={testing || !input.trim()}
-          style={{ background: C.accent, border: 'none', borderRadius: 8, padding: '10px 0', minHeight: 48, fontSize: 12, fontWeight: 700, color: '#000', cursor: (testing || !input.trim()) ? 'not-allowed' : 'pointer', opacity: (testing || !input.trim()) ? 0.6 : 1 }}
-        >
-          {testing ? 'Verbinde…' : 'Verbinden & speichern'}
-        </button>
-      </div>
+        <div className="admin-auth-card__copy">
+          <span className="admin-auth-card__eyebrow">Sovereign Control Plane</span>
+          <h1 id="admin-auth-title">Admin-Verbindung</h1>
+          <p>
+            Verwende denselben bestehenden Admin-Key wie bisher. Der Schlüssel bleibt nur in
+            dieser geöffneten App-Sitzung im Arbeitsspeicher und wird serverseitig geprüft.
+          </p>
+        </div>
+        <div className="admin-auth-form">
+          <label>
+            Bestehender Admin-Key
+            <input
+              type="password"
+              autoComplete="current-password"
+              placeholder="Admin-Key eingeben"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && void handleSave()}
+            />
+          </label>
+          {error && (
+            <div className="admin-auth-form__error" role="alert">
+              <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              {error}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={testing || !input.trim()}
+            className="admin-auth-form__button"
+          >
+            {testing ? 'Verbinde…' : 'Verbinden & speichern'}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -191,9 +201,9 @@ function ReadyContent() {
 
   return (
     <AdminGate>
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: C.bg }}>
+      <div className="admin-shell">
         {/* Tab bar */}
-        <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, overflowX: 'auto', flexShrink: 0 }}>
+        <nav className="admin-shell__tabs" aria-label="Admin-Bereiche">
           {TABS.map(t => {
             const Icon = t.icon;
             const active = tab === t.id;
@@ -202,17 +212,18 @@ function ReadyContent() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '8px 14px', minHeight: 52, background: 'transparent', border: 'none', cursor: 'pointer', touchAction: 'manipulation', borderBottom: `2px solid ${active ? C.accent : 'transparent'}`, color: active ? C.accent : C.textSub, flexShrink: 0, minWidth: 72 }}
+                className={`admin-shell__tab${active ? ' admin-shell__tab--active' : ''}`}
+                aria-current={active ? 'page' : undefined}
               >
                 <Icon size={14} />
                 <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.label}</span>
               </button>
             );
           })}
-        </div>
+        </nav>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: tab === 'platform' ? 0 : 14, overscrollBehavior: 'contain' }}>
+        <main className={`admin-shell__content${tab === 'platform' ? ' admin-shell__content--platform' : ''}`}>
           {tab === 'platform' && <EnterpriseBackendPanel />}
           {tab === 'users'    && <UserTable api={usersApi} onEdit={setEditUser} />}
           {tab === 'billing'  && (
@@ -225,7 +236,7 @@ function ReadyContent() {
           {tab === 'launcher' && <LauncherToolEditor api={launcherApi} />}
           {tab === 'llm'      && <LlmRouteEditor api={llmApi} />}
           {tab === 'audit'    && <AuditLogView />}
-        </div>
+        </main>
 
         {editUser && (
           <UserEditModal

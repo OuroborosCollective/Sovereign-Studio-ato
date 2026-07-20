@@ -38,6 +38,7 @@ from flask_cors import CORS
 import requests
 
 from litellm_runtime import (
+    classify_litellm_failure,
     extract_litellm_evidence,
     fetch_litellm,
     litellm_completion_canary,
@@ -55,6 +56,13 @@ from llm_cost_policy import (
     reservation_credits,
     route_billing_policy,
     require_package_cash_buffer,
+)
+from llm_revolver import (
+    build_revolver_candidates,
+    failure_decision,
+    normalize_quota_scope,
+    provider_usage_seen as revolver_provider_usage_seen,
+    route_quota_scope,
 )
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
@@ -566,15 +574,28 @@ def admin_credit_adjustment(uid):
         return jsonify({"error": "amount darf nicht 0 sein"}), 400
     if not reason:
         return jsonify({"error": "reason fehlt"}), 400
+    raw_idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
+    try:
+        idempotency_key = str(uuid.UUID(raw_idempotency_key))
+    except (ValueError, AttributeError, TypeError):
+        return jsonify({
+            "error": "Idempotency-Key muss eine UUID sein",
+            "blocker": "idempotency_key_required",
+        }), 400
 
     admin = get_current_admin() or {}
     ledger_type = "bonus" if amount > 0 else "correction"
     sign = "+" if amount > 0 else ""
     ledger_reason = f"Admin {sign}{amount}: {reason}"
+    admin_id = str(admin.get("id") or "")
+    request_fingerprint = hashlib.sha256(
+        f"{admin_id}\n{uid}\n{amount}\n{reason}".encode("utf-8")
+    ).hexdigest()
     audit_changes = {
         "amount": amount,
         "reason": reason,
         "ledgerType": ledger_type,
+        "idempotencyKey": idempotency_key,
     }
     try:
         result = _apply_credit_delta(
@@ -582,7 +603,10 @@ def admin_credit_adjustment(uid):
             amount,
             ledger_type=ledger_type,
             reason=ledger_reason,
-            created_by=str(admin.get("id") or ""),
+            provider=f"admin-credit-adjustment:{admin_id}",
+            provider_tx_id=idempotency_key,
+            request_fingerprint=request_fingerprint,
+            created_by=admin_id,
             audit_action="admin_credit_adjustment",
             audit_admin_email=str(admin.get("email") or ""),
             audit_changes=audit_changes,
@@ -606,6 +630,8 @@ def admin_credit_adjustment(uid):
     return jsonify({
         "ok": True,
         "newBalance": result["newBalance"],
+        "duplicate": bool(result.get("duplicate")),
+        "idempotencyKey": idempotency_key,
         "ledgerEntry": {
             "type": ledger_type,
             "amount": amount,
@@ -865,6 +891,22 @@ def _admin_llm_route_payload(row) -> dict:
         minimum = category_minimum_multiplier(category)
     except BillingPolicyError:
         minimum = 8
+    try:
+        quota_scope = normalize_quota_scope(
+            config.get("quotaScope"),
+            route_id=item.get("id"),
+        )
+    except ValueError:
+        quota_scope = normalize_quota_scope(None, route_id=item.get("id"))
+    revolver_state = query(
+        """SELECT status, consecutive_failures AS "consecutiveFailures",
+                  cooldown_until AS "cooldownUntil",
+                  last_http_status AS "lastHttpStatus",
+                  last_blocker AS "lastBlocker",
+                  last_attempt_at AS "lastAttemptAt"
+           FROM llm_route_revolver_state WHERE quota_scope=%s LIMIT 1""",
+        (quota_scope,), one=True,
+    ) or {}
     return {
         "id": str(item.get("id") or ""),
         "modelId": str(item.get("modelId") or item.get("model_id") or ""),
@@ -882,6 +924,23 @@ def _admin_llm_route_payload(row) -> dict:
         "pricingVerified": bool(policy.get("pricingVerified")),
         "pricingSource": str(policy.get("pricingSource") or "unverified"),
         "revolverEligible": category == FREE_CATEGORY and bool(policy.get("pricingVerified")),
+        "quotaScope": quota_scope,
+        "revolverState": {
+            "status": str(revolver_state.get("status") or "ready"),
+            "consecutiveFailures": int(revolver_state.get("consecutiveFailures") or 0),
+            "cooldownUntil": (
+                revolver_state.get("cooldownUntil").isoformat()
+                if revolver_state.get("cooldownUntil")
+                else None
+            ),
+            "lastHttpStatus": revolver_state.get("lastHttpStatus"),
+            "lastBlocker": revolver_state.get("lastBlocker"),
+            "lastAttemptAt": (
+                revolver_state.get("lastAttemptAt").isoformat()
+                if revolver_state.get("lastAttemptAt")
+                else None
+            ),
+        },
         "policyBlocker": policy_error,
     }
 
@@ -896,6 +955,21 @@ def admin_llm_routes():
            FROM llm_routes
            ORDER BY priority ASC, model_name ASC"""
     )
+    revolver_stats = query(
+        """SELECT COUNT(*)::integer AS attempts,
+                  COUNT(*) FILTER (WHERE outcome='success')::integer AS successes,
+                  COUNT(*) FILTER (WHERE outcome='retryable_failure')::integer AS rotations
+           FROM llm_route_attempts
+           WHERE completed_at >= NOW() - INTERVAL '24 hours'""",
+        one=True,
+    ) or {}
+    active_states = query(
+        """SELECT COUNT(*)::integer AS count
+           FROM llm_route_revolver_state
+           WHERE status='blocked'
+              OR (status='cooldown' AND cooldown_until > NOW())""",
+        one=True,
+    ) or {}
     return jsonify({
         "routes": [_admin_llm_route_payload(row) for row in (rows or [])],
         "billingCategories": [
@@ -903,6 +977,12 @@ def admin_llm_routes():
             {"id": "standard", "minimumMultiplier": 4, "revolverOnly": False},
             {"id": "premium", "minimumMultiplier": 8, "revolverOnly": False},
         ],
+        "revolverStats": {
+            "attempts24h": int(revolver_stats.get("attempts") or 0),
+            "successes24h": int(revolver_stats.get("successes") or 0),
+            "rotations24h": int(revolver_stats.get("rotations") or 0),
+            "blockedOrCoolingScopes": int(active_states.get("count") or 0),
+        },
         "manualCreditsPerUnitEditing": False,
     })
 
@@ -946,12 +1026,17 @@ def admin_update_llm_route(rid):
         priority = int(body.get("priority", route.get("priority") or 0))
         if not -10_000 <= priority <= 10_000:
             raise BillingPolicyError("priority liegt außerhalb des erlaubten Bereichs")
+        quota_scope = normalize_quota_scope(
+            body.get("quotaScope", config.get("quotaScope")),
+            route_id=route.get("id"),
+        )
         config.update({
             "billingCategory": category,
             "billingClass": category,
             "markupMultiplier": multiplier,
             "minimumMultiplier": category_minimum_multiplier(category),
             "revolverEligible": category == FREE_CATEGORY,
+            "quotaScope": quota_scope,
         })
         policy = route_billing_policy({"model_id": route["model_id"], "config": config})
     except (BillingPolicyError, TypeError, ValueError) as exc:
@@ -1047,6 +1132,41 @@ def admin_update_llm_route(rid):
         "ok": True,
         "route": _admin_llm_route_payload(updated),
         "activationVerified": body.get("disabled") is not False or bool(activation_evidence),
+    })
+
+
+@app.route("/api/admin/llm/routes/<rid>/revolver-reset", methods=["POST"])
+@require_admin
+def admin_reset_llm_revolver_route(rid):
+    route = query(
+        "SELECT id::text, config FROM llm_routes WHERE id::text=%s LIMIT 1",
+        (rid,), one=True,
+    )
+    if not route:
+        return jsonify({"error": "Route nicht gefunden"}), 404
+    try:
+        quota_scope = route_quota_scope(dict(route))
+    except ValueError as exc:
+        return jsonify({
+            "error": str(exc),
+            "blocker": "llm_quota_scope_invalid",
+        }), 409
+    query(
+        """INSERT INTO llm_route_revolver_state
+               (quota_scope, status, consecutive_failures, cooldown_until,
+                last_http_status, last_blocker, updated_at)
+           VALUES (%s, 'ready', 0, NULL, NULL, NULL, NOW())
+           ON CONFLICT (quota_scope) DO UPDATE SET
+               status='ready', consecutive_failures=0, cooldown_until=NULL,
+               last_http_status=NULL, last_blocker=NULL, updated_at=NOW()""",
+        (quota_scope,), write=True,
+    )
+    audit("admin_reset_llm_revolver_route", rid, {"quotaScope": quota_scope})
+    return jsonify({
+        "ok": True,
+        "routeId": rid,
+        "quotaScope": quota_scope,
+        "status": "ready",
     })
 
 
@@ -1826,7 +1946,12 @@ def admin_tool_healthcheck(tid):
 @app.route("/health")
 @app.route("/health/live")
 def health():
-    return jsonify({"ok": True, "status": "live"})
+    return jsonify({
+        "ok": True,
+        "status": "live",
+        "sourceRevision": os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified"),
+        "imageDigest": os.getenv("SOVEREIGN_IMAGE_DIGEST", "unverified"),
+    })
 
 
 @app.route("/health/ready")
@@ -1834,7 +1959,25 @@ def health_ready():
     components = {}
     try:
         query("SELECT 1", one=True)
-        migration = query("SELECT id FROM schema_migrations WHERE id=21 LIMIT 1", one=True)
+        schema = query(
+            """SELECT
+                   to_regclass('llm_route_attempts') IS NOT NULL AS revolver_attempts,
+                   to_regclass('llm_route_revolver_state') IS NOT NULL AS revolver_state,
+                   to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
+                   EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                       WHERE table_schema=current_schema()
+                         AND table_name='transactions'
+                         AND column_name='provider_tx_id'
+                   ) AS transaction_receipts,
+                   EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                       WHERE table_schema=current_schema()
+                         AND table_name='credit_receipts'
+                         AND column_name='request_fingerprint'
+                   ) AS receipt_fingerprints""",
+            one=True,
+        ) or {}
         routes = query(
             """SELECT model_id, provider FROM llm_routes
                WHERE disabled=false ORDER BY priority ASC"""
@@ -1844,11 +1987,23 @@ def health_ready():
             for row in (routes or [])
             if str(row.get("provider") or "").strip().lower() != "litellm"
         ]
+        schema_ready = all(bool(schema.get(name)) for name in (
+            "revolver_attempts",
+            "revolver_state",
+            "package_uniqueness",
+            "transaction_receipts",
+            "receipt_fingerprints",
+        ))
         components["database"] = {
-            "ok": bool(migration),
-            "migration21": bool(migration),
+            "ok": schema_ready,
+            "requiredMigrations": [
+                "026_llm_free_route_revolver.sql",
+                "027_billing_idempotency_and_package_uniqueness.sql",
+            ],
+            "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
             "invalidDirectRoutes": invalid_routes,
+            "llmRoutingStatus": "ready" if routes else "not_configured",
         }
     except Exception:
         components["database"] = {"ok": False, "blocker": "database_not_ready"}
@@ -1857,18 +2012,19 @@ def health_ready():
     components["litellm"] = {
         "ok": bool(lite.get("ok")),
         "httpStatus": lite.get("httpStatus"),
-        "error": lite.get("error") if not lite.get("ok") else None,
+        "errorCode": lite.get("errorCode") if not lite.get("ok") else None,
     }
     database = components["database"]
     ready = bool(
         database.get("ok")
-        and int(database.get("activeRoutes") or 0) > 0
         and not database.get("invalidDirectRoutes")
         and components["litellm"].get("ok")
     )
     return jsonify({
         "ok": ready,
         "status": "ready" if ready else "blocked",
+        "sourceRevision": os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified"),
+        "imageDigest": os.getenv("SOVEREIGN_IMAGE_DIGEST", "unverified"),
         "components": components,
     }), 200 if ready else 503
 
@@ -2010,6 +2166,7 @@ def _apply_credit_delta(
     reason: str,
     provider: str | None = None,
     provider_tx_id: str | None = None,
+    request_fingerprint: str | None = None,
     created_by: str | None = None,
     transaction_amount_eur: float | None = None,
     provider_funded_delta: int | None = None,
@@ -2022,8 +2179,11 @@ def _apply_credit_delta(
         raise ValueError("Credit-Änderung benötigt User und einen ganzzahligen Betrag ungleich null")
     normalized_provider = (provider or "").strip() or None
     normalized_tx_id = (provider_tx_id or "").strip() or None
+    normalized_fingerprint = (request_fingerprint or "").strip() or None
     if transaction_amount_eur is not None and (not normalized_provider or not normalized_tx_id):
         raise ValueError("Bestätigte Käufe benötigen Provider und eindeutige Transaktions-ID")
+    if normalized_fingerprint and (not normalized_provider or not normalized_tx_id):
+        raise ValueError("Request-Fingerprint benötigt Provider und Idempotency-Key")
 
     pool = get_pool()
     conn = pool.getconn()
@@ -2052,7 +2212,8 @@ def _apply_credit_delta(
 
             if normalized_provider and normalized_tx_id:
                 cur.execute(
-                    "SELECT user_id::text, credits FROM credit_receipts "
+                    "SELECT user_id::text, credits, request_fingerprint "
+                    "FROM credit_receipts "
                     "WHERE provider = %s AND provider_tx_id = %s LIMIT 1",
                     (normalized_provider, normalized_tx_id),
                 )
@@ -2061,8 +2222,15 @@ def _apply_credit_delta(
                     if (
                         existing_receipt["user_id"] != user_id
                         or int(existing_receipt["credits"]) != amount
+                        or (
+                            normalized_fingerprint
+                            and existing_receipt.get("request_fingerprint")
+                                != normalized_fingerprint
+                        )
                     ):
-                        raise CreditStateConflict("Provider-Receipt kollidiert mit anderem User oder Betrag")
+                        raise CreditStateConflict(
+                            "Idempotency-Key kollidiert mit anderem User, Betrag oder Request"
+                        )
                     conn.rollback()
                     return {
                         "newBalance": cached_balance,
@@ -2071,9 +2239,16 @@ def _apply_credit_delta(
                     }
                 cur.execute(
                     """INSERT INTO credit_receipts
-                           (provider, provider_tx_id, user_id, credits)
-                       VALUES (%s, %s, %s::uuid, %s)""",
-                    (normalized_provider, normalized_tx_id, user_id, amount),
+                           (provider, provider_tx_id, user_id, credits,
+                            request_fingerprint)
+                       VALUES (%s, %s, %s::uuid, %s, %s)""",
+                    (
+                        normalized_provider,
+                        normalized_tx_id,
+                        user_id,
+                        amount,
+                        normalized_fingerprint,
+                    ),
                 )
 
             new_balance = cached_balance + amount
@@ -2302,16 +2477,16 @@ def admin_init_payment_methods():
     ]
     inserted = 0
     for ptype, label, cfg in defaults:
-        existing = query(
-            "SELECT id FROM payment_methods WHERE type = %s LIMIT 1", (ptype,), one=True,
+        created = query(
+            """INSERT INTO payment_methods (type, label, enabled, config)
+               VALUES (%s, %s, false, %s::jsonb)
+               ON CONFLICT (type) DO NOTHING
+               RETURNING id::text""",
+            (ptype, label, psycopg2.extras.Json(cfg)),
+            one=True,
+            write=True,
         )
-        if not existing:
-            query(
-                """INSERT INTO payment_methods (type, label, enabled, config)
-                   VALUES (%s, %s, false, %s::jsonb)""",
-                (ptype, label, psycopg2.extras.Json(cfg)), write=True,
-            )
-            inserted += 1
+        inserted += int(bool(created))
     return jsonify({"ok": True, "inserted": inserted})
 
 
@@ -2345,17 +2520,17 @@ def admin_init_credit_packages():
     ]
     inserted = 0
     for name, creds, price, desc, order in defaults:
-        existing = query(
-            "SELECT id FROM credit_packages WHERE name = %s LIMIT 1", (name,), one=True,
+        created = query(
+            """INSERT INTO credit_packages
+                   (name, credits, price_eur, description, enabled, sort_order)
+               VALUES (%s, %s, %s, %s, true, %s)
+               ON CONFLICT (name) DO NOTHING
+               RETURNING id::text""",
+            (name, creds, price, desc, order),
+            one=True,
+            write=True,
         )
-        if not existing:
-            query(
-                """INSERT INTO credit_packages
-                       (name, credits, price_eur, description, enabled, sort_order)
-                   VALUES (%s, %s, %s, %s, true, %s)""",
-                (name, creds, price, desc, order), write=True,
-            )
-            inserted += 1
+        inserted += int(bool(created))
     return jsonify({"ok": True, "inserted": inserted})
 
 
@@ -6900,6 +7075,14 @@ def public_llm_auto_route():
                 "suggestion": "Im Admin ein LiteLLM-Modell auswählen, Kategorie setzen und die Canary ausführen.",
             }), 503
         selected = safe_routes[0]
+        free_fallbacks = (
+            [
+                candidate for candidate in safe_routes[1:]
+                if candidate["billingCategory"] == FREE_CATEGORY
+            ][:4]
+            if selected["billingCategory"] == FREE_CATEGORY
+            else []
+        )
         return jsonify({
             "ok": True,
             "selected": {
@@ -6907,9 +7090,11 @@ def public_llm_auto_route():
                 "provider": "litellm",
                 "routeType": "private-litellm",
             },
-            "fallback": safe_routes[1:5],
+            "fallback": free_fallbacks,
             "revolverSelection": (
-                "free" if selected["billingCategory"] == FREE_CATEGORY else "paid-fallback"
+                "free-revolver"
+                if selected["billingCategory"] == FREE_CATEGORY
+                else "paid-single-route"
             ),
             "message": f"LiteLLM: {selected['label']} · {selected['billingCategory']}",
         })
@@ -7373,6 +7558,151 @@ def _settle_llm_usage(
     }, ""
 
 
+def _load_llm_revolver_candidates(primary_route) -> list:
+    try:
+        primary_policy = route_billing_policy(primary_route)
+    except BillingPolicyError:
+        return []
+    if primary_policy["billingCategory"] != FREE_CATEGORY:
+        return [primary_route]
+
+    rows = query(
+        """SELECT id::text, model_id, model_name, provider, base_url,
+                  credits_per_unit::float AS credits_per_unit,
+                  disabled, priority, config
+           FROM llm_routes
+           WHERE disabled=false AND lower(provider)='litellm'
+             AND COALESCE(config->>'billingCategory', config->>'billingClass')='free'
+           ORDER BY priority ASC, model_name ASC
+           LIMIT 100"""
+    ) or []
+    scopes = []
+    for row in rows:
+        try:
+            scopes.append(route_quota_scope(dict(row)))
+        except ValueError:
+            continue
+    state_rows = query(
+        """SELECT quota_scope, status, cooldown_until
+           FROM llm_route_revolver_state
+           WHERE quota_scope = ANY(%s)""",
+        (scopes,),
+    ) if scopes else []
+    state_by_scope = {
+        str(row["quota_scope"]): dict(row)
+        for row in (state_rows or [])
+    }
+    return build_revolver_candidates(
+        dict(primary_route),
+        [dict(row) for row in rows],
+        state_by_scope=state_by_scope,
+    )
+
+
+def _record_llm_revolver_attempt(
+    *,
+    request_id: str,
+    attempt_number: int,
+    route,
+    outcome: str,
+    response,
+    evidence: dict,
+    decision: dict | None,
+) -> None:
+    quota_scope = route_quota_scope(dict(route))
+    http_status = int(response.status_code) if response is not None else None
+    blocker = str((decision or {}).get("blocker") or "")[:120] or None
+    provider_cost_micros = provider_cost_usd_to_micros(
+        evidence.get("providerCostUsd")
+    )
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO llm_route_attempts
+                       (request_id, attempt_number, route_id, model_id, provider,
+                        quota_scope, outcome, http_status, blocker,
+                        upstream_request_id, prompt_tokens, completion_tokens,
+                        total_tokens, provider_cost_usd_micros,
+                        started_at, completed_at)
+                   VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())""",
+                (
+                    request_id,
+                    attempt_number,
+                    str(route["id"]),
+                    str(route["model_id"]),
+                    "litellm",
+                    quota_scope,
+                    outcome,
+                    http_status,
+                    blocker,
+                    str(evidence.get("upstreamRequestId") or "")[:200] or None,
+                    max(0, int(evidence.get("promptTokens") or 0)),
+                    max(0, int(evidence.get("completionTokens") or 0)),
+                    max(0, int(evidence.get("totalTokens") or 0)),
+                    provider_cost_micros,
+                ),
+            )
+            if outcome == "success":
+                cursor.execute(
+                    """INSERT INTO llm_route_revolver_state
+                           (quota_scope, status, consecutive_failures,
+                            cooldown_until, last_route_id, last_http_status,
+                            last_blocker, last_request_id, last_attempt_at, updated_at)
+                       VALUES (%s,'ready',0,NULL,%s,%s,NULL,%s::uuid,NOW(),NOW())
+                       ON CONFLICT (quota_scope) DO UPDATE SET
+                           status='ready', consecutive_failures=0, cooldown_until=NULL,
+                           last_route_id=EXCLUDED.last_route_id,
+                           last_http_status=EXCLUDED.last_http_status,
+                           last_blocker=NULL, last_request_id=EXCLUDED.last_request_id,
+                           last_attempt_at=NOW(), updated_at=NOW()""",
+                    (quota_scope, str(route["id"]), http_status, request_id),
+                )
+            else:
+                state = str((decision or {}).get("state") or "ready")
+                cooldown_seconds = max(
+                    0, min(int((decision or {}).get("cooldownSeconds") or 0), 86_400)
+                )
+                cursor.execute(
+                    """INSERT INTO llm_route_revolver_state
+                           (quota_scope, status, consecutive_failures,
+                            cooldown_until, last_route_id, last_http_status,
+                            last_blocker, last_request_id, last_attempt_at, updated_at)
+                       VALUES (
+                           %s,%s,1,
+                           CASE WHEN %s > 0
+                                THEN NOW() + (%s * INTERVAL '1 second')
+                                ELSE NULL END,
+                           %s,%s,%s,%s::uuid,NOW(),NOW()
+                       )
+                       ON CONFLICT (quota_scope) DO UPDATE SET
+                           status=EXCLUDED.status,
+                           consecutive_failures=llm_route_revolver_state.consecutive_failures + 1,
+                           cooldown_until=EXCLUDED.cooldown_until,
+                           last_route_id=EXCLUDED.last_route_id,
+                           last_http_status=EXCLUDED.last_http_status,
+                           last_blocker=EXCLUDED.last_blocker,
+                           last_request_id=EXCLUDED.last_request_id,
+                           last_attempt_at=NOW(), updated_at=NOW()""",
+                    (
+                        quota_scope,
+                        state,
+                        cooldown_seconds,
+                        cooldown_seconds,
+                        str(route["id"]),
+                        http_status,
+                        blocker,
+                        request_id,
+                    ),
+                )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 @app.route("/api/llm/chat", methods=["POST"])
 @require_session
 def public_llm_chat():
@@ -7461,6 +7791,12 @@ def public_llm_chat():
                 "error": str(exc),
                 "blocker": "llm_billing_policy_invalid",
             }), 409
+        candidate_routes = _load_llm_revolver_candidates(route)
+        if policy["billingCategory"] == FREE_CATEGORY and not candidate_routes:
+            return jsonify({
+                "error": "Alle unabhängigen Free-Routen sind blockiert oder in Abkühlung.",
+                "blocker": "free_route_revolver_exhausted",
+            }), 503
 
         input_token_upper_bound = _estimate_llm_input_token_upper_bound(messages)
         estimated_tokens = input_token_upper_bound + max_tokens
@@ -7574,24 +7910,29 @@ def public_llm_chat():
             return refund_failed_run("settlement_failed")
 
         provider = str(route.get("provider") or "").strip().lower()
-        route_model = str(route.get("model_id") or "").strip()
+        if provider != "litellm":
+            return refund_failed_run("direct_provider_route_blocked")
+
         payload = {
-            "model": route_model,
             "messages": messages,
             "max_tokens": max_tokens,
             "stream": False,
         }
         fallback_route = None
-
-        if provider != "litellm":
-            return refund_failed_run("direct_provider_route_blocked")
-
-        if provider == "litellm":
+        result = {}
+        evidence = {}
+        resp = None
+        attempt_count = 0
+        revolver_enabled = policy["billingCategory"] == FREE_CATEGORY
+        for attempt_count, candidate_route in enumerate(candidate_routes, start=1):
+            payload["model"] = str(candidate_route.get("model_id") or "").strip()
             resp, err = fetch_litellm(
                 "/v1/chat/completions",
                 method="POST",
                 json_data=payload,
             )
+            if err or resp is None:
+                return refund_failed_run("litellm_unavailable")
             result = _safe_upstream_json(resp)
             evidence = (
                 extract_litellm_evidence(resp, result)
@@ -7604,45 +7945,101 @@ def public_llm_chat():
                     "providerCostUsd": None,
                 }
             )
-            provider_usage_seen = bool(
-                int(evidence.get("totalTokens") or 0) > 0
-                or str(evidence.get("upstreamRequestId") or "").strip()
+            attempt_usage_seen = revolver_provider_usage_seen(evidence)
+            provider_usage_seen = provider_usage_seen or attempt_usage_seen
+            if not err and resp is not None and resp.ok:
+                if revolver_enabled:
+                    try:
+                        _record_llm_revolver_attempt(
+                            request_id=request_id,
+                            attempt_number=attempt_count,
+                            route=candidate_route,
+                            outcome="success",
+                            response=resp,
+                            evidence=evidence,
+                            decision=None,
+                        )
+                    except Exception:
+                        return refund_failed_run("revolver_evidence_failed")
+                if str(candidate_route["id"]) != str(route["id"]):
+                    fallback_route = candidate_route
+                break
+
+            classified = classify_litellm_failure(resp, err)
+            decision = failure_decision(
+                classified,
+                usage_seen=attempt_usage_seen,
             )
-            if err or resp is None or not resp.ok:
-                if provider_usage_seen:
-                    billing, settlement_error = _settle_llm_usage(
+            has_next = attempt_count < len(candidate_routes)
+            will_retry = (
+                revolver_enabled
+                and bool(decision["retryAllowed"])
+                and not attempt_usage_seen
+                and has_next
+            )
+            if revolver_enabled:
+                try:
+                    _record_llm_revolver_attempt(
                         request_id=request_id,
-                        user_id=user_id,
-                        route=route,
-                        reserved_credits=reserved_cost,
-                        reserved_balance=reserved_balance,
+                        attempt_number=attempt_count,
+                        route=candidate_route,
+                        outcome=(
+                            "retryable_failure" if will_retry else "terminal_failure"
+                        ),
+                        response=resp,
                         evidence=evidence,
+                        decision=decision,
                     )
-                    if settlement_error:
-                        _mark_llm_settlement_failed(request_id, settlement_error)
-                        return jsonify({
-                            "error": "Provider-Nutzung erkannt, Settlement nicht bestätigt",
-                            "blocker": settlement_error,
-                            "requestId": request_id,
-                        }), 500
+                except Exception:
+                    return refund_failed_run("revolver_evidence_failed")
+            if will_retry:
+                continue
+
+            blocker = str(decision.get("blocker") or "provider_rejected")
+            if attempt_usage_seen:
+                actual_route = (
+                    candidate_route
+                    if str(candidate_route["id"]) != str(route["id"])
+                    else None
+                )
+                billing, settlement_error = _settle_llm_usage(
+                    request_id=request_id,
+                    user_id=user_id,
+                    route=route,
+                    reserved_credits=reserved_cost,
+                    reserved_balance=reserved_balance,
+                    evidence=evidence,
+                    fallback_route=actual_route,
+                )
+                if settlement_error:
+                    _mark_llm_settlement_failed(request_id, settlement_error)
                     return jsonify({
-                        "error": "Provider hat den Modellaufruf abgelehnt",
-                        "blocker": "provider_rejected",
+                        "error": "Provider-Nutzung erkannt, Settlement nicht bestätigt",
+                        "blocker": settlement_error,
                         "requestId": request_id,
-                        "sovereignBilling": billing,
-                    }), 502
-
-                return refund_failed_run("litellm_unavailable")
+                    }), 500
+                return jsonify({
+                    "error": "Provider hat den Modellaufruf abgelehnt",
+                    "blocker": blocker,
+                    "requestId": request_id,
+                    "sovereignBilling": billing,
+                    "sovereignRevolver": {
+                        "eligible": revolver_enabled,
+                        "attempts": attempt_count,
+                        "exhausted": not has_next,
+                    },
+                }), 502
+            return refund_failed_run(
+                "free_route_revolver_exhausted"
+                if revolver_enabled and not has_next and decision["retryAllowed"]
+                else blocker
+            )
         else:
-            resp, err = _call_existing_llm_route(route, payload)
-            result = _safe_upstream_json(resp)
-            if err or resp is None or not resp.ok:
-                return refund_failed_run("provider_rejected")
-            evidence = extract_litellm_evidence(resp, result)
+            return refund_failed_run("free_route_revolver_exhausted")
 
-        provider_usage_seen = bool(
-            int(evidence.get("totalTokens") or 0) > 0
-            or str(evidence.get("upstreamRequestId") or "").strip()
+        evidence["requestCount"] = max(1, attempt_count)
+        provider_usage_seen = (
+            provider_usage_seen or revolver_provider_usage_seen(evidence)
         )
         billing, settlement_error = _settle_llm_usage(
             request_id=request_id,
@@ -7663,6 +8060,15 @@ def public_llm_chat():
 
         response_payload = dict(result) if isinstance(result, dict) else {"result": result}
         response_payload["sovereignBilling"] = billing
+        response_payload["sovereignRevolver"] = {
+            "eligible": revolver_enabled,
+            "attempts": max(1, attempt_count),
+            "rotated": fallback_route is not None,
+            "exhausted": False,
+            "selectedModelId": str(
+                (fallback_route or route).get("model_id") or ""
+            ),
+        }
         return jsonify(response_payload)
     except Exception:
         if reserved_cost > 0 and reserved_route_id and request_id and not provider_usage_seen:
