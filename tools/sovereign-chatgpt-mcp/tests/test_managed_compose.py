@@ -91,6 +91,89 @@ def test_managed_stack_inspect_returns_mount_and_image_metadata_without_environm
     assert "PASSWORD" not in str(anchor)
 
 
+def test_code_server_template_is_digest_pinned_loopback_only_and_preserves_volume() -> None:
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "templates"
+        / "code-server-46bq"
+        / "docker-compose.yml"
+    ).read_text("utf-8")
+
+    assert "lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441" in template
+    assert "lscr.io/linuxserver/code-server:latest" not in template
+    assert "127.0.0.1:32782:8443" in template
+    assert "0.0.0.0:32782" not in template
+    assert "code-server-46bq_code-server-config" in template
+    assert "/var/run/docker.sock" not in template
+
+
+def test_code_server_env_is_preserved_without_returning_values(tmp_path: Path) -> None:
+    password = "existing $owner#pass'word"
+
+    def runner(argv, **kwargs):
+        if argv[:3] == ["docker", "inspect", "--format"] and "Config.Env" in argv[3]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                '["PUID=1000","PGID=1000","TZ=Europe/Berlin","PASSWORD=' + password + '","DEFAULT_WORKSPACE=/config/workspace"]',
+                "",
+            )
+        return subprocess.CompletedProcess(argv, 1, "", "not found")
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    original = STACKS["code-server-46bq"]
+    stack = type(original)(**{**original.__dict__, "deploy_root": str(tmp_path / "deploy")})
+    result = runtime._ensure_stack_secret_env(stack)
+    env_text = Path(result["path"]).read_text("utf-8")
+
+    assert result["source"] == "running_container"
+    assert result["authMode"] == "password"
+    assert result["secretValuesReturned"] is False
+    assert Path(result["path"]).stat().st_mode & 0o777 == 0o600
+    assert "PASSWORD='existing $owner#pass\\'word'" in env_text
+    assert password not in str(result)
+    assert runtime._decode_code_server_env_value("'existing $owner#pass\\'word'") == password
+
+
+def test_code_server_env_blocks_unauthenticated_recreation(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        if argv[:3] == ["docker", "inspect", "--format"] and "Config.Env" in argv[3]:
+            return subprocess.CompletedProcess(argv, 0, '["PUID=1000","PGID=1000"]', "")
+        return subprocess.CompletedProcess(argv, 1, "", "not found")
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    original = STACKS["code-server-46bq"]
+    stack = type(original)(**{**original.__dict__, "deploy_root": str(tmp_path / "deploy")})
+
+    with pytest.raises(RuntimeError, match="Authentisierung fehlt"):
+        runtime._ensure_stack_secret_env(stack)
+
+
+def test_code_server_transport_requires_loopback_digest_and_exact_volume(tmp_path: Path) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    state = {
+        "present": True,
+        "running": True,
+        "publishedPorts": {"8443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "32782"}]},
+        "repoDigests": ["lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441"],
+        "mounts": [{
+            "type": "volume",
+            "name": "code-server-46bq_code-server-config",
+            "destination": "/config",
+            "rw": True,
+        }],
+    }
+    assert runtime._code_server_transport_ready(state) is True
+    state["publishedPorts"]["8443/tcp"].append({"HostIp": "::", "HostPort": "32782"})
+    assert runtime._code_server_transport_ready(state) is False
+
+
+def test_milvus_deploy_requires_collection_canary() -> None:
+    source = Path(__file__).resolve().parents[1].joinpath("managed_compose.py").read_text("utf-8")
+    assert "self.memory_gateway_collection_canary()" in source
+    assert "MILVUS_TRANSPORT_AND_COLLECTION_VERIFIED" in source
+
+
 def test_deploy_is_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", raising=False)
     monkeypatch.delenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", raising=False)

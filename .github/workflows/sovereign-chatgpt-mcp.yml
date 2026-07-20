@@ -131,6 +131,40 @@ jobs:
           test -f templates/sovereign-litellm/sovereign-entrypoint.py
           test -f templates/pgbackweb-wq5r/docker-compose.yml
           test -f templates/patchmon-sovereign/docker-compose.yml
+          test -f templates/code-server-46bq/docker-compose.yml
+          cat > /tmp/code-server-test.env <<'EOF'
+          PUID='1000'
+          PGID='1000'
+          TZ='Europe/Berlin'
+          PASSWORD='ci-only-password'
+          HASHED_PASSWORD=''
+          SUDO_PASSWORD=''
+          SUDO_PASSWORD_HASH=''
+          PROXY_DOMAIN=''
+          DEFAULT_WORKSPACE='/config/workspace'
+          EOF
+          docker compose --project-name code-server-46bq --env-file /tmp/code-server-test.env --file templates/code-server-46bq/docker-compose.yml config --format json > /tmp/code-server-rendered.json
+          python - /tmp/code-server-rendered.json <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          rendered = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+          service = (rendered.get('services') or {}).get('code-server') or {}
+          assert service.get('image') == 'lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441', service
+          ports = service.get('ports') or []
+          assert len(ports) == 1, ports
+          assert str(ports[0].get('host_ip') or '') == '127.0.0.1', ports[0]
+          assert str(ports[0].get('published') or '') == '32782', ports[0]
+          assert str(ports[0].get('target') or '') == '8443', ports[0]
+          volumes = service.get('volumes') or []
+          assert len(volumes) == 1, volumes
+          assert str(volumes[0].get('target') or '') == '/config', volumes[0]
+          named = rendered.get('volumes') or {}
+          assert (named.get('code-server-config') or {}).get('name') == 'code-server-46bq_code-server-config', named
+          assert service.get('environment', {}).get('PASSWORD') == 'ci-only-password', service.get('environment')
+          PY
+          rm -f /tmp/code-server-test.env /tmp/code-server-rendered.json
           cmp templates/sovereign-litellm/docker-compose.yml ../../deploy/sovereign-litellm/docker-compose.yml
           cmp templates/sovereign-litellm/config.yaml ../../deploy/sovereign-litellm/config.yaml
           cmp templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
@@ -684,7 +718,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
