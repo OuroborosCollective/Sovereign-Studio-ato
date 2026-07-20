@@ -4,7 +4,10 @@
 
 **Evidence-Stand:** 20. Juli 2026
 
-**Baseline-Revision vor diesem Manifest-Update:** `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01`
+- **Audit-Baseline dieses Manifest-Updates:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
+- **Produktive MCP-Revision:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
+- **Produktives MCP-Image:** `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`
+- **Backend-Releasezustand:** Code und immutable Image für `246e701f5b2d8ce94c21c001b26bf4aee216239c` sind vorhanden; der produktive Backend-Container läuft noch auf dem Stand vor PR #867. Deployment, Migration `028` und Live-Readback bleiben offen.
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
 **Produkt:** Android-first NoCode-/AI-Service- und Agentenplattform  
@@ -277,6 +280,10 @@ ist der vorgesehene kanonische Backend-/Admin-Livepfad.
 
 **BELEGT:** Die tatsächlich gespiegelten Agent-Runtime-, A2A-, ARE-, Knowledge-, Security-, LiteLLM-, `knowledge_library.py`- und `r2_storage.py`-Dateien sind im Architektur-Snapshot bytegleich. Der produktive R2-Adapter verwendet die vollständige fail-closed Implementierung einschließlich Pfad-, MIME-, Hash-, Evidence- und 33-MiB-PDF-Grenzen.
 
+**BELEGT — Code auf `main`:** PR #867 ersetzte die ausgelieferte `/admin`-Wahrheit durch `scripts/sovereign-backend/enterprise_admin_ui.py` und ergänzte die persistierbare Standing-Owner-Policy in Migration `028_owner_learning_policy.sql`. Das immutable Backend-Image für Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` wurde erfolgreich als Digest `sha256:629a694d67c4789053da81656cbc7523a084b8ac52877ff2083aa0325453ae18` gebaut.
+
+**TEILWEISE — produktive Aktivierung:** Der laufende Backend-Container wurde vor diesem Merge gestartet. `owner_learning_policies` fehlt im Live-Schema und Migration `028` ist nicht registriert. Die neue Adminoberfläche und die Standing-Learning-Policy sind daher code- und image-belegt, aber noch nicht produktiv readback-verifiziert.
+
 ---
 
 # 6. Admin Backend
@@ -468,7 +475,7 @@ Der private Sovereign ChatGPT MCP verbindet ChatGPT mit kontrollierten Repositor
 
 ## 9.2 Belegter Control-Plane-Stand
 
-**BELEGT:** Die Control Plane meldet `BROKER_READY`. Repository-`main` und produktive MCP-Revision stehen aktuell auf `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01`; der revisionsgebundene Self-Update-Readback bestätigt Container-Health, Host-Command-Worker, Broker-RPC, MCP-Protokoll-Handshake, Cross-Runtime-Parität und KappaPos `1_000_000`. Immutable Image-Referenz und Image-ID sind `sha256:230564e0073975649c7277e18de1cb6fe9805a70af0d9fc3d7ec01e62a2b9871`; der Runtime-Evidence-Hash ist `293d22105569058ab5cbb4187eba1c18edf0d98be628750ae3393873411da88e`. Direkte eingehende Mutationen, generische Shell und ein Docker-Socket im MCP bleiben verboten.
+**BELEGT:** Die Control Plane meldet `BROKER_READY`. Repository-`main` und produktive MCP-Revision stehen aktuell auf `246e701f5b2d8ce94c21c001b26bf4aee216239c`; der revisionsgebundene Self-Update-Readback bestätigt Container-Health, Host-Command-Worker, Broker-RPC, MCP-Protokoll-Handshake, Cross-Runtime-Parität und KappaPos `1_000_000`. Immutable Image-Referenz und Image-ID sind `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`; der Runtime-Evidence-Hash ist `1d0fe00f2b344d584bbf7c46320cc2b171191c9533efae192272db7cec431af2`. Direkte eingehende Mutationen, generische Shell und ein Docker-Socket im MCP bleiben verboten.
 
 Die Runtime-Grenzen schreiben unter anderem vor:
 
@@ -526,7 +533,7 @@ Revision, immutable Image-Referenz, Digest, Image-ID, Runtime-Evidence-Hash sowi
 
 **BELEGT — lokale Verträge:** Acht gezielte Modultests belegen Registrierung, FastMCP-Schemas, Sicherheitsannotationen, Secret-Redaktion, Stackauswahl, TSX-/Tenancy-/Plugin-/Release-Roadmap, Threat-Control-Plan sowie Revisionserfolg und fail-closed Dirty-/Mismatch-Pfade. Weitere 17 Installer-/Docker-Vertragstests belegen Packaging, Launcher-Registrierung und Runtime-Import-Canaries. Die vollständige lokal ausführbare MCP-Suite bestand mit `264 passed`; zwei unveränderte Broker-Tests wurden ausschließlich wegen des Sandbox-Verbots für Unix-Socket-Erzeugung lokal nicht ausgeführt und bleiben für GitHub Actions verpflichtend.
 
-**BELEGT — Runtime:** Dockerfile, Launcher, Installer, Releasearchiv-Check und GitHub-Workflow sind verdrahtet. PR #854 bestand am unveränderten Head `380d1c34a1a8205e90d7a6fe53181128ee29f75b` alle 18 Checkläufe ohne Fehler und wurde als Squash-Commit `11016a246af0a1f866c1814178f4fed7f82746c8` übernommen. Die produktive MCP-Runtime wurde danach revisionsgebunden auf `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01` aktualisiert. Der aktuelle Readback bestätigt Digest `sha256:230564e0073975649c7277e18de1cb6fe9805a70af0d9fc3d7ec01e62a2b9871`, Evidence-Hash `293d22105569058ab5cbb4187eba1c18edf0d98be628750ae3393873411da88e`, KappaPos `1_000_000`, Container-Health, Host Worker, Broker-RPC, MCP-Handshake und Cross-Runtime-Parität.
+**BELEGT — Runtime:** Dockerfile, Launcher, Installer, Releasearchiv-Check und GitHub-Workflow sind verdrahtet. PR #854 bestand am unveränderten Head `380d1c34a1a8205e90d7a6fe53181128ee29f75b` alle 18 Checkläufe ohne Fehler und wurde als Squash-Commit `11016a246af0a1f866c1814178f4fed7f82746c8` übernommen. Nach PR #867 wurde die produktive MCP-Runtime revisionsgebunden auf `246e701f5b2d8ce94c21c001b26bf4aee216239c` aktualisiert. Der aktuelle Readback bestätigt Digest `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`, Evidence-Hash `1d0fe00f2b344d584bbf7c46320cc2b171191c9533efae192272db7cec431af2`, KappaPos `1_000_000`, Container-Health, Host Worker, Broker-RPC, MCP-Handshake und Cross-Runtime-Parität.
 
 ## 9.5 A2A-Adapter
 
@@ -650,6 +657,7 @@ Die Migrationen belegen unter anderem folgende Familien:
 
 - `admin_api_keys`
 - `owner_input_requests`
+- `owner_learning_policies` — in Migration `028` definiert, live noch nicht angewendet
 - `user_passkeys`
 - `user_account_keys`
 - `user_security_policies`
@@ -692,6 +700,8 @@ Die Migrationen belegen unter anderem folgende Familien:
 - `knowledge_source_blocks`
 - `sovereign_agent_pattern_candidates`
 - `sovereign_agent_pattern_vectors`
+- `knowledge_learning_candidates`
+- `vector_index_outbox`
 
 ### Toolchain und Audit
 
@@ -767,6 +777,10 @@ Jede Migration muss fail-closed laufen, Preview/Rollback-Evidence liefern und da
 Contributor-Submissions und shared-derived-pattern bleiben getrennt. User-Erasure entfernt nur owner-/contributor-gebundene Inhalte; geteilte, nicht personenbezogene abgeleitete Muster bleiben nach dem definierten Gateway-Vertrag bestehen.
 
 **BELEGT:** PR #802 erzwingt im sichtbaren Pattern-Memory-Pfad, dass ausschließlich akzeptierte serverseitige Learning-Evidence mit Candidate-ID und gespeichertem Vector den Zustand „gelernt“ erzeugen darf. Der zunächst rote Head enthielt einen einzelnen Test-Scope-Fehler (`PR_URL is not defined`); nach kausaler Reparatur bestand Head `c5b4668c13da592a370853815b1f14d6c0fb1f0b` sämtliche Typecheck-, Test-, Build-, Runtime-/UX-, Security-, Release- und Android-Gates und wurde SHA-gebunden als Squash-Commit `c81af1ef295d102a887211e738e4b30ac4788944` nach `main` gemergt.
+
+**BELEGT — aktueller Codevertrag:** PR #867 ergänzt eine persistierte Owner-Policy. Ohne frische Einzelanfrage darf `apply_proven_learning` nur dann automatisch speichern, wenn exakt eine aktive `owner_learning_policies`-Zeile für einen Admin oder Superadmin existiert. Null oder mehrere aktive Policies blockieren fail-closed. Plan-Hash, Secretblocker, Content-Idempotenz, pgvector-Readback und Milvus-Outbox bleiben unverändert verpflichtend.
+
+**TEILWEISE — Livebetrieb:** Migration `028` ist noch nicht produktiv angewendet; die Standing-Owner-Policy ist daher im aktuellen Backendbetrieb noch nicht aktiv belegt.
 
 ---
 
@@ -1044,7 +1058,7 @@ Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar; pro
 - `/a2a/v1/tasks`
 - A2A-Task-, Subscribe- und Cancel-Unterpfade
 
-**BELEGT:** Die deterministische Architekturreferenz wird aus dem aktuellen Repositorycode erzeugt. Die produktive Endpoint-Wahrheit stammt ausschließlich aus `scripts/sovereign-backend/app.py` sowie den registrierten Runtime-/Protokollmodulen. Der aktuelle Snapshot enthält 156 kanonische Backendverträge und `0` aktive unmatched Frontend-Calls.
+**BELEGT:** Die deterministische Architekturreferenz wird aus dem aktuellen Repositorycode erzeugt. Die produktive Endpoint-Wahrheit stammt ausschließlich aus `scripts/sovereign-backend/app.py` sowie den registrierten Runtime-/Protokollmodulen. Der aktuelle Snapshot auf Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` enthält 167 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und den Referenzhash `4338121167f1eaa8ad14a4df620da166a2545c3f1ddd8092e27f66b3dee11d9f`.
 
 Vier weiterhin sichtbare Altflächen werden nicht verborgen, sondern getrennt ausgewiesen: `/api/ai/gemini` als `legacy-unreferenced` sowie `/api/vps/connect`, `/api/vps/disconnect` und `/api/vps/exec` als `disabled-launcher`. Statische Routenerkennung bleibt Orientierung; produktive Funktionsaussagen benötigen zusätzlich Live-Evidence.
 
@@ -1179,7 +1193,7 @@ GitHub Intent
 7. **BELEGT — historischer LiteLLM-Kernpfad:** 92 Provider-Modelle wurden inventarisiert; `sovereign-fast` und `sovereign-balanced` bestanden echte Completion-Canaries. Der davon getrennte aktuelle Quota-Blocker wird unter 24.2 geführt.
 8. **BELEGT — Android-Releaseartefakte:** APK und AAB, SHA-256, Signaturdiagnose, ein Signer, Zertifikat-Fingerprint und Alignment wurden im Releaseworkflow belegt.
 9. **BELEGT — externe Action-Stream-Brücke im Codevertrag:** owner-scoped, idempotente externe Events mit deterministischen IDs und ohne Run-, Task- oder Blockermutation sind über Store, Backendroute, MCP-Client und MCP-Tool verdrahtet und getestet.
-10. **BELEGT — MCP-Releasebasis:** PR #854 bestand am unveränderten Head `380d1c34a1a8205e90d7a6fe53181128ee29f75b` alle 18 Checkläufe ohne Fehler und wurde als Squash-Commit `11016a246af0a1f866c1814178f4fed7f82746c8` übernommen. Die aktuelle immutable MCP-Runtime steht auf `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01`; Self-Update, Host Worker, Broker-RPC, MCP-Handshake, Cross-Runtime-Parität und KappaPos `1_000_000` sind grün. Der Live-Readback bestätigte Digest `sha256:230564e0073975649c7277e18de1cb6fe9805a70af0d9fc3d7ec01e62a2b9871` und Evidence-Hash `293d22105569058ab5cbb4187eba1c18edf0d98be628750ae3393873411da88e`.
+10. **BELEGT — MCP-Releasebasis:** PR #854 bestand am unveränderten Head `380d1c34a1a8205e90d7a6fe53181128ee29f75b` alle 18 Checkläufe ohne Fehler und wurde als Squash-Commit `11016a246af0a1f866c1814178f4fed7f82746c8` übernommen. Die aktuelle immutable MCP-Runtime steht auf `246e701f5b2d8ce94c21c001b26bf4aee216239c`; Self-Update, Host Worker, Broker-RPC, MCP-Handshake, Cross-Runtime-Parität und KappaPos `1_000_000` sind grün. Der Live-Readback bestätigte Digest `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b` und Evidence-Hash `293d22105569058ab5cbb4187eba1c18edf0d98be628750ae3393873411da88e`.
 11. **BELEGT — GitHub-Knowledge- und Modell-Health-Wahrheit:** PR #818 bestand Release Gate, vollständigen Type-check/Test/Build, Security Audit, alle CodeQL-Pfade, OAuth-Live-Path, E2E Smoke, Android- und Runtime-/UX-Verträge und wurde SHA-gebunden als Squash-Commit `feae19e0965ff276eadc97e95fb2b5aadd046463` gemergt. Öffentliche GitHub-Imports sind credential-frei bevorzugt, verlassene Knowledge-Imports werden fail-closed reconciled und Modell-Health erfordert eine echte Completion statt bloßer Readiness.
 12. **BELEGT — dreistufiger LLM-Kostenvertrag im Code und Live-Schema:** `free`, `standard` und `premium` sind als Backend-Policy, Admin-Vertrag, Usage-Settlement-Felder, Provider-Pricing-Felder und PostgreSQL-Constraints abgebildet. Provider-finanzierte Credits trennen bezahlte Kaufkraft von Bonus-/Admin-Gutschriften.
 13. **BELEGT — GitHub-Knowledge-Transportvertrag im Code:** GitHub-Antwortstatus und HTTPS-Transportfehler werden getrennt behandelt. Timeout, TLS, Connection/DNS und sonstige `requests`-Fehler liefern sichere `github_*`-Blocker mit passender `502`-/`504`-Semantik. Der Fehlerpfad schreibt Audit-Evidence nur mit einem URL-Fingerprint; rohe URL-, Query-, Credential- oder Exceptiondetails werden weder zurückgegeben noch persistiert.
@@ -1191,15 +1205,25 @@ GitHub Intent
 19. **BELEGT — Memory-Transport:** Das hash-bestätigte Managed-Compose-Deployment stellte den internen Gateway→Milvus-Pfad wieder her. Milvus-Health, Netzwerkisolation und TCP-Erreichbarkeit wurden ohne externe Portfreigabe bestätigt.
 20. **BELEGT — Memory-Collection-Lifecycle:** Ein echter Gateway-Canary erzeugte eine flüchtige Milvus-Collection, schrieb einen Marker, bestätigte Query und Vektorsuche und löschte die Collection im `finally`-Pfad. Keine Collection-Inhalte oder Secrets wurden zurückgegeben.
 21. **BELEGT — Code-Server-Härtung und User-Workspace:** Code Server läuft auf einem immutable Image-Digest, nur noch auf `127.0.0.1:32782`, mit dem bestehenden persistenten `/config`-Volume und erhaltener Authentisierung. Der Runtime-Canary bestätigte HTTP, Git, Schreibbarkeit, echten Clone des aktuellen Runtime-`main` und Cleanup des flüchtigen Workspaces.
+22. **BELEGT — PR #867 Code- und MCP-Integration:** PR #867 wurde nach vollständig grünen Gates als Squash-Commit `246e701f5b2d8ce94c21c001b26bf4aee216239c` übernommen. Das produktive MCP läuft auf derselben Revision und dem immutable Digest `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`. Enterprise-Admin-UI und Standing-Learning-Policy sind code- und image-belegt; Backend-Deployment und Migration `028` bleiben getrennte offene Betriebsaufgaben.
+23. **BELEGT — aktueller Endpoint-Snapshot:** Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` enthält 167 kanonische Endpointverträge, `0` aktive unmatched Frontend-Calls und vier weiterhin explizit nichtaktive Altflächen.
 
 ## 24.2 Offen, teilweise oder blockiert
 
-1. **BLOCKIERT/TEILWEISE — Provider-Onboarding und `gpt-5.4-mini`-Route:** Das geschützte Inventar belegt `gpt-5.4-mini`, Provideridentität und den vorhandenen geschützten Service-Key. Readiness, Datenbank und Aliasinventar sind grün; beide Completion-Canaries enden jedoch reproduzierbar mit OpenAI HTTP `429`, `insufficient_quota`. `sovereign-fast` bleibt deshalb fail-closed inaktiv. Offen bleiben verfügbares Provider-Kontingent sowie der vollständige automatische Lifecycle für beliebige neue Provider inklusive Preisen, atomarer Aktivierung und Rollback.
-2. **TEILWEISE — Betriebsbeweise:** Die ausdrücklich genannten Container- und Fachpfade besitzen aktuelle Evidence. Nicht ausdrücklich belegte Fachfunktionen benötigen weiterhin jeweils eigene Canaries; Prozessleben allein ist kein Funktionsbeweis.
-3. **TEILWEISE — Android:** Signierte Releaseartefakte und Alignment sind belegt; Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
-4. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation:** Der letzte Architektur-Snapshot meldete 65 heuristische `LLM_TOOL_BOUNDARY`-Kandidaten. Diese Treffer sind keine Runtimefehler. Die vollständige SHA-gebundene Reviewliste muss noch maschinenlesbar verankert werden, damit jede relevante Dateiänderung den Kandidaten erneut öffnet.
-5. **TEILWEISE — GitHub-Knowledge-Livecanary:** Der Codevertrag klassifiziert und auditiert HTTPS-443-Transportfehler sicher. Ein Livecanary nach einem separat freigegebenen immutable Backend-Deployment muss den realen GitHub-Import und den Auditblocker noch bestätigen.
-6. **TEILWEISE — Historische Schema-Ownership:** Die P1-Drift für `platform_runtime_evidence`, `llm_route_attempts` und `llm_route_revolver_state` ist geschlossen. Die bereits live vorhandenen Tabellen `admin_users`, `sovereign_agent_draft_pr_events` und `sovereign_agent_evidence_log` besitzen im statischen Migrationsscanner noch keine eindeutig zugeordnete Erzeugerquelle und bleiben P2-Dokumentationsdrift.
+Die folgenden zwölf Punkte sind die vollständige operative Open-Point-Liste dieses Audits. Jeder Punkt besitzt einen stabilen Schlüssel im versionierten Bundle `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES.json`. Der owner-gated Workflow `.github/workflows/create-manifest-open-issues.yml` eröffnet daraus idempotent genau ein GitHub-Issue je Schlüssel.
+
+1. **BLOCKIERT/TEILWEISE — Provider-Onboarding und `gpt-5.4-mini`-Route** (`provider-onboarding-gpt54-route`): Providerinventar, Projektidentität, LiteLLM-Readiness und Aliasinventar sind belegt; echte Completion-Canaries bleiben fehlgeschlagen. Offen sind verfügbares Kontingent und der vollständige automatische Lifecycle mit Preisvertrag, atomarer Aktivierung und Rollback.
+2. **TEILWEISE — Fachcanary-Abdeckung** (`runtime-canary-coverage-matrix`): Mehrere kritische Pfade besitzen Fachcanaries, aber nicht jede produktive Funktionsfamilie ist in einer revisionsgebundenen Canary-Matrix abgedeckt. Prozessleben allein bleibt kein Funktionsbeweis.
+3. **TEILWEISE — physischer Android-Geräte-Smoke** (`physical-android-device-smoke`): Repository- und Release-Scan sind ohne statische Blocker; signierte Artefakte und Alignment sind belegt. Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
+4. **OFFEN — SHA-gebundene LLM-Boundary-Klassifikation** (`llm-tool-boundary-review-ledger`): Der aktuelle Snapshot meldet 65 heuristische `LLM_TOOL_BOUNDARY`-Kandidaten. Die Treffer sind keine bestätigten Runtimefehler; ihre vollständige, datei-SHA-gebundene Klassifikation fehlt.
+5. **TEILWEISE — GitHub-Knowledge-Livecanary** (`github-knowledge-live-canary`): Der sichere Transport- und Auditvertrag ist im Code belegt. Ein realer öffentlicher Import sowie ein kontrollierter Fehlerpfad müssen nach einem revisionsgebundenen Backend-Deployment live bestätigt werden.
+6. **TEILWEISE — historische Schema-Ownership** (`historical-schema-ownership`): `admin_users`, `sovereign_agent_draft_pr_events` und `sovereign_agent_evidence_log` sind live vorhanden, besitzen im statischen Scanner aber keine eindeutig versionierte Erzeugerquelle.
+7. **TEILWEISE — Enterprise-Admin-Backend deployen** (`deploy-enterprise-admin-backend`): Das immutable Backend-Image für Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` ist als Digest `sha256:629a694d67c4789053da81656cbc7523a084b8ac52877ff2083aa0325453ae18` gebaut; der laufende Container wurde jedoch vor PR #867 gestartet. `/admin` und die Enterprise-API benötigen einen Digest- und revisionsgebundenen Live-Readback.
+8. **BLOCKIERT — Migration `028` und Standing-Owner-Policy** (`apply-owner-learning-policy-migration`): `owner_learning_policies` ist im Repository definiert, fehlt aber live; `schema_migrations` enthält keinen Eintrag `028`. Automatische, idempotente Pattern-Persistenz ohne wiederholte Einzelbestätigung ist daher noch nicht produktiv belegt.
+9. **OFFEN — Mirror-Drift der LLM-Kostenpolicy** (`mirror-drift-llm-cost-policy`): `backend/llm_cost_policy.py` und `scripts/sovereign-backend/llm_cost_policy.py` besitzen unterschiedliche Hashes. Die kanonische Deploymentquelle ist bekannt, aber die Analyse-/Testquelle darf keine abweichende Kostenwahrheit behalten.
+10. **OFFEN — Mirror-Drift der Proven-Learning-Runtime** (`mirror-drift-proven-learning-runtime`): Der Deploymentpfad enthält die Standing-Owner-Policy, während `backend/proven_learning_runtime.py` noch den früheren Einzelbestätigungspfad abbildet. Semantische und Scanner-Parität fehlen.
+11. **BLOCKIERT — GitHub-App-Routenregistrierung** (`github-app-route-registration`): Der produktive Backendstart protokolliert `GitHub App routes registration failed: name 'get_connection' is not defined`. Diese Routenfamilie ist deshalb nicht als produktiv registriert belegt.
+12. **OFFEN — toten Legacy-Admin-HTML-Block entfernen** (`remove-dead-legacy-admin-html`): Die Route wird zwar auf `ENTERPRISE_ADMIN_HTML` überschrieben, aber der historische `_ADMIN_PANEL_HTML`-Literalblock verbleibt als reaktivierbare zweite UI-Wahrheit in `scripts/sovereign-backend/app.py`.
 
 ## 24.3 Langfristig
 
@@ -1230,26 +1254,26 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. A2A, Backend-Ownership, Endpoint-Referenz, Knowledge-Integrität, signierte Android-Releaseartefakte, die produktive Enterprise-MCP-Werkzeugkette, Gotenberg→Tika, Action-Stream-Idempotenz, Release-Schema, Milvus-Transport und -Collection-Lifecycle sowie Code-Server-Härtung und User-Workspace-Clone sind belegt. Aktueller harter externer Blocker sind die echten LiteLLM-Completion-Canaries: Beide Aliase erhalten vom OpenAI-Upstream HTTP `429` mit `insufficient_quota`. Zusätzlich fehlen der physische Android-Geräte-Smoke, der GitHub-Knowledge-Livecanary und die vollständige SHA-gebundene LLM-Boundary-Reviewliste; die drei historischen Schema-Ownership-Befunde bleiben P2-Dokumentationsdrift.
+**BLOCKIERT/TEILWEISE:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. Repository-`main` und produktiver MCP sind revisionsgleich und gesund; A2A, Endpoint-Referenz, Knowledge-Integrität, signierte Android-Releaseartefakte, Dokumentpipeline, Action-Stream, Milvus und Code Server besitzen belastbare Evidence. Releasekritisch offen bleiben jedoch alle zwölf Punkte aus Abschnitt 24.2: fehlgeschlagene LiteLLM-Completion-Canaries, unvollständige Canary-Matrix, physischer Android-Smoke, LLM-Boundary-Ledger, GitHub-Knowledge-Livecanary, historische Schema-Ownership, noch nicht deployte Enterprise-Admin-Wahrheit, nicht angewendete Migration `028`, zwei Mirror-Drifts, fehlgeschlagene GitHub-App-Routenregistrierung und der tote Legacy-Admin-HTML-Block. Ein grüner Gesamtzustand darf erst nach getrenntem Abschluss und revisionsgebundener Manifestaktualisierung dieser Issues behauptet werden.
 
 ---
 
 # 26. Aktueller Evidence-Snapshot
 
-Evidence-Stand: 20. Juli 2026. Repository-`main` und produktive MCP-Runtime stehen revisionsgebunden auf `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01`. Der ursprüngliche LiteLLM-Transportfehler, Release-Schema-Drift, Action-Stream-Idempotenz, Enterprise-Spiegel, Milvus-Transport und -Collection-Lifecycle sowie Code-Server-Härtung wurden über exakte PR-Heads, Merge-SHAs, immutable Images, Managed-Compose-Bundle-Hashes und echte Runtime-Canaries erneut belegt. Frühere PR- und Releasebelege bleiben historische Provenance und werden nicht als Ersatz für den aktuellen Readback verwendet.
+Evidence-Stand: 20. Juli 2026. Audit-Baseline, Repository-`main` und produktive MCP-Runtime stehen revisionsgebunden auf `246e701f5b2d8ce94c21c001b26bf4aee216239c`. Der aktuelle MCP-Readback, Endpoint-Snapshot, Live-Schema-Readback, Knowledge-Zählung, Android-Repositoryscan und LiteLLM-Zugriff wurden für dieses Update erneut erhoben. Frühere PR- und Releasebelege bleiben historische Provenance und werden nicht als Ersatz für den aktuellen Readback verwendet. Das produktive Backend läuft noch auf dem Stand vor PR #867; Code- und Image-Evidence werden daher ausdrücklich von Live-Evidence getrennt.
 
-- **BELEGT:** Repository-`main` und produktive MCP-Runtime stehen auf `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01`.
-- **BELEGT:** Für MCP-Release-Revision `e85a9d07a2b560fdcd3319bb43271bdea6fd5b01` bestanden immutable Image-Publish, revisionsgebundener Self-Update, Host Worker, Broker-RPC, MCP-Handshake und Cross-Runtime-Parität. Der Live-Readback bestätigte Digest `sha256:230564e0073975649c7277e18de1cb6fe9805a70af0d9fc3d7ec01e62a2b9871`, Evidence-Hash `293d22105569058ab5cbb4187eba1c18edf0d98be628750ae3393873411da88e` und KappaPos `1_000_000`; direkte eingehende Mutationen bleiben verboten.
+- **BELEGT:** Repository-`main` und produktive MCP-Runtime stehen auf `246e701f5b2d8ce94c21c001b26bf4aee216239c`.
+- **BELEGT:** Für MCP-Release-Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` bestanden immutable Image-Publish, revisionsgebundener Self-Update, Host Worker, Broker-RPC, MCP-Handshake und Cross-Runtime-Parität. Der Live-Readback bestätigte Digest und Image-ID `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`, Evidence-Hash `1d0fe00f2b344d584bbf7c46320cc2b171191c9533efae192272db7cec431af2` und KappaPos `1_000_000`; direkte eingehende Mutationen bleiben verboten.
 - **BELEGT:** Kappa-Skala `1_000_000` und Python-/TypeScript-Cross-Runtime-Parität sind revisionsgebunden bestätigt.
 - **BELEGT:** A2A wurde mit AgentCard, Owner-Scope, persistiertem Run und `contextId`, Streaming, Resume und Controller-/Task-Endstatus live korreliert.
 - **BELEGT:** `scripts/sovereign-backend/app.py` ist die kanonische deployte Backend-App. `knowledge_library.py`, `r2_storage.py` und die übrigen echten Spiegel sind bytegleich.
-- **BELEGT:** Der generierte Endpoint-Snapshot enthält 156 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und vier separat klassifizierte nichtaktive Altflächen.
+- **BELEGT:** Der generierte Endpoint-Snapshot enthält 167 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls, vier separat klassifizierte nichtaktive Altflächen und den Referenzhash `4338121167f1eaa8ad14a4df620da166a2545c3f1ddd8092e27f66b3dee11d9f`.
 - **BELEGT:** Das geschützte LiteLLM-/OpenAI-Inventar enthielt 92 Provider-Modelle und bestätigte `gpt-5.4-mini` als verfügbares Modell. Provider-Identität, Projektzugriff und vorhandener Provider-Key wurden ohne Secret-Ausgabe bestätigt.
 - **BELEGT:** Migration `022` wurde exakt aus der Repository-Quelle mit SHA-256 `7c08cf8f92dafe264171d62a19cd6bbc5accf1264574a00ad7f468c7323bdfa4` angewendet. Der Live-Readback bestätigte den Ledger-Eintrag `022`, die neuen Kosten-/Billing-Spalten für `provider_funded_credits`, `llm_usage_settlements` und `llm_provider_deployments`, alle sieben neuen Constraints, `0` ungültige provider-finanzierte User-Balances und `0` aktive Routen mit ungeprüfter Preisgrundlage.
 - **BELEGT:** Auf PR-Revision `75e2738594986b32bb41793cd150c56b0bdc5ae1` schlossen alle elf GitHub-Workflowläufe erfolgreich ab. Die gezielten lokalen Verträge bestanden mit `237`, die vollständige Suite unter `scripts/sovereign-backend/tests` mit `113` Tests; zusätzlich bestanden der Agents-SDK-Preflight für zwölf Agenten, Compile-, Mirror- und interne Live-Path-Verträge.
 - **BLOCKIERT:** Die Alias-Aktivierung von `sovereign-fast` und `sovereign-balanced` auf `gpt-5.4-mini` bestand die echten Completion-Canaries nicht. Beide Aufrufe erhielten HTTP `429` mit `insufficient_quota`; Readiness, Datenbank und Aliasinventar waren dabei grün. Die Alias-/Route-Aktivierung bleibt fail-closed; ein grüner Agents-SDK-Modellpfad wird nicht behauptet.
 - **BELEGT:** PR #818 wurde nach vollständig grünen GitHub-Gates SHA-gebunden gemergt. Der neue Modell-Healthvertrag unterscheidet Quota, Rate-Limit, Credentials, Aliasfehler und Infrastruktur und setzt `completionVerified=true` für Grün voraus.
-- **BELEGT:** Der aktuelle Live-Readback enthält 38 Knowledge-Quellen: 37 `ready`, eine PDF-Quelle `processing`, 400 verknüpfte Chunks und keine persistierte GitHub-Quelle. In `audit_log` und `sovereign_toolchain_incidents` existiert für den früheren GitHub-443-Fehler keine passende Evidence; der Fehler lag damit vor dem bisherigen Quellen-Commit- und Auditpfad.
+- **BELEGT:** Der aktuelle Live-Readback enthält 38 Knowledge-Quellen: 37 `ready` und eine `blocked`; es gibt 400 Wissensblöcke, `0` fehlende Embeddings und 400 Source-Block-Links. Der frühere verlassene `processing`-Zustand ist damit nicht mehr aktiv. Ein revisionsgebundener GitHub-Knowledge-Livecanary bleibt dennoch offen.
 - **BELEGT — Code/Test:** Der Folgecode klassifiziert GitHub-Timeout, TLS, Connection/DNS und sonstige Transportfehler in sichere Blocker, liefert keine rohen Exceptiondetails und persistiert nur einen URL-Fingerprint. Die vollständige Suite `scripts/sovereign-backend/tests` bestand lokal mit `119 passed`; der GitHub-PR- und Deploybeweis folgt getrennt.
 - **BELEGT — Enterprise-Backend-/Revisions-Code und Runtime:** Sechs read-only MCP-Tools sind in Launcher, Dockerfile, VPS-Installer, Releasearchiv-Check, Workflow und Server-Instruktionen integriert. Acht gezielte Tooltests, 17 Installer-/Docker-Vertragstests und die vollständige lokal ausführbare MCP-Suite mit `264 passed` bestanden auf PR #824; GitHub Actions führte auch die zwei lokal sandboxblockierten Unix-Socket-Verträge aus. Alle acht PR-Workflows waren am unveränderten Head grün. Merge-, laufende und Image-Revision sowie immutable Digest stimmen im Produktions-Readback überein.
 - **BELEGT:** Öffentliche GitHub-Wissensimporte laufen credential-frei zuerst; private Reads werden nur nach öffentlichem Nichtfund über den bestätigten Serverzugang versucht.
@@ -1261,8 +1285,14 @@ Evidence-Stand: 20. Juli 2026. Repository-`main` und produktive MCP-Runtime steh
 - **BELEGT — Release-Schema:** Die Migrationen `025` und `026` wurden nach erfolgreicher Rollback-Preview aus ihren unveränderten Quell-SHAs angewendet. Der Live-Readback enthält nun 50 Tabellen einschließlich `platform_runtime_evidence`, `llm_route_attempts` und `llm_route_revolver_state`; die drei vorherigen P1-Missing-Table-Befunde sind geschlossen.
 - **BELEGT — Enterprise-Spiegel:** `backend/enterprise_platform/service.py` und `scripts/sovereign-backend/enterprise_platform/service.py` sind wieder bytegleich und prüfen denselben Release-Schema-Vertrag.
 - **BELEGT — Memory-Transport und Collection:** Das Managed-Compose-Deployment bestätigte Milvus-Health, isoliertes gemeinsames Netzwerk, Gateway→Milvus-TCP, keine veröffentlichten Milvus-Ports sowie Create, Insert, Query, Vektorsuche und Drop einer flüchtigen Collection. Marker-Receipt: `f918ac924f0bf5a4bd2ca4f99463d8b5ded8f5e1b3bb65eb6dd1fb3200234d04`.
-- **BELEGT — Code Server:** Bundle `828f9bdee7def79ef4731fefffa0234232c9c0456d493a9668211ff9d30ec41d`, bestehendes Volume `code-server-46bq_code-server-config`, erhaltene Authentisierung, root-only `.env`, HTTP `200`, Git, Schreibbarkeit, realer Clone von Runtime-`main=11016a246af0a1f866c1814178f4fed7f82746c8` und Cleanup sind verifiziert.
-- **TEILWEISE/BLOCKIERT:** Physischer Android-Geräte-Smoke, GitHub-Knowledge-Livecanary, vollständige SHA-gebundene Klassifikation der LLM-Boundary-Kandidaten, historische P2-Schema-Ownership und verfügbares OpenAI-Providerkontingent bleiben offen.
+- **BELEGT — Code Server:** Bundle `828f9bdee7def79ef4731fefffa0234232c9c0456d493a9668211ff9d30ec41d`, bestehendes Volume `code-server-46bq_code-server-config`, erhaltene Authentisierung, root-only `.env`, HTTP `200`, Git, Schreibbarkeit, realer Clone und Cleanup sind verifiziert.
+- **BELEGT — PR #867 und Backend-Image:** PR #867 wurde als `246e701f5b2d8ce94c21c001b26bf4aee216239c` gemergt. Das immutable Backend-Image wurde erfolgreich als `sha256:629a694d67c4789053da81656cbc7523a084b8ac52877ff2083aa0325453ae18` gebaut. Der laufende Backend-Container startete jedoch bereits am 20. Juli 2026 um 16:37:26 UTC und wurde seitdem nicht revisionsgebunden auf dieses Image umgestellt; ein Live-Erfolg wird nicht behauptet.
+- **BLOCKIERT — Migration `028`:** Das Repository definiert `owner_learning_policies`, das Live-Schema enthält bei 50 Tabellen jedoch keine solche Tabelle und `schema_migrations` enthält keinen Eintrag `028`.
+- **OFFEN — Architekturdrift:** Der statische Driftreport enthält 67 P1-Kandidaten: 65 heuristische LLM-/Tool-Boundary-Reviews sowie zwei Mirror-Abweichungen für `llm_cost_policy.py` und `proven_learning_runtime.py`. Diese Kandidaten sind keine automatisch bestätigten Runtimefehler, benötigen aber getrennte SHA-gebundene Reviews.
+- **BLOCKIERT — GitHub-App-Routen:** Der aktuelle Backend-Startreadback enthält zweimal `GitHub App routes registration failed: name 'get_connection' is not defined`; die betroffene Routenfamilie ist daher nicht produktiv belegt.
+- **OFFEN — Admin-Legacycode:** `scripts/sovereign-backend/app.py` enthält weiterhin den historischen `_ADMIN_PANEL_HTML`-Literalblock, obwohl die Variable vor der Route auf `ENTERPRISE_ADMIN_HTML` überschrieben wird. Ausgeliefert wird code-seitig die neue Oberfläche; die tote zweite Quelle bleibt zu entfernen.
+- **BELEGT — Issue-Verträge:** Alle zwölf operativen Open Points sind mit Ziel, Regeln, Pfaden, Arbeitsablauf, Beispielvertrag, Integrationsplan, Akzeptanzkriterien sowie Manifest- und Revisionsabschluss in `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES.json` versioniert. `.github/workflows/create-manifest-open-issues.yml` erstellt daraus owner-gated und marker-idempotent eigene GitHub-Issues.
+- **TEILWEISE/BLOCKIERT:** Die vollständige operative Open-Point-Liste besteht aus den zwölf Schlüsseln in Abschnitt 24.2 und dem versionierten Issue-Bundle. Kein einzelner Sammelstatus darf einen dieser Punkte verdecken.
 - Ein vollständig grüner Produkt- und Releasezustand wird daher nicht behauptet.
 
 ---
