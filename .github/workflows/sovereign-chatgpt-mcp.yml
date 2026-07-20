@@ -76,7 +76,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operational_governance_tools.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -114,6 +114,8 @@ jobs:
           grep -q 'enterprise_backend_tools.py' deploy/install-on-vps.sh
           grep -q 'freemium_product_architect_tools.py' deploy/install-on-vps.sh
           grep -q 'openai_project_access_tools.py' deploy/install-on-vps.sh
+          grep -q 'operational_governance_tools.py' deploy/install-on-vps.sh
+          test -f skills/sovereign-operational-governance/SKILL.md
           grep -q 'launcher.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_ADMIN_SQL' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_MCP_ENABLE_MAIN_PUSH' deploy/install-on-vps.sh
@@ -317,6 +319,7 @@ jobs:
           import launcher
           import enterprise_backend_tools
           import freemium_product_architect_tools
+          import operational_governance_tools
           import server
           import self_heal
           import tool_extensions
@@ -375,6 +378,25 @@ jobs:
               'freemium_product_bundle_manifest',
           ):
               assert callable(getattr(freemium_product_architect_tools, name)), name
+          for name in (
+              'operational_skill_inventory',
+              'mcp_tool_contract_registry',
+              'tool_recommend_for_mission',
+              'mcp_registry_snapshot_verify',
+              'evidence_graph_build',
+              'schema_migration_reconcile',
+              'llm_route_reliability_assess',
+              'agent_run_liveness_assess',
+              'semantic_intent_boundary_audit',
+              'cost_credit_settlement_reconcile',
+              'backup_restore_evidence_verify',
+              'slo_error_budget_assess',
+              'configuration_drift_assess',
+              'runtime_runbook_generate',
+              'ownership_codeowners_guard',
+              'compliance_evidence_export',
+          ):
+              assert callable(getattr(operational_governance_tools, name)), name
           tool_names = {tool.name for tool in server.mcp._tool_manager.list_tools()}
           assert {
               'backend_engineering_tool_inventory',
@@ -391,6 +413,27 @@ jobs:
               'freemium_product_contract_validate',
               'freemium_product_bundle_manifest',
           }.issubset(tool_names)
+          assert {
+              'operational_skill_inventory',
+              'mcp_tool_contract_registry',
+              'tool_recommend_for_mission',
+              'mcp_registry_snapshot_verify',
+              'evidence_graph_build',
+              'schema_migration_reconcile',
+              'llm_route_reliability_assess',
+              'agent_run_liveness_assess',
+              'semantic_intent_boundary_audit',
+              'cost_credit_settlement_reconcile',
+              'backup_restore_evidence_verify',
+              'slo_error_budget_assess',
+              'configuration_drift_assess',
+              'runtime_runbook_generate',
+              'ownership_codeowners_guard',
+              'compliance_evidence_export',
+          }.issubset(tool_names)
+          registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
+          assert registry.status == 'MCP_TOOL_REGISTRY_READY', registry
+          assert registry.toolCount == len(tool_names), (registry.toolCount, len(tool_names))
           resource_uris = {str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}
           assert 'sovereign_cognitive_architecture_status' in tool_names
           assert 'ui://sovereign/dev_dashboard.html' in resource_uris
@@ -417,7 +460,7 @@ jobs:
       - name: Assert Docker socket is absent from MCP container contract
         run: |
           set -euo pipefail
-          if grep -RIn '/var/run/docker.sock' Dockerfile docker-compose.yml server.py owner_input_widget.py sovereign_cognitive_widget.py launcher.py tool_extensions.py command_contract.py command_queue.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py; then
+          if grep -RIn '/var/run/docker.sock' Dockerfile docker-compose.yml server.py owner_input_widget.py sovereign_cognitive_widget.py operational_governance_tools.py launcher.py tool_extensions.py command_contract.py command_queue.py broker_client.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py; then
             echo 'MCP container must not receive the Docker socket.' >&2
             exit 1
           fi
@@ -718,7 +761,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py operational_governance_tools.py skills/sovereign-operational-governance/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
@@ -776,7 +819,8 @@ jobs:
             BROKER_RPC_STATE=ready
             run_root docker exec sovereign-chatgpt-mcp python /app/mcp_protocol_health.py --url http://127.0.0.1:8090/mcp --timeout-seconds 5
             MCP_PROTOCOL_STATE=ready
-            run_root docker exec sovereign-chatgpt-mcp python -c "import server; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status','owner_approval_widget_open','controller_run_start','controller_run_list','controller_run_status','controller_run_external_event','controller_run_resume','a2a_live_canary','managed_compose_stack_plan','deploy_managed_compose_stack'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; tool_names={tool.name for tool in server.mcp._tool_manager.list_tools()}; resource_uris={str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}; assert 'sovereign_cognitive_architecture_status' in tool_names, tool_names; assert 'ui://sovereign/dev_dashboard.html' in resource_uris, resource_uris; assert 'ui://sovereign/owner_input.html' in resource_uris, resource_uris; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('status') == 'HOST_WORKER_READY', canary; assert canary.get('execution_origin') == 'host_worker', canary; print({'tool_contract': True, 'cognitive_widget': True, 'owner_input_widget': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'host_worker_canary': True})"
+            run_root docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-governance/SKILL.md
+            run_root docker exec sovereign-chatgpt-mcp python -c "import launcher; import server; import operational_governance_tools; assert launcher.mcp is server.mcp; names=('mcp_self_update_schedule','mcp_self_update_status','repository_pr_status','repository_merge_pr','android_run_validation_suite','owner_approval_request_create','owner_approval_request_status','owner_approval_widget_open','controller_run_start','controller_run_list','controller_run_status','controller_run_external_event','controller_run_resume','a2a_live_canary','managed_compose_stack_plan','deploy_managed_compose_stack'); missing=[name for name in names if not callable(getattr(server,name,None))]; assert not missing, missing; tool_names={tool.name for tool in server.mcp._tool_manager.list_tools()}; resource_uris={str(resource.uri) for resource in server.mcp._resource_manager.list_resources()}; assert 'sovereign_cognitive_architecture_status' in tool_names, tool_names; required_operational={'operational_skill_inventory','mcp_tool_contract_registry','tool_recommend_for_mission','mcp_registry_snapshot_verify','evidence_graph_build','runtime_runbook_generate','ownership_codeowners_guard','compliance_evidence_export'}; assert required_operational.issubset(tool_names), sorted(required_operational-tool_names); registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == 'MCP_TOOL_REGISTRY_READY', registry; assert registry.toolCount == len(tool_names), (registry.toolCount,len(tool_names)); assert 'ui://sovereign/dev_dashboard.html' in resource_uris, resource_uris; assert 'ui://sovereign/owner_input.html' in resource_uris, resource_uris; boundaries=server.mcp_runtime_boundaries(); assert boundaries.get('llm_can_receive_protected_values') is False, boundaries; canary=server.broker.call('host_worker_canary', {}, timeout=10); assert canary.get('status') == 'HOST_WORKER_READY', canary; assert canary.get('execution_origin') == 'host_worker', canary; print({'tool_contract': True, 'cognitive_widget': True, 'owner_input_widget': True, 'self_update': True, 'pr_lifecycle': True, 'owner_approval': True, 'host_worker_canary': True})"
             INBOUND_MUTATION_STATE=forbidden
             COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"
             BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"

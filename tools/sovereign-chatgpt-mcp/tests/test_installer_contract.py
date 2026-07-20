@@ -79,6 +79,9 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
     assert 'enterprise_backend_tools.py' in installer
+    assert 'operational_governance_tools.py' in installer
+    assert 'skills/sovereign-operational-governance/SKILL.md' in installer
+    assert '/app/skills/sovereign-operational-governance/SKILL.md' in installer
     assert 'patchmon_operator.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
@@ -93,15 +96,22 @@ def test_android_hardening_runtime_and_validation_router_are_installed() -> None
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'enterprise_backend_tools.py' in dockerfile
+    assert 'operational_governance_tools.py' in dockerfile
+    assert 'COPY skills /app/skills' in dockerfile
     assert 'patchmon_operator.py' in dockerfile
     assert 'launcher.py' in dockerfile
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'android_validation_router.install(server.android, server.runtime, server.broker)' in launcher
     assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
     assert 'enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)' in launcher
+    assert 'operational_governance_tools.register(server.mcp, server.runtime, server.database, server.broker)' in launcher
     assert 'deterministic_contract.KAPPA_SCALE == 1000000' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_transition_validate)' in installer
     assert 'callable(enterprise_backend_tools.repository_revision_resolve)' in installer
+    assert 'callable(operational_governance_tools.operational_skill_inventory)' in installer
+    assert 'callable(operational_governance_tools.tool_recommend_for_mission)' in installer
+    assert 'callable(operational_governance_tools.mcp_registry_snapshot_verify)' in installer
+    assert '"operational_governance_tools":true' in installer
     assert '_native_validation_router_installed' in installer
     assert 'docker compose build' not in installer
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
