@@ -226,6 +226,7 @@ def test_main_workflow_runs_real_memory_collection_post_install_canary() -> None
     assert "Verify Memory Gateway to Milvus collection canary" in workflow
     assert "memory_gateway_collection_canary" in workflow
     assert '"MEMORY_COLLECTION_CANARY_VERIFIED"' in workflow
+    assert 'print(json.dumps(result, sort_keys=True, separators=(",", ":")))' in workflow
     assert 'result.get("collectionCreated") is True' in workflow
     assert 'result.get("recordInserted") is True' in workflow
     assert 'result.get("queryReadbackVerified") is True' in workflow

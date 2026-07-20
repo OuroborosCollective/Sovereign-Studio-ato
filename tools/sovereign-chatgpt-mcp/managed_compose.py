@@ -907,7 +907,29 @@ const markerSha256 = crypto.createHash('sha256').update(marker).digest('hex');
 const client = new MilvusClient({ address });
 let created = false;
 let cleanup = false;
+let stage = 'initialize';
 const containsMarker = (value) => JSON.stringify(value || {}).includes(marker);
+const boundedToken = (value, fallback) => {
+  const rendered = String(value === undefined || value === null ? '' : value);
+  return /^[A-Za-z0-9_.-]{1,80}$/.test(rendered) ? rendered : fallback;
+};
+const diagnostic = (error, errorStage) => {
+  const message = String(error && error.message ? error.message : '');
+  const normalized = message.toLowerCase();
+  let family = `${errorStage}_failure`;
+  if (/missing milvus sdk method/.test(normalized)) family = 'sdk_method_missing';
+  else if (/unavailable|ehostunreach|econnrefused|deadline|timeout/.test(normalized)) family = 'transport_unavailable';
+  else if (/schema|field|data type|datatype|dimension|dim/.test(normalized)) family = 'schema_contract';
+  else if (/database/.test(normalized)) family = 'database_contract';
+  return {
+    diagnostic: true,
+    errorStage,
+    errorFamily: family,
+    errorName: boundedToken(error && error.name, 'Error'),
+    errorCode: boundedToken(error && error.code, 'none'),
+    errorMessageSha256: crypto.createHash('sha256').update(message).digest('hex'),
+  };
+};
 const call = async (names, payload) => {
   for (const name of names) {
     if (typeof client[name] === 'function') return await client[name](payload);
@@ -916,6 +938,7 @@ const call = async (names, payload) => {
 };
 (async () => {
   try {
+    stage = 'create_collection';
     await call(['createCollection'], {
       collection_name: collection,
       fields: [
@@ -925,6 +948,7 @@ const call = async (names, payload) => {
       ],
     });
     created = true;
+    stage = 'create_index';
     await call(['createIndex'], {
       collection_name: collection,
       field_name: 'embedding',
@@ -932,17 +956,22 @@ const call = async (names, payload) => {
       metric_type: 'COSINE',
       params: {},
     });
+    stage = 'load_collection';
     await call(['loadCollectionSync', 'loadCollection'], { collection_name: collection });
+    stage = 'insert_record';
     await call(['insert'], {
       collection_name: collection,
       fields_data: [{ id: 1, embedding: [1, 0, 0, 0], marker }],
     });
+    stage = 'flush_collection';
     await call(['flushSync', 'flush'], { collection_names: [collection] });
+    stage = 'query_readback';
     const query = await call(['query'], {
       collection_name: collection,
       expr: 'id == 1',
       output_fields: ['id', 'marker'],
     });
+    stage = 'vector_search';
     const search = await call(['search'], {
       collection_name: collection,
       data: [[1, 0, 0, 0]],
@@ -951,6 +980,7 @@ const call = async (names, payload) => {
       metric_type: 'COSINE',
       output_fields: ['id', 'marker'],
     });
+    stage = 'verify_readback';
     if (!containsMarker(query) || !containsMarker(search)) {
       throw new Error('Milvus canary readback marker missing');
     }
@@ -965,16 +995,21 @@ const call = async (names, payload) => {
   } finally {
     if (created) {
       try {
+        stage = 'drop_collection';
         await call(['dropCollection'], { collection_name: collection });
         cleanup = true;
-      } catch (_error) {
+      } catch (cleanupError) {
         cleanup = false;
+        process.stdout.write(JSON.stringify({
+          cleanup: false,
+          ...diagnostic(cleanupError, 'drop_collection'),
+        }) + '\n');
       }
     }
     process.stdout.write(JSON.stringify({ cleanup }) + '\n');
   }
 })().catch((error) => {
-  process.stderr.write(`${error && error.name ? error.name : 'Error'}\n`);
+  process.stdout.write(JSON.stringify(diagnostic(error, stage)) + '\n');
   process.exitCode = 1;
 });
 """
@@ -984,7 +1019,7 @@ const call = async (names, payload) => {
         )
         lines = [line for line in result.get("stdout", "").splitlines() if line.strip()]
         receipts: list[dict[str, Any]] = []
-        for line in lines[-4:]:
+        for line in lines[-8:]:
             try:
                 value = json.loads(line)
             except json.JSONDecodeError:
@@ -993,6 +1028,10 @@ const call = async (names, payload) => {
                 receipts.append(value)
         canary = next((item for item in receipts if item.get("ok") is True), {})
         cleanup = next((item for item in reversed(receipts) if "cleanup" in item), {})
+        diagnostic = next(
+            (item for item in reversed(receipts) if item.get("diagnostic") is True),
+            {},
+        )
         ok = bool(
             result.get("ok")
             and canary.get("created")
@@ -1011,7 +1050,12 @@ const call = async (names, payload) => {
             "vectorSearchVerified": bool(canary.get("searched")),
             "collectionDropped": cleanup.get("cleanup") is True,
             "markerSha256": str(canary.get("markerSha256") or ""),
-            "errorFamily": None if ok else (result.get("stderr", "").strip().splitlines()[-1:] or ["unknown"])[0],
+            "errorFamily": None if ok else str(diagnostic.get("errorFamily") or "unknown"),
+            "errorStage": None if ok else str(diagnostic.get("errorStage") or "unknown"),
+            "errorName": None if ok else str(diagnostic.get("errorName") or "Error"),
+            "errorCode": None if ok else str(diagnostic.get("errorCode") or "none"),
+            "errorMessageSha256": None if ok else str(diagnostic.get("errorMessageSha256") or ""),
+            "diagnosticContentReturned": False,
             "responseContentReturned": False,
             "secretValuesReturned": False,
         }

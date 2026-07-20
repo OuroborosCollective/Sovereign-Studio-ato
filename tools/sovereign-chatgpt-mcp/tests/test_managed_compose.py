@@ -685,6 +685,35 @@ def test_memory_collection_canary_fails_closed_when_cleanup_is_missing(tmp_path:
     assert result["collectionDropped"] is False
 
 
+def test_memory_collection_canary_returns_bounded_failure_diagnostics(tmp_path: Path) -> None:
+    def runner(argv, **kwargs):
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            '{"cleanup":true}\n'
+            '{"diagnostic":true,"errorStage":"insert_record",'
+            '"errorFamily":"insert_record_failure","errorName":"MilvusException",'
+            '"errorCode":"1100","errorMessageSha256":"' + ('c' * 64) + '"}\n',
+            "raw provider error must not be returned",
+        )
+
+    runtime = ManagedComposeRuntime(runner=runner, template_root=str(tmp_path))
+    result = runtime.memory_gateway_collection_canary()
+
+    assert result["ok"] is False
+    assert result["status"] == "MEMORY_COLLECTION_CANARY_FAILED"
+    assert result["collectionDropped"] is True
+    assert result["errorStage"] == "insert_record"
+    assert result["errorFamily"] == "insert_record_failure"
+    assert result["errorName"] == "MilvusException"
+    assert result["errorCode"] == "1100"
+    assert result["errorMessageSha256"] == "c" * 64
+    assert result["diagnosticContentReturned"] is False
+    assert result["responseContentReturned"] is False
+    assert result["secretValuesReturned"] is False
+    assert "raw provider error" not in str(result)
+
+
 def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     root = Path(__file__).resolve().parents[1]
     server = (root / "server.py").read_text("utf-8")
