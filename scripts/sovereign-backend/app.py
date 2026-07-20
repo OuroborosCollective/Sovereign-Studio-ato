@@ -78,6 +78,7 @@ from proven_learning_runtime import register_proven_learning_routes
 from llm_provider_runtime import register_llm_provider_routes
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
+from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML
 
 # GitHub App integration (Marketplace)
 try:
@@ -6517,11 +6518,15 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 </body>
 </html>"""
 
+# Compatibility alias only: even a stale reference cannot reactivate the retired panel.
+# The enterprise evidence UI is the sole served admin truth.
+_ADMIN_PANEL_HTML = ENTERPRISE_ADMIN_HTML
+
 
 @app.route("/admin")
 @app.route("/admin/")
 def admin_panel():
-    resp = make_response(_ADMIN_PANEL_HTML)
+    resp = make_response(ENTERPRISE_ADMIN_HTML)
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     resp.headers["Cache-Control"] = "no-store"
     return resp

@@ -66,7 +66,8 @@ def test_plan_is_deterministic_secret_safe_and_read_only() -> None:
     assert first["record"]["embedding_text"].startswith("Title: Persist only proven learning")
     assert first["databaseAccessed"] is False
     assert first["embeddingGenerated"] is False
-    assert first["ownerApprovalRequired"] is True
+    assert first["ownerApprovalRequired"] is False
+    assert first["approvalMode"] == "persisted-owner-policy-or-fresh-owner-approval"
 
 
 def test_database_and_merge_require_operation_specific_readback() -> None:
@@ -191,6 +192,46 @@ def test_apply_commits_candidate_vector_and_approval_atomically(monkeypatch) -> 
     assert ("candidate", False) in calls
     assert ("vector", False) in calls
     assert calls[-1] == ("cleanup", True)
+
+
+def test_standing_owner_policy_persists_without_one_time_confirmation(monkeypatch) -> None:
+    record = _record()
+    digest = runtime.plan_proven_learning(record)["confirmationSha256"]
+    calls = []
+
+    class Cursor:
+        def __init__(self):
+            self.statement = ""
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def execute(self, statement, _params=()): self.statement = " ".join(statement.split())
+        def fetchall(self):
+            assert "owner_learning_policies" in self.statement
+            return [{"owner_admin_id": "owner-1"}]
+
+    class Connection:
+        def __init__(self): self.commits = 0
+        def cursor(self): return Cursor()
+        def commit(self): self.commits += 1
+        def rollback(self): raise AssertionError("rollback not expected")
+
+    monkeypatch.setattr(runtime, "_read_approval_hash", lambda: pytest.fail("one-time hash must not be read"))
+    monkeypatch.setattr(runtime, "_remove_approval_hash", lambda: pytest.fail("one-time hash must not be removed"))
+    monkeypatch.setattr(runtime, "persist_pattern_learning_candidate_once", lambda *_args, **_kwargs: ("pattern-2", True))
+    monkeypatch.setattr(runtime, "persist_pattern_vector", lambda *_args, **_kwargs: {"stored": True, "embeddingModel": "model", "provider": "proxy"})
+    monkeypatch.setattr(runtime, "_pattern_readback", lambda *_args, **_kwargs: {"candidateId": "pattern-2", "vectorStored": True, "outboxStatus": "pending"})
+
+    connection = Connection()
+    result = runtime.apply_proven_learning(
+        connection,
+        confirmation_sha256=digest,
+        record=record,
+    )
+
+    assert result["standingOwnerPolicyUsed"] is True
+    assert result["ownerApprovalConsumed"] is False
+    assert result["duplicate"] is False
+    assert connection.commits == 1
 
 
 def test_owner_confirmation_file_requires_exact_mode_owner_and_hash(monkeypatch, tmp_path: Path) -> None:
