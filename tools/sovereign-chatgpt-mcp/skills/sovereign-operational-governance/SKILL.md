@@ -12,7 +12,9 @@ Provide the existing Sovereign ChatGPT MCP container with one bounded capability
 
 The online LLM interprets natural language and maps the mission to structured capability values. Deterministic runtime code may rank only currently registered tools by capability, effect class and contract metadata. A recommendation is never executed automatically.
 
-## Installed skill families
+## Installed base skill families
+
+This manifest owns the original 15 governance families below. The companion `sovereign-operational-assurance` manifest adds 27 distinct families for numbered capabilities 16–43 and reuses the registry family rather than duplicating it. The combined routing inventory therefore exposes 42 unique skill families and 43 unique profile tool identities.
 
 1. `sovereign-tool-capability-router`
 2. `sovereign-mcp-registry-verifier`
@@ -30,7 +32,9 @@ The online LLM interprets natural language and maps the mission to structured ca
 14. `sovereign-ownership-codeowners-guardian`
 15. `sovereign-compliance-evidence-exporter`
 
-## Registered MCP tools
+## Registered base MCP tools
+
+The following 16 tools are implemented by `operational_governance_tools.py`. The assurance module registers 28 additional callable tools, including its inventory; numbered capability 29 reuses `mcp_tool_contract_registry` from this list.
 
 - `operational_skill_inventory`
 - `mcp_tool_contract_registry`
@@ -92,4 +96,4 @@ Stop rather than guess when any of these conditions occurs:
 
 ## Verification contract
 
-The immutable MCP image must contain this file and `operational_governance_tools.py`. CI and the VPS installer must compile/import the module, verify all sixteen callables, inspect the live FastMCP registry and run the dedicated regression tests. A repository file or successful import alone is not a production installation claim.
+The immutable MCP image must contain this file, `operational_governance_tools.py`, the companion assurance manifest and `operational_assurance_tools.py`. CI and the VPS installer must compile/import both modules, verify their callables, inspect the combined live FastMCP registry and run the dedicated regression tests. A repository file or successful import alone is not a production installation claim.

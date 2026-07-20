@@ -111,6 +111,71 @@ def test_non_allowlisted_container_is_blocked(monkeypatch) -> None:
     assert "nicht freigegeben" in result["blocker"]
 
 
+def test_runtime_capacity_snapshot_reads_host_container_and_queue_metadata(monkeypatch, tmp_path: Path) -> None:
+    runtime = BrokerRuntime()
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    (queue / "one.pending").write_text("{}", "utf-8")
+    monkeypatch.setenv("SOVEREIGN_MCP_COMMAND_QUEUE", str(queue))
+    monkeypatch.setattr(
+        runtime,
+        "_read_meminfo",
+        lambda: {
+            "MemTotal": 16_000,
+            "MemAvailable": 12_000,
+            "SwapTotal": 8_000,
+            "SwapFree": 7_000,
+        },
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_filesystem_snapshot",
+        lambda path: {
+            "path": path,
+            "present": True,
+            "ok": True,
+            "totalBytes": 100,
+            "availableBytes": 75,
+            "usedBytes": 25,
+            "usedPpm": 250_000,
+            "inodeTotal": 100,
+            "inodeAvailable": 90,
+            "inodeUsed": 10,
+            "inodeUsedPpm": 100_000,
+        },
+    )
+
+    def run(argv, timeout=60):
+        if argv[:3] == ["docker", "stats", "--no-stream"]:
+            return {
+                "ok": True,
+                "stdout": '{"Name":"sovereign-backend","CPUPerc":"1.00%","MemUsage":"10MiB / 1GiB","MemPerc":"1.00%","PIDs":"4","BlockIO":"0B / 0B","NetIO":"1kB / 2kB"}\n',
+                "stderr": "",
+            }
+        if argv[:3] == ["docker", "ps", "-a"]:
+            return {"ok": True, "stdout": "sovereign-backend\n", "stderr": ""}
+        if argv[:2] == ["docker", "inspect"]:
+            return {
+                "ok": True,
+                "stdout": '{"Running":true,"Status":"running","OOMKilled":false}|{"Memory":1073741824,"NanoCpus":2000000000,"PidsLimit":128}\n',
+                "stderr": "",
+            }
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(runtime, "_run", run)
+    result = runtime.dispatch("runtime_capacity_snapshot", {})
+
+    assert result["ok"] is True
+    assert result["status"] == "RUNTIME_CAPACITY_SNAPSHOT_READY"
+    assert result["host"]["memory"]["usedBytes"] == 4_000
+    assert result["host"]["swap"]["usedBytes"] == 1_000
+    assert result["hostCommandQueue"]["pending"] == 1
+    assert result["containers"][0]["memoryLimitBytes"] == 1_073_741_824
+    assert result["containers"][0]["oomKilled"] is False
+    assert result["mutationPerformed"] is False
+    assert result["secretValuesExposed"] is False
+
+
 def test_openai_project_runtime_evidence_dispatch_is_read_only(monkeypatch) -> None:
     runtime = BrokerRuntime()
     monkeypatch.setattr(

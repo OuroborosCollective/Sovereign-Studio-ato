@@ -175,6 +175,8 @@ def test_registers_sixteen_read_only_operational_tools_with_fastmcp_contracts(re
     capability_enum = capability_items.get("enum") or parameters.get("$defs", {}).get("Capability", {}).get("enum", [])
     assert "mcp" in capability_enum
     assert "database" in capability_enum
+    assert "privacy" in capability_enum
+    assert "supply-chain" in capability_enum
     assert registered_tools["tool_recommend_for_mission"].parameters["properties"]["max_tools"]["maximum"] == 20
 
 
@@ -182,8 +184,8 @@ def test_inventory_and_router_use_live_registry_without_executing_tools(register
     _, _, _ = registered
     inventory = tools.operational_skill_inventory()
     assert inventory.status == "OPERATIONAL_SKILL_SUITE_READY"
-    assert inventory.skillCount == 15
-    assert inventory.toolCount == 16
+    assert inventory.skillCount == 42
+    assert inventory.toolCount == 43
     assert inventory.boundaries["naturalLanguageInterpretation"] == "model_only"
     assert inventory.boundaries["autoMerge"] is False
 

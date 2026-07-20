@@ -48,6 +48,14 @@ Capability = Literal[
     "android",
     "document",
     "deterministic",
+    "maintenance",
+    "privacy",
+    "performance",
+    "topology",
+    "queue",
+    "supply-chain",
+    "authentication",
+    "tenant",
 ]
 EffectClass = Literal["read", "workspace-write", "external-write"]
 EvidenceStatus = Literal["success", "failure", "pending", "unknown"]
@@ -136,6 +144,33 @@ _PREFIX_CAPABILITIES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("runtime_runbook_", ("runtime", "observability")),
     ("ownership_codeowners_", ("ownership", "security", "repository")),
     ("compliance_evidence_", ("compliance", "release")),
+    ("vps_capacity_", ("container", "runtime", "observability", "performance")),
+    ("runtime_dependency_", ("runtime", "observability", "container")),
+    ("outbox_queue_", ("queue", "database", "runtime")),
+    ("scheduled_maintenance_", ("maintenance", "runtime", "release")),
+    ("runtime_topology_", ("topology", "container", "configuration")),
+    ("postgres_query_", ("database", "performance", "observability")),
+    ("data_integrity_", ("database", "deterministic", "compliance")),
+    ("data_repair_", ("database", "deterministic")),
+    ("vector_memory_", ("database", "learning", "queue")),
+    ("memory_poisoning_", ("learning", "security", "compliance")),
+    ("learning_pattern_", ("learning", "compliance")),
+    ("data_retention_", ("privacy", "compliance", "database")),
+    ("multi_tenant_", ("tenant", "security", "privacy")),
+    ("mcp_schema_", ("mcp", "configuration")),
+    ("mcp_protocol_", ("mcp", "security", "observability")),
+    ("tool_permission_", ("mcp", "security")),
+    ("dynamic_execution_", ("security", "repository", "runtime")),
+    ("skill_capability_", ("mcp", "repository")),
+    ("skill_lifecycle_", ("mcp", "compliance")),
+    ("skill_regression_", ("mcp", "ci")),
+    ("tool_idempotency_", ("mcp", "deterministic", "ci")),
+    ("owner_approval_policy_", ("ownership", "security", "compliance")),
+    ("secret_lifecycle_", ("security", "compliance")),
+    ("secret_literal_", ("security", "repository")),
+    ("sbom_provenance_", ("supply-chain", "release", "security")),
+    ("dependency_vulnerability_", ("supply-chain", "security", "repository")),
+    ("authentication_chaos_", ("authentication", "security", "ci")),
 )
 
 _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
@@ -213,6 +248,141 @@ _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
         "priority": "P1",
         "tools": ["compliance_evidence_export"],
         "purpose": "Create a canonical revision-bound evidence export with a deterministic digest and explicit gaps.",
+    },
+    "sovereign-vps-capacity-resource-pressure": {
+        "priority": "P0",
+        "tools": ["vps_capacity_resource_pressure_assess"],
+        "purpose": "Separate CPU, memory, swap, filesystem, inode, container, queue and pool pressure from software defects.",
+    },
+    "sovereign-runtime-dependency-health-matrix": {
+        "priority": "P0",
+        "tools": ["runtime_dependency_health_matrix"],
+        "purpose": "Run bounded dependency canaries and map failures to blocked product functions.",
+    },
+    "sovereign-outbox-queue-liveness": {
+        "priority": "P0",
+        "tools": ["outbox_queue_liveness_assess"],
+        "purpose": "Detect stalled outboxes, retries, dead letters, duplicates and missing worker progress.",
+    },
+    "sovereign-scheduled-maintenance-coordinator": {
+        "priority": "P1",
+        "tools": ["scheduled_maintenance_coordinate"],
+        "purpose": "Build conflict-free maintenance windows without executing maintenance.",
+    },
+    "sovereign-runtime-topology-change-auditor": {
+        "priority": "P0",
+        "tools": ["runtime_topology_change_audit"],
+        "purpose": "Compare services, networks, volumes and identities between confirmed revisions.",
+    },
+    "sovereign-postgres-query-index-performance": {
+        "priority": "P0",
+        "tools": ["postgres_query_index_performance_assess"],
+        "purpose": "Assess bounded query latency, index coverage, locking and pool pressure metadata.",
+    },
+    "sovereign-data-integrity-invariant-auditor": {
+        "priority": "P0",
+        "tools": ["data_integrity_invariant_audit"],
+        "purpose": "Audit cross-table business invariants from exact aggregate evidence.",
+    },
+    "sovereign-data-repair-planner": {
+        "priority": "P0",
+        "tools": ["data_repair_plan_build"],
+        "purpose": "Create state-bound, idempotent and bounded historical-data repair plans.",
+    },
+    "sovereign-vector-memory-consistency": {
+        "priority": "P0",
+        "tools": ["vector_memory_consistency_assess"],
+        "purpose": "Reconcile source hashes, outbox state, vector identities and embedding-model versions.",
+    },
+    "sovereign-memory-poisoning-provenance-guardian": {
+        "priority": "P0",
+        "tools": ["memory_poisoning_provenance_guard"],
+        "purpose": "Quarantine under-evidenced, expired, conflicting or revision-mismatched learning candidates.",
+    },
+    "sovereign-learning-pattern-lifecycle": {
+        "priority": "P1",
+        "tools": ["learning_pattern_lifecycle_preview"],
+        "purpose": "Preview versioning, replacement, merge, deprecation and removal of learning patterns.",
+    },
+    "sovereign-data-retention-privacy": {
+        "priority": "P0",
+        "tools": ["data_retention_privacy_audit"],
+        "purpose": "Audit retention, deletion, pseudonymization, export and tenant-key controls.",
+    },
+    "sovereign-multi-tenant-isolation-verifier": {
+        "priority": "P0",
+        "tools": ["multi_tenant_isolation_verify"],
+        "purpose": "Gate release on negative isolation tests across data and execution budgets.",
+    },
+    "sovereign-mcp-schema-compatibility-auditor": {
+        "priority": "P0",
+        "tools": ["mcp_schema_compatibility_audit"],
+        "purpose": "Compare published, repository, adapter and agent-expected MCP schemas.",
+    },
+    "sovereign-mcp-protocol-conformance-fuzzing": {
+        "priority": "P0",
+        "tools": ["mcp_protocol_conformance_fuzz_plan"],
+        "purpose": "Generate reproducible initialize, listing, error, timeout, payload and disconnect fuzz cases.",
+    },
+    "sovereign-tool-permission-minimizer": {
+        "priority": "P0",
+        "tools": ["tool_permission_minimize"],
+        "purpose": "Derive least-privilege tool permissions from declared and observed requirements.",
+    },
+    "sovereign-dynamic-execution-containment-auditor": {
+        "priority": "P0",
+        "tools": ["dynamic_execution_containment_audit"],
+        "purpose": "Classify dynamic code and shell candidates by path and required isolation evidence.",
+    },
+    "sovereign-skill-capability-coverage-mapper": {
+        "priority": "P1",
+        "tools": ["skill_capability_coverage_map"],
+        "purpose": "Map architecture tasks to live registered tools before adding more skills.",
+    },
+    "sovereign-skill-lifecycle-deprecation": {
+        "priority": "P1",
+        "tools": ["skill_lifecycle_deprecation_preview"],
+        "purpose": "Preview controlled skill states and block unsafe deprecation with active callers.",
+    },
+    "sovereign-skill-regression-benchmark": {
+        "priority": "P0",
+        "tools": ["skill_regression_benchmark"],
+        "purpose": "Compare expected tool calls, effects and evidence across MCP updates.",
+    },
+    "sovereign-tool-idempotency-verifier": {
+        "priority": "P0",
+        "tools": ["tool_idempotency_verify"],
+        "purpose": "Detect duplicated side effects and divergent results across identical retries.",
+    },
+    "sovereign-owner-approval-policy-engine": {
+        "priority": "P0",
+        "tools": ["owner_approval_policy_evaluate"],
+        "purpose": "Centralize approval requirement, TTL, revision and payload binding decisions.",
+    },
+    "sovereign-secret-lifecycle-rotation": {
+        "priority": "P0",
+        "tools": ["secret_lifecycle_rotation_assess"],
+        "purpose": "Assess secret-reference age, ownership, rotation intervals and canary freshness without raw values.",
+    },
+    "sovereign-secret-literal-triage": {
+        "priority": "P0",
+        "tools": ["secret_literal_triage"],
+        "purpose": "Separate secret rotation candidates from tests, placeholders and fingerprints without returning literals.",
+    },
+    "sovereign-sbom-provenance-image-signing": {
+        "priority": "P0",
+        "tools": ["sbom_provenance_image_signing_verify"],
+        "purpose": "Verify revision labels, immutable digests, SBOM, provenance, signature and attestation evidence.",
+    },
+    "sovereign-dependency-vulnerability-remediation": {
+        "priority": "P0",
+        "tools": ["dependency_vulnerability_remediation_plan"],
+        "purpose": "Prioritize reachable vulnerabilities and minimal upgrade plans.",
+    },
+    "sovereign-authentication-chaos-negative-test": {
+        "priority": "P0",
+        "tools": ["authentication_chaos_negative_test_assess"],
+        "purpose": "Gate authentication on negative OAuth, PKCE, passkey, session, replay and concurrency evidence.",
     },
 }
 
@@ -414,6 +584,14 @@ def _capabilities_for(name: str, description: str) -> list[str]:
         "android": ("android", "gradle", "apk", "aab"),
         "document": ("document", "pdf", "tika", "gotenberg"),
         "deterministic": ("deterministic", "kappa", "replay", "invariant"),
+        "maintenance": ("maintenance", "window", "patchmon", "reindex", "certificate"),
+        "privacy": ("privacy", "retention", "pseudonym", "tenant"),
+        "performance": ("performance", "latency", "capacity", "pool", "index"),
+        "topology": ("topology", "network", "volume", "compose"),
+        "queue": ("queue", "outbox", "dead letter", "retry"),
+        "supply-chain": ("sbom", "provenance", "signature", "attestation", "vulnerability"),
+        "authentication": ("authentication", "oauth", "pkce", "passkey", "session", "token"),
+        "tenant": ("tenant", "isolation", "cross-tenant"),
     }
     for capability, markers in token_map.items():
         if any(marker in haystack for marker in markers):
