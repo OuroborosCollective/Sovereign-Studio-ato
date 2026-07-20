@@ -21,6 +21,9 @@ WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
+BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
+BACKEND_WORKSPACE_UID="10001"
+BACKEND_WORKSPACE_GID="10001"
 LITELLM_BASE_URL=http://litellm:4000
 LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt
 ENV_FILE="$INSTALL_ROOT/.env"
@@ -337,6 +340,16 @@ fi
 chmod 0700 "$OWNER_INPUT_HOST_ROOT"
 [[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]] \
   || fail "owner input host root is not writable and searchable"
+if [[ -e "$BACKEND_WORKSPACE_HOST_ROOT" || -L "$BACKEND_WORKSPACE_HOST_ROOT" ]]; then
+  [[ -d "$BACKEND_WORKSPACE_HOST_ROOT" && ! -L "$BACKEND_WORKSPACE_HOST_ROOT" ]] \
+    || fail "backend workspace host root is not a regular directory"
+else
+  install -d -m 0770 -o "$BACKEND_WORKSPACE_UID" -g "$BACKEND_WORKSPACE_GID" "$BACKEND_WORKSPACE_HOST_ROOT"
+fi
+chown "$BACKEND_WORKSPACE_UID:$BACKEND_WORKSPACE_GID" "$BACKEND_WORKSPACE_HOST_ROOT"
+chmod 0770 "$BACKEND_WORKSPACE_HOST_ROOT"
+[[ -w "$BACKEND_WORKSPACE_HOST_ROOT" && -x "$BACKEND_WORKSPACE_HOST_ROOT" ]] \
+  || fail "backend workspace host root is not writable and searchable"
 
 INSTALL_STAGE="backup_existing_control_plane"
 ROLLBACK_DIR="$(mktemp -d "$INSTALL_ROOT/.control-plane-backup.XXXXXX")"

@@ -17,6 +17,11 @@ def test_installer_assigns_workspace_to_container_user_and_probes_write_access()
     assert 'mkdir -p "$OWNER_INPUT_HOST_ROOT"' in script
     assert 'chmod 0700 "$OWNER_INPUT_HOST_ROOT"' in script
     assert '[[ -w "$OWNER_INPUT_HOST_ROOT" && -x "$OWNER_INPUT_HOST_ROOT" ]]' in script
+    assert 'BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"' in script
+    assert 'install -d -m 0770 -o "$BACKEND_WORKSPACE_UID" -g "$BACKEND_WORKSPACE_GID" "$BACKEND_WORKSPACE_HOST_ROOT"' in script
+    assert 'chown "$BACKEND_WORKSPACE_UID:$BACKEND_WORKSPACE_GID" "$BACKEND_WORKSPACE_HOST_ROOT"' in script
+    assert 'chmod 0770 "$BACKEND_WORKSPACE_HOST_ROOT"' in script
+    assert '[[ -w "$BACKEND_WORKSPACE_HOST_ROOT" && -x "$BACKEND_WORKSPACE_HOST_ROOT" ]]' in script
     assert '.permission-probe' in script
 
 
@@ -45,6 +50,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
     assert 'ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue' in worker_service
     assert '/opt/sovereign-owner-managed' in worker_service
+    assert '/opt/sovereign-agent-workspaces' in worker_service
     assert '/opt/sovereign-litellm' in worker_service
     assert '/opt/sovereign-backend' in worker_service
     assert '/opt/gpt-tools' in worker_service
