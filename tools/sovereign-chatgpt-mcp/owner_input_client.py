@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.parse
 import uuid
 from typing import Any
 
@@ -42,7 +43,35 @@ class OwnerInputClient:
             "http://sovereign-backend:8787",
         ).strip().rstrip("/")
         self.request_key = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+        public_url = os.getenv(
+            "SOVEREIGN_BACKEND_PUBLIC_URL",
+            "https://sovereign-backend.arelorian.de",
+        ).strip().rstrip("/")
+        parsed_public_url = urllib.parse.urlsplit(public_url)
+        if (
+            parsed_public_url.scheme != "https"
+            or not parsed_public_url.hostname
+            or parsed_public_url.username
+            or parsed_public_url.password
+            or parsed_public_url.query
+            or parsed_public_url.fragment
+        ):
+            raise RuntimeError("SOVEREIGN_BACKEND_PUBLIC_URL muss eine sichere HTTPS-Origin sein")
+        self.public_base_url = public_url
         self.session = session or requests.Session()
+
+    def _owner_url(self, request_id: str) -> str:
+        selected = str(request_id or "").strip()
+        if not REQUEST_ID_RE.fullmatch(selected):
+            raise RuntimeError("Owner-Freigabe-Anfrage lieferte keine gültige Request-ID")
+        try:
+            normalized = str(uuid.UUID(selected))
+        except ValueError as exc:
+            raise RuntimeError("Owner-Freigabe-Anfrage lieferte keine gültige Request-ID") from exc
+        return (
+            f"{self.public_base_url}/owner-approvals"
+            f"?request_id={urllib.parse.quote(normalized, safe='')}"
+        )
 
     def _headers(self) -> dict[str, str]:
         if not self.request_key:
@@ -118,11 +147,12 @@ class OwnerInputClient:
         request_payload = payload.get("request")
         if not isinstance(request_payload, dict) or not request_payload.get("id"):
             raise RuntimeError("Owner-Freigabe-Anfrage wurde nicht bestätigt")
+        owner_url = self._owner_url(str(request_payload["id"]))
         return {
             "ok": True,
             "status": "OWNER_INPUT_REQUESTED",
             "request": request_payload,
-            "owner_url": "/owner-approvals",
+            "owner_url": owner_url,
             "protected_value_transport": "owner_ui_only",
             "llm_can_receive_protected_value": False,
         }
@@ -146,6 +176,7 @@ class OwnerInputClient:
             "ok": True,
             "status": "OWNER_INPUT_STATUS",
             "request": request_payload,
+            "owner_url": self._owner_url(selected),
             "protected_value_returned": False,
         }
 

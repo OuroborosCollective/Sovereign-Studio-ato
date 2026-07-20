@@ -28,7 +28,12 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert "owner_input_requests" in runtime
     assert '"/model/new"' in runtime
     assert '"/v1/chat/completions"' in runtime
+    assert '"/api/admin/llm/provider-deployments/<route_id>/owner-input"' in runtime
     assert "provider_canary_failed" in runtime
+    assert "_catalog_model_with_retry" in runtime
+    assert "requires_secret = secret_available or not model_present or not key_fingerprint" in runtime
+    assert "if secret_loaded:" in runtime
+    assert "key_fingerprint=%s, key_hint=%s" in runtime
     assert "SET status='ready'" in runtime
     assert "SET provider='litellm'" in runtime
     assert "_securely_remove(path)" in runtime
@@ -121,6 +126,9 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "STANDARD_MARKUP_MULTIPLIER" in policy
     assert "PREMIUM_MARKUP_MULTIPLIER" in policy
     assert "free routes require verified zero provider prices" in policy
+    assert 'FREE_FUNDING_PROVIDER_QUOTA: Final[str] = "provider_free_quota"' in policy
+    assert "normalize_funding_mode" in policy
+    assert "provider_free_quota routes require positive verified provider list prices" in policy
     assert "AGENTS_PROVIDER_MODEL: Final[str] = \"gpt-5.4-mini\"" in policy
 
     assert "provider_funded_credits" in migration
@@ -136,14 +144,26 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "funded_credits_reserved" in billing
 
     assert '"billingCategories": list(BILLING_CATEGORY_OPTIONS)' in provider
+    assert '"fundingModes": list(FUNDING_MODE_OPTIONS)' in provider
+    assert "FREE_FUNDING_PROVIDER_QUOTA" in provider
     assert '"/api/admin/llm/model-catalog"' in provider
     assert '"/api/admin/llm/model-catalog/attach"' in provider
     assert "litellm_pricing_not_eligible" in provider
     assert "free_route_nonzero_or_unreported_cost" in provider
 
     assert "provider_funded_delta=-amount" in app
+    assert "providerBillingCategory" in app
+    assert "providerFundingMode" in app
+    assert "providerMarkupMultiplier" in app
+    assert "billingCategory:document.getElementById('providerBillingCategory').value" in app
+    assert "fundingMode:document.getElementById('providerFundingMode').value" in app
+    assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||0)" in app
+    assert "refreshProviderOwnerInput" in app
+    assert "providerCredentialLabel" in app
+    assert "lastErrorCode" in app
     assert "billingCategory" in app
     assert "markupMultiplier" in app
     assert "llm_route_attempts" in app
     assert "llm_route_revolver_state" in app
     assert "manual_llm_price_editing_disabled" in app
+    assert "free_route_user_charge_nonzero" in app

@@ -37,6 +37,7 @@ class FakeSession:
 def test_create_request_sends_openai_target_and_no_protected_value(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_PUBLIC_URL", "https://sovereign-backend.arelorian.de")
     session = FakeSession([
         FakeResponse(201, {
             "ok": True,
@@ -63,10 +64,15 @@ def test_create_request_sends_openai_target_and_no_protected_value(monkeypatch) 
     assert "secret" not in " ".join(call["json"].keys()).lower()
     assert result["llm_can_receive_protected_value"] is False
     assert result["protected_value_transport"] == "owner_ui_only"
+    assert result["owner_url"] == (
+        "https://sovereign-backend.arelorian.de/owner-approvals"
+        "?request_id=11111111-1111-4111-8111-111111111111"
+    )
 
 
 def test_status_returns_metadata_only(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_PUBLIC_URL", "https://sovereign-backend.arelorian.de")
     request_id = "22222222-2222-4222-8222-222222222222"
     session = FakeSession([
         FakeResponse(200, {
@@ -80,7 +86,19 @@ def test_status_returns_metadata_only(monkeypatch) -> None:
 
     assert result["protected_value_returned"] is False
     assert "protectedValue" not in result["request"]
+    assert result["owner_url"] == (
+        "https://sovereign-backend.arelorian.de/owner-approvals"
+        f"?request_id={request_id}"
+    )
     assert session.calls[0]["method"] == "GET"
+
+
+def test_rejects_non_https_public_owner_origin(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_PUBLIC_URL", "http://sovereign-backend.arelorian.de")
+
+    with pytest.raises(RuntimeError, match="sichere HTTPS-Origin"):
+        OwnerInputClient(session=FakeSession([]))
 
 
 def test_proven_learning_plan_and_apply_use_private_backend_only(monkeypatch) -> None:

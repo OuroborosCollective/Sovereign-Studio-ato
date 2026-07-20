@@ -7,6 +7,8 @@ import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { Sidebar } from './Sidebar';
 import { AgentQuestionCard } from './AgentQuestionCard';
 import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
+import { PatchDiffEvidenceSheet } from './PatchDiffEvidenceSheet';
+import { RuntimeEvidenceLogSheet } from './RuntimeEvidenceLogSheet';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -77,6 +79,42 @@ describe('Palette Accessibility Enhancements', () => {
        // We can check if it exists when panel is open and there are simulated logs if possible
        // Actually, the clear button only shows if tab === "logs" and logs.length > 0.
        // It's hard to trigger from props.
+    });
+  });
+
+  describe('Sheet close-button tooltips', () => {
+    it('Patch Diff close button keeps matching aria-label and title', () => {
+      const report = {
+        files: [],
+        created: 0,
+        modified: 0,
+        unchanged: 0,
+        sourceMissing: 0,
+        totalAddedLines: 0,
+        totalRemovedLines: 0,
+        summary: 'Keine Änderungen.',
+      };
+
+      render(
+        <PatchDiffEvidenceSheet
+          report={report}
+          confirmed={false}
+          onConfirm={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+
+      const closeButton = screen.getByRole('button', { name: 'Patch Diff schließen' });
+      expect(closeButton).toHaveAttribute('aria-label', 'Patch Diff schließen');
+      expect(closeButton).toHaveAttribute('title', 'Patch Diff schließen');
+    });
+
+    it('Runtime Logs close button keeps matching aria-label and title', () => {
+      render(<RuntimeEvidenceLogSheet entries={[]} onClose={vi.fn()} />);
+
+      const closeButton = screen.getByRole('button', { name: 'Runtime Logs schließen' });
+      expect(closeButton).toHaveAttribute('aria-label', 'Runtime Logs schließen');
+      expect(closeButton).toHaveAttribute('title', 'Runtime Logs schließen');
     });
   });
 
