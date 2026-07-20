@@ -71,6 +71,16 @@ class FakeBroker:
         raise AssertionError(action)
 
 
+class PressureBroker(FakeBroker):
+    def call(self, action: str, arguments: dict, timeout: int = 30) -> dict:
+        result = super().call(action, arguments, timeout)
+        if action == "runtime_capacity_snapshot":
+            result["filesystems"] = [
+                {"path": "/", "usedPpm": 950_000, "inodeUsedPpm": 100_000},
+            ]
+        return result
+
+
 @pytest.fixture()
 def repository(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
@@ -174,6 +184,32 @@ def test_dependency_matrix_maps_failures_and_optional_canaries(registered) -> No
     ]
     assert by_name["document-pipeline"]["ok"] is True
     assert by_name["milvus-memory-gateway"]["ok"] is True
+
+
+def test_dependency_matrix_propagates_capacity_pressure(registered, monkeypatch) -> None:
+    monkeypatch.setattr(tools, "_BROKER", PressureBroker())
+
+    result = tools.runtime_dependency_health_matrix(include_ephemeral_canaries=False)
+
+    assert result.ok is False
+    assert result.status == "DEPENDENCY_MATRIX_DEGRADED"
+    by_name = {item["dependency"]: item for item in result.evidence["dependencies"]}
+    capacity = by_name["host-capacity"]
+    assert capacity["ok"] is False
+    assert capacity["status"] == "VPS_CAPACITY_PRESSURE"
+    assert any(
+        finding["family"] == "FILESYSTEM_CAPACITY_PRESSURE"
+        for finding in capacity["causeFindings"]
+    )
+    top_level = next(
+        finding
+        for finding in result.findings
+        if finding["dependency"] == "host-capacity"
+    )
+    assert any(
+        finding["family"] == "FILESYSTEM_CAPACITY_PRESSURE"
+        for finding in top_level["causeFindings"]
+    )
 
 
 def test_queue_maintenance_and_topology_fail_closed(registered) -> None:

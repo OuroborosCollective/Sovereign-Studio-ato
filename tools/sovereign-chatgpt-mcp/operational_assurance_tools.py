@@ -556,7 +556,38 @@ def runtime_dependency_health_matrix(
     broker = safe("BROKER", lambda: _BROKER.status()) if _BROKER is not None else {"ok": False, "status": "BROKER_UNREGISTERED"}
     postgres = safe("POSTGRES", lambda: _DATABASE.canary()) if _DATABASE is not None else {"ok": False, "status": "DATABASE_UNREGISTERED"}
     pgvector = safe("PGVECTOR", lambda: _DATABASE.vector_canary()) if _DATABASE is not None else {"ok": False, "status": "DATABASE_UNREGISTERED"}
-    capacity = safe("CAPACITY", lambda: _BROKER.call("runtime_capacity_snapshot", {}, timeout=90)) if _BROKER is not None else {"ok": False, "status": "BROKER_UNREGISTERED"}
+    if _BROKER is not None:
+        try:
+            capacity_result = vps_capacity_resource_pressure_assess()
+            capacity = {
+                "ok": capacity_result.ok,
+                "status": capacity_result.status,
+                "findings": capacity_result.findings,
+                "evidence": capacity_result.evidence,
+                "runtimeVerified": capacity_result.runtimeVerified,
+            }
+        except Exception as exc:
+            capacity = {
+                "ok": False,
+                "status": "CAPACITY_ASSESSMENT_UNAVAILABLE",
+                "findings": [
+                    {
+                        "severity": "P0",
+                        "family": "VPS_CAPACITY_ASSESSMENT_UNAVAILABLE",
+                        "errorType": type(exc).__name__,
+                    }
+                ],
+                "runtimeVerified": False,
+            }
+    else:
+        capacity = {
+            "ok": False,
+            "status": "BROKER_UNREGISTERED",
+            "findings": [
+                {"severity": "P0", "family": "VPS_CAPACITY_BROKER_UNREGISTERED"}
+            ],
+            "runtimeVerified": False,
+        }
     backend = safe("BACKEND_CONTAINER", lambda: _BROKER.call("container_status", {"container": "sovereign-backend"}, timeout=30)) if _BROKER is not None else {"ok": False}
     mcp = safe("MCP_CONTAINER", lambda: _BROKER.call("container_status", {"container": "sovereign-chatgpt-mcp"}, timeout=30)) if _BROKER is not None else {"ok": False}
     document = {"ok": None, "status": "NOT_REQUESTED"}
@@ -572,15 +603,29 @@ def runtime_dependency_health_matrix(
         {"dependency": "mcp-control-plane", "ok": broker.get("status") == "BROKER_READY", "status": broker.get("status"), "blockedFunctions": ["host mutations", "deployments", "self-update", "workflow control"]},
         {"dependency": "backend-container", "ok": bool(backend.get("ok")), "status": backend.get("status"), "blockedFunctions": ["product API", "authentication", "billing", "agents"]},
         {"dependency": "mcp-container", "ok": bool(mcp.get("ok")), "status": mcp.get("status"), "blockedFunctions": ["Sovottt tools", "owner workflows"]},
-        {"dependency": "host-capacity", "ok": bool(capacity.get("ok")), "status": capacity.get("status"), "blockedFunctions": ["all runtime functions under pressure"]},
+        {
+            "dependency": "host-capacity",
+            "ok": bool(capacity.get("ok")),
+            "status": capacity.get("status"),
+            "blockedFunctions": ["all runtime functions under pressure"],
+            "causeFindings": capacity.get("findings") or [],
+        },
         {"dependency": "document-pipeline", "ok": document.get("ok"), "status": document.get("status"), "blockedFunctions": ["DOCX to PDF", "PDF marker verification"]},
         {"dependency": "milvus-memory-gateway", "ok": milvus.get("ok"), "status": milvus.get("status"), "blockedFunctions": ["Milvus collection operations", "external vector memory canary"]},
     ]
-    findings = [
-        {"severity": "P0", "family": "DEPENDENCY_CANARY_FAILED", "dependency": item["dependency"], "blockedFunctions": item["blockedFunctions"]}
-        for item in dependencies
-        if item["ok"] is False
-    ]
+    findings: list[dict[str, Any]] = []
+    for item in dependencies:
+        if item["ok"] is not False:
+            continue
+        finding: dict[str, Any] = {
+            "severity": "P0",
+            "family": "DEPENDENCY_CANARY_FAILED",
+            "dependency": item["dependency"],
+            "blockedFunctions": item["blockedFunctions"],
+        }
+        if item.get("causeFindings"):
+            finding["causeFindings"] = item["causeFindings"]
+        findings.append(finding)
     unknown = [item["dependency"] for item in dependencies if item["ok"] is None]
     ok = not findings
     return _result(
