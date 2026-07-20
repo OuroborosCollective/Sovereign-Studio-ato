@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": "ff35255d01fefa3e0455028ab4489ef8f75aa952",
-  "generatedAt": "2026-07-20T16:26:22Z",
-  "generatedFromRepositoryRevision": "ff35255d01fefa3e0455028ab4489ef8f75aa952",
+  "expectedPrHeadSha": "e02346fdabcf43ff82dab5c0c69283ab6ac5bf50",
+  "generatedAt": "2026-07-20T16:57:13Z",
+  "generatedFromRepositoryRevision": "e02346fdabcf43ff82dab5c0c69283ab6ac5bf50",
   "importantManifestFiles": [
     {
       "bytes": 14520,
@@ -214,9 +214,9 @@
       "sha256": "bb279727b0663949f83184dee95ee7da55aea9134ccb3409b8071745a52b53a2"
     },
     {
-      "bytes": 6143,
+      "bytes": 9286,
       "path": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-      "sha256": "f634112a2574c97e9cb35b4e1d4962d5860de8849658734e1ee5c8a930f48b52"
+      "sha256": "c01b2f6bfc74a251a90359a08ab3da4ea8e246f57bf8421236e6a502f7c07356"
     },
     {
       "bytes": 7336,
@@ -459,13 +459,14 @@
       "sha256": "82b80c0312430fcb68651dfa43e0f44ca65a2e732249b7c461145c7966bb4c65"
     }
   ],
-  "latestPatternSha256": "2e4e1b65d673f9c4f93865d40acfe09c57ac0c2cad59cd1a08b17c9a59f9361a",
+  "latestPatternSha256": "55ffd93ae01bc44cd139bc6b1de37ef6a5fe054ae30b718bba16bd69294ee30f",
   "learningPatternSha256": [
     "2e4e1b65d673f9c4f93865d40acfe09c57ac0c2cad59cd1a08b17c9a59f9361a",
+    "55ffd93ae01bc44cd139bc6b1de37ef6a5fe054ae30b718bba16bd69294ee30f",
     "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1"
   ],
   "logbookPath": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-  "logbookSha256": "f634112a2574c97e9cb35b4e1d4962d5860de8849658734e1ee5c8a930f48b52",
+  "logbookSha256": "c01b2f6bfc74a251a90359a08ab3da4ea8e246f57bf8421236e6a502f7c07356",
   "mergeTarget": "main",
   "schemaVersion": "sovereign.proven-learning-manifest.v1",
   "selfHashExcluded": true
