@@ -31,6 +31,11 @@ CODE_SERVER_CONTAINER = "code-server-46bq-code-server-1"
 CODE_SERVER_IMAGE = "lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441"
 CODE_SERVER_CONFIG_VOLUME = "code-server-46bq_code-server-config"
 CODE_SERVER_REPOSITORY = "https://github.com/OuroborosCollective/Sovereign-Studio-ato.git"
+CODE_SERVER_RUNTIME_UID = 10001
+CODE_SERVER_RUNTIME_GID = 10001
+CODE_SERVER_OPERATOR_ROOT = "/opt/sovereign-chatgpt-tools"
+CODE_SERVER_WORKSPACE_ROOT = f"{CODE_SERVER_OPERATOR_ROOT}/workspaces"
+CODE_SERVER_WORKSPACE_MOUNT = "/config/sovereign-workspaces"
 CODE_SERVER_ENV_KEYS = (
     "PUID",
     "PGID",
@@ -109,7 +114,7 @@ STACKS: dict[str, ManagedStack] = {
         deploy_root="/opt/code-server-46bq",
         template_name="code-server-46bq",
         allowed_networks=("default", "code-server-46bq_default", "sovereign-private"),
-        allowed_bind_roots=("/opt/code-server-46bq",),
+        allowed_bind_roots=("/opt/code-server-46bq", CODE_SERVER_WORKSPACE_ROOT),
         allowed_published_ports=("127.0.0.1:32782:8443",),
     ),
     "pgbackweb-wq5r": ManagedStack(
@@ -635,10 +640,10 @@ class ManagedComposeRuntime:
         if not any(values.get(key) for key in CODE_SERVER_AUTH_KEYS):
             raise RuntimeError("Code-Server-Authentisierung fehlt; eine ungeschützte Neuerstellung ist gesperrt")
 
-        values.setdefault("PUID", "1000")
-        values.setdefault("PGID", "1000")
+        values["PUID"] = str(CODE_SERVER_RUNTIME_UID)
+        values["PGID"] = str(CODE_SERVER_RUNTIME_GID)
         values.setdefault("TZ", "Europe/Berlin")
-        values.setdefault("DEFAULT_WORKSPACE", "/config/workspace")
+        values["DEFAULT_WORKSPACE"] = CODE_SERVER_WORKSPACE_MOUNT
         rendered = [self._code_server_env_line(key, values.get(key, "")) for key in CODE_SERVER_ENV_KEYS]
         self._write_atomic(env_path, ("\n".join(rendered) + "\n").encode("utf-8"), mode=0o600)
         os.chmod(env_path, 0o600)
@@ -993,8 +998,26 @@ class ManagedComposeRuntime:
             and config_mounts[0].get("name") == CODE_SERVER_CONFIG_VOLUME
             and config_mounts[0].get("rw") is True
         )
+        workspace_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict) and item.get("destination") == CODE_SERVER_WORKSPACE_MOUNT
+        ]
+        workspace_mount_ready = (
+            len(workspace_mounts) == 1
+            and workspace_mounts[0].get("type") == "bind"
+            and workspace_mounts[0].get("source") == CODE_SERVER_WORKSPACE_ROOT
+            and workspace_mounts[0].get("rw") is True
+        )
         digest_ready = CODE_SERVER_IMAGE in set(state.get("repoDigests") or [])
-        return bool(state.get("present") and state.get("running") and loopback_only and volume_ready and digest_ready)
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and loopback_only
+            and volume_ready
+            and workspace_mount_ready
+            and digest_ready
+        )
 
     def _code_server_runtime_canary(self) -> dict[str, Any]:
         http_status = 0
@@ -1019,12 +1042,26 @@ class ManagedComposeRuntime:
 
         token = secrets.token_hex(8)
         workspace = f"/config/workspace/.sovereign-clone-canary-{token}"
+        operator_canary = f"{CODE_SERVER_WORKSPACE_MOUNT}/.code-server-canary-{token}"
         git_version = self._run(
             ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "git", "--version"],
             timeout=30,
         )
         mkdir = self._run(
             ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "mkdir", "-p", "/config/workspace"],
+            timeout=30,
+        )
+        operator_write = self._run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "abc",
+                CODE_SERVER_CONTAINER,
+                "sh",
+                "-c",
+                f"umask 077 && mkdir -p '{operator_canary}' && printf '%s' '{token}' > '{operator_canary}/marker' && test \"$(cat '{operator_canary}/marker')\" = '{token}'",
+            ],
             timeout=30,
         )
         clone = self._run(
@@ -1053,16 +1090,22 @@ class ManagedComposeRuntime:
             ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "rm", "-rf", workspace],
             timeout=30,
         )
+        operator_cleanup = self._run(
+            ["docker", "exec", "--user", "abc", CODE_SERVER_CONTAINER, "rm", "-rf", operator_canary],
+            timeout=30,
+        )
         cloned_revision = str(revision.get("stdout") or "").strip()
         revision_verified = bool(re.fullmatch(r"[0-9a-f]{40}", cloned_revision))
         ok = bool(
             200 <= http_status < 400
             and git_version.get("ok")
             and mkdir.get("ok")
+            and operator_write.get("ok")
             and clone.get("ok")
             and revision.get("ok")
             and revision_verified
             and cleanup.get("ok")
+            and operator_cleanup.get("ok")
         )
         return {
             "ok": ok,
@@ -1071,9 +1114,11 @@ class ManagedComposeRuntime:
             "authenticationEndpointReachable": 200 <= http_status < 400,
             "gitAvailable": bool(git_version.get("ok")),
             "workspaceWritable": bool(mkdir.get("ok")),
+            "operatorWorkspaceMountWritable": bool(operator_write.get("ok")),
             "repositoryCloneVerified": bool(clone.get("ok") and revision_verified),
             "clonedRevision": cloned_revision if revision_verified else None,
             "temporaryCloneRemoved": bool(cleanup.get("ok")),
+            "operatorWorkspaceCanaryRemoved": bool(operator_cleanup.get("ok")),
             "errorFamily": None if ok else (last_error or str(clone.get("stderr") or "workspace_canary_failed").strip().splitlines()[-1]),
             "repositoryContentReturned": False,
             "secretValuesReturned": False,

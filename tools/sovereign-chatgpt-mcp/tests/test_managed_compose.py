@@ -105,6 +105,10 @@ def test_code_server_template_is_digest_pinned_loopback_only_and_preserves_volum
     assert "127.0.0.1:32782:8443" in template
     assert "0.0.0.0:32782" not in template
     assert "code-server-46bq_code-server-config" in template
+    assert "/opt/sovereign-chatgpt-tools/workspaces" in template
+    assert "/config/sovereign-workspaces" in template
+    assert "PUID: ${PUID:-10001}" in template
+    assert "PGID: ${PGID:-10001}" in template
     assert "/var/run/docker.sock" not in template
 
 
@@ -132,6 +136,9 @@ def test_code_server_env_is_preserved_without_returning_values(tmp_path: Path) -
     assert result["secretValuesReturned"] is False
     assert Path(result["path"]).stat().st_mode & 0o777 == 0o600
     assert "PASSWORD='existing $owner#pass\\'word'" in env_text
+    assert "PUID='10001'" in env_text
+    assert "PGID='10001'" in env_text
+    assert "DEFAULT_WORKSPACE='/config/sovereign-workspaces'" in env_text
     assert password not in str(result)
     assert runtime._decode_code_server_env_value("'existing $owner#pass\\'word'") == password
 
@@ -157,15 +164,27 @@ def test_code_server_transport_requires_loopback_digest_and_exact_volume(tmp_pat
         "running": True,
         "publishedPorts": {"8443/tcp": [{"HostIp": "127.0.0.1", "HostPort": "32782"}]},
         "repoDigests": ["lscr.io/linuxserver/code-server@sha256:dfc5e74083f43f3cb217fedfead149f32b319ee663744351c001bdc5e4245441"],
-        "mounts": [{
-            "type": "volume",
-            "name": "code-server-46bq_code-server-config",
-            "destination": "/config",
-            "rw": True,
-        }],
+        "mounts": [
+            {
+                "type": "volume",
+                "name": "code-server-46bq_code-server-config",
+                "destination": "/config",
+                "rw": True,
+            },
+            {
+                "type": "bind",
+                "name": "",
+                "source": "/opt/sovereign-chatgpt-tools/workspaces",
+                "destination": "/config/sovereign-workspaces",
+                "rw": True,
+            },
+        ],
     }
     assert runtime._code_server_transport_ready(state) is True
     state["publishedPorts"]["8443/tcp"].append({"HostIp": "::", "HostPort": "32782"})
+    assert runtime._code_server_transport_ready(state) is False
+    state["publishedPorts"]["8443/tcp"] = [{"HostIp": "127.0.0.1", "HostPort": "32782"}]
+    state["mounts"][1]["rw"] = False
     assert runtime._code_server_transport_ready(state) is False
 
 
@@ -823,3 +842,5 @@ def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     assert '"litellm_provider_model_inventory": lambda _values:' in broker
     assert '"openai_project_runtime_evidence": lambda _values:' in broker
     assert '"litellm_model_aliases_activate": lambda values:' in broker
+    assert "def code_server_workspace_open(" in server
+    assert 'broker.call("managed_compose_stack_plan", {"stack_id": "code-server-46bq"}' in server
