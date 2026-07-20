@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import time
 import urllib.parse
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from pathlib import Path
@@ -22,8 +23,11 @@ from litellm_runtime import extract_litellm_evidence, fetch_litellm
 from llm_cost_policy import (
     BillingPolicyError,
     FREE_CATEGORY,
+    FREE_FUNDING_PROVIDER_QUOTA,
+    FREE_FUNDING_VERIFIED_ZERO_COST,
     category_minimum_multiplier,
     normalize_billing_category,
+    normalize_funding_mode,
     normalized_multiplier,
 )
 
@@ -53,12 +57,25 @@ PROVIDER_PRESETS = (
     {"id": "openai_compatible", "label": "Andere OpenAI-kompatible API", "apiBase": ""},
 )
 
+FUNDING_MODE_OPTIONS = (
+    {
+        "id": FREE_FUNDING_VERIFIED_ZERO_COST,
+        "label": "Verifizierte Providerkosten 0",
+        "description": "Nur aktiv, wenn LiteLLM Kosten von exakt 0 bestätigt.",
+    },
+    {
+        "id": FREE_FUNDING_PROVIDER_QUOTA,
+        "label": "Provider-Free-Kontingent",
+        "description": "Nutzerpreis 0; echte Provider-Listenpreise bleiben sichtbar, Kontingentstatus ist owner-bestätigt und canary-belegt.",
+    },
+)
+
 BILLING_CATEGORY_OPTIONS = (
     {
         "id": "free",
         "label": "Free · Revolver",
         "minimumMultiplier": 0,
-        "description": "Nur bei von LiteLLM bestätigten Providerkosten von exakt 0.",
+        "description": "Kostenlos für Nutzer: verifizierte 0-Kosten oder ehrlich ausgewiesenes Provider-Free-Kontingent.",
     },
     {
         "id": "standard",
@@ -173,20 +190,43 @@ def _catalog_model(model_id: str) -> dict[str, Any] | None:
     return next((item for item in models if item["modelId"] == normalized), None)
 
 
+def _catalog_model_with_retry(
+    model_id: str,
+    *,
+    attempts: int = 8,
+    delay_seconds: float = 0.5,
+) -> dict[str, Any] | None:
+    """Bound dynamic LiteLLM catalog propagation without re-registering a model."""
+    bounded_attempts = max(1, min(int(attempts), 20))
+    bounded_delay = max(0.0, min(float(delay_seconds), 2.0))
+    for attempt in range(bounded_attempts):
+        model = _catalog_model(model_id)
+        if model:
+            return model
+        if attempt + 1 < bounded_attempts and bounded_delay:
+            time.sleep(bounded_delay)
+    return None
+
+
 def _validate_category_pricing(
     *,
     category: str,
     model: dict[str, Any],
+    funding_mode: str = FREE_FUNDING_VERIFIED_ZERO_COST,
 ) -> None:
     if not model.get("pricingVerified"):
         raise BillingPolicyError("LiteLLM hat für dieses Modell keine verifizierten Kosten geliefert")
-    if category == FREE_CATEGORY and not model.get("freeEligible"):
-        raise BillingPolicyError("Free ist nur bei exakt 0 bestätigten Providerkosten erlaubt")
-    if category != FREE_CATEGORY:
-        input_price = _non_negative_decimal(model.get("inputUsdPerMillion"))
-        output_price = _non_negative_decimal(model.get("outputUsdPerMillion"))
-        if input_price is None or output_price is None or input_price <= 0 or output_price <= 0:
-            raise BillingPolicyError("Bezahlte Routen benötigen positive verifizierte Providerpreise")
+    normalized_funding = normalize_funding_mode(category, funding_mode)
+    input_price = _non_negative_decimal(model.get("inputUsdPerMillion"))
+    output_price = _non_negative_decimal(model.get("outputUsdPerMillion"))
+    if category == FREE_CATEGORY:
+        if normalized_funding == FREE_FUNDING_VERIFIED_ZERO_COST and not model.get("freeEligible"):
+            raise BillingPolicyError("Free mit verified_zero_cost ist nur bei exakt 0 bestätigten Providerkosten erlaubt")
+        if normalized_funding == FREE_FUNDING_PROVIDER_QUOTA:
+            if input_price is None or output_price is None or input_price <= 0 or output_price <= 0:
+                raise BillingPolicyError("Provider-Free-Kontingent benötigt positive verifizierte Listenpreise")
+    elif input_price is None or output_price is None or input_price <= 0 or output_price <= 0:
+        raise BillingPolicyError("Bezahlte Routen benötigen positive verifizierte Providerpreise")
 
 
 def _slug(value: str, limit: int) -> str:
@@ -220,6 +260,7 @@ def _normalize_metadata(body: dict[str, Any]) -> dict[str, Any]:
     try:
         category = normalize_billing_category(body.get("billingCategory") or "premium")
         multiplier = normalized_multiplier(category, body.get("markupMultiplier"))
+        funding_mode = normalize_funding_mode(category, body.get("fundingMode"))
         priority = int(body.get("priority", 50))
     except BillingPolicyError as exc:
         raise ValueError(str(exc)) from exc
@@ -238,6 +279,7 @@ def _normalize_metadata(body: dict[str, Any]) -> dict[str, Any]:
         "apiBase": api_base,
         "billingCategory": category,
         "markupMultiplier": multiplier,
+        "fundingMode": funding_mode,
         "minimumMultiplier": category_minimum_multiplier(category),
         "priority": priority,
         "routeId": f"litellm-admin-{digest[:24]}",
@@ -277,6 +319,7 @@ def register_llm_provider_routes(
         return jsonify({
             "providers": list(PROVIDER_PRESETS),
             "billingCategories": list(BILLING_CATEGORY_OPTIONS),
+            "fundingModes": list(FUNDING_MODE_OPTIONS),
             "createsRoutes": False,
         })
 
@@ -307,6 +350,7 @@ def register_llm_provider_routes(
         try:
             category = normalize_billing_category(body.get("billingCategory"))
             multiplier = normalized_multiplier(category, body.get("markupMultiplier"))
+            funding_mode = normalize_funding_mode(category, body.get("fundingMode"))
             priority = int(body.get("priority", 50))
         except (BillingPolicyError, TypeError, ValueError) as exc:
             return jsonify({"error": str(exc), "blocker": "billing_category_invalid"}), 400
@@ -320,7 +364,11 @@ def register_llm_provider_routes(
                 "blocker": "litellm_model_not_found",
             }), 404
         try:
-            _validate_category_pricing(category=category, model=model)
+            _validate_category_pricing(
+                category=category,
+                model=model,
+                funding_mode=funding_mode,
+            )
         except BillingPolicyError as exc:
             return jsonify({"error": str(exc), "blocker": "litellm_pricing_not_eligible"}), 409
 
@@ -345,9 +393,13 @@ def register_llm_provider_routes(
         except ValueError:
             return jsonify({"error": "Provider-Canary lieferte kein gültiges JSON"}), 502
         evidence = extract_litellm_evidence(canary_response, canary_payload)
-        if category == FREE_CATEGORY and evidence.get("providerCostUsd") not in (0, 0.0):
+        if (
+            category == FREE_CATEGORY
+            and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
+            and evidence.get("providerCostUsd") not in (0, 0.0)
+        ):
             return jsonify({
-                "error": "Free-Route wurde abgelehnt: Die Canary bestätigt keine Providerkosten von exakt 0.",
+                "error": "Free-Route wurde abgelehnt: verified_zero_cost wurde nicht bestätigt.",
                 "blocker": "free_route_nonzero_or_unreported_cost",
                 "providerCostUsd": evidence.get("providerCostUsd"),
             }), 409
@@ -365,6 +417,7 @@ def register_llm_provider_routes(
             "billingCategory": category,
             "billingClass": category,
             "markupMultiplier": multiplier,
+            "fundingMode": funding_mode,
             "minimumMultiplier": category_minimum_multiplier(category),
             "inputUsdPerMillion": model["inputUsdPerMillion"],
             "cachedInputUsdPerMillion": model["cachedInputUsdPerMillion"],
@@ -427,6 +480,7 @@ def register_llm_provider_routes(
             "modelId": model_id,
             "billingCategory": category,
             "markupMultiplier": multiplier,
+            "fundingMode": funding_mode,
             "prices": {
                 "inputUsdPerMillion": model["inputUsdPerMillion"],
                 "cachedInputUsdPerMillion": model["cachedInputUsdPerMillion"],
@@ -440,21 +494,36 @@ def register_llm_provider_routes(
     @require_admin
     def admin_llm_provider_deployments():
         rows = query(
-            """SELECT route_id AS "routeId", provider_name AS "providerName",
-                      provider_prefix AS "providerPrefix", upstream_model_id AS "upstreamModelId",
-                      litellm_model_name AS "litellmModelName", api_base AS "apiBase",
-                      billing_category AS "billingCategory",
-                      markup_multiplier AS "markupMultiplier",
-                      input_usd_per_million AS "inputUsdPerMillion",
-                      cached_input_usd_per_million AS "cachedInputUsdPerMillion",
-                      output_usd_per_million AS "outputUsdPerMillion",
-                      pricing_source AS "pricingSource",
-                      pricing_verified_at AS "pricingVerifiedAt",
-                      key_hint AS "keyHint", status, last_error_code AS "lastErrorCode",
-                      last_canary_request_id AS "lastCanaryRequestId",
-                      to_char(last_canary_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS "lastCanaryAt",
-                      owner_request_id::text AS "ownerRequestId"
-               FROM llm_provider_deployments ORDER BY updated_at DESC"""
+            """SELECT deployment.route_id AS "routeId",
+                      deployment.provider_name AS "providerName",
+                      deployment.provider_prefix AS "providerPrefix",
+                      deployment.upstream_model_id AS "upstreamModelId",
+                      deployment.litellm_model_name AS "litellmModelName",
+                      deployment.api_base AS "apiBase",
+                      deployment.billing_category AS "billingCategory",
+                      deployment.markup_multiplier AS "markupMultiplier",
+                      deployment.input_usd_per_million AS "inputUsdPerMillion",
+                      deployment.cached_input_usd_per_million AS "cachedInputUsdPerMillion",
+                      deployment.output_usd_per_million AS "outputUsdPerMillion",
+                      deployment.pricing_source AS "pricingSource",
+                      deployment.pricing_verified_at AS "pricingVerifiedAt",
+                      deployment.key_hint AS "keyHint", deployment.status,
+                      deployment.last_error_code AS "lastErrorCode",
+                      deployment.last_canary_request_id AS "lastCanaryRequestId",
+                      to_char(deployment.last_canary_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS "lastCanaryAt",
+                      deployment.owner_request_id::text AS "ownerRequestId",
+                      owner_request.status AS "ownerInputStatus",
+                      CASE
+                        WHEN deployment.status='ready' THEN 'stored_in_litellm'
+                        WHEN deployment.key_fingerprint IS NOT NULL THEN 'registered'
+                        WHEN owner_request.status='consumed' THEN 'consumed'
+                        WHEN owner_request.status IN ('pending','processing') THEN 'awaiting_owner_input'
+                        ELSE 'missing'
+                      END AS "credentialState"
+               FROM llm_provider_deployments AS deployment
+               LEFT JOIN owner_input_requests AS owner_request
+                 ON owner_request.id=deployment.owner_request_id
+               ORDER BY deployment.updated_at DESC"""
         )
         return jsonify({"deployments": [dict(row) for row in (rows or [])]})
 
@@ -502,6 +571,7 @@ def register_llm_provider_routes(
                     "billingCategory": config["billingCategory"],
                     "billingClass": config["billingCategory"],
                     "markupMultiplier": config["markupMultiplier"],
+                    "fundingMode": config["fundingMode"],
                     "minimumMultiplier": config["minimumMultiplier"],
                     "pricingVerified": False,
                     "pricingSource": "pending-litellm-registration",
@@ -570,20 +640,89 @@ def register_llm_provider_routes(
             "routeId": config["routeId"],
             "billingCategory": config["billingCategory"],
             "markupMultiplier": config["markupMultiplier"],
+            "fundingMode": config["fundingMode"],
             "minimumMultiplier": config["minimumMultiplier"],
             "ownerRequestId": owner_request_id,
             "ownerUrl": f"/owner-approvals?request_id={owner_request_id}",
             "nextAction": "Provider-Zugang auf der Owner-Seite sicher eintragen und danach aktivieren.",
         }), 202
 
+    @app.route("/api/admin/llm/provider-deployments/<route_id>/owner-input", methods=["POST"])
+    @require_admin
+    def admin_refresh_llm_provider_owner_input(route_id: str):
+        deployment = query(
+            """SELECT route_id, provider_name, litellm_model_name, status
+               FROM llm_provider_deployments WHERE route_id=%s LIMIT 1""",
+            (route_id,), one=True,
+        )
+        if not deployment:
+            return jsonify({"error": "Providerroute nicht gefunden"}), 404
+        if str(deployment.get("status") or "") == "ready":
+            return jsonify({"error": "Route ist bereits aktiv", "blocker": "provider_route_exists"}), 409
+
+        connection = get_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE owner_input_requests
+                       SET status='expired', resolved_at=NOW(), result_code='superseded'
+                       WHERE target_id='litellm_provider_key'
+                         AND status IN ('pending','processing')"""
+                )
+                cursor.execute(
+                    """INSERT INTO owner_input_requests
+                           (target_id, title, reason, field_label, expires_at)
+                       VALUES ('litellm_provider_key', %s, %s, 'Provider API-Key',
+                               NOW() + INTERVAL '15 minutes')
+                       RETURNING id::text""",
+                    (
+                        f"Providerzugang für {deployment['provider_name']}",
+                        f"Erneute geschützte Eingabe für {deployment['litellm_model_name']}; der Rohwert wird nicht in Sovereign PostgreSQL gespeichert.",
+                    ),
+                )
+                owner_request_id = str(cursor.fetchone()["id"])
+                cursor.execute(
+                    """UPDATE llm_provider_deployments
+                       SET owner_request_id=%s::uuid, status='awaiting_owner_input',
+                           last_error_code=NULL, updated_at=NOW()
+                       WHERE route_id=%s""",
+                    (owner_request_id, route_id),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("provider_owner_input_refresh_missing")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            return jsonify({
+                "error": "Neue Owner-Eingabe konnte nicht atomar vorbereitet werden",
+                "blocker": "owner_input_refresh_failed",
+            }), 500
+        finally:
+            connection.close()
+
+        return jsonify({
+            "ok": True,
+            "status": "awaiting_owner_input",
+            "routeId": route_id,
+            "ownerRequestId": owner_request_id,
+            "ownerUrl": f"/owner-approvals?request_id={owner_request_id}",
+        }), 202
+
     @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])
     @require_admin
     def admin_activate_llm_provider(route_id: str):
         deployment = query(
-            """SELECT route_id, provider_name, provider_prefix, upstream_model_id,
-                      litellm_model_name, api_base, owner_request_id::text AS owner_request_id,
-                      billing_category, markup_multiplier, status
-               FROM llm_provider_deployments WHERE route_id=%s LIMIT 1""",
+            """SELECT deployment.route_id, deployment.provider_name,
+                      deployment.provider_prefix, deployment.upstream_model_id,
+                      deployment.litellm_model_name, deployment.api_base,
+                      deployment.owner_request_id::text AS owner_request_id,
+                      deployment.billing_category, deployment.markup_multiplier,
+                      deployment.status, deployment.key_fingerprint,
+                      deployment.key_hint, deployment.litellm_deployment_id,
+                      COALESCE(route.config->>'fundingMode', 'verified_zero_cost') AS funding_mode
+               FROM llm_provider_deployments AS deployment
+               JOIN llm_routes AS route ON route.id=deployment.route_id
+               WHERE deployment.route_id=%s LIMIT 1""",
             (route_id,), one=True,
         )
         if not deployment:
@@ -615,6 +754,7 @@ def register_llm_provider_routes(
 
         protected = bytearray()
         path = _secret_path()
+        secret_loaded = False
 
         def fail(code: str, message: str, status_code: int = 502):
             query(
@@ -630,29 +770,27 @@ def register_llm_provider_routes(
             return jsonify({"error": message, "blocker": code, "routeId": route_id}), status_code
 
         try:
-            info = path.lstat()
-            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
-                return fail("provider_secret_permissions_invalid", "Geschützter Providerzugang hat keine sichere Dateiberechtigung", 500)
-            if info.st_size < 8 or info.st_size > 8192:
-                return fail("provider_secret_invalid", "Geschützter Providerzugang fehlt oder ist ungültig", 400)
-            protected = bytearray(path.read_bytes())
-            secret_text = protected.decode("utf-8").strip()
-            if len(secret_text) < 8:
-                return fail("provider_secret_invalid", "Geschützter Providerzugang ist leer", 400)
-
             alias = str(deployment["litellm_model_name"])
-            model_info_response, model_info_error = fetch_litellm("/v1/model/info", method="GET")
-            model_present = False
-            if not model_info_error and model_info_response is not None and model_info_response.ok:
-                try:
-                    model_info_payload = model_info_response.json()
-                except ValueError:
-                    model_info_payload = {}
-                model_present = any(
-                    isinstance(item, dict)
-                    and str(item.get("model_name") or item.get("model") or "").strip() == alias
-                    for item in (model_info_payload.get("data", []) if isinstance(model_info_payload, dict) else [])
-                )
+            catalog_model = _catalog_model(alias)
+            model_present = catalog_model is not None
+            key_fingerprint = str(deployment.get("key_fingerprint") or "").strip()
+            key_hint = str(deployment.get("key_hint") or "").strip()
+            secret_text = ""
+            secret_available = path.exists()
+            requires_secret = secret_available or not model_present or not key_fingerprint
+            if requires_secret:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
+                    return fail("provider_secret_permissions_invalid", "Geschützter Providerzugang hat keine sichere Dateiberechtigung", 500)
+                if info.st_size < 8 or info.st_size > 8192:
+                    return fail("provider_secret_invalid", "Geschützter Providerzugang fehlt oder ist ungültig", 400)
+                protected = bytearray(path.read_bytes())
+                secret_loaded = True
+                secret_text = protected.decode("utf-8").strip()
+                if len(secret_text) < 8:
+                    return fail("provider_secret_invalid", "Geschützter Providerzugang ist leer", 400)
+                key_fingerprint = hashlib.sha256(secret_text.encode()).hexdigest()
+                key_hint = f"…{secret_text[-4:]}"
 
             registration: dict[str, Any] = {}
             if not model_present:
@@ -687,6 +825,22 @@ def register_llm_provider_routes(
                     parsed_registration = {}
                 registration = parsed_registration if isinstance(parsed_registration, dict) else {}
 
+            if secret_loaded:
+                query(
+                    """UPDATE llm_provider_deployments
+                       SET key_fingerprint=%s, key_hint=%s,
+                           litellm_deployment_id=COALESCE(NULLIF(%s,''), litellm_deployment_id),
+                           status='provisioning', updated_at=NOW()
+                       WHERE route_id=%s""",
+                    (
+                        key_fingerprint,
+                        key_hint,
+                        str(registration.get("model_id") or registration.get("id") or ""),
+                        route_id,
+                    ),
+                    write=True,
+                )
+
             canary_response, canary_error = fetch_litellm(
                 "/v1/chat/completions",
                 method="POST",
@@ -713,21 +867,30 @@ def register_llm_provider_routes(
             evidence = extract_litellm_evidence(canary_response, canary_payload)
             category = normalize_billing_category(deployment.get("billing_category"))
             multiplier = normalized_multiplier(category, deployment.get("markup_multiplier"))
-            catalog_model = _catalog_model(alias)
+            funding_mode = normalize_funding_mode(category, deployment.get("funding_mode"))
+            catalog_model = catalog_model or _catalog_model_with_retry(alias)
             if not catalog_model:
                 return fail(
                     "litellm_pricing_unavailable",
-                    "Providerroute wurde nicht freigegeben, weil LiteLLM keine Modellkosten bestätigt hat",
+                    "Providerroute wurde nicht freigegeben, weil der dynamische LiteLLM-Katalog die Modellkosten noch nicht bestätigt hat. Die Registrierung bleibt für einen sicheren Wiederholungsversuch erhalten.",
                     409,
                 )
             try:
-                _validate_category_pricing(category=category, model=catalog_model)
+                _validate_category_pricing(
+                    category=category,
+                    model=catalog_model,
+                    funding_mode=funding_mode,
+                )
             except BillingPolicyError as exc:
                 return fail("litellm_pricing_not_eligible", str(exc), 409)
-            if category == FREE_CATEGORY and evidence.get("providerCostUsd") not in (0, 0.0):
+            if (
+                category == FREE_CATEGORY
+                and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
+                and evidence.get("providerCostUsd") not in (0, 0.0)
+            ):
                 return fail(
                     "free_route_nonzero_or_unreported_cost",
-                    "Free-Route wurde abgelehnt: Die echte Canary bestätigt keine Providerkosten von exakt 0",
+                    "Free-Route wurde abgelehnt: verified_zero_cost wurde nicht bestätigt",
                     409,
                 )
 
@@ -735,7 +898,12 @@ def register_llm_provider_routes(
             credits_per_unit = int(
                 (output_price * Decimal(multiplier)).to_integral_value(rounding=ROUND_CEILING)
             ) if multiplier else 0
-            key_fingerprint = hashlib.sha256(secret_text.encode()).hexdigest()
+            if not key_fingerprint:
+                return fail(
+                    "provider_key_fingerprint_missing",
+                    "Providerroute ist registriert, aber die Key-Identität für einen unabhängigen Revolver-Quota-Scope fehlt. Owner-Zugang bitte erneut sicher eintragen.",
+                    409,
+                )
             quota_material = (
                 f"{deployment['provider_prefix']}:{key_fingerprint}".encode()
             )
@@ -747,6 +915,7 @@ def register_llm_provider_routes(
                 "billingCategory": category,
                 "billingClass": category,
                 "markupMultiplier": multiplier,
+                "fundingMode": funding_mode,
                 "minimumMultiplier": category_minimum_multiplier(category),
                 "inputUsdPerMillion": catalog_model["inputUsdPerMillion"],
                 "cachedInputUsdPerMillion": catalog_model["cachedInputUsdPerMillion"],
@@ -758,7 +927,6 @@ def register_llm_provider_routes(
                 "quotaScope": quota_scope,
                 "canaryRequestId": evidence.get("upstreamRequestId") or None,
             }
-            key_hint = f"…{secret_text[-4:]}"
             secret_text = ""
 
             connection = get_connection()
@@ -835,6 +1003,7 @@ def register_llm_provider_routes(
                 "provider": "litellm",
                 "billingCategory": category,
                 "markupMultiplier": multiplier,
+                "fundingMode": funding_mode,
                 "prices": {
                     "inputUsdPerMillion": catalog_model["inputUsdPerMillion"],
                     "cachedInputUsdPerMillion": catalog_model["cachedInputUsdPerMillion"],
@@ -851,4 +1020,5 @@ def register_llm_provider_routes(
         finally:
             for index in range(len(protected)):
                 protected[index] = 0
-            _securely_remove(path)
+            if secret_loaded:
+                _securely_remove(path)

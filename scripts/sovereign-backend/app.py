@@ -47,9 +47,12 @@ from litellm_runtime import (
 from llm_cost_policy import (
     BillingPolicyError,
     FREE_CATEGORY,
+    FREE_FUNDING_PROVIDER_QUOTA,
+    FREE_FUNDING_VERIFIED_ZERO_COST,
     billed_credits_for_provider_cost,
     category_minimum_multiplier,
     normalize_billing_category,
+    normalize_funding_mode,
     normalized_multiplier,
     provider_cost_micros_from_usage,
     provider_cost_usd_to_micros,
@@ -878,6 +881,7 @@ def _admin_llm_route_payload(row) -> dict:
             "billingCategory": str(
                 config.get("billingCategory") or config.get("billingClass") or "premium"
             ).strip().lower(),
+            "fundingMode": config.get("fundingMode") or "provider_priced",
             "markupMultiplier": config.get("markupMultiplier"),
             "inputUsdPerMillion": config.get("inputUsdPerMillion"),
             "cachedInputUsdPerMillion": config.get("cachedInputUsdPerMillion"),
@@ -916,6 +920,7 @@ def _admin_llm_route_payload(row) -> dict:
         "disabled": bool(item.get("disabled")),
         "priority": int(item.get("priority") or 0),
         "billingCategory": category,
+        "fundingMode": str(policy.get("fundingMode") or "provider_priced"),
         "markupMultiplier": int(policy.get("markupMultiplier") or 0),
         "minimumMultiplier": minimum,
         "inputUsdPerMillion": _decimal_json(policy.get("inputUsdPerMillion")),
@@ -1023,6 +1028,10 @@ def admin_update_llm_route(rid):
             category,
             body.get("markupMultiplier", config.get("markupMultiplier")),
         )
+        funding_mode = normalize_funding_mode(
+            category,
+            body.get("fundingMode", config.get("fundingMode")),
+        )
         priority = int(body.get("priority", route.get("priority") or 0))
         if not -10_000 <= priority <= 10_000:
             raise BillingPolicyError("priority liegt außerhalb des erlaubten Bereichs")
@@ -1034,6 +1043,7 @@ def admin_update_llm_route(rid):
             "billingCategory": category,
             "billingClass": category,
             "markupMultiplier": multiplier,
+            "fundingMode": funding_mode,
             "minimumMultiplier": category_minimum_multiplier(category),
             "revolverEligible": category == FREE_CATEGORY,
             "quotaScope": quota_scope,
@@ -1075,10 +1085,14 @@ def admin_update_llm_route(rid):
                 "routeRemainsDisabled": True,
             }), status_code
         activation_evidence = canary.get("evidence") or {}
-        if category == FREE_CATEGORY and activation_evidence.get("providerCostUsd") not in (0, 0.0):
+        if (
+            category == FREE_CATEGORY
+            and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
+            and activation_evidence.get("providerCostUsd") not in (0, 0.0)
+        ):
             return jsonify({
                 "ok": False,
-                "error": "Free-Route bleibt deaktiviert: Die echte Canary bestätigt keine Providerkosten von exakt 0.",
+                "error": "Free-Route bleibt deaktiviert: verified_zero_cost wurde nicht bestätigt.",
                 "blocker": "free_route_nonzero_or_unreported_cost",
                 "providerCostUsd": activation_evidence.get("providerCostUsd"),
                 "routeRemainsDisabled": True,
@@ -1104,6 +1118,7 @@ def admin_update_llm_route(rid):
         "disabled": requested_disabled,
         "priority": priority,
         "billingCategory": category,
+        "fundingMode": funding_mode,
         "markupMultiplier": multiplier,
         "providerPrices": {
             "inputUsdPerMillion": float(policy["inputUsdPerMillion"]),
@@ -3361,6 +3376,7 @@ def _public_llm_route_payload(row) -> dict:
         "userKeyOverride": False,
         "maxTokensPerRequest": 32_000,
         "billingCategory": admin_payload["billingCategory"],
+        "fundingMode": admin_payload["fundingMode"],
         "markupMultiplier": admin_payload["markupMultiplier"],
         "minimumMultiplier": admin_payload["minimumMultiplier"],
         "providerPrices": {
@@ -5393,7 +5409,9 @@ input[type=text],input[type=password]{-webkit-appearance:none}
           <div class="form-group"><label>Anzeigename</label><input id="providerDisplayName" type="text" placeholder="Produktname der Route"></div>
           <div class="form-group"><label>API-Basis (nur falls erforderlich)</label><input id="providerApiBase" type="text" placeholder="https://provider.example/v1"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group"><label>Credits pro 1.000 Tokens</label><input id="providerCredits" type="number" min="0.0001" step="0.0001" value="1"></div>
+            <div class="form-group"><label>Kostenkategorie</label><select id="providerBillingCategory"></select></div>
+            <div class="form-group"><label>Free-Finanzierung</label><select id="providerFundingMode"></select></div>
+            <div class="form-group"><label>Markup-Multiplikator</label><input id="providerMarkupMultiplier" type="number" min="0" step="1" value="0"></div>
             <div class="form-group"><label>Priorität</label><input id="providerPriority" type="number" step="1" value="50"></div>
           </div>
           <p class="subtitle">Der Provider-Zugang wird nicht in diesem Formular übertragen. Nach der Vorbereitung öffnet sich die geschützte Owner-Eingabe. Erst eine echte LiteLLM-Completion-Canary aktiviert die Route.</p>
@@ -5918,13 +5936,25 @@ function renderBilling(d){
 
 /* ────── PRIVATE LITELLM PROVIDER ONBOARDING ────── */
 let providerPresets = [];
+let providerBillingCategories = [];
+let providerFundingModes = [];
 async function loadProviderPresets(){
   try{
     const data=await boundedFetch('/api/admin/llm/provider-presets',{headers:hdr()});
     providerPresets=data.providers||[];
+    providerBillingCategories=data.billingCategories||[];
+    providerFundingModes=data.fundingModes||[];
     const select=document.getElementById('providerPrefix');
     if(!select)return;
     select.innerHTML=providerPresets.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}</option>`).join('');
+    const billingSelect=document.getElementById('providerBillingCategory');
+    billingSelect.innerHTML=providerBillingCategories.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}</option>`).join('');
+    billingSelect.value='premium';
+    const fundingSelect=document.getElementById('providerFundingMode');
+    fundingSelect.innerHTML=providerFundingModes.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}</option>`).join('');
+    fundingSelect.value='verified_zero_cost';
+    billingSelect.onchange=syncProviderBillingCategory;
+    syncProviderBillingCategory();
     select.onchange=()=>{
       const preset=providerPresets.find(item=>item.id===select.value);
       document.getElementById('providerApiBase').value=preset?.apiBase||'';
@@ -5937,13 +5967,34 @@ function providerRouteMessage(text,ok){
   if(!el)return;
   el.textContent=text;el.className='msg '+(ok?'ok':'err');el.style.display='block';
 }
+function syncProviderBillingCategory(){
+  const category=document.getElementById('providerBillingCategory').value||'premium';
+  const option=providerBillingCategories.find(item=>item.id===category)||{};
+  const input=document.getElementById('providerMarkupMultiplier');
+  const minimum=Number(option.minimumMultiplier||0);
+  input.min=String(minimum);
+  input.value=String(minimum);
+  input.disabled=category==='free';
+  const funding=document.getElementById('providerFundingMode');
+  funding.disabled=category!=='free';
+  if(category!=='free')funding.value='verified_zero_cost';
+}
+function providerCredentialLabel(item){
+  if(item.credentialState==='stored_in_litellm')return item.keyHint?`LiteLLM gespeichert ${item.keyHint}`:'In LiteLLM gespeichert';
+  if(item.credentialState==='registered')return item.keyHint?`Registriert ${item.keyHint}`:'In LiteLLM registriert';
+  if(item.ownerInputStatus==='consumed')return 'Owner-Eingabe verbraucht';
+  if(item.ownerInputStatus==='pending'||item.ownerInputStatus==='processing')return 'Owner-Eingabe offen';
+  return 'Providerzugang fehlt';
+}
 async function prepareProviderRoute(){
   const body={
     providerPrefix:document.getElementById('providerPrefix').value,
     modelId:document.getElementById('providerModelId').value.trim(),
     displayName:document.getElementById('providerDisplayName').value.trim(),
     apiBase:document.getElementById('providerApiBase').value.trim(),
-    creditsPerUnit:Number(document.getElementById('providerCredits').value),
+    billingCategory:document.getElementById('providerBillingCategory').value,
+    fundingMode:document.getElementById('providerFundingMode').value,
+    markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||0),
     priority:Number(document.getElementById('providerPriority').value),
   };
   try{
@@ -5955,6 +6006,17 @@ async function prepareProviderRoute(){
   }catch(error){ providerRouteMessage(error.message,false); }
 }
 function openOwnerInput(path){ window.open(path,'_blank','noopener,noreferrer'); }
+async function refreshProviderOwnerInput(routeId){
+  providerRouteMessage('Neue geschützte Owner-Eingabe wird vorbereitet…',true);
+  try{
+    const response=await api(`/api/admin/llm/provider-deployments/${encodeURIComponent(routeId)}/owner-input`,{method:'POST'});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||data.blocker||'Owner-Eingabe konnte nicht vorbereitet werden');
+    openOwnerInput(data.ownerUrl);
+    providerRouteMessage('Neue Owner-Eingabe geöffnet. Danach genau einmal aktivieren.',true);
+    await loadProviderDeployments();
+  }catch(error){providerRouteMessage(error.message,false);}
+}
 async function activateProviderRoute(routeId){
   providerRouteMessage('LiteLLM-Registrierung und echte Completion-Canary laufen…',true);
   try{
@@ -5970,7 +6032,7 @@ async function loadProviderDeployments(){
   try{
     const data=await boundedFetch('/api/admin/llm/provider-deployments',{headers:hdr()});
     const items=data.deployments||[];
-    el.innerHTML=items.length?items.map(item=>`<div style="padding:10px 0;border-top:1px solid var(--border)"><strong>${esc(item.providerName||item.litellmModelName)}</strong> <span class="badge ${item.status==='ready'?'on':'off'}">${esc(item.status)}</span><div class="muted">${esc(item.providerPrefix)} / ${esc(item.upstreamModelId)} · ${esc(item.keyHint||'Zugang ausstehend')}</div>${item.lastCanaryAt?`<div class="muted">Canary: ${esc(item.lastCanaryAt)}</div>`:''}${item.status!=='ready'?`<button class="btn btn-ghost" style="margin-top:8px" onclick="activateProviderRoute('${esc(item.routeId)}')">Aktivierung prüfen</button>`:''}</div>`).join(''):'<div style="color:var(--muted)">Noch keine owner-gesteuerten Fremdprovider.</div>';
+    el.innerHTML=items.length?items.map(item=>`<div style="padding:10px 0;border-top:1px solid var(--border)"><strong>${esc(item.providerName||item.litellmModelName)}</strong> <span class="badge ${item.status==='ready'?'on':'off'}">${esc(item.status)}</span><div class="muted">${esc(item.providerPrefix)} / ${esc(item.upstreamModelId)} · ${esc(providerCredentialLabel(item))}</div>${item.lastErrorCode?`<div class="error">Blocker: ${esc(item.lastErrorCode)}</div>`:''}${item.lastCanaryAt?`<div class="muted">Canary: ${esc(item.lastCanaryAt)}</div>`:''}${item.status!=='ready'?`<div class="btn-row" style="margin-top:8px"><button class="btn btn-ghost" onclick="refreshProviderOwnerInput('${esc(item.routeId)}')">Owner-Zugang neu eingeben</button><button class="btn btn-primary" onclick="activateProviderRoute('${esc(item.routeId)}')">Aktivierung prüfen</button></div>`:''}</div>`).join(''):'<div style="color:var(--muted)">Noch keine owner-gesteuerten Fremdprovider.</div>';
   }catch(error){el.innerHTML='<div style="color:var(--danger)">'+esc(error.message)+'</div>';}
 }
 
@@ -7426,8 +7488,11 @@ def _settle_llm_usage(
         provider_cost_micros,
         markup_multiplier=int(policy["markupMultiplier"]),
     )
-    if policy["billingCategory"] == FREE_CATEGORY and (
-        provider_cost_micros != 0 or billed_credits != 0
+    funding_mode = str(policy.get("fundingMode") or "provider_priced")
+    if (
+        policy["billingCategory"] == FREE_CATEGORY
+        and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
+        and (provider_cost_micros != 0 or billed_credits != 0)
     ):
         try:
             _update_llm_usage_settlement(
@@ -7452,6 +7517,30 @@ def _settle_llm_usage(
         except Exception:
             pass
         return None, "free_route_reported_provider_cost"
+    if policy["billingCategory"] == FREE_CATEGORY and billed_credits != 0:
+        try:
+            _update_llm_usage_settlement(
+                request_id,
+                status="reconciliation_required",
+                reserved_credits=reserved_credits,
+                settled_credits=reserved_credits,
+                refunded_credits=0,
+                prompt_tokens=prompt_tokens,
+                cached_prompt_tokens=cached_prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                upstream_request_id=str(evidence.get("upstreamRequestId") or "").strip() or None,
+                provider_cost_usd=float(provider_cost_micros / 1_000_000),
+                provider_cost_usd_micros=provider_cost_micros,
+                billed_value_usd_micros=0,
+                markup_multiplier=0,
+                billing_category=FREE_CATEGORY,
+                funded_credits_reserved=0,
+                error_code="free_route_user_charge_nonzero",
+            )
+        except Exception:
+            pass
+        return None, "free_route_user_charge_nonzero"
 
     additional_credits = max(0, billed_credits - reserved_credits)
     new_balance = reserved_balance
@@ -7541,6 +7630,7 @@ def _settle_llm_usage(
         "requestId": request_id,
         "upstreamRequestId": str(evidence.get("upstreamRequestId") or ""),
         "billingCategory": str(policy["billingCategory"]),
+        "fundingMode": funding_mode,
         "markupMultiplier": int(policy["markupMultiplier"]),
         "providerCostUsd": float(provider_cost_micros / 1_000_000),
         "billedValueUsd": float(
