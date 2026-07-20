@@ -1,0 +1,517 @@
+{
+  "schemaVersion": "sovereign.manifest-open-issues.v1",
+  "auditBaseline": "246e701f5b2d8ce94c21c001b26bf4aee216239c",
+  "generatedAt": "2026-07-20",
+  "manifestPath": "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md",
+  "issues": [
+    {
+      "key": "provider-onboarding-gpt54-route",
+      "title": "[Manifest] Provider-Onboarding und sovereign-fast/sovereign-balanced produktiv aktivieren",
+      "evidence": "Das geschützte Providerinventar enthält 92 Modelle einschließlich gpt-5.4-mini. LiteLLM und seine Datenbank sind gesund und die Aliase sind sichtbar. Echte Completion-Canaries für sovereign-fast und sovereign-balanced schlagen weiterhin fehl; der Agents-SDK-Pfad bleibt deshalb korrekt mit ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE blockiert.",
+      "goal": "Verfügbares Providerkontingent herstellen und den vollständigen owner-gated Onboardingvertrag für bestehende und neue Provider bis zur atomaren, preisverifizierten Routenaktivierung mit Rollback belegen.",
+      "paths": [
+        "scripts/sovereign-backend/litellm_runtime.py",
+        "scripts/sovereign-backend/llm_cost_policy.py",
+        "scripts/sovereign-backend/app.py",
+        "tools/sovereign-chatgpt-mcp/litellm_stack.py",
+        "deploy/sovereign-litellm/config.yaml",
+        "scripts/sovereign-backend/migrations/ und scripts/sovereign-backend/tests/"
+      ],
+      "rules": [
+        "Provider-Key ausschließlich über den geschützten Owner-Kanal verarbeiten.",
+        "free nur bei bestätigten Providerkosten 0; standard mindestens Faktor 4; premium mindestens Faktor 8.",
+        "Kein Alias wird allein aufgrund von Readiness aktiviert.",
+        "Aktivierung benötigt Inventar, Preis-Metadaten, Datenbankeintrag und echten Completion-Canary.",
+        "Ein Fehlschlag muss die vorherige Route atomar erhalten oder wiederherstellen."
+      ],
+      "workflow": [
+        "Aktuelles Modellinventar und Projektzuordnung ohne Secretausgabe lesen.",
+        "Preis-, Billing- und Quotenstatus verifizieren.",
+        "Aliasplan gegen Datenbank- und LiteLLM-Konfiguration erzeugen.",
+        "Änderungen in isoliertem Workspace implementieren.",
+        "Backend-, MCP-, Preis-Constraint- und Rollbacktests ausführen.",
+        "Immutable Images bauen und owner-gated aktivieren.",
+        "Beide Completion-Canaries sowie Agents-SDK- und Settlement-Evidence prüfen."
+      ],
+      "integrationPlan": [
+        "Eine einzige Onboardingfunktion für Credential-Metadaten, Modellinventar, Preisvertrag und Aliasbereitstellung verwenden.",
+        "Canary und atomare Aktivierung als getrennte, revisionsgebundene Gates implementieren.",
+        "Normale Nutzerrequests dürfen Provider- oder Routentabellen niemals reparieren oder aktivieren.",
+        "Rollbackbezug und Aktivierungsevidence persistieren."
+      ],
+      "example": "plan = prepare_provider_onboarding(provider, models)\nassert plan.pricing_verified\nassert canary(alias='sovereign-fast').completion_verified\nactivate_routes_atomically(plan)\nassert rollback_reference.persisted",
+      "acceptance": [
+        "Beide Aliase liefern echte erfolgreiche Completion-Evidence.",
+        "sovereign-fast ist preisverifiziert und Agents-SDK-lauffähig.",
+        "Reservierung, Settlement und Refund sind anhand einer Trace-ID belegt.",
+        "Quota-, Auth-, Rate-Limit- und Aliasfehler bleiben getrennt klassifiziert.",
+        "Rollback auf die vorherige Konfiguration ist getestet."
+      ]
+    },
+    {
+      "key": "runtime-canary-coverage-matrix",
+      "title": "[Manifest] Fachcanary-Abdeckung für produktive Runtimepfade vollständig machen",
+      "evidence": "Mehrere zentrale Pfade besitzen echte Fachcanaries, aber Prozess-Health wird noch nicht für jede produktive Fachfunktion durch einen getrennten Funktionsbeweis ergänzt. Das Manifest darf daher keinen pauschalen Gesamtgrünstatus behaupten.",
+      "goal": "Eine revisionsgebundene Canary-Matrix erstellen und für jede releasekritische Backend-, Tool-, Storage- und Integrationsfamilie mindestens einen echten, nicht destruktiven Funktionsbeweis oder einen dokumentierten Ausschluss liefern.",
+      "paths": [
+        "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md",
+        "docs/architecture/",
+        ".github/workflows/release-verification.yml",
+        ".github/workflows/sovereign-contract-scan.yml",
+        "scripts/sovereign-backend/tests/",
+        "tools/sovereign-chatgpt-mcp/tests/"
+      ],
+      "rules": [
+        "Liveness ist kein Fachbeweis.",
+        "Jeder Canary ist idempotent, begrenzt, secret-safe und räumt Testdaten auf.",
+        "Produktive Nutzerobjekte dürfen nicht verändert werden.",
+        "Jeder Beweis bindet Revision, Lauf-ID, Ergebnisstatus und Evidence-Hash.",
+        "Externe Kostenpfade benötigen Budget- und Quota-Gates."
+      ],
+      "workflow": [
+        "Produktive Routen und Integrationen aus Endpoint- und Produktlogik-Snapshot gruppieren.",
+        "Bestehende Canaries zuordnen.",
+        "Unabgedeckte releasekritische Familien priorisieren.",
+        "Pro Familie minimalen Canary und Cleanup definieren.",
+        "CI-Verträge und Produktionscanaries trennen.",
+        "Ergebnis als maschinenlesbare Matrix versionieren."
+      ],
+      "integrationPlan": [
+        "Matrixfelder surface, riskClass, staticGate, ciCanary, liveCanary, cleanup, evidenceFields und ownerGate definieren.",
+        "Release Gate gegen fehlende Pflicht-Evidence fail-closed machen.",
+        "Canary-Receipts ohne Responseinhalte oder Secrets speichern.",
+        "Manifest aus der Matrix ableiten, nicht umgekehrt."
+      ],
+      "example": "{\"surface\":\"github-knowledge-import\",\"riskClass\":\"high\",\"ciCanary\":\"contract\",\"liveCanary\":\"required\",\"cleanup\":\"delete_ephemeral_source\",\"evidenceFields\":[\"revision\",\"status\",\"evidenceSha256\"]}",
+      "acceptance": [
+        "Alle releasekritischen Familien sind erfasst.",
+        "Jede Familie besitzt einen Beweis oder einen nachvollziehbaren Ausschluss.",
+        "Release Gate schlägt bei fehlender verpflichtender Evidence fehl.",
+        "Manifest nennt keine pauschale Funktionsfähigkeit aus Container-Health."
+      ]
+    },
+    {
+      "key": "physical-android-device-smoke",
+      "title": "[Manifest] Hauptpfad auf physischem Android-Gerät belegen",
+      "evidence": "Repository-Scan, Android-CI, signierte APK/AAB, Signer- und Alignment-Evidence sind grün. Ein echter Installations- und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlt.",
+      "goal": "Ein reproduzierbares physisches Device-Gate für Installation, Start, Login oder Session, Chat-Hauptpfad, Backendkommunikation, Fehlerdarstellung und Artefaktidentität etablieren.",
+      "paths": [
+        "android/",
+        "android/app/src/main/AndroidManifest.xml",
+        "android/app/build.gradle",
+        "capacitor.config.ts",
+        ".github/workflows/android-release.yml",
+        "src/App.androidWebView.smoke.test.tsx",
+        "docs/architecture/"
+      ],
+      "rules": [
+        "Ein Emulatorbeweis ersetzt den geforderten physischen Smoke nicht.",
+        "Testgerät, Android-Version, Build-SHA und Artefakthash dokumentieren.",
+        "Keine Zugangsdaten in Logcat, Screenshots oder Testreports.",
+        "Touchziele, WebView-Netzwerk, Back-Navigation und Fehlerzustände prüfen.",
+        "Testkonto und Testdaten müssen begrenzt und löschbar sein."
+      ],
+      "workflow": [
+        "Releaseartefakt vom exakten PR- oder Main-SHA beziehen.",
+        "Signatur und Hash vor Installation prüfen.",
+        "Saubere Installation auf einem realen Gerät durchführen.",
+        "Hauptpfad mit Netzwerk- und UI-Evidence ausführen.",
+        "Crash, ANR, WebView-Konsole und Backend-Trace prüfen.",
+        "Testdaten bereinigen und Evidence-Receipt speichern."
+      ],
+      "integrationPlan": [
+        "Manuelle Device-Checkliste und maschinenlesbares Receipt gemeinsam versionieren.",
+        "Artefakt-SHA, Deviceklasse und Betriebssystem im Receipt binden.",
+        "Backend-Trace mit dem UI-Roundtrip korrelieren.",
+        "Release Gate erst nach bestätigtem physischen Smoke aktualisieren."
+      ],
+      "example": "assert installed_artifact.sha256 == release_artifact.sha256\nassert launch.ok\nassert chat_roundtrip.backend_trace_verified\nassert no_secret_in_logcat",
+      "acceptance": [
+        "Installation und Start auf physischem Android-Gerät erfolgreich.",
+        "Login oder Session und mindestens ein echter Chat-Backend-Roundtrip belegt.",
+        "Kein Crash, ANR oder Secret-Leak.",
+        "Android-first Touch- und Fehlerflächen geprüft.",
+        "Evidence ist an exakte Revision und Artefakthash gebunden."
+      ]
+    },
+    {
+      "key": "llm-tool-boundary-review-ledger",
+      "title": "[Manifest] SHA-gebundene Reviewliste der 65 LLM-/Tool-Boundary-Kandidaten verankern",
+      "evidence": "Der Architektur-Snapshot auf Audit-Baseline meldet 65 heuristische LLM_TOOL_BOUNDARY-Kandidaten. Diese sind keine bestätigten Fehler; es fehlt eine maschinenlesbare Klassifikation, die bei relevanten Dateiänderungen automatisch erneut geöffnet wird.",
+      "goal": "Alle Kandidaten als strukturierte, SHA-gebundene Revieweinträge klassifizieren: erlaubte strukturierte Enum- oder Policylogik, klar markierter Offline-Fallback, Test- oder Analysecode oder unzulässiges freies Sprachverständnis.",
+      "paths": [
+        "tools/sovereign-chatgpt-mcp/deterministic_architecture_tools.py",
+        ".github/workflows/llm-runtime-boundary.yml",
+        "backend/agent_runtime/",
+        "scripts/sovereign-backend/agent_runtime/",
+        "src/features/product/runtime/",
+        "src/runtime/RuntimeIntelligence.ts",
+        "docs/architecture/ oder config/architecture/"
+      ],
+      "rules": [
+        "Runtime darf keine freie Nutzersprache fachlich interpretieren.",
+        "Strukturierte Felder, Allowlisten und Offline-Fallbacks sind ausdrücklich zu kennzeichnen.",
+        "Jeder Eintrag bindet Pfad, Symbol, Datei-SHA, Klassifikation und Begründung.",
+        "Ändert sich die Datei-SHA, wird der Eintrag automatisch wieder offen.",
+        "Spiegelpaare dürfen nicht als zwei unabhängige Wahrheiten bewertet werden."
+      ],
+      "workflow": [
+        "Snapshot erzeugen und Kandidaten deduplizieren.",
+        "Kanonische Quelle je Spiegelpaar bestimmen.",
+        "Jeden Treffer reviewen und klassifizieren.",
+        "Ledger mit Datei-SHA und Reviewstatus schreiben.",
+        "CI auf Vollständigkeit und Staleness prüfen.",
+        "Unzulässige Treffer in getrennten kleinen Patches beseitigen."
+      ],
+      "integrationPlan": [
+        "Ledgerfelder candidateId, canonicalPath, symbol, fileSha256, classification, rationale und reopenOnChange definieren.",
+        "Generator und CI-Prüfer aus demselben Kandidatenvertrag speisen.",
+        "Veraltete Reviews automatisch als offen markieren.",
+        "Ledger-Hash und Kandidatenzahl im Manifest dokumentieren."
+      ],
+      "example": "{\"candidateId\":\"...\",\"canonicalPath\":\"...\",\"fileSha256\":\"...\",\"classification\":\"STRUCTURED_POLICY\",\"reopenOnChange\":true}",
+      "acceptance": [
+        "Alle 65 Kandidaten sind genau einmal klassifiziert.",
+        "Kein UNREVIEWED bleibt übrig.",
+        "Dateiänderungen öffnen betroffene Reviews automatisch.",
+        "CI verhindert stilles Entfernen oder Umklassifizieren ohne Begründung.",
+        "Manifest nennt Kandidatenzahl und Ledger-Hash."
+      ]
+    },
+    {
+      "key": "github-knowledge-live-canary",
+      "title": "[Manifest] GitHub-Knowledge-Import und sicheren Transportblocker live belegen",
+      "evidence": "Der Codevertrag bevorzugt öffentliche credential-freie GitHub-Reads und klassifiziert Timeout, TLS, DNS oder Connection und sonstige Transportfehler sicher. Ein Livecanary auf dem aktuell deployten immutable Backend fehlt.",
+      "goal": "Einen nicht destruktiven Produktionscanary implementieren, der einen öffentlichen GitHub-Import bis zum persistierten Knowledge-Status belegt und einen kontrollierten Fehlerpfad mit sicherem Audit-Fingerprint verifiziert.",
+      "paths": [
+        "scripts/sovereign-backend/knowledge_library.py",
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/tests/",
+        "/api/knowledge/ und /api/admin/knowledge/",
+        "audit_log und sovereign_toolchain_incidents",
+        "Backend-Deploymentworkflow"
+      ],
+      "rules": [
+        "Öffentliche Repositories zuerst ohne Credential lesen.",
+        "Keine rohe URL, Query, Exception oder Credential persistieren.",
+        "Canaryquelle eindeutig markieren und anschließend entfernen oder blockiert archivieren.",
+        "Livecanary nur gegen revisions- und digestverifiziertes Backend.",
+        "Rate-Limit und Providerfehler nicht mit Transportfehlern vermischen."
+      ],
+      "workflow": [
+        "Exaktes Backend-Image deployen und Revision readbacken.",
+        "Öffentliche stabile Testdatei importieren.",
+        "Source-, Chunk-, Embedding- und Link-Evidence prüfen.",
+        "Kontrollierten Transportfehler über sicheren Testadapter auslösen.",
+        "Audit-Fingerprint und Blockerklasse prüfen.",
+        "Canarydaten bereinigen."
+      ],
+      "integrationPlan": [
+        "Erfolgs- und Fehlerpfad als getrennte Canaryphasen implementieren.",
+        "Nur Metadaten, Status und Hashes ausgeben.",
+        "Cleanup im finally-Pfad erzwingen.",
+        "Live-Evidence an Backendrevision und Digest binden."
+      ],
+      "example": "assert import_result.public_read_without_credential\nassert import_result.chunks > 0\nassert error_result.blocker.startswith('github_')\nassert not error_result.raw_exception_persisted",
+      "acceptance": [
+        "Öffentlicher Import ist live erfolgreich.",
+        "Persistierte Chunks besitzen Embeddings und Provenance.",
+        "Kontrollierter Fehler erzeugt korrekte HTTP- und Blockersemantik sowie nur einen URL-Fingerprint.",
+        "Cleanup ist belegt.",
+        "Keine Secrets oder Dokumentinhalte werden ausgegeben."
+      ]
+    },
+    {
+      "key": "historical-schema-ownership",
+      "title": "[Manifest] Historische Ownership für drei live vorhandene Tabellen dokumentieren",
+      "evidence": "Die Live-Datenbank enthält admin_users, sovereign_agent_draft_pr_events und sovereign_agent_evidence_log, aber der statische Migrationsscanner findet keine eindeutige CREATE-TABLE-Erzeugerquelle.",
+      "goal": "Für jede Tabelle die historische kanonische Erzeugerquelle, Bootstrap- oder Supabase-Herkunft, aktuelles Ownership-Modul und Wiederherstellungsstrategie versioniert dokumentieren oder eine sichere Baseline-Migration ergänzen.",
+      "paths": [
+        "scripts/sovereign-backend/migrations/",
+        "backend/migrations/",
+        "scripts/sovereign-backend/auto-migrate.sh",
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/agent_runtime/",
+        "docs/architecture/"
+      ],
+      "rules": [
+        "Keine blinde Neuanlage live vorhandener Tabellen.",
+        "Schema zuerst read-only mit Spalten, Constraints, Indizes und Abhängigkeiten inventarisieren.",
+        "Historische Daten dürfen nicht verloren oder umgedeutet werden.",
+        "Baseline-Migration muss idempotent und fail-closed sein.",
+        "Preview und Rollback vor Produktionsanwendung."
+      ],
+      "workflow": [
+        "Schema und Abhängigkeiten je Tabelle inventarisieren.",
+        "Git-Historie und Bootstrapquellen nach Erzeuger prüfen.",
+        "Ownershipentscheidung dokumentieren.",
+        "Falls nötig additive Baseline-Migration mit exakten Guards erstellen.",
+        "Preview in dedizierter Datenbank und Drift-Scan ausführen.",
+        "Live nur mit Ownerfreigabe anwenden."
+      ],
+      "integrationPlan": [
+        "Für jede Tabelle ein Ownership-Manifest mit Quelle, Version und Recoverypfad anlegen.",
+        "Scanner um bewusst externe oder historische Ownership ergänzen.",
+        "Inkompatible Liveformen blockieren statt still zu reparieren.",
+        "Datenänderungen getrennt von Dokumentations- und Scanneränderungen behandeln."
+      ],
+      "example": "DO $$ BEGIN\n  IF to_regclass('public.admin_users') IS NULL THEN\n    RAISE EXCEPTION 'historical owner table missing; manual recovery required';\n  END IF;\nEND $$;",
+      "acceptance": [
+        "Alle drei Tabellen besitzen dokumentierte kanonische Ownership.",
+        "Scanner meldet keine ungeklärte P2-Ownership mehr oder verweist auf ein versioniertes Baseline-Manifest.",
+        "Keine produktiven Daten wurden verändert.",
+        "Wiederherstellungs- und Rollbackpfad ist dokumentiert."
+      ]
+    },
+    {
+      "key": "deploy-enterprise-admin-backend",
+      "title": "[Manifest] Gemergte Enterprise-Admin-Wahrheit als immutable Backend deployen",
+      "evidence": "PR #867 ist in main enthalten und das immutable Backend-Image für die Audit-Baseline wurde als Digest sha256:629a694d67c4789053da81656cbc7523a084b8ac52877ff2083aa0325453ae18 gebaut. Der laufende Backend-Container startete vor diesem Merge; die neue /admin-Wahrheit ist deshalb noch nicht live belegt.",
+      "goal": "Das exakt gebaute Backend-Image owner-gated deployen und /admin, Health, Enterprise-Overview, Integrations- und Evidence-Endpunkte gegen die laufende Revision verifizieren.",
+      "paths": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/enterprise_admin_ui.py",
+        "scripts/sovereign-backend/enterprise_platform/",
+        ".github/workflows/sovereign-backend-image.yml",
+        "Backend-Deploy- und Rollbackskripte im MCP",
+        "/admin und /api/admin/platform/v1/*"
+      ],
+      "rules": [
+        "Deployment nur über immutable Digest und exakte Revision.",
+        "Vorherigen Digest als Rollbackbezug erfassen.",
+        "Keine UI-Wahrheit ohne Backendreadback.",
+        "Admin-Authentisierung bleibt serverseitig und secret-safe.",
+        "Fehlschlag muss Rollback erlauben."
+      ],
+      "workflow": [
+        "Owner-Gate und aktuelle Runtimeidentität prüfen.",
+        "Digest und Revision erneut auflösen.",
+        "Deployment ausführen.",
+        "Container-Health, Migrationen und Revision lesen.",
+        "/admin-Marker sowie echte Overview-, Integrations- und Evidence-Daten prüfen.",
+        "Alte UI darf nicht ausgeliefert werden.",
+        "Rollbackbezug persistieren."
+      ],
+      "integrationPlan": [
+        "Deployvertrag an expected_revision, confirmation_revision und image_digest binden.",
+        "Post-Deploy-Readback als Pflichtgate ausführen.",
+        "Admin-HTML und API-Daten getrennt prüfen.",
+        "Bei Abweichung automatisch oder explizit auf den vorherigen Digest zurückfallen."
+      ],
+      "example": "deploy_verified_backend_release(\n  image_digest='sha256:629a694...',\n  expected_revision='246e701...',\n  confirmation_revision='246e701...'\n)",
+      "acceptance": [
+        "Laufender Container trägt exakt erwarteten Digest und Revision-Label.",
+        "/admin liefert die Enterprise-Admin-Oberfläche.",
+        "Overview, Integrations und Evidence zeigen echte Backenddaten.",
+        "Health und Readiness sind grün.",
+        "Rollback auf vorherigen Digest wurde mindestens als Preview verifiziert."
+      ]
+    },
+    {
+      "key": "apply-owner-learning-policy-migration",
+      "title": "[Manifest] Migration 028 anwenden und dauerhafte Owner-Learning-Policy live verifizieren",
+      "evidence": "scripts/sovereign-backend/migrations/028_owner_learning_policy.sql ist in main, aber public.owner_learning_policies fehlt live und schema_migrations enthält keinen Eintrag 028. Automatisches Speichern nützlicher eindeutiger Patterns kann daher noch nicht über die persistierte Owner-Policy laufen.",
+      "goal": "Migration 028 sicher anwenden, exakt eine aktive Owner-Policy bestätigen und den idempotenten Proven-Learning-Pfad ohne wiederholte Einzelbestätigung live belegen.",
+      "paths": [
+        "scripts/sovereign-backend/migrations/028_owner_learning_policy.sql",
+        "scripts/sovereign-backend/proven_learning_runtime.py",
+        "tools/sovereign-chatgpt-mcp/proven_learning_tools.py",
+        "tools/sovereign-chatgpt-mcp/owner_input_client.py",
+        "admin_users, owner_learning_policies und Pattern-, Vector- und Outbox-Tabellen"
+      ],
+      "rules": [
+        "Fail-closed bei null oder mehreren aktiven Owner-Policies.",
+        "Nur nützliche, belegte und nicht doppelte Patterns speichern.",
+        "Content-Hash und Vektorreadback bleiben verpflichtend.",
+        "Secret- und personenbezogene Inhalte bleiben blockiert.",
+        "Frische Einzelbestätigung bleibt als kompatibler Fallback möglich."
+      ],
+      "workflow": [
+        "Produktionsschema und eindeutigen Ownerkandidaten read-only prüfen.",
+        "Migration in Preview mit benötigten Basisschemata testen.",
+        "Exakte Migrations-SHA bestätigen und anwenden.",
+        "Tabellen-, Constraint- und Policy-Readback durchführen.",
+        "Ein neues belegtes nicht doppeltes Canary-Pattern planen und speichern.",
+        "Identischen zweiten Apply als idempotent nachweisen.",
+        "pgvector- und Outbox-Readback prüfen."
+      ],
+      "integrationPlan": [
+        "Standing Owner aus genau einer aktiven Policy auflösen.",
+        "Fresh-Approval-Pfad kompatibel lassen.",
+        "Plan-Hash, Content-Hash und Duplicate-Gate vor Persistenz prüfen.",
+        "Livecanary nur mit neuem, wirklich nützlichem Pattern durchführen."
+      ],
+      "example": "owner_id = standing_learning_owner(conn)\nassert owner_id\ncandidate = persist_once(content_hash)\nassert vector_readback(candidate.id)\nassert duplicate_apply.created is False",
+      "acceptance": [
+        "Migration 028 ist registriert und Tabelle vorhanden.",
+        "Genau eine aktive Owner-Policy ist belegt.",
+        "Ein nützliches eindeutiges Testpattern wird einmal gespeichert und beim Wiederholen nicht dupliziert.",
+        "pgvector-Readback und Milvus-Outbox sind konsistent.",
+        "Kein geschützter Wert wird ausgegeben."
+      ]
+    },
+    {
+      "key": "mirror-drift-llm-cost-policy",
+      "title": "[Manifest] Drift zwischen backend/llm_cost_policy.py und Deploymentquelle klären",
+      "evidence": "Der aktuelle Architektursnapshot meldet unterschiedliche Hashes für backend/llm_cost_policy.py und scripts/sovereign-backend/llm_cost_policy.py. Die Deploymentquelle ist scripts/sovereign-backend, aber die Analyse- und Testquelle darf keine widersprüchliche Kostenwahrheit darstellen.",
+      "goal": "Die kanonische Ownership des Kostenvertrags festlegen und beide Pfade entweder sicher synchronisieren oder den nichtkanonischen Pfad als generierten oder kompatiblen Adapter kennzeichnen und aus Wahrheitsprüfungen entfernen.",
+      "paths": [
+        "backend/llm_cost_policy.py",
+        "scripts/sovereign-backend/llm_cost_policy.py",
+        "Kostenpolicy-Tests in backend/tests/ und scripts/sovereign-backend/tests/",
+        "Mirror- und Architekturtests",
+        "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md"
+      ],
+      "rules": [
+        "Keine automatische Kopie ohne semantischen Diff.",
+        "Produktionsquelle bleibt scripts/sovereign-backend.",
+        "Multiplikator-, Free-Route-, Pricing- und Settlement-Regeln dürfen nicht abgeschwächt werden.",
+        "Nach Synchronisierung Bytegleichheit oder dokumentierte Nichtgleichheit maschinell prüfen."
+      ],
+      "workflow": [
+        "Bounded Diff lesen.",
+        "Jede Abweichung nach Policywirkung klassifizieren.",
+        "Kanonische Version bestimmen.",
+        "Exakten Search-Replace-Patch anwenden.",
+        "Kostenpolicy-, Billing- und Mirror-Tests ausführen.",
+        "Driftreport erneut erzeugen."
+      ],
+      "integrationPlan": [
+        "Canonical-Producer-Regel im Architekturvertrag festhalten.",
+        "Echte Spiegel durch CI-Hashgleichheit schützen.",
+        "Bewusst unterschiedliche Adapter aus dem Mirrorvertrag entfernen.",
+        "Preis- und Settlementtests als Releasegate erhalten."
+      ],
+      "example": "assert sha256('backend/llm_cost_policy.py') == sha256('scripts/sovereign-backend/llm_cost_policy.py')",
+      "acceptance": [
+        "Kein ungeklärter Mirror-Drift bleibt.",
+        "Preis- und Credit-Constraints sind unverändert streng.",
+        "Tests belegen Free, Standard, Premium und Fehlerfälle.",
+        "Architekturdriftreport ist für diese Familie grün."
+      ]
+    },
+    {
+      "key": "mirror-drift-proven-learning-runtime",
+      "title": "[Manifest] Proven-Learning-Runtime zwischen Analyse- und Deploymentpfad synchronisieren",
+      "evidence": "Nach PR #867 enthält die kanonische Deploymentquelle die persistierte Standing-Owner-Policy, während backend/proven_learning_runtime.py noch den alten Einzelbestätigungspfad abbildet. Der Snapshot meldet einen großen semantischen Diff.",
+      "goal": "Den Proven-Learning-Vertrag in Analyse-, Test- und Deploymentpfaden auf eine einzige semantische Wahrheit bringen und Endpoint- sowie Testscanner auf die kanonische Quelle ausrichten.",
+      "paths": [
+        "backend/proven_learning_runtime.py",
+        "scripts/sovereign-backend/proven_learning_runtime.py",
+        "scripts/sovereign-backend/tests/test_proven_learning_runtime.py",
+        "backend/tests/",
+        "tools/sovereign-chatgpt-mcp/proven_learning_tools.py",
+        "Endpoint- und Mirror-Snapshot-Tools"
+      ],
+      "rules": [
+        "Standing Policy darf nur bei genau einem aktiven Owner gelten.",
+        "Fresh-Approval-Fallback muss kompatibel bleiben.",
+        "Plan-Hash, Secretblocker, Idempotenz, Vectorreadback und Outbox bleiben verpflichtend.",
+        "Keine ungeprüfte Copy-Paste-Synchronisierung."
+      ],
+      "workflow": [
+        "Diff semantisch prüfen.",
+        "Canonical-Producer-Regel festhalten.",
+        "Nichtkanonischen Spiegel exakt aktualisieren oder durch Importadapter ersetzen.",
+        "Beide Testfamilien ausführen.",
+        "Endpoint-Referenz und Driftreport neu generieren.",
+        "Live-Deployment getrennt über Migration- und Deploy-Issues behandeln."
+      ],
+      "integrationPlan": [
+        "Signatur und Rückgabefelder für Standing Policy und Fresh Approval vereinheitlichen.",
+        "Interne Endpointquelle im Snapshot auf den Produktionspfad binden.",
+        "Duplicate- und Race-Tests für beide Modi ergänzen.",
+        "Mirrorvertrag dauerhaft in CI schützen."
+      ],
+      "example": "result = apply_proven_learning(conn, confirmation_sha256=digest, record=record)\nassert result['standingOwnerPolicyUsed'] is True\nassert result['ownerApprovalConsumed'] is False",
+      "acceptance": [
+        "Semantische und gegebenenfalls byteweise Parität ist hergestellt.",
+        "Endpoint-Referenz zeigt keine veraltete interne Apply-Signatur.",
+        "Standing-Policy-, Fresh-Approval- und Duplicate-Tests sind grün.",
+        "Driftreport meldet diesen Spiegel nicht mehr."
+      ]
+    },
+    {
+      "key": "github-app-route-registration",
+      "title": "[Manifest] GitHub-App-Routenregistrierung reparieren: get_connection undefined",
+      "evidence": "Der laufende Backend-Container protokolliert beim Start zweimal, dass die GitHub-App-Routenregistrierung wegen get_connection is not defined fehlschlägt. Die GitHub-App-Routenfamilie kann daher trotz vorhandenem Code nicht als produktiv registriert gelten.",
+      "goal": "Die Import- oder Dependency-Injection-Ursache beheben und alle GitHub-App-Routen mit Datenbank-, Auth- und Webhook-Verträgen im Backendstart und in einem begrenzten Livecanary belegen.",
+      "paths": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/github_app.py",
+        "backend/github_app.py",
+        "Datenbankzugriffsmodule",
+        "GitHub-App-Tests unter backend/tests/ und scripts/sovereign-backend/tests/",
+        "/api/auth/github-app/callback, /api/github-app/* und /api/webhooks/github-app"
+      ],
+      "rules": [
+        "Keine globale Datenbankfunktion implizit voraussetzen.",
+        "Dependency explizit injizieren oder eindeutig importieren.",
+        "Webhook-Signatur, Installation-Scope und Creditpfad bleiben fail-closed.",
+        "Keine Tokens oder Installation-Credentials loggen.",
+        "Releasekritische fehlende Routen dürfen nicht nur als Warnung verschluckt werden."
+      ],
+      "workflow": [
+        "Registrierungsfunktion und Aufrufstelle lesen.",
+        "Symbolherkunft von get_connection bestimmen.",
+        "Minimalen Import- oder Injection-Fix erstellen.",
+        "Unit-, Route-, OAuth- und Webhooktests ausführen.",
+        "Backend-Starttest auf registrierte Endpoints prüfen.",
+        "Immutable Deploy und secret-safe Livecanary durchführen."
+      ],
+      "integrationPlan": [
+        "Registrierungsfunktion mit expliziten Abhängigkeiten versehen.",
+        "Startfehler als strukturierte Runtime-Evidence behandeln.",
+        "Routenmanifest und Live-Readback korrelieren.",
+        "Webhook- und Installationspfade getrennt testen."
+      ],
+      "example": "register_github_app_routes(app, get_connection=db.get_connection)\nassert route_registered('/api/github-app/configured')",
+      "acceptance": [
+        "Kein Startlog get_connection is not defined.",
+        "Alle GitHub-App-Routen sind im kanonischen Endpoint-Snapshot vorhanden und gemäß Authvertrag live erreichbar.",
+        "Webhook-Signaturtest und Installation-Readback sind grün.",
+        "Fehlerzustände bleiben ohne Secret-Leak."
+      ]
+    },
+    {
+      "key": "remove-dead-legacy-admin-html",
+      "title": "[Manifest] Toten Legacy-Admin-HTML-Block aus der kanonischen Backenddatei entfernen",
+      "evidence": "scripts/sovereign-backend/app.py enthält weiterhin einen großen historischen _ADMIN_PANEL_HTML-Literalblock. Direkt vor der Route wird die Variable zwar auf ENTERPRISE_ADMIN_HTML überschrieben, aber der tote Block hält eine künftig versehentlich reaktivierbare zweite UI-Wahrheit im Code.",
+      "goal": "Den alten eingebetteten Admin-HTML-Block vollständig entfernen und die /admin-Route ausschließlich an ENTERPRISE_ADMIN_HTML aus enterprise_admin_ui.py binden.",
+      "paths": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/enterprise_admin_ui.py",
+        "scripts/sovereign-backend/tests/test_admin_runtime_truth_contracts.py",
+        "Frontend- und Admin-Vertragstests",
+        "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md"
+      ],
+      "rules": [
+        "Große Live-Datei nur mit exaktem überprüfbarem Patch ändern.",
+        "Keine Änderung an Authheadern oder Admin-API-Verträgen.",
+        "Kein Ersatz durch Mock, Redirect auf nicht deployte Oberfläche oder statische Erfolgskarten.",
+        "Alte Marker und Texte müssen durch Tests als abwesend bestätigt werden."
+      ],
+      "workflow": [
+        "Anfang und Ende des Legacy-Literals exakt bestimmen.",
+        "Kleinen deterministischen Entfernungspatch erzeugen.",
+        "Direkten Import und Route vereinfachen.",
+        "Python-Compile und Admin-Vertragstests ausführen.",
+        "Immutable Image bauen.",
+        "/admin nach Deploy auf neue und alte Marker prüfen."
+      ],
+      "integrationPlan": [
+        "Direkte Response aus ENTERPRISE_ADMIN_HTML verwenden.",
+        "Test auf Abwesenheit der Legacy-Zuweisung ergänzen.",
+        "Keine zweite Admin-Quelle im Repository zulassen.",
+        "Live-Readback an Revision und Digest binden."
+      ],
+      "example": "from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML\n\n@app.get('/admin')\ndef admin_panel():\n    return Response(ENTERPRISE_ADMIN_HTML, mimetype='text/html')",
+      "acceptance": [
+        "Die historische _ADMIN_PANEL_HTML-Literalzuweisung existiert nicht mehr.",
+        "/admin verwendet nur ENTERPRISE_ADMIN_HTML.",
+        "Alte Admin-Marker werden nicht ausgeliefert.",
+        "Compile-, Contract- und Live-Readback sind grün."
+      ]
+    }
+  ]
+}
