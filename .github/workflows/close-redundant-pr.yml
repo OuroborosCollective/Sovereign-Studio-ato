@@ -1,0 +1,125 @@
+name: Close exact redundant PR
+
+run-name: Close PR #${{ inputs.pr_number }} as ${{ inputs.closure_reason }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Positive pull-request number
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact 40-character pull-request head SHA
+        required: true
+        type: string
+      closure_reason:
+        description: Bounded non-merge closure reason
+        required: true
+        default: redundant
+        type: choice
+        options:
+          - redundant
+          - superseded
+      owner_approved:
+        description: Explicit repository-owner approval
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: close-exact-pr-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  close-exact-pr:
+    name: Verify and close without merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact PR identity and close
+        id: close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumberText = String(core.getInput('pr_number') || '').trim();
+            const expectedHead = String(core.getInput('expected_head_sha') || '').trim().toLowerCase();
+            const closureReason = String(core.getInput('closure_reason') || '').trim().toLowerCase();
+            const ownerApproved = String(core.getInput('owner_approved') || '').trim().toLowerCase();
+
+            if (!/^[1-9][0-9]*$/.test(prNumberText)) {
+              core.setFailed('pr_number must be a positive integer');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedHead)) {
+              core.setFailed('expected_head_sha must be an exact 40-character Git SHA');
+              return;
+            }
+            if (!['redundant', 'superseded'].includes(closureReason)) {
+              core.setFailed('closure_reason is not allowlisted');
+              return;
+            }
+            if (ownerApproved !== 'true') {
+              core.setFailed('explicit owner approval is required');
+              return;
+            }
+
+            const pullNumber = Number(prNumberText);
+            const identity = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            };
+            const before = (await github.rest.pulls.get(identity)).data;
+            const actualHead = String(before.head?.sha || '').toLowerCase();
+            const actualBase = String(before.base?.ref || '');
+
+            if (actualBase !== 'main') {
+              core.setFailed(`PR #${pullNumber} does not target main`);
+              return;
+            }
+            if (actualHead !== expectedHead) {
+              core.setFailed(`PR #${pullNumber} head changed before closure`);
+              return;
+            }
+            if (before.merged_at) {
+              core.setFailed(`PR #${pullNumber} is already merged and cannot be closed as redundant`);
+              return;
+            }
+
+            if (before.state !== 'closed') {
+              await github.rest.pulls.update({ ...identity, state: 'closed' });
+            }
+
+            const after = (await github.rest.pulls.get(identity)).data;
+            if (
+              String(after.state || '') !== 'closed' ||
+              String(after.head?.sha || '').toLowerCase() !== expectedHead ||
+              String(after.base?.ref || '') !== 'main' ||
+              Boolean(after.merged_at)
+            ) {
+              core.setFailed(`GitHub readback did not confirm the exact non-merge close contract for PR #${pullNumber}`);
+              return;
+            }
+
+            core.setOutput('pr_number', String(pullNumber));
+            core.setOutput('head_sha', expectedHead);
+            core.setOutput('closure_reason', closureReason);
+            core.setOutput('state', 'closed');
+            core.setOutput('merge_performed', 'false');
+            await core.summary
+              .addHeading('Exact PR closure verified')
+              .addTable([
+                [{ data: 'Field', header: true }, { data: 'Verified value', header: true }],
+                ['PR', `#${pullNumber}`],
+                ['Head SHA', expectedHead],
+                ['Base', 'main'],
+                ['Reason', closureReason],
+                ['State', 'closed'],
+                ['Merge performed', 'false'],
+              ])
+              .write();
