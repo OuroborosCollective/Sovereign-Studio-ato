@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": "c2e7c58a8123b909c502a4303ac5f75791bd32e8",
-  "generatedAt": "2026-07-19T17:13:09.928000Z",
-  "generatedFromRepositoryRevision": "b915c852d3749c8d0dc6fc74473285d849640757",
+  "expectedPrHeadSha": "ff35255d01fefa3e0455028ab4489ef8f75aa952",
+  "generatedAt": "2026-07-20T16:26:22Z",
+  "generatedFromRepositoryRevision": "ff35255d01fefa3e0455028ab4489ef8f75aa952",
   "importantManifestFiles": [
     {
       "bytes": 14520,
@@ -47,6 +47,11 @@
       "bytes": 9163,
       "path": ".github/workflows/ci.yml",
       "sha256": "ebea9b1d4d5f323cc69a1465a8739f51be08ef19e4b3d21faf78aea1bf3a3924"
+    },
+    {
+      "bytes": 4748,
+      "path": ".github/workflows/close-redundant-pr.yml",
+      "sha256": "97a935e449016324a44198ff69e9b1608f5680be98a54ec9e5be918d2bef3a6a"
     },
     {
       "bytes": 5276,
@@ -134,9 +139,9 @@
       "sha256": "b4f19ed2d4a17679239860ad52b7053e8278ee7bee4f1784bcd9752fc2db4f31"
     },
     {
-      "bytes": 54720,
+      "bytes": 60397,
       "path": ".github/workflows/sovereign-chatgpt-mcp.yml",
-      "sha256": "3292f26dffab911a2fa4a1352eda1305edb224b2b31ef38eef7b82d3503757d7"
+      "sha256": "88511721538fa949002f91154367c55f185b30ccbb577116e4a4d1270837d68b"
     },
     {
       "bytes": 7094,
@@ -209,9 +214,9 @@
       "sha256": "bb279727b0663949f83184dee95ee7da55aea9134ccb3409b8071745a52b53a2"
     },
     {
-      "bytes": 2630,
+      "bytes": 6143,
       "path": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-      "sha256": "69589f37f8d5afb170bd522d46952d5dd0dbc43c3713cda1461369a80e688803"
+      "sha256": "f634112a2574c97e9cb35b4e1d4962d5860de8849658734e1ee5c8a930f48b52"
     },
     {
       "bytes": 7336,
@@ -369,6 +374,26 @@
       "sha256": "166bf24426ccf52db950bd43dd2b00dcdf3739e02aa421a311495535c1e531d2"
     },
     {
+      "bytes": 77,
+      "path": "scripts/sovereign-backend/migrations/025_llm_free_route_revolver.sql",
+      "sha256": "5de0e7959496ac5f9f0059cd2404dea869cc943f35ea35a7981757bf1c01c8ec"
+    },
+    {
+      "bytes": 96,
+      "path": "scripts/sovereign-backend/migrations/026_billing_idempotency_and_package_uniqueness.sql",
+      "sha256": "4de2ebcc57ad8b62875ba02487e6b79317234dae0d7b4530b84fc0c51ace9145"
+    },
+    {
+      "bytes": 2057,
+      "path": "scripts/sovereign-backend/migrations/026_llm_free_route_revolver.sql",
+      "sha256": "b6e6d36436a4714ded012588573914d43d2bb2a696da2cc09360e5c0dd6e236a"
+    },
+    {
+      "bytes": 1288,
+      "path": "scripts/sovereign-backend/migrations/027_billing_idempotency_and_package_uniqueness.sql",
+      "sha256": "138925708702744f63d82b9faac1d019ca010024bedc3a6de3954e1ffde381ef"
+    },
+    {
       "bytes": 5099,
       "path": "scripts/sovereign-backend/migrations/AGENTS_MIGRATION_SKILL.md",
       "sha256": "0752a607c7d8b71446026767e7aed1cdad6db32e5c878b47fcbd47c6b6968ccb"
@@ -397,6 +422,11 @@
       "bytes": 86,
       "path": "tools/sovereign-chatgpt-mcp/requirements.txt",
       "sha256": "ed7f63fc88bf8f7abeb7c378f61d8107ff753ebc37fcfb3185be533c201b0d15"
+    },
+    {
+      "bytes": 703,
+      "path": "tools/sovereign-chatgpt-mcp/templates/code-server-46bq/docker-compose.yml",
+      "sha256": "7559e5a48b40328c59123eec55b3b726106cbf7bde7a0db525b564771d4375d4"
     },
     {
       "bytes": 2744,
@@ -429,12 +459,13 @@
       "sha256": "82b80c0312430fcb68651dfa43e0f44ca65a2e732249b7c461145c7966bb4c65"
     }
   ],
-  "latestPatternSha256": "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1",
+  "latestPatternSha256": "2e4e1b65d673f9c4f93865d40acfe09c57ac0c2cad59cd1a08b17c9a59f9361a",
   "learningPatternSha256": [
+    "2e4e1b65d673f9c4f93865d40acfe09c57ac0c2cad59cd1a08b17c9a59f9361a",
     "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1"
   ],
   "logbookPath": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-  "logbookSha256": "69589f37f8d5afb170bd522d46952d5dd0dbc43c3713cda1461369a80e688803",
+  "logbookSha256": "f634112a2574c97e9cb35b4e1d4962d5860de8849658734e1ee5c8a930f48b52",
   "mergeTarget": "main",
   "schemaVersion": "sovereign.proven-learning-manifest.v1",
   "selfHashExcluded": true
