@@ -39,9 +39,13 @@ services:
       # Source revision is baked into the image; do not override it at runtime.
       SOVEREIGN_IMAGE_DIGEST: ${SOVEREIGN_IMAGE_DIGEST:-unverified}
       SOVEREIGN_MAX_REQUEST_BYTES: "67108864"
+      SOVEREIGN_AGENT_WORKSPACE_ROOT: /var/lib/sovereign-agent/workspaces
+      SOVEREIGN_AGENT_WORKSPACE_UID: "10001"
+      SOVEREIGN_AGENT_WORKSPACE_GID: "10001"
     volumes:
       - /opt/secure:/opt/secure:ro
       - /opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw
+      - /opt/sovereign-agent-workspaces:/var/lib/sovereign-agent/workspaces:rw
     restart: unless-stopped
     networks:
       - supabase_default

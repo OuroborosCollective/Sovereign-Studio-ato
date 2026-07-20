@@ -13,8 +13,13 @@ import types
 
 import pytest
 
-# Füge Backend zum Python Path hinzu
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Importiere die echte produktive Backend-App aus scripts/sovereign-backend.
+# backend/ enthält Verträge und Tests, aber bewusst keine zweite app.py-Wahrheit.
+TEST_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPOSITORY_ROOT = os.path.dirname(TEST_BACKEND_ROOT)
+PRODUCTION_BACKEND_ROOT = os.path.join(REPOSITORY_ROOT, "scripts", "sovereign-backend")
+sys.path.insert(0, TEST_BACKEND_ROOT)
+sys.path.insert(0, PRODUCTION_BACKEND_ROOT)
 
 
 # ── Mock psycopg2 vor app.py Import ───────────────────────────────────────────

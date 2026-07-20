@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import ToolBase, ToolResult, ToolPolicyError
+from ..workspace_policy import normalize_workspace_permissions
 
 
 class FileReadTool(ToolBase):
@@ -152,6 +153,8 @@ class FileWriteTool(ToolBase):
             else:
                 with open(target, mode) as f:
                     f.write(content.encode("utf-8", errors="replace"))
+            workspace_root = Path(workspace_path).resolve().parent.parent
+            normalize_workspace_permissions(target.parent, workspace_root)
 
             return ToolResult(
                 status="done",

@@ -649,47 +649,6 @@ def managed_compose_stack_plan(stack_id: str) -> dict[str, Any]:
     return broker.call("managed_compose_stack_plan", {"stack_id": stack_id}, timeout=60)
 
 
-@mcp.tool(annotations=NETWORK_READ)
-def code_server_workspace_open(
-    workspace_id: str,
-    sdcard_enabled: bool = False,
-    sdcard_marker_sha256: str = "",
-    public_base_url: str = "",
-) -> dict[str, Any]:
-    """Return a verified Code Server launch descriptor for one isolated workspace."""
-    descriptor = runtime.code_server_workspace_descriptor(
-        workspace_id,
-        sdcard_enabled=sdcard_enabled,
-        sdcard_marker_sha256=sdcard_marker_sha256,
-        public_base_url=public_base_url,
-    )
-    stack = broker.call("managed_compose_stack_plan", {"stack_id": "code-server-46bq"}, timeout=60)
-    anchor = stack.get("anchor") if isinstance(stack, dict) and isinstance(stack.get("anchor"), dict) else {}
-    mounts = anchor.get("mounts") if isinstance(anchor.get("mounts"), list) else []
-    workspace_mount_ready = any(
-        isinstance(item, dict)
-        and item.get("type") == "bind"
-        and item.get("source") == "/opt/sovereign-chatgpt-tools/workspaces"
-        and item.get("destination") == "/config/sovereign-workspaces"
-        and item.get("rw") is True
-        for item in mounts
-    )
-    runtime_ready = bool(anchor.get("present") and anchor.get("running") and workspace_mount_ready)
-    return {
-        **descriptor,
-        "ok": runtime_ready,
-        "status": "CODE_SERVER_WORKSPACE_READY" if runtime_ready else "CODE_SERVER_WORKSPACE_RUNTIME_NOT_READY",
-        "runtime": {
-            "container": anchor.get("container"),
-            "running": bool(anchor.get("running")),
-            "workspaceMountReady": workspace_mount_ready,
-            "loopbackOnly": "127.0.0.1" in str(anchor.get("publishedPorts") or {}),
-            "credentialsReturned": False,
-        },
-        "nextAction": None if runtime_ready else "deploy_confirmed_code_server_managed_compose_template",
-    }
-
-
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def memory_gateway_collection_canary() -> dict[str, Any]:
     """Create, write, query, search and drop one ephemeral Milvus collection through the existing gateway container."""
