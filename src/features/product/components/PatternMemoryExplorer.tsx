@@ -60,7 +60,7 @@ function PatternEntryRow({
         type="button"
         onClick={onSelect}
         disabled={!onSelect}
-        className="w-full rounded border border-slate-700 bg-slate-900 p-3 text-left hover:bg-slate-800 disabled:cursor-default disabled:hover:bg-slate-900 transition-colors"
+        className="w-full rounded border border-slate-700 bg-slate-900 p-3 text-left transition-colors hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-default disabled:bg-slate-900"
       >
         <div className="flex items-start gap-2">
           <LampDot verified={entry.verified} localExecutable={entry.localExecutable} />
