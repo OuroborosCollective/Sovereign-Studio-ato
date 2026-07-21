@@ -29,6 +29,9 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
     assert result["direct_broker_socket_mutation_allowed"] is False
     assert result["generic_shell_available"] is False
     assert result["workspace_changes_end_at_draft_pr"] is True
+    assert result["workspace_pr_head_sync"] == "exact_revision_local_only"
+    assert result["workspace_pr_head_sync_force_push_allowed"] is False
+    assert result["workspace_pr_head_sync_main_mutation_allowed"] is False
     assert result["owner_protected_input_execution"] == "authenticated_owner_ui_only"
     assert result["llm_can_receive_protected_values"] is False
     assert result["raw_payment_card_input_allowed"] is False
@@ -41,7 +44,10 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "postgres_admin_sql",
         "repository_push_main",
         "repository_merge_pr",
+        "repository_update_pr",
+        "repository_reopen_pr",
         "repository_close_pr",
+        "repository_delete_pr_branch",
         "repository_workflow_dispatch",
         "repository_rerun_failed_workflows",
         "mcp_self_update",

@@ -259,6 +259,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"operational_governance_tools":true' in installer
     assert '"operational_assurance_tools":true' in installer
     assert '"repository_revision_resolver":true' in installer
+    assert '"workspace_pr_head_sync_available":true' in installer
+    assert 'callable(server.repository_sync_workspace_to_pr_head)' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer

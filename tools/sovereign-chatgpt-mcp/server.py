@@ -69,6 +69,9 @@ def _runtime_boundaries() -> dict[str, Any]:
         "direct_broker_socket_mutation_allowed": False,
         "generic_shell_available": False,
         "workspace_changes_end_at_draft_pr": True,
+        "workspace_pr_head_sync": "exact_revision_local_only",
+        "workspace_pr_head_sync_force_push_allowed": False,
+        "workspace_pr_head_sync_main_mutation_allowed": False,
         "owner_protected_input_execution": "authenticated_owner_ui_only",
         "llm_can_receive_protected_values": False,
         "raw_payment_card_input_allowed": False,
@@ -240,7 +243,7 @@ mcp = FastMCP(
         "Für Android-Produktionsarbeit beginne mit android_project_inventory, android_failure_family_scan und vorhandener Runtime-Evidence. Korrigiere zuerst die kausale Fehlerfamilie, "
         "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
         "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
-        "Draft-PR bleibt verfügbar. Derselbe Workspace-Branch wird idempotent weitergeführt; parallele Draft-PRs werden vor Git-Mutationen blockiert. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
+        "Draft-PR bleibt verfügbar. Derselbe Workspace-Branch wird idempotent weitergeführt; parallele Draft-PRs werden vor Git-Mutationen blockiert. Wenn Workspace- und PR-Head auseinanderlaufen, verwende repository_sync_workspace_to_pr_head mit der exakt bestätigten PR-Revision; das Tool darf weder remote schreiben noch force-pushen oder main verändern. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
         "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. repository_close_pr darf ausschließlich mit privatem Owner-Modus, ausdrücklicher Owner-Freigabe, exaktem Head-SHA und einem begrenzten Redundanzgrund schließen; es führt niemals einen Merge aus. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
@@ -273,6 +276,7 @@ mcp = FastMCP(
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 NETWORK_READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 SAFE_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+WORKSPACE_NETWORK_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 EXTERNAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True)
 
 
@@ -327,6 +331,20 @@ def repository_install_dependencies(workspace_id: str) -> dict[str, Any]:
 def repository_run_check(workspace_id: str, check: str, target: str = "") -> dict[str, Any]:
     """Run local Python/diff checks or delegate Node-dependent checks to GitHub Actions."""
     return runtime.run_check(workspace_id, check, target)
+
+
+@mcp.tool(annotations=WORKSPACE_NETWORK_WRITE)
+def repository_sync_workspace_to_pr_head(
+    workspace_id: str,
+    pr_number: int,
+    expected_pr_head_sha: str,
+) -> dict[str, Any]:
+    """Sync one workspace to the exact current head of its existing PR without remote writes or force-push."""
+    return runtime.sync_workspace_to_pr_head(
+        workspace_id,
+        pr_number=pr_number,
+        expected_pr_head_sha=expected_pr_head_sha,
+    )
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)

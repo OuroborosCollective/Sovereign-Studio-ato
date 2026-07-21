@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import zipfile
 from typing import Any
+
+import pytest
 
 import runtime as runtime_module
 
@@ -222,6 +225,136 @@ def test_other_open_draft_blocks_before_git_mutation(repo_runtime, monkeypatch) 
         raise AssertionError("parallel Draft PR must be blocked")
 
     assert mutation_calls == []
+
+
+def test_workspace_sync_fast_forwards_exact_pr_head_and_restores_local_changes(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    metadata = runtime._read_metadata(workspace_id)
+    branch = metadata["branch"]
+    remote = repo.parent / "remote.git"
+    writer = repo.parent / "writer"
+
+    subprocess.run(["git", "checkout", "-b", branch], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    subprocess.run(["git", "push", "--set-upstream", "origin", branch], cwd=repo, check=True, capture_output=True)
+
+    subprocess.run(["git", "clone", str(remote), str(writer)], check=True, capture_output=True)
+    subprocess.run(["git", "checkout", branch], cwd=writer, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Remote Test"], cwd=writer, check=True)
+    subprocess.run(["git", "config", "user.email", "remote@example.invalid"], cwd=writer, check=True)
+    (writer / "README.md").write_text("remote head\n", "utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=writer, check=True)
+    subprocess.run(["git", "commit", "-m", "advance remote"], cwd=writer, check=True, capture_output=True)
+    subprocess.run(["git", "push", "origin", branch], cwd=writer, check=True, capture_output=True)
+    remote_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=writer,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    (repo / "LOCAL.txt").write_text("preserve me\n", "utf-8")
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(
+            200,
+            payload={
+                "number": 901,
+                "state": "open",
+                "head": {
+                    "ref": branch,
+                    "sha": remote_head,
+                    "repo": {"full_name": runtime.config.repository},
+                },
+                "base": {"ref": "main"},
+            },
+        ),
+    )
+
+    result = runtime.sync_workspace_to_pr_head(
+        workspace_id,
+        pr_number=901,
+        expected_pr_head_sha=remote_head,
+    )
+
+    actual_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert result["status"] == "WORKSPACE_SYNCED_TO_PR_HEAD"
+    assert result["strategy"] == "fast_forward"
+    assert result["remote_pr_head_sha"] == remote_head
+    assert result["workspace_head_sha"] == remote_head
+    assert actual_head == remote_head
+    assert (repo / "LOCAL.txt").read_text("utf-8") == "preserve me\n"
+    assert result["local_changes_restored"] is True
+    assert result["force_push_used"] is False
+    assert result["main_mutated"] is False
+    assert result["remote_mutation_performed"] is False
+
+
+def test_workspace_sync_rejects_changed_pr_head_before_git_mutation(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, _repo = repo_runtime
+    metadata = runtime._read_metadata(workspace_id)
+    branch = metadata["branch"]
+    git_calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(
+            200,
+            payload={
+                "number": 901,
+                "state": "open",
+                "head": {
+                    "ref": branch,
+                    "sha": "b" * 40,
+                    "repo": {"full_name": runtime.config.repository},
+                },
+                "base": {"ref": "main"},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda argv, **kwargs: git_calls.append(list(argv)) or command_result(list(argv)),
+    )
+
+    with pytest.raises(RuntimeError, match="PR_HEAD_CHANGED"):
+        runtime.sync_workspace_to_pr_head(
+            workspace_id,
+            pr_number=901,
+            expected_pr_head_sha="a" * 40,
+        )
+
+    assert git_calls == []
+
+
+def test_workspace_sync_never_accepts_main_or_base_branch(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, _repo = repo_runtime
+    metadata = runtime._read_metadata(workspace_id)
+    metadata["branch"] = "main"
+    runtime._write_metadata(workspace_id, metadata)
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network call must not start")),
+    )
+
+    with pytest.raises(RuntimeError, match="PROTECTED_BRANCH_SYNC_FORBIDDEN"):
+        runtime.sync_workspace_to_pr_head(
+            workspace_id,
+            pr_number=901,
+            expected_pr_head_sha="a" * 40,
+        )
 
 
 def test_workflow_artifact_import_binds_artifact_to_confirmed_run(repo_runtime, monkeypatch) -> None:
