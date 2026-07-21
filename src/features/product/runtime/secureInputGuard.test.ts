@@ -136,7 +136,7 @@ describe('secureInputGuard', () => {
       const policy = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
       expect(policy.shouldBlock).toBe(true);
       expect(policy.kind).toBe('github_pat');
-      expect(policy.userMessage).toContain('sicheres Zugangsfeld');
+      expect(policy.userMessage).toContain('sichere Zugangsfeld');
       expect(policy.actionLabel).toContain('GitHub');
       expect(policy.securityCardTitle).toBe('Sicherer GitHub-Zugang erkannt');
       expect(policy.securityCardText).toContain('blockiert');
