@@ -655,6 +655,45 @@ def execute_persisted_swarm(
     }, status_code)
 
 
+def _persist_execution_resolution_blocker(
+    get_connection: ConnectionFactory,
+    *,
+    user_id: str,
+    run_id: str,
+    trace_id: str,
+    status: str,
+    blocker: str,
+    reason: str,
+    next_action: str,
+    error_type: str = "",
+) -> dict[str, str]:
+    """Persist one route-resolution blocker after the run truth already exists."""
+    conn = get_connection()
+    try:
+        return transition_agent_run(
+            conn,
+            user_id=user_id,
+            run_id=run_id,
+            status=status,
+            source="agents-sdk",
+            trace_id=trace_id,
+            reason=reason,
+            next_action=next_action,
+            evidence_kind="llm_execution_resolution_blocker",
+            evidence_summary=reason,
+            evidence_payload={
+                "blocker": str(blocker)[:160],
+                "errorType": str(error_type)[:160] or None,
+                "providerExecutionPrevented": True,
+                "backgroundAgentsStarted": 0,
+                "rawErrorPersisted": False,
+            },
+            agent_id="execution_resolver",
+        )
+    finally:
+        _close_connection(conn)
+
+
 def _record_paid_route_cooldown(
     get_connection: ConnectionFactory,
     *,
@@ -739,57 +778,6 @@ def start_cognitive_swarm_run(
     resolved_session_key = str(session_key or f"session-{uuid.uuid4().hex}").strip()
     resolved_trace_id = str(trace_id or f"trace-{uuid.uuid4().hex}").strip()
     manifest = manifest_payload()
-    try:
-        execution_resolution = load_execution_resolution(
-            get_connection,
-            user_id=user_id,
-            requested_model=normalized_model or "",
-        )
-    except LookupError:
-        return {"error": "authenticated user account was not found"}, 404
-    except Exception as exc:
-        return {
-            "ok": False,
-            "runtime": "openai-agents-sdk",
-            "blocker": "LLM_EXECUTION_RESOLVER_UNAVAILABLE",
-            "errorType": type(exc).__name__,
-        }, 503
-    if execution_resolution is None:
-        return {
-            "ok": False,
-            "runtime": "openai-agents-sdk",
-            "blocker": "NO_PRICE_VERIFIED_LITELLM_ROUTE_READY",
-            "reason": "No active paid route or free revolver route is currently ready.",
-            "nextAction": "ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
-        }, 503
-    if _force_free_profile:
-        execution_resolution = free_fallback_resolution(
-            execution_resolution,
-            reason=(
-                _fallback_reason
-                or "paid_provider_failure_resolved_to_free_revolver"
-            ),
-        )
-        if execution_resolution is None:
-            return {
-                "ok": False,
-                "runtime": "openai-agents-sdk",
-                "blocker": "FREE_REVOLVER_ROUTE_NOT_READY",
-                "reason": "The paid route failed and no verified free fallback route is ready.",
-                "nextAction": "ACTIVATE_FREE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
-            }, 503
-    resolved_model = str(
-        execution_resolution.primary_route.get("model_id")
-        or execution_resolution.primary_route.get("modelId")
-        or ""
-    ).strip()
-    if not resolved_model:
-        return {
-            "ok": False,
-            "runtime": "openai-agents-sdk",
-            "blocker": "RESOLVED_LITELLM_ALIAS_MISSING",
-        }, 503
-
     if _reuse_received_state is not None:
         received_state = dict(_reuse_received_state)
     else:
@@ -804,10 +792,7 @@ def start_cognitive_swarm_run(
                     mission=normalized_mission,
                     supplied_evidence=normalized_evidence,
                     trace_id=resolved_trace_id,
-                    max_active_specialists=max(
-                        1,
-                        int(execution_resolution.max_background_agents),
-                    ),
+                    max_active_specialists=int(manifest["maxActiveSpecialists"]),
                     max_iterations=_max_iterations(),
                     job_id=None,
                     a2a_context_id=a2a_context_id,
@@ -822,6 +807,149 @@ def start_cognitive_swarm_run(
                 "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
                 "errorType": type(exc).__name__,
             }, 503
+
+    try:
+        execution_resolution = load_execution_resolution(
+            get_connection,
+            user_id=user_id,
+            requested_model=normalized_model or "",
+        )
+    except LookupError as exc:
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="AGENT_BILLING_USER_NOT_FOUND",
+            reason="The authenticated user has no persisted account state for route resolution.",
+            next_action="RESTORE_AGENT_BILLING_ACCOUNT",
+            error_type=type(exc).__name__,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "AGENT_BILLING_USER_NOT_FOUND",
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+        }, 404
+    except Exception as exc:
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="FAILED_RECOVERABLE",
+            blocker="LLM_EXECUTION_RESOLVER_UNAVAILABLE",
+            reason="The persisted run could not resolve an active LLM execution profile.",
+            next_action="RETRY_LLM_EXECUTION_RESOLUTION",
+            error_type=type(exc).__name__,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "LLM_EXECUTION_RESOLVER_UNAVAILABLE",
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+            "errorType": type(exc).__name__,
+        }, 503
+    if execution_resolution is None:
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="NO_PRICE_VERIFIED_LITELLM_ROUTE_READY",
+            reason="No active paid route or free revolver route is currently ready.",
+            next_action="ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "NO_PRICE_VERIFIED_LITELLM_ROUTE_READY",
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+        }, 503
+    if _force_free_profile:
+        execution_resolution = free_fallback_resolution(
+            execution_resolution,
+            reason=(
+                _fallback_reason
+                or "paid_provider_failure_resolved_to_free_revolver"
+            ),
+        )
+        if execution_resolution is None:
+            state = _persist_execution_resolution_blocker(
+                get_connection,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                trace_id=resolved_trace_id,
+                status="BLOCKED",
+                blocker="FREE_REVOLVER_ROUTE_NOT_READY",
+                reason="The paid route failed and no verified free fallback route is ready.",
+                next_action="ACTIVATE_FREE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
+            )
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": resolved_run_id,
+                "traceId": resolved_trace_id,
+                "status": state["status"],
+                "source": state["source"],
+                "evidenceId": state["evidenceId"],
+                "receivedEvidenceId": received_state["evidenceId"],
+                "blocker": "FREE_REVOLVER_ROUTE_NOT_READY",
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+            }, 503
+    resolved_model = str(
+        execution_resolution.primary_route.get("model_id")
+        or execution_resolution.primary_route.get("modelId")
+        or ""
+    ).strip()
+    if not resolved_model:
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="RESOLVED_LITELLM_ALIAS_MISSING",
+            reason="The selected execution route has no bounded LiteLLM alias.",
+            next_action="REPAIR_LITELLM_ROUTE_ALIAS",
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "RESOLVED_LITELLM_ALIAS_MISSING",
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+        }, 503
 
     if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
         implementation_job = None
