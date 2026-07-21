@@ -106,6 +106,24 @@ export interface LlmRevolverStats {
   blockedOrCoolingScopes: number;
 }
 
+export interface LlmRevolverV3Status {
+  runtime: 'postgresql-litellm-evidence';
+  profile: {
+    profileKey?: string;
+    mode?: 'sequential' | 'weighted' | 'race';
+    raceN?: number;
+    timeoutMs?: number;
+    tokenBudget?: number;
+    requiredCapabilities?: string[];
+    structuredRepairAttempts?: number;
+    semanticCacheEnabled?: boolean;
+    revision?: number;
+  };
+  structuredOutput24h: { checks: number; valid: number; invalid: number };
+  semanticCachePolicy: 'cache_safe-only';
+  autoWeights: 'recommendation-only';
+}
+
 export interface LlmModelCatalogEntry {
   modelId: string;
   providerModel: string;
@@ -413,6 +431,7 @@ export const adminApiClient = {
       routes: LlmRoute[];
       billingCategories: LlmBillingCategoryOption[];
       revolverStats: LlmRevolverStats;
+      revolverV3: LlmRevolverV3Status;
       manualCreditsPerUnitEditing: false;
     }>('/api/admin/llm/routes');
   },

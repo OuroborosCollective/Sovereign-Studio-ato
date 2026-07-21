@@ -16,6 +16,7 @@ import {
   type LlmBillingCategoryOption,
   type LlmModelCatalogEntry,
   type LlmRevolverStats,
+  type LlmRevolverV3Status,
   type AuditEntry,
   type PaymentMethod,
 } from '../api/adminApiClient';
@@ -172,6 +173,7 @@ export interface UseAdminLlmRoutesResult {
   routes: LlmRoute[];
   billingCategories: LlmBillingCategoryOption[];
   revolverStats: LlmRevolverStats | null;
+  revolverV3: LlmRevolverV3Status | null;
   catalog: LlmModelCatalogEntry[];
   catalogError: string | null;
   loading: boolean;
@@ -191,6 +193,7 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
   const [routes, setRoutes] = useState<LlmRoute[]>([]);
   const [billingCategories, setBillingCategories] = useState<LlmBillingCategoryOption[]>([]);
   const [revolverStats, setRevolverStats] = useState<LlmRevolverStats | null>(null);
+  const [revolverV3, setRevolverV3] = useState<LlmRevolverV3Status | null>(null);
   const [catalog, setCatalog] = useState<LlmModelCatalogEntry[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -212,6 +215,7 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
         setRoutes(routesResult.value.routes);
         setBillingCategories(routesResult.value.billingCategories);
         setRevolverStats(routesResult.value.revolverStats);
+        setRevolverV3(routesResult.value.revolverV3);
       } else {
         setError(String(routesResult.reason));
       }
@@ -256,6 +260,7 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
     routes,
     billingCategories,
     revolverStats,
+    revolverV3,
     catalog,
     catalogError,
     loading,

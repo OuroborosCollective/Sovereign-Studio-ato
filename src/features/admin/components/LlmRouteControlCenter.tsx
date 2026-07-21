@@ -315,6 +315,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
   const {
     routes,
     revolverStats,
+    revolverV3,
     catalog,
     catalogError,
     loading,
@@ -359,6 +360,26 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
         <div><ShieldCheck /><span>Erfolge 24 h</span><strong>{revolverStats?.successes24h ?? 0}</strong></div>
         <div><BadgeDollarSign /><span>Blockiert / Kühlung</span><strong>{revolverStats?.blockedOrCoolingScopes ?? 0}</strong></div>
       </div>
+
+      {revolverV3 && (
+        <section className="llm-catalog" aria-label="Free Revolver v3 Runtime-Evidence">
+          <div className="llm-section-title">
+            <div><RotateCcw size={21} /><div>
+              <h2>Free Revolver v3</h2>
+              <p>Direkter PostgreSQL/LiteLLM-Livepfad · keine Mock- oder Fassaden-Laufzeit.</p>
+            </div></div>
+          </div>
+          <div className="llm-stat-grid">
+            <div><Activity /><span>Modus</span><strong>{revolverV3.profile.mode ?? 'sequential'}</strong></div>
+            <div><DatabaseZap /><span>Profilrevision</span><strong>{revolverV3.profile.revision ?? 1}</strong></div>
+            <div><ShieldCheck /><span>Schema gültig 24 h</span><strong>{revolverV3.structuredOutput24h.valid}</strong></div>
+            <div><BadgeDollarSign /><span>Schema ungültig 24 h</span><strong>{revolverV3.structuredOutput24h.invalid}</strong></div>
+          </div>
+          <p className="llm-catalog__evidence">
+            Cache: {revolverV3.semanticCachePolicy} · Auto-Gewichte: {revolverV3.autoWeights}
+          </p>
+        </section>
+      )}
 
       {error && <div className="llm-alert llm-alert--danger">{error}</div>}
       {catalogError && <div className="llm-alert">Modellkatalog derzeit nicht verfügbar: {catalogError}</div>}

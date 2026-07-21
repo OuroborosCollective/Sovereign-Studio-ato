@@ -71,6 +71,10 @@ from llm_execution_resolver import (
     PAID_SWARM_PROFILE,
     build_paid_to_free_candidates,
 )
+from free_revolver_runtime import (
+    register_free_revolver_runtime,
+    resolve_free_revolver_plan,
+)
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.routes import register_sovereign_agent_routes
@@ -445,6 +449,12 @@ enterprise_platform_service = register_enterprise_platform_routes(
     audit=audit,
     litellm_readiness=litellm_readiness,
     litellm_completion_canary=litellm_completion_canary,
+)
+register_free_revolver_runtime(
+    app,
+    require_admin=require_admin,
+    query=query,
+    audit=audit,
 )
 
 
@@ -1009,6 +1019,25 @@ def admin_llm_routes():
            FROM llm_execution_profiles
            ORDER BY priority ASC, profile_id ASC"""
     ) or []
+    revolver_v3_profile = query(
+        """SELECT profile_key AS "profileKey", mode, race_n AS "raceN",
+                  timeout_ms AS "timeoutMs", token_budget AS "tokenBudget",
+                  required_capabilities AS "requiredCapabilities",
+                  structured_repair_attempts AS "structuredRepairAttempts",
+                  semantic_cache_enabled AS "semanticCacheEnabled", revision
+           FROM llm_revolver_profiles
+           WHERE tenant_id IS NULL AND profile_key='default-free' AND enabled=true
+           LIMIT 1""",
+        one=True,
+    ) or {}
+    structured_stats = query(
+        """SELECT COUNT(*)::integer AS checks,
+                  COUNT(*) FILTER (WHERE valid=true)::integer AS valid,
+                  COUNT(*) FILTER (WHERE valid=false)::integer AS invalid
+           FROM llm_revolver_structured_evidence
+           WHERE observed_at >= NOW() - INTERVAL '24 hours'""",
+        one=True,
+    ) or {}
     return jsonify({
         "routes": [_admin_llm_route_payload(row) for row in (rows or [])],
         "billingCategories": [
@@ -1029,6 +1058,17 @@ def admin_llm_routes():
             "paidProfile": PAID_SWARM_PROFILE,
             "providersHardcoded": False,
             "routingOwner": "postgresql-and-private-litellm",
+        },
+        "revolverV3": {
+            "runtime": "postgresql-litellm-evidence",
+            "profile": dict(revolver_v3_profile),
+            "structuredOutput24h": {
+                "checks": int(structured_stats.get("checks") or 0),
+                "valid": int(structured_stats.get("valid") or 0),
+                "invalid": int(structured_stats.get("invalid") or 0),
+            },
+            "semanticCachePolicy": "cache_safe-only",
+            "autoWeights": "recommendation-only",
         },
         "manualCreditsPerUnitEditing": False,
     })
@@ -2027,6 +2067,8 @@ def health_ready():
             """SELECT
                    to_regclass('llm_route_attempts') IS NOT NULL AS revolver_attempts,
                    to_regclass('llm_route_revolver_state') IS NOT NULL AS revolver_state,
+                   to_regclass('llm_revolver_profiles') IS NOT NULL AS revolver_v3_profiles,
+                   to_regclass('llm_revolver_structured_evidence') IS NOT NULL AS revolver_v3_structured,
                    to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
                    to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
                    to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
@@ -2056,6 +2098,8 @@ def health_ready():
         schema_ready = all(bool(schema.get(name)) for name in (
             "revolver_attempts",
             "revolver_state",
+            "revolver_v3_profiles",
+            "revolver_v3_structured",
             "package_uniqueness",
             "github_app_credits",
             "github_app_credit_transactions",
@@ -2069,6 +2113,7 @@ def health_ready():
                 "027_billing_idempotency_and_package_uniqueness.sql",
                 "029_github_app_credit_runtime.sql",
                 "030_llm_execution_profiles.sql",
+                "031_sovereign_free_revolver_v3.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -6374,8 +6419,8 @@ def _settle_llm_usage(
     }, ""
 
 
-def _load_llm_revolver_candidates(primary_route) -> list:
-    """Load one DB-owned route magazine: paid primary, then free revolver scopes."""
+def _load_llm_revolver_candidates(primary_route, *, user_id: str, request_id: str) -> list:
+    """Load one DB-owned route magazine and apply the persisted Revolver v3 plan."""
     try:
         route_billing_policy(primary_route)
     except BillingPolicyError:
@@ -6409,11 +6454,26 @@ def _load_llm_revolver_candidates(primary_route) -> list:
         str(row["quota_scope"]): dict(row)
         for row in (state_rows or [])
     }
-    return build_paid_to_free_candidates(
+    candidates = build_paid_to_free_candidates(
         dict(primary_route),
         all_routes,
         state_by_scope=state_by_scope,
     )
+    try:
+        policy = route_billing_policy(primary_route)
+    except BillingPolicyError:
+        return []
+    if policy["billingCategory"] != FREE_CATEGORY:
+        return candidates
+    _profile, planned = resolve_free_revolver_plan(
+        query,
+        tenant_id=user_id,
+        request_id=request_id,
+        profile_key=str((primary_route.get("config") or {}).get("revolverProfile") or "default-free"),
+        capabilities=("chat",),
+    )
+    allowed = {str(route.get("id") or "") for route in candidates}
+    return [route for route in planned if str(route.get("id") or "") in allowed]
 
 
 def _record_llm_revolver_attempt(
@@ -6608,7 +6668,11 @@ def public_llm_chat():
                 "error": str(exc),
                 "blocker": "llm_billing_policy_invalid",
             }), 409
-        candidate_routes = _load_llm_revolver_candidates(route)
+        candidate_routes = _load_llm_revolver_candidates(
+            route,
+            user_id=user_id,
+            request_id=request_id,
+        )
         if policy["billingCategory"] == FREE_CATEGORY and not candidate_routes:
             return jsonify({
                 "error": "Alle unabhängigen Free-Routen sind blockiert oder in Abkühlung.",
