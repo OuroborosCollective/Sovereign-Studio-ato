@@ -195,6 +195,22 @@ describe('Palette Accessibility Enhancements', () => {
       const fileButtons = screen.getAllByRole('button');
       const appFileButton = fileButtons.find(btn => btn.getAttribute('title') === 'src/App.tsx');
       expect(appFileButton).toBeDefined();
+
+      // Uebernehmen button
+      const uebernehmenButton = screen.getByRole('button', { name: 'Idee übernehmen' });
+      expect(uebernehmenButton).toHaveAttribute('title', 'Idee übernehmen');
+
+      // Notiz button
+      const notizButton = screen.getByRole('button', { name: 'Notiz hinzufügen' });
+      expect(notizButton).toHaveAttribute('title', 'Notiz hinzufügen');
+
+      // Suche button
+      const sucheButton = screen.getByRole('button', { name: 'Datei im Repository suchen' });
+      expect(sucheButton).toHaveAttribute('title', 'Datei im Repository suchen');
+
+      // Idee-Fabrik chip button
+      const chipButton = screen.getByRole('button', { name: 'Idee übernehmen: CI Fehleranalyse' });
+      expect(chipButton).toHaveAttribute('title', 'Idee übernehmen: CI Fehleranalyse');
     });
   });
 
