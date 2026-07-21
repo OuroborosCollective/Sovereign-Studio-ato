@@ -1,0 +1,15 @@
+{
+  "target": "package.json",
+  "source_ref": "main",
+  "branch_base_ref": "main",
+  "branch": "sovereign/chatgpt/1784655357-pr907-artifact-repair-carrier-v2-b2a99d",
+  "commit_message": "chore(ci): runner self-canary",
+  "pr_title": "chore(ci): runner self-canary",
+  "pr_body": "Read-only search/replace runner self-canary.",
+  "blocks": [
+    {
+      "search": "\"name\": \"sovereign-studio\"",
+      "replace": "\"name\": \"sovereign-studio\""
+    }
+  ]
+}
