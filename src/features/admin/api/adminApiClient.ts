@@ -125,7 +125,7 @@ export interface LlmRevolverV3Status {
   pricingEvidenceTtlHours: number;
 }
 
-export type FreeRevolverProviderAuthMode = 'bearer' | 'x-api-key' | 'none';
+export type FreeRevolverProviderAuthMode = 'bearer' | 'x-api-key' | 'none' | 'managed-bearer';
 export type FreeRevolverProviderStatus =
   | 'awaiting_owner_input' | 'probing' | 'healthy' | 'degraded'
   | 'blocked' | 'disabled';

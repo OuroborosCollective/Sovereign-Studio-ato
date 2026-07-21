@@ -35,6 +35,7 @@ services:
     environment:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY_FILE: /opt/sovereign-owner-managed/litellm_master_key.txt
+      SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE: /opt/sovereign-owner-managed/freellmapi_unified_key.txt
       SOVEREIGN_RUNTIME_ENVIRONMENT: production
       # Source revision is baked into the image; do not override it at runtime.
       SOVEREIGN_IMAGE_DIGEST: ${SOVEREIGN_IMAGE_DIGEST:-unverified}

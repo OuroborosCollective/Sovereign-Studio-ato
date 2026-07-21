@@ -1,0 +1,48 @@
+services:
+  freellmapi:
+    image: ghcr.io/tashfeenahmed/freellmapi:v0.5.0@sha256:e3ffcd7f78527cf16113fa196174bebdd6fa5dd0c84adfa9e577f43f4a48a784
+    container_name: sovereign-freellmapi
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOST: "0.0.0.0"
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FREEAPI_DB_PATH: /app/server/data/freeapi.db
+    volumes:
+      - freellmapi-data:/app/server/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    restart: unless-stopped
+    networks:
+      sovereign-private:
+        aliases:
+          - freellmapi
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3001/api/ping').then((response)=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    labels:
+      sovereign.component: freellmapi
+      sovereign.version: "0.5.0"
+      sovereign.source-archive-sha256: dd134590f336a8a36488e903e6129c2ee04929508b9a811e0de6b72b1f89a9ef
+
+networks:
+  sovereign-private:
+    external: true
+
+volumes:
+  freellmapi-data:
+    name: sovereign-freellmapi-data

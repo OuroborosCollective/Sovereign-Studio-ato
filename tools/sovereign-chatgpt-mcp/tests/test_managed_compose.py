@@ -24,6 +24,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "pgbackweb-wq5r",
         "patchmon-sovereign",
         "milvus-sovereign",
+        "sovereign-freellmapi",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("memory_gateway_collection_canary") is True

@@ -2138,6 +2138,7 @@ def health_ready():
                 "030_llm_execution_profiles.sql",
                 "031_sovereign_free_revolver_v3.sql",
                 "032_free_revolver_provider_control.sql",
+                "033_freellmapi_managed_provider.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),

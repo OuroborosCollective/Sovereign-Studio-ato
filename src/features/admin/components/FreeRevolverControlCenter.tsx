@@ -11,10 +11,13 @@ import {
 import type { FreeRevolverProviderAuthMode } from '../api/adminApiClient';
 import type { UseAdminFreeRevolverProvidersResult } from '../hooks/useAdminApi';
 
+const FREELLMAPI_DOCKER_API_BASE = 'http://freellmapi:3001/v1';
+
 const AUTH_LABELS: Record<FreeRevolverProviderAuthMode, string> = {
   bearer: 'Bearer API-Key',
   'x-api-key': 'X-API-Key',
   none: 'Kein Key erforderlich',
+  'managed-bearer': 'Owner-managed Docker-Key',
 };
 
 function statusLabel(status: string): string {
@@ -101,9 +104,12 @@ export function FreeRevolverControlCenter({
     setApiKey('');
     void run('new-provider', async () => {
       const parsed = new URL(apiBase);
-      if (parsed.protocol !== 'https:') throw new Error('Nur vollständige HTTPS-URLs sind erlaubt.');
+      const managedDockerTarget = apiBase.trim().replace(/\/$/, '') === FREELLMAPI_DOCKER_API_BASE;
+      if (parsed.protocol !== 'https:' && !managedDockerTarget) {
+        throw new Error('Nur vollständige HTTPS-URLs oder der verwaltete FreeLLM-API-Docker-Endpunkt sind erlaubt.');
+      }
       if (!label.trim()) throw new Error('Bitte einen verständlichen Provider-Namen eintragen.');
-      if (authMode !== 'none' && protectedValue.length < 8) {
+      if ((authMode === 'bearer' || authMode === 'x-api-key') && protectedValue.length < 8) {
         throw new Error('Der API-Key muss mindestens 8 Zeichen enthalten.');
       }
       await api.createAndDiscover({
@@ -157,6 +163,16 @@ export function FreeRevolverControlCenter({
             <p>Basis-URL genügt; `/v1/models` und `/models` werden sicher geprüft.</p>
           </div></div>
         </div>
+        <button type="button" className="llm-button"
+          disabled={busyId !== null}
+          onClick={() => {
+            setLabel('FreeLLM API 0.5.0 · interner Docker');
+            setApiBase(FREELLMAPI_DOCKER_API_BASE);
+            setAuthMode('managed-bearer');
+            setApiKey('');
+          }}>
+          <Server size={17} /> FreeLLM API 0.5.0 auswählen
+        </button>
         <div className="free-revolver-form">
           <label>
             <span>Provider-Name</span>
@@ -165,9 +181,9 @@ export function FreeRevolverControlCenter({
               onChange={event => setLabel(event.target.value)} />
           </label>
           <label>
-            <span>HTTPS API-Basis</span>
+            <span>API-Basis</span>
             <input value={apiBase} disabled={busyId !== null} inputMode="url"
-              placeholder="https://api.provider.example"
+              placeholder="https://api.provider.example oder interner FreeLLM-Docker"
               onChange={event => setApiBase(event.target.value)} />
           </label>
           <label>
@@ -180,14 +196,23 @@ export function FreeRevolverControlCenter({
             </select>
           </label>
           <label>
-            <span>{authMode === 'none' ? 'API-Key nicht erforderlich' : 'API-Key · einmalige Übergabe'}</span>
+            <span>{authMode === 'none'
+              ? 'API-Key nicht erforderlich'
+              : authMode === 'managed-bearer'
+                ? 'Interner Schlüssel · owner-managed'
+                : 'API-Key · einmalige Übergabe'}</span>
             <input type="password" autoComplete="new-password" spellCheck={false}
-              value={apiKey} disabled={busyId !== null || authMode === 'none'}
-              placeholder={authMode === 'none' ? 'Kein Key wird übertragen' : 'Wird nach Übergabe sofort aus dem Formular gelöscht'}
+              value={apiKey} disabled={busyId !== null || authMode === 'none' || authMode === 'managed-bearer'}
+              placeholder={authMode === 'none'
+                ? 'Kein Key wird übertragen'
+                : authMode === 'managed-bearer'
+                  ? 'Wird aus der geschützten Owner-Datei gelesen'
+                  : 'Wird nach Übergabe sofort aus dem Formular gelöscht'}
               onChange={event => setApiKey(event.target.value)} />
           </label>
           <button type="button" className="llm-button llm-button--primary"
-            disabled={busyId !== null || !label.trim() || !apiBase.trim() || (authMode !== 'none' && apiKey.length < 8)}
+            disabled={busyId !== null || !label.trim() || !apiBase.trim()
+              || ((authMode === 'bearer' || authMode === 'x-api-key') && apiKey.length < 8)}
             onClick={submitProvider}>
             {busyId === 'new-provider' ? <RefreshCw className="llm-spin" size={18} /> : <Search size={18} />}
             Sicher prüfen und Free-Routen anlegen
@@ -290,7 +315,7 @@ export function FreeRevolverControlCenter({
                 </div>
 
                 <footer className="llm-route-card__actions">
-                  {provider.authMode === 'none' && (
+                  {(provider.authMode === 'none' || provider.authMode === 'managed-bearer') && (
                     <button type="button" className="llm-button llm-button--primary"
                       disabled={busyId !== null || !provider.enabled}
                       onClick={() => void run(
@@ -312,7 +337,7 @@ export function FreeRevolverControlCenter({
                   </button>
                 </footer>
 
-                {provider.authMode !== 'none' && (
+                {(provider.authMode === 'bearer' || provider.authMode === 'x-api-key') && (
                   <div className="free-revolver-provider__renew">
                     <label>
                       <span>Neuen Key eintragen und Modelle neu erkennen</span>
@@ -333,7 +358,7 @@ export function FreeRevolverControlCenter({
             );
           })}
           {api.providers.length === 0 && !api.loading && (
-            <div className="llm-empty">Noch kein Free-Provider eingetragen. Oben genügen Name, HTTPS-Basis und gegebenenfalls API-Key.</div>
+            <div className="llm-empty">Noch kein Free-Provider eingetragen. Oben genügen Name, API-Basis und gegebenenfalls API-Key; FreeLLM API 0.5.0 kann als interner Docker gewählt werden.</div>
           )}
           {api.loading && api.providers.length === 0 && (
             <div className="llm-empty"><RefreshCw className="llm-spin" /> Free-Revolver-Evidence wird geladen…</div>
