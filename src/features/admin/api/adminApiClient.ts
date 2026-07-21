@@ -106,6 +106,65 @@ export interface LlmRevolverStats {
   blockedOrCoolingScopes: number;
 }
 
+export interface LlmRevolverV3Status {
+  runtime: 'postgresql-litellm-evidence';
+  profile: {
+    profileKey?: string;
+    mode?: 'sequential' | 'weighted' | 'race';
+    raceN?: number;
+    timeoutMs?: number;
+    tokenBudget?: number;
+    requiredCapabilities?: string[];
+    structuredRepairAttempts?: number;
+    semanticCacheEnabled?: boolean;
+    revision?: number;
+  };
+  structuredOutput24h: { checks: number; valid: number; invalid: number };
+  semanticCachePolicy: 'cache_safe-only';
+  autoWeights: 'recommendation-only';
+  pricingEvidenceTtlHours: number;
+}
+
+export type FreeRevolverProviderAuthMode = 'bearer' | 'x-api-key' | 'none';
+export type FreeRevolverProviderStatus =
+  | 'awaiting_owner_input' | 'probing' | 'healthy' | 'degraded'
+  | 'blocked' | 'disabled';
+
+export interface FreeRevolverProviderModel {
+  id: string;
+  modelId: string;
+  displayName: string;
+  litellmAlias: string | null;
+  capabilities: string[];
+  freeVerified: boolean;
+  pricingSource: string;
+  pricingVerifiedAt: string | null;
+  status: 'discovered' | 'ready' | 'blocked' | 'disabled';
+  lastCanaryRequestId: string | null;
+  lastCanaryAt: string | null;
+  canaryCostState: 'zero' | 'unreported' | 'nonzero';
+  lastProviderCostUsdMicros: number | null;
+  lastErrorCode: string | null;
+  enabled: boolean;
+}
+
+export interface FreeRevolverProviderSource {
+  id: string;
+  label: string;
+  apiBase: string;
+  modelsUrl: string | null;
+  authMode: FreeRevolverProviderAuthMode;
+  keyHint: string | null;
+  status: FreeRevolverProviderStatus;
+  lastHttpStatus: number | null;
+  lastErrorCode: string | null;
+  lastDiscoveredAt: string | null;
+  lastCheckedAt: string | null;
+  enabled: boolean;
+  ownerRequestId: string | null;
+  models: FreeRevolverProviderModel[];
+}
+
 export interface LlmModelCatalogEntry {
   modelId: string;
   providerModel: string;
@@ -314,6 +373,44 @@ async function req<T>(
   return res.json() as Promise<T>;
 }
 
+async function resolveProtectedOwnerInput(
+  requestId: string,
+  protectedValue: string,
+): Promise<{ ok: true; status: 'consumed'; targetId: string }> {
+  const key = getAdminKey();
+  if (!key) throw new Error('Admin-API-Key fehlt. Bitte im Panel eintragen.');
+  const encoded = new TextEncoder().encode(protectedValue);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(
+      `${ADMIN_API_BASE}/api/admin/owner-input/requests/${encodeURIComponent(requestId)}/resolve?decision=yes`,
+      {
+        method: 'POST',
+        signal: controller.signal,
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/octet-stream',
+          Authorization: `Bearer ${key}`,
+        },
+        body: encoded,
+      },
+    );
+    const body = await response.json().catch(() => ({})) as { error?: string; status?: string; targetId?: string };
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) clearAdminKey();
+      throw new Error(body.error ?? `HTTP ${response.status}`);
+    }
+    return body as { ok: true; status: 'consumed'; targetId: string };
+  } finally {
+    encoded.fill(0);
+    window.clearTimeout(timeout);
+  }
+}
+
 // ── API client ────────────────────────────────────────────────────────────────
 
 export const adminApiClient = {
@@ -413,6 +510,7 @@ export const adminApiClient = {
       routes: LlmRoute[];
       billingCategories: LlmBillingCategoryOption[];
       revolverStats: LlmRevolverStats;
+      revolverV3: LlmRevolverV3Status;
       manualCreditsPerUnitEditing: false;
     }>('/api/admin/llm/routes');
   },
@@ -428,6 +526,87 @@ export const adminApiClient = {
     return req<{ ok: true; routeId: string; quotaScope: string; status: 'ready' }>(
       `/api/admin/llm/routes/${id}/revolver-reset`,
       { method: 'POST', body: '{}' },
+    );
+  },
+
+  getFreeRevolverProviders() {
+    return req<{
+      ok: true;
+      truthOwner: string;
+      keyStorage: string;
+      activationRule: string;
+      providers: FreeRevolverProviderSource[];
+    }>('/api/admin/llm/revolver-v3/providers');
+  },
+
+  createFreeRevolverProvider(input: {
+    label: string;
+    apiBase: string;
+    authMode: FreeRevolverProviderAuthMode;
+  }) {
+    return req<{
+      ok: true;
+      sourceId: string;
+      ownerRequestId: string | null;
+      ownerUrl: string | null;
+      nextAction: string;
+    }>('/api/admin/llm/revolver-v3/providers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  renewFreeRevolverProviderKey(sourceId: string) {
+    return req<{ ok: true; sourceId: string; ownerRequestId: string; ownerUrl: string }>(
+      `/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/owner-input`,
+      { method: 'POST', body: '{}' },
+    );
+  },
+
+  resolveFreeRevolverOwnerInput(requestId: string, protectedValue: string) {
+    return resolveProtectedOwnerInput(requestId, protectedValue);
+  },
+
+  discoverFreeRevolverProvider(sourceId: string, maxAutoActivate = 20) {
+    return req<{
+      ok: boolean;
+      status: FreeRevolverProviderStatus;
+      sourceId: string;
+      modelsUrl: string;
+      discovered: number;
+      freeVerified: number;
+      activated: Array<{
+        modelId: string;
+        routeId?: string;
+        alias?: string;
+        canaryRequestId?: string;
+        canaryCostState?: 'zero' | 'unreported';
+      }>;
+      blocked: Array<{ modelId: string; error?: string }>;
+      unverified: string[];
+      keyStoredBy: string;
+    }>(`/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/discover`, {
+      method: 'POST',
+      body: JSON.stringify({ maxAutoActivate }),
+    }, 180_000);
+  },
+
+  recheckFreeRevolverProvider(sourceId: string) {
+    return req<{
+      ok: boolean;
+      status: FreeRevolverProviderStatus;
+      ready: string[];
+      blocked: string[];
+    }>(`/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/recheck`, {
+      method: 'POST',
+      body: '{}',
+    }, 180_000);
+  },
+
+  updateFreeRevolverProvider(sourceId: string, enabled: boolean) {
+    return req<{ ok: true; sourceId: string; enabled: boolean }>(
+      `/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}`,
+      { method: 'PATCH', body: JSON.stringify({ enabled }) },
     );
   },
 

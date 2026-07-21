@@ -44,36 +44,35 @@ def _priced_model() -> dict:
     }
 
 
-def test_recovery_converts_blocked_route_to_provider_free_quota() -> None:
-    policy = _normalize_provider_recovery_policy(
-        {
-            "billingCategory": "free",
-            "fundingMode": "provider_free_quota",
-            "markupMultiplier": 0,
-        },
-        _deployment(),
-        _priced_model(),
-    )
-
-    assert policy is not None
-    assert policy["billingCategory"] == "free"
-    assert policy["fundingMode"] == "provider_free_quota"
-    assert policy["markupMultiplier"] == 0
-    assert policy["creditsPerUnit"] == 0
-    assert policy["priority"] == 50
-
-
-def test_recovery_rejects_positive_prices_as_verified_zero_cost() -> None:
-    with pytest.raises(BillingPolicyError, match="verified_zero_cost"):
+@pytest.mark.parametrize("funding_mode", ["provider_free_quota", "verified_zero_cost"])
+def test_paid_provider_recovery_cannot_convert_routes_to_free(funding_mode: str) -> None:
+    with pytest.raises(BillingPolicyError, match="Free-Revolver-Providerbereich"):
         _normalize_provider_recovery_policy(
             {
                 "billingCategory": "free",
-                "fundingMode": "verified_zero_cost",
+                "fundingMode": funding_mode,
                 "markupMultiplier": 0,
             },
             _deployment(),
             _priced_model(),
         )
+
+
+def test_recovery_keeps_standard_paid_policy_valid() -> None:
+    policy = _normalize_provider_recovery_policy(
+        {
+            "billingCategory": "standard",
+            "markupMultiplier": 4,
+            "priority": 25,
+        },
+        _deployment(),
+        _priced_model(),
+    )
+    assert policy is not None
+    assert policy["billingCategory"] == "standard"
+    assert policy["fundingMode"] == "provider_priced"
+    assert policy["markupMultiplier"] == 4
+    assert policy["priority"] == 25
 
 
 def test_plain_owner_input_refresh_does_not_change_policy() -> None:

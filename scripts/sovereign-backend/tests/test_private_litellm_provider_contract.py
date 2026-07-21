@@ -165,8 +165,10 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "AGENTS_STANDARD_ROUTE_REQUIRED" in billing
     assert "funded_credits_reserved" in billing
 
-    assert '"billingCategories": list(BILLING_CATEGORY_OPTIONS)' in provider
-    assert '"fundingModes": list(FUNDING_MODE_OPTIONS)' in provider
+    assert '"billingCategories": list(PAID_BILLING_CATEGORY_OPTIONS)' in provider
+    assert '"fundingModes": []' in provider
+    assert "free_routes_require_revolver_provider_onboarding" in provider
+    assert "_require_paid_admin_category" in provider
     assert "FREE_FUNDING_PROVIDER_QUOTA" in provider
     assert '"/api/admin/llm/model-catalog"' in provider
     assert '"/api/admin/llm/model-catalog/attach"' in provider
@@ -175,14 +177,14 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
 
     assert "provider_funded_delta=-amount" in app
     assert "providerBillingCategory" in ui
-    assert "providerFundingMode" in ui
+    assert "providerFundingMode" not in ui
     assert "providerMarkupMultiplier" in ui
     assert "billingCategory:document.getElementById('providerBillingCategory').value" in ui
-    assert "fundingMode:document.getElementById('providerFundingMode').value" in ui
-    assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||0)" in ui
+    assert "fundingMode:document.getElementById('providerFundingMode').value" not in ui
+    assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||4)" in ui
     assert "refreshProviderOwnerInput" in ui
-    assert "prepareProviderFreeQuota" in ui
-    assert "provider_free_quota" in ui
+    assert "prepareProviderFreeQuota" not in ui
+    assert "Kostenfreie Provider werden im getrennten Free-Revolver-Interface verwaltet" in ui
     assert "providerCredentialLabel" in ui
     assert "lastErrorCode" in ui
     assert "billingCategory" in ui
@@ -191,3 +193,5 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "llm_route_revolver_state" in ui
     assert "manual_llm_price_editing_disabled" in ui
     assert "free_route_user_charge_nonzero" in ui
+    assert "free_revolver_managed_route" in app
+    assert '"requiredEndpoint": "/api/admin/llm/revolver-v3/providers"' in app
