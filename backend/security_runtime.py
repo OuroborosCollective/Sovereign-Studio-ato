@@ -407,9 +407,15 @@ def register_security_routes(
                 continue
             value = body[key]
             if key == "purchaseThresholdEur":
-                value = max(0, min(float(value), 100_000))
+                try:
+                    value = max(0.0, min(float(value), 100_000.0))
+                except (ValueError, TypeError):
+                    return jsonify({"error": "Invalid float value for purchaseThresholdEur"}), 400
             elif key == "routeThresholdCredits":
-                value = max(1, min(int(value), 10_000_000))
+                try:
+                    value = max(1, min(int(value), 10_000_000))
+                except (ValueError, TypeError):
+                    return jsonify({"error": "Invalid integer value for routeThresholdCredits"}), 400
             else:
                 value = bool(value)
             sets.append(f"{column}=%s")
@@ -487,7 +493,9 @@ def register_security_routes(
                 purpose="passkey_register",
                 user_id=request.session_user_id,
             )
-            credential = body.get("credential") or {}
+            credential = body.get("credential")
+            if not isinstance(credential, dict):
+                return jsonify({"error": "Credential payload must be a dictionary"}), 400
             verification = api["verify_registration_response"](
                 credential=credential,
                 expected_challenge=bytes(challenge["challenge"]),
@@ -587,7 +595,9 @@ def register_security_routes(
     @app.route("/api/auth/passkey/verify", methods=["POST"])
     def passkey_login_verify():
         body = request.get_json(force=True) or {}
-        credential = body.get("credential") or {}
+        credential = body.get("credential")
+        if not isinstance(credential, dict):
+            return jsonify({"error": "Credential payload must be a dictionary"}), 400
         api = _webauthn()
         conn = get_connection()
         try:
@@ -766,7 +776,9 @@ def register_security_routes(
     @require_session
     def step_up_verify():
         body = request.get_json(force=True) or {}
-        credential = body.get("credential") or {}
+        credential = body.get("credential")
+        if not isinstance(credential, dict):
+            return jsonify({"error": "Credential payload must be a dictionary"}), 400
         api = _webauthn()
         conn = get_connection()
         try:
