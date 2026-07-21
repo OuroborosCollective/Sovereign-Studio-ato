@@ -73,3 +73,12 @@ def test_canonical_agent_runtime_mirrors_are_equal() -> None:
         assert (BACKEND / "agent_runtime" / name).read_bytes() == (
             ROOT / "backend" / "agent_runtime" / name
         ).read_bytes()
+
+
+def test_execution_resolver_top_level_mirrors_are_equal() -> None:
+    for name in (
+        "llm_cost_policy.py",
+        "llm_revolver.py",
+        "llm_execution_resolver.py",
+    ):
+        assert (BACKEND / name).read_bytes() == (ROOT / "backend" / name).read_bytes()
