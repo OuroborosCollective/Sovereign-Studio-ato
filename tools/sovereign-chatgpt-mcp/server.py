@@ -539,18 +539,6 @@ def owner_approval_request_status(request_id: str) -> dict[str, Any]:
     return owner_input.status(request_id)
 
 
-@mcp.tool(annotations=EXTERNAL_WRITE)
-def litellm_provider_route_activate(
-    route_id: str,
-    owner_request_id: str,
-) -> dict[str, Any]:
-    """Activate one prepared LiteLLM route after its exact Owner request was consumed."""
-    return owner_input.activate_provider_route(
-        route_id=route_id,
-        owner_request_id=owner_request_id,
-    )
-
-
 @mcp.tool(
     annotations=NETWORK_READ,
     meta=OWNER_INPUT_TOOL_META,
