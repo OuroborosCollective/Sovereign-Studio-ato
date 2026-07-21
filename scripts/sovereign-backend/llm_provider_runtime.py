@@ -7,6 +7,7 @@ value is accepted only by owner_input_runtime and is never stored in this DB.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -872,9 +873,7 @@ def register_llm_provider_routes(
             "markupMultiplier": policy["markupMultiplier"] if policy else deployment.get("markup_multiplier"),
         }), 202
 
-    @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])
-    @require_admin
-    def admin_activate_llm_provider(route_id: str):
+    def _activate_llm_provider(route_id: str):
         deployment = query(
             """SELECT deployment.route_id, deployment.provider_name,
                       deployment.provider_prefix, deployment.upstream_model_id,
@@ -1193,3 +1192,36 @@ def register_llm_provider_routes(
                 protected[index] = 0
             if secret_loaded:
                 _securely_remove(path)
+
+    @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])
+    @require_admin
+    def admin_activate_llm_provider(route_id: str):
+        return _activate_llm_provider(route_id)
+
+    @app.route("/api/internal/llm/provider-deployments/<route_id>/activate", methods=["POST"])
+    def internal_activate_llm_provider(route_id: str):
+        expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+        supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+            return jsonify({"error": "Nicht autorisiert", "blocker": "owner_service_auth_required"}), 401
+        body = request.get_json(silent=True) or {}
+        owner_request_id = str(body.get("ownerRequestId") or "").strip()
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_request_id):
+            return jsonify({"error": "ownerRequestId ist ungültig", "blocker": "owner_request_id_invalid"}), 400
+        deployment = query(
+            """SELECT owner_request_id::text AS owner_request_id
+               FROM llm_provider_deployments
+               WHERE route_id=%s LIMIT 1""",
+            (route_id,), one=True,
+        )
+        if not deployment:
+            return jsonify({"error": "Providerroute nicht gefunden", "blocker": "provider_route_missing"}), 404
+        if not hmac.compare_digest(
+            str(deployment.get("owner_request_id") or ""),
+            owner_request_id,
+        ):
+            return jsonify({
+                "error": "Owner-Anfrage gehört nicht zur aktuellen Providerroute",
+                "blocker": "owner_request_route_mismatch",
+            }), 409
+        return _activate_llm_provider(route_id)
