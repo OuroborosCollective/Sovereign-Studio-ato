@@ -74,6 +74,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "patchmon-sovereign-database-1" in script
     assert "patchmon-sovereign-redis-1" in script
     assert "patchmon-sovereign-guacd-1" in script
+    assert "sovereign-freellmapi" in script
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
@@ -92,6 +93,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/pgbackweb-wq5r' in worker_service
     assert '/opt/patchmon-sovereign' in worker_service
     assert '/opt/milvus-sovereign' in worker_service
+    assert '/opt/sovereign-freellmapi' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
@@ -99,12 +101,16 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'templates/pgbackweb-wq5r' in script
     assert 'templates/patchmon-sovereign' in script
     assert 'templates/milvus-sovereign' in script
+    assert 'templates/sovereign-freellmapi' in script
     assert 'install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"' in script
     assert 'install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"' in script
     assert 'install -m 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml"' in script
+    assert 'install -m 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml"' in script
     assert '"pgbackweb-wq5r"' in script
     assert '"patchmon-sovereign"' in script
     assert '"milvus-sovereign"' in script
+    assert '"sovereign-freellmapi"' in script
+    assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 

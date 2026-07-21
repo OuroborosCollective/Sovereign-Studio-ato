@@ -11,18 +11,31 @@ from typing import Any
 
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,239}$")
 _MAX_DISCOVERED_MODELS = 200
+_MANAGED_INTERNAL_API_BASE = "http://freellmapi:3001/v1"
+_MANAGED_INTERNAL_HOST = "freellmapi"
+_MANAGED_INTERNAL_PORT = 3001
 
 
 def normalize_api_base(value: Any) -> str:
     candidate = str(value or "").strip().rstrip("/")
     parsed = urllib.parse.urlsplit(candidate)
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise ValueError("API-Basis muss eine vollständige HTTPS-URL sein")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("API-Basis darf keine Zugangsdaten, Query oder Fragmente enthalten")
     path = parsed.path.rstrip("/")
     if path.endswith("/models"):
         path = path[:-7].rstrip("/")
+    if (
+        parsed.scheme == "http"
+        and (parsed.hostname or "").lower() == _MANAGED_INTERNAL_HOST
+        and parsed.port == _MANAGED_INTERNAL_PORT
+        and path == "/v1"
+    ):
+        return _MANAGED_INTERNAL_API_BASE
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError(
+            "API-Basis muss eine vollständige HTTPS-URL oder der verwaltete "
+            "FreeLLM-API-Docker-Endpunkt sein"
+        )
     normalized = urllib.parse.urlunsplit(("https", parsed.netloc.lower(), path, "", ""))
     return normalized.rstrip("/")
 
@@ -34,6 +47,20 @@ def models_url_candidates(api_base: str) -> tuple[str, ...]:
     else:
         candidates = (f"{base}/v1/models", f"{base}/models")
     return tuple(dict.fromkeys(candidate.rstrip("/") for candidate in candidates))
+
+
+def is_managed_internal_provider_url(url: str) -> bool:
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    return (
+        parsed.scheme == "http"
+        and (parsed.hostname or "").lower() == _MANAGED_INTERNAL_HOST
+        and parsed.port == _MANAGED_INTERNAL_PORT
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.query == ""
+        and parsed.fragment == ""
+        and parsed.path.rstrip("/") in {"/v1", "/v1/models", "/models"}
+    )
 
 
 def assert_public_https_host(url: str) -> None:
@@ -57,6 +84,12 @@ def assert_public_https_host(url: str) -> None:
             or address.is_unspecified
         ):
             raise ValueError("Private oder reservierte Provider-Adressen sind nicht erlaubt")
+
+
+def assert_provider_target_allowed(url: str) -> None:
+    if is_managed_internal_provider_url(url):
+        return
+    assert_public_https_host(url)
 
 
 def _numeric_zero(value: Any) -> bool | None:

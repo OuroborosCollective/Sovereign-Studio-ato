@@ -20,14 +20,16 @@ from flask import jsonify, request
 
 from litellm_runtime import fetch_litellm, litellm_completion_canary
 from free_revolver_provider_contracts import (
-    assert_public_https_host,
+    assert_provider_target_allowed,
+    is_managed_internal_provider_url,
     models_url_candidates,
     normalize_api_base,
     normalize_models_payload,
 )
 
 _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
-_AUTH_MODES = {"bearer", "x-api-key", "none"}
+_MANAGED_AUTH_MODE = "managed-bearer"
+_AUTH_MODES = {"bearer", "x-api-key", "none", _MANAGED_AUTH_MODE}
 _MAX_AUTO_ACTIVATE = 50
 _MAX_MODELS_RESPONSE_BYTES = 2_000_000
 
@@ -39,6 +41,17 @@ def _owner_root() -> Path:
 def _secret_path(owner_request_id: str) -> Path:
     safe_request_id = str(uuid.UUID(str(owner_request_id or "")))
     return _owner_root() / f"revolver_provider_key.{safe_request_id}.txt"
+
+
+def _managed_secret_path() -> Path:
+    root = _owner_root()
+    candidate = Path(os.getenv(
+        "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE",
+        str(root / "freellmapi_unified_key.txt"),
+    )).resolve()
+    if candidate.parent != root or candidate.name != "freellmapi_unified_key.txt":
+        raise RuntimeError("free_provider_managed_secret_path_invalid")
+    return candidate
 
 
 def _securely_remove(path: Path) -> None:
@@ -95,7 +108,7 @@ def _cleanup_orphaned_secret_files(query: Callable[..., Any]) -> int:
 
 def _auth_headers(auth_mode: str, key: str) -> dict[str, str]:
     headers = {"Accept": "application/json", "User-Agent": "sovereign-free-revolver/3"}
-    if auth_mode == "bearer":
+    if auth_mode in {"bearer", _MANAGED_AUTH_MODE}:
         headers["Authorization"] = f"Bearer {key}"
     elif auth_mode == "x-api-key":
         headers["X-API-Key"] = key
@@ -257,10 +270,15 @@ def register_free_revolver_provider_runtime(
         if not label:
             return jsonify({"error": "Provider-Name fehlt"}), 400
         if auth_mode not in _AUTH_MODES:
-            return jsonify({"error": "authMode muss bearer, x-api-key oder none sein"}), 400
+            return jsonify({"error": "authMode muss bearer, x-api-key, none oder managed-bearer sein"}), 400
         try:
             api_base = normalize_api_base(body.get("apiBase"))
-            assert_public_https_host(api_base)
+            assert_provider_target_allowed(api_base)
+            managed_target = is_managed_internal_provider_url(api_base)
+            if (auth_mode == _MANAGED_AUTH_MODE) != managed_target:
+                raise ValueError(
+                    "managed-bearer ist ausschließlich für den verwalteten FreeLLM-API-Docker-Endpunkt erlaubt"
+                )
         except ValueError as exc:
             return jsonify({"error": str(exc), "blocker": "free_provider_url_invalid"}), 400
         existing = query(
@@ -279,14 +297,14 @@ def register_free_revolver_provider_runtime(
                 label,
                 api_base,
                 auth_mode,
-                "degraded" if auth_mode == "none" else "awaiting_owner_input",
+                "degraded" if auth_mode in {"none", _MANAGED_AUTH_MODE} else "awaiting_owner_input",
                 str(admin.get("id") or ""),
             ),
             one=True, write=True,
         )
         source_id = str(source["id"])
         request_id = None
-        if auth_mode != "none":
+        if auth_mode in {"bearer", "x-api-key"}:
             try:
                 request_id = _request_owner_input(get_connection, source_id=source_id, label=label)
             except Exception:
@@ -303,6 +321,8 @@ def register_free_revolver_provider_runtime(
             "nextAction": (
                 "Discovery starten; diese API benötigt keinen Key."
                 if auth_mode == "none"
+                else "Discovery starten; der interne FreeLLM-Schlüssel bleibt owner-managed."
+                if auth_mode == _MANAGED_AUTH_MODE
                 else "API-Key sicher eintragen und danach Discovery starten."
             ),
         }), 201
@@ -320,8 +340,8 @@ def register_free_revolver_provider_runtime(
             "SELECT auth_mode FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1",
             (source_id,), one=True,
         ) or {}
-        if str(auth.get("auth_mode") or "") == "none":
-            return jsonify({"error": "Diese Provider-API benötigt keinen Key"}), 409
+        if str(auth.get("auth_mode") or "") in {"none", _MANAGED_AUTH_MODE}:
+            return jsonify({"error": "Dieser Provider verwendet keinen erneuerbaren Owner-Input-Key"}), 409
         try:
             request_id = _request_owner_input(
                 get_connection,
@@ -371,7 +391,7 @@ def register_free_revolver_provider_runtime(
         litellm_params: dict[str, Any] = {
             "model": f"openai/{model_id}",
             "api_base": str(source["api_base"]),
-            "api_key": key if source.get("auth_mode") == "bearer" else "",
+            "api_key": key if source.get("auth_mode") in {"bearer", _MANAGED_AUTH_MODE} else "",
         }
         if source.get("auth_mode") == "x-api-key":
             litellm_params["extra_headers"] = {"X-API-Key": key}
@@ -520,7 +540,7 @@ def register_free_revolver_provider_runtime(
             (owner_request_id,), one=True,
         ) if owner_request_id else None
         if (
-            source.get("auth_mode") != "none"
+            source.get("auth_mode") in {"bearer", "x-api-key"}
             and (
                 not owner_request
                 or owner_request.get("status") != "consumed"
@@ -548,8 +568,10 @@ def register_free_revolver_provider_runtime(
 
         protected = bytearray()
         path = (
-            _secret_path(owner_request_id)
-            if source["auth_mode"] != "none"
+            _managed_secret_path()
+            if source["auth_mode"] == _MANAGED_AUTH_MODE
+            else _secret_path(owner_request_id)
+            if source["auth_mode"] in {"bearer", "x-api-key"}
             else _owner_root() / ".no-key-provider"
         )
         selected_url = None
@@ -569,7 +591,13 @@ def register_free_revolver_provider_runtime(
             key_fingerprint = hashlib.sha256(
                 (key if key else f"public:{source['api_base']}").encode()
             ).hexdigest()
-            key_hint = f"…{key[-4:]}" if key else "ohne Key"
+            key_hint = (
+                "owner-managed"
+                if source["auth_mode"] == _MANAGED_AUTH_MODE
+                else f"…{key[-4:]}"
+                if key
+                else "ohne Key"
+            )
             source["key_fingerprint"] = key_fingerprint
             source["key_hint"] = key_hint
             headers = _auth_headers(str(source["auth_mode"]), key)
@@ -577,7 +605,7 @@ def register_free_revolver_provider_runtime(
             with requests.Session() as provider_session:
                 provider_session.trust_env = False
                 for candidate in models_url_candidates(str(source["api_base"])):
-                    assert_public_https_host(candidate)
+                    assert_provider_target_allowed(candidate)
                     with provider_session.get(
                         candidate,
                         headers=headers,
@@ -757,7 +785,11 @@ def register_free_revolver_provider_runtime(
                 "activated": activated,
                 "blocked": blocked,
                 "unverified": [model["modelId"] for model in models if not model["freeVerified"]],
-                "keyStoredBy": "private-litellm-only",
+                "keyStoredBy": (
+                    "owner-managed-file-and-private-litellm"
+                    if source["auth_mode"] == _MANAGED_AUTH_MODE
+                    else "private-litellm-only"
+                ),
             }), 200 if activated else 409
         except PermissionError as exc:
             code = str(exc)
@@ -793,7 +825,7 @@ def register_free_revolver_provider_runtime(
             key = ""
             for index in range(len(protected)):
                 protected[index] = 0
-            if source.get("auth_mode") != "none":
+            if source.get("auth_mode") in {"bearer", "x-api-key"}:
                 _securely_remove(path)
 
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>/recheck", methods=["POST"])

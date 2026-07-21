@@ -11,7 +11,9 @@ REPO = BACKEND.parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from free_revolver_provider_contracts import (
+    assert_provider_target_allowed,
     assert_public_https_host,
+    is_managed_internal_provider_url,
     models_url_candidates,
     normalize_api_base,
     normalize_models_payload,
@@ -34,6 +36,22 @@ def test_models_url_is_normalized_and_discovered_deterministically() -> None:
 def test_provider_url_rejects_credentials_in_url() -> None:
     with pytest.raises(ValueError, match="Zugangsdaten"):
         normalize_api_base("https://user:secret@api.example.test/v1")
+
+
+def test_only_exact_managed_freellmapi_endpoint_bypasses_public_https_resolution() -> None:
+    managed = "http://freellmapi:3001/v1"
+    assert normalize_api_base(managed) == managed
+    assert is_managed_internal_provider_url(managed) is True
+    assert is_managed_internal_provider_url(f"{managed}/models") is True
+    assert_provider_target_allowed(f"{managed}/models")
+    for blocked in (
+        "http://freellmapi:3002/v1",
+        "http://freellmapi:3001/admin",
+        "http://sovereign-backend:8787/v1",
+        "http://127.0.0.1:3001/v1",
+    ):
+        with pytest.raises(ValueError):
+            normalize_api_base(blocked)
 
 
 def test_ssrf_guard_rejects_private_resolved_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,6 +109,7 @@ def test_database_never_receives_raw_provider_keys() -> None:
 def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_keys() -> None:
     migration_31 = (BACKEND / "migrations" / "031_sovereign_free_revolver_v3.sql").read_text("utf-8")
     migration_32 = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
+    migration_33 = (BACKEND / "migrations" / "033_freellmapi_managed_provider.sql").read_text("utf-8")
 
     assert "tenant_id UUID NULL REFERENCES admin_users" not in migration_31
     assert "tenant_id UUID NOT NULL REFERENCES admin_users" not in migration_31
@@ -109,6 +128,8 @@ def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_key
     assert "to_regclass('admin_users') IS NOT NULL" in migration_32
     assert "fk_llm_revolver_provider_owner_request" in migration_32
     assert "fk_llm_revolver_provider_created_by" in migration_32
+    assert "managed-bearer" in migration_33
+    assert "api_key" not in migration_33.lower()
 
 
 def test_app_registers_provider_runtime_and_readiness_requires_migration() -> None:
@@ -116,6 +137,7 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     owner_runtime = (BACKEND / "owner_input_runtime.py").read_text("utf-8")
     assert "register_free_revolver_provider_runtime(" in app
     assert "032_free_revolver_provider_control.sql" in app
+    assert "033_freellmapi_managed_provider.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     assert '"revolver_provider_key"' in owner_runtime
@@ -133,7 +155,7 @@ def test_provider_recovery_and_key_rotation_are_fail_closed() -> None:
     assert "_cleanup_orphaned_secret_files(query)" in runtime
     assert 'glob("revolver_provider_key.*.txt")' in runtime
     assert "f\"{source_id}\\n{model_id}\\n{key_fingerprint}\"" in runtime
-    assert 'key if source.get("auth_mode") == "bearer" else ""' in runtime
+    assert 'source.get("auth_mode") in {"bearer", _MANAGED_AUTH_MODE}' in runtime
     assert "ON CONFLICT (id) DO UPDATE SET" in runtime
     assert "model_id=EXCLUDED.model_id" in runtime
 
@@ -153,3 +175,6 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "provider_model.pricing_verified_at" in route_runtime
     assert "provider_session.trust_env = False" in runtime
     assert runtime.count("COALESCE(to_jsonb(%s::text), 'null'::jsonb)") >= 2
+    assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in runtime
+    assert 'candidate.name != "freellmapi_unified_key.txt"' in runtime
+    assert 'source.get("auth_mode") in {"bearer", "x-api-key"}' in runtime

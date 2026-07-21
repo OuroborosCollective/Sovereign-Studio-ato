@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -49,6 +50,17 @@ CODE_SERVER_ENV_KEYS = (
     "DEFAULT_WORKSPACE",
 )
 CODE_SERVER_AUTH_KEYS = ("PASSWORD", "HASHED_PASSWORD")
+FREELLMAPI_CONTAINER = "sovereign-freellmapi"
+FREELLMAPI_IMAGE = (
+    "ghcr.io/tashfeenahmed/freellmapi:v0.5.0@"
+    "sha256:e3ffcd7f78527cf16113fa196174bebdd6fa5dd0c84adfa9e577f43f4a48a784"
+)
+FREELLMAPI_REPO_DIGEST = (
+    "ghcr.io/tashfeenahmed/freellmapi@"
+    "sha256:e3ffcd7f78527cf16113fa196174bebdd6fa5dd0c84adfa9e577f43f4a48a784"
+)
+FREELLMAPI_DATA_VOLUME = "sovereign-freellmapi-data"
+FREELLMAPI_OWNER_KEY_PATH = "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
 
 
 @dataclass(frozen=True)
@@ -162,6 +174,17 @@ STACKS: dict[str, ManagedStack] = {
         allowed_networks=("patchmon-internal", "patchmon-edge"),
         allowed_bind_roots=("/opt/patchmon-sovereign",),
         allowed_published_ports=("127.0.0.1:32830:3000",),
+    ),
+    "sovereign-freellmapi": ManagedStack(
+        stack_id="sovereign-freellmapi",
+        project_name="sovereign-freellmapi",
+        anchor_container=FREELLMAPI_CONTAINER,
+        expected_containers=(FREELLMAPI_CONTAINER,),
+        allowed_services=("freellmapi",),
+        deploy_root="/opt/sovereign-freellmapi",
+        template_name="sovereign-freellmapi",
+        allowed_networks=("sovereign-private",),
+        allowed_bind_roots=("/opt/sovereign-freellmapi",),
     ),
 }
 
@@ -408,7 +431,12 @@ class ManagedComposeRuntime:
                 "preserved_from_running_container"
                 if stack.stack_id == "code-server-46bq"
                 else "generated_on_confirmed_deploy"
-                if stack.stack_id in {"pgbackweb-wq5r", "patchmon-sovereign", "milvus-sovereign"}
+                if stack.stack_id in {
+                    "pgbackweb-wq5r",
+                    "patchmon-sovereign",
+                    "milvus-sovereign",
+                    "sovereign-freellmapi",
+                }
                 else "external_or_not_required"
             ),
         }
@@ -489,6 +517,12 @@ class ManagedComposeRuntime:
             image = str(service.get("image") or "")
             if image and (image.endswith(":latest") or ":latest@" in image):
                 raise RuntimeError(f"Unfixiertes latest-Image ist gesperrt: {service_name}")
+            if (
+                stack.stack_id == "sovereign-freellmapi"
+                and service_name == "freellmapi"
+                and image != FREELLMAPI_IMAGE
+            ):
+                raise RuntimeError("FreeLLM API muss exakt auf v0.5.0 und den freigegebenen Digest gepinnt sein")
             service_networks = service.get("networks")
             if isinstance(service_networks, dict):
                 used_networks = set(service_networks)
@@ -682,7 +716,12 @@ class ManagedComposeRuntime:
     def _ensure_stack_secret_env(self, stack: ManagedStack) -> dict[str, Any]:
         if stack.stack_id == "code-server-46bq":
             return self._ensure_code_server_env(stack)
-        if stack.stack_id not in {"pgbackweb-wq5r", "patchmon-sovereign", "milvus-sovereign"}:
+        if stack.stack_id not in {
+            "pgbackweb-wq5r",
+            "patchmon-sovereign",
+            "milvus-sovereign",
+            "sovereign-freellmapi",
+        }:
             return {
                 "required": False,
                 "created": False,
@@ -744,6 +783,11 @@ class ManagedComposeRuntime:
                 "TZ": "Europe/Berlin",
                 "AGENT_UPDATE_BODY_LIMIT": "5mb",
             }
+        elif stack.stack_id == "sovereign-freellmapi":
+            required_lengths = {
+                "ENCRYPTION_KEY": 64,
+            }
+            fixed_values = {}
         else:
             required_lengths = {
                 "MINIO_ACCESS_KEY_ID": 32,
@@ -1145,6 +1189,165 @@ class ManagedComposeRuntime:
         }
 
     @staticmethod
+    def _freellmapi_transport_ready(state: dict[str, Any]) -> bool:
+        mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict) and item.get("destination") == "/app/server/data"
+        ]
+        data_volume_ready = (
+            len(mounts) == 1
+            and mounts[0].get("type") == "volume"
+            and mounts[0].get("name") == FREELLMAPI_DATA_VOLUME
+            and mounts[0].get("rw") is True
+        )
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and not (state.get("publishedPorts") or {})
+            and "sovereign-private" in set(state.get("networks") or [])
+            and state.get("imageReference") == FREELLMAPI_IMAGE
+            and FREELLMAPI_REPO_DIGEST in set(state.get("repoDigests") or [])
+            and data_volume_ready
+        )
+
+    def _freellmapi_owner_key_sync(self) -> dict[str, Any]:
+        script = r"""
+const Database = require('better-sqlite3');
+const db = new Database('/app/server/data/freeapi.db', { readonly: true });
+const row = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get();
+db.close();
+const key = String(row && row.value ? row.value : '');
+if (!/^freellmapi-[0-9a-f]{48}$/.test(key)) process.exit(2);
+process.stdout.write(key);
+"""
+        key = ""
+        last_family = "database_not_ready"
+        for _attempt in range(45):
+            result = self._run(
+                ["docker", "exec", FREELLMAPI_CONTAINER, "node", "-e", script],
+                timeout=20,
+            )
+            candidate = str(result.get("stdout") or "").strip()
+            if result.get("ok") and re.fullmatch(r"freellmapi-[0-9a-f]{48}", candidate):
+                key = candidate
+                break
+            last_family = "unified_key_invalid" if result.get("ok") else "database_not_ready"
+            time.sleep(2)
+        if not key:
+            return {
+                "ok": False,
+                "status": "FREELLMAPI_OWNER_KEY_SYNC_FAILED",
+                "errorFamily": last_family,
+                "secretValuesReturned": False,
+            }
+
+        destination = Path(FREELLMAPI_OWNER_KEY_PATH)
+        root = destination.parent
+        if root.is_symlink() or (root.exists() and not root.is_dir()):
+            return {
+                "ok": False,
+                "status": "FREELLMAPI_OWNER_KEY_SYNC_FAILED",
+                "errorFamily": "owner_root_invalid",
+                "secretValuesReturned": False,
+            }
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        root_mode = stat.S_IMODE(root.stat().st_mode)
+        if root_mode & 0o077:
+            return {
+                "ok": False,
+                "status": "FREELLMAPI_OWNER_KEY_SYNC_FAILED",
+                "errorFamily": "owner_root_permissions_invalid",
+                "secretValuesReturned": False,
+            }
+        if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+            return {
+                "ok": False,
+                "status": "FREELLMAPI_OWNER_KEY_SYNC_FAILED",
+                "errorFamily": "owner_key_path_invalid",
+                "secretValuesReturned": False,
+            }
+        payload = (key + "\n").encode("utf-8")
+        self._write_atomic(destination, payload, mode=0o600)
+        os.chmod(destination, 0o600)
+        fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        key = ""
+        return {
+            "ok": True,
+            "status": "FREELLMAPI_OWNER_KEY_SYNCED",
+            "path": str(destination),
+            "mode": "0600",
+            "keyFingerprintSha256": fingerprint,
+            "secretValuesReturned": False,
+        }
+
+    def _freellmapi_runtime_canary(self) -> dict[str, Any]:
+        script = r"""
+const crypto = require('crypto');
+const Database = require('better-sqlite3');
+(async () => {
+  const db = new Database('/app/server/data/freeapi.db', { readonly: true });
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'unified_api_key'").get();
+  db.close();
+  const key = String(row && row.value ? row.value : '');
+  if (!/^freellmapi-[0-9a-f]{48}$/.test(key)) throw new Error('unified_key_invalid');
+  const ping = await fetch('http://127.0.0.1:3001/api/ping');
+  const models = await fetch('http://127.0.0.1:3001/v1/models?available=true', {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  const raw = await models.text();
+  if (raw.length > 2000000) throw new Error('models_response_too_large');
+  const payload = JSON.parse(raw);
+  const rows = Array.isArray(payload && payload.data) ? payload.data : [];
+  if (!ping.ok || !models.ok) throw new Error('http_not_ready');
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    pingStatus: ping.status,
+    modelsStatus: models.status,
+    modelCount: rows.length,
+    unifiedKeySha256: crypto.createHash('sha256').update(key).digest('hex'),
+  }));
+})().catch((error) => {
+  const message = String(error && error.message ? error.message : 'runtime_canary_failed');
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    errorFamily: /^[a-z0-9_]{1,80}$/.test(message) ? message : 'runtime_canary_failed',
+  }));
+  process.exitCode = 1;
+});
+"""
+        receipt: dict[str, Any] = {}
+        for _attempt in range(30):
+            result = self._run(
+                ["docker", "exec", FREELLMAPI_CONTAINER, "node", "-e", script],
+                timeout=30,
+            )
+            try:
+                receipt = json.loads(str(result.get("stdout") or "").strip())
+            except json.JSONDecodeError:
+                receipt = {}
+            if result.get("ok") and receipt.get("ok") is True:
+                break
+            time.sleep(2)
+        ok = bool(
+            receipt.get("ok") is True
+            and int(receipt.get("pingStatus") or 0) == 200
+            and int(receipt.get("modelsStatus") or 0) == 200
+            and re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("unifiedKeySha256") or ""))
+        )
+        return {
+            "ok": ok,
+            "status": "FREELLMAPI_AUTHENTICATED_MODELS_VERIFIED" if ok else "FREELLMAPI_RUNTIME_CANARY_FAILED",
+            "pingStatus": int(receipt.get("pingStatus") or 0),
+            "modelsStatus": int(receipt.get("modelsStatus") or 0),
+            "modelCount": int(receipt.get("modelCount") or 0),
+            "keyFingerprintSha256": str(receipt.get("unifiedKeySha256") or "") if ok else "",
+            "errorFamily": None if ok else str(receipt.get("errorFamily") or "runtime_canary_failed"),
+            "responseContentReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    @staticmethod
     def _patchmon_http_canary() -> dict[str, Any]:
         last_error = ""
         for _attempt in range(30):
@@ -1497,11 +1700,31 @@ const call = async (names, payload) => {
             transport_verified = self._patchmon_server_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "code-server-46bq":
             transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "sovereign-freellmapi":
+            transport_verified = self._freellmapi_transport_ready(states.get(stack.anchor_container, {}))
         else:
             transport_verified = True
 
         if stack.stack_id == "patchmon-sovereign":
             runtime_canary = self._patchmon_http_canary()
+        elif stack.stack_id == "sovereign-freellmapi":
+            owner_key_sync = self._freellmapi_owner_key_sync()
+            authenticated_models = (
+                self._freellmapi_runtime_canary()
+                if owner_key_sync.get("ok")
+                else {"ok": False, "status": "SKIPPED_OWNER_KEY_SYNC_FAILED"}
+            )
+            runtime_canary = {
+                "ok": bool(owner_key_sync.get("ok") and authenticated_models.get("ok")),
+                "status": (
+                    "FREELLMAPI_OWNER_KEY_AND_MODELS_VERIFIED"
+                    if owner_key_sync.get("ok") and authenticated_models.get("ok")
+                    else "FREELLMAPI_RUNTIME_UNVERIFIED"
+                ),
+                "ownerKeySync": owner_key_sync,
+                "authenticatedModels": authenticated_models,
+                "secretValuesReturned": False,
+            }
         elif stack.stack_id == "milvus-sovereign":
             transport_canary = self._milvus_runtime_canary()
             collection_canary = (

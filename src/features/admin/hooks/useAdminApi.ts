@@ -323,7 +323,7 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
       apiBase: input.apiBase,
       authMode: input.authMode,
     });
-    if (input.authMode !== 'none') {
+    if (input.authMode === 'bearer' || input.authMode === 'x-api-key') {
       if (!created.ownerRequestId || input.apiKey.length < 8) {
         throw new Error('Ein gültiger API-Key ist für diesen Auth-Modus erforderlich.');
       }
