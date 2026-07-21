@@ -6,6 +6,13 @@ on:
     paths:
       - 'scripts/sovereign-backend/**'
       - 'tools/sovereign-chatgpt-mcp/**'
+      - 'src/features/admin/**'
+      - 'src/SovereignAppWrapper.tsx'
+      - 'src/main.tsx'
+      - 'index.html'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
       - '.github/workflows/sovereign-backend-image.yml'
   push:
     branches: [main]
@@ -35,6 +42,35 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.12.2 --activate
+
+      - name: Install frozen web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build revision-bound React admin
+        env:
+          VITE_ADMIN_API_BASE: ''
+          VITE_SOVEREIGN_SOURCE_REVISION: ${{ github.sha }}
+        run: pnpm run build:web
+
+      - name: Stage canonical admin artifact for backend image
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          rm -rf scripts/sovereign-backend/admin-dist
+          cp -a dist scripts/sovereign-backend/admin-dist
+          grep -Rqs 'CANONICAL_REACT_ADMIN' scripts/sovereign-backend/admin-dist
+          grep -Rqs '${{ github.sha }}' scripts/sovereign-backend/admin-dist
+          grep -Rqs 'Free Revolver' scripts/sovereign-backend/admin-dist
 
       - name: Compile backend before image build
         run: |
@@ -78,10 +114,24 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.title=sovereign-backend
-          provenance: mode=max
-          sbom: true
+          load: ${{ github.event_name == 'pull_request' }}
+          provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=max' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify canonical admin inside PR image
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint python "${IMAGE_NAME}:${GITHUB_SHA}" -c '
+          from pathlib import Path
+          root = Path("/app/admin-dist")
+          assert (root / "index.html").is_file()
+          rendered = "\n".join(path.read_text("utf-8", errors="ignore") for path in root.rglob("*") if path.is_file())
+          assert "CANONICAL_REACT_ADMIN" in rendered
+          assert "Free Revolver" in rendered
+          '
 
       - name: Report immutable image evidence
         run: |

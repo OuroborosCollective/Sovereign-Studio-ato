@@ -252,7 +252,7 @@ function ReadyContent() {
 
 // ── Root panel ────────────────────────────────────────────────────────────────
 
-export function AdminPanel(_props: LauncherToolProps) {
+export function AdminPanel(_props?: LauncherToolProps) {
   const [ready, setReady] = useState(false);
 
   // On mount: if a key exists and user not yet in store, re-validate the key.

@@ -33,8 +33,9 @@ from security_oauth import (
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request, make_response, g
+from flask import Flask, jsonify, request, make_response, g, abort, redirect, send_from_directory
 from flask_cors import CORS
+from werkzeug.exceptions import NotFound
 import requests
 
 from litellm_runtime import (
@@ -88,7 +89,6 @@ from proven_learning_runtime import register_proven_learning_routes
 from llm_provider_runtime import register_llm_provider_routes
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
-from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML
 
 # GitHub App integration (Marketplace)
 try:
@@ -2154,11 +2154,17 @@ def health_ready():
         "httpStatus": lite.get("httpStatus"),
         "errorCode": lite.get("errorCode") if not lite.get("ok") else None,
     }
+    components["adminUi"] = {
+        "ok": os.path.isfile(ADMIN_INDEX_PATH),
+        "producer": "CANONICAL_REACT_ADMIN",
+        "artifact": "admin-dist/index.html",
+    }
     database = components["database"]
     ready = bool(
         database.get("ok")
         and not database.get("invalidDirectRoutes")
         and components["litellm"].get("ok")
+        and components["adminUi"].get("ok")
     )
     return jsonify({
         "ok": ready,
@@ -5314,12 +5320,45 @@ def tc_skills_delete(skill_id: str):
 
 
 
-@app.route("/admin")
-@app.route("/admin/")
-def admin_panel():
-    resp = make_response(ENTERPRISE_ADMIN_HTML)
+ADMIN_DIST_DIR = os.getenv(
+    "SOVEREIGN_ADMIN_DIST_DIR",
+    os.path.join(os.path.dirname(__file__), "admin-dist"),
+).strip()
+ADMIN_INDEX_PATH = os.path.join(ADMIN_DIST_DIR, "index.html")
+
+
+def _admin_index_response():
+    if not os.path.isfile(ADMIN_INDEX_PATH):
+        return make_response("Canonical React admin artifact is unavailable.", 503)
+    resp = send_from_directory(ADMIN_DIST_DIR, "index.html")
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Sovereign-Admin-Producer"] = "CANONICAL_REACT_ADMIN"
+    resp.headers["X-Sovereign-Source-Revision"] = os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified")
+    return resp
+
+
+@app.route("/admin")
+def admin_panel_redirect():
+    return redirect("/admin/", code=308)
+
+
+@app.route("/admin/")
+def admin_panel():
+    return _admin_index_response()
+
+
+@app.route("/admin/<path:asset_path>")
+def admin_asset(asset_path: str):
+    if not os.path.isdir(ADMIN_DIST_DIR):
+        return make_response("Canonical React admin artifact is unavailable.", 503)
+    try:
+        resp = send_from_directory(ADMIN_DIST_DIR, asset_path)
+    except NotFound:
+        if "." in os.path.basename(asset_path):
+            abort(404)
+        return _admin_index_response()
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return resp
 
 

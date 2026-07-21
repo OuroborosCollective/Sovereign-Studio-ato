@@ -8,10 +8,18 @@
  * Issue #460
  */
 
-// Resolved at build time by Vite; falls back to production URL.
-export const ADMIN_API_BASE: string =
-  (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+// Resolved at build time by Vite. The backend-served /admin surface uses
+// same-origin requests; the standalone/mobile app retains the production fallback.
+const configuredAdminApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
+const backendServedAdmin = typeof window !== 'undefined'
+  && /^https?:$/.test(window.location.protocol)
+  && (window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/'));
+
+export const ADMIN_API_BASE: string = configuredAdminApiBase
+  ? configuredAdminApiBase.replace(/\/$/, '')
+  : backendServedAdmin
+    ? window.location.origin
+    : 'https://sovereign-backend.arelorian.de';
 
 let adminKeyInMemory = '';
 
