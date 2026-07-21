@@ -554,8 +554,16 @@ function generatePatternMatches(
   // Match patterns using multiple queries for better coverage
   const allMatches: SolutionPatternMatch[] = [];
 
-  // Query by file extensions present in repo
-  for (const ext of repoExtensions) {
+  // Get unique extensions actually present in patternStore.patterns to avoid calling matchSolutionPatterns for extensions with zero patterns.
+  const knownExtensions = new Set(
+    patternStore.patterns.map((p) => p.fileExtension.toLowerCase())
+  );
+  const activeExtensions = Array.from(repoExtensions).filter((ext) =>
+    knownExtensions.has(ext.toLowerCase())
+  );
+
+  // Query by file extensions present in repo that have corresponding pattern(s) in the store
+  for (const ext of activeExtensions) {
     const matches = matchSolutionPatterns(patternStore, {
       filePath: `file${ext}`,
       limit: 5,
