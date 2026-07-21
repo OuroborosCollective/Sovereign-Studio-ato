@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -1250,8 +1251,15 @@ process.stdout.write(key);
                 "errorFamily": "owner_root_invalid",
                 "secretValuesReturned": False,
             }
-        root.mkdir(parents=True, exist_ok=True, mode=0o750)
-        os.chmod(root, 0o750)
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        root_mode = stat.S_IMODE(root.stat().st_mode)
+        if root_mode & 0o077:
+            return {
+                "ok": False,
+                "status": "FREELLMAPI_OWNER_KEY_SYNC_FAILED",
+                "errorFamily": "owner_root_permissions_invalid",
+                "secretValuesReturned": False,
+            }
         if destination.is_symlink() or (destination.exists() and not destination.is_file()):
             return {
                 "ok": False,

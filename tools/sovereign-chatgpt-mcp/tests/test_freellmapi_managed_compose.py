@@ -101,6 +101,7 @@ def test_freellmapi_owner_key_sync_writes_private_file_without_returning_key(
     assert result["secretValuesReturned"] is False
     assert result["mode"] == "0600"
     assert destination.read_text("utf-8") == key + "\n"
+    assert destination.parent.stat().st_mode & 0o777 == 0o700
     assert destination.stat().st_mode & 0o777 == 0o600
     assert key not in str(result)
 
