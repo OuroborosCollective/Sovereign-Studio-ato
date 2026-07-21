@@ -40,9 +40,11 @@ from .cognitive_swarm_agents import (
     classify_swarm_exception,
     ensure_openai_runtime_key,
     run_cognitive_swarm,
+    run_free_single_agent,
 )
 from .cognitive_repository_tools import (
     BoundRepositoryToolset,
+    create_repository_single_agent_task,
     create_repository_swarm_tasks,
 )
 from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
@@ -56,6 +58,11 @@ from .pattern_gateway import (
     persist_pattern_learning_candidate_once,
 )
 from .pattern_vector_memory import persist_pattern_vector
+from llm_execution_resolver import (
+    FREE_SINGLE_AGENT_PROFILE,
+    PAID_SWARM_PROFILE,
+    load_execution_resolution,
+)
 
 
 ConnectionFactory = Callable[[], Any]
@@ -671,8 +678,8 @@ def start_cognitive_swarm_run(
         return {"error": "evidence exceeds the bounded input limit"}, 400
     if _contains_secret_shaped_text(normalized_mission) or _contains_secret_shaped_text(normalized_evidence):
         return {"error": "secret-shaped material is forbidden in swarm input"}, 400
-    if normalized_model and normalized_model not in _allowed_models():
-        return {"error": "model is not allowlisted"}, 400
+    if normalized_model and len(normalized_model) > 200:
+        return {"error": "model identifier exceeds the bounded limit"}, 400
     if not user_id:
         return {"error": "authenticated user id is required"}, 401
 
@@ -680,6 +687,40 @@ def start_cognitive_swarm_run(
     resolved_session_key = str(session_key or f"session-{uuid.uuid4().hex}").strip()
     resolved_trace_id = str(trace_id or f"trace-{uuid.uuid4().hex}").strip()
     manifest = manifest_payload()
+    try:
+        execution_resolution = load_execution_resolution(
+            get_connection,
+            user_id=user_id,
+            requested_model=normalized_model or "",
+        )
+    except LookupError:
+        return {"error": "authenticated user account was not found"}, 404
+    except Exception as exc:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "blocker": "LLM_EXECUTION_RESOLVER_UNAVAILABLE",
+            "errorType": type(exc).__name__,
+        }, 503
+    if execution_resolution is None:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "blocker": "NO_PRICE_VERIFIED_LITELLM_ROUTE_READY",
+            "reason": "No active paid route or free revolver route is currently ready.",
+            "nextAction": "ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
+        }, 503
+    resolved_model = str(
+        execution_resolution.primary_route.get("model_id")
+        or execution_resolution.primary_route.get("modelId")
+        or ""
+    ).strip()
+    if not resolved_model:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "blocker": "RESOLVED_LITELLM_ALIAS_MISSING",
+        }, 503
 
     try:
         conn = get_connection()
@@ -692,7 +733,10 @@ def start_cognitive_swarm_run(
                 mission=normalized_mission,
                 supplied_evidence=normalized_evidence,
                 trace_id=resolved_trace_id,
-                max_active_specialists=int(manifest["maxActiveSpecialists"]),
+                max_active_specialists=max(
+                    1,
+                    int(execution_resolution.max_background_agents),
+                ),
                 max_iterations=_max_iterations(),
                 job_id=None,
                 a2a_context_id=a2a_context_id,
@@ -708,6 +752,279 @@ def start_cognitive_swarm_run(
             "errorType": type(exc).__name__,
         }, 503
 
+    if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
+        implementation_job = None
+        repository_toolset = None
+        free_task_id: str | None = None
+        mission_intent = None
+        try:
+            mission_intent = asyncio.run(classify_mission_intent(
+                normalized_mission,
+                model=resolved_model,
+                stage_billing=None,
+            ))
+            if mission_intent.mode == "repository_execution":
+                conn = get_connection()
+                try:
+                    repository = _configured_repository()
+                    implementation_job = create_sovereign_agent_job(
+                        conn,
+                        user_id=user_id,
+                        payload={
+                            "repoUrl": f"https://github.com/{repository}",
+                            "branch": "main",
+                            "mission": mission_intent.normalized_goal,
+                            "executor": "sovereign-local-runner",
+                            "draftPrOnly": True,
+                            "allowAutoMerge": False,
+                        },
+                        workspace_root=_workspace_root(),
+                        provision_workspace=True,
+                        clone_repo=True,
+                    )
+                    linked_state = link_agent_run_job(
+                        conn,
+                        user_id=user_id,
+                        run_id=resolved_run_id,
+                        job_id=implementation_job.job_id,
+                        trace_id=resolved_trace_id,
+                        workspace_id=implementation_job.result.workspace_id,
+                    )
+                    if implementation_job.result.status in {"blocked", "failed"}:
+                        raise RuntimeError(
+                            implementation_job.result.blocker
+                            or "FREE_AGENT_WORKSPACE_PROVISIONING_FAILED"
+                        )
+                    free_task_id = create_repository_single_agent_task(
+                        conn,
+                        run_id=resolved_run_id,
+                        evidence_id=linked_state["evidenceId"],
+                        write_confirmed=True,
+                    )
+                finally:
+                    _close_connection(conn)
+                repository_toolset = BoundRepositoryToolset(
+                    get_connection=get_connection,
+                    user_id=user_id,
+                    run_id=resolved_run_id,
+                    job_id=implementation_job.job_id,
+                    task_ids_by_agent={"free_single_agent": free_task_id},
+                    workspace_root=_workspace_root(),
+                    write_confirmed=True,
+                )
+
+            single_result = asyncio.run(run_free_single_agent(
+                normalized_mission,
+                evidence=normalized_evidence,
+                model=resolved_model,
+                repository_tool_factory=(
+                    repository_toolset.tools_for_role if repository_toolset else None
+                ),
+            ))
+            single_payload = (
+                single_result.get("result")
+                if isinstance(single_result.get("result"), dict)
+                else {}
+            )
+            repository_summary = repository_toolset.summary() if repository_toolset else {}
+            job_evidence: dict[str, object] = {}
+            execution_gate = None
+            if implementation_job is not None:
+                conn = get_connection()
+                try:
+                    stored_job = read_agent_job(
+                        conn,
+                        user_id=user_id,
+                        job_id=implementation_job.job_id,
+                    )
+                finally:
+                    _close_connection(conn)
+                if not stored_job:
+                    raise RuntimeError("The free-agent workspace job disappeared during execution.")
+                execution_gate = evaluate_agent_evidence(EvidenceGateInput(
+                    job_id=stored_job.job_id,
+                    changed_files=stored_job.changed_files,
+                    diff_summary=stored_job.diff_summary,
+                    test_summary=stored_job.test_summary,
+                    blocker=stored_job.blocker,
+                    tool_status=stored_job.status,
+                ))
+                job_evidence = {
+                    "jobId": stored_job.job_id,
+                    "workspaceId": stored_job.workspace_id,
+                    "codeServerWorkspace": (
+                        "/config/sovereign-agent-workspaces/"
+                        + stored_job.workspace_id
+                        + "/repo"
+                    ),
+                    "status": stored_job.status,
+                    "changedFiles": list(stored_job.changed_files),
+                    "hasDiff": bool(stored_job.diff_summary),
+                    "hasTests": bool(stored_job.test_summary),
+                    "blocker": stored_job.blocker,
+                    "gatePassed": execution_gate.passed,
+                    "gateReason": execution_gate.reason,
+                    "canPrepareDraftPr": execution_gate.can_prepare_draft_pr,
+                }
+
+            repository_requested = bool(
+                mission_intent and mission_intent.mode == "repository_execution"
+            )
+            roles_with_calls = set(repository_summary.get("rolesWithCalls") or [])
+            workspace_evidence_ready = (
+                not repository_requested
+                or (
+                    execution_gate is not None
+                    and execution_gate.passed
+                    and "free_single_agent" in roles_with_calls
+                )
+            )
+            single_blocked = (
+                str(single_result.get("status") or "BLOCKED") != "COMPLETED"
+                or not workspace_evidence_ready
+            )
+            reason = (
+                "The free single agent completed one isolated Code-Server workspace mission with diff and test evidence."
+                if repository_requested and not single_blocked
+                else "The free single agent completed without background agents."
+                if not single_blocked
+                else "The free single-agent workspace execution lacks required tool, diff or test evidence."
+            )
+            next_action = (
+                "REVIEW_WORKSPACE_AND_OPTIONALLY_CREATE_DRAFT_PR"
+                if repository_requested and not single_blocked
+                else "NO_FURTHER_ACTION_REQUIRED"
+                if not single_blocked
+                else "COMPLETE_SINGLE_AGENT_WORKSPACE_EVIDENCE"
+            )
+            conn = get_connection()
+            try:
+                final_state = transition_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=resolved_run_id,
+                    status="COMPLETED" if not single_blocked else "BLOCKED",
+                    source="agents-sdk",
+                    trace_id=resolved_trace_id,
+                    reason=reason,
+                    next_action=next_action,
+                    evidence_kind="free_single_agent_result",
+                    evidence_summary=reason,
+                    evidence_payload={
+                        "executionResolution": execution_resolution.safe_payload(),
+                        "intent": mission_intent.model_dump() if mission_intent else {},
+                        "resultMode": str(single_payload.get("mode") or ""),
+                        "repositoryExecutionPerformed": bool(
+                            repository_requested and workspace_evidence_ready
+                        ),
+                        "backgroundAgentsStarted": 0,
+                        "repositoryTools": repository_summary,
+                        "jobEvidence": job_evidence,
+                        "rawModelOutputPersisted": False,
+                    },
+                    agent_id="free_single_agent",
+                    task_id=free_task_id,
+                )
+            finally:
+                _close_connection(conn)
+            return {
+                "runtime": "openai-agents-sdk",
+                **single_result,
+                "runId": resolved_run_id,
+                "traceId": resolved_trace_id,
+                "status": final_state["status"],
+                "source": final_state["source"],
+                "evidenceId": final_state["evidenceId"],
+                "reason": final_state["reason"],
+                "nextAction": final_state["nextAction"],
+                "receivedEvidenceId": received_state["evidenceId"],
+                "executionResolution": execution_resolution.safe_payload(),
+                "intent": mission_intent.model_dump() if mission_intent else {},
+                "resolvedModelId": resolved_model,
+                "jobId": implementation_job.job_id if implementation_job else None,
+                "workspaceId": (
+                    implementation_job.result.workspace_id if implementation_job else None
+                ),
+                "codeServerWorkspace": job_evidence.get("codeServerWorkspace"),
+                "repositoryTools": repository_summary,
+                "jobEvidence": job_evidence,
+                "repositoryExecutionPerformed": bool(
+                    repository_requested and workspace_evidence_ready
+                ),
+                "maxBackgroundAgents": 0,
+                "autoMerge": False,
+            }, 200 if not single_blocked else 503
+        except Exception as raw_exc:
+            exc = (
+                raw_exc
+                if isinstance(raw_exc, SwarmExecutionError)
+                else classify_swarm_exception(raw_exc, stage="free-single-agent")
+            )
+            conn = get_connection()
+            try:
+                failed_state = transition_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=resolved_run_id,
+                    status="FAILED_RECOVERABLE" if exc.retryable else "BLOCKED",
+                    source="agents-sdk",
+                    trace_id=resolved_trace_id,
+                    reason="The free single-agent route or workspace could not produce validated evidence.",
+                    next_action=exc.next_action,
+                    evidence_kind="free_single_agent_failure",
+                    evidence_summary="The free single-agent path failed without starting background agents.",
+                    evidence_payload={
+                        **exc.safe_payload(),
+                        "executionResolution": execution_resolution.safe_payload(),
+                        "jobId": implementation_job.job_id if implementation_job else None,
+                        "workspaceId": (
+                            implementation_job.result.workspace_id
+                            if implementation_job
+                            else None
+                        ),
+                        "backgroundAgentsStarted": 0,
+                    },
+                    agent_id="free_single_agent",
+                    task_id=free_task_id,
+                )
+            finally:
+                _close_connection(conn)
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "runId": resolved_run_id,
+                "traceId": resolved_trace_id,
+                "status": failed_state["status"],
+                "source": failed_state["source"],
+                "evidenceId": failed_state["evidenceId"],
+                "receivedEvidenceId": received_state["evidenceId"],
+                "blocker": exc.family,
+                "reason": failed_state["reason"],
+                "nextAction": failed_state["nextAction"],
+                "executionResolution": execution_resolution.safe_payload(),
+                "resolvedModelId": resolved_model,
+                "jobId": implementation_job.job_id if implementation_job else None,
+                "workspaceId": (
+                    implementation_job.result.workspace_id if implementation_job else None
+                ),
+                "maxBackgroundAgents": 0,
+            }, 502 if exc.retryable else 503
+
+    if execution_resolution.profile_id != PAID_SWARM_PROFILE:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "blocker": "EXECUTION_PROFILE_UNSUPPORTED",
+        }, 503
+    if resolved_model not in _allowed_models():
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "blocker": "PAID_SWARM_ALIAS_NOT_ALLOWLISTED",
+            "resolvedModelId": resolved_model,
+            "nextAction": "ATTACH_EXPECTED_LITELLM_PROVIDER_MODEL",
+        }, 409
+
     try:
         stage_billing = AgentStageBilling(
             get_connection=get_connection,
@@ -717,7 +1034,7 @@ def start_cognitive_swarm_run(
         )
         mission_intent = asyncio.run(classify_mission_intent(
             normalized_mission,
-            model=normalized_model,
+            model=resolved_model,
             stage_billing=stage_billing,
         ))
     except AgentBillingError as exc:
@@ -913,7 +1230,7 @@ def start_cognitive_swarm_run(
         trace_id=resolved_trace_id,
         mission=normalized_mission,
         evidence=normalized_evidence,
-        model=normalized_model,
+        model=resolved_model,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
         job_id=implementation_job.job_id if implementation_job else None,
@@ -929,6 +1246,9 @@ def start_cognitive_swarm_run(
             "jobId": implementation_job.job_id if implementation_job else None,
             "workspaceId": implementation_job.result.workspace_id if implementation_job else None,
             "learningState": "PENDING_EVIDENCE" if implementation_job else "NOT_REQUESTED",
+            "executionResolution": execution_resolution.safe_payload(),
+            "resolvedModelId": resolved_model,
+            "maxBackgroundAgents": execution_resolution.max_background_agents,
             "autoMerge": False,
         },
     )

@@ -475,6 +475,13 @@ def register_llm_provider_routes(
             "pricingSource": model["pricingSource"],
             "usdMicrosPerCredit": 1000,
             "revolverEligible": category == FREE_CATEGORY,
+            "executionProfile": (
+                "free_single_agent" if category == FREE_CATEGORY else "paid_swarm_6"
+            ),
+            "resolverMode": "revolver" if category == FREE_CATEGORY else "single",
+            "maxForegroundAgents": 1,
+            "maxBackgroundAgents": 0 if category == FREE_CATEGORY else 6,
+            "repositoryExecutionAllowed": True,
             "quotaScope": (
                 f"litellm:route:{hashlib.sha256(route_id.encode()).hexdigest()[:24]}"
             ),
@@ -635,6 +642,17 @@ def register_llm_provider_routes(
                     "pricingSource": "pending-litellm-registration",
                     "usdMicrosPerCredit": 1000,
                     "revolverEligible": config["billingCategory"] == FREE_CATEGORY,
+                    "executionProfile": (
+                        "free_single_agent"
+                        if config["billingCategory"] == FREE_CATEGORY
+                        else "paid_swarm_6"
+                    ),
+                    "resolverMode": (
+                        "revolver" if config["billingCategory"] == FREE_CATEGORY else "single"
+                    ),
+                    "maxForegroundAgents": 1,
+                    "maxBackgroundAgents": 0 if config["billingCategory"] == FREE_CATEGORY else 6,
+                    "repositoryExecutionAllowed": True,
                     "quotaScope": (
                         "litellm:route:"
                         + hashlib.sha256(config["routeId"].encode()).hexdigest()[:24]
@@ -771,6 +789,21 @@ def register_llm_provider_routes(
                         "pricingSource": model["pricingSource"],
                         "usdMicrosPerCredit": 1000,
                         "revolverEligible": policy["billingCategory"] == FREE_CATEGORY,
+                        "executionProfile": (
+                            "free_single_agent"
+                            if policy["billingCategory"] == FREE_CATEGORY
+                            else "paid_swarm_6"
+                        ),
+                        "resolverMode": (
+                            "revolver"
+                            if policy["billingCategory"] == FREE_CATEGORY
+                            else "single"
+                        ),
+                        "maxForegroundAgents": 1,
+                        "maxBackgroundAgents": (
+                            0 if policy["billingCategory"] == FREE_CATEGORY else 6
+                        ),
+                        "repositoryExecutionAllowed": True,
                     }
                     cursor.execute(
                         """UPDATE llm_routes
@@ -1055,6 +1088,13 @@ def register_llm_provider_routes(
                 "pricingSource": catalog_model["pricingSource"],
                 "usdMicrosPerCredit": 1000,
                 "revolverEligible": category == FREE_CATEGORY,
+                "executionProfile": (
+                    "free_single_agent" if category == FREE_CATEGORY else "paid_swarm_6"
+                ),
+                "resolverMode": "revolver" if category == FREE_CATEGORY else "single",
+                "maxForegroundAgents": 1,
+                "maxBackgroundAgents": 0 if category == FREE_CATEGORY else 6,
+                "repositoryExecutionAllowed": True,
                 "quotaScope": quota_scope,
                 "canaryRequestId": evidence.get("upstreamRequestId") or None,
             }
