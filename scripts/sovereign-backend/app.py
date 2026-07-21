@@ -33,7 +33,7 @@ from security_oauth import (
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request, make_response, g
+from flask import Flask, jsonify, request, make_response, g, send_from_directory
 from flask_cors import CORS
 import requests
 
@@ -88,7 +88,6 @@ from proven_learning_runtime import register_proven_learning_routes
 from llm_provider_runtime import register_llm_provider_routes
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
-from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML
 
 # GitHub App integration (Marketplace)
 try:
@@ -164,6 +163,9 @@ CORS(app, origins=list(_DEFAULT_CORS_ORIGINS), supports_credentials=True)
 
 ADMIN_API_KEY  = os.getenv("ADMIN_API_KEY", "")
 LLM_PROXY_KEY  = os.getenv("LLM_PROXY_KEY", "")
+_ADMIN_WEB_ROOT = os.path.abspath(
+    os.getenv("SOVEREIGN_ADMIN_WEB_ROOT", "/app/admin-web")
+)
 
 POSTGRES_HOST  = os.getenv("POSTGRES_HOST", "db")
 POSTGRES_PORT  = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -5314,13 +5316,41 @@ def tc_skills_delete(skill_id: str):
 
 
 
+def _admin_web_response(asset_path: str):
+    normalized = str(asset_path or "index.html").lstrip("/") or "index.html"
+    candidate = os.path.abspath(os.path.join(_ADMIN_WEB_ROOT, normalized))
+    if os.path.commonpath((_ADMIN_WEB_ROOT, candidate)) != _ADMIN_WEB_ROOT:
+        return jsonify({
+            "error": "Ungültiger Admin-Asset-Pfad",
+            "blocker": "admin_asset_path_rejected",
+        }), 400
+    if not os.path.isfile(candidate):
+        return jsonify({
+            "error": "Das kanonische React-Admin-Artefakt fehlt im Backend-Image",
+            "blocker": "react_admin_artifact_missing",
+            "sourceRevision": os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified"),
+        }), 503
+
+    response = make_response(send_from_directory(_ADMIN_WEB_ROOT, normalized))
+    response.headers["X-Sovereign-Admin-Surface"] = "react"
+    response.headers["X-Sovereign-Source-Revision"] = os.getenv(
+        "SOVEREIGN_SOURCE_REVISION", "unverified"
+    )
+    response.headers["Cache-Control"] = (
+        "no-store" if normalized == "index.html" else "public, max-age=31536000, immutable"
+    )
+    return response
+
+
 @app.route("/admin")
 @app.route("/admin/")
 def admin_panel():
-    resp = make_response(ENTERPRISE_ADMIN_HTML)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
+    return _admin_web_response("index.html")
+
+
+@app.route("/admin/<path:asset_path>")
+def admin_panel_asset(asset_path: str):
+    return _admin_web_response(asset_path)
 
 
 

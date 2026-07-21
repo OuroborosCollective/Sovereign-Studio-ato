@@ -5,6 +5,16 @@ on:
     branches: [main]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'src/features/admin/**'
+      - 'src/features/user/**'
+      - 'src/main.tsx'
+      - 'src/index.css'
+      - 'src/styles/**'
+      - 'index.html'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
       - 'tools/sovereign-chatgpt-mcp/**'
       - '.github/workflows/sovereign-backend-image.yml'
   push:
@@ -68,7 +78,7 @@ jobs:
         id: image
         uses: docker/build-push-action@v6
         with:
-          context: scripts/sovereign-backend
+          context: .
           file: scripts/sovereign-backend/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}

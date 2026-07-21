@@ -132,7 +132,7 @@ export function FreeRevolverControlCenter({
   };
 
   return (
-    <div className="free-revolver-admin">
+    <div className="free-revolver-admin" data-testid="free-revolver-control-center">
       <section className="llm-control-center__hero free-revolver-admin__hero">
         <div>
           <span className="llm-kicker">Free Revolver / Nullkosten-Routen</span>
@@ -156,7 +156,7 @@ export function FreeRevolverControlCenter({
         <div><Lock /><span>Blockierte Modelle</span><strong>{totals.blocked}</strong></div>
       </div>
 
-      <section className="llm-catalog free-revolver-admin__onboarding">
+      <section className="llm-catalog free-revolver-admin__onboarding" data-testid="freellm-provider-registration">
         <div className="llm-section-title">
           <div><KeyRound size={21} /><div>
             <h2>Provider automatisch erkennen</h2>
@@ -164,6 +164,7 @@ export function FreeRevolverControlCenter({
           </div></div>
         </div>
         <button type="button" className="llm-button"
+          data-testid="freellm-managed-provider-select"
           disabled={busyId !== null}
           onClick={() => {
             setLabel('FreeLLM API 0.5.0 · interner Docker');

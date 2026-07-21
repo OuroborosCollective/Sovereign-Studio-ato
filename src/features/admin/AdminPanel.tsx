@@ -252,7 +252,7 @@ function ReadyContent() {
 
 // ── Root panel ────────────────────────────────────────────────────────────────
 
-export function AdminPanel(_props: LauncherToolProps) {
+export function AdminPanel(_props?: LauncherToolProps) {
   const [ready, setReady] = useState(false);
 
   // On mount: if a key exists and user not yet in store, re-validate the key.
@@ -271,11 +271,15 @@ export function AdminPanel(_props: LauncherToolProps) {
       });
   }, []);
 
-  if (!ready) {
-    // API key setup renders WITHOUT AdminGate — this is intentional.
-    // The gate only wraps ReadyContent (below), after key is validated.
-    return <ApiKeySetup onReady={() => setReady(true)} />;
-  }
-
-  return <ReadyContent />;
+  return (
+    <div data-testid="sovereign-react-admin" data-admin-surface="react">
+      {!ready ? (
+        // API key setup renders WITHOUT AdminGate — this is intentional.
+        // The gate only wraps ReadyContent (below), after key is validated.
+        <ApiKeySetup onReady={() => setReady(true)} />
+      ) : (
+        <ReadyContent />
+      )}
+    </div>
+  );
 }

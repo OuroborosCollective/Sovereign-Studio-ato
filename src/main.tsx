@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import posthog from 'posthog-js';
 import App from './SovereignAppWrapper';
+import { AdminPanel } from './features/admin/AdminPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { flushCanvasStateMirror, restoreCanvasStateMirror, store } from './store';
 import {
@@ -339,11 +340,14 @@ function bootApp(): void {
     return;
   }
 
+  const isAdminRoute = /^\/admin(?:\/|$)/.test(window.location.pathname);
+  document.documentElement.dataset.sovereignSurface = isAdminRoute ? 'react-admin' : 'chat';
+
   createRoot(container).render(
     <StrictMode>
       <ErrorBoundary>
         <Provider store={store}>
-          <App />
+          {isAdminRoute ? <AdminPanel /> : <App />}
         </Provider>
       </ErrorBoundary>
     </StrictMode>,

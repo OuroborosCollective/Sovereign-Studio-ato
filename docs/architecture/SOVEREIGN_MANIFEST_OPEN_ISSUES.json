@@ -475,42 +475,48 @@
     },
     {
       "key": "remove-dead-legacy-admin-html",
-      "title": "[Manifest] Toten Legacy-Admin-HTML-Block aus der kanonischen Backenddatei entfernen",
-      "evidence": "scripts/sovereign-backend/app.py enthält weiterhin einen großen historischen _ADMIN_PANEL_HTML-Literalblock. Direkt vor der Route wird die Variable zwar auf ENTERPRISE_ADMIN_HTML überschrieben, aber der tote Block hält eine künftig versehentlich reaktivierbare zweite UI-Wahrheit im Code.",
-      "goal": "Den alten eingebetteten Admin-HTML-Block vollständig entfernen und die /admin-Route ausschließlich an ENTERPRISE_ADMIN_HTML aus enterprise_admin_ui.py binden.",
+      "title": "[Manifest] /admin auf das kanonische React-Control-Center derselben Backendrevision umstellen",
+      "evidence": "Die produktiv sichtbare /admin-Route liefert auf der aktuellen Main-Revision weiterhin das eingebettete enterprise_admin_ui.py-HTML. Das React-Admin mit FreeRevolverControlCenter und FreeLLM-Registrierung existiert im Repository, wird aber vom Backend-Image nicht ausgeliefert. Der stabile Schlüssel bleibt zur Issue-Kontinuität erhalten.",
+      "goal": "Das React-Admin im Build desselben immutable Backend-Images erzeugen, /admin ausschließlich fail-closed daraus ausliefern und nach Deployment den sichtbaren Produktions-DOM an exakte Revision, Producer-Header, Free-Revolver und FreeLLM-Registrierung binden.",
       "paths": [
         "scripts/sovereign-backend/app.py",
-        "scripts/sovereign-backend/enterprise_admin_ui.py",
-        "scripts/sovereign-backend/tests/test_admin_runtime_truth_contracts.py",
-        "Frontend- und Admin-Vertragstests",
-        "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md"
+        "scripts/sovereign-backend/Dockerfile",
+        "src/main.tsx",
+        "src/features/admin/",
+        ".github/workflows/sovereign-backend-image.yml",
+        ".github/workflows/sovereign-admin-production-dom.yml",
+        "tests/e2e/admin-production-dom.spec.ts"
       ],
       "rules": [
-        "Große Live-Datei nur mit exaktem überprüfbarem Patch ändern.",
-        "Keine Änderung an Authheadern oder Admin-API-Verträgen.",
-        "Kein Ersatz durch Mock, Redirect auf nicht deployte Oberfläche oder statische Erfolgskarten.",
-        "Alte Marker und Texte müssen durch Tests als abwesend bestätigt werden."
+        "Große Live-Dateien nur mit exakten überprüfbaren Patches ändern.",
+        "Keine Änderung an Authheadern, Admin-Key-Transport oder Admin-API-Verträgen.",
+        "Kein Mock, kein Redirect auf eine unabhängig deployte Revision und kein Fallback auf eingebettetes Python-HTML.",
+        "Fehlende React-Artefakte blockieren mit einer expliziten Fehlerfamilie.",
+        "Der Produktionsgate prüft echte Health-, Header-, Login- und DOM-Evidence ohne Request-Mocks."
       ],
       "workflow": [
-        "Anfang und Ende des Legacy-Literals exakt bestimmen.",
-        "Kleinen deterministischen Entfernungspatch erzeugen.",
-        "Direkten Import und Route vereinfachen.",
-        "Python-Compile und Admin-Vertragstests ausführen.",
-        "Immutable Image bauen.",
-        "/admin nach Deploy auf neue und alte Marker prüfen."
+        "Aktive /admin-Producerroute und exakte Main-Revision bestimmen.",
+        "React-Admin als direkten /admin-Entrypoint markieren.",
+        "Webartefakt im selben immutable Backend-Build erzeugen und in das Image kopieren.",
+        "Python-Producer entfernen und statische Auslieferung fail-closed implementieren.",
+        "Compile-, Source-Contract-, Typecheck-, Web-, Docker- und Backendtests ausführen.",
+        "Immutable Digest deployen.",
+        "Revisionsgebundenen Produktions-DOM-Gate mit geschütztem Admin-Testzugang ausführen."
       ],
       "integrationPlan": [
-        "Direkte Response aus ENTERPRISE_ADMIN_HTML verwenden.",
-        "Test auf Abwesenheit der Legacy-Zuweisung ergänzen.",
-        "Keine zweite Admin-Quelle im Repository zulassen.",
-        "Live-Readback an Revision und Digest binden."
+        "Backend-Image aus Repository-Root bauen, damit Python und React exakt dieselbe Revision besitzen.",
+        "/admin/index.html ohne Cache und fingerprinted Assets immutable ausliefern.",
+        "Producer- und Revisionsheader auf allen Admin-Artefakten setzen.",
+        "Free-Revolver- und FreeLLM-Registrierungsmarker im real gerenderten DOM prüfen.",
+        "Legacy-HTML darf im aktiven Import- und Routenpfad nicht mehr vorkommen."
       ],
-      "example": "from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML\n\n@app.get('/admin')\ndef admin_panel():\n    return Response(ENTERPRISE_ADMIN_HTML, mimetype='text/html')",
+      "example": "assert response.headers['X-Sovereign-Admin-Surface'] == 'react'\nassert response.headers['X-Sovereign-Source-Revision'] == expected_revision\nassert page.get_by_test_id('free-revolver-control-center').is_visible()\nassert page.get_by_test_id('freellm-provider-registration').is_visible()",
       "acceptance": [
-        "Die historische _ADMIN_PANEL_HTML-Literalzuweisung existiert nicht mehr.",
-        "/admin verwendet nur ENTERPRISE_ADMIN_HTML.",
-        "Alte Admin-Marker werden nicht ausgeliefert.",
-        "Compile-, Contract- und Live-Readback sind grün."
+        "Laufender Container, /health und /admin-Header tragen die exakt erwartete Revision.",
+        "/admin rendert das React-Admin und nicht Sovereign Enterprise Admin aus Python-HTML.",
+        "Nach realem Admin-Login sind Free-Revolver-Control-Center und FreeLLM-Registrierung sichtbar.",
+        "Fehlendes Webartefakt erzeugt fail-closed react_admin_artifact_missing.",
+        "Compile-, Contract-, Typecheck-, Web-, Docker- und revisionsgebundener Produktions-DOM-Gate sind grün."
       ]
     }
   ]

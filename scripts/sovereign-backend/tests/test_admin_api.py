@@ -307,24 +307,27 @@ class TestHealthcheckArchitecture(unittest.TestCase):
 
 
 class TestAdminRuntimeTruth(unittest.TestCase):
-    """Tests ensuring /admin serves only the enterprise UI truth."""
+    """Tests ensuring /admin serves only the revision-bound React artifact."""
 
-    def test_legacy_admin_panel_html_literal_absent(self):
-        """The historical _ADMIN_PANEL_HTML literal must not exist."""
+    def test_embedded_admin_html_producers_are_absent(self):
         app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
         with open(app_path) as f:
             content = f.read()
-        self.assertNotIn("_ADMIN_PANEL_HTML = r\"\"\"", content)
-        self.assertNotIn("_ADMIN_PANEL_HTML = ENTERPRISE_ADMIN_HTML", content)
-
-    def test_admin_route_uses_enterprise_html_only(self):
-        """/admin must return ENTERPRISE_ADMIN_HTML and not refer to legacy sources."""
-        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
-        with open(app_path) as f:
-            content = f.read()
-        self.assertIn("ENTERPRISE_ADMIN_HTML", content)
-        self.assertIn("def admin_panel", content)
         self.assertNotIn("_ADMIN_PANEL_HTML", content)
+        self.assertNotIn("ENTERPRISE_ADMIN_HTML", content)
+        self.assertNotIn("from enterprise_admin_ui import", content)
+
+    def test_admin_route_is_fail_closed_and_revision_bound(self):
+        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
+        with open(app_path) as f:
+            content = f.read()
+        self.assertIn("SOVEREIGN_ADMIN_WEB_ROOT", content)
+        self.assertIn("send_from_directory", content)
+        self.assertIn('X-Sovereign-Admin-Surface', content)
+        self.assertIn('X-Sovereign-Source-Revision', content)
+        self.assertIn('react_admin_artifact_missing', content)
+        self.assertIn("def admin_panel", content)
+        self.assertIn("def admin_panel_asset", content)
 
 
 class TestAppRunPlacement(unittest.TestCase):

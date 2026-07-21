@@ -8,8 +8,16 @@
  * Issue #460
  */
 
-// Resolved at build time by Vite; falls back to production URL.
+// A directly served /admin surface must read and mutate the same immutable
+// backend origin that produced its DOM. Other app surfaces retain the explicit
+// build-time endpoint and the production fallback.
+const DIRECT_ADMIN_ORIGIN =
+  typeof window !== 'undefined' && /^\/admin(?:\/|$)/.test(window.location.pathname)
+    ? window.location.origin
+    : '';
+
 export const ADMIN_API_BASE: string =
+  DIRECT_ADMIN_ORIGIN ||
   (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
   'https://sovereign-backend.arelorian.de';
 
