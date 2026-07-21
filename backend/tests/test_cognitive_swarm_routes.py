@@ -61,11 +61,23 @@ class FakeCursor:
         self.factory.calls.append((self.last_sql, params))
 
     def fetchone(self):
+        if "FROM admin_users AS account" in self.last_sql:
+            return {
+                "provider_funded_credits": 10_000,
+                "paid_purchase_verified": True,
+            }
         if "FROM llm_routes" in self.last_sql:
             if not self.factory.route_ready:
                 return None
             return {
+                "id": "route-paid-sovereign-fast",
                 "model_id": "sovereign-fast",
+                "model_name": "Sovereign Fast",
+                "provider": "litellm",
+                "base_url": "http://litellm:4000",
+                "credits_per_unit": 1.0,
+                "disabled": False,
+                "priority": 10,
                 "config": {
                     "providerModel": "gpt-5.4-mini",
                     "billingCategory": "standard",
@@ -75,6 +87,8 @@ class FakeCursor:
                     "outputUsdPerMillion": "2.00",
                     "pricingVerified": True,
                     "pricingSource": "test-fixture",
+                    "quotaScope": "litellm:test:paid-route",
+                    "executionProfile": "paid_swarm_6",
                 },
             }
         if self.factory.fetchone_rows:
@@ -84,6 +98,11 @@ class FakeCursor:
         return None
 
     def fetchall(self):
+        if "FROM llm_routes" in self.last_sql:
+            route = self.fetchone()
+            return [route] if route else []
+        if "FROM llm_route_revolver_state" in self.last_sql:
+            return []
         return list(self.factory.fetchall_rows)
 
 
@@ -226,8 +245,8 @@ def test_swarm_start_persists_route_blocker_before_provider_execution(monkeypatc
 
     assert response.status_code == 503
     assert payload["status"] == "BLOCKED"
-    assert payload["blocker"] == "AGENTS_LITELLM_ALIAS_NOT_READY"
-    assert payload["nextAction"] == "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE"
+    assert payload["blocker"] == "NO_PRICE_VERIFIED_LITELLM_ROUTE_READY"
+    assert payload["nextAction"] == "ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE"
     assert payload["receivedEvidenceId"].startswith("evidence-")
     assert payload["evidenceId"].startswith("evidence-")
     assert factory.commits == 2
