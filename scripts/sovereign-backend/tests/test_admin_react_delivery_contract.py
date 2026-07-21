@@ -56,6 +56,7 @@ def test_image_workflow_builds_from_repository_root_and_smokes_exact_image():
 def test_live_production_dom_gate_is_revision_bound_and_browser_executed():
     workflow = read(".github/workflows/sovereign-admin-production-dom.yml")
     spec = read("tests/e2e/admin-production-dom.spec.ts")
+    default_config = read("playwright.config.ts")
     assert "expected_revision" in workflow
     assert "Checkout exact deployed revision" in workflow
     assert "playwright.admin-production.config.ts" in workflow
@@ -63,3 +64,4 @@ def test_live_production_dom_gate_is_revision_bound_and_browser_executed():
     assert "data-source-revision" in spec
     assert "FreeLLM API 0.5.0 auswählen" in spec
     assert "Sovereign Enterprise Admin" in spec
+    assert "testIgnore: 'admin-production-dom.spec.ts'" in default_config

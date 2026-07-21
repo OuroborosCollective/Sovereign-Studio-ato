@@ -16,6 +16,7 @@ const appUrl = process.env.SOVEREIGN_E2E_APP_URL?.trim() || 'http://localhost:30
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: 'admin-production-dom.spec.ts',
   fullyParallel: !liveFivePath,
   forbidOnly: !!process.env.CI,
   retries: liveFivePath ? 0 : (process.env.CI ? 2 : 0),
