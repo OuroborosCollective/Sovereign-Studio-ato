@@ -31,7 +31,7 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     assert '"/opt/secure/owner-managed/openhands_api_key.txt"' not in app
     assert '"/opt/secure/openhands_api_key.txt"' not in app
     assert "OPENHANDS_API_URL" not in app
-    assert "COPY *.py ./" in dockerfile
+    assert "COPY scripts/sovereign-backend/*.py ./" in dockerfile
     owner_runtime = (ROOT / "owner_input_runtime.py").read_text("utf-8")
     swarm_agents = (ROOT / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
     swarm_routes = (ROOT / "agent_runtime" / "cognitive_swarm_routes.py").read_text("utf-8")

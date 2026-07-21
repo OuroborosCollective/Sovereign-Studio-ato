@@ -10,11 +10,13 @@ BACKEND = ROOT / "scripts" / "sovereign-backend"
 def test_only_canonical_backend_is_built_for_production() -> None:
     workflow = (ROOT / ".github" / "workflows" / "sovereign-backend-image.yml").read_text("utf-8")
     dockerfile = (BACKEND / "Dockerfile").read_text("utf-8")
-    assert "context: scripts/sovereign-backend" in workflow
+    assert "context: ." in workflow
     assert "file: scripts/sovereign-backend/Dockerfile" in workflow
-    assert "COPY *.py ./" in dockerfile
-    assert "COPY agent_runtime/ ./agent_runtime/" in dockerfile
-    assert "COPY migrations ./migrations" in dockerfile
+    assert "COPY scripts/sovereign-backend/*.py ./" in dockerfile
+    assert "COPY scripts/sovereign-backend/agent_runtime/ ./agent_runtime/" in dockerfile
+    assert "COPY scripts/sovereign-backend/migrations ./migrations" in dockerfile
+    assert "COPY --from=admin-web /workspace/dist /app/admin-dist" in dockerfile
+    assert "rm -f /app/enterprise_admin_ui.py" in dockerfile
     assert "COPY app.py ." not in dockerfile
     assert "context: backend" not in workflow
 
