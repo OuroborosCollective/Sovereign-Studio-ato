@@ -110,6 +110,8 @@ def mock_app_deps(monkeypatch):
         normalized_sql = " ".join(sql.upper().split())
         if "SELECT CREDITS, ROLE FROM ADMIN_USERS" in normalized_sql:
             return {"credits": 500, "role": "admin"}
+        if "SELECT ROLE FROM ADMIN_USERS" in normalized_sql:
+            return {"role": "admin"}
         return None
 
     monkeypatch.setattr(app, "query", fake_query)
