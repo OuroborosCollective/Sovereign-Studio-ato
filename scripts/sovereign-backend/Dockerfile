@@ -14,7 +14,8 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY . .
 RUN pnpm run build:web \
     && test -f /workspace/dist/index.html \
-    && grep -R --fixed-strings "sovereign-react-admin-root" /workspace/dist >/dev/null
+    && grep -Eq 'src="/admin/assets/[^"]+\.js"' /workspace/dist/index.html \
+    && find /workspace/dist/assets -type f -name '*.js' -size +0c -print -quit | grep -q .
 
 FROM python:3.11-slim
 
