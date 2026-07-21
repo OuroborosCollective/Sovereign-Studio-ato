@@ -17,6 +17,7 @@ import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
 MAX_TEXT = 1000
@@ -220,6 +221,45 @@ class OwnerInputClient:
             expected=(200,),
             timeout=120,
         )
+
+
+class ProviderRuntimeClient(OwnerInputClient):
+    """Secret-free operator client for existing owner-confirmed LiteLLM routes."""
+
+    @staticmethod
+    def _route_id(route_id: str) -> str:
+        selected = str(route_id or "").strip()
+        if not ROUTE_ID_RE.fullmatch(selected):
+            raise ValueError("route_id ist ungültig")
+        return selected
+
+    def list_deployments(self) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            "/api/internal/llm/provider-deployments",
+            timeout=30,
+        )
+        deployments = payload.get("deployments")
+        return {
+            **payload,
+            "deployments": deployments if isinstance(deployments, list) else [],
+            "protected_values_returned": False,
+        }
+
+    def activate(self, route_id: str) -> dict[str, Any]:
+        selected = self._route_id(route_id)
+        payload = self._request(
+            "POST",
+            f"/api/internal/llm/provider-deployments/{selected}/activate",
+            expected=(200, 400, 409, 500, 502),
+            timeout=180,
+        )
+        return {
+            **payload,
+            "routeId": str(payload.get("routeId") or selected),
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
 
 
 class ControllerRuntimeClient(OwnerInputClient):

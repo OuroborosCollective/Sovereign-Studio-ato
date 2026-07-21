@@ -29,6 +29,12 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert '"/model/new"' in runtime
     assert '"/v1/chat/completions"' in runtime
     assert '"/api/admin/llm/provider-deployments/<route_id>/owner-input"' in runtime
+    assert '"/api/internal/llm/provider-deployments"' in runtime
+    assert '"/api/internal/llm/provider-deployments/<route_id>/activate"' in runtime
+    assert "def _service_authorized()" in runtime
+    assert 'request.headers.get("X-Sovereign-Owner-Request-Key"' in runtime
+    assert "hmac.compare_digest" in runtime
+    assert "provider_route_id_invalid" in runtime
     assert "provider_canary_failed" in runtime
     assert "_catalog_model_with_retry" in runtime
     assert "requires_secret = secret_available or not model_present or not key_fingerprint" in runtime
@@ -44,6 +50,20 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert "UPDATE llm_routes" in migration
     assert "lower(COALESCE(provider, '')) <> 'litellm'" in migration
     assert "SET api_key = NULL" in migration
+
+
+def test_mcp_provider_operator_never_accepts_a_secret_argument() -> None:
+    server = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "server.py").read_text("utf-8")
+    client = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "owner_input_client.py").read_text("utf-8")
+
+    assert "ProviderRuntimeClient" in server
+    assert "def litellm_provider_deployments()" in server
+    assert "def litellm_provider_route_activate(route_id: str)" in server
+    assert "provider_runtime.activate(route_id)" in server
+    assert "def activate(self, route_id: str)" in client
+    assert 'json_body={"apiKey"' not in client
+    assert "secret_argument_accepted" in client
+    assert "protected_values_returned" in client
 
 
 def test_live_chat_and_catalog_accept_only_private_litellm_routes() -> None:
