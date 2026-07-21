@@ -80,7 +80,21 @@ jobs:
           python-version: '3.11'
 
       - name: Run Agent Runtime Tests
-        run: pytest scripts/sovereign-backend/tests -q
+        shell: bash
+        run: |
+          set +e
+          pytest scripts/sovereign-backend/tests -q 2>&1 | tee agent-runtime-pytest.log
+          test_status=${PIPESTATUS[0]}
+          exit "${test_status}"
+
+      - name: Upload bounded agent-runtime test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-pytest-${{ github.run_id }}
+          path: agent-runtime-pytest.log
+          if-no-files-found: error
+          retention-days: 3
 
   release-policy-gate:
     name: Queue-only Release Policy
