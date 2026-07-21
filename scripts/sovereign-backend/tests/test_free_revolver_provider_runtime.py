@@ -88,6 +88,29 @@ def test_database_never_receives_raw_provider_keys() -> None:
     assert "key_hint" in migration
 
 
+def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_keys() -> None:
+    migration_31 = (BACKEND / "migrations" / "031_sovereign_free_revolver_v3.sql").read_text("utf-8")
+    migration_32 = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
+
+    assert "tenant_id UUID NULL REFERENCES admin_users" not in migration_31
+    assert "tenant_id UUID NOT NULL REFERENCES admin_users" not in migration_31
+    assert "to_regclass('admin_users') IS NOT NULL" in migration_31
+    for constraint in (
+        "fk_llm_revolver_profiles_tenant",
+        "fk_llm_revolver_schema_contracts_tenant",
+        "fk_llm_revolver_bandit_tenant",
+        "fk_llm_semantic_cache_tenant",
+    ):
+        assert constraint in migration_31
+
+    assert "owner_request_id UUID REFERENCES owner_input_requests" not in migration_32
+    assert "created_by UUID REFERENCES admin_users" not in migration_32
+    assert "to_regclass('owner_input_requests') IS NOT NULL" in migration_32
+    assert "to_regclass('admin_users') IS NOT NULL" in migration_32
+    assert "fk_llm_revolver_provider_owner_request" in migration_32
+    assert "fk_llm_revolver_provider_created_by" in migration_32
+
+
 def test_app_registers_provider_runtime_and_readiness_requires_migration() -> None:
     app = (BACKEND / "app.py").read_text("utf-8")
     owner_runtime = (BACKEND / "owner_input_runtime.py").read_text("utf-8")

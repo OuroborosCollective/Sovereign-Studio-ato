@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS llm_revolver_provider_sources (
     models_url TEXT,
     auth_mode TEXT NOT NULL DEFAULT 'bearer'
         CHECK (auth_mode IN ('bearer', 'x-api-key', 'none')),
-    owner_request_id UUID REFERENCES owner_input_requests(id) ON DELETE SET NULL,
+    owner_request_id UUID,
     key_fingerprint TEXT,
     key_hint TEXT,
     status TEXT NOT NULL DEFAULT 'awaiting_owner_input'
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS llm_revolver_provider_sources (
     last_discovered_at TIMESTAMPTZ,
     last_checked_at TIMESTAMPTZ,
     enabled BOOLEAN NOT NULL DEFAULT true,
-    created_by UUID REFERENCES admin_users(id) ON DELETE SET NULL,
+    created_by UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -72,5 +72,30 @@ CREATE TABLE IF NOT EXISTS llm_revolver_provider_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_llm_revolver_provider_checks_recent
     ON llm_revolver_provider_checks (source_id, observed_at DESC);
+
+DO $$
+BEGIN
+    IF to_regclass('owner_input_requests') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname = 'fk_llm_revolver_provider_owner_request'
+       ) THEN
+        ALTER TABLE llm_revolver_provider_sources
+            ADD CONSTRAINT fk_llm_revolver_provider_owner_request
+            FOREIGN KEY (owner_request_id)
+            REFERENCES owner_input_requests(id) ON DELETE SET NULL;
+    END IF;
+
+    IF to_regclass('admin_users') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname = 'fk_llm_revolver_provider_created_by'
+       ) THEN
+        ALTER TABLE llm_revolver_provider_sources
+            ADD CONSTRAINT fk_llm_revolver_provider_created_by
+            FOREIGN KEY (created_by)
+            REFERENCES admin_users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 COMMIT;
