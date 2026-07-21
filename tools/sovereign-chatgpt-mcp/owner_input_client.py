@@ -16,6 +16,7 @@ from typing import Any
 import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
@@ -32,6 +33,7 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
+    "litellm_provider_key": "LiteLLM Provider API-Key",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 
@@ -178,6 +180,41 @@ class OwnerInputClient:
             "request": request_payload,
             "owner_url": self._owner_url(selected),
             "protected_value_returned": False,
+        }
+
+    def activate_provider_route(
+        self,
+        *,
+        route_id: str,
+        owner_request_id: str,
+    ) -> dict[str, Any]:
+        selected_route = str(route_id or "").strip()
+        selected_request = str(owner_request_id or "").strip()
+        if not ROUTE_ID_RE.fullmatch(selected_route):
+            raise ValueError("route_id ist ungültig")
+        if not REQUEST_ID_RE.fullmatch(selected_request):
+            raise ValueError("owner_request_id ist ungültig")
+        try:
+            normalized_request = str(uuid.UUID(selected_request))
+        except ValueError as exc:
+            raise ValueError("owner_request_id ist ungültig") from exc
+        payload = self._request(
+            "POST",
+            (
+                "/api/internal/llm/provider-deployments/"
+                f"{urllib.parse.quote(selected_route, safe='')}/activate"
+            ),
+            json_body={"ownerRequestId": normalized_request},
+            expected=(200, 409, 500, 502),
+            timeout=180,
+        )
+        return {
+            **payload,
+            "status": str(payload.get("status") or "PROVIDER_ACTIVATION_RESULT"),
+            "routeId": str(payload.get("routeId") or selected_route),
+            "ownerRequestId": normalized_request,
+            "protected_values_returned": False,
+            "activation_transport": "private_owner_service_bridge",
         }
 
     def plan_proven_learning(self, record: dict[str, Any]) -> dict[str, Any]:
