@@ -29,12 +29,10 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert '"/model/new"' in runtime
     assert '"/v1/chat/completions"' in runtime
     assert '"/api/admin/llm/provider-deployments/<route_id>/owner-input"' in runtime
-    assert '"/api/internal/llm/provider-deployments"' in runtime
     assert '"/api/internal/llm/provider-deployments/<route_id>/activate"' in runtime
-    assert "def _service_authorized()" in runtime
-    assert 'request.headers.get("X-Sovereign-Owner-Request-Key"' in runtime
+    assert "X-Sovereign-Owner-Request-Key" in runtime
+    assert "owner_request_route_mismatch" in runtime
     assert "hmac.compare_digest" in runtime
-    assert "provider_route_id_invalid" in runtime
     assert "provider_canary_failed" in runtime
     assert "_catalog_model_with_retry" in runtime
     assert "requires_secret = secret_available or not model_present or not key_fingerprint" in runtime

@@ -921,8 +921,6 @@ def register_llm_provider_routes(
         }), 202
 
     def _activate_llm_provider(route_id: str):
-        if not _ROUTE_ID_RE.fullmatch(str(route_id or "").strip()):
-            return jsonify({"error": "Providerroute ist ungültig", "blocker": "provider_route_id_invalid"}), 400
         deployment = query(
             """SELECT deployment.route_id, deployment.provider_name,
                       deployment.provider_prefix, deployment.upstream_model_id,
@@ -1249,6 +1247,28 @@ def register_llm_provider_routes(
 
     @app.route("/api/internal/llm/provider-deployments/<route_id>/activate", methods=["POST"])
     def internal_activate_llm_provider(route_id: str):
-        if not _service_authorized():
-            return jsonify({"error": "Nicht autorisiert"}), 401
+        expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+        supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+            return jsonify({"error": "Nicht autorisiert", "blocker": "owner_service_auth_required"}), 401
+        body = request.get_json(silent=True) or {}
+        owner_request_id = str(body.get("ownerRequestId") or "").strip()
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_request_id):
+            return jsonify({"error": "ownerRequestId ist ungültig", "blocker": "owner_request_id_invalid"}), 400
+        deployment = query(
+            """SELECT owner_request_id::text AS owner_request_id
+               FROM llm_provider_deployments
+               WHERE route_id=%s LIMIT 1""",
+            (route_id,), one=True,
+        )
+        if not deployment:
+            return jsonify({"error": "Providerroute nicht gefunden", "blocker": "provider_route_missing"}), 404
+        if not hmac.compare_digest(
+            str(deployment.get("owner_request_id") or ""),
+            owner_request_id,
+        ):
+            return jsonify({
+                "error": "Owner-Anfrage gehört nicht zur aktuellen Providerroute",
+                "blocker": "owner_request_route_mismatch",
+            }), 409
         return _activate_llm_provider(route_id)
