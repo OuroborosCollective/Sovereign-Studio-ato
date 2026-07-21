@@ -1,0 +1,15 @@
+{
+  "target": "scripts/sovereign-backend/Dockerfile",
+  "source_ref": "sovereign/chatgpt/1784644923-pr-905-fix-271472",
+  "branch_base_ref": "sovereign/chatgpt/1784644923-pr-905-fix-271472",
+  "branch": "sovereign/chatgpt/1784644923-pr-905-fix-271472",
+  "commit_message": "fix(admin): validate the built React mount artifact",
+  "pr_title": "Fix canonical admin delivery",
+  "pr_body": "Supersedes #907. Replaces the invalid runtime-only DOM marker assertion with the real static Vite mount contract while preserving the canonical React admin artifact build and backend delivery path.",
+  "blocks": [
+    {
+      "search": "sovereign-react-admin-root",
+      "replace": "id=\"root\""
+    }
+  ]
+}
