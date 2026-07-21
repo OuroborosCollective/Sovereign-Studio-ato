@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from owner_input_client import ControllerRuntimeClient, OwnerInputClient
+from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 
 
 class FakeResponse:
@@ -68,6 +68,73 @@ def test_create_request_sends_openai_target_and_no_protected_value(monkeypatch) 
         "https://sovereign-backend.arelorian.de/owner-approvals"
         "?request_id=11111111-1111-4111-8111-111111111111"
     )
+
+
+def test_create_request_allows_litellm_provider_target(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_PUBLIC_URL", "https://sovereign-backend.arelorian.de")
+    request_id = "44444444-4444-4444-8444-444444444444"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "litellm_provider_key",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="litellm_provider_key",
+        title="Free-Route Providerzugang",
+        reason="Eine LiteLLM-Free-Route benötigt eine geschützte Owner-Eingabe.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "litellm_provider_key"
+    assert call["json"]["fieldLabel"] == "LiteLLM Provider API-Key"
+    assert "protectedValue" not in call["json"]
+    assert result["owner_url"] == (
+        "https://sovereign-backend.arelorian.de/owner-approvals"
+        f"?request_id={request_id}"
+    )
+    assert result["llm_can_receive_protected_value"] is False
+
+
+def test_activate_provider_route_uses_private_owner_bridge(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    request_id = "44444444-4444-4444-8444-444444444444"
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "ready",
+            "routeId": route_id,
+            "modelId": "sovereign-free-route",
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.activate_provider_route(
+        route_id=route_id,
+        owner_request_id=request_id,
+    )
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == (
+        "http://backend:8787/api/internal/llm/provider-deployments/"
+        f"{route_id}/activate"
+    )
+    assert call["headers"]["X-Sovereign-Owner-Request-Key"] == "bridge-key"
+    assert call["json"] == {"ownerRequestId": request_id}
+    assert call["timeout"] == 180
+    assert result["status"] == "ready"
+    assert result["protected_values_returned"] is False
 
 
 def test_status_returns_metadata_only(monkeypatch) -> None:
@@ -277,6 +344,69 @@ def test_controller_external_event_rejects_secret_before_network(monkeypatch) ->
             summary="Exact-head workflow completed.",
             payload={"token": "sk-proj-" + "x" * 30},
         )
+    assert session.calls == []
+
+
+def test_provider_deployments_are_read_without_protected_values(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "PROVIDER_DEPLOYMENTS_READ",
+            "deployments": [{
+                "routeId": "litellm-admin-route-1",
+                "status": "awaiting_owner_input",
+                "keyFingerprintPresent": False,
+            }],
+            "protectedValuesReturned": False,
+        })
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    result = client.list_deployments()
+
+    call = session.calls[0]
+    assert call["method"] == "GET"
+    assert call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
+    assert result["protected_values_returned"] is False
+    assert result["deployments"][0]["routeId"] == "litellm-admin-route-1"
+
+
+def test_provider_activation_accepts_only_route_identity(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "ready",
+            "routeId": route_id,
+            "modelId": "sovereign-groq-model",
+        })
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    result = client.activate(route_id)
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == (
+        "http://backend:8787/api/internal/llm/provider-deployments/"
+        f"{route_id}/activate"
+    )
+    assert call["json"] is None
+    assert result["secret_argument_accepted"] is False
+    assert result["protected_values_returned"] is False
+
+
+def test_provider_activation_rejects_path_escape_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([])
+    client = ProviderRuntimeClient(session=session)
+
+    with pytest.raises(ValueError, match="route_id ist ungültig"):
+        client.activate("../../owner-secret")
     assert session.calls == []
 
 

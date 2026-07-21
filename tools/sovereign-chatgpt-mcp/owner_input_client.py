@@ -16,8 +16,9 @@ from typing import Any
 import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
-LITELLM_ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$")
+ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
 MAX_TEXT = 1000
@@ -33,6 +34,7 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
+    "litellm_provider_key": "LiteLLM Provider API-Key",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 
@@ -181,22 +183,39 @@ class OwnerInputClient:
             "protected_value_returned": False,
         }
 
-    def activate_litellm_provider_route(self, route_id: str) -> dict[str, Any]:
-        selected = str(route_id or "").strip()
-        if not LITELLM_ROUTE_ID_RE.fullmatch(selected):
+    def activate_provider_route(
+        self,
+        *,
+        route_id: str,
+        owner_request_id: str,
+    ) -> dict[str, Any]:
+        selected_route = str(route_id or "").strip()
+        selected_request = str(owner_request_id or "").strip()
+        if not ROUTE_ID_RE.fullmatch(selected_route):
             raise ValueError("route_id ist ungültig")
+        if not REQUEST_ID_RE.fullmatch(selected_request):
+            raise ValueError("owner_request_id ist ungültig")
+        try:
+            normalized_request = str(uuid.UUID(selected_request))
+        except ValueError as exc:
+            raise ValueError("owner_request_id ist ungültig") from exc
         payload = self._request(
             "POST",
             (
                 "/api/internal/llm/provider-deployments/"
-                f"{urllib.parse.quote(selected, safe='')}/activate"
+                f"{urllib.parse.quote(selected_route, safe='')}/activate"
             ),
-            expected=(200, 400, 409, 500, 502, 503),
-            timeout=1200,
+            json_body={"ownerRequestId": normalized_request},
+            expected=(200, 409, 500, 502),
+            timeout=180,
         )
         return {
             **payload,
+            "status": str(payload.get("status") or "PROVIDER_ACTIVATION_RESULT"),
+            "routeId": str(payload.get("routeId") or selected_route),
+            "ownerRequestId": normalized_request,
             "protected_values_returned": False,
+            "activation_transport": "private_owner_service_bridge",
         }
 
     def plan_proven_learning(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -239,6 +258,45 @@ class OwnerInputClient:
             expected=(200,),
             timeout=120,
         )
+
+
+class ProviderRuntimeClient(OwnerInputClient):
+    """Secret-free operator client for existing owner-confirmed LiteLLM routes."""
+
+    @staticmethod
+    def _route_id(route_id: str) -> str:
+        selected = str(route_id or "").strip()
+        if not ROUTE_ID_RE.fullmatch(selected):
+            raise ValueError("route_id ist ungültig")
+        return selected
+
+    def list_deployments(self) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            "/api/internal/llm/provider-deployments",
+            timeout=30,
+        )
+        deployments = payload.get("deployments")
+        return {
+            **payload,
+            "deployments": deployments if isinstance(deployments, list) else [],
+            "protected_values_returned": False,
+        }
+
+    def activate(self, route_id: str) -> dict[str, Any]:
+        selected = self._route_id(route_id)
+        payload = self._request(
+            "POST",
+            f"/api/internal/llm/provider-deployments/{selected}/activate",
+            expected=(200, 400, 409, 500, 502),
+            timeout=180,
+        )
+        return {
+            **payload,
+            "routeId": str(payload.get("routeId") or selected),
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
 
 
 class ControllerRuntimeClient(OwnerInputClient):

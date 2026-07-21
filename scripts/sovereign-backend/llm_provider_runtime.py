@@ -37,6 +37,7 @@ _PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,47}$")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
 _ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$")
 _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
+_ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 _DEFAULT_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
 
 
@@ -601,6 +602,45 @@ def register_llm_provider_routes(
         )
         return jsonify({"deployments": [dict(row) for row in (rows or [])]})
 
+    @app.route("/api/internal/llm/provider-deployments", methods=["GET"])
+    def internal_llm_provider_deployments():
+        if not _service_authorized():
+            return jsonify({"error": "Nicht autorisiert"}), 401
+        rows = query(
+            """SELECT deployment.route_id AS "routeId",
+                      deployment.provider_name AS "providerName",
+                      deployment.provider_prefix AS "providerPrefix",
+                      deployment.upstream_model_id AS "upstreamModelId",
+                      deployment.litellm_model_name AS "litellmModelName",
+                      deployment.billing_category AS "billingCategory",
+                      deployment.markup_multiplier AS "markupMultiplier",
+                      deployment.pricing_verified_at AS "pricingVerifiedAt",
+                      deployment.key_hint AS "keyHint", deployment.status,
+                      deployment.last_error_code AS "lastErrorCode",
+                      deployment.last_canary_request_id AS "lastCanaryRequestId",
+                      to_char(deployment.last_canary_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS "lastCanaryAt",
+                      deployment.owner_request_id::text AS "ownerRequestId",
+                      owner_request.status AS "ownerInputStatus",
+                      owner_request.result_code AS "ownerInputResultCode",
+                      COALESCE(route.config->>'fundingMode', 'provider_priced') AS "fundingMode",
+                      route.disabled AS "routeDisabled",
+                      COALESCE((route.config->>'pricingVerified')::boolean, false) AS "routePricingVerified",
+                      CASE WHEN deployment.key_fingerprint IS NULL THEN false ELSE true END AS "keyFingerprintPresent"
+               FROM llm_provider_deployments AS deployment
+               LEFT JOIN owner_input_requests AS owner_request
+                 ON owner_request.id=deployment.owner_request_id
+               LEFT JOIN llm_routes AS route
+                 ON route.id=deployment.route_id
+               ORDER BY deployment.updated_at DESC
+               LIMIT 100"""
+        )
+        return jsonify({
+            "ok": True,
+            "status": "PROVIDER_DEPLOYMENTS_READ",
+            "deployments": [dict(row) for row in (rows or [])],
+            "protectedValuesReturned": False,
+        })
+
     @app.route("/api/admin/llm/provider-deployments/prepare", methods=["POST"])
     @require_admin
     def admin_prepare_llm_provider():
@@ -881,11 +921,7 @@ def register_llm_provider_routes(
             "markupMultiplier": policy["markupMultiplier"] if policy else deployment.get("markup_multiplier"),
         }), 202
 
-    def _activate_llm_provider_route(route_id: str):
-        selected_route_id = str(route_id or "").strip()
-        if not _ROUTE_ID_RE.fullmatch(selected_route_id):
-            return jsonify({"error": "route_id ist ungültig", "blocker": "provider_route_id_invalid"}), 400
-        route_id = selected_route_id
+    def _activate_llm_provider(route_id: str):
         deployment = query(
             """SELECT deployment.route_id, deployment.provider_name,
                       deployment.provider_prefix, deployment.upstream_model_id,
@@ -1208,10 +1244,32 @@ def register_llm_provider_routes(
     @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])
     @require_admin
     def admin_activate_llm_provider(route_id: str):
-        return _activate_llm_provider_route(route_id)
+        return _activate_llm_provider(route_id)
 
     @app.route("/api/internal/llm/provider-deployments/<route_id>/activate", methods=["POST"])
     def internal_activate_llm_provider(route_id: str):
-        if not _service_authorized():
-            return jsonify({"error": "Nicht autorisiert"}), 401
-        return _activate_llm_provider_route(route_id)
+        expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+        supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+            return jsonify({"error": "Nicht autorisiert", "blocker": "owner_service_auth_required"}), 401
+        body = request.get_json(silent=True) or {}
+        owner_request_id = str(body.get("ownerRequestId") or "").strip()
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_request_id):
+            return jsonify({"error": "ownerRequestId ist ungültig", "blocker": "owner_request_id_invalid"}), 400
+        deployment = query(
+            """SELECT owner_request_id::text AS owner_request_id
+               FROM llm_provider_deployments
+               WHERE route_id=%s LIMIT 1""",
+            (route_id,), one=True,
+        )
+        if not deployment:
+            return jsonify({"error": "Providerroute nicht gefunden", "blocker": "provider_route_missing"}), 404
+        if not hmac.compare_digest(
+            str(deployment.get("owner_request_id") or ""),
+            owner_request_id,
+        ):
+            return jsonify({
+                "error": "Owner-Anfrage gehört nicht zur aktuellen Providerroute",
+                "blocker": "owner_request_route_mismatch",
+            }), 409
+        return _activate_llm_provider(route_id)
