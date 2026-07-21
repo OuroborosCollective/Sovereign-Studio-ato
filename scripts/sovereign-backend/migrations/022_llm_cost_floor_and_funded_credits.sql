@@ -140,7 +140,11 @@ SET credits_per_unit = 0,
         'pricingAuthority', 'litellm-model-info'
     ),
     updated_at = NOW()
-WHERE model_id = 'sovereign-fast' AND lower(provider) = 'litellm';
+WHERE model_id = 'sovereign-fast'
+  AND lower(provider) = 'litellm'
+  -- Startup migrations are replayed for schema-drift safety. Never erase
+  -- later price/canary evidence that already activated this route.
+  AND COALESCE(config->>'pricingVerified', 'false') <> 'true';
 
 -- Every non-Agent route is re-gated. The owner must assign one of the three
 -- categories and LiteLLM must confirm exact pricing before activation. Existing
@@ -176,7 +180,10 @@ SET disabled = true,
     ),
     updated_at = NOW()
 WHERE lower(provider) = 'litellm'
-  AND model_id <> 'sovereign-fast';
+  AND model_id <> 'sovereign-fast'
+  -- Re-gate only legacy or still-unverified rows. A verified route is live
+  -- runtime truth and must survive every idempotent container restart.
+  AND COALESCE(config->>'pricingVerified', 'false') <> 'true';
 
 ALTER TABLE credit_packages
     DROP CONSTRAINT IF EXISTS credit_packages_cash_buffer_check;
