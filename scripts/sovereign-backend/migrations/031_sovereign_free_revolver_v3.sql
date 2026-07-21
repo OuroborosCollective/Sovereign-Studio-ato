@@ -4,7 +4,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS llm_revolver_profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+    tenant_id UUID NULL,
     profile_key TEXT NOT NULL,
     mode TEXT NOT NULL DEFAULT 'sequential'
         CHECK (mode IN ('sequential', 'weighted', 'race')),
@@ -30,7 +30,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_llm_revolver_profiles_scope
 
 CREATE TABLE IF NOT EXISTS llm_revolver_schema_contracts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+    tenant_id UUID NULL,
     schema_id TEXT NOT NULL,
     schema_body JSONB NOT NULL,
     revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
@@ -43,7 +43,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_llm_revolver_schema_scope
 
 CREATE TABLE IF NOT EXISTS llm_revolver_bandit_recommendations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+    tenant_id UUID NULL,
     profile_key TEXT NOT NULL,
     route_id TEXT NOT NULL,
     recommended_weight_ppm INTEGER NOT NULL CHECK (recommended_weight_ppm BETWEEN 0 AND 1000000),
@@ -72,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_llm_revolver_structured_recent
 
 CREATE TABLE IF NOT EXISTS llm_semantic_cache_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL,
     capability TEXT NOT NULL,
     prompt_hash TEXT NOT NULL,
     policy_revision INTEGER NOT NULL,
@@ -89,6 +89,44 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_llm_semantic_cache_identity
        (tenant_id, capability, prompt_hash, policy_revision, knowledge_revision, model_family, schema_id);
 CREATE INDEX IF NOT EXISTS idx_llm_semantic_cache_expiry
     ON llm_semantic_cache_entries (expires_at);
+
+DO $$
+BEGIN
+    IF to_regclass('admin_users') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'fk_llm_revolver_profiles_tenant'
+        ) THEN
+            ALTER TABLE llm_revolver_profiles
+                ADD CONSTRAINT fk_llm_revolver_profiles_tenant
+                FOREIGN KEY (tenant_id) REFERENCES admin_users(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'fk_llm_revolver_schema_contracts_tenant'
+        ) THEN
+            ALTER TABLE llm_revolver_schema_contracts
+                ADD CONSTRAINT fk_llm_revolver_schema_contracts_tenant
+                FOREIGN KEY (tenant_id) REFERENCES admin_users(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'fk_llm_revolver_bandit_tenant'
+        ) THEN
+            ALTER TABLE llm_revolver_bandit_recommendations
+                ADD CONSTRAINT fk_llm_revolver_bandit_tenant
+                FOREIGN KEY (tenant_id) REFERENCES admin_users(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'fk_llm_semantic_cache_tenant'
+        ) THEN
+            ALTER TABLE llm_semantic_cache_entries
+                ADD CONSTRAINT fk_llm_semantic_cache_tenant
+                FOREIGN KEY (tenant_id) REFERENCES admin_users(id) ON DELETE CASCADE;
+        END IF;
+    END IF;
+END $$;
 
 INSERT INTO llm_revolver_profiles (tenant_id, profile_key, mode)
 VALUES (NULL, 'default-free', 'sequential')
