@@ -228,15 +228,31 @@ def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> 
 
 def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> None:
     routes = SWARM_ROUTES.read_text("utf-8")
+    free_profile = routes.split(
+        "if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:",
+        1,
+    )[1].split("if execution_resolution.profile_id != PAID_SWARM_PROFILE:", 1)[0]
+    paid_profile = routes.split(
+        "if execution_resolution.profile_id != PAID_SWARM_PROFILE:",
+        1,
+    )[1].split("except AgentBillingError as exc:", 1)[0]
 
     assert 'def start_cognitive_swarm_run(' in routes
     assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
-    assert "mission_intent = asyncio.run(classify_mission_intent(" in routes
-    assert "normalized_mission," in routes
-    assert "model=normalized_model," in routes
-    assert "stage_billing=stage_billing," in routes
-    assert routes.index("received_state = create_agent_run(") < routes.index("stage_billing = AgentStageBilling(")
-    assert routes.index("stage_billing = AgentStageBilling(") < routes.index("mission_intent = asyncio.run(classify_mission_intent(")
+    assert "mission_intent = asyncio.run(classify_mission_intent(" in free_profile
+    assert "normalized_mission," in free_profile
+    assert "model=resolved_model," in free_profile
+    assert "stage_billing=None," in free_profile
+    assert "create_repository_single_agent_task(" in free_profile
+    assert 'task_ids_by_agent={"free_single_agent": free_task_id}' in free_profile
+    assert '"codeServerWorkspace"' in free_profile
+    assert '"backgroundAgentsStarted": 0' in free_profile
+    assert "stage_billing = AgentStageBilling(" in paid_profile
+    assert "mission_intent = asyncio.run(classify_mission_intent(" in paid_profile
+    assert "model=resolved_model," in paid_profile
+    assert "stage_billing=stage_billing," in paid_profile
+    assert paid_profile.index("stage_billing = AgentStageBilling(") < paid_profile.index("mission_intent = asyncio.run(classify_mission_intent(")
+    assert routes.index("received_state = create_agent_run(") < routes.index("if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:")
     assert "payload, status_code = start_cognitive_swarm_run(" in routes
     assert "payload, status_code = resume_cognitive_swarm_run(" in routes
     assert "start_run=start_cognitive_swarm_run" in routes

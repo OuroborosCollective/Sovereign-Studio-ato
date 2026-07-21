@@ -10,6 +10,7 @@ import asyncio
 import importlib
 import importlib.metadata
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -31,6 +32,7 @@ DEFAULT_MODEL: Final[str] = AGENTS_LITELLM_ALIAS
 ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset({AGENTS_LITELLM_ALIAS})
 _AGENT_OUTPUT_TOKEN_LIMIT: Final[int] = 2_048
 _AGENT_WORKER_MAX_TURNS: Final[int] = 4
+_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12
 _AGENT_SINGLE_STAGE_MAX_TURNS: Final[int] = 1
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 RELEASE_HUNT_SKILL_PATH: Final[Path] = (
@@ -43,11 +45,15 @@ RELEASE_HUNT_SKILL_PATH: Final[Path] = (
 _AGENT_CLASS: Any | None = None
 _RUNNER_CLASS: Any | None = None
 _RUN_CONFIG: Any | None = None
+_RUN_CONFIG_MODEL = ""
 _RUN_CONFIG_ERROR = ""
 _AGENTS_SDK_ERROR = ""
 _LITELLM_SERVICE_KEY_FILENAME: Final[str] = "litellm_master_key.txt"
 _LITELLM_SERVICE_KEY_MAX_BYTES: Final[int] = 8192
 _DEFAULT_LITELLM_BASE_URL: Final[str] = "http://litellm:4000"
+_SAFE_LITELLM_ALIAS: Final[re.Pattern[str]] = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$"
+)
 
 StageObserver = Callable[[dict[str, object]], None]
 RepositoryToolFactory = Callable[[str], list[Any]]
@@ -77,12 +83,17 @@ def _emit_stage(
     observer(payload)
 
 
-def ensure_openai_runtime_key() -> bool:
-    """Build a per-run Agents SDK provider that can reach only internal LiteLLM."""
+def ensure_openai_runtime_key(model: str | None = None) -> bool:
+    """Build a per-model Agents SDK provider that can reach only internal LiteLLM."""
 
-    global _RUN_CONFIG, _RUN_CONFIG_ERROR
+    global _RUN_CONFIG, _RUN_CONFIG_MODEL, _RUN_CONFIG_ERROR
     _RUN_CONFIG = None
+    _RUN_CONFIG_MODEL = ""
     _RUN_CONFIG_ERROR = ""
+    selected_model = str(model or DEFAULT_MODEL).strip()
+    if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
+        _RUN_CONFIG_ERROR = "LITELLM_ALIAS_INVALID"
+        return False
     os.environ.pop("OPENAI_API_KEY", None)
     os.environ.pop("OPENAI_BASE_URL", None)
     base_url = os.getenv("LITELLM_BASE_URL", _DEFAULT_LITELLM_BASE_URL).strip().rstrip("/")
@@ -148,7 +159,7 @@ def ensure_openai_runtime_key() -> bool:
         return False
     try:
         _RUN_CONFIG = run_config_class(
-            model=DEFAULT_MODEL,
+            model=selected_model,
             model_provider=provider,
             model_settings=model_settings,
             tracing_disabled=True,
@@ -158,12 +169,15 @@ def ensure_openai_runtime_key() -> bool:
         _RUN_CONFIG = None
         _RUN_CONFIG_ERROR = "SDK_RUN_CONFIG_REJECTED"
         return False
+    _RUN_CONFIG_MODEL = selected_model
     return True
 
 
-def _require_litellm_run_config() -> Any:
-    if _RUN_CONFIG is None:
-        raise RuntimeError("The internal LiteLLM Agents SDK RunConfig is unavailable.")
+def _require_litellm_run_config(model: str | None = None) -> Any:
+    selected_model = str(model or DEFAULT_MODEL).strip()
+    if _RUN_CONFIG is None or _RUN_CONFIG_MODEL != selected_model:
+        if not ensure_openai_runtime_key(selected_model):
+            raise RuntimeError("The internal LiteLLM Agents SDK RunConfig is unavailable.")
     return _RUN_CONFIG
 
 
@@ -265,7 +279,12 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
 
 
 def _stage_max_turns(stage: str) -> int:
-    return _AGENT_WORKER_MAX_TURNS if ":worker:" in str(stage).casefold() else _AGENT_SINGLE_STAGE_MAX_TURNS
+    normalized = str(stage or "").casefold()
+    if "free-single-agent" in normalized:
+        return _AGENT_FREE_WORKSPACE_MAX_TURNS
+    if ":worker:" in normalized:
+        return _AGENT_WORKER_MAX_TURNS
+    return _AGENT_SINGLE_STAGE_MAX_TURNS
 
 
 async def _run_stage(
@@ -285,23 +304,36 @@ async def _run_stage(
         result = await runner_class.run(
             agent,
             prompt,
-            run_config=_require_litellm_run_config(),
+            run_config=_require_litellm_run_config(str(getattr(agent, "model", "") or DEFAULT_MODEL)),
             max_turns=_stage_max_turns(stage),
         )
-    except SwarmExecutionError:
+    except SwarmExecutionError as exc:
         if reservation is not None:
-            stage_billing.mark_reconciliation_required(
-                reservation,
-                family="AGENTS_STAGE_FAILED_WITHOUT_USAGE",
-            )
+            if exc.http_status in {400, 401, 403, 404, 429}:
+                stage_billing.refund_failed_before_usage(
+                    reservation,
+                    family=exc.family,
+                )
+            else:
+                stage_billing.mark_reconciliation_required(
+                    reservation,
+                    family=exc.family,
+                )
         raise
     except Exception as exc:
+        classified = classify_swarm_exception(exc, stage=stage)
         if reservation is not None:
-            stage_billing.mark_reconciliation_required(
-                reservation,
-                family=type(exc).__name__,
-            )
-        raise classify_swarm_exception(exc, stage=stage) from exc
+            if classified.http_status in {400, 401, 403, 404, 429}:
+                stage_billing.refund_failed_before_usage(
+                    reservation,
+                    family=classified.family,
+                )
+            else:
+                stage_billing.mark_reconciliation_required(
+                    reservation,
+                    family=classified.family,
+                )
+        raise classified from exc
     if reservation is not None:
         stage_billing.settle(reservation, result)
     return result
@@ -374,7 +406,12 @@ async def classify_mission_intent(
     normalized_mission = mission.strip()
     if not normalized_mission:
         raise ValueError("mission is required")
-    if not ensure_openai_runtime_key():
+    selected_model = (model or DEFAULT_MODEL).strip()
+    if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
+        raise ValueError("A valid Sovereign LiteLLM model alias is required.")
+    if stage_billing is not None and selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
+        raise ValueError("A paid Sovereign LiteLLM model alias is required.")
+    if not ensure_openai_runtime_key(selected_model):
         raise SwarmExecutionError(
             stage="intent-router",
             family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
@@ -382,9 +419,6 @@ async def classify_mission_intent(
             next_action="VERIFY_LITELLM_SERVICE_KEY",
             retryable=False,
         )
-    selected_model = (model or DEFAULT_MODEL).strip()
-    if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
-        raise ValueError("A Sovereign LiteLLM model alias is required.")
     agent_class, runner_class = _require_agents_sdk()
     router = agent_class(
         name="Sovereign Intent Router",
@@ -422,6 +456,127 @@ async def classify_mission_intent(
         intent.requires_online_tools = False
         intent.requires_repository_workspace = False
     return intent
+
+
+class FreeSingleAgentResult(BaseModel):
+    mode: Literal["conversation", "read_only_analysis", "repository_execution"]
+    assistant_text: str = Field(min_length=1, max_length=8000)
+    findings: list[str] = Field(default_factory=list, max_length=20)
+    blockers: list[str] = Field(default_factory=list, max_length=20)
+    upgrade_required: bool = False
+    repository_execution_performed: bool = False
+
+
+async def run_free_single_agent(
+    mission: str,
+    *,
+    evidence: str = "",
+    model: str,
+    stage_observer: StageObserver | None = None,
+    repository_tool_factory: RepositoryToolFactory | None = None,
+) -> dict[str, Any]:
+    """Run exactly one foreground agent on one DB-resolved free LiteLLM alias."""
+    normalized_mission = str(mission or "").strip()
+    selected_model = str(model or "").strip()
+    if not normalized_mission:
+        raise ValueError("mission is required")
+    if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
+        raise ValueError("A valid resolved LiteLLM alias is required.")
+    if not ensure_openai_runtime_key(selected_model):
+        raise SwarmExecutionError(
+            stage="free-single-agent",
+            family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
+            error_type="RuntimeConfigurationError",
+            next_action="VERIFY_LITELLM_SERVICE_KEY",
+            retryable=False,
+        )
+    agent_class, runner_class = _require_agents_sdk()
+    repository_tools = (
+        list(repository_tool_factory("free_single_agent"))
+        if repository_tool_factory is not None
+        else []
+    )
+    single_agent = agent_class(
+        name="Sovereign Free Single Agent",
+        model=selected_model,
+        instructions=(
+            "You are the single-agent free execution profile. Understand the user's language and complete one bounded task without spawning or delegating to another agent. "
+            "When repository tools are present, you may read, create, replace and exactly patch code only inside the isolated Code-Server Agent Job workspace. Read before writing; after every mutation inspect Git status and diff and run at least one relevant allowlisted test. "
+            "You must never merge, auto-merge, deploy to production, mutate the host, read secrets, or claim success without tool evidence. "
+            "When repository execution is requested but no repository tools are present, set upgrade_required=true and include WORKSPACE_TOOLS_REQUIRED. "
+            "For conversation or read-only analysis, answer directly. Return only the structured result."
+        ),
+        tools=repository_tools,
+        output_type=FreeSingleAgentResult,
+    )
+    _emit_stage(
+        stage_observer,
+        agent_id="free_single_agent",
+        event_type="agent_started",
+        status="RUNNING",
+        summary="The database-resolved free single agent started.",
+        next_action="WAIT_FOR_FREE_SINGLE_AGENT",
+    )
+    result = await _run_stage(
+        runner_class,
+        single_agent,
+        (
+            f"User mission:\n{normalized_mission}\n\n"
+            f"Supplied read-only evidence:\n{evidence or '[no evidence supplied]'}"
+        ),
+        stage="free-single-agent",
+        stage_billing=None,
+    )
+    output = result.final_output
+    if not isinstance(output, FreeSingleAgentResult):
+        raise SwarmExecutionError(
+            stage="free-single-agent-output",
+            family="AGENTS_STRUCTURED_OUTPUT_INVALID",
+            error_type=type(output).__name__,
+            next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
+            retryable=True,
+        )
+    repository_requested = output.mode == "repository_execution"
+    workspace_tools_available = bool(repository_tools)
+    if repository_requested and not workspace_tools_available:
+        output.upgrade_required = True
+        output.repository_execution_performed = False
+        if "WORKSPACE_TOOLS_REQUIRED" not in output.blockers:
+            output.blockers.append("WORKSPACE_TOOLS_REQUIRED")
+    else:
+        output.upgrade_required = False
+        output.repository_execution_performed = False
+    blocked = repository_requested and not workspace_tools_available
+    _emit_stage(
+        stage_observer,
+        agent_id="free_single_agent",
+        event_type="agent_completed",
+        status="BLOCKED" if blocked else "COMPLETED",
+        summary=(
+            "The free single agent could not access an isolated workspace."
+            if blocked
+            else "The free single agent completed its bounded foreground execution."
+        ),
+        next_action=(
+            "PROVISION_ISOLATED_CODE_SERVER_WORKSPACE"
+            if blocked
+            else "VERIFY_SINGLE_AGENT_WORKSPACE_EVIDENCE"
+            if repository_requested
+            else "NO_FURTHER_ACTION_REQUIRED"
+        ),
+    )
+    return {
+        "ok": not blocked,
+        "status": "BLOCKED" if blocked else "COMPLETED",
+        "executionProfile": "free_single_agent",
+        "maxForegroundAgents": 1,
+        "maxBackgroundAgents": 0,
+        "repositoryExecutionAllowed": True,
+        "repositoryExecutionPerformed": False,
+        "result": output.model_dump(),
+        "activeSpecialists": 0,
+        "autoMerge": False,
+    }
 
 
 class DispatchPlan(BaseModel):
@@ -551,7 +706,7 @@ def build_cognitive_swarm(
             specialist.as_tool(
                 tool_name=f"specialist_{role}",
                 tool_description=f"Analyze one bounded {role} work package and return evidence-backed findings.",
-                run_config=_require_litellm_run_config(),
+                run_config=_require_litellm_run_config(selected_model),
                 max_turns=2,
             )
         )
@@ -674,7 +829,10 @@ async def run_cognitive_swarm(
     normalized_mission = mission.strip()
     if not normalized_mission:
         raise ValueError("mission is required")
-    if not ensure_openai_runtime_key():
+    selected_model = str(model or DEFAULT_MODEL).strip()
+    if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
+        raise ValueError("A paid Sovereign LiteLLM model alias is required.")
+    if not ensure_openai_runtime_key(selected_model):
         return {
             "ok": False,
             "status": "BLOCKED",

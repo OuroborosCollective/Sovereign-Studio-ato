@@ -61,11 +61,15 @@ from llm_cost_policy import (
     require_package_cash_buffer,
 )
 from llm_revolver import (
-    build_revolver_candidates,
     failure_decision,
     normalize_quota_scope,
     provider_usage_seen as revolver_provider_usage_seen,
     route_quota_scope,
+)
+from llm_execution_resolver import (
+    FREE_SINGLE_AGENT_PROFILE,
+    PAID_SWARM_PROFILE,
+    build_paid_to_free_candidates,
 )
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
@@ -930,6 +934,23 @@ def _admin_llm_route_payload(row) -> dict:
         "pricingVerified": bool(policy.get("pricingVerified")),
         "pricingSource": str(policy.get("pricingSource") or "unverified"),
         "revolverEligible": category == FREE_CATEGORY and bool(policy.get("pricingVerified")),
+        "executionProfile": str(
+            config.get("executionProfile")
+            or (FREE_SINGLE_AGENT_PROFILE if category == FREE_CATEGORY else PAID_SWARM_PROFILE)
+        ),
+        "resolverMode": str(
+            config.get("resolverMode")
+            or ("revolver" if category == FREE_CATEGORY else "single")
+        ),
+        "maxForegroundAgents": 1,
+        "maxBackgroundAgents": int(
+            config.get("maxBackgroundAgents")
+            if config.get("maxBackgroundAgents") is not None
+            else 0 if category == FREE_CATEGORY else 6
+        ),
+        "repositoryExecutionAllowed": bool(
+            config.get("repositoryExecutionAllowed", True)
+        ),
         "quotaScope": quota_scope,
         "revolverState": {
             "status": str(revolver_state.get("status") or "ready"),
@@ -976,6 +997,18 @@ def admin_llm_routes():
               OR (status='cooldown' AND cooldown_until > NOW())""",
         one=True,
     ) or {}
+    execution_profiles = query(
+        """SELECT profile_id AS "profileId",
+                  billing_categories AS "billingCategories",
+                  route_mode AS "routeMode",
+                  max_foreground_agents AS "maxForegroundAgents",
+                  max_background_agents AS "maxBackgroundAgents",
+                  repository_execution_allowed AS "repositoryExecutionAllowed",
+                  requires_verified_purchase AS "requiresVerifiedPurchase",
+                  enabled, priority
+           FROM llm_execution_profiles
+           ORDER BY priority ASC, profile_id ASC"""
+    ) or []
     return jsonify({
         "routes": [_admin_llm_route_payload(row) for row in (rows or [])],
         "billingCategories": [
@@ -988,6 +1021,14 @@ def admin_llm_routes():
             "successes24h": int(revolver_stats.get("successes") or 0),
             "rotations24h": int(revolver_stats.get("rotations") or 0),
             "blockedOrCoolingScopes": int(active_states.get("count") or 0),
+        },
+        "executionProfiles": [dict(profile) for profile in execution_profiles],
+        "resolverPolicy": {
+            "paidQuotaFallback": "free-revolver-without-provider-usage",
+            "freeProfile": FREE_SINGLE_AGENT_PROFILE,
+            "paidProfile": PAID_SWARM_PROFILE,
+            "providersHardcoded": False,
+            "routingOwner": "postgresql-and-private-litellm",
         },
         "manualCreditsPerUnitEditing": False,
     })
@@ -1047,6 +1088,13 @@ def admin_update_llm_route(rid):
             "fundingMode": funding_mode,
             "minimumMultiplier": category_minimum_multiplier(category),
             "revolverEligible": category == FREE_CATEGORY,
+            "executionProfile": (
+                FREE_SINGLE_AGENT_PROFILE if category == FREE_CATEGORY else PAID_SWARM_PROFILE
+            ),
+            "resolverMode": "revolver" if category == FREE_CATEGORY else "single",
+            "maxForegroundAgents": 1,
+            "maxBackgroundAgents": 0 if category == FREE_CATEGORY else 6,
+            "repositoryExecutionAllowed": True,
             "quotaScope": quota_scope,
         })
         policy = route_billing_policy({"model_id": route["model_id"], "config": config})
@@ -2020,6 +2068,7 @@ def health_ready():
                 "026_llm_free_route_revolver.sql",
                 "027_billing_idempotency_and_package_uniqueness.sql",
                 "029_github_app_credit_runtime.sql",
+                "030_llm_execution_profiles.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -6326,12 +6375,11 @@ def _settle_llm_usage(
 
 
 def _load_llm_revolver_candidates(primary_route) -> list:
+    """Load one DB-owned route magazine: paid primary, then free revolver scopes."""
     try:
-        primary_policy = route_billing_policy(primary_route)
+        route_billing_policy(primary_route)
     except BillingPolicyError:
         return []
-    if primary_policy["billingCategory"] != FREE_CATEGORY:
-        return [primary_route]
 
     rows = query(
         """SELECT id::text, model_id, model_name, provider, base_url,
@@ -6339,14 +6387,16 @@ def _load_llm_revolver_candidates(primary_route) -> list:
                   disabled, priority, config
            FROM llm_routes
            WHERE disabled=false AND lower(provider)='litellm'
-             AND COALESCE(config->>'billingCategory', config->>'billingClass')='free'
            ORDER BY priority ASC, model_name ASC
            LIMIT 100"""
     ) or []
+    all_routes = [dict(row) for row in rows]
+    if not any(str(row.get("id") or "") == str(primary_route.get("id") or "") for row in all_routes):
+        all_routes.insert(0, dict(primary_route))
     scopes = []
-    for row in rows:
+    for row in all_routes:
         try:
-            scopes.append(route_quota_scope(dict(row)))
+            scopes.append(route_quota_scope(row))
         except ValueError:
             continue
     state_rows = query(
@@ -6359,9 +6409,9 @@ def _load_llm_revolver_candidates(primary_route) -> list:
         str(row["quota_scope"]): dict(row)
         for row in (state_rows or [])
     }
-    return build_revolver_candidates(
+    return build_paid_to_free_candidates(
         dict(primary_route),
-        [dict(row) for row in rows],
+        all_routes,
         state_by_scope=state_by_scope,
     )
 
@@ -6691,6 +6741,10 @@ def public_llm_chat():
         resp = None
         attempt_count = 0
         revolver_enabled = policy["billingCategory"] == FREE_CATEGORY
+        resolver_enabled = len(candidate_routes) > 1
+        resolver_mode = (
+            "free-revolver" if revolver_enabled else "paid-to-free-fallback"
+        )
         for attempt_count, candidate_route in enumerate(candidate_routes, start=1):
             payload["model"] = str(candidate_route.get("model_id") or "").strip()
             resp, err = fetch_litellm(
@@ -6715,7 +6769,7 @@ def public_llm_chat():
             attempt_usage_seen = revolver_provider_usage_seen(evidence)
             provider_usage_seen = provider_usage_seen or attempt_usage_seen
             if not err and resp is not None and resp.ok:
-                if revolver_enabled:
+                if resolver_enabled:
                     try:
                         _record_llm_revolver_attempt(
                             request_id=request_id,
@@ -6739,12 +6793,12 @@ def public_llm_chat():
             )
             has_next = attempt_count < len(candidate_routes)
             will_retry = (
-                revolver_enabled
+                resolver_enabled
                 and bool(decision["retryAllowed"])
                 and not attempt_usage_seen
                 and has_next
             )
-            if revolver_enabled:
+            if resolver_enabled:
                 try:
                     _record_llm_revolver_attempt(
                         request_id=request_id,
@@ -6791,18 +6845,30 @@ def public_llm_chat():
                     "requestId": request_id,
                     "sovereignBilling": billing,
                     "sovereignRevolver": {
-                        "eligible": revolver_enabled,
+                        "eligible": resolver_enabled,
+                        "mode": resolver_mode,
                         "attempts": attempt_count,
                         "exhausted": not has_next,
+                        "maxBackgroundAgents": (
+                            0 if revolver_enabled else 6
+                        ),
                     },
                 }), 502
             return refund_failed_run(
-                "free_route_revolver_exhausted"
-                if revolver_enabled and not has_next and decision["retryAllowed"]
+                (
+                    "free_route_revolver_exhausted"
+                    if revolver_enabled
+                    else "llm_route_resolver_exhausted"
+                )
+                if resolver_enabled and not has_next and decision["retryAllowed"]
                 else blocker
             )
         else:
-            return refund_failed_run("free_route_revolver_exhausted")
+            return refund_failed_run(
+                "free_route_revolver_exhausted"
+                if revolver_enabled
+                else "llm_route_resolver_exhausted"
+            )
 
         evidence["requestCount"] = max(1, attempt_count)
         provider_usage_seen = (
@@ -6828,12 +6894,23 @@ def public_llm_chat():
         response_payload = dict(result) if isinstance(result, dict) else {"result": result}
         response_payload["sovereignBilling"] = billing
         response_payload["sovereignRevolver"] = {
-            "eligible": revolver_enabled,
+            "eligible": resolver_enabled,
+            "mode": resolver_mode,
+            "executionProfile": (
+                FREE_SINGLE_AGENT_PROFILE
+                if (fallback_route or route).get("config", {}).get("billingCategory") == FREE_CATEGORY
+                else PAID_SWARM_PROFILE
+            ),
             "attempts": max(1, attempt_count),
             "rotated": fallback_route is not None,
             "exhausted": False,
             "selectedModelId": str(
                 (fallback_route or route).get("model_id") or ""
+            ),
+            "maxBackgroundAgents": (
+                0
+                if (fallback_route or route).get("config", {}).get("billingCategory") == FREE_CATEGORY
+                else 6
             ),
         }
         return jsonify(response_payload)

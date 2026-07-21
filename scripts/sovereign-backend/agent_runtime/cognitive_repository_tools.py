@@ -32,6 +32,7 @@ from .tools.base import ToolResult
 ConnectionFactory = Callable[[], Any]
 
 ROLE_WORK_PACKAGES: Final[dict[str, str]] = {
+    "free_single_agent": "Implement one bounded coding mission in the isolated Code-Server workspace; read before writing and preserve diff plus test evidence.",
     "data_storage": "Inspect SQL, Agent Job persistence, pattern candidates and pgvector learning; accept learning only after tool and test evidence.",
     "business_core": "Inspect intent, ARE inference and evidence-gate semantics; model output must never create runtime success.",
     "endpoint_bridge": "Inspect route, job, workspace and executor handoff; prove every state transition from real tool evidence.",
@@ -41,6 +42,7 @@ ROLE_WORK_PACKAGES: Final[dict[str, str]] = {
 }
 
 ROLE_PATH_PREFIXES: Final[dict[str, tuple[str, ...]]] = {
+    "free_single_agent": ("__workspace_all__",),
     "data_storage": (
         "scripts/sovereign-backend/migrations/",
         "scripts/sovereign-backend/knowledge_library.py",
@@ -99,7 +101,10 @@ READ_REPOSITORY_TOOL_NAMES: Final[tuple[str, ...]] = (
     "inspect_repository_diff",
     "run_repository_test",
 )
-WRITE_REPOSITORY_TOOL_NAME: Final[str] = "apply_exact_repository_patch"
+WRITE_REPOSITORY_TOOL_NAMES: Final[tuple[str, ...]] = (
+    "apply_exact_repository_patch",
+    "write_repository_file",
+)
 
 _SECRET_VALUE_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"github_pat_[A-Za-z0-9_]{16,}", re.IGNORECASE),
@@ -130,6 +135,8 @@ def _safe_path(value: str) -> str:
 
 def _path_in_role_scope(role: str, path: str) -> bool:
     for prefix in ROLE_PATH_PREFIXES.get(role, ()):
+        if prefix == "__workspace_all__":
+            return True
         if prefix.endswith("/") and path.startswith(prefix):
             return True
         if path == prefix:
@@ -199,7 +206,7 @@ def create_repository_swarm_tasks(
     )
     task_ids["dispatcher"] = dispatcher_id
 
-    allowed_tools = (*READ_REPOSITORY_TOOL_NAMES, *((WRITE_REPOSITORY_TOOL_NAME,) if write_confirmed else ()))
+    allowed_tools = (*READ_REPOSITORY_TOOL_NAMES, *(WRITE_REPOSITORY_TOOL_NAMES if write_confirmed else ()))
     for role in WORKER_ROLES:
         task_id = f"task-{role}-{uuid.uuid4().hex}"
         create_agent_task(
@@ -253,6 +260,52 @@ def create_repository_swarm_tasks(
     return task_ids
 
 
+def create_repository_single_agent_task(
+    conn: Any,
+    *,
+    run_id: str,
+    evidence_id: str,
+    write_confirmed: bool,
+) -> str:
+    """Persist exactly one coding task for the free single-agent profile."""
+    task_id = f"free-agent-work-{uuid.uuid4().hex}"
+    allowed_tools = (
+        *READ_REPOSITORY_TOOL_NAMES,
+        *(WRITE_REPOSITORY_TOOL_NAMES if write_confirmed else ()),
+    )
+    create_agent_task(
+        conn,
+        run_id=run_id,
+        task_id=task_id,
+        agent_id="free_single_agent",
+        specialist_role="free_single_agent",
+        work_package=ROLE_WORK_PACKAGES["free_single_agent"],
+        evidence_id=evidence_id,
+        status="QUEUED",
+        next_action="EXECUTE_SINGLE_AGENT_WORKSPACE_MISSION",
+        allowed_files=("isolated_code_server_workspace",),
+        allowed_tools=allowed_tools,
+        acceptance_criteria=(
+            "The single agent uses real workspace tools before making repository claims.",
+            "Every write remains inside the isolated Agent Job repository clone.",
+            "Status, diff and at least one relevant test are read after mutation.",
+            "No background agent, production deploy, merge or auto-merge is started.",
+        ),
+        forbidden_actions=(
+            "persist or reveal secrets",
+            "write outside the isolated workspace",
+            "start background agents",
+            "merge a pull request",
+            "deploy to production",
+            "claim success without tool, diff and test evidence",
+        ),
+        max_tool_calls=40,
+        max_retries=2,
+        commit=True,
+    )
+    return task_id
+
+
 def _require_function_tool() -> Callable[..., Any]:
     module = importlib.import_module("agents")
     factory = getattr(module, "function_tool", None)
@@ -277,11 +330,13 @@ class BoundRepositoryToolset:
     _lock: Lock = field(default_factory=Lock)
 
     def allowed_paths(self, role: str) -> tuple[str, ...]:
+        if role == "free_single_agent":
+            return (".",)
         return ROLE_PATH_PREFIXES.get(role, ())
 
     def allowed_tool_names(self, role: str) -> tuple[str, ...]:
         return (
-            (*READ_REPOSITORY_TOOL_NAMES, WRITE_REPOSITORY_TOOL_NAME)
+            (*READ_REPOSITORY_TOOL_NAMES, *WRITE_REPOSITORY_TOOL_NAMES)
             if self.write_confirmed
             else READ_REPOSITORY_TOOL_NAMES
         )
@@ -457,6 +512,19 @@ class BoundRepositoryToolset:
             function_tool(run_repository_test),
         ]
         if self.write_confirmed:
+            def write_repository_file(path: str, content: str) -> str:
+                """Create or fully replace one UTF-8 file inside the assigned workspace boundary."""
+                target = self._validate_role_path(role, path)
+                bounded_content = str(content or "")
+                if len(bounded_content.encode("utf-8")) > 500_000:
+                    raise ValueError("repository file content exceeds the bounded write limit")
+                return self._execute(
+                    role,
+                    "file",
+                    {"mode": "write", "path": target, "content": bounded_content, "append": False},
+                    mutation=True,
+                )
+
             def apply_exact_repository_patch(
                 path: str,
                 search_text: str,
@@ -474,7 +542,10 @@ class BoundRepositoryToolset:
                     "confirm": True,
                 }, mutation=True)
 
-            tools.append(function_tool(apply_exact_repository_patch))
+            tools.extend((
+                function_tool(write_repository_file),
+                function_tool(apply_exact_repository_patch),
+            ))
         return tools
 
     def summary(self) -> dict[str, Any]:
