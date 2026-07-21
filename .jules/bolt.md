@@ -21,3 +21,7 @@
 ## 2026-07-04 - [Optimizing Deep Structure Analysis Loops]
 **Learning:** O(N) operations over file list arrays (e.g., structure analysis, extension checks, matching solution patterns) in a recursive engine can be consolidated. Accumulating name counts on-the-fly and reusing pre-computed metrics (like `byExtension`) completely eliminates redundant iterations. Slicing files before mapping arrays prevents large heap allocations.
 **Action:** Always consolidate separate O(N) loops operating on the same arrays. Reuse pre-computed metrics downstream to completely avoid re-parsing structures. Slice lists before allocating string paths.
+
+## 2026-07-05 - [Pre-filtering Query Spaces by Known Store Domains]
+**Learning:** When matching database/store patterns based on dynamically gathered repository traits (such as all file extensions), querying the store for every unique trait results in $O(T \times P)$ complexity. Pre-filtering the traits to only those actually present in the store's domain completely eliminates wasteful iterations on non-matching traits.
+**Action:** Always pre-filter traits (like extensions or paths) against a Set of the store's known/indexed values before performing nested pattern-matching or search queries.

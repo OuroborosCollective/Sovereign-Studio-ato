@@ -23,6 +23,7 @@ import {
   canGenerateMission,
   type RepoInsightEngineInput,
 } from './repoInsightEngine';
+import * as solutionPatternMemory from './solutionPatternMemory';
 
 function createTestFiles(paths: string[]): RepoFile[] {
   return paths.map((path) => ({ path, type: 'blob' as const, size: path.length * 10 }));
@@ -686,6 +687,76 @@ describe('RepoInsightEngine', () => {
       expect(result.ok).toBe(true);
       // Should still generate a concrete mission, not empty
       expect(result.output!.recommendedMission.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('generatePatternMatches optimization', () => {
+    it('only queries matchSolutionPatterns for extensions present in the patternStore', () => {
+      const files = createTestFiles([
+        'src/App.tsx',
+        'src/styles/theme.css',
+        'README.md',
+        'package.json',
+        'assets/logo.png',
+      ]);
+
+      const testStore: solutionPatternMemory.SolutionPatternStore = {
+        version: 1,
+        patterns: [
+          {
+            id: 'solve-tsx',
+            status: 'active',
+            problemSignature: 'sig-tsx',
+            contextFingerprint: 'ctx-tsx',
+            fixFingerprint: 'fix-tsx',
+            category: 'type-error',
+            filePathHint: 'src/App.tsx',
+            fileExtension: '.tsx',
+            problemSummary: 'TypeScript React issue',
+            beforeFingerprint: 'before-tsx',
+            solutionSummary: 'Fixed TSX',
+            afterFingerprint: 'after-tsx',
+            conditions: ['.tsx'],
+            recommendedSteps: ['Step 1'],
+            evidence: 'Proof 1',
+            intakeNode: 'scan-finding-registry',
+            processingNode: 'learning-memory',
+            outputNodes: ['action-builder'],
+            confidence: 'completed',
+            tags: [],
+            hits: 1,
+            successfulUses: 1,
+            rejectedUses: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        ],
+        rejections: [],
+        updatedAt: Date.now(),
+      };
+
+      const spy = vi.spyOn(solutionPatternMemory, 'matchSolutionPatterns');
+
+      const result = createRepoInsightSuggestions({
+        repoFiles: files,
+        solutionPatternStore: testStore,
+      });
+
+      expect(result.ok).toBe(true);
+
+      // We had 5 files with unique extensions/no-extension (.tsx, .css, .md, .json, .png).
+      // But only '.tsx' is present in testStore.patterns.
+      // Therefore, the spy should only be called once for file extension matching (for '.tsx')
+      // plus once for the overall contextSignals/path matching.
+      // In total, 2 times instead of 6 times.
+      const extensionQueries = spy.mock.calls.filter(
+        (call) => call[1].filePath && call[1].filePath.startsWith('file'),
+      );
+
+      expect(extensionQueries.length).toBe(1);
+      expect(extensionQueries[0][1].filePath).toBe('file.tsx');
+
+      spy.mockRestore();
     });
   });
 
