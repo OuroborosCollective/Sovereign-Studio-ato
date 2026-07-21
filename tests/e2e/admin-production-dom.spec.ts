@@ -38,6 +38,10 @@ test('production /admin is the revision-bound React Free-Revolver surface', asyn
   });
 
   await page.getByRole('button', { name: 'LLM' }).click();
+  await expect(page.getByRole('navigation', { name: 'LLM-Laufzeitbereiche' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole('button', { name: 'Free Revolver' }).click();
   await expect(page.getByTestId('free-revolver-control-center')).toBeVisible({
     timeout: 30_000,
   });

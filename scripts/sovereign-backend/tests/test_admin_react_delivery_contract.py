@@ -44,6 +44,7 @@ def test_backend_image_contains_admin_build_from_same_revision_context() -> None
     assert "pnpm install --frozen-lockfile --ignore-scripts" in dockerfile
     assert "pnpm exec vite build --base=/admin/" in dockerfile
     assert "COPY --from=admin-web-build /workspace/dist/ /app/admin-web/" in dockerfile
+    assert "rm -f /app/enterprise_admin_ui.py" in dockerfile
     assert "test -s /app/admin-web/index.html" in dockerfile
     assert "context: ." in workflow
     assert "context: scripts/sovereign-backend" not in workflow
@@ -85,5 +86,6 @@ def test_production_gate_binds_revision_headers_and_visible_dom() -> None:
     assert "free-revolver-control-center" in e2e
     assert "freellm-provider-registration" in e2e
     assert "freellm-managed-provider-select" in e2e
+    assert "name: 'Free Revolver'" in e2e
     assert "Sovereign Enterprise Admin" in e2e
     assert "page.route(" not in e2e

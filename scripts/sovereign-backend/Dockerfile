@@ -39,6 +39,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend application code and the React admin artifact built from this
 # exact repository revision. /admin therefore cannot drift to another deploy.
 COPY scripts/sovereign-backend/*.py ./
+RUN rm -f /app/enterprise_admin_ui.py
 COPY scripts/sovereign-backend/enterprise_platform/ ./enterprise_platform/
 COPY scripts/sovereign-backend/agent_runtime/ ./agent_runtime/
 COPY scripts/sovereign-backend/migrations ./migrations
