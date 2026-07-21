@@ -1,10 +1,79 @@
-# Canonical ownership for release-critical Sovereign Studio paths.
+# Sovereign Studio ATO — CODEOWNERS
+#
+# GitHub uses the last matching rule. Keep the global fallback first and
+# increasingly specific ownership rules below it.
+#
+# Current repository owner and mandatory fallback reviewer:
 * @OuroborosCollective
 
+# Repository governance, automation, security and contribution policy
+/.github/ @OuroborosCollective
+/CODE_OF_CONDUCT.md @OuroborosCollective
+/CONTRIBUTING.md @OuroborosCollective
+/SECURITY.md @OuroborosCollective
+/LICENSE* @OuroborosCollective
+
+# CI/CD, release, deployment and operational automation
 /.github/workflows/ @OuroborosCollective
-/scripts/sovereign-backend/ @OuroborosCollective
-/src/features/admin/ @OuroborosCollective
-/src/main.tsx @OuroborosCollective
-/vite.config.ts @OuroborosCollective
+/scripts/ @OuroborosCollective
+/docker/ @OuroborosCollective
+/Dockerfile* @OuroborosCollective
+/docker-compose*.yml @OuroborosCollective
+/docker-compose*.yaml @OuroborosCollective
+/compose*.yml @OuroborosCollective
+/compose*.yaml @OuroborosCollective
+
+# Application frontend, routes, components and product surfaces
+/src/ @OuroborosCollective
+/public/ @OuroborosCollective
+/index.html @OuroborosCollective
+
+# Backend, APIs, runtime workers and service boundaries
+/backend/ @OuroborosCollective
+/server/ @OuroborosCollective
+/api/ @OuroborosCollective
+/runtime/ @OuroborosCollective
+/worker/ @OuroborosCollective
+/workers/ @OuroborosCollective
+/jobs/ @OuroborosCollective
+
+# MCP, tools, skills, agents and orchestration surfaces
+/mcp/ @OuroborosCollective
+/tools/ @OuroborosCollective
+/skills/ @OuroborosCollective
+/agents/ @OuroborosCollective
+
+# Persistence, database schemas and migrations
+/database/ @OuroborosCollective
+/db/ @OuroborosCollective
+/migrations/ @OuroborosCollective
+/backend/migrations/ @OuroborosCollective
+/scripts/sovereign-backend/migrations/ @OuroborosCollective
+
+# Android and Capacitor production surfaces
+/android/ @OuroborosCollective
+/capacitor.config.* @OuroborosCollective
+
+# Tests, fixtures and validation contracts
+/tests/ @OuroborosCollective
+/test/ @OuroborosCollective
+/e2e/ @OuroborosCollective
+/playwright.config.* @OuroborosCollective
+/vitest.config.* @OuroborosCollective
+
+# Documentation and architecture truth sources
+/docs/ @OuroborosCollective
+/*.md @OuroborosCollective
+
+# Dependency, build and compiler contracts
 /package.json @OuroborosCollective
 /pnpm-lock.yaml @OuroborosCollective
+/pnpm-workspace.yaml @OuroborosCollective
+/tsconfig*.json @OuroborosCollective
+/vite.config.* @OuroborosCollective
+/eslint.config.* @OuroborosCollective
+
+# Environment and infrastructure templates. Never commit real secret values.
+/.env.example @OuroborosCollective
+/.env.*.example @OuroborosCollective
+/*.example @OuroborosCollective

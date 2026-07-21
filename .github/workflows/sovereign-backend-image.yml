@@ -90,8 +90,11 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.title=sovereign-backend
-          provenance: mode=max
-          sbom: true
+          # The Docker exporter used by PR validation cannot load an attested
+          # manifest list into the local daemon. Preserve full attestations for
+          # published main images and disable them only for the ephemeral PR load.
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
