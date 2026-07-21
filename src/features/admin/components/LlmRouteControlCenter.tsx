@@ -15,7 +15,11 @@ import type {
   LlmRoute,
   LlmRouteUpdate,
 } from '../api/adminApiClient';
-import type { UseAdminLlmRoutesResult } from '../hooks/useAdminApi';
+import {
+  useAdminFreeRevolverProviders,
+  type UseAdminLlmRoutesResult,
+} from '../hooks/useAdminApi';
+import { FreeRevolverControlCenter } from './FreeRevolverControlCenter';
 import './LlmRouteControlCenter.css';
 
 const FLOOR: Record<LlmBillingCategory, number> = {
@@ -132,9 +136,11 @@ function RouteCard({
             disabled={busy}
             onChange={event => categoryChanged(event.target.value as LlmBillingCategory)}
           >
-            {Object.entries(CATEGORY_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
+            {Object.entries(CATEGORY_LABEL)
+              .filter(([value]) => value !== 'free')
+              .map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
           </select>
         </label>
         <label>
@@ -256,7 +262,7 @@ function CatalogAttach({
             <option value="">Modell auswählen</option>
             {catalog.map(model => (
               <option key={model.modelId} value={model.modelId}>
-                {model.modelId}{model.freeEligible ? ' · Free bestätigt' : ''}
+                {model.modelId}
               </option>
             ))}
           </select>
@@ -268,7 +274,6 @@ function CatalogAttach({
             disabled={busy}
             onChange={event => chooseCategory(event.target.value as LlmBillingCategory)}
           >
-            <option value="free" disabled={!selected?.freeEligible}>Free</option>
             <option value="standard">Standard 4×+</option>
             <option value="premium">Premium 8×+</option>
           </select>
@@ -295,7 +300,7 @@ function CatalogAttach({
         <button
           type="button"
           className="llm-button llm-button--primary"
-          disabled={busy || !selected || !selected.pricingVerified || (category === 'free' && !selected.freeEligible)}
+          disabled={busy || !selected || !selected.pricingVerified}
           onClick={() => modelId && void onAttach(modelId, category, multiplier, priority)}
         >
           <Plus size={18} /> Mit Canary hinzufügen
@@ -325,8 +330,17 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
     resetRevolver,
     attachModel,
   } = api;
+  const freeApi = useAdminFreeRevolverProviders();
+  const [surface, setSurface] = useState<'paid' | 'free'>('paid');
   const [busyId, setBusyId] = useState<string | null>(null);
-  const activeRoutes = useMemo(() => routes.filter(route => !route.disabled).length, [routes]);
+  const paidRoutes = useMemo(
+    () => routes.filter(route => route.billingCategory !== 'free'),
+    [routes],
+  );
+  const activePaidRoutes = useMemo(
+    () => paidRoutes.filter(route => !route.disabled).length,
+    [paidRoutes],
+  );
 
   const run = async (id: string, action: () => Promise<void>) => {
     setBusyId(id);
@@ -343,75 +357,97 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
 
   return (
     <div className="llm-control-center">
-      <div className="llm-control-center__hero">
-        <div>
-          <span className="llm-kicker">LLM Models / Routes</span>
-          <h1>Preisgesteuerte Modell-Laufzeit</h1>
-          <p>Free rotiert nur über unabhängige, nullpreis-verifizierte Routen. Bezahlte Routen werden nie still gewechselt.</p>
-        </div>
-        <button type="button" className="llm-button" onClick={reload} disabled={loading || busyId !== null}>
-          <RefreshCw className={loading ? 'llm-spin' : ''} size={18} /> Aktualisieren
+      <nav className="llm-runtime-tabs" aria-label="LLM-Laufzeitbereiche">
+        <button type="button" className={surface === 'paid' ? 'llm-runtime-tab llm-runtime-tab--active' : 'llm-runtime-tab'}
+          aria-pressed={surface === 'paid'} onClick={() => setSurface('paid')}>
+          <BadgeDollarSign size={18} /> LiteLLM & bezahlt
         </button>
-      </div>
+        <button type="button" className={surface === 'free' ? 'llm-runtime-tab llm-runtime-tab--active' : 'llm-runtime-tab'}
+          aria-pressed={surface === 'free'} onClick={() => setSurface('free')}>
+          <RotateCcw size={18} /> Free Revolver
+        </button>
+      </nav>
 
-      <div className="llm-stat-grid">
-        <div><Activity /><span>Aktive Routen</span><strong>{activeRoutes}</strong></div>
-        <div><RotateCcw /><span>Rotationen 24 h</span><strong>{revolverStats?.rotations24h ?? 0}</strong></div>
-        <div><ShieldCheck /><span>Erfolge 24 h</span><strong>{revolverStats?.successes24h ?? 0}</strong></div>
-        <div><BadgeDollarSign /><span>Blockiert / Kühlung</span><strong>{revolverStats?.blockedOrCoolingScopes ?? 0}</strong></div>
-      </div>
-
-      {revolverV3 && (
-        <section className="llm-catalog" aria-label="Free Revolver v3 Runtime-Evidence">
-          <div className="llm-section-title">
-            <div><RotateCcw size={21} /><div>
-              <h2>Free Revolver v3</h2>
-              <p>Direkter PostgreSQL/LiteLLM-Livepfad · keine Mock- oder Fassaden-Laufzeit.</p>
-            </div></div>
-          </div>
-          <div className="llm-stat-grid">
-            <div><Activity /><span>Modus</span><strong>{revolverV3.profile.mode ?? 'sequential'}</strong></div>
-            <div><DatabaseZap /><span>Profilrevision</span><strong>{revolverV3.profile.revision ?? 1}</strong></div>
-            <div><ShieldCheck /><span>Schema gültig 24 h</span><strong>{revolverV3.structuredOutput24h.valid}</strong></div>
-            <div><BadgeDollarSign /><span>Schema ungültig 24 h</span><strong>{revolverV3.structuredOutput24h.invalid}</strong></div>
-          </div>
-          <p className="llm-catalog__evidence">
-            Cache: {revolverV3.semanticCachePolicy} · Auto-Gewichte: {revolverV3.autoWeights}
-          </p>
-        </section>
-      )}
-
-      {error && <div className="llm-alert llm-alert--danger">{error}</div>}
-      {catalogError && <div className="llm-alert">Modellkatalog derzeit nicht verfügbar: {catalogError}</div>}
-
-      <CatalogAttach
-        catalog={catalog}
-        busy={busyId !== null}
-        onAttach={(modelId, category, multiplier, priority) => run(
-          'catalog',
-          () => attachModel(modelId, category, multiplier, priority),
-        )}
-      />
-
-      <section>
-        <div className="llm-section-title">
-          <div><Activity size={21} /><div><h2>Aktive Konfiguration</h2><p>{routes.length} persistierte Routen</p></div></div>
-        </div>
-        <div className="llm-route-grid">
-          {routes.map(route => (
-            <RouteCard
-              key={route.id}
-              route={route}
-              busy={busyId === route.id}
-              onUpdate={(id, changes) => run(id, () => updateRoute(id, changes))}
-              onReset={id => run(id, () => resetRevolver(id))}
-            />
-          ))}
-          {routes.length === 0 && (
-            <div className="llm-empty">Noch keine preisverifizierte Route. Wähle oben ein erkanntes Modell.</div>
+      {surface === 'free' ? (
+        <>
+          {revolverV3 && (
+            <section className="llm-catalog" aria-label="Free Revolver v3 Runtime-Evidence">
+              <div className="llm-section-title">
+                <div><RotateCcw size={21} /><div>
+                  <h2>Resolver-Livepfad</h2>
+                  <p>PostgreSQL-Zustand, private LiteLLM-Ausführung und persistierte Attempts.</p>
+                </div></div>
+              </div>
+              <div className="llm-stat-grid">
+                <div><Activity /><span>Modus</span><strong>{revolverV3.profile.mode ?? 'sequential'}</strong></div>
+                <div><RotateCcw /><span>Rotationen 24 h</span><strong>{revolverStats?.rotations24h ?? 0}</strong></div>
+                <div><ShieldCheck /><span>Erfolge 24 h</span><strong>{revolverStats?.successes24h ?? 0}</strong></div>
+                <div><BadgeDollarSign /><span>Blockiert / Kühlung</span><strong>{revolverStats?.blockedOrCoolingScopes ?? 0}</strong></div>
+              </div>
+              <p className="llm-catalog__evidence">
+                Profilrevision {revolverV3.profile.revision ?? 1} · Preis-Evidence maximal {revolverV3.pricingEvidenceTtlHours} h ·
+                Cache {revolverV3.semanticCachePolicy} · Auto-Gewichte {revolverV3.autoWeights}
+              </p>
+            </section>
           )}
-        </div>
-      </section>
+          <FreeRevolverControlCenter
+            api={freeApi}
+            pricingEvidenceTtlHours={revolverV3?.pricingEvidenceTtlHours ?? 24}
+          />
+        </>
+      ) : (
+        <>
+          <div className="llm-control-center__hero">
+            <div>
+              <span className="llm-kicker">LiteLLM / bezahlte Modelle</span>
+              <h1>Preisverifizierte Standard- und Premium-Routen</h1>
+              <p>Dieser Bereich verwaltet nur bezahlte LiteLLM-Routen. Kostenfreie Provider gehören ausschließlich in den getrennten Free-Revolver-Bereich.</p>
+            </div>
+            <button type="button" className="llm-button" onClick={reload} disabled={loading || busyId !== null}>
+              <RefreshCw className={loading ? 'llm-spin' : ''} size={18} /> Aktualisieren
+            </button>
+          </div>
+
+          <div className="llm-stat-grid">
+            <div><Activity /><span>Aktive Paid-Routen</span><strong>{activePaidRoutes}</strong></div>
+            <div><BadgeDollarSign /><span>Standard</span><strong>{paidRoutes.filter(route => route.billingCategory === 'standard').length}</strong></div>
+            <div><ShieldCheck /><span>Premium</span><strong>{paidRoutes.filter(route => route.billingCategory === 'premium').length}</strong></div>
+            <div><DatabaseZap /><span>Preis nicht verifiziert</span><strong>{paidRoutes.filter(route => !route.pricingVerified).length}</strong></div>
+          </div>
+
+          {error && <div className="llm-alert llm-alert--danger">{error}</div>}
+          {catalogError && <div className="llm-alert">Modellkatalog derzeit nicht verfügbar: {catalogError}</div>}
+
+          <CatalogAttach
+            catalog={catalog.filter(model => !model.freeEligible)}
+            busy={busyId !== null}
+            onAttach={(modelId, category, multiplier, priority) => run(
+              'catalog',
+              () => attachModel(modelId, category, multiplier, priority),
+            )}
+          />
+
+          <section>
+            <div className="llm-section-title">
+              <div><Activity size={21} /><div><h2>Bezahlte Konfiguration</h2><p>{paidRoutes.length} persistierte Standard-/Premium-Routen</p></div></div>
+            </div>
+            <div className="llm-route-grid">
+              {paidRoutes.map(route => (
+                <RouteCard
+                  key={route.id}
+                  route={route}
+                  busy={busyId === route.id}
+                  onUpdate={(id, changes) => run(id, () => updateRoute(id, changes))}
+                  onReset={id => run(id, () => resetRevolver(id))}
+                />
+              ))}
+              {paidRoutes.length === 0 && (
+                <div className="llm-empty">Noch keine bezahlte, preisverifizierte LiteLLM-Route.</div>
+              )}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

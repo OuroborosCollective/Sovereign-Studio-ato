@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from typing import Any, Callable, Mapping
 
@@ -9,6 +10,11 @@ from flask import jsonify, request
 
 from free_revolver_v3 import RevolverProfile, eligible_free_routes, plan_routes
 from llm_cost_policy import BillingPolicyError, route_billing_policy
+
+FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS = max(
+    1,
+    min(int(os.getenv("FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS", "24")), 168),
+)
 
 
 def _load_profile(query: Callable[..., Any], tenant_id: str | None, profile_key: str) -> RevolverProfile:
@@ -65,11 +71,29 @@ def resolve_free_revolver_plan(
             revision=profile.revision,
         )
     rows = query(
-        """SELECT id::text, model_id, model_name, provider, disabled, priority, config
-           FROM llm_routes
-           WHERE disabled=false AND lower(provider)='litellm'
-           ORDER BY priority ASC, model_name ASC
-           LIMIT 100"""
+        """SELECT route.id::text, route.model_id, route.model_name,
+                  route.provider, route.disabled, route.priority, route.config
+           FROM llm_routes AS route
+           LEFT JOIN llm_revolver_provider_models AS provider_model
+             ON provider_model.litellm_alias=route.model_id
+           LEFT JOIN llm_revolver_provider_sources AS provider_source
+             ON provider_source.id=provider_model.source_id
+           WHERE route.disabled=false AND lower(route.provider)='litellm'
+             AND (
+               COALESCE(route.config->>'routingOwner','') <> 'free-revolver-v3'
+               OR (
+                 provider_model.free_verified=true
+                 AND provider_model.enabled=true
+                 AND provider_model.status='ready'
+                 AND provider_model.pricing_verified_at >=
+                     NOW() - (%s * INTERVAL '1 hour')
+                 AND provider_source.enabled=true
+                 AND provider_source.status IN ('healthy','degraded')
+               )
+             )
+           ORDER BY route.priority ASC, route.model_name ASC
+           LIMIT 100""",
+        (FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,),
     ) or []
     verified: list[dict[str, Any]] = []
     for source in rows:
@@ -153,6 +177,7 @@ def register_free_revolver_runtime(
             },
             "banditRecommendations": [dict(item) for item in recommendations],
             "semanticCachePolicy": "disabled-unless-cache_safe-capability-and-tenant-scope",
+            "pricingEvidenceTtlHours": FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
             "kubernetesSidecar": False,
         })
 

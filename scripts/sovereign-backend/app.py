@@ -72,9 +72,11 @@ from llm_execution_resolver import (
     build_paid_to_free_candidates,
 )
 from free_revolver_runtime import (
+    FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
     register_free_revolver_runtime,
     resolve_free_revolver_plan,
 )
+from free_revolver_provider_runtime import register_free_revolver_provider_runtime
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.routes import register_sovereign_agent_routes
@@ -454,6 +456,14 @@ register_free_revolver_runtime(
     app,
     require_admin=require_admin,
     query=query,
+    audit=audit,
+)
+register_free_revolver_provider_runtime(
+    app,
+    require_admin=require_admin,
+    query=query,
+    get_connection=get_agent_runtime_connection,
+    get_current_admin=get_current_admin,
     audit=audit,
 )
 
@@ -1069,6 +1079,7 @@ def admin_llm_routes():
             },
             "semanticCachePolicy": "cache_safe-only",
             "autoWeights": "recommendation-only",
+            "pricingEvidenceTtlHours": FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
         },
         "manualCreditsPerUnitEditing": False,
     })
@@ -1100,6 +1111,12 @@ def admin_update_llm_route(rid):
         }), 409
 
     config = dict(route.get("config") or {})
+    if str(config.get("routingOwner") or "") == "free-revolver-v3":
+        return jsonify({
+            "error": "Free-Revolver-Routen werden ausschließlich im getrennten Providerbereich verwaltet.",
+            "blocker": "free_revolver_managed_route",
+            "requiredEndpoint": "/api/admin/llm/revolver-v3/providers",
+        }), 409
     try:
         category = normalize_billing_category(
             body.get("billingCategory")
@@ -2069,6 +2086,9 @@ def health_ready():
                    to_regclass('llm_route_revolver_state') IS NOT NULL AS revolver_state,
                    to_regclass('llm_revolver_profiles') IS NOT NULL AS revolver_v3_profiles,
                    to_regclass('llm_revolver_structured_evidence') IS NOT NULL AS revolver_v3_structured,
+                   to_regclass('llm_revolver_provider_sources') IS NOT NULL AS revolver_v3_provider_sources,
+                   to_regclass('llm_revolver_provider_models') IS NOT NULL AS revolver_v3_provider_models,
+                   to_regclass('llm_revolver_provider_checks') IS NOT NULL AS revolver_v3_provider_checks,
                    to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
                    to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
                    to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
@@ -2100,6 +2120,9 @@ def health_ready():
             "revolver_state",
             "revolver_v3_profiles",
             "revolver_v3_structured",
+            "revolver_v3_provider_sources",
+            "revolver_v3_provider_models",
+            "revolver_v3_provider_checks",
             "package_uniqueness",
             "github_app_credits",
             "github_app_credit_transactions",
@@ -2114,6 +2137,7 @@ def health_ready():
                 "029_github_app_credit_runtime.sql",
                 "030_llm_execution_profiles.sql",
                 "031_sovereign_free_revolver_v3.sql",
+                "032_free_revolver_provider_control.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),

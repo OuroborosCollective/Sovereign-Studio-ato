@@ -73,6 +73,7 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert set(targets) == {
         "openai_api_key",
         "litellm_provider_key",
+        "revolver_provider_key",
         "proven_learning_confirmation",
     }
 
@@ -87,6 +88,12 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert provider_target["label"] == "Einmaliger Fremdprovider-Zugang für LiteLLM"
     assert provider_target["fieldLabel"] == "Provider API-Key"
     assert provider_target["maxBytes"] == 8192
+
+    revolver_target = targets["revolver_provider_key"]
+    assert revolver_target["path"] == (tmp_path / "revolver_provider_key.txt").resolve()
+    assert revolver_target["label"] == "Einmaliger Free-Revolver Provider-Zugang"
+    assert revolver_target["fieldLabel"] == "Free-Provider API-Key"
+    assert revolver_target["maxBytes"] == 8192
 
     learning_target = targets["proven_learning_confirmation"]
     assert learning_target["path"] == (tmp_path / "proven_learning_confirmation.txt").resolve()

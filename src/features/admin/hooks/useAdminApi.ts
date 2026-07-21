@@ -17,6 +17,8 @@ import {
   type LlmModelCatalogEntry,
   type LlmRevolverStats,
   type LlmRevolverV3Status,
+  type FreeRevolverProviderSource,
+  type FreeRevolverProviderAuthMode,
   type AuditEntry,
   type PaymentMethod,
 } from '../api/adminApiClient';
@@ -269,6 +271,105 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
     updateRoute,
     resetRevolver,
     attachModel,
+  };
+}
+
+// ── useAdminFreeRevolverProviders ────────────────────────────────────────────
+
+export interface UseAdminFreeRevolverProvidersResult {
+  providers: FreeRevolverProviderSource[];
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
+  createAndDiscover: (input: {
+    label: string;
+    apiBase: string;
+    authMode: FreeRevolverProviderAuthMode;
+    apiKey: string;
+  }) => Promise<void>;
+  renewAndDiscover: (sourceId: string, apiKey: string) => Promise<void>;
+  discover: (sourceId: string) => Promise<void>;
+  recheck: (sourceId: string) => Promise<void>;
+  toggle: (sourceId: string, enabled: boolean) => Promise<void>;
+}
+
+export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersResult {
+  const [providers, setProviders] = useState<FreeRevolverProviderSource[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick(value => value + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    adminApiClient.getFreeRevolverProviders()
+      .then(result => { if (!cancelled) setProviders(result.providers); })
+      .catch(reason => { if (!cancelled) setError(String(reason)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [tick]);
+
+  const createAndDiscover = useCallback(async (input: {
+    label: string;
+    apiBase: string;
+    authMode: FreeRevolverProviderAuthMode;
+    apiKey: string;
+  }) => {
+    setError(null);
+    const created = await adminApiClient.createFreeRevolverProvider({
+      label: input.label,
+      apiBase: input.apiBase,
+      authMode: input.authMode,
+    });
+    if (input.authMode !== 'none') {
+      if (!created.ownerRequestId || input.apiKey.length < 8) {
+        throw new Error('Ein gültiger API-Key ist für diesen Auth-Modus erforderlich.');
+      }
+      await adminApiClient.resolveFreeRevolverOwnerInput(created.ownerRequestId, input.apiKey);
+    }
+    await adminApiClient.discoverFreeRevolverProvider(created.sourceId);
+    reload();
+  }, [reload]);
+
+  const renewAndDiscover = useCallback(async (sourceId: string, apiKey: string) => {
+    setError(null);
+    if (apiKey.length < 8) throw new Error('Der API-Key muss mindestens 8 Zeichen enthalten.');
+    const ownerInput = await adminApiClient.renewFreeRevolverProviderKey(sourceId);
+    await adminApiClient.resolveFreeRevolverOwnerInput(ownerInput.ownerRequestId, apiKey);
+    await adminApiClient.discoverFreeRevolverProvider(sourceId);
+    reload();
+  }, [reload]);
+
+  const discover = useCallback(async (sourceId: string) => {
+    setError(null);
+    await adminApiClient.discoverFreeRevolverProvider(sourceId);
+    reload();
+  }, [reload]);
+
+  const recheck = useCallback(async (sourceId: string) => {
+    setError(null);
+    await adminApiClient.recheckFreeRevolverProvider(sourceId);
+    reload();
+  }, [reload]);
+
+  const toggle = useCallback(async (sourceId: string, enabled: boolean) => {
+    setError(null);
+    await adminApiClient.updateFreeRevolverProvider(sourceId, enabled);
+    reload();
+  }, [reload]);
+
+  return {
+    providers,
+    loading,
+    error,
+    reload,
+    createAndDiscover,
+    renewAndDiscover,
+    discover,
+    recheck,
+    toggle,
   };
 }
 

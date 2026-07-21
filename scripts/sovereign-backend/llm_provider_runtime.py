@@ -84,7 +84,7 @@ BILLING_CATEGORY_OPTIONS = (
         "id": "free",
         "label": "Free · Revolver",
         "minimumMultiplier": 0,
-        "description": "Kostenlos für Nutzer: verifizierte 0-Kosten oder ehrlich ausgewiesenes Provider-Free-Kontingent.",
+        "description": "Kostenlos für Nutzer: ausschließlich über den getrennten Free-Revolver-Onboardingpfad.",
     },
     {
         "id": "standard",
@@ -99,6 +99,16 @@ BILLING_CATEGORY_OPTIONS = (
         "description": "Stärkere/teurere Modelle; Multiplikator kann nur erhöht werden.",
     },
 )
+PAID_BILLING_CATEGORY_OPTIONS = tuple(
+    option for option in BILLING_CATEGORY_OPTIONS if option["id"] != FREE_CATEGORY
+)
+
+
+def _require_paid_admin_category(category: str) -> None:
+    if category == FREE_CATEGORY:
+        raise BillingPolicyError(
+            "Kostenlose Routen dürfen nur im getrennten Free-Revolver-Providerbereich angelegt werden"
+        )
 
 
 def _non_negative_decimal(value: Any) -> Decimal | None:
@@ -253,6 +263,7 @@ def _normalize_provider_recovery_policy(
     category = normalize_billing_category(
         body.get("billingCategory", deployment.get("billing_category"))
     )
+    _require_paid_admin_category(category)
     multiplier = normalized_multiplier(
         category,
         body.get("markupMultiplier", deployment.get("markup_multiplier")),
@@ -317,6 +328,7 @@ def _normalize_metadata(body: dict[str, Any]) -> dict[str, Any]:
     api_base = _normalize_api_base(body.get("apiBase"), prefix)
     try:
         category = normalize_billing_category(body.get("billingCategory") or "premium")
+        _require_paid_admin_category(category)
         multiplier = normalized_multiplier(category, body.get("markupMultiplier"))
         funding_mode = normalize_funding_mode(category, body.get("fundingMode"))
         priority = int(body.get("priority", 50))
@@ -376,8 +388,8 @@ def register_llm_provider_routes(
     def admin_llm_provider_presets():
         return jsonify({
             "providers": list(PROVIDER_PRESETS),
-            "billingCategories": list(BILLING_CATEGORY_OPTIONS),
-            "fundingModes": list(FUNDING_MODE_OPTIONS),
+            "billingCategories": list(PAID_BILLING_CATEGORY_OPTIONS),
+            "fundingModes": [],
             "createsRoutes": False,
         })
 
@@ -388,13 +400,13 @@ def register_llm_provider_routes(
         if error:
             return jsonify({
                 "models": [],
-                "billingCategories": list(BILLING_CATEGORY_OPTIONS),
+                "billingCategories": list(PAID_BILLING_CATEGORY_OPTIONS),
                 "blocker": error,
                 "error": "LiteLLM-Modellkatalog ist nicht verfügbar.",
             }), 503
         return jsonify({
             "models": models,
-            "billingCategories": list(BILLING_CATEGORY_OPTIONS),
+            "billingCategories": list(PAID_BILLING_CATEGORY_OPTIONS),
             "pricingAuthority": "litellm-model-info",
         })
 
@@ -407,11 +419,17 @@ def register_llm_provider_routes(
             return jsonify({"error": "modelId fehlt", "blocker": "model_id_required"}), 400
         try:
             category = normalize_billing_category(body.get("billingCategory"))
+            _require_paid_admin_category(category)
             multiplier = normalized_multiplier(category, body.get("markupMultiplier"))
             funding_mode = normalize_funding_mode(category, body.get("fundingMode"))
             priority = int(body.get("priority", 50))
         except (BillingPolicyError, TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc), "blocker": "billing_category_invalid"}), 400
+            blocker = (
+                "free_routes_require_revolver_provider_onboarding"
+                if "Free-Revolver" in str(exc)
+                else "billing_category_invalid"
+            )
+            return jsonify({"error": str(exc), "blocker": blocker}), 409 if blocker.startswith("free_routes") else 400
         if not -10_000 <= priority <= 10_000:
             return jsonify({"error": "priority liegt außerhalb des erlaubten Bereichs"}), 400
 
