@@ -35,7 +35,7 @@ const SECRET_PATTERNS: Array<{ readonly kind: SecretKind; readonly pattern: RegE
   { kind: 'generic_bearer', pattern: /\bBearer\s+[A-Za-z0-9\-._~+/]{20,}\b/i },
   {
     kind: 'generic_secret',
-    pattern: /\b(?:token|secret|password|passwd|api[_-]?key)\s*[:=]\s*["']?(?!(?:process|import\.meta)\.env\b)(?!os\.(?:environ|getenv)\b)[A-Za-z0-9\-._~+/]{10,}["']?/i,
+    pattern: /\b(?:token|secret|password|passwd|api[_-]?key)\s*[:=]\s*(?!(?:process|import\.meta)\.env\b)(?!os\.(?:environ|getenv)\b)(?:["'][A-Za-z0-9\-._~+/]{10,}["']|[A-Za-z0-9\-._~+/]{10,})/i,
   },
 ];
 
