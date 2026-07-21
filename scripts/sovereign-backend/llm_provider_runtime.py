@@ -229,6 +229,55 @@ def _validate_category_pricing(
         raise BillingPolicyError("Bezahlte Routen benötigen positive verifizierte Providerpreise")
 
 
+def _normalize_provider_recovery_policy(
+    body: dict[str, Any],
+    deployment: dict[str, Any],
+    model: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    policy_fields = {"billingCategory", "fundingMode", "markupMultiplier", "priority"}
+    if not any(field in body for field in policy_fields):
+        return None
+    if not model:
+        raise BillingPolicyError(
+            "LiteLLM-Modellkatalog ist für die Policy-Umstellung nicht verfügbar"
+        )
+    category = normalize_billing_category(
+        body.get("billingCategory", deployment.get("billing_category"))
+    )
+    multiplier = normalized_multiplier(
+        category,
+        body.get("markupMultiplier", deployment.get("markup_multiplier")),
+    )
+    funding_mode = normalize_funding_mode(
+        category,
+        body.get("fundingMode", deployment.get("funding_mode")),
+    )
+    try:
+        priority = int(body.get("priority", deployment.get("priority") or 50))
+    except (TypeError, ValueError) as exc:
+        raise BillingPolicyError("priority ist ungültig") from exc
+    if not -10_000 <= priority <= 10_000:
+        raise BillingPolicyError("priority liegt außerhalb des erlaubten Bereichs")
+    _validate_category_pricing(
+        category=category,
+        model=model,
+        funding_mode=funding_mode,
+    )
+    output_price = Decimal(str(model["outputUsdPerMillion"] or 0))
+    credits_per_unit = int(
+        (output_price * Decimal(multiplier)).to_integral_value(rounding=ROUND_CEILING)
+    ) if multiplier else 0
+    return {
+        "billingCategory": category,
+        "markupMultiplier": multiplier,
+        "fundingMode": funding_mode,
+        "minimumMultiplier": category_minimum_multiplier(category),
+        "priority": priority,
+        "creditsPerUnit": credits_per_unit,
+        "model": model,
+    }
+
+
 def _slug(value: str, limit: int) -> str:
     normalized = _ALIAS_RE.sub("-", value.strip().lower()).strip("-")
     return (normalized or "provider")[:limit]
@@ -513,8 +562,15 @@ def register_llm_provider_routes(
                       to_char(deployment.last_canary_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS "lastCanaryAt",
                       deployment.owner_request_id::text AS "ownerRequestId",
                       owner_request.status AS "ownerInputStatus",
+                      COALESCE(route.config->>'fundingMode', 'provider_priced') AS "fundingMode",
+                      route.priority,
                       CASE
                         WHEN deployment.status='ready' THEN 'stored_in_litellm'
+                        WHEN deployment.last_error_code IN (
+                          'provider_secret_missing', 'provider_secret_invalid',
+                          'provider_secret_invalid_encoding', 'provider_secret_permissions_invalid',
+                          'provider_key_fingerprint_missing'
+                        ) THEN 'missing'
                         WHEN deployment.key_fingerprint IS NOT NULL THEN 'registered'
                         WHEN owner_request.status='consumed' THEN 'consumed'
                         WHEN owner_request.status IN ('pending','processing') THEN 'awaiting_owner_input'
@@ -523,6 +579,8 @@ def register_llm_provider_routes(
                FROM llm_provider_deployments AS deployment
                LEFT JOIN owner_input_requests AS owner_request
                  ON owner_request.id=deployment.owner_request_id
+               LEFT JOIN llm_routes AS route
+                 ON route.id=deployment.route_id
                ORDER BY deployment.updated_at DESC"""
         )
         return jsonify({"deployments": [dict(row) for row in (rows or [])]})
@@ -651,14 +709,30 @@ def register_llm_provider_routes(
     @require_admin
     def admin_refresh_llm_provider_owner_input(route_id: str):
         deployment = query(
-            """SELECT route_id, provider_name, litellm_model_name, status
-               FROM llm_provider_deployments WHERE route_id=%s LIMIT 1""",
+            """SELECT deployment.route_id, deployment.provider_name,
+                      deployment.litellm_model_name, deployment.status,
+                      deployment.billing_category, deployment.markup_multiplier,
+                      route.priority,
+                      COALESCE(route.config->>'fundingMode', 'provider_priced') AS funding_mode
+               FROM llm_provider_deployments AS deployment
+               JOIN llm_routes AS route ON route.id=deployment.route_id
+               WHERE deployment.route_id=%s LIMIT 1""",
             (route_id,), one=True,
         )
         if not deployment:
             return jsonify({"error": "Providerroute nicht gefunden"}), 404
         if str(deployment.get("status") or "") == "ready":
             return jsonify({"error": "Route ist bereits aktiv", "blocker": "provider_route_exists"}), 409
+
+        body = request.get_json(silent=True) or {}
+        try:
+            catalog_model = _catalog_model(str(deployment["litellm_model_name"]))
+            policy = _normalize_provider_recovery_policy(body, dict(deployment), catalog_model)
+        except BillingPolicyError as exc:
+            return jsonify({
+                "error": str(exc),
+                "blocker": "provider_recovery_policy_invalid",
+            }), 409
 
         connection = get_connection()
         try:
@@ -681,6 +755,53 @@ def register_llm_provider_routes(
                     ),
                 )
                 owner_request_id = str(cursor.fetchone()["id"])
+                if policy:
+                    model = policy["model"]
+                    route_patch = {
+                        "providerModel": model["providerModel"],
+                        "billingCategory": policy["billingCategory"],
+                        "billingClass": policy["billingCategory"],
+                        "markupMultiplier": policy["markupMultiplier"],
+                        "fundingMode": policy["fundingMode"],
+                        "minimumMultiplier": policy["minimumMultiplier"],
+                        "inputUsdPerMillion": model["inputUsdPerMillion"],
+                        "cachedInputUsdPerMillion": model["cachedInputUsdPerMillion"],
+                        "outputUsdPerMillion": model["outputUsdPerMillion"],
+                        "pricingVerified": True,
+                        "pricingSource": model["pricingSource"],
+                        "usdMicrosPerCredit": 1000,
+                        "revolverEligible": policy["billingCategory"] == FREE_CATEGORY,
+                    }
+                    cursor.execute(
+                        """UPDATE llm_routes
+                           SET credits_per_unit=%s, disabled=true, priority=%s, tier=%s,
+                               config=COALESCE(config, '{}'::jsonb) || %s::jsonb,
+                               updated_at=NOW()
+                           WHERE id=%s""",
+                        (
+                            policy["creditsPerUnit"], policy["priority"],
+                            policy["billingCategory"],
+                            json.dumps(route_patch, ensure_ascii=False), route_id,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError("provider_recovery_route_missing")
+                    cursor.execute(
+                        """UPDATE llm_provider_deployments
+                           SET billing_category=%s, markup_multiplier=%s,
+                               input_usd_per_million=%s,
+                               cached_input_usd_per_million=%s,
+                               output_usd_per_million=%s,
+                               pricing_source=%s, pricing_verified_at=NOW()
+                           WHERE route_id=%s""",
+                        (
+                            policy["billingCategory"], policy["markupMultiplier"],
+                            model["inputUsdPerMillion"], model["cachedInputUsdPerMillion"],
+                            model["outputUsdPerMillion"], model["pricingSource"], route_id,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError("provider_recovery_deployment_missing")
                 cursor.execute(
                     """UPDATE llm_provider_deployments
                        SET owner_request_id=%s::uuid, status='awaiting_owner_input',
@@ -700,12 +821,22 @@ def register_llm_provider_routes(
         finally:
             connection.close()
 
+        audit("admin_llm_provider_owner_input_refreshed", route_id, {
+            "policyUpdated": bool(policy),
+            "billingCategory": policy["billingCategory"] if policy else deployment.get("billing_category"),
+            "fundingMode": policy["fundingMode"] if policy else deployment.get("funding_mode"),
+            "markupMultiplier": policy["markupMultiplier"] if policy else deployment.get("markup_multiplier"),
+        })
         return jsonify({
             "ok": True,
             "status": "awaiting_owner_input",
             "routeId": route_id,
             "ownerRequestId": owner_request_id,
             "ownerUrl": f"/owner-approvals?request_id={owner_request_id}",
+            "policyUpdated": bool(policy),
+            "billingCategory": policy["billingCategory"] if policy else deployment.get("billing_category"),
+            "fundingMode": policy["fundingMode"] if policy else deployment.get("funding_mode"),
+            "markupMultiplier": policy["markupMultiplier"] if policy else deployment.get("markup_multiplier"),
         }), 202
 
     @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])

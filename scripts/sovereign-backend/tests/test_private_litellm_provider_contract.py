@@ -32,6 +32,9 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert "provider_canary_failed" in runtime
     assert "_catalog_model_with_retry" in runtime
     assert "requires_secret = secret_available or not model_present or not key_fingerprint" in runtime
+    assert "_normalize_provider_recovery_policy" in runtime
+    assert "provider_recovery_policy_invalid" in runtime
+    assert "policyUpdated" in runtime
     assert "if secret_loaded:" in runtime
     assert "key_fingerprint=%s, key_hint=%s" in runtime
     assert "SET status='ready'" in runtime
@@ -160,6 +163,8 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "fundingMode:document.getElementById('providerFundingMode').value" in ui
     assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||0)" in ui
     assert "refreshProviderOwnerInput" in ui
+    assert "prepareProviderFreeQuota" in ui
+    assert "provider_free_quota" in ui
     assert "providerCredentialLabel" in ui
     assert "lastErrorCode" in ui
     assert "billingCategory" in ui
