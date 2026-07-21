@@ -158,6 +158,9 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "billing_category = 'standard' AND markup_multiplier >= 4" in migration
     assert "billing_category = 'premium' AND markup_multiplier >= 8" in migration
     assert "credit_packages_cash_buffer_check" in migration
+    assert migration.count(
+        "COALESCE(config->>'pricingVerified', 'false') <> 'true'"
+    ) == 2
 
     assert "_load_agent_policy" in billing
     assert "AGENTS_LITELLM_ALIAS_NOT_READY" in billing
