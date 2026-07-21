@@ -336,26 +336,38 @@ def test_provider_activation_accepts_only_route_identity(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
     route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    request_id = "44444444-4444-4444-8444-444444444444"
     session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "PROVIDER_DEPLOYMENTS_READ",
+            "deployments": [{
+                "routeId": route_id,
+                "ownerRequestId": request_id,
+                "keyFingerprintPresent": False,
+            }],
+            "protectedValuesReturned": False,
+        }),
         FakeResponse(200, {
             "ok": True,
             "status": "ready",
             "routeId": route_id,
             "modelId": "sovereign-groq-model",
-        })
+        }),
     ])
     client = ProviderRuntimeClient(session=session)
 
     result = client.activate(route_id)
 
-    call = session.calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == (
+    metadata_call, activation_call = session.calls
+    assert metadata_call["method"] == "GET"
+    assert metadata_call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
+    assert activation_call["method"] == "POST"
+    assert activation_call["url"] == (
         "http://backend:8787/api/internal/llm/provider-deployments/"
         f"{route_id}/activate"
     )
-    assert call["json"] is None
-    assert result["secret_argument_accepted"] is False
+    assert activation_call["json"] == {"ownerRequestId": request_id}
     assert result["protected_values_returned"] is False
 
 
