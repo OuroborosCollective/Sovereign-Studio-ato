@@ -307,7 +307,7 @@ class TestHealthcheckArchitecture(unittest.TestCase):
 
 
 class TestAdminRuntimeTruth(unittest.TestCase):
-    """Tests ensuring /admin serves only the enterprise UI truth."""
+    """Tests ensuring /admin serves only the canonical React UI truth."""
 
     def test_legacy_admin_panel_html_literal_absent(self):
         """The historical _ADMIN_PANEL_HTML literal must not exist."""
@@ -317,13 +317,16 @@ class TestAdminRuntimeTruth(unittest.TestCase):
         self.assertNotIn("_ADMIN_PANEL_HTML = r\"\"\"", content)
         self.assertNotIn("_ADMIN_PANEL_HTML = ENTERPRISE_ADMIN_HTML", content)
 
-    def test_admin_route_uses_enterprise_html_only(self):
-        """/admin must return ENTERPRISE_ADMIN_HTML and not refer to legacy sources."""
+    def test_admin_route_uses_canonical_react_artifact_only(self):
+        """/admin must serve admin-dist and never reactivate embedded legacy HTML."""
         app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
         with open(app_path) as f:
             content = f.read()
-        self.assertIn("ENTERPRISE_ADMIN_HTML", content)
-        self.assertIn("def admin_panel", content)
+        self.assertNotIn("ENTERPRISE_ADMIN_HTML", content)
+        self.assertIn("ADMIN_DIST_DIR", content)
+        self.assertIn("send_from_directory", content)
+        self.assertIn('redirect("/admin/", code=308)', content)
+        self.assertIn("CANONICAL_REACT_ADMIN", content)
         self.assertNotIn("_ADMIN_PANEL_HTML", content)
 
 
