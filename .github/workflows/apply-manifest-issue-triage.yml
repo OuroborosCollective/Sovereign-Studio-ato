@@ -1,0 +1,272 @@
+name: Apply manifest issue triage
+
+on:
+  workflow_dispatch:
+    inputs:
+      triage_path:
+        description: Versioned issue triage JSON under docs/architecture
+        required: true
+        default: docs/architecture/SOVEREIGN_MANIFEST_ISSUE_TRIAGE_2026-07-22.json
+        type: string
+      expected_triage_sha256:
+        description: Exact SHA-256 of the triage JSON
+        required: true
+        type: string
+      expected_main_sha:
+        description: Exact main revision on which this workflow is dispatched
+        required: true
+        type: string
+      owner_approved:
+        description: Explicit repository owner approval
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sovereign-manifest-issue-triage
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply bounded issue decisions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRIAGE_PATH: ${{ inputs.triage_path }}
+      EXPECTED_TRIAGE_SHA256: ${{ inputs.expected_triage_sha256 }}
+      EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+      OWNER_APPROVED: ${{ inputs.owner_approved }}
+    steps:
+      - name: Check out exact dispatch revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate and apply exact marker-bound decisions
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+
+            const triagePath = String(process.env.TRIAGE_PATH || '').trim();
+            const expectedTriageSha = String(process.env.EXPECTED_TRIAGE_SHA256 || '').trim().toLowerCase();
+            const expectedMainSha = String(process.env.EXPECTED_MAIN_SHA || '').trim().toLowerCase();
+            const ownerApproved = String(process.env.OWNER_APPROVED || '').trim().toLowerCase() === 'true';
+            const currentSha = String(context.sha || '').trim().toLowerCase();
+
+            if (!ownerApproved) {
+              core.setFailed('Explicit owner approval is required.');
+              return;
+            }
+            if (!/^docs\/architecture\/[A-Za-z0-9._-]+\.json$/.test(triagePath)) {
+              core.setFailed('triage_path must be one JSON file directly under docs/architecture.');
+              return;
+            }
+            if (!/^[0-9a-f]{64}$/.test(expectedTriageSha)) {
+              core.setFailed('expected_triage_sha256 must be a lowercase SHA-256.');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedMainSha) || expectedMainSha !== currentSha) {
+              core.setFailed(`Dispatch revision mismatch: expected ${expectedMainSha}, actual ${currentSha}.`);
+              return;
+            }
+            if (context.ref !== 'refs/heads/main') {
+              core.setFailed(`This workflow may run only on main, not ${context.ref}.`);
+              return;
+            }
+            if (!fs.existsSync(triagePath)) {
+              core.setFailed(`Triage file not found: ${triagePath}`);
+              return;
+            }
+
+            const raw = fs.readFileSync(triagePath);
+            const actualTriageSha = crypto.createHash('sha256').update(raw).digest('hex');
+            if (actualTriageSha !== expectedTriageSha) {
+              core.setFailed(`Triage SHA mismatch: expected ${expectedTriageSha}, actual ${actualTriageSha}.`);
+              return;
+            }
+
+            let document;
+            try {
+              document = JSON.parse(raw.toString('utf8'));
+            } catch (error) {
+              core.setFailed(`Triage JSON is invalid: ${error.message}`);
+              return;
+            }
+
+            if (document.schemaVersion !== 'sovereign.manifest-issue-triage.v1') {
+              core.setFailed(`Unsupported schemaVersion: ${document.schemaVersion}`);
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(String(document.auditedRevision || ''))) {
+              core.setFailed('auditedRevision must be an exact commit SHA.');
+              return;
+            }
+            if (!Array.isArray(document.decisions) || document.decisions.length < 1 || document.decisions.length > 40) {
+              core.setFailed('decisions must contain between 1 and 40 records.');
+              return;
+            }
+
+            const allowedActions = new Set(['update_open', 'close_completed']);
+            const seenKeys = new Set();
+            for (const decision of document.decisions) {
+              const key = String(decision.key || '').trim();
+              const title = String(decision.title || '').trim();
+              if (!/^[a-z0-9][a-z0-9-]{1,79}$/.test(key)) {
+                core.setFailed(`Invalid issue key: ${key}`);
+                return;
+              }
+              if (seenKeys.has(key)) {
+                core.setFailed(`Duplicate issue key: ${key}`);
+                return;
+              }
+              seenKeys.add(key);
+              if (!allowedActions.has(decision.action)) {
+                core.setFailed(`Unsupported action for ${key}: ${decision.action}`);
+                return;
+              }
+              if (!title || title.length > 240) {
+                core.setFailed(`Invalid title for ${key}.`);
+                return;
+              }
+              if (!String(decision.summary || '').trim()) {
+                core.setFailed(`Missing summary for ${key}.`);
+                return;
+              }
+              if (!Array.isArray(decision.evidence) || decision.evidence.length < 1 || decision.evidence.length > 20) {
+                core.setFailed(`Evidence list for ${key} must contain between 1 and 20 entries.`);
+                return;
+              }
+              if (!Array.isArray(decision.remainingAcceptance) || decision.remainingAcceptance.length > 20) {
+                core.setFailed(`remainingAcceptance for ${key} must be an array with at most 20 entries.`);
+                return;
+              }
+              if (decision.action === 'close_completed' && decision.remainingAcceptance.length !== 0) {
+                core.setFailed(`Completed issue ${key} may not retain acceptance blockers.`);
+                return;
+              }
+            }
+
+            const { owner, repo } = context.repo;
+            const allIssues = (await github.paginate(
+              github.rest.issues.listForRepo,
+              { owner, repo, state: 'all', per_page: 100 }
+            )).filter(item => !item.pull_request);
+
+            // Resolve every marker before the first write. A missing or duplicate
+            // marker therefore blocks the whole run instead of partially applying
+            // an otherwise valid triage bundle.
+            const issueByKey = new Map();
+            for (const decision of document.decisions) {
+              const key = String(decision.key);
+              const sourceMarker = `<!-- sovereign-manifest-issue:${key} -->`;
+              const matches = allIssues.filter(issue => String(issue.body || '').includes(sourceMarker));
+              if (matches.length !== 1) {
+                core.setFailed(`Expected exactly one issue for ${key}, found ${matches.length}. No issue was mutated.`);
+                return;
+              }
+              issueByKey.set(key, matches[0]);
+            }
+
+            function upsertScopeBlock(body, key, block) {
+              const start = `<!-- sovereign-manifest-current-scope:${key} -->`;
+              const end = `<!-- /sovereign-manifest-current-scope:${key} -->`;
+              const current = String(body || '');
+              const startIndex = current.indexOf(start);
+              const endIndex = current.indexOf(end);
+              if (startIndex >= 0 && endIndex > startIndex) {
+                return `${current.slice(0, startIndex)}${block}${current.slice(endIndex + end.length)}`.trim();
+              }
+              return `${current.trim()}\n\n${block}`.trim();
+            }
+
+            const outcomes = [];
+            for (const decision of document.decisions) {
+              const key = String(decision.key);
+              const issue = issueByKey.get(key);
+              const idempotencyMarker = `<!-- sovereign-manifest-triage:${key}:${actualTriageSha} -->`;
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: issue.number, per_page: 100 }
+              );
+              if (comments.some(comment => String(comment.body || '').includes(idempotencyMarker))) {
+                outcomes.push({ key, issue: issue.number, action: 'already_applied' });
+                continue;
+              }
+
+              const evidenceLines = decision.evidence.map(item => `- ${String(item)}`).join('\n');
+              const remainingLines = decision.remainingAcceptance.length
+                ? decision.remainingAcceptance.map(item => `- [ ] ${String(item)}`).join('\n')
+                : '- Keine offenen Akzeptanzkriterien aus dieser Issue-Familie.';
+              const stateLabel = decision.action === 'close_completed'
+                ? 'ERLEDIGT — durch aktuelle Main-Architektur redundant'
+                : 'WEITER OFFEN — Scope an aktuellen Main-Stand angepasst';
+              const scopeBlock = [
+                `<!-- sovereign-manifest-current-scope:${key} -->`,
+                `## Aktueller Manifest-Status`,
+                '',
+                `**${stateLabel}**`,
+                '',
+                String(decision.summary),
+                '',
+                `**Geprüfte Evidenzbasis:** \`${document.auditedRevision}\``,
+                '',
+                '### Evidenz',
+                evidenceLines,
+                '',
+                '### Verbleibende Akzeptanz',
+                remainingLines,
+                `<!-- /sovereign-manifest-current-scope:${key} -->`,
+              ].join('\n');
+              const updatedBody = upsertScopeBlock(issue.body, key, scopeBlock);
+
+              const update = {
+                owner,
+                repo,
+                issue_number: issue.number,
+                title: decision.title,
+                body: updatedBody,
+              };
+              if (decision.action === 'close_completed') {
+                update.state = 'closed';
+                update.state_reason = 'completed';
+              } else {
+                update.state = 'open';
+              }
+
+              await github.rest.issues.update(update);
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: [
+                  idempotencyMarker,
+                  `Manifest-Triage vom ${document.generatedAt}`,
+                  '',
+                  `**Entscheidung:** ${stateLabel}`,
+                  '',
+                  String(decision.summary),
+                  '',
+                  `Audit-Revision: \`${document.auditedRevision}\``,
+                  `Triage-SHA256: \`${actualTriageSha}\``,
+                ].join('\n'),
+              });
+              outcomes.push({ key, issue: issue.number, action: decision.action });
+            }
+
+            core.summary
+              .addHeading('Manifest issue triage')
+              .addTable([
+                [{ data: 'Key', header: true }, { data: 'Issue', header: true }, { data: 'Action', header: true }],
+                ...outcomes.map(item => [item.key, `#${item.issue}`, item.action]),
+              ])
+              .addRaw(`\nTriage SHA-256: \`${actualTriageSha}\`\n`)
+              .write();
+            core.setOutput('triage_sha256', actualTriageSha);
+            core.setOutput('mutated_issue_count', String(outcomes.filter(item => item.action !== 'already_applied').length));

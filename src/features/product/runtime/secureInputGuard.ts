@@ -30,12 +30,12 @@ export type SecretGuardResult = SecretDetection | NoSecretDetected;
 const SECRET_PATTERNS: Array<{ readonly kind: SecretKind; readonly pattern: RegExp }> = [
   { kind: 'github_pat', pattern: /\bghp_[A-Za-z0-9]{20,}\b/ },
   { kind: 'github_pat_fine', pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/ },
-  { kind: 'openai_key', pattern: /\bsk-[A-Za-z0-9]{20,}\b/ },
   { kind: 'anthropic_key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/ },
+  { kind: 'openai_key', pattern: /\bsk-(?!ant-)[A-Za-z0-9_-]{20,}\b/ },
   { kind: 'generic_bearer', pattern: /\bBearer\s+[A-Za-z0-9\-._~+/]{20,}\b/i },
   {
     kind: 'generic_secret',
-    pattern: /\b(?:token|secret|password|passwd|api[_-]?key)\s*[:=]\s*[A-Za-z0-9\-._~+/]{10,}/i,
+    pattern: /\b(?:token|secret|password|passwd|api[_-]?key)\s*[:=]\s*(?!(?:process|import\.meta)\.env\b)(?!os\.(?:environ|getenv)\b)(?:["'][A-Za-z0-9\-._~+/]{10,}["']|[A-Za-z0-9\-._~+/]{10,})/i,
   },
 ];
 
@@ -68,7 +68,8 @@ export function scanForSecret(input: string): SecretGuardResult {
 export function redactSecret(input: string): string {
   let redacted = input;
   for (const entry of SECRET_PATTERNS) {
-    redacted = redacted.replace(entry.pattern, '[REDACTED]');
+    const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
+    redacted = redacted.replace(new RegExp(entry.pattern.source, flags), '[REDACTED]');
   }
   return redacted;
 }
@@ -102,7 +103,7 @@ export function evaluateInputPolicy(input: string): SecureInputPolicy {
   return {
     shouldBlock: true,
     kind: result.kind,
-    userMessage: `Sicherer Zugang erkannt. Diese Eingabe wurde nicht als Chat gespeichert. Bitte nutze das sicheres Zugangsfeld.`,
+    userMessage: `Sicherer Zugang erkannt. Diese Eingabe wurde nicht als Chat gespeichert. Bitte nutze das sichere Zugangsfeld.`,
     actionLabel: 'GitHub-Zugang öffnen',
     securityCardTitle: isGitHubToken
       ? 'Sicherer GitHub-Zugang erkannt'

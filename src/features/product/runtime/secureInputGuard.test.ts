@@ -37,6 +37,16 @@ describe('secureInputGuard', () => {
       }
     });
 
+    it('detects project-style OpenAI keys without misclassifying Anthropic keys', () => {
+      const openAi = scanForSecret('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234');
+      expect(openAi.detected).toBe(true);
+      if (openAi.detected) expect(openAi.kind).toBe('openai_key');
+
+      const anthropic = scanForSecret('sk-ant-api-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234');
+      expect(anthropic.detected).toBe(true);
+      if (anthropic.detected) expect(anthropic.kind).toBe('anthropic_key');
+    });
+
     it('detects Anthropic key (sk-ant-)', () => {
       const input = 'sk-ant-api-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234';
       const result = scanForSecret(input);
@@ -65,6 +75,11 @@ describe('secureInputGuard', () => {
       const input = 'api_key=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef';
       const result = scanForSecret(input);
       expect(result.detected).toBe(true);
+    });
+
+    it('detects quoted secret assignments but allows environment references', () => {
+      expect(scanForSecret("api_key='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'").detected).toBe(true);
+      expect(scanForSecret('const token = process.env.TOOLCHAIN_API_KEY').detected).toBe(false);
     });
 
     it('does not flag short strings', () => {
@@ -97,6 +112,13 @@ describe('secureInputGuard', () => {
       expect(redacted).not.toContain('sk-');
     });
 
+    it('replaces every occurrence of the same secret kind', () => {
+      const input = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01 and ghp_1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const redacted = redactSecret(input);
+      expect(redacted.match(/\[REDACTED\]/g)).toHaveLength(2);
+      expect(redacted).not.toContain('ghp_');
+    });
+
     it('leaves normal text unchanged', () => {
       expect(redactSecret('Baue mir ein Feature')).toBe('Baue mir ein Feature');
     });
@@ -114,7 +136,7 @@ describe('secureInputGuard', () => {
       const policy = evaluateInputPolicy('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01');
       expect(policy.shouldBlock).toBe(true);
       expect(policy.kind).toBe('github_pat');
-      expect(policy.userMessage).toContain('sicheres Zugangsfeld');
+      expect(policy.userMessage).toContain('sichere Zugangsfeld');
       expect(policy.actionLabel).toContain('GitHub');
       expect(policy.securityCardTitle).toBe('Sicherer GitHub-Zugang erkannt');
       expect(policy.securityCardText).toContain('blockiert');

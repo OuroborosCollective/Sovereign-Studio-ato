@@ -1,0 +1,184 @@
+{
+  "schemaVersion": "sovereign.manifest-issue-triage.v1",
+  "auditedRevision": "31060add7216939281585905f09a318ed57900b8",
+  "sourceBundlePath": "docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES.json",
+  "sourceBundleSha256": "92cf28571ff8a164b4bb5351891e87dfb058b390b8910adf8f0320d5bcd6209a",
+  "generatedAt": "2026-07-22",
+  "decisions": [
+    {
+      "key": "provider-onboarding-gpt54-route",
+      "action": "update_open",
+      "title": "[Manifest] Preisverifizierte LiteLLM-Aliase und Agents-SDK-Route produktiv aktivieren",
+      "summary": "Das Providerinventar und die OpenAI-Projektzuordnung sind inzwischen real verifiziert. Die produktiven Aliase sovereign-fast und sovereign-balanced bleiben jedoch ohne erfolgreiche Completion-Canary; der Agents-SDK-Pfad ist weiterhin durch ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE blockiert.",
+      "evidence": [
+        "92 Provider-Modelle sind für das bestätigte Projekt inventarisiert.",
+        "LiteLLM und Datenbank sind gesund; sovereign-fast und sovereign-balanced sind sichtbar.",
+        "Beide Alias-Completion-Canaries schlagen weiterhin fehl.",
+        "Die aktuell registrierte Providerroute ist deaktiviert und nicht als preisverifiziert aktiv."
+      ],
+      "remainingAcceptance": [
+        "Mindestens eine preisverifizierte produktive LiteLLM-Route atomar aktivieren.",
+        "Completion-Canaries für sovereign-fast und sovereign-balanced erfolgreich belegen.",
+        "Agents-SDK-Canary sowie Reservation, Settlement, Refund und Rollback revisionsgebunden nachweisen."
+      ]
+    },
+    {
+      "key": "runtime-canary-coverage-matrix",
+      "action": "update_open",
+      "title": "[Manifest] Revisionsgebundene Fachcanary-Matrix vollständig machen",
+      "summary": "Die Kernabhängigkeiten und mehrere Fachpfade sind live gesund, aber die Abdeckung ist weiterhin nicht für jede releasekritische Produktfunktion als revisionsgebundene Matrix belegt.",
+      "evidence": [
+        "PostgreSQL, pgvector, MCP, Backend, Dokumentpipeline und Milvus-Canary sind gesund.",
+        "Das aktuelle Architekturmanifest kennzeichnet die Fachcanary-Abdeckung weiterhin als teilweise.",
+        "Container-Liveness ersetzt weiterhin keinen Funktionsbeweis je Produktfamilie."
+      ],
+      "remainingAcceptance": [
+        "Alle releasekritischen Familien in einer maschinenlesbaren Matrix erfassen.",
+        "Je Familie echten Canary oder begründeten Ausschluss mit Cleanup und Evidence-Feldern hinterlegen.",
+        "Release Gate bei fehlender Pflicht-Evidence fail-closed machen."
+      ]
+    },
+    {
+      "key": "physical-android-device-smoke",
+      "action": "update_open",
+      "title": "[Manifest] Hauptpfad auf physischem Android-Gerät revisionsgebunden belegen",
+      "summary": "Android-Repository-, Build-, Signatur- und Alignment-Evidence sind vorhanden. Ein echter Installations- und Hauptpfad-Smoke auf einem physischen Gerät fehlt weiterhin.",
+      "evidence": [
+        "Das aktuelle Architekturmanifest kennzeichnet den physischen Android-Smoke weiterhin als teilweise.",
+        "Statische Android- und Artefaktprüfungen ersetzen keinen realen Geräte-Roundtrip."
+      ],
+      "remainingAcceptance": [
+        "Exaktes Releaseartefakt auf physischem Gerät installieren und starten.",
+        "Session/Login, Chat-Backend-Roundtrip, Back-Navigation und Fehlerzustände prüfen.",
+        "Device-, Android-, Artefakt- und Backend-Revision im Receipt binden."
+      ]
+    },
+    {
+      "key": "llm-tool-boundary-review-ledger",
+      "action": "update_open",
+      "title": "[Manifest] SHA-gebundene Reviewliste der 71 LLM-/Tool-Boundary-Kandidaten verankern",
+      "summary": "Der alte Stand mit 65 Kandidaten ist überholt. Der aktuelle main-Snapshot enthält 71 statische LLM-/Tool-Boundary-Kandidaten. Sie sind weiterhin Reviewkandidaten und keine bestätigten Laufzeitfehler.",
+      "evidence": [
+        "Architekturdrift-Snapshot auf dem geprüften main-Stand meldet 71 P1-Kandidaten.",
+        "Es wurden keine P0- oder P2-Boundary-Befunde bestätigt.",
+        "Offline-Fallbacks, strukturierte Policies und Spiegelpfade müssen weiterhin einzeln klassifiziert werden."
+      ],
+      "remainingAcceptance": [
+        "Alle 71 Kandidaten dedupliziert und SHA-gebunden klassifizieren.",
+        "Keinen UNREVIEWED-Eintrag belassen.",
+        "Dateiänderungen müssen betroffene Reviews automatisch wieder öffnen."
+      ]
+    },
+    {
+      "key": "github-knowledge-live-canary",
+      "action": "update_open",
+      "title": "[Manifest] GitHub-Knowledge-Import und sicheren Transportfehler live belegen",
+      "summary": "Der sichere Codevertrag besteht weiterhin, aber öffentlicher Import, persistierter Knowledge-Status, kontrollierter Transportfehler und Cleanup sind noch nicht gegen ein exakt revisionsgebundenes Backend gemeinsam live belegt.",
+      "evidence": [
+        "Das aktuelle Architekturmanifest kennzeichnet den GitHub-Knowledge-Livecanary weiterhin als teilweise.",
+        "Statische Endpoint- und Transportverträge sind vorhanden, ersetzen aber keinen Live-Import."
+      ],
+      "remainingAcceptance": [
+        "Öffentliche stabile Quelle credential-frei importieren.",
+        "Chunks, Embeddings, Provenance und sicheren Fehlerfingerprint prüfen.",
+        "Canarydaten vollständig bereinigen und Backendrevision/Digest binden."
+      ]
+    },
+    {
+      "key": "historical-schema-ownership",
+      "action": "update_open",
+      "title": "[Manifest] Historische Ownership für drei Live-Tabellen dokumentieren",
+      "summary": "Die strukturellen Umbauten haben den Befund nicht beseitigt. Drei Live-Tabellen besitzen weiterhin keine statisch nachgewiesene CREATE-TABLE-Quelle.",
+      "evidence": [
+        "Live-Schema enthält 62 Tabellen, der statische Migrationsscan ordnet 59 Erzeuger zu.",
+        "Ungeklärt bleiben admin_users, sovereign_agent_draft_pr_events und sovereign_agent_evidence_log.",
+        "Es wurden keine Datenzeilen gelesen oder verändert."
+      ],
+      "remainingAcceptance": [
+        "Historische kanonische Erzeugerquelle und Recoverypfad je Tabelle dokumentieren.",
+        "Scanner auf versioniertes Ownership-Manifest ausrichten.",
+        "Keine blinde Neuanlage live vorhandener Tabellen."
+      ]
+    },
+    {
+      "key": "deploy-enterprise-admin-backend",
+      "action": "update_open",
+      "title": "[Manifest] Kanonisches React-Admin-Backend revisionsgebunden live belegen",
+      "summary": "Der alte eingebettete Admin-HTML-Pfad wurde strukturell ersetzt: /admin liefert heute das kanonische React-Artefakt. Der laufende Container ist gesund, aber ein exakter Source-Revision-/Image-Digest-Readback mit Admin-Endpunkt- und Rollbackbeweis fehlt noch.",
+      "evidence": [
+        "/admin leitet auf /admin/ und bedient admin-dist/index.html über den Producer CANONICAL_REACT_ADMIN.",
+        "Der Backendcontainer läuft gesund und die Enterprise-/Admin-Endpunkte sind im aktuellen Snapshot vorhanden.",
+        "Der Live-A2A-Canary konnte die erwartete Backendrevision nicht als actualRevision readbacken."
+      ],
+      "remainingAcceptance": [
+        "Laufenden Backend-Digest und Source-Revision exakt bestätigen.",
+        "/admin, Overview, Integrations und Evidence gegen dieselbe Revision live lesen.",
+        "Rollbackbezug auf vorherigen immutable Digest nachweisen."
+      ]
+    },
+    {
+      "key": "apply-owner-learning-policy-migration",
+      "action": "update_open",
+      "title": "[Manifest] Migration 028 registrieren und Proven-Learning-Idempotenz live belegen",
+      "summary": "Migration 028 wurde praktisch angewendet: owner_learning_policies existiert und genau eine aktive Policy ist vorhanden. Im bestehenden schema_migrations-Layout ist jedoch kein 028-Eintrag nachgewiesen; der vollständige idempotente Pattern-/Vector-/Outbox-Canary fehlt ebenfalls.",
+      "evidence": [
+        "Backendstart protokolliert die erfolgreiche Anwendung von 028_owner_learning_policy.sql.",
+        "Live-Schema enthält owner_learning_policies.",
+        "Genau eine Policyzeile ist vorhanden und auto_accept_useful_unique ist aktiv.",
+        "Kein üblicher 028-Bezeichner wurde in schema_migrations gefunden."
+      ],
+      "remainingAcceptance": [
+        "Migrationsregistrierung oder bewusst abweichenden Registry-Vertrag dokumentieren und testen.",
+        "Ein nützliches eindeutiges Pattern einmal speichern und identische Wiederholung deduplizieren.",
+        "pgvector-Readback und Outbox-/Milvus-Konsistenz bestätigen."
+      ]
+    },
+    {
+      "key": "mirror-drift-llm-cost-policy",
+      "action": "close_completed",
+      "title": "[Manifest] Drift zwischen llm_cost_policy-Spiegeln geklärt",
+      "summary": "Das Issue ist durch die strukturellen Umbauten erledigt. Analyse- und Deploymentpfad der LLM-Kostenpolicy sind auf dem geprüften main-Stand ohne Diff.",
+      "evidence": [
+        "Bounded Mirror-Diff für backend/llm_cost_policy.py und scripts/sovereign-backend/llm_cost_policy.py meldet mismatchCount 0.",
+        "Die produktive Kostenpolicy bleibt im Deploymentpfad vorhanden."
+      ],
+      "remainingAcceptance": []
+    },
+    {
+      "key": "mirror-drift-proven-learning-runtime",
+      "action": "close_completed",
+      "title": "[Manifest] Proven-Learning-Runtime-Spiegel synchronisiert",
+      "summary": "Das Issue ist erledigt. Analyse- und Deploymentpfad der Proven-Learning-Runtime sind auf dem geprüften main-Stand ohne Diff.",
+      "evidence": [
+        "Bounded Mirror-Diff für backend/proven_learning_runtime.py und scripts/sovereign-backend/proven_learning_runtime.py meldet mismatchCount 0.",
+        "Standing-Owner- und Fresh-Approval-Vertrag liegen nicht mehr in widersprüchlichen Spiegelständen vor."
+      ],
+      "remainingAcceptance": []
+    },
+    {
+      "key": "github-app-route-registration",
+      "action": "close_completed",
+      "title": "[Manifest] GitHub-App-Routenregistrierung repariert",
+      "summary": "Der historische get_connection-Registrierungsfehler ist beseitigt. Die Datenbankverbindung wird explizit injiziert, Startfehler würden fail-closed eskalieren, und der laufende Backendstart bestätigt die Registrierung.",
+      "evidence": [
+        "register_github_app_routes erhält get_connection=get_agent_runtime_connection.",
+        "Der Backendstart protokolliert GitHub App routes registered und keinen get_connection-NameError.",
+        "Callback-, Installation-, Credits-, Deduct- und Webhookrouten sind im aktuellen Endpoint-Snapshot vorhanden."
+      ],
+      "remainingAcceptance": []
+    },
+    {
+      "key": "remove-dead-legacy-admin-html",
+      "action": "close_completed",
+      "title": "[Manifest] Toten Legacy-Admin-HTML-Block entfernt",
+      "summary": "Das Issue ist erledigt. Die historische _ADMIN_PANEL_HTML-Zuweisung existiert nicht mehr; /admin wird ausschließlich durch das kanonische React-Admin-Artefakt bedient.",
+      "evidence": [
+        "Keine _ADMIN_PANEL_HTML-Zuweisung in scripts/sovereign-backend/app.py.",
+        "/admin leitet auf /admin/; /admin/ liefert admin-dist/index.html.",
+        "Der Responsevertrag kennzeichnet CANONICAL_REACT_ADMIN als Producer.",
+        "Ein Regressionstest prüft die Abwesenheit des Legacy-Literals."
+      ],
+      "remainingAcceptance": []
+    }
+  ]
+}
