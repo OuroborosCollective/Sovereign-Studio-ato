@@ -83,7 +83,7 @@ def _emit_stage(
     observer(payload)
 
 
-def ensure_openai_runtime_key(model: str | None = None) -> bool:
+def _ensure_litellm_runtime_key(model: str | None = None) -> bool:
     """Build a per-model Agents SDK provider that can reach only internal LiteLLM."""
 
     global _RUN_CONFIG, _RUN_CONFIG_MODEL, _RUN_CONFIG_ERROR
@@ -173,10 +173,15 @@ def ensure_openai_runtime_key(model: str | None = None) -> bool:
     return True
 
 
+def ensure_openai_runtime_key() -> bool:
+    """Build the default paid Agents SDK provider through internal LiteLLM."""
+    return _ensure_litellm_runtime_key(DEFAULT_MODEL)
+
+
 def _require_litellm_run_config(model: str | None = None) -> Any:
     selected_model = str(model or DEFAULT_MODEL).strip()
     if _RUN_CONFIG is None or _RUN_CONFIG_MODEL != selected_model:
-        if not ensure_openai_runtime_key(selected_model):
+        if not _ensure_litellm_runtime_key(selected_model):
             raise RuntimeError("The internal LiteLLM Agents SDK RunConfig is unavailable.")
     return _RUN_CONFIG
 
@@ -301,12 +306,21 @@ async def _run_stage(
         else None
     )
     try:
-        result = await runner_class.run(
-            agent,
-            prompt,
-            run_config=_require_litellm_run_config(str(getattr(agent, "model", "") or DEFAULT_MODEL)),
-            max_turns=_stage_max_turns(stage),
-        )
+        selected_agent_model = str(getattr(agent, "model", "") or DEFAULT_MODEL)
+        if selected_agent_model == DEFAULT_MODEL:
+            result = await runner_class.run(
+                agent,
+                prompt,
+                run_config=_require_litellm_run_config(),
+                max_turns=_stage_max_turns(stage),
+            )
+        else:
+            result = await runner_class.run(
+                agent,
+                prompt,
+                run_config=_require_litellm_run_config(selected_agent_model),
+                max_turns=_stage_max_turns(stage),
+            )
     except SwarmExecutionError as exc:
         if reservation is not None:
             if exc.http_status in {400, 401, 403, 404, 429}:
@@ -411,7 +425,7 @@ async def classify_mission_intent(
         raise ValueError("A valid Sovereign LiteLLM model alias is required.")
     if stage_billing is not None and selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
         raise ValueError("A paid Sovereign LiteLLM model alias is required.")
-    if not ensure_openai_runtime_key(selected_model):
+    if not _ensure_litellm_runtime_key(selected_model):
         raise SwarmExecutionError(
             stage="intent-router",
             family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
@@ -482,7 +496,7 @@ async def run_free_single_agent(
         raise ValueError("mission is required")
     if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
         raise ValueError("A valid resolved LiteLLM alias is required.")
-    if not ensure_openai_runtime_key(selected_model):
+    if not _ensure_litellm_runtime_key(selected_model):
         raise SwarmExecutionError(
             stage="free-single-agent",
             family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
@@ -832,7 +846,15 @@ async def run_cognitive_swarm(
     selected_model = str(model or DEFAULT_MODEL).strip()
     if selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
         raise ValueError("A paid Sovereign LiteLLM model alias is required.")
-    if not ensure_openai_runtime_key(selected_model):
+    if selected_model == DEFAULT_MODEL:
+        if not ensure_openai_runtime_key():
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "LiteLLM internal service key or internal base URL is not configured.",
+                "manifest": manifest_payload(),
+            }
+    elif not _ensure_litellm_runtime_key(selected_model):
         return {
             "ok": False,
             "status": "BLOCKED",
