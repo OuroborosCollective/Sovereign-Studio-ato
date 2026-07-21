@@ -1,0 +1,15 @@
+{
+  "target": "scripts/sovereign-backend/Dockerfile",
+  "source_ref": "sovereign/chatgpt/1784644923-pr-905-fix-271472",
+  "branch_base_ref": "sovereign/chatgpt/1784644923-pr-905-fix-271472",
+  "branch": "sovereign/chatgpt/1784644923-pr-905-fix-271472",
+  "commit_message": "chore(ci): Dockerfile source canary",
+  "pr_title": "chore(ci): Dockerfile source canary",
+  "pr_body": "Read-only source canary.",
+  "blocks": [
+    {
+      "search": "FROM python:3.11-slim",
+      "replace": "FROM python:3.11-slim"
+    }
+  ]
+}
