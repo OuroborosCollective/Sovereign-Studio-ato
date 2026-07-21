@@ -301,7 +301,28 @@ class ProviderRuntimeClient(OwnerInputClient):
 
     def activate(self, route_id: str) -> dict[str, Any]:
         selected = self._route_id(route_id)
-        return self.activate_litellm_provider_route(selected)
+        deployments = self.list_deployments().get("deployments", [])
+        matching = next(
+            (
+                item for item in deployments
+                if isinstance(item, dict)
+                and str(item.get("routeId") or item.get("route_id") or "").strip() == selected
+            ),
+            None,
+        )
+        if not isinstance(matching, dict):
+            raise RuntimeError("Provider-Route wurde in den Deployment-Metadaten nicht gefunden")
+        owner_request_id = str(
+            matching.get("ownerRequestId")
+            or matching.get("owner_request_id")
+            or ""
+        ).strip()
+        if not owner_request_id:
+            raise RuntimeError("Provider-Route besitzt keine gebundene Owner-Request-ID")
+        return self.activate_provider_route(
+            route_id=selected,
+            owner_request_id=owner_request_id,
+        )
 
 
 class ControllerRuntimeClient(OwnerInputClient):

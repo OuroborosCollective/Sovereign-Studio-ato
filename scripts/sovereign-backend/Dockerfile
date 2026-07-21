@@ -27,6 +27,7 @@ COPY *.py ./
 COPY enterprise_platform/ ./enterprise_platform/
 COPY agent_runtime/ ./agent_runtime/
 COPY migrations ./migrations
+COPY admin-dist/ ./admin-dist/
 COPY auto-migrate.sh /docker-entrypoint.d/auto-migrate.sh
 RUN chmod +x /docker-entrypoint.d/auto-migrate.sh
 
