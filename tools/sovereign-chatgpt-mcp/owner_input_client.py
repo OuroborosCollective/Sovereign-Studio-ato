@@ -18,7 +18,6 @@ import requests
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
-ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
 MAX_TEXT = 1000
@@ -218,6 +217,23 @@ class OwnerInputClient:
             "activation_transport": "private_owner_service_bridge",
         }
 
+    def activate_litellm_provider_route(self, route_id: str) -> dict[str, Any]:
+        selected = str(route_id or "").strip()
+        if not ROUTE_ID_RE.fullmatch(selected):
+            raise ValueError("route_id ist ungültig")
+        payload = self._request(
+            "POST",
+            f"/api/internal/llm/provider-deployments/{selected}/activate",
+            expected=(200, 400, 409, 500, 502, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "routeId": str(payload.get("routeId") or selected),
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
     def plan_proven_learning(self, record: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(record, dict):
             raise ValueError("record muss ein Objekt sein")
@@ -285,18 +301,7 @@ class ProviderRuntimeClient(OwnerInputClient):
 
     def activate(self, route_id: str) -> dict[str, Any]:
         selected = self._route_id(route_id)
-        payload = self._request(
-            "POST",
-            f"/api/internal/llm/provider-deployments/{selected}/activate",
-            expected=(200, 400, 409, 500, 502),
-            timeout=180,
-        )
-        return {
-            **payload,
-            "routeId": str(payload.get("routeId") or selected),
-            "protected_values_returned": False,
-            "secret_argument_accepted": False,
-        }
+        return self.activate_litellm_provider_route(selected)
 
 
 class ControllerRuntimeClient(OwnerInputClient):

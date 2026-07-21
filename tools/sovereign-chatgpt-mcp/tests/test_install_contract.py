@@ -127,6 +127,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'openai_project_access_tools.py' in installer
     assert 'operational_governance_tools.py' in installer
     assert 'operational_assurance_tools.py' in installer
+    assert 'output_contracts.py' in installer
+    assert 'toolchain_composition.py' in installer
     assert 'skills/sovereign-operational-governance/SKILL.md' in installer
     assert '/app/skills/sovereign-operational-governance/SKILL.md' in installer
     assert 'skills/sovereign-operational-assurance/SKILL.md' in installer
@@ -151,6 +153,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'enterprise_backend_tools.py' in dockerfile
     assert 'operational_governance_tools.py' in dockerfile
     assert 'operational_assurance_tools.py' in dockerfile
+    assert 'output_contracts.py' in dockerfile
+    assert 'toolchain_composition.py' in dockerfile
     assert 'COPY skills /app/skills' in dockerfile
     assert (ROOT / 'skills' / 'sovereign-operational-governance' / 'SKILL.md').is_file()
     assert (ROOT / 'skills' / 'sovereign-operational-assurance' / 'SKILL.md').is_file()
@@ -173,6 +177,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'operational_governance_tools.register(server.mcp, server.runtime, server.database, server.broker)' in launcher
     assert 'import operational_assurance_tools' in launcher
     assert 'operational_assurance_tools.register(server.mcp, server.runtime, server.database, server.broker)' in launcher
+    assert 'import output_contracts' in launcher
+    assert 'import toolchain_composition' in launcher
+    assert 'toolchain_composition.register(server.mcp)' in launcher
+    assert 'output_contracts.install_output_contracts(server.mcp)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
     assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
     assert 'docker compose build' not in installer
@@ -240,12 +248,19 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(operational_assurance_tools.mcp_schema_compatibility_audit)' in installer
     assert 'callable(operational_assurance_tools.secret_literal_triage)' in installer
     assert 'callable(operational_assurance_tools.authentication_chaos_negative_test_assess)' in installer
+    assert 'output_contracts.ToolOutputEnvelope is not None' in installer
+    assert 'callable(toolchain_composition.mcp_toolchain_compile)' in installer
+    assert 'callable(toolchain_composition.mcp_toolchain_validate)' in installer
+    assert 'callable(toolchain_composition.mcp_toolchain_next_step)' in installer
+    assert 'all(getattr(tool, "output_schema", None)' in installer
     assert 'assurance=operational_assurance_tools.operational_assurance_skill_inventory()' in installer
     assert 'registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False)' in installer
     assert '"enterprise_backend_tools":true' in installer
     assert '"operational_governance_tools":true' in installer
     assert '"operational_assurance_tools":true' in installer
     assert '"repository_revision_resolver":true' in installer
+    assert '"workspace_pr_head_sync_available":true' in installer
+    assert 'callable(server.repository_sync_workspace_to_pr_head)' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer

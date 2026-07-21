@@ -179,6 +179,11 @@ _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
         "tools": ["tool_recommend_for_mission", "operational_skill_inventory"],
         "purpose": "Deterministically rank the smallest eligible Sovottt tool set from structured capabilities and effect boundaries.",
     },
+    "sovereign-mcp-toolchain-composer": {
+        "priority": "P0",
+        "tools": ["mcp_toolchain_contract_inventory", "mcp_toolchain_compile", "mcp_toolchain_validate", "mcp_toolchain_next_step", "mcp_diagnostic_chain_plan"],
+        "purpose": "Build and validate bounded MCP toolchain graphs from registered contracts.",
+    },
     "sovereign-mcp-registry-verifier": {
         "priority": "P0",
         "tools": ["mcp_tool_contract_registry", "mcp_registry_snapshot_verify"],

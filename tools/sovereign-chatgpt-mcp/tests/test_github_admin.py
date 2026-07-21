@@ -54,16 +54,23 @@ def _pull(
     mergeable: bool = True,
     base: str = "main",
     state: str = "open",
+    head_ref: str = "sovereign/change",
+    head_repo: str = "OuroborosCollective/Sovereign-Studio-ato",
+    title: str = "Test PR",
+    body: str = "Test body",
+    merged_at: str | None = None,
 ) -> dict[str, Any]:
     return {
         "number": 7,
         "node_id": "PR_node_7",
-        "title": "Test PR",
+        "title": title,
+        "body": body,
         "state": state,
         "draft": draft,
         "mergeable": mergeable,
         "mergeable_state": "clean",
-        "head": {"sha": head},
+        "merged_at": merged_at,
+        "head": {"sha": head, "ref": head_ref, "repo": {"full_name": head_repo}},
         "base": {"ref": base},
         "html_url": "https://github.com/example/repo/pull/7",
     }
@@ -193,6 +200,115 @@ def test_close_pr_blocks_without_private_owner_approval(monkeypatch) -> None:
     assert result["status"] == "BLOCKED"
     assert "Owner-Freigabe" in result["blocker"]
     assert session.calls == []
+
+
+def test_update_pr_requires_exact_head_and_verifies_readback(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    head = "7" * 40
+    updated = _pull(head, title="Updated title", body="Updated body")
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head)),
+                FakeResponse(200, updated),
+            ],
+            ("PATCH", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, updated)
+            ],
+        },
+    )
+
+    result = runtime.update_pr(
+        pr_number=7,
+        expected_head_sha=head,
+        title="Updated title",
+        body="Updated body",
+        owner_approved=True,
+    )
+
+    assert result["status"] == "UPDATED"
+    patch_call = next(call for call in session.calls if call["method"] == "PATCH")
+    assert patch_call["json"] == {"title": "Updated title", "body": "Updated body"}
+
+
+def test_reopen_pr_blocks_merged_and_reopens_closed_unmerged(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    head = "6" * 40
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, state="closed")),
+                FakeResponse(200, _pull(head, state="open")),
+            ],
+            ("PATCH", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, state="open"))
+            ],
+        },
+    )
+
+    result = runtime.reopen_pr(pr_number=7, expected_head_sha=head, owner_approved=True)
+
+    assert result["status"] == "REOPENED"
+    assert any(call["method"] == "PATCH" and call["json"] == {"state": "open"} for call in session.calls)
+
+
+def test_delete_pr_branch_never_deletes_main_default_or_base(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    head = "5" * 40
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, state="closed", head_ref="main", base="main"))
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato"): [
+                FakeResponse(200, {"default_branch": "main"})
+            ],
+        },
+    )
+
+    result = runtime.delete_pr_branch(pr_number=7, expected_head_sha=head, owner_approved=True)
+
+    assert result["status"] == "BLOCKED"
+    assert result["failure_family"] == "PROTECTED_BRANCH_DELETE_FORBIDDEN"
+    assert not any(call["method"] == "DELETE" for call in session.calls)
+
+
+def test_delete_pr_branch_requires_closed_exact_ref_and_verifies_deletion(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    head = "4" * 40
+    encoded = "sovereign%2Fsafe-change"
+    ref_path = f"/repos/OuroborosCollective/Sovereign-Studio-ato/git/ref/heads/{encoded}"
+    delete_path = f"/repos/OuroborosCollective/Sovereign-Studio-ato/git/refs/heads/{encoded}"
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, state="closed", head_ref="sovereign/safe-change"))
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato"): [
+                FakeResponse(200, {"default_branch": "main"})
+            ],
+            ("GET", ref_path): [
+                FakeResponse(200, {"object": {"sha": head}}),
+                FakeResponse(404, None),
+            ],
+            ("DELETE", delete_path): [FakeResponse(204, None)],
+        },
+    )
+
+    result = runtime.delete_pr_branch(pr_number=7, expected_head_sha=head, owner_approved=True)
+
+    assert result["status"] == "BRANCH_DELETED"
+    assert result["branch"] == "sovereign/safe-change"
+    assert result["readback_deleted"] is True
+    assert any(call["method"] == "DELETE" for call in session.calls)
 
 
 def test_merge_blocks_draft_even_when_checks_are_green(monkeypatch) -> None:

@@ -464,15 +464,249 @@ class OperatorRuntime:
     def _has_successful_check(checks: dict[str, Any], prefix: str) -> bool:
         return any(key.startswith(prefix) and bool(value.get("ok")) for key, value in checks.items() if isinstance(value, dict))
 
+    def sync_workspace_to_pr_head(
+        self,
+        workspace_id: str,
+        *,
+        pr_number: int,
+        expected_pr_head_sha: str,
+    ) -> dict[str, Any]:
+        """Synchronize one workspace with the exact current head of its existing PR.
+
+        Local uncommitted changes are stashed and restored. The operation never
+        updates a remote ref, never force-pushes and never checks out the base or
+        default branch. Any identity mismatch or conflict stops the operation.
+        """
+        number = int(pr_number)
+        expected = str(expected_pr_head_sha or "").strip().lower()
+        if number < 1:
+            raise ValueError("pr_number muss positiv sein")
+        if not re.fullmatch(r"[0-9a-f]{40}", expected):
+            raise ValueError("expected_pr_head_sha muss eine vollständige Commit-SHA sein")
+
+        repo = self._repo(workspace_id)
+        metadata = self._read_metadata(workspace_id)
+        raw_branch = str(metadata["branch"]).strip()
+        base_branch = str(metadata["base_branch"]).strip()
+        if raw_branch in {"main", "master", base_branch}:
+            raise RuntimeError("PROTECTED_BRANCH_SYNC_FORBIDDEN")
+        branch = validate_branch(raw_branch)
+
+        headers = {
+            "Authorization": f"Bearer {self.config.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        }
+        response = requests.get(
+            f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+            headers=headers,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"PR konnte nicht geprüft werden: HTTP {response.status_code}")
+        pull = response.json()
+        if not isinstance(pull, dict):
+            raise RuntimeError("GitHub lieferte keinen gültigen PR")
+        head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
+        base = pull.get("base") if isinstance(pull.get("base"), dict) else {}
+        head_repo = head.get("repo") if isinstance(head.get("repo"), dict) else {}
+        actual_head = str(head.get("sha") or "").strip().lower()
+        actual_branch = str(head.get("ref") or "").strip()
+        actual_base = str(base.get("ref") or "").strip()
+        actual_repository = str(head_repo.get("full_name") or self.config.repository).strip()
+        if str(pull.get("state") or "") != "open":
+            raise RuntimeError("PR_HEAD_SYNC_REQUIRES_OPEN_PR")
+        if actual_head != expected:
+            raise RuntimeError("PR_HEAD_CHANGED: erwartete Revision stimmt nicht mehr")
+        if actual_branch != branch or actual_base != base_branch:
+            raise RuntimeError("WORKSPACE_PR_BRANCH_MISMATCH")
+        if actual_repository.lower() != self.config.repository.lower():
+            raise RuntimeError("FORK_PR_WORKSPACE_SYNC_FORBIDDEN")
+
+        original_head_result = self._run(["git", "rev-parse", "HEAD"], cwd=repo)
+        if not original_head_result["ok"]:
+            raise RuntimeError("Workspace-HEAD konnte nicht gelesen werden")
+        original_head = original_head_result["stdout"].strip().lower()
+        status_before = self._run(["git", "status", "--porcelain"], cwd=repo)
+        if not status_before["ok"]:
+            raise RuntimeError("Workspace-Status konnte nicht gelesen werden")
+        had_local_changes = bool(status_before["stdout"].strip())
+        stash_ref = ""
+
+        def restore_original_workspace() -> None:
+            self._run(["git", "rebase", "--abort"], cwd=repo)
+            reset = self._run(["git", "reset", "--hard", original_head], cwd=repo)
+            if not reset["ok"]:
+                raise RuntimeError("WORKSPACE_SYNC_ROLLBACK_FAILED")
+            self._run(["git", "clean", "-fd"], cwd=repo)
+            if stash_ref:
+                restored = self._run(["git", "stash", "apply", "--index", stash_ref], cwd=repo)
+                if not restored["ok"]:
+                    raise RuntimeError("WORKSPACE_SYNC_LOCAL_CHANGE_RESTORE_FAILED")
+
+        if had_local_changes:
+            stashed = self._run(
+                ["git", "stash", "push", "--include-untracked", "-m", f"sovereign-pr-sync-{number}"],
+                cwd=repo,
+            )
+            if not stashed["ok"]:
+                raise RuntimeError("WORKSPACE_SYNC_STASH_FAILED")
+            stash_result = self._run(["git", "rev-parse", "refs/stash"], cwd=repo)
+            if not stash_result["ok"] or not re.fullmatch(r"[0-9a-f]{40}", stash_result["stdout"].strip().lower()):
+                raise RuntimeError("WORKSPACE_SYNC_STASH_IDENTITY_MISSING")
+            stash_ref = "stash@{0}"
+
+        askpass_dir, env = self._askpass()
+        try:
+            fetched = self._run(
+                [
+                    "git",
+                    "fetch",
+                    "--no-tags",
+                    "origin",
+                    f"refs/heads/{branch}:refs/remotes/origin/{branch}",
+                ],
+                cwd=repo,
+                env=env,
+            )
+        finally:
+            shutil.rmtree(askpass_dir, ignore_errors=True)
+        if not fetched["ok"]:
+            if stash_ref:
+                restore_original_workspace()
+            raise RuntimeError(f"WORKSPACE_SYNC_FETCH_FAILED: {fetched['stderr']}")
+
+        remote_ref = f"refs/remotes/origin/{branch}"
+        remote_result = self._run(["git", "rev-parse", remote_ref], cwd=repo)
+        remote_head = remote_result["stdout"].strip().lower() if remote_result["ok"] else ""
+        if remote_head != expected:
+            if stash_ref:
+                restore_original_workspace()
+            raise RuntimeError("FETCHED_PR_HEAD_MISMATCH")
+
+        strategy = "already_current"
+        if original_head != expected:
+            local_is_ancestor = self._run(
+                ["git", "merge-base", "--is-ancestor", original_head, expected],
+                cwd=repo,
+            )
+            remote_is_ancestor = self._run(
+                ["git", "merge-base", "--is-ancestor", expected, original_head],
+                cwd=repo,
+            )
+            if local_is_ancestor["exit_code"] == 0:
+                moved = self._run(["git", "merge", "--ff-only", expected], cwd=repo)
+                strategy = "fast_forward"
+            elif remote_is_ancestor["exit_code"] == 0:
+                moved = {"ok": True}
+                strategy = "local_ahead"
+            else:
+                moved = self._run(["git", "rebase", expected], cwd=repo)
+                strategy = "rebase"
+            if not moved.get("ok"):
+                restore_original_workspace()
+                raise RuntimeError("WORKSPACE_SYNC_CONFLICT")
+
+        if stash_ref:
+            applied = self._run(["git", "stash", "apply", "--index", stash_ref], cwd=repo)
+            if not applied["ok"]:
+                restore_original_workspace()
+                raise RuntimeError("WORKSPACE_SYNC_LOCAL_CHANGE_CONFLICT")
+            dropped = self._run(["git", "stash", "drop", stash_ref], cwd=repo)
+            if not dropped["ok"]:
+                raise RuntimeError("WORKSPACE_SYNC_STASH_CLEANUP_FAILED")
+
+        final_head_result = self._run(["git", "rev-parse", "HEAD"], cwd=repo)
+        final_head = final_head_result["stdout"].strip().lower() if final_head_result["ok"] else ""
+        based_on_remote = self._run(
+            ["git", "merge-base", "--is-ancestor", expected, final_head],
+            cwd=repo,
+        )
+        if not final_head or based_on_remote["exit_code"] != 0:
+            raise RuntimeError("WORKSPACE_SYNC_POSTCHECK_FAILED")
+        status_after = self._run(["git", "status", "--short"], cwd=repo)
+        if not status_after["ok"]:
+            raise RuntimeError("WORKSPACE_SYNC_STATUS_READBACK_FAILED")
+
+        metadata["pr_sync"] = {
+            "pr_number": number,
+            "expected_pr_head_sha": expected,
+            "workspace_head_sha": final_head,
+            "strategy": strategy,
+            "at": int(time.time()),
+        }
+        self._write_metadata(workspace_id, metadata)
+        return {
+            "ok": True,
+            "status": "WORKSPACE_SYNCED_TO_PR_HEAD",
+            "workspace_id": workspace_id,
+            "pr_number": number,
+            "branch": branch,
+            "base_branch": base_branch,
+            "remote_pr_head_sha": expected,
+            "workspace_head_sha": final_head,
+            "strategy": strategy,
+            "local_changes_restored": had_local_changes,
+            "worktree_status": status_after["stdout"],
+            "force_push_used": False,
+            "main_mutated": False,
+            "remote_mutation_performed": False,
+        }
+
     def create_draft_pr(self, workspace_id: str, *, title: str, body: str, commit_message: str) -> dict[str, Any]:
+        """Create one Draft PR or idempotently update the existing PR for this workspace branch."""
         if not title.strip() or not commit_message.strip():
             raise ValueError("PR-Titel und Commit-Nachricht dürfen nicht leer sein")
         repo = self._repo(workspace_id)
         metadata = self._read_metadata(workspace_id)
         branch = validate_branch(metadata["branch"])
+        base_branch = str(metadata["base_branch"]).strip()
+        if base_branch not in self.config.allowed_base_branches:
+            raise ValueError("Base-Branch ist nicht freigegeben")
         changed = self._changed_files(repo)
         if not changed:
             raise ValueError("Keine Änderungen vorhanden")
+
+        owner = self.config.repository.split("/", 1)[0]
+        headers = {
+            "Authorization": f"Bearer {self.config.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        }
+        inventory = requests.get(
+            f"https://api.github.com/repos/{self.config.repository}/pulls",
+            headers=headers,
+            params={"state": "open", "base": base_branch, "per_page": 100},
+            timeout=30,
+        )
+        if inventory.status_code != 200:
+            raise RuntimeError(f"Offene PRs konnten nicht geprüft werden: HTTP {inventory.status_code}")
+        open_pulls = inventory.json()
+        if not isinstance(open_pulls, list):
+            raise RuntimeError("GitHub lieferte keine gültige PR-Liste")
+        same_branch = next(
+            (
+                pull
+                for pull in open_pulls
+                if isinstance(pull, dict)
+                and str((pull.get("head") or {}).get("ref") or "") == branch
+                and str((pull.get("base") or {}).get("ref") or "") == base_branch
+            ),
+            None,
+        )
+        other_drafts = [
+            int(pull.get("number") or 0)
+            for pull in open_pulls
+            if isinstance(pull, dict)
+            and bool(pull.get("draft"))
+            and str((pull.get("head") or {}).get("ref") or "") != branch
+        ]
+        other_drafts = [number for number in other_drafts if number > 0]
+        if same_branch is None and other_drafts:
+            raise RuntimeError(
+                "OPEN_DRAFT_PR_EXISTS: Ein anderer offener Draft-PR blockiert die Erstellung: "
+                + ", ".join(f"#{number}" for number in other_drafts)
+            )
 
         diff_check = self.run_check(workspace_id, "git_diff_check")
         if not diff_check["ok"]:
@@ -513,22 +747,42 @@ class OperatorRuntime:
         if not push["ok"]:
             raise RuntimeError(f"Push fehlgeschlagen: {push['stderr']}")
 
-        owner = self.config.repository.split("/", 1)[0]
-        headers = {"Authorization": f"Bearer {self.config.github_token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"}
-        response = requests.post(
-            f"https://api.github.com/repos/{self.config.repository}/pulls",
-            headers=headers,
-            timeout=30,
-            json={"title": title[:256], "head": f"{owner}:{branch}", "base": metadata["base_branch"], "body": body, "draft": True},
-        )
+        created = same_branch is None
+        if same_branch is not None:
+            number = int(same_branch.get("number") or 0)
+            if number < 1:
+                raise RuntimeError("Bestehender PR besitzt keine gültige Nummer")
+            response = requests.patch(
+                f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+                headers=headers,
+                timeout=30,
+                json={"title": title[:256], "body": body, "state": "open"},
+            )
+        else:
+            response = requests.post(
+                f"https://api.github.com/repos/{self.config.repository}/pulls",
+                headers=headers,
+                timeout=30,
+                json={"title": title[:256], "head": f"{owner}:{branch}", "base": base_branch, "body": body, "draft": True},
+            )
         if response.status_code not in (200, 201):
-            raise RuntimeError(f"Draft-PR konnte nicht erstellt werden: HTTP {response.status_code} {response.text[:1000]}")
+            operation = "aktualisiert" if same_branch is not None else "erstellt"
+            raise RuntimeError(f"Draft-PR konnte nicht {operation} werden: HTTP {response.status_code}")
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub lieferte keine gültige PR-Antwort")
         metadata = self._read_metadata(workspace_id)
-        metadata["draft_pr"] = {"number": payload["number"], "url": payload["html_url"], "head_sha": payload["head"]["sha"]}
+        metadata["draft_pr"] = {
+            "number": payload["number"],
+            "url": payload["html_url"],
+            "head_sha": payload["head"]["sha"],
+        }
         self._write_metadata(workspace_id, metadata)
         return {
-            "draft": True,
+            "ok": True,
+            "status": "DRAFT_PR_CREATED" if created else "DRAFT_PR_UPDATED",
+            "created": created,
+            "draft": bool(payload.get("draft", True)),
             "number": payload["number"],
             "url": payload["html_url"],
             "branch": branch,

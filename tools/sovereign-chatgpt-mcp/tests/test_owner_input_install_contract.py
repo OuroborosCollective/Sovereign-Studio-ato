@@ -122,6 +122,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"litellm_provider_key": "LiteLLM Provider API-Key"' in client
     assert '"proven_learning_confirmation": "Exakter Learning-Plan-Hash"' in client
     assert "def activate_provider_route(" in client
+    assert "def activate_litellm_provider_route(" in client
     assert "def plan_proven_learning(" in client
     assert "def apply_proven_learning(" in client
     assert "openhands_api_key" not in client
@@ -129,8 +130,8 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"targetId": selected_target' in client
     assert "if selected_target not in ALLOWED_TARGETS" in client
     assert "owner_input.create_request(" in server
-    assert "def litellm_provider_route_activate(" in server
-    assert "owner_input.activate_provider_route(" in server
+    assert server.count("def litellm_provider_route_activate(") == 1
+    assert "provider_runtime.activate(route_id)" in server
     assert "payload = owner_input.status(request_id)" in server
     assert "def owner_approval_widget_open(" in server
     assert "meta=OWNER_INPUT_TOOL_META" in server

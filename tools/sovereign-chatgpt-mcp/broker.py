@@ -425,10 +425,27 @@ class BrokerRuntime:
                 mark_ready_if_draft=bool(values.get("mark_ready_if_draft", False)),
                 allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
             ),
+            "github_update_pr": lambda values: self.github.update_pr(
+                pr_number=int(values.get("pr_number") or 0),
+                expected_head_sha=str(values.get("expected_head_sha") or ""),
+                title=str(values.get("title") or ""),
+                body=str(values.get("body") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
+            "github_reopen_pr": lambda values: self.github.reopen_pr(
+                pr_number=int(values.get("pr_number") or 0),
+                expected_head_sha=str(values.get("expected_head_sha") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
             "github_close_pr": lambda values: self.github.close_pr(
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),
                 closure_reason=str(values.get("closure_reason") or "redundant"),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
+            "github_delete_pr_branch": lambda values: self.github.delete_pr_branch(
+                pr_number=int(values.get("pr_number") or 0),
+                expected_head_sha=str(values.get("expected_head_sha") or ""),
                 owner_approved=bool(values.get("owner_approved", False)),
             ),
             "mcp_self_update_schedule": lambda values: self.self_update.schedule(

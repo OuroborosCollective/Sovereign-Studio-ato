@@ -41,7 +41,13 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_MAIN_PUSH", "0").strip() == "1":
         capabilities.append("repository_push_main")
     if os.getenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "0").strip() == "1":
-        capabilities.extend(("repository_merge_pr", "repository_close_pr"))
+        capabilities.extend((
+            "repository_merge_pr",
+            "repository_update_pr",
+            "repository_reopen_pr",
+            "repository_close_pr",
+            "repository_delete_pr_branch",
+        ))
     if os.getenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "0").strip() == "1":
         capabilities.extend(("repository_workflow_dispatch", "repository_rerun_failed_workflows"))
     if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
@@ -63,6 +69,9 @@ def _runtime_boundaries() -> dict[str, Any]:
         "direct_broker_socket_mutation_allowed": False,
         "generic_shell_available": False,
         "workspace_changes_end_at_draft_pr": True,
+        "workspace_pr_head_sync": "exact_revision_local_only",
+        "workspace_pr_head_sync_force_push_allowed": False,
+        "workspace_pr_head_sync_main_mutation_allowed": False,
         "owner_protected_input_execution": "authenticated_owner_ui_only",
         "llm_can_receive_protected_values": False,
         "raw_payment_card_input_allowed": False,
@@ -234,7 +243,7 @@ mcp = FastMCP(
         "Für Android-Produktionsarbeit beginne mit android_project_inventory, android_failure_family_scan und vorhandener Runtime-Evidence. Korrigiere zuerst die kausale Fehlerfamilie, "
         "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
         "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
-        "Draft-PR bleibt verfügbar. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
+        "Draft-PR bleibt verfügbar. Derselbe Workspace-Branch wird idempotent weitergeführt; parallele Draft-PRs werden vor Git-Mutationen blockiert. Wenn Workspace- und PR-Head auseinanderlaufen, verwende repository_sync_workspace_to_pr_head mit der exakt bestätigten PR-Revision; das Tool darf weder remote schreiben noch force-pushen oder main verändern. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
         "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. repository_close_pr darf ausschließlich mit privatem Owner-Modus, ausdrücklicher Owner-Freigabe, exaktem Head-SHA und einem begrenzten Redundanzgrund schließen; es führt niemals einen Merge aus. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
@@ -244,7 +253,7 @@ mcp = FastMCP(
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
         "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt ein echtes flüchtiges DOCX, konvertiert es über Gotenbergs LibreOffice-Pfad zu PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
         "Für den optionalen Milvus-Pfad verwende memory_gateway_collection_canary. Der Canary läuft ausschließlich über den laufenden Memory-Gateway-Container, erzeugt eine zufällige flüchtige Collection, prüft Insert, Query und Vektorsuche und muss die Collection im finally-Pfad wieder löschen. Ein TCP-Canary allein belegt keine fachliche Memory-Funktion. "
-        "Bei toolreichen Aufträgen beginne mit operational_skill_inventory und tool_recommend_for_mission. Das Modell übersetzt freie Sprache in strukturierte Capabilities; die Runtime darf nur registrierte Tools innerhalb der erlaubten Effect-Klasse deterministisch empfehlen und niemals automatisch ausführen. Nutze mcp_tool_contract_registry und mcp_registry_snapshot_verify nach MCP-Änderungen, bevor der eingefrorene ChatGPT-App-Tool-Snapshot aktualisiert wird. Für revisionsgebundene Betriebsarbeit nutze evidence_graph_build, schema_migration_reconcile, llm_route_reliability_assess, agent_run_liveness_assess, semantic_intent_boundary_audit, cost_credit_settlement_reconcile, backup_restore_evidence_verify, slo_error_budget_assess, configuration_drift_assess, runtime_runbook_generate, ownership_codeowners_guard und compliance_evidence_export. Diese Tools sind read-only-first, akzeptieren keine Secrets, führen keine vorgeschlagenen Mutationen selbst aus und dürfen ohne die jeweilige Runtime-Evidence keinen Erfolg behaupten. "
+        "Bei toolreichen Aufträgen beginne mit operational_skill_inventory und tool_recommend_for_mission. Mehrstufige Pläne werden mit mcp_toolchain_compile, mcp_toolchain_validate und mcp_toolchain_next_step vorbereitet und niemals selbst ausgeführt. Das Modell übersetzt freie Sprache in strukturierte Capabilities; die Runtime darf nur registrierte Tools innerhalb der erlaubten Effect-Klasse deterministisch empfehlen und niemals automatisch ausführen. Nutze mcp_tool_contract_registry und mcp_registry_snapshot_verify nach MCP-Änderungen, bevor der eingefrorene ChatGPT-App-Tool-Snapshot aktualisiert wird. Für revisionsgebundene Betriebsarbeit nutze evidence_graph_build, schema_migration_reconcile, llm_route_reliability_assess, agent_run_liveness_assess, semantic_intent_boundary_audit, cost_credit_settlement_reconcile, backup_restore_evidence_verify, slo_error_budget_assess, configuration_drift_assess, runtime_runbook_generate, ownership_codeowners_guard und compliance_evidence_export. Diese Tools sind read-only-first, akzeptieren keine Secrets, führen keine vorgeschlagenen Mutationen selbst aus und dürfen ohne die jeweilige Runtime-Evidence keinen Erfolg behaupten. "
         "Für die abschließende Betriebs-, Daten-, Memory-, MCP-, Security- und Supply-Chain-Assurance beginne mit operational_assurance_skill_inventory. Prüfe Ressourcenursachen mit vps_capacity_resource_pressure_assess, Abhängigkeiten mit runtime_dependency_health_matrix, Queue-Fortschritt mit outbox_queue_liveness_assess und Wartungsfenster mit scheduled_maintenance_coordinate. Nutze runtime_topology_change_audit, postgres_query_index_performance_assess, data_integrity_invariant_audit, data_repair_plan_build, vector_memory_consistency_assess, memory_poisoning_provenance_guard, learning_pattern_lifecycle_preview, data_retention_privacy_audit und multi_tenant_isolation_verify für zustands- und revisionsgebundene Datenwahrheit. Nummer 29 verwendet die vorhandene mcp_tool_contract_registry; dupliziere sie nicht. Für MCP-Governance und Sicherheit nutze mcp_schema_compatibility_audit, mcp_protocol_conformance_fuzz_plan, tool_permission_minimize, dynamic_execution_containment_audit, skill_capability_coverage_map, skill_lifecycle_deprecation_preview, skill_regression_benchmark, tool_idempotency_verify, owner_approval_policy_evaluate, secret_lifecycle_rotation_assess, secret_literal_triage, sbom_provenance_image_signing_verify, dependency_vulnerability_remediation_plan und authentication_chaos_negative_test_assess. Diese Tools führen keine Reparatur, Freigabe, Löschung, Rotation oder Deprecation automatisch aus; nur ausdrücklich angeforderte, selbstaufräumende Dokument- und Milvus-Canaries dürfen temporäre Runtime-Artefakte erzeugen. "
         "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_architecture_snapshot, repository_architecture_drift_report, repository_architecture_runtime_drift_evidence, repository_mirror_diff_report, repository_endpoint_reference, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Architektur-Snapshot und statischer Drift liefern Kandidaten; repository_architecture_runtime_drift_evidence verbindet Repo-Migrationen ausschließlich mit read-only PostgreSQL-Schema- und Vector-Evidence. Keines dieser Werkzeuge behauptet LLM-Erfolg, mutiert die Datenbank oder erzeugt persisted Hunt-Ergebnisse. Für deterministische Architekturarbeit beginne mit deterministic_tool_inventory und deterministic_architecture_inventory, prüfe danach deterministic_nondeterminism_scan, deterministic_kappa_contract_audit und deterministic_sql_contract_audit. Nutze deterministic_transition_validate und deterministic_replay_verify nur als pure Vorschau ohne Persistenz- oder Laufzeiterfolgsbehauptung; TypeScript/Python-Bitparität erfordert weiterhin unabhängige Ausführung derselben kanonischen Vektoren. Parserfehler können Python-Grammatik-/Versionsdrift oder tatsächlich ungültigen Source bedeuten und müssen gegen die Repository-Zielversion geprüft werden. "
         "Für professionelle Backend- und Systemarchitektur beginne mit backend_engineering_tool_inventory. Nutze backend_architecture_assess für begrenzte statische Evidence, backend_stack_select für eine constraints-basierte Stack-Entscheidung, backend_delivery_plan für einen testgegateden Greenfield- oder Modernisierungsfahrplan und backend_api_security_plan für ein Threat-/Control-/Verifikationsmodell. Nutze repository_revision_resolve vor der Arbeit und erneut nach Merge, Rebase, Update-Branch, Force-Push, Branchwechsel oder Base-Advance; bei Revisionskonflikten muss die Arbeit stoppen. Diese read-only Tools mutieren weder Repository noch Datenbank, führen keinen beliebigen Code aus und behaupten ohne echte Gates weder Runtime-Erfolg noch Compliance. Für autorisierte Implementierung bleiben die vorhandenen Repository-Werkzeuge zuständig. "
@@ -267,6 +276,7 @@ mcp = FastMCP(
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 NETWORK_READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 SAFE_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+WORKSPACE_NETWORK_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 EXTERNAL_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True)
 
 
@@ -323,6 +333,20 @@ def repository_run_check(workspace_id: str, check: str, target: str = "") -> dic
     return runtime.run_check(workspace_id, check, target)
 
 
+@mcp.tool(annotations=WORKSPACE_NETWORK_WRITE)
+def repository_sync_workspace_to_pr_head(
+    workspace_id: str,
+    pr_number: int,
+    expected_pr_head_sha: str,
+) -> dict[str, Any]:
+    """Sync one workspace to the exact current head of its existing PR without remote writes or force-push."""
+    return runtime.sync_workspace_to_pr_head(
+        workspace_id,
+        pr_number=pr_number,
+        expected_pr_head_sha=expected_pr_head_sha,
+    )
+
+
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def repository_create_draft_pr(
     workspace_id: str,
@@ -330,7 +354,7 @@ def repository_create_draft_pr(
     body: str,
     commit_message: str,
 ) -> dict[str, Any]:
-    """Verify, commit and push workspace changes, then create a Draft PR."""
+    """Verify, commit and push changes, then create or update the Draft PR for this workspace branch."""
     return runtime.create_draft_pr(workspace_id, title=title, body=body, commit_message=commit_message)
 
 
@@ -379,6 +403,46 @@ def repository_merge_pr(
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_update_pr(
+    pr_number: int,
+    expected_head_sha: str,
+    title: str = "",
+    body: str = "",
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Update title or body of one exact open PR after explicit owner approval."""
+    return broker.call(
+        "github_update_pr",
+        {
+            "pr_number": pr_number,
+            "expected_head_sha": expected_head_sha,
+            "title": title,
+            "body": body,
+            "owner_approved": owner_approved,
+        },
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_reopen_pr(
+    pr_number: int,
+    expected_head_sha: str,
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Reopen one exact closed and unmerged PR after explicit owner approval."""
+    return broker.call(
+        "github_reopen_pr",
+        {
+            "pr_number": pr_number,
+            "expected_head_sha": expected_head_sha,
+            "owner_approved": owner_approved,
+        },
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
 def repository_close_pr(
     pr_number: int,
     expected_head_sha: str,
@@ -392,6 +456,24 @@ def repository_close_pr(
             "pr_number": pr_number,
             "expected_head_sha": expected_head_sha,
             "closure_reason": closure_reason,
+            "owner_approved": owner_approved,
+        },
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_delete_pr_branch(
+    pr_number: int,
+    expected_head_sha: str,
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Delete a completed PR head branch; main, master, default and base branches are permanently protected."""
+    return broker.call(
+        "github_delete_pr_branch",
+        {
+            "pr_number": pr_number,
+            "expected_head_sha": expected_head_sha,
             "owner_approved": owner_approved,
         },
         timeout=120,
@@ -537,18 +619,6 @@ def owner_approval_request_create(
 def owner_approval_request_status(request_id: str) -> dict[str, Any]:
     """Read only lifecycle metadata for one owner request; protected values are never returned."""
     return owner_input.status(request_id)
-
-
-@mcp.tool(annotations=EXTERNAL_WRITE)
-def litellm_provider_route_activate(
-    route_id: str,
-    owner_request_id: str,
-) -> dict[str, Any]:
-    """Activate one prepared LiteLLM route after its exact Owner request was consumed."""
-    return owner_input.activate_provider_route(
-        route_id=route_id,
-        owner_request_id=owner_request_id,
-    )
 
 
 @mcp.tool(
