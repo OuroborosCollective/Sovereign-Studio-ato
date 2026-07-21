@@ -465,14 +465,59 @@ class OperatorRuntime:
         return any(key.startswith(prefix) and bool(value.get("ok")) for key, value in checks.items() if isinstance(value, dict))
 
     def create_draft_pr(self, workspace_id: str, *, title: str, body: str, commit_message: str) -> dict[str, Any]:
+        """Create one Draft PR or idempotently update the existing PR for this workspace branch."""
         if not title.strip() or not commit_message.strip():
             raise ValueError("PR-Titel und Commit-Nachricht dürfen nicht leer sein")
         repo = self._repo(workspace_id)
         metadata = self._read_metadata(workspace_id)
         branch = validate_branch(metadata["branch"])
+        base_branch = str(metadata["base_branch"]).strip()
+        if base_branch not in self.config.allowed_base_branches:
+            raise ValueError("Base-Branch ist nicht freigegeben")
         changed = self._changed_files(repo)
         if not changed:
             raise ValueError("Keine Änderungen vorhanden")
+
+        owner = self.config.repository.split("/", 1)[0]
+        headers = {
+            "Authorization": f"Bearer {self.config.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        }
+        inventory = requests.get(
+            f"https://api.github.com/repos/{self.config.repository}/pulls",
+            headers=headers,
+            params={"state": "open", "base": base_branch, "per_page": 100},
+            timeout=30,
+        )
+        if inventory.status_code != 200:
+            raise RuntimeError(f"Offene PRs konnten nicht geprüft werden: HTTP {inventory.status_code}")
+        open_pulls = inventory.json()
+        if not isinstance(open_pulls, list):
+            raise RuntimeError("GitHub lieferte keine gültige PR-Liste")
+        same_branch = next(
+            (
+                pull
+                for pull in open_pulls
+                if isinstance(pull, dict)
+                and str((pull.get("head") or {}).get("ref") or "") == branch
+                and str((pull.get("base") or {}).get("ref") or "") == base_branch
+            ),
+            None,
+        )
+        other_drafts = [
+            int(pull.get("number") or 0)
+            for pull in open_pulls
+            if isinstance(pull, dict)
+            and bool(pull.get("draft"))
+            and str((pull.get("head") or {}).get("ref") or "") != branch
+        ]
+        other_drafts = [number for number in other_drafts if number > 0]
+        if same_branch is None and other_drafts:
+            raise RuntimeError(
+                "OPEN_DRAFT_PR_EXISTS: Ein anderer offener Draft-PR blockiert die Erstellung: "
+                + ", ".join(f"#{number}" for number in other_drafts)
+            )
 
         diff_check = self.run_check(workspace_id, "git_diff_check")
         if not diff_check["ok"]:
@@ -513,22 +558,42 @@ class OperatorRuntime:
         if not push["ok"]:
             raise RuntimeError(f"Push fehlgeschlagen: {push['stderr']}")
 
-        owner = self.config.repository.split("/", 1)[0]
-        headers = {"Authorization": f"Bearer {self.config.github_token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"}
-        response = requests.post(
-            f"https://api.github.com/repos/{self.config.repository}/pulls",
-            headers=headers,
-            timeout=30,
-            json={"title": title[:256], "head": f"{owner}:{branch}", "base": metadata["base_branch"], "body": body, "draft": True},
-        )
+        created = same_branch is None
+        if same_branch is not None:
+            number = int(same_branch.get("number") or 0)
+            if number < 1:
+                raise RuntimeError("Bestehender PR besitzt keine gültige Nummer")
+            response = requests.patch(
+                f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+                headers=headers,
+                timeout=30,
+                json={"title": title[:256], "body": body, "state": "open"},
+            )
+        else:
+            response = requests.post(
+                f"https://api.github.com/repos/{self.config.repository}/pulls",
+                headers=headers,
+                timeout=30,
+                json={"title": title[:256], "head": f"{owner}:{branch}", "base": base_branch, "body": body, "draft": True},
+            )
         if response.status_code not in (200, 201):
-            raise RuntimeError(f"Draft-PR konnte nicht erstellt werden: HTTP {response.status_code} {response.text[:1000]}")
+            operation = "aktualisiert" if same_branch is not None else "erstellt"
+            raise RuntimeError(f"Draft-PR konnte nicht {operation} werden: HTTP {response.status_code}")
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub lieferte keine gültige PR-Antwort")
         metadata = self._read_metadata(workspace_id)
-        metadata["draft_pr"] = {"number": payload["number"], "url": payload["html_url"], "head_sha": payload["head"]["sha"]}
+        metadata["draft_pr"] = {
+            "number": payload["number"],
+            "url": payload["html_url"],
+            "head_sha": payload["head"]["sha"],
+        }
         self._write_metadata(workspace_id, metadata)
         return {
-            "draft": True,
+            "ok": True,
+            "status": "DRAFT_PR_CREATED" if created else "DRAFT_PR_UPDATED",
+            "created": created,
+            "draft": bool(payload.get("draft", True)),
             "number": payload["number"],
             "url": payload["html_url"],
             "branch": branch,

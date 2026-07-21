@@ -95,11 +95,17 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
     monkeypatch.setattr(runtime, "_run", guarded_run)
     monkeypatch.setattr(
         runtime_module.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(200, payload=[]),
+    )
+    monkeypatch.setattr(
+        runtime_module.requests,
         "post",
         lambda *args, **kwargs: FakeResponse(
             201,
             payload={
                 "number": 999,
+                "draft": True,
                 "html_url": "https://github.test/example/pull/999",
                 "head": {"sha": "a" * 40},
             },
@@ -119,6 +125,103 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
     assert result["remote_validation"]["execution_mode"] == "github_actions"
     assert result["remote_validation"]["local_dependency_install_allowed"] is False
     assert not any(call and call[0] == "pnpm" for call in calls)
+
+
+def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    metadata = runtime._read_metadata(workspace_id)
+    branch = metadata["branch"]
+    (repo / "README.md").write_text("updated\n", "utf-8")
+    original_run = runtime._run
+    calls: list[list[str]] = []
+    patches: list[dict[str, Any]] = []
+
+    def guarded_run(argv, *, cwd, timeout=None, env=None):
+        calls.append(list(argv))
+        if argv[:2] == ["git", "push"]:
+            return command_result(list(argv))
+        return original_run(argv, cwd=cwd, timeout=timeout, env=env)
+
+    def fake_get(*args, **kwargs):
+        return FakeResponse(
+            200,
+            payload=[{
+                "number": 901,
+                "draft": True,
+                "head": {"ref": branch, "sha": "b" * 40},
+                "base": {"ref": "main"},
+            }],
+        )
+
+    def fake_patch(*args, **kwargs):
+        patches.append(kwargs["json"])
+        return FakeResponse(
+            200,
+            payload={
+                "number": 901,
+                "draft": True,
+                "html_url": "https://github.test/example/pull/901",
+                "head": {"sha": "c" * 40},
+            },
+        )
+
+    monkeypatch.setattr(runtime, "_run", guarded_run)
+    monkeypatch.setattr(runtime_module.requests, "get", fake_get)
+    monkeypatch.setattr(runtime_module.requests, "patch", fake_patch)
+
+    result = runtime.create_draft_pr(
+        workspace_id,
+        title="Update existing PR",
+        body="No duplicate PR.",
+        commit_message="Update existing PR",
+    )
+
+    assert result["status"] == "DRAFT_PR_UPDATED"
+    assert result["created"] is False
+    assert result["number"] == 901
+    assert patches == [{"title": "Update existing PR", "body": "No duplicate PR.", "state": "open"}]
+    assert any(call[:2] == ["git", "push"] for call in calls)
+
+
+def test_other_open_draft_blocks_before_git_mutation(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    (repo / "README.md").write_text("blocked\n", "utf-8")
+    original_run = runtime._run
+    mutation_calls: list[list[str]] = []
+
+    def guarded_run(argv, *, cwd, timeout=None, env=None):
+        if argv[:2] in (["git", "add"], ["git", "commit"], ["git", "push"]):
+            mutation_calls.append(list(argv))
+        return original_run(argv, cwd=cwd, timeout=timeout, env=env)
+
+    monkeypatch.setattr(runtime, "_run", guarded_run)
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(
+            200,
+            payload=[{
+                "number": 900,
+                "draft": True,
+                "head": {"ref": "sovereign/other"},
+                "base": {"ref": "main"},
+            }],
+        ),
+    )
+
+    try:
+        runtime.create_draft_pr(
+            workspace_id,
+            title="Must block",
+            body="Must block.",
+            commit_message="Must block",
+        )
+    except RuntimeError as exc:
+        assert "OPEN_DRAFT_PR_EXISTS" in str(exc)
+    else:
+        raise AssertionError("parallel Draft PR must be blocked")
+
+    assert mutation_calls == []
 
 
 def test_workflow_artifact_import_binds_artifact_to_confirmed_run(repo_runtime, monkeypatch) -> None:

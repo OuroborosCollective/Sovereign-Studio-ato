@@ -14,7 +14,7 @@ The online LLM interprets natural language and maps the mission to structured ca
 
 ## Installed base skill families
 
-This manifest owns the original 15 governance families below. The companion `sovereign-operational-assurance` manifest adds 27 distinct families for numbered capabilities 16–43 and reuses the registry family rather than duplicating it. The combined routing inventory therefore exposes 42 unique skill families and 43 unique profile tool identities.
+This manifest owns 16 governance families. The companion `sovereign-operational-assurance` manifest adds 27 distinct families and reuses the registry family rather than duplicating it. The combined routing inventory therefore exposes 43 unique skill families and 48 unique profile tool identities.
 
 1. `sovereign-tool-capability-router`
 2. `sovereign-mcp-registry-verifier`
@@ -31,10 +31,11 @@ This manifest owns the original 15 governance families below. The companion `sov
 13. `sovereign-runtime-runbook-generator`
 14. `sovereign-ownership-codeowners-guardian`
 15. `sovereign-compliance-evidence-exporter`
+16. `sovereign-mcp-toolchain-composer`
 
 ## Registered base MCP tools
 
-The following 16 tools are implemented by `operational_governance_tools.py`. The assurance module registers 28 additional callable tools, including its inventory; numbered capability 29 reuses `mcp_tool_contract_registry` from this list.
+The following 16 tools are implemented by `operational_governance_tools.py`. `toolchain_composition.py` adds five typed, non-executing composition tools. The assurance module registers 28 additional callable tools, including its inventory, and reuses `mcp_tool_contract_registry` rather than duplicating it.
 
 - `operational_skill_inventory`
 - `mcp_tool_contract_registry`
@@ -52,6 +53,11 @@ The following 16 tools are implemented by `operational_governance_tools.py`. The
 - `runtime_runbook_generate`
 - `ownership_codeowners_guard`
 - `compliance_evidence_export`
+- `mcp_toolchain_contract_inventory`
+- `mcp_toolchain_compile`
+- `mcp_toolchain_validate`
+- `mcp_toolchain_next_step`
+- `mcp_diagnostic_chain_plan`
 
 ## Recommended workflow
 
@@ -59,12 +65,13 @@ The following 16 tools are implemented by `operational_governance_tools.py`. The
 2. Convert the mission into structured capabilities and allowed effects.
 3. Call `tool_recommend_for_mission`.
 4. Load full contracts only for the selected tools through `mcp_tool_contract_registry`.
-5. Resolve exact repository, PR, CI and installed revision identities.
-6. Collect authoritative evidence without inferring missing success.
-7. Generate a bounded runbook when a failure family is known.
-8. Apply changes only through the existing authorized repository or host paths.
-9. Verify the original failure family and adjacent contracts.
-10. End code work at one Draft PR unless the owner separately authorizes a later lifecycle action.
+5. For multi-step work, compile and validate one bounded ToolChain DAG, then request only the next safe node.
+6. Resolve exact repository, PR, CI and installed revision identities.
+7. Collect authoritative evidence without inferring missing success.
+8. Generate a bounded runbook or diagnostic ToolChain when a failure family is known.
+9. Apply changes only through the existing authorized repository or host paths.
+10. Verify the original failure family and adjacent contracts.
+11. End code work at one Draft PR unless the owner separately authorizes a later lifecycle action.
 
 ## Runtime boundaries
 
@@ -72,7 +79,9 @@ The following 16 tools are implemented by `operational_governance_tools.py`. The
 - No arbitrary SQL.
 - No raw database rows from the schema reconciler.
 - No secret or owner-protected value accepted as a tool argument.
-- No tool recommendation is automatically executed.
+- No tool recommendation or ToolChain node is automatically executed.
+- ToolChain graphs are hash-bound to the live registry and output schemas.
+- A failed ToolChain node stops and requires new evidence before replanning.
 - No merge or deployment is performed by this skill.
 - Host mutation remains queue-only.
 - Repository mutations remain workspace-bound and end at Draft PR by default.
@@ -96,4 +105,4 @@ Stop rather than guess when any of these conditions occurs:
 
 ## Verification contract
 
-The immutable MCP image must contain this file, `operational_governance_tools.py`, the companion assurance manifest and `operational_assurance_tools.py`. CI and the VPS installer must compile/import both modules, verify their callables, inspect the combined live FastMCP registry and run the dedicated regression tests. A repository file or successful import alone is not a production installation claim.
+The immutable MCP image must contain this file, `operational_governance_tools.py`, `toolchain_composition.py`, the companion assurance manifest and `operational_assurance_tools.py`. CI and the VPS installer must compile/import all modules, verify their callables, inspect the combined live FastMCP registry and run the dedicated regression tests. A repository file or successful import alone is not a production installation claim.

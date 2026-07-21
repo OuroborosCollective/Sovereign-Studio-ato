@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -14,6 +15,7 @@ WORKFLOW_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.ya?ml$")
 INPUT_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 ALLOWED_MERGE_METHODS = {"merge", "squash", "rebase"}
 ALLOWED_CLOSE_REASONS = {"redundant", "superseded"}
+PROTECTED_BRANCH_NAMES = frozenset({"main", "master"})
 SUCCESSFUL_CHECK_CONCLUSIONS = {"success", "neutral", "skipped"}
 RERUN_FAILED_CONCLUSIONS = {"failure"}
 RERUN_ALL_CONCLUSIONS = {"cancelled", "timed_out", "action_required", "stale"}
@@ -120,6 +122,24 @@ class GitHubAdminRuntime:
         if not isinstance(payload, dict):
             raise RuntimeError("GitHub PR-Antwort ist ungültig")
         return payload
+
+    def _require_owner_pr_admin(self, owner_approved: bool) -> dict[str, Any] | None:
+        if not _enabled("SOVEREIGN_MCP_ENABLE_PR_MERGE"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "PR-Administration ist nicht aktiviert"}
+        if not self.private_owner_mode or not owner_approved:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Administration erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",
+            }
+        return None
+
+    def _default_branch(self) -> str:
+        payload = self._request("GET", f"/repos/{self.repository}")
+        branch = str(payload.get("default_branch") or "").strip() if isinstance(payload, dict) else ""
+        if not branch or not REF_RE.fullmatch(branch) or ".." in branch:
+            raise RuntimeError("GitHub lieferte keinen sicheren Default-Branch")
+        return branch
 
     def _check_state(self, head_sha: str) -> dict[str, Any]:
         if not COMMIT_SHA_RE.fullmatch(head_sha):
@@ -517,6 +537,212 @@ class GitHubAdminRuntime:
             "ready_transition": ready_transition,
             "ignored_pending_checks": ignored_pending_checks,
             "self_update": update_result,
+        }
+
+    def update_pr(
+        self,
+        *,
+        pr_number: int,
+        expected_head_sha: str,
+        title: str = "",
+        body: str = "",
+        owner_approved: bool = False,
+    ) -> dict[str, Any]:
+        """Update title/body for one exact open PR and verify GitHub readback."""
+        blocked = self._require_owner_pr_admin(owner_approved)
+        if blocked:
+            return blocked
+        number = self._pr_number(pr_number)
+        expected = str(expected_head_sha or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(expected):
+            raise ValueError("expected_head_sha muss ein vollständiger Commit-SHA sein")
+        clean_title = str(title or "").strip()
+        clean_body = str(body or "").strip()
+        if not clean_title and not clean_body:
+            raise ValueError("title oder body muss gesetzt sein")
+        if len(clean_title) > 256 or len(clean_body) > 60_000:
+            raise ValueError("PR-Titel oder PR-Beschreibung überschreitet das Limit")
+
+        pull = self._pull(number)
+        actual_head = str((pull.get("head") or {}).get("sha") or "").strip().lower()
+        if actual_head != expected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Head stimmt nicht mit der Bestätigung überein",
+                "actual_head_sha": actual_head,
+                "expected_head_sha": expected,
+            }
+        if str(pull.get("state") or "") != "open":
+            return {"ok": False, "status": "BLOCKED", "blocker": "Nur ein offener PR darf bearbeitet werden"}
+
+        mutation: dict[str, Any] = {}
+        if clean_title:
+            mutation["title"] = clean_title
+        if clean_body:
+            mutation["body"] = clean_body
+        payload = self._request(
+            "PATCH",
+            f"/repos/{self.repository}/pulls/{number}",
+            json_body=mutation,
+            expected=(200,),
+            timeout=60,
+        )
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub bestätigte die PR-Aktualisierung nicht")
+        readback = self._pull(number)
+        readback_head = str((readback.get("head") or {}).get("sha") or "").strip().lower()
+        if readback_head != expected or str(readback.get("state") or "") != "open":
+            raise RuntimeError("GitHub PR-Readback stimmt nicht mit dem Update-Vertrag überein")
+        if clean_title and str(readback.get("title") or "") != clean_title:
+            raise RuntimeError("GitHub bestätigte den aktualisierten PR-Titel nicht")
+        if clean_body and str(readback.get("body") or "") != clean_body:
+            raise RuntimeError("GitHub bestätigte die aktualisierte PR-Beschreibung nicht")
+        return {
+            "ok": True,
+            "status": "UPDATED",
+            "pr_number": number,
+            "head_sha": expected,
+            "title_updated": bool(clean_title),
+            "body_updated": bool(clean_body),
+            "owner_approved": True,
+            "url": str(readback.get("html_url") or payload.get("html_url") or ""),
+        }
+
+    def reopen_pr(
+        self,
+        *,
+        pr_number: int,
+        expected_head_sha: str,
+        owner_approved: bool = False,
+    ) -> dict[str, Any]:
+        """Reopen one exact closed, unmerged PR and verify GitHub readback."""
+        blocked = self._require_owner_pr_admin(owner_approved)
+        if blocked:
+            return blocked
+        number = self._pr_number(pr_number)
+        expected = str(expected_head_sha or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(expected):
+            raise ValueError("expected_head_sha muss ein vollständiger Commit-SHA sein")
+        pull = self._pull(number)
+        actual_head = str((pull.get("head") or {}).get("sha") or "").strip().lower()
+        if actual_head != expected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Head stimmt nicht mit der Bestätigung überein",
+                "actual_head_sha": actual_head,
+                "expected_head_sha": expected,
+            }
+        state = str(pull.get("state") or "")
+        if state == "open":
+            return {"ok": True, "status": "ALREADY_OPEN", "pr_number": number, "head_sha": expected}
+        if state != "closed" or pull.get("merged_at"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Nur ein geschlossener, ungemergter PR darf wieder geöffnet werden"}
+        payload = self._request(
+            "PATCH",
+            f"/repos/{self.repository}/pulls/{number}",
+            json_body={"state": "open"},
+            expected=(200,),
+            timeout=60,
+        )
+        if not isinstance(payload, dict) or str(payload.get("state") or "") != "open":
+            raise RuntimeError("GitHub bestätigte den wieder geöffneten PR-Zustand nicht")
+        readback = self._pull(number)
+        if (
+            str(readback.get("state") or "") != "open"
+            or str((readback.get("head") or {}).get("sha") or "").strip().lower() != expected
+        ):
+            raise RuntimeError("GitHub PR-Readback stimmt nicht mit dem Reopen-Vertrag überein")
+        return {
+            "ok": True,
+            "status": "REOPENED",
+            "pr_number": number,
+            "head_sha": expected,
+            "owner_approved": True,
+            "url": str(readback.get("html_url") or payload.get("html_url") or ""),
+        }
+
+    def delete_pr_branch(
+        self,
+        *,
+        pr_number: int,
+        expected_head_sha: str,
+        owner_approved: bool = False,
+    ) -> dict[str, Any]:
+        """Delete only a completed PR head branch; primary and base branches are immutable."""
+        blocked = self._require_owner_pr_admin(owner_approved)
+        if blocked:
+            return blocked
+        number = self._pr_number(pr_number)
+        expected = str(expected_head_sha or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(expected):
+            raise ValueError("expected_head_sha muss ein vollständiger Commit-SHA sein")
+        pull = self._pull(number)
+        head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
+        base = pull.get("base") if isinstance(pull.get("base"), dict) else {}
+        actual_head = str(head.get("sha") or "").strip().lower()
+        branch = str(head.get("ref") or "").strip()
+        base_branch = str(base.get("ref") or "").strip()
+        head_repository = str((head.get("repo") or {}).get("full_name") or "").strip()
+        if actual_head != expected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Head stimmt nicht mit der Bestätigung überein",
+                "actual_head_sha": actual_head,
+                "expected_head_sha": expected,
+            }
+        if str(pull.get("state") or "") != "closed" and not pull.get("merged_at"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Der PR muss vor Branch-Löschung geschlossen oder gemergt sein"}
+        if not branch or not REF_RE.fullmatch(branch) or ".." in branch:
+            raise RuntimeError("GitHub lieferte keinen sicheren PR-Head-Branch")
+        if head_repository != self.repository:
+            return {"ok": False, "status": "BLOCKED", "blocker": "Branches aus Fork-Repositories werden nicht gelöscht"}
+
+        default_branch = self._default_branch()
+        protected = {name.casefold() for name in PROTECTED_BRANCH_NAMES}
+        protected.update({default_branch.casefold(), base_branch.casefold()})
+        if branch.casefold() in protected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "failure_family": "PROTECTED_BRANCH_DELETE_FORBIDDEN",
+                "blocker": "main, master, Default-Branch und PR-Basisbranch dürfen niemals gelöscht werden",
+                "branch": branch,
+                "protected_branches": sorted(protected),
+            }
+
+        encoded = quote(branch, safe="")
+        ref_path = f"/repos/{self.repository}/git/ref/heads/{encoded}"
+        ref = self._request("GET", ref_path)
+        ref_sha = str(((ref.get("object") or {}) if isinstance(ref, dict) else {}).get("sha") or "").strip().lower()
+        if ref_sha != expected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Branch-Ref stimmt nicht mit dem bestätigten PR-Head überein",
+                "actual_head_sha": ref_sha,
+                "expected_head_sha": expected,
+            }
+        self._request(
+            "DELETE",
+            f"/repos/{self.repository}/git/refs/heads/{encoded}",
+            expected=(204,),
+            timeout=60,
+        )
+        self._request("GET", ref_path, expected=(404,), timeout=30)
+        return {
+            "ok": True,
+            "status": "BRANCH_DELETED",
+            "pr_number": number,
+            "branch": branch,
+            "head_sha": expected,
+            "default_branch": default_branch,
+            "base_branch": base_branch,
+            "protected_primary_branches": sorted(PROTECTED_BRANCH_NAMES),
+            "readback_deleted": True,
+            "owner_approved": True,
         }
 
     def close_pr(
