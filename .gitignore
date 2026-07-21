@@ -40,3 +40,4 @@ backend_app.py
 # Generated VPS/runtime truth and local diagnostic harnesses; never commit live evidence
 runtime-evidence/
 .sovereign-artifacts/
+.venv-backend-tests/
