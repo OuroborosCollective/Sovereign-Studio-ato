@@ -336,25 +336,39 @@ def test_provider_activation_accepts_only_route_identity(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
     route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    request_id = "44444444-4444-4444-8444-444444444444"
     session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "PROVIDER_DEPLOYMENTS_READ",
+            "deployments": [{
+                "routeId": route_id,
+                "ownerRequestId": request_id,
+                "ownerInputStatus": "consumed",
+            }],
+        }),
         FakeResponse(200, {
             "ok": True,
             "status": "ready",
             "routeId": route_id,
             "modelId": "sovereign-groq-model",
-        })
+        }),
     ])
     client = ProviderRuntimeClient(session=session)
 
     result = client.activate(route_id)
 
-    call = session.calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == (
+    metadata_call = session.calls[0]
+    activation_call = session.calls[1]
+    assert metadata_call["method"] == "GET"
+    assert metadata_call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
+    assert activation_call["method"] == "POST"
+    assert activation_call["url"] == (
         "http://backend:8787/api/internal/llm/provider-deployments/"
         f"{route_id}/activate"
     )
-    assert call["json"] is None
+    assert activation_call["json"] == {"ownerRequestId": request_id}
+    assert result["ownerRequestId"] == request_id
     assert result["secret_argument_accepted"] is False
     assert result["protected_values_returned"] is False
 
@@ -363,29 +377,55 @@ def test_litellm_provider_route_activation_compatibility_alias_is_secret_free(mo
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
     route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    request_id = "44444444-4444-4444-8444-444444444444"
     session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "deployments": [{"routeId": route_id, "ownerRequestId": request_id}],
+        }),
         FakeResponse(200, {
             "ok": True,
             "status": "ready",
             "routeId": route_id,
             "canaryRequestId": "req_123",
-        })
+        }),
     ])
     client = OwnerInputClient(session=session)
 
     result = client.activate_litellm_provider_route(route_id)
 
-    call = session.calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == (
+    metadata_call = session.calls[0]
+    activation_call = session.calls[1]
+    assert metadata_call["method"] == "GET"
+    assert activation_call["method"] == "POST"
+    assert activation_call["url"] == (
         "http://backend:8787/api/internal/llm/provider-deployments/"
         f"{route_id}/activate"
     )
-    assert call["json"] is None
-    assert call["timeout"] == 1200
+    assert activation_call["json"] == {"ownerRequestId": request_id}
+    assert activation_call["timeout"] == 1200
     assert result["status"] == "ready"
+    assert result["ownerRequestId"] == request_id
     assert result["protected_values_returned"] is False
     assert result["secret_argument_accepted"] is False
+
+
+def test_litellm_provider_route_activation_rejects_missing_owner_request(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "deployments": [{"routeId": route_id, "ownerRequestId": None}],
+        }),
+    ])
+    client = OwnerInputClient(session=session)
+
+    with pytest.raises(RuntimeError, match="keine gültige Owner-Request-ID"):
+        client.activate_litellm_provider_route(route_id)
+    assert len(session.calls) == 1
+    assert session.calls[0]["method"] == "GET"
 
 
 def test_litellm_provider_route_activation_compatibility_alias_rejects_invalid_route(monkeypatch) -> None:

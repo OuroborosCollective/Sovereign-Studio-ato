@@ -221,15 +221,44 @@ class OwnerInputClient:
         selected = str(route_id or "").strip()
         if not ROUTE_ID_RE.fullmatch(selected):
             raise ValueError("route_id ist ungültig")
+
+        metadata = self._request(
+            "GET",
+            "/api/internal/llm/provider-deployments",
+            timeout=30,
+        )
+        deployments = metadata.get("deployments")
+        rows = deployments if isinstance(deployments, list) else []
+        deployment = next(
+            (
+                row
+                for row in rows
+                if isinstance(row, dict) and str(row.get("routeId") or "") == selected
+            ),
+            None,
+        )
+        if not deployment:
+            raise RuntimeError("Providerroute ist in der aktuellen Deployment-Metadatenliste nicht vorhanden")
+
+        owner_request_id = str(deployment.get("ownerRequestId") or "").strip()
+        if not REQUEST_ID_RE.fullmatch(owner_request_id):
+            raise RuntimeError("Providerroute besitzt keine gültige Owner-Request-ID")
+        try:
+            normalized_request = str(uuid.UUID(owner_request_id))
+        except ValueError as exc:
+            raise RuntimeError("Providerroute besitzt keine gültige Owner-Request-ID") from exc
+
         payload = self._request(
             "POST",
             f"/api/internal/llm/provider-deployments/{selected}/activate",
+            json_body={"ownerRequestId": normalized_request},
             expected=(200, 400, 409, 500, 502, 503),
             timeout=1200,
         )
         return {
             **payload,
             "routeId": str(payload.get("routeId") or selected),
+            "ownerRequestId": normalized_request,
             "protected_values_returned": False,
             "secret_argument_accepted": False,
         }
