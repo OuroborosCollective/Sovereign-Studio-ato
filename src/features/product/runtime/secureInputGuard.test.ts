@@ -37,6 +37,16 @@ describe('secureInputGuard', () => {
       }
     });
 
+    it('detects project-style OpenAI keys without misclassifying Anthropic keys', () => {
+      const openAi = scanForSecret('sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234');
+      expect(openAi.detected).toBe(true);
+      if (openAi.detected) expect(openAi.kind).toBe('openai_key');
+
+      const anthropic = scanForSecret('sk-ant-api-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234');
+      expect(anthropic.detected).toBe(true);
+      if (anthropic.detected) expect(anthropic.kind).toBe('anthropic_key');
+    });
+
     it('detects Anthropic key (sk-ant-)', () => {
       const input = 'sk-ant-api-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef1234';
       const result = scanForSecret(input);
@@ -67,6 +77,11 @@ describe('secureInputGuard', () => {
       expect(result.detected).toBe(true);
     });
 
+    it('detects quoted secret assignments but allows environment references', () => {
+      expect(scanForSecret("api_key='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef'").detected).toBe(true);
+      expect(scanForSecret('const token = process.env.TOOLCHAIN_API_KEY').detected).toBe(false);
+    });
+
     it('does not flag short strings', () => {
       expect(scanForSecret('ghp_short').detected).toBe(false);
       expect(scanForSecret('sk-abc').detected).toBe(false);
@@ -95,6 +110,13 @@ describe('secureInputGuard', () => {
       const redacted = redactSecret(input);
       expect(redacted).not.toContain('ghp_');
       expect(redacted).not.toContain('sk-');
+    });
+
+    it('replaces every occurrence of the same secret kind', () => {
+      const input = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01 and ghp_1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const redacted = redactSecret(input);
+      expect(redacted.match(/\[REDACTED\]/g)).toHaveLength(2);
+      expect(redacted).not.toContain('ghp_');
     });
 
     it('leaves normal text unchanged', () => {

@@ -15,6 +15,28 @@ describe('generated file self review', () => {
     expect(() => assertGeneratedFileReviewSafe(report)).not.toThrow();
   });
 
+  it('allows security code that mentions secret concepts without embedding a secret value', () => {
+    const report = reviewGeneratedFiles([{
+      path: 'src/security/tokenPolicy.ts',
+      content: "export const token = process.env.TOOLCHAIN_API_KEY;\nexport const passwordPolicy = 'required';",
+      reason: 'security implementation',
+    }]);
+    expect(report.highRiskCount).toBe(0);
+    expect(report.files[0]?.flags).not.toContain('secret-value-in-content');
+    expect(report.selfReview.accepted).toBe(true);
+  });
+
+  it('rejects an actual embedded secret value', () => {
+    const report = reviewGeneratedFiles([{
+      path: 'src/config.ts',
+      content: "export const api_key = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef';",
+      reason: 'unsafe implementation',
+    }]);
+    expect(report.highRiskCount).toBe(1);
+    expect(report.files[0]?.flags).toContain('secret-value-in-content');
+    expect(report.selfReview.accepted).toBe(false);
+  });
+
   it('rejects plan only output and asks for rewrite', () => {
     const report = reviewGeneratedFiles([
       { path: 'docs/SOVEREIGN_PLAN.md', content: '# Sovereign Plan', reason: 'plan' },

@@ -1,4 +1,5 @@
 import type { ImplementationFile } from './sovereignRuntime';
+import { scanForSecret } from './secureInputGuard';
 
 export type GeneratedFileReviewRisk = 'low' | 'medium' | 'high';
 
@@ -35,7 +36,6 @@ export interface GeneratedFileReviewReport {
 
 const HIGH_RISK_PATHS = [/^\.env/i, /^\.git\//i, /^node_modules\//i, /^dist\//i, /^build\//i];
 const MEDIUM_RISK_PATHS = [/\.ya?ml$/i, /workflow/i, /package\.json$/i, /vite\.config/i, /tsconfig/i];
-const SECRET_MARKERS = [/api[_-]?key/i, /token/i, /secret/i, /password/i, /private[_-]?key/i];
 const PLAN_ONLY_PATHS = new Set(['docs/sovereign_plan.md', 'generated/sovereign-product/workflow.ts']);
 const ACTIONABLE_PATHS = [/^src\//i, /^tests?\//i, /\.test\.[tj]sx?$/i, /\.spec\.[tj]sx?$/i, /^android\//i, /^scripts\//i, /^\.github\//i, /^package\.json$/i, /^vite\.config/i, /^tsconfig/i, /^readme\.md$/i, /^docs\//i];
 
@@ -110,8 +110,8 @@ export function reviewGeneratedFile(file: ImplementationFile): GeneratedFileRevi
     risk = 'high';
   }
 
-  if (SECRET_MARKERS.some((pattern) => pattern.test(file.content))) {
-    flags.push('secret-marker-in-content');
+  if (scanForSecret(file.content).detected) {
+    flags.push('secret-value-in-content');
     risk = 'high';
   }
 
