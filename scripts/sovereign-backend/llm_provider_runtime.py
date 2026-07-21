@@ -374,6 +374,35 @@ def _securely_remove(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
+def _provider_canary_payload(
+    model: str,
+    *,
+    provider_prefix: str = "",
+    upstream_model_id: str = "",
+) -> dict[str, Any]:
+    """Build a bounded completion canary that still requires final answer text."""
+    payload: dict[str, Any] = {
+        "model": str(model or "").strip(),
+        "messages": [{"role": "user", "content": "Reply with OK."}],
+        "temperature": 0,
+        "max_tokens": 64,
+        "stream": False,
+    }
+    normalized_provider = str(provider_prefix or "").strip().lower()
+    normalized_upstream = str(upstream_model_id or "").strip().lower()
+    if normalized_provider == "groq" and normalized_upstream in {
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+    }:
+        payload.pop("max_tokens", None)
+        payload.update({
+            "max_completion_tokens": 256,
+            "reasoning_effort": "low",
+            "include_reasoning": False,
+        })
+    return payload
+
+
 def register_llm_provider_routes(
     app: Any,
     *,
@@ -451,13 +480,11 @@ def register_llm_provider_routes(
         canary_response, canary_error = fetch_litellm(
             "/v1/chat/completions",
             method="POST",
-            json_data={
-                "model": model_id,
-                "messages": [{"role": "user", "content": "Reply with OK."}],
-                "temperature": 0,
-                "max_tokens": 8,
-                "stream": False,
-            },
+            json_data=_provider_canary_payload(
+                model_id,
+                provider_prefix=str(model.get("provider") or ""),
+                upstream_model_id=str(model.get("providerModel") or ""),
+            ),
         )
         if canary_error or canary_response is None or not canary_response.ok:
             return jsonify({
@@ -1072,13 +1099,11 @@ def register_llm_provider_routes(
             canary_response, canary_error = fetch_litellm(
                 "/v1/chat/completions",
                 method="POST",
-                json_data={
-                    "model": alias,
-                    "messages": [{"role": "user", "content": "Reply with OK."}],
-                    "temperature": 0,
-                    "max_tokens": 8,
-                    "stream": False,
-                },
+                json_data=_provider_canary_payload(
+                    alias,
+                    provider_prefix=str(deployment["provider_prefix"]),
+                    upstream_model_id=str(deployment["upstream_model_id"]),
+                ),
             )
             if canary_error or canary_response is None or not canary_response.ok:
                 return fail("provider_canary_failed", "Providerroute wurde nicht freigegeben, weil die echte Completion-Canary fehlgeschlagen ist")
