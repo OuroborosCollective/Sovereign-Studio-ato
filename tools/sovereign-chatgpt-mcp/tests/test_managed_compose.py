@@ -838,6 +838,8 @@ def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     assert 'broker.call("memory_gateway_collection_canary", {}, timeout=240)' in server
     assert '"memory_gateway_collection_canary": lambda _values:' in broker
     assert "def litellm_provider_model_inventory()" in server
+    assert "def litellm_provider_route_activate(" in server
+    assert "owner_input.activate_litellm_provider_route(route_id)" in server
     assert "def litellm_model_aliases_activate(" in server
     assert 'broker.call("litellm_provider_model_inventory", {}, timeout=90)' in server
     assert '"litellm_model_aliases_activate"' in server

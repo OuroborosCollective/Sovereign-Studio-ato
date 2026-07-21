@@ -29,6 +29,11 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert '"/model/new"' in runtime
     assert '"/v1/chat/completions"' in runtime
     assert '"/api/admin/llm/provider-deployments/<route_id>/owner-input"' in runtime
+    assert '"/api/internal/llm/provider-deployments/<route_id>/activate"' in runtime
+    assert "def _activate_llm_provider_route(route_id: str):" in runtime
+    assert 'request.headers.get("X-Sovereign-Owner-Request-Key"' in runtime
+    assert "if not _service_authorized():" in runtime
+    assert runtime.count("return _activate_llm_provider_route(route_id)") == 2
     assert "provider_canary_failed" in runtime
     assert "_catalog_model_with_retry" in runtime
     assert "requires_secret = secret_available or not model_present or not key_fingerprint" in runtime

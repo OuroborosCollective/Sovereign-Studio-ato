@@ -16,6 +16,7 @@ from typing import Any
 import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+LITELLM_ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
@@ -178,6 +179,24 @@ class OwnerInputClient:
             "request": request_payload,
             "owner_url": self._owner_url(selected),
             "protected_value_returned": False,
+        }
+
+    def activate_litellm_provider_route(self, route_id: str) -> dict[str, Any]:
+        selected = str(route_id or "").strip()
+        if not LITELLM_ROUTE_ID_RE.fullmatch(selected):
+            raise ValueError("route_id ist ungültig")
+        payload = self._request(
+            "POST",
+            (
+                "/api/internal/llm/provider-deployments/"
+                f"{urllib.parse.quote(selected, safe='')}/activate"
+            ),
+            expected=(200, 400, 409, 500, 502, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "protected_values_returned": False,
         }
 
     def plan_proven_learning(self, record: dict[str, Any]) -> dict[str, Any]:

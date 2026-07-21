@@ -93,6 +93,47 @@ def test_status_returns_metadata_only(monkeypatch) -> None:
     assert session.calls[0]["method"] == "GET"
 
 
+def test_litellm_provider_route_activation_uses_private_backend_without_secret(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "ready",
+            "routeId": route_id,
+            "canaryRequestId": "req_123",
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.activate_litellm_provider_route(route_id)
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == (
+        "http://backend:8787/api/internal/llm/provider-deployments/"
+        f"{route_id}/activate"
+    )
+    assert call["headers"]["X-Sovereign-Owner-Request-Key"] == "bridge-key"
+    assert call["json"] is None
+    assert call["timeout"] == 1200
+    assert result["status"] == "ready"
+    assert result["protected_values_returned"] is False
+    assert "secret" not in str(call).lower()
+    assert "api_key" not in str(call).lower()
+
+
+def test_litellm_provider_route_activation_rejects_invalid_route_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([])
+    client = OwnerInputClient(session=session)
+
+    with pytest.raises(ValueError, match="route_id ist ungültig"):
+        client.activate_litellm_provider_route("../../etc/passwd")
+    assert session.calls == []
+
+
 def test_rejects_non_https_public_owner_origin(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_PUBLIC_URL", "http://sovereign-backend.arelorian.de")

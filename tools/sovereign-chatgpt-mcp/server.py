@@ -662,6 +662,12 @@ def litellm_provider_model_inventory() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
+def litellm_provider_route_activate(route_id: str) -> dict[str, Any]:
+    """Activate one owner-confirmed LiteLLM provider route through the existing backend canary path."""
+    return owner_input.activate_litellm_provider_route(route_id)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
 def litellm_model_aliases_activate(
     fast_provider_model: str,
     balanced_provider_model: str,

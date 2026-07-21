@@ -7,6 +7,7 @@ value is accepted only by owner_input_runtime and is never stored in this DB.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -34,6 +35,7 @@ from llm_cost_policy import (
 
 _PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,47}$")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
+_ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$")
 _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
 _DEFAULT_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
 
@@ -41,6 +43,13 @@ _DEFAULT_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
 def _secret_path() -> Path:
     root = Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", str(_DEFAULT_SECRET_ROOT))).resolve()
     return root / "litellm_provider_key.txt"
+
+
+def _service_authorized() -> bool:
+    expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
 
 # UI metadata only. No preset creates or activates a route.
 PROVIDER_PRESETS = (
@@ -872,9 +881,11 @@ def register_llm_provider_routes(
             "markupMultiplier": policy["markupMultiplier"] if policy else deployment.get("markup_multiplier"),
         }), 202
 
-    @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])
-    @require_admin
-    def admin_activate_llm_provider(route_id: str):
+    def _activate_llm_provider_route(route_id: str):
+        selected_route_id = str(route_id or "").strip()
+        if not _ROUTE_ID_RE.fullmatch(selected_route_id):
+            return jsonify({"error": "route_id ist ungültig", "blocker": "provider_route_id_invalid"}), 400
+        route_id = selected_route_id
         deployment = query(
             """SELECT deployment.route_id, deployment.provider_name,
                       deployment.provider_prefix, deployment.upstream_model_id,
@@ -1193,3 +1204,14 @@ def register_llm_provider_routes(
                 protected[index] = 0
             if secret_loaded:
                 _securely_remove(path)
+
+    @app.route("/api/admin/llm/provider-deployments/<route_id>/activate", methods=["POST"])
+    @require_admin
+    def admin_activate_llm_provider(route_id: str):
+        return _activate_llm_provider_route(route_id)
+
+    @app.route("/api/internal/llm/provider-deployments/<route_id>/activate", methods=["POST"])
+    def internal_activate_llm_provider(route_id: str):
+        if not _service_authorized():
+            return jsonify({"error": "Nicht autorisiert"}), 401
+        return _activate_llm_provider_route(route_id)
