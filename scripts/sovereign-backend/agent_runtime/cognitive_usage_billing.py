@@ -410,6 +410,67 @@ class AgentStageBilling:
             "refundedCredits": max(0, -delta),
         }
 
+    def refund_failed_before_usage(
+        self,
+        reservation: AgentStageReservation,
+        *,
+        family: str,
+    ) -> bool:
+        """Atomically release one reservation when the provider rejected before usage."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE llm_usage_settlements
+                       SET status='refunded',
+                           refunded_credits=reserved_credits,
+                           settled_credits=0,
+                           prompt_tokens=0,
+                           cached_prompt_tokens=0,
+                           completion_tokens=0,
+                           total_tokens=0,
+                           provider_cost_usd=0,
+                           provider_cost_usd_micros=0,
+                           billed_value_usd_micros=0,
+                           error_code=%s,
+                           settled_at=NOW(), updated_at=NOW()
+                       WHERE request_id=%s::uuid AND status='reserved'
+                       RETURNING reserved_credits::integer AS refunded""",
+                    (str(family)[:120], reservation.request_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    conn.commit()
+                    return False
+                refunded = max(0, int(row["refunded"] or 0))
+                if refunded:
+                    cur.execute(
+                        """INSERT INTO credit_ledger
+                               (user_id,type,amount,reason,provider,provider_tx_id)
+                           VALUES (%s::uuid,'agent_usage_refund',%s,%s,'litellm',%s)""",
+                        (
+                            self.user_id,
+                            refunded,
+                            f"Agents SDK provider rejected before usage: {AGENTS_PROVIDER_MODEL}",
+                            f"{reservation.request_id}:failed-before-usage",
+                        ),
+                    )
+                    cur.execute(
+                        """UPDATE admin_users
+                           SET credits=credits+%s,
+                               provider_funded_credits=provider_funded_credits+%s,
+                               last_active_at=NOW()
+                           WHERE id=%s::uuid""",
+                        (refunded, refunded, self.user_id),
+                    )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            _close(conn)
+
     def mark_reconciliation_required(
         self,
         reservation: AgentStageReservation,

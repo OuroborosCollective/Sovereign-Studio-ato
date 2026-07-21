@@ -11,6 +11,7 @@ from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     PAID_SWARM_PROFILE,
     build_paid_to_free_candidates,
+    free_fallback_resolution,
     resolve_execution_profile,
 )
 
@@ -189,3 +190,39 @@ def test_paid_to_free_candidates_deduplicate_shared_quota_scopes() -> None:
         paid,
         [paid, free_a, free_same_key, free_b],
     )] == ["paid", "free-a-alias", "free-b"]
+
+
+def test_paid_provider_failure_derives_free_single_agent_fallback() -> None:
+    paid = route(
+        "paid",
+        category="standard",
+        scope="paid:key-a",
+        priority=10,
+        profile=PAID_SWARM_PROFILE,
+    )
+    free = route(
+        "free",
+        category="free",
+        scope="free:key-a",
+        priority=20,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    resolution = resolve_execution_profile(
+        routes=[paid, free],
+        state_by_scope={},
+        paid_purchase_verified=True,
+        provider_funded_credits=500,
+    )
+
+    assert resolution is not None
+    fallback = free_fallback_resolution(
+        resolution,
+        reason="paid_provider_429_resolved_to_free_revolver",
+    )
+
+    assert fallback is not None
+    assert fallback.profile_id == FREE_SINGLE_AGENT_PROFILE
+    assert fallback.primary_route["id"] == "free"
+    assert fallback.max_background_agents == 0
+    assert fallback.repository_execution_allowed is True
+    assert fallback.reason == "paid_provider_429_resolved_to_free_revolver"

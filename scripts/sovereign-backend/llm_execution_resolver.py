@@ -286,6 +286,32 @@ def resolve_execution_profile(
     )
 
 
+def free_fallback_resolution(
+    resolution: ExecutionResolution,
+    *,
+    reason: str,
+) -> ExecutionResolution | None:
+    """Derive a free single-agent resolution from one paid route magazine."""
+    free_candidates = tuple(
+        route
+        for route in resolution.candidate_routes
+        if route_is_verified_free(route)
+    )
+    if not free_candidates:
+        return None
+    return ExecutionResolution(
+        profile_id=FREE_SINGLE_AGENT_PROFILE,
+        primary_route=free_candidates[0],
+        candidate_routes=free_candidates,
+        max_foreground_agents=1,
+        max_background_agents=0,
+        repository_execution_allowed=True,
+        paid_purchase_verified=resolution.paid_purchase_verified,
+        provider_funded_credits=resolution.provider_funded_credits,
+        reason=str(reason or "paid_route_failed_resolved_to_free_revolver")[:240],
+    )
+
+
 def load_execution_resolution(
     get_connection: Callable[[], Any],
     *,

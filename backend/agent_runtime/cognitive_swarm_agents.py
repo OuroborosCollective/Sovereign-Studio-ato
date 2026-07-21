@@ -32,6 +32,7 @@ DEFAULT_MODEL: Final[str] = AGENTS_LITELLM_ALIAS
 ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset({AGENTS_LITELLM_ALIAS})
 _AGENT_OUTPUT_TOKEN_LIMIT: Final[int] = 2_048
 _AGENT_WORKER_MAX_TURNS: Final[int] = 4
+_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12
 _AGENT_SINGLE_STAGE_MAX_TURNS: Final[int] = 1
 SKILL_PATH: Final[Path] = Path(__file__).parent / "skills" / "sovereign-cognitive-architecture" / "SKILL.md"
 RELEASE_HUNT_SKILL_PATH: Final[Path] = (
@@ -278,7 +279,12 @@ def classify_swarm_exception(exc: Exception, *, stage: str) -> SwarmExecutionErr
 
 
 def _stage_max_turns(stage: str) -> int:
-    return _AGENT_WORKER_MAX_TURNS if ":worker:" in str(stage).casefold() else _AGENT_SINGLE_STAGE_MAX_TURNS
+    normalized = str(stage or "").casefold()
+    if "free-single-agent" in normalized:
+        return _AGENT_FREE_WORKSPACE_MAX_TURNS
+    if ":worker:" in normalized:
+        return _AGENT_WORKER_MAX_TURNS
+    return _AGENT_SINGLE_STAGE_MAX_TURNS
 
 
 async def _run_stage(
@@ -301,20 +307,33 @@ async def _run_stage(
             run_config=_require_litellm_run_config(str(getattr(agent, "model", "") or DEFAULT_MODEL)),
             max_turns=_stage_max_turns(stage),
         )
-    except SwarmExecutionError:
+    except SwarmExecutionError as exc:
         if reservation is not None:
-            stage_billing.mark_reconciliation_required(
-                reservation,
-                family="AGENTS_STAGE_FAILED_WITHOUT_USAGE",
-            )
+            if exc.http_status in {400, 401, 403, 404, 429}:
+                stage_billing.refund_failed_before_usage(
+                    reservation,
+                    family=exc.family,
+                )
+            else:
+                stage_billing.mark_reconciliation_required(
+                    reservation,
+                    family=exc.family,
+                )
         raise
     except Exception as exc:
+        classified = classify_swarm_exception(exc, stage=stage)
         if reservation is not None:
-            stage_billing.mark_reconciliation_required(
-                reservation,
-                family=type(exc).__name__,
-            )
-        raise classify_swarm_exception(exc, stage=stage) from exc
+            if classified.http_status in {400, 401, 403, 404, 429}:
+                stage_billing.refund_failed_before_usage(
+                    reservation,
+                    family=classified.family,
+                )
+            else:
+                stage_billing.mark_reconciliation_required(
+                    reservation,
+                    family=classified.family,
+                )
+        raise classified from exc
     if reservation is not None:
         stage_billing.settle(reservation, result)
     return result

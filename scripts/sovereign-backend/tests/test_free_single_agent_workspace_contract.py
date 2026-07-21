@@ -31,6 +31,11 @@ def test_free_agent_uses_one_isolated_workspace_task_with_write_and_test_tools()
     assert '"codeServerWorkspace"' in routes
     assert "repository_tool_factory" in agents
     assert "tools=repository_tools" in agents
+    assert "_AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12" in agents
+    assert 'if "free-single-agent" in normalized:' in agents
+    assert "free_fallback_resolution(" in routes
+    assert "paid_provider_429_resolved_to_free_revolver" in routes
+    assert "_reuse_received_state=received_state" in routes
 
 
 def test_code_server_and_agent_jobs_share_the_same_workspace_root() -> None:
@@ -47,8 +52,24 @@ def test_code_server_and_agent_jobs_share_the_same_workspace_root() -> None:
     assert 'return safe_workspace_path(workspace_id, root) / "repo"' in workspace_policy
 
 
+def test_paid_rejection_refunds_before_free_fallback() -> None:
+    agents = (BACKEND / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
+    billing = (BACKEND / "agent_runtime" / "cognitive_usage_billing.py").read_text("utf-8")
+
+    assert "refund_failed_before_usage" in agents
+    assert "classified.http_status in {400, 401, 403, 404, 429}" in agents
+    assert "def refund_failed_before_usage(" in billing
+    assert "status='refunded'" in billing
+    assert ":failed-before-usage" in billing
+
+
 def test_canonical_agent_runtime_mirrors_are_equal() -> None:
-    for name in ("cognitive_swarm_agents.py", "cognitive_swarm_routes.py", "cognitive_repository_tools.py"):
+    for name in (
+        "cognitive_swarm_agents.py",
+        "cognitive_swarm_routes.py",
+        "cognitive_repository_tools.py",
+        "cognitive_usage_billing.py",
+    ):
         assert (BACKEND / "agent_runtime" / name).read_bytes() == (
             ROOT / "backend" / "agent_runtime" / name
         ).read_bytes()

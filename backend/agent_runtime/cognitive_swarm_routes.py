@@ -61,8 +61,10 @@ from .pattern_vector_memory import persist_pattern_vector
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     PAID_SWARM_PROFILE,
+    free_fallback_resolution,
     load_execution_resolution,
 )
+from llm_revolver import route_quota_scope
 
 
 ConnectionFactory = Callable[[], Any]
@@ -653,6 +655,53 @@ def execute_persisted_swarm(
     }, status_code)
 
 
+def _record_paid_route_cooldown(
+    get_connection: ConnectionFactory,
+    *,
+    execution_resolution: Any,
+    failure: SwarmExecutionError,
+) -> None:
+    """Persist a bounded cooldown so later runs skip one exhausted paid scope."""
+    try:
+        route = dict(execution_resolution.primary_route)
+        scope = route_quota_scope(route)
+    except (AttributeError, TypeError, ValueError):
+        return
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO llm_route_revolver_state
+                       (quota_scope, status, consecutive_failures, cooldown_until,
+                        last_route_id, last_http_status, last_blocker,
+                        last_attempt_at, updated_at)
+                   VALUES (%s, 'cooldown', 1, NOW() + INTERVAL '5 minutes',
+                           %s, %s, %s, NOW(), NOW())
+                   ON CONFLICT (quota_scope) DO UPDATE SET
+                       status='cooldown',
+                       consecutive_failures=llm_route_revolver_state.consecutive_failures + 1,
+                       cooldown_until=NOW() + INTERVAL '5 minutes',
+                       last_route_id=EXCLUDED.last_route_id,
+                       last_http_status=EXCLUDED.last_http_status,
+                       last_blocker=EXCLUDED.last_blocker,
+                       last_attempt_at=NOW(),
+                       updated_at=NOW()""",
+                (
+                    scope,
+                    str(route.get("id") or "")[:240],
+                    failure.http_status,
+                    failure.family[:240],
+                ),
+            )
+        conn.commit()
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+    finally:
+        _close_connection(conn)
+
+
 def start_cognitive_swarm_run(
     *,
     get_connection: ConnectionFactory,
@@ -664,6 +713,9 @@ def start_cognitive_swarm_run(
     session_key: str | None = None,
     a2a_context_id: str | None = None,
     trace_id: str | None = None,
+    _reuse_received_state: dict[str, str] | None = None,
+    _force_free_profile: bool = False,
+    _fallback_reason: str = "",
 ) -> tuple[dict[str, object], int]:
     """Execute the single persisted Agents SDK start path for REST and A2A."""
 
@@ -710,6 +762,22 @@ def start_cognitive_swarm_run(
             "reason": "No active paid route or free revolver route is currently ready.",
             "nextAction": "ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
         }, 503
+    if _force_free_profile:
+        execution_resolution = free_fallback_resolution(
+            execution_resolution,
+            reason=(
+                _fallback_reason
+                or "paid_provider_failure_resolved_to_free_revolver"
+            ),
+        )
+        if execution_resolution is None:
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "blocker": "FREE_REVOLVER_ROUTE_NOT_READY",
+                "reason": "The paid route failed and no verified free fallback route is ready.",
+                "nextAction": "ACTIVATE_FREE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
+            }, 503
     resolved_model = str(
         execution_resolution.primary_route.get("model_id")
         or execution_resolution.primary_route.get("modelId")
@@ -722,35 +790,38 @@ def start_cognitive_swarm_run(
             "blocker": "RESOLVED_LITELLM_ALIAS_MISSING",
         }, 503
 
-    try:
-        conn = get_connection()
+    if _reuse_received_state is not None:
+        received_state = dict(_reuse_received_state)
+    else:
         try:
-            received_state = create_agent_run(
-                conn,
-                user_id=user_id,
-                run_id=resolved_run_id,
-                session_key=resolved_session_key,
-                mission=normalized_mission,
-                supplied_evidence=normalized_evidence,
-                trace_id=resolved_trace_id,
-                max_active_specialists=max(
-                    1,
-                    int(execution_resolution.max_background_agents),
-                ),
-                max_iterations=_max_iterations(),
-                job_id=None,
-                a2a_context_id=a2a_context_id,
-            )
-        finally:
-            _close_connection(conn)
-    except Exception as exc:
-        return {
-            "ok": False,
-            "runtime": "openai-agents-sdk",
-            "error": "agent run persistence unavailable",
-            "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
-            "errorType": type(exc).__name__,
-        }, 503
+            conn = get_connection()
+            try:
+                received_state = create_agent_run(
+                    conn,
+                    user_id=user_id,
+                    run_id=resolved_run_id,
+                    session_key=resolved_session_key,
+                    mission=normalized_mission,
+                    supplied_evidence=normalized_evidence,
+                    trace_id=resolved_trace_id,
+                    max_active_specialists=max(
+                        1,
+                        int(execution_resolution.max_background_agents),
+                    ),
+                    max_iterations=_max_iterations(),
+                    job_id=None,
+                    a2a_context_id=a2a_context_id,
+                )
+            finally:
+                _close_connection(conn)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "runtime": "openai-agents-sdk",
+                "error": "agent run persistence unavailable",
+                "blocker": "AGENT_RUN_PERSISTENCE_UNAVAILABLE",
+                "errorType": type(exc).__name__,
+            }, 503
 
     if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
         implementation_job = None
@@ -1038,6 +1109,34 @@ def start_cognitive_swarm_run(
             stage_billing=stage_billing,
         ))
     except AgentBillingError as exc:
+        if exc.family in {
+            "INSUFFICIENT_PROVIDER_FUNDED_CREDITS",
+            "PAID_CREDIT_PURCHASE_REQUIRED",
+        }:
+            fallback_resolution = free_fallback_resolution(
+                execution_resolution,
+                reason="paid_credit_capacity_resolved_to_free_revolver",
+            )
+            if fallback_resolution is not None:
+                fallback_model = str(
+                    fallback_resolution.primary_route.get("model_id")
+                    or fallback_resolution.primary_route.get("modelId")
+                    or ""
+                ).strip()
+                return start_cognitive_swarm_run(
+                    get_connection=get_connection,
+                    user_id=user_id,
+                    mission=normalized_mission,
+                    evidence=normalized_evidence,
+                    model=fallback_model,
+                    run_id=resolved_run_id,
+                    session_key=resolved_session_key,
+                    a2a_context_id=a2a_context_id,
+                    trace_id=resolved_trace_id,
+                    _reuse_received_state=received_state,
+                    _force_free_profile=True,
+                    _fallback_reason="paid_credit_capacity_resolved_to_free_revolver",
+                )
         try:
             intent_state = _persist_billing_blocker(
                 get_connection=get_connection,
@@ -1077,6 +1176,36 @@ def start_cognitive_swarm_run(
             if isinstance(raw_exc, SwarmExecutionError)
             else classify_swarm_exception(raw_exc, stage="intent-router")
         )
+        if isinstance(exc, SwarmExecutionError) and exc.http_status == 429:
+            fallback_resolution = free_fallback_resolution(
+                execution_resolution,
+                reason="paid_provider_429_resolved_to_free_revolver",
+            )
+            if fallback_resolution is not None:
+                _record_paid_route_cooldown(
+                    get_connection,
+                    execution_resolution=execution_resolution,
+                    failure=exc,
+                )
+                fallback_model = str(
+                    fallback_resolution.primary_route.get("model_id")
+                    or fallback_resolution.primary_route.get("modelId")
+                    or ""
+                ).strip()
+                return start_cognitive_swarm_run(
+                    get_connection=get_connection,
+                    user_id=user_id,
+                    mission=normalized_mission,
+                    evidence=normalized_evidence,
+                    model=fallback_model,
+                    run_id=resolved_run_id,
+                    session_key=resolved_session_key,
+                    a2a_context_id=a2a_context_id,
+                    trace_id=resolved_trace_id,
+                    _reuse_received_state=received_state,
+                    _force_free_profile=True,
+                    _fallback_reason="paid_provider_429_resolved_to_free_revolver",
+                )
         conn = get_connection()
         try:
             intent_state = transition_agent_run(
