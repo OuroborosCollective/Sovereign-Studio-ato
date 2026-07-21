@@ -374,6 +374,15 @@ def _securely_remove(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
+def _provider_route_is_ready(deployment: dict[str, Any]) -> bool:
+    """Require deployment and resolver-route truth before returning ready."""
+    return (
+        str(deployment.get("status") or "") == "ready"
+        and deployment.get("route_disabled") is False
+        and bool(deployment.get("route_pricing_verified"))
+    )
+
+
 def _provider_canary_payload(
     model: str,
     *,
@@ -974,6 +983,9 @@ def register_llm_provider_routes(
                       deployment.billing_category, deployment.markup_multiplier,
                       deployment.status, deployment.key_fingerprint,
                       deployment.key_hint, deployment.litellm_deployment_id,
+                      route.disabled AS route_disabled,
+                      COALESCE((route.config->>'pricingVerified')::boolean, false)
+                          AS route_pricing_verified,
                       COALESCE(route.config->>'fundingMode', 'verified_zero_cost') AS funding_mode
                FROM llm_provider_deployments AS deployment
                JOIN llm_routes AS route ON route.id=deployment.route_id
@@ -982,7 +994,7 @@ def register_llm_provider_routes(
         )
         if not deployment:
             return jsonify({"error": "Providerroute nicht gefunden"}), 404
-        if str(deployment.get("status") or "") == "ready":
+        if _provider_route_is_ready(dict(deployment)):
             return jsonify({"ok": True, "status": "ready", "routeId": route_id})
         owner_request_id = str(deployment.get("owner_request_id") or "")
         owner_request = query(
@@ -1000,7 +1012,7 @@ def register_llm_provider_routes(
         claimed = query(
             """UPDATE llm_provider_deployments
                SET status='provisioning', last_error_code=NULL, updated_at=NOW()
-               WHERE route_id=%s AND status IN ('awaiting_owner_input','blocked')
+               WHERE route_id=%s AND status IN ('awaiting_owner_input','blocked','ready')
                RETURNING route_id""",
             (route_id,), one=True, write=True,
         )

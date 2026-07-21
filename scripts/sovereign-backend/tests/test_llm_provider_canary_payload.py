@@ -14,9 +14,13 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 if flask is not None:
-    from llm_provider_runtime import _provider_canary_payload  # noqa: E402
+    from llm_provider_runtime import (  # noqa: E402
+        _provider_canary_payload,
+        _provider_route_is_ready,
+    )
 else:
     _provider_canary_payload = None
+    _provider_route_is_ready = None
 
 
 def test_canary_payload_contract_is_present_without_optional_flask() -> None:
@@ -25,6 +29,34 @@ def test_canary_payload_contract_is_present_without_optional_flask() -> None:
     assert '"max_completion_tokens": 256' in runtime
     assert '"reasoning_effort": "low"' in runtime
     assert '"include_reasoning": False' in runtime
+    assert "def _provider_route_is_ready(" in runtime
+    assert "route.disabled AS route_disabled" in runtime
+    assert "AS route_pricing_verified" in runtime
+    assert "status IN ('awaiting_owner_input','blocked','ready')" in runtime
+
+
+@pytest.mark.skipif(flask is None, reason="Flask is validated in the full backend CI image")
+def test_ready_requires_consistent_resolver_route_truth() -> None:
+    assert _provider_route_is_ready({
+        "status": "ready",
+        "route_disabled": False,
+        "route_pricing_verified": True,
+    }) is True
+    assert _provider_route_is_ready({
+        "status": "ready",
+        "route_disabled": True,
+        "route_pricing_verified": True,
+    }) is False
+    assert _provider_route_is_ready({
+        "status": "ready",
+        "route_disabled": False,
+        "route_pricing_verified": False,
+    }) is False
+    assert _provider_route_is_ready({
+        "status": "blocked",
+        "route_disabled": False,
+        "route_pricing_verified": True,
+    }) is False
 
 
 @pytest.mark.skipif(flask is None, reason="Flask is validated in the full backend CI image")
