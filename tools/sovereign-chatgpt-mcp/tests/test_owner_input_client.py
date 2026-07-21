@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from owner_input_client import ControllerRuntimeClient, OwnerInputClient
+from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 
 
 class FakeResponse:
@@ -303,6 +303,69 @@ def test_controller_external_event_rejects_secret_before_network(monkeypatch) ->
             summary="Exact-head workflow completed.",
             payload={"token": "sk-proj-" + "x" * 30},
         )
+    assert session.calls == []
+
+
+def test_provider_deployments_are_read_without_protected_values(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "PROVIDER_DEPLOYMENTS_READ",
+            "deployments": [{
+                "routeId": "litellm-admin-route-1",
+                "status": "awaiting_owner_input",
+                "keyFingerprintPresent": False,
+            }],
+            "protectedValuesReturned": False,
+        })
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    result = client.list_deployments()
+
+    call = session.calls[0]
+    assert call["method"] == "GET"
+    assert call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
+    assert result["protected_values_returned"] is False
+    assert result["deployments"][0]["routeId"] == "litellm-admin-route-1"
+
+
+def test_provider_activation_accepts_only_route_identity(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "ready",
+            "routeId": route_id,
+            "modelId": "sovereign-groq-model",
+        })
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    result = client.activate(route_id)
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == (
+        "http://backend:8787/api/internal/llm/provider-deployments/"
+        f"{route_id}/activate"
+    )
+    assert call["json"] is None
+    assert result["secret_argument_accepted"] is False
+    assert result["protected_values_returned"] is False
+
+
+def test_provider_activation_rejects_path_escape_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([])
+    client = ProviderRuntimeClient(session=session)
+
+    with pytest.raises(ValueError, match="route_id ist ungültig"):
+        client.activate("../../owner-secret")
     assert session.calls == []
 
 

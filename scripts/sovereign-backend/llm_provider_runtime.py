@@ -36,12 +36,20 @@ from llm_cost_policy import (
 _PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,47}$")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
 _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
+_ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 _DEFAULT_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
 
 
 def _secret_path() -> Path:
     root = Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", str(_DEFAULT_SECRET_ROOT))).resolve()
     return root / "litellm_provider_key.txt"
+
+
+def _service_authorized() -> bool:
+    expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
 
 # UI metadata only. No preset creates or activates a route.
 PROVIDER_PRESETS = (
@@ -592,6 +600,45 @@ def register_llm_provider_routes(
                ORDER BY deployment.updated_at DESC"""
         )
         return jsonify({"deployments": [dict(row) for row in (rows or [])]})
+
+    @app.route("/api/internal/llm/provider-deployments", methods=["GET"])
+    def internal_llm_provider_deployments():
+        if not _service_authorized():
+            return jsonify({"error": "Nicht autorisiert"}), 401
+        rows = query(
+            """SELECT deployment.route_id AS "routeId",
+                      deployment.provider_name AS "providerName",
+                      deployment.provider_prefix AS "providerPrefix",
+                      deployment.upstream_model_id AS "upstreamModelId",
+                      deployment.litellm_model_name AS "litellmModelName",
+                      deployment.billing_category AS "billingCategory",
+                      deployment.markup_multiplier AS "markupMultiplier",
+                      deployment.pricing_verified_at AS "pricingVerifiedAt",
+                      deployment.key_hint AS "keyHint", deployment.status,
+                      deployment.last_error_code AS "lastErrorCode",
+                      deployment.last_canary_request_id AS "lastCanaryRequestId",
+                      to_char(deployment.last_canary_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS "lastCanaryAt",
+                      deployment.owner_request_id::text AS "ownerRequestId",
+                      owner_request.status AS "ownerInputStatus",
+                      owner_request.result_code AS "ownerInputResultCode",
+                      COALESCE(route.config->>'fundingMode', 'provider_priced') AS "fundingMode",
+                      route.disabled AS "routeDisabled",
+                      COALESCE((route.config->>'pricingVerified')::boolean, false) AS "routePricingVerified",
+                      CASE WHEN deployment.key_fingerprint IS NULL THEN false ELSE true END AS "keyFingerprintPresent"
+               FROM llm_provider_deployments AS deployment
+               LEFT JOIN owner_input_requests AS owner_request
+                 ON owner_request.id=deployment.owner_request_id
+               LEFT JOIN llm_routes AS route
+                 ON route.id=deployment.route_id
+               ORDER BY deployment.updated_at DESC
+               LIMIT 100"""
+        )
+        return jsonify({
+            "ok": True,
+            "status": "PROVIDER_DEPLOYMENTS_READ",
+            "deployments": [dict(row) for row in (rows or [])],
+            "protectedValuesReturned": False,
+        })
 
     @app.route("/api/admin/llm/provider-deployments/prepare", methods=["POST"])
     @require_admin

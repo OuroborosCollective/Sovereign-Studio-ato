@@ -12,7 +12,7 @@ from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
 from document_pipeline import DocumentPipelineRuntime
-from owner_input_client import ControllerRuntimeClient, OwnerInputClient
+from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
 from runtime import OperatorRuntime
 from self_heal import REPAIR_ENGINE
@@ -76,6 +76,7 @@ database = DatabaseRuntime(runtime._repo)
 broker = HostBrokerClient()
 android = AndroidHardeningRuntime(runtime._repo, runtime._run, runtime._record_check)
 owner_input = OwnerInputClient()
+provider_runtime = ProviderRuntimeClient()
 controller_runtime = ControllerRuntimeClient()
 a2a_runtime = A2ARuntimeClient()
 document_pipeline = DocumentPipelineRuntime()
@@ -238,7 +239,7 @@ mcp = FastMCP(
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
-        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. "
+        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bestehende Fremdprovider-Routen verwende litellm_provider_deployments und litellm_provider_route_activate. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, LiteLLM-Registrierung, Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Nutze controller_run_external_event nur für exakt identifizierte externe GitHub-, Broker-, MCP-, Dokument- oder Datenbank-Evidence; das Tool darf weder Run-/Task-Status noch aktive Blocker verändern. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
         "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt ein echtes flüchtiges DOCX, konvertiert es über Gotenbergs LibreOffice-Pfad zu PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
@@ -671,6 +672,18 @@ def memory_gateway_collection_canary() -> dict[str, Any]:
 def litellm_provider_model_inventory() -> dict[str, Any]:
     """Return bounded model-id metadata from the protected OpenAI project without returning its key."""
     return broker.call("litellm_provider_model_inventory", {}, timeout=90)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def litellm_provider_deployments() -> dict[str, Any]:
+    """Read secret-free metadata for owner-managed LiteLLM provider deployments."""
+    return provider_runtime.list_deployments()
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def litellm_provider_route_activate(route_id: str) -> dict[str, Any]:
+    """Activate one existing owner-confirmed provider route; no secret argument is accepted."""
+    return provider_runtime.activate(route_id)
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
