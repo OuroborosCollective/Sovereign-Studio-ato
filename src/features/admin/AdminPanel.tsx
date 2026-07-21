@@ -63,6 +63,10 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ size?: number 
   { id: 'audit',    label: 'Audit',     icon: FileText },
 ];
 
+const ADMIN_SOURCE_REVISION =
+  (import.meta.env['VITE_SOVEREIGN_SOURCE_REVISION'] as string | undefined)?.trim()
+  || 'unverified';
+
 // ── API Key Setup ─────────────────────────────────────────────────────────────
 // Renders WITHOUT AdminGate — this IS the entry point for first-time admins.
 
@@ -252,7 +256,7 @@ function ReadyContent() {
 
 // ── Root panel ────────────────────────────────────────────────────────────────
 
-export function AdminPanel(_props: LauncherToolProps) {
+export function AdminPanel(_props?: LauncherToolProps) {
   const [ready, setReady] = useState(false);
 
   // On mount: if a key exists and user not yet in store, re-validate the key.
@@ -271,11 +275,17 @@ export function AdminPanel(_props: LauncherToolProps) {
       });
   }, []);
 
-  if (!ready) {
-    // API key setup renders WITHOUT AdminGate — this is intentional.
-    // The gate only wraps ReadyContent (below), after key is validated.
-    return <ApiKeySetup onReady={() => setReady(true)} />;
-  }
-
-  return <ReadyContent />;
+  return (
+    <div
+      className="admin-runtime-root"
+      data-testid="sovereign-react-admin-root"
+      data-admin-producer="react-admin-dist"
+      data-source-revision={ADMIN_SOURCE_REVISION}
+      style={{ minHeight: '100dvh' }}
+    >
+      {ready
+        ? <ReadyContent />
+        : <ApiKeySetup onReady={() => setReady(true)} />}
+    </div>
+  );
 }

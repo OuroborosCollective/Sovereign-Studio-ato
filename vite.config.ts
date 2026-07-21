@@ -6,9 +6,10 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig(() => {
   const enableSourcemaps = process.env.VITE_BUILD_SOURCEMAP === 'true';
   const e2eBackendProxyTarget = process.env.SOVEREIGN_E2E_BACKEND_PROXY_TARGET?.trim();
+  const buildBasePath = process.env.VITE_BASE_PATH?.trim() || './';
 
   return {
-    base: './',
+    base: buildBasePath,
     plugins: [
       react(),
       tailwindcss(),

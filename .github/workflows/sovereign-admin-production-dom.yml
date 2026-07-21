@@ -1,0 +1,86 @@
+name: Sovereign Admin Production DOM
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact deployed 40-character source revision
+        required: true
+        type: string
+      production_url:
+        description: Public backend origin without /admin
+        required: false
+        default: https://sovereign-backend.arelorian.de
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-admin-production-dom-${{ inputs.expected_revision }}
+  cancel-in-progress: false
+
+jobs:
+  production-dom:
+    name: Exact production React admin DOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate requested revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ '${{ inputs.expected_revision }}' =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout exact deployed revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_revision }}
+          fetch-depth: 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install exact dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify exact live React admin DOM and bundled Free Revolver
+        env:
+          SOVEREIGN_ADMIN_PRODUCTION_URL: ${{ inputs.production_url }}
+          SOVEREIGN_EXPECTED_REVISION: ${{ inputs.expected_revision }}
+        run: pnpm exec playwright test --config=playwright.admin-production.config.ts
+
+      - name: Upload bounded failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-admin-production-dom-${{ inputs.expected_revision }}
+          path: |
+            playwright-report/admin-production
+            test-results
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Report revision-bound production evidence
+        if: success()
+        run: |
+          {
+            echo '### Sovereign Admin Production DOM'
+            echo '- Revision: `${{ inputs.expected_revision }}`'
+            echo '- Producer: `react-admin-dist`'
+            echo '- React DOM: `verified`'
+            echo '- Free Revolver bundle: `verified`'
+            echo '- Legacy embedded admin: `absent`'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -8,10 +8,13 @@ This ensures the tests verify the real implementation.
 import unittest
 import sys
 import os
+import tempfile
+from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import app as app_module
 from app import _DEFAULT_RUNTIME_CONFIG, _effective_cors_origins, app
 
 # These tests verify the actual function signatures and logic
@@ -307,24 +310,60 @@ class TestHealthcheckArchitecture(unittest.TestCase):
 
 
 class TestAdminRuntimeTruth(unittest.TestCase):
-    """Tests ensuring /admin serves only the enterprise UI truth."""
+    """Tests ensuring /admin has one React producer and no legacy fallback."""
 
-    def test_legacy_admin_panel_html_literal_absent(self):
-        """The historical _ADMIN_PANEL_HTML literal must not exist."""
+    def setUp(self):
+        self.original_dist_root = app_module.ADMIN_DIST_ROOT
+
+    def tearDown(self):
+        app_module.ADMIN_DIST_ROOT = self.original_dist_root
+
+    def test_legacy_admin_producer_is_absent_from_active_app(self):
         app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
         with open(app_path) as f:
             content = f.read()
-        self.assertNotIn("_ADMIN_PANEL_HTML = r\"\"\"", content)
-        self.assertNotIn("_ADMIN_PANEL_HTML = ENTERPRISE_ADMIN_HTML", content)
+        self.assertNotIn("ENTERPRISE_ADMIN_HTML", content)
+        self.assertNotIn("from enterprise_admin_ui import", content)
+        self.assertIn('ADMIN_UI_PRODUCER = "react-admin-dist"', content)
+        self.assertIn('"react_admin_artifact_missing"', content)
 
-    def test_admin_route_uses_enterprise_html_only(self):
-        """/admin must return ENTERPRISE_ADMIN_HTML and not refer to legacy sources."""
-        app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
-        with open(app_path) as f:
-            content = f.read()
-        self.assertIn("ENTERPRISE_ADMIN_HTML", content)
-        self.assertIn("def admin_panel", content)
-        self.assertNotIn("_ADMIN_PANEL_HTML", content)
+    def test_admin_fails_closed_when_react_artifact_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app_module.ADMIN_DIST_ROOT = Path(tmp).resolve()
+            response = app.test_client().get("/admin/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["blocker"], "react_admin_artifact_missing")
+        self.assertEqual(response.headers["X-Sovereign-Admin-Producer"], "react-admin-dist")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_admin_serves_index_and_assets_from_same_react_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            assets = root / "assets"
+            assets.mkdir()
+            (root / "index.html").write_text(
+                '<div id="root" data-testid="sovereign-react-admin-root"></div>',
+                encoding="utf-8",
+            )
+            (assets / "admin.js").write_text("console.log('admin')", encoding="utf-8")
+            app_module.ADMIN_DIST_ROOT = root
+            client = app.test_client()
+            index_response = client.get("/admin/")
+            asset_response = client.get("/admin/assets/admin.js")
+
+        self.assertEqual(index_response.status_code, 200)
+        self.assertIn(b"sovereign-react-admin-root", index_response.data)
+        self.assertEqual(index_response.headers["X-Sovereign-Admin-Producer"], "react-admin-dist")
+        self.assertEqual(index_response.headers["Cache-Control"], "no-store")
+        self.assertEqual(asset_response.status_code, 200)
+        self.assertIn(b"console.log", asset_response.data)
+        self.assertIn("immutable", asset_response.headers["Cache-Control"])
+
+    def test_admin_root_redirects_to_canonical_trailing_slash(self):
+        response = app.test_client().get("/admin", follow_redirects=False)
+        self.assertEqual(response.status_code, 308)
+        self.assertEqual(response.headers["Location"], "/admin/")
+        self.assertEqual(response.headers["X-Sovereign-Admin-Producer"], "react-admin-dist")
 
 
 class TestAppRunPlacement(unittest.TestCase):

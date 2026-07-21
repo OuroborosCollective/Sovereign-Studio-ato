@@ -56,7 +56,7 @@ test('database and deploy path enforce internal, fail-closed migrations', () => 
   assert.match(bootstrap, /WHERE NOT EXISTS[\s\S]*credit_packages/);
 
   const dockerfile = read('scripts/sovereign-backend/Dockerfile');
-  assert.match(dockerfile, /COPY migrations/);
+  assert.match(dockerfile, /COPY (?:scripts\/sovereign-backend\/)?migrations/);
   const migrate = read('scripts/sovereign-backend/auto-migrate.sh');
   assert.match(migrate, /ON_ERROR_STOP=1/);
   assert.match(migrate, /find "\$\{MIGRATION_DIR\}"[\s\S]*\| sort/);

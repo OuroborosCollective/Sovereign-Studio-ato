@@ -4,6 +4,7 @@ import { Provider } from 'react-redux';
 import posthog from 'posthog-js';
 import App from './SovereignAppWrapper';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AdminPanel } from './features/admin/AdminPanel';
 import { flushCanvasStateMirror, restoreCanvasStateMirror, store } from './store';
 import {
   SOVEREIGN_WORKSPACE_COMMAND_EVENT,
@@ -339,11 +340,13 @@ function bootApp(): void {
     return;
   }
 
+  const isAdminSurface = /^\/admin(?:\/|$)/.test(window.location.pathname);
+
   createRoot(container).render(
     <StrictMode>
       <ErrorBoundary>
         <Provider store={store}>
-          <App />
+          {isAdminSurface ? <AdminPanel /> : <App />}
         </Provider>
       </ErrorBoundary>
     </StrictMode>,

@@ -17,6 +17,7 @@ import time
 import urllib.parse
 import uuid
 from functools import wraps
+from pathlib import Path
 
 # Import OAuth Security Module
 from security_oauth import (
@@ -33,7 +34,7 @@ from security_oauth import (
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-from flask import Flask, jsonify, request, make_response, g
+from flask import Flask, jsonify, request, make_response, g, redirect, send_from_directory
 from flask_cors import CORS
 import requests
 
@@ -88,7 +89,6 @@ from proven_learning_runtime import register_proven_learning_routes
 from llm_provider_runtime import register_llm_provider_routes
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
-from enterprise_admin_ui import ENTERPRISE_ADMIN_HTML
 
 # GitHub App integration (Marketplace)
 try:
@@ -134,6 +134,11 @@ def fetch_worker_ai(path: str, method: str = "GET", json_data: dict = None) -> t
         return None, f"Worker AI request failed: {e}"
 
 app = Flask(__name__)
+
+ADMIN_DIST_ROOT = Path(
+    os.getenv("SOVEREIGN_ADMIN_DIST_ROOT", "/app/admin-dist")
+).resolve()
+ADMIN_UI_PRODUCER = "react-admin-dist"
 
 _REQUIRED_NATIVE_CORS_ORIGINS: tuple[str, ...] = (
     "https://localhost",
@@ -2072,6 +2077,8 @@ def health():
         "status": "live",
         "sourceRevision": os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified"),
         "imageDigest": os.getenv("SOVEREIGN_IMAGE_DIGEST", "unverified"),
+        "adminProducer": ADMIN_UI_PRODUCER,
+        "adminArtifactReady": _admin_artifact_ready(),
     })
 
 
@@ -2154,11 +2161,17 @@ def health_ready():
         "httpStatus": lite.get("httpStatus"),
         "errorCode": lite.get("errorCode") if not lite.get("ok") else None,
     }
+    components["adminUi"] = {
+        "ok": _admin_artifact_ready(),
+        "producer": ADMIN_UI_PRODUCER,
+        "blocker": None if _admin_artifact_ready() else "react_admin_artifact_missing",
+    }
     database = components["database"]
     ready = bool(
         database.get("ok")
         and not database.get("invalidDirectRoutes")
         and components["litellm"].get("ok")
+        and components["adminUi"].get("ok")
     )
     return jsonify({
         "ok": ready,
@@ -5314,13 +5327,54 @@ def tc_skills_delete(skill_id: str):
 
 
 
+def _admin_artifact_ready() -> bool:
+    return (ADMIN_DIST_ROOT / "index.html").is_file()
+
+
+def _stamp_admin_response(response, *, cache_control: str):
+    response.headers["Cache-Control"] = cache_control
+    response.headers["X-Sovereign-Admin-Producer"] = ADMIN_UI_PRODUCER
+    response.headers["X-Sovereign-Source-Revision"] = os.getenv(
+        "SOVEREIGN_SOURCE_REVISION",
+        "unverified",
+    )
+    return response
+
+
+def _serve_react_admin(asset_path: str = ""):
+    if not _admin_artifact_ready():
+        response = jsonify({
+            "ok": False,
+            "status": "blocked",
+            "blocker": "react_admin_artifact_missing",
+            "producer": ADMIN_UI_PRODUCER,
+            "sourceRevision": os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified"),
+        })
+        response.status_code = 503
+        return _stamp_admin_response(response, cache_control="no-store")
+
+    requested = (ADMIN_DIST_ROOT / asset_path).resolve() if asset_path else None
+    if requested is not None and requested.is_file() and ADMIN_DIST_ROOT in requested.parents:
+        response = send_from_directory(str(ADMIN_DIST_ROOT), asset_path)
+        return _stamp_admin_response(
+            response,
+            cache_control="public, max-age=31536000, immutable",
+        )
+
+    response = send_from_directory(str(ADMIN_DIST_ROOT), "index.html")
+    return _stamp_admin_response(response, cache_control="no-store")
+
+
 @app.route("/admin")
+def admin_panel_redirect():
+    response = redirect("/admin/", code=308)
+    return _stamp_admin_response(response, cache_control="no-store")
+
+
 @app.route("/admin/")
-def admin_panel():
-    resp = make_response(ENTERPRISE_ADMIN_HTML)
-    resp.headers["Content-Type"] = "text/html; charset=utf-8"
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
+@app.route("/admin/<path:asset_path>")
+def admin_panel(asset_path: str = ""):
+    return _serve_react_admin(asset_path)
 
 
 

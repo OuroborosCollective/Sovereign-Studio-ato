@@ -1,0 +1,10 @@
+# Canonical ownership for release-critical Sovereign Studio paths.
+* @OuroborosCollective
+
+/.github/workflows/ @OuroborosCollective
+/scripts/sovereign-backend/ @OuroborosCollective
+/src/features/admin/ @OuroborosCollective
+/src/main.tsx @OuroborosCollective
+/vite.config.ts @OuroborosCollective
+/package.json @OuroborosCollective
+/pnpm-lock.yaml @OuroborosCollective

@@ -8,10 +8,12 @@
  * Issue #460
  */
 
-// Resolved at build time by Vite; falls back to production URL.
+// Resolved at build time by Vite. The backend-served admin uses same-origin
+// requests by default, so UI and API cannot silently drift to different releases.
 export const ADMIN_API_BASE: string =
-  (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ||
-  'https://sovereign-backend.arelorian.de';
+  ((import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined) ?? '')
+    .trim()
+    .replace(/\/+$/, '');
 
 let adminKeyInMemory = '';
 

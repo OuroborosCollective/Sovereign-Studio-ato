@@ -5,7 +5,18 @@ on:
     branches: [main]
     paths:
       - 'scripts/sovereign-backend/**'
+      - 'src/features/admin/**'
+      - 'src/main.tsx'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'scripts/release-html-runtime-fix.mjs'
+      - 'scripts/copy-dist-to-android.mjs'
+      - 'scripts/sovereign-static-audit.mjs'
       - 'tools/sovereign-chatgpt-mcp/**'
+      - '.dockerignore'
+      - '.github/CODEOWNERS'
       - '.github/workflows/sovereign-backend-image.yml'
   push:
     branches: [main]
@@ -68,9 +79,10 @@ jobs:
         id: image
         uses: docker/build-push-action@v6
         with:
-          context: scripts/sovereign-backend
+          context: .
           file: scripts/sovereign-backend/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           build-args: |
             SOVEREIGN_SOURCE_REVISION=${{ github.sha }}
@@ -82,6 +94,53 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Pull published image for exact-image smoke
+        if: github.event_name != 'pull_request'
+        run: docker pull "${IMAGE_NAME}:${GITHUB_SHA}"
+
+      - name: Verify React admin inside exact immutable image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${IMAGE_NAME}:${GITHUB_SHA}"
+          revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image}")"
+          test "${revision}" = "${GITHUB_SHA}"
+          docker run --rm --entrypoint /bin/sh "${image}" -c '
+            test -f /app/admin-dist/index.html
+            grep -R --fixed-strings "react-admin-dist" /app/admin-dist >/dev/null
+            test ! -f /app/enterprise_admin_ui.py
+          '
+          container="sovereign-admin-image-smoke-${GITHUB_RUN_ID}"
+          trap 'docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
+          docker run -d --name "${container}" \
+            -e SOVEREIGN_SOURCE_REVISION="${GITHUB_SHA}" \
+            -p 127.0.0.1:18787:8787 \
+            --entrypoint gunicorn \
+            "${image}" \
+            --bind 0.0.0.0:8787 --worker-class gthread --workers 1 --threads 2 --timeout 30 app:app
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:18787/health/live > health.json; then
+              break
+            fi
+            sleep 1
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('health.json').read_text('utf-8'))
+          assert payload['sourceRevision'] == '${{ github.sha }}', payload
+          assert payload['adminProducer'] == 'react-admin-dist', payload
+          assert payload['adminArtifactReady'] is True, payload
+          PY
+          curl --fail --silent --show-error \
+            -D admin-headers.txt \
+            http://127.0.0.1:18787/admin/ \
+            -o admin-index.html
+          grep -i '^X-Sovereign-Admin-Producer: react-admin-dist' admin-headers.txt
+          grep -i '^X-Sovereign-Source-Revision: ${{ github.sha }}' admin-headers.txt
+          grep --fixed-strings 'data-sovereign-bundle="react-admin-dist"' admin-index.html
+          grep --fixed-strings '/admin/assets/' admin-index.html
 
       - name: Report immutable image evidence
         run: |
