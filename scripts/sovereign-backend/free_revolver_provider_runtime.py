@@ -1163,10 +1163,17 @@ def register_free_revolver_provider_runtime(
                         },
                         key,
                     )
-                except (ArithmeticError, TypeError, ValueError):
+                except (ArithmeticError, TypeError, ValueError) as exc:
+                    error_type = re.sub(
+                        r"[^a-z0-9]+", "_", type(exc).__name__.lower()
+                    ).strip("_")[:40]
                     result = {
                         "ok": False,
-                        "blocker": "freellm_model_activation_invalid_evidence",
+                        "blocker": (
+                            f"freellm_model_activation_{error_type}"
+                            if error_type
+                            else "freellm_model_activation_invalid_evidence"
+                        ),
                     }
                 if result.get("ok"):
                     ready.append({
