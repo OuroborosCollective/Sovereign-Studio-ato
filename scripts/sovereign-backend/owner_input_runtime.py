@@ -38,6 +38,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 8192,
         "kind": "credential",
     },
+    "openrouter_api_key": {
+        "label": "Direkter OpenRouter-Zugang für bezahlte Agenten",
+        "fieldLabel": "OpenRouter API-Key",
+        "path": "/opt/sovereign-owner-managed/openrouter_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "credential",
+    },
     "revolver_provider_key": {
         "label": "Einmaliger Free-Revolver Provider-Zugang",
         "fieldLabel": "Free-Provider API-Key",
@@ -73,6 +80,7 @@ def _target_map() -> dict[str, dict[str, Any]]:
     targets = {key: dict(value) for key, value in DEFAULT_TARGETS.items()}
     targets["openai_api_key"]["path"] = str(_root() / "openai_api_key.txt")
     targets["litellm_provider_key"]["path"] = str(_root() / "litellm_provider_key.txt")
+    targets["openrouter_api_key"]["path"] = str(_root() / "openrouter_api_key.txt")
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")
     configured = os.getenv("SOVEREIGN_OWNER_INPUT_TARGETS_JSON", "").strip()

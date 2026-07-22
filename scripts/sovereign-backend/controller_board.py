@@ -33,9 +33,19 @@ from agent_runtime.cognitive_run_store import (
 )
 from agent_runtime.cognitive_swarm_agents import SwarmExecutionError, classify_mission_intent
 from agent_runtime.cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
-from agent_runtime.cognitive_swarm_routes import _persist_billing_blocker, execute_persisted_swarm
+from agent_runtime.cognitive_swarm_routes import (
+    _persist_billing_blocker,
+    _persist_execution_resolution_blocker,
+    execute_persisted_swarm,
+)
 from agent_runtime.cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
+from llm_execution_resolver import (
+    PAID_SWARM_PROFILE,
+    ExecutionResolutionError,
+    load_execution_resolution,
+)
+from llm_transport import route_provider_model
 from security_oauth import _decrypt_token
 
 
@@ -300,6 +310,7 @@ def register_controller_board_routes(
         body = request.get_json(force=True) or {}
         mission = str(body.get("mission") or "").strip()
         evidence = str(body.get("evidence") or "").strip()
+        requested_mode = str(body.get("mode") or "paid").strip().lower()
         if not mission:
             return _operator_json({"error": "mission is required"}, 400)
         if len(mission) > 20_000:
@@ -341,14 +352,82 @@ def register_controller_board_routes(
             _close(conn)
 
         try:
+            execution_resolution = load_execution_resolution(
+                get_connection,
+                user_id=owner_id,
+                requested_mode=requested_mode,
+            )
+        except (ExecutionResolutionError, LookupError) as exc:
+            family = (
+                exc.failure_family
+                if isinstance(exc, ExecutionResolutionError)
+                else "AGENT_BILLING_USER_NOT_FOUND"
+            )
+            status_code = (
+                exc.status_code
+                if isinstance(exc, ExecutionResolutionError)
+                else 404
+            )
+            state = _persist_execution_resolution_blocker(
+                get_connection,
+                user_id=owner_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                status="BLOCKED",
+                blocker=family,
+                reason=str(exc),
+                next_action="REPAIR_OR_SELECT_VERIFIED_EXECUTION_ROUTE",
+                error_type=type(exc).__name__,
+            )
+            return _operator_json({
+                "ok": False,
+                "runId": run_id,
+                "status": state["status"],
+                "blocker": family,
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+                "requestedMode": requested_mode,
+                "protectedValuesReturned": False,
+            }, status_code)
+        if (
+            execution_resolution is None
+            or execution_resolution.profile_id != PAID_SWARM_PROFILE
+        ):
+            state = _persist_execution_resolution_blocker(
+                get_connection,
+                user_id=owner_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                status="BLOCKED",
+                blocker="CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
+                reason="The six-agent controller requires a verified paid OpenRouter profile.",
+                next_action="USE_USER_SWARM_ENDPOINT_FOR_FREE_SINGLE_AGENT",
+            )
+            return _operator_json({
+                "ok": False,
+                "runId": run_id,
+                "status": state["status"],
+                "blocker": "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+                "requestedMode": requested_mode,
+                "protectedValuesReturned": False,
+            }, 409)
+        resolved_model = route_provider_model(execution_resolution.primary_route)
+        try:
             stage_billing = AgentStageBilling(
                 get_connection=get_connection,
                 user_id=owner_id,
                 run_id=run_id,
                 trace_id=trace_id,
+                main_route=execution_resolution.primary_route,
+                agent_route=execution_resolution.agent_route,
+                requested_mode=execution_resolution.requested_mode,
             )
             mission_intent = asyncio.run(classify_mission_intent(
                 mission,
+                model=resolved_model,
+                route=execution_resolution.primary_route,
                 stage_billing=stage_billing,
             ))
         except AgentBillingError as exc:
@@ -544,7 +623,9 @@ def register_controller_board_routes(
             trace_id=trace_id,
             mission=mission,
             evidence=evidence,
-            model=None,
+            model=resolved_model,
+            route=execution_resolution.primary_route,
+            agent_route=execution_resolution.agent_route,
             repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
             repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
             job_id=implementation_job.job_id if implementation_job else None,
@@ -557,6 +638,7 @@ def register_controller_board_routes(
                 "operatorBridge": True,
                 "receivedEvidenceId": received_state["evidenceId"],
                 "intent": mission_intent.model_dump(),
+                "executionResolution": execution_resolution.safe_payload(),
                 "jobId": implementation_job.job_id if implementation_job else None,
                 "workspaceId": implementation_job.result.workspace_id if implementation_job else None,
                 "learningState": "PENDING_EVIDENCE" if implementation_job else "NOT_REQUESTED",
@@ -714,6 +796,7 @@ def register_controller_board_routes(
             return _operator_json({"error": "not authorized"}, 401)
         body = request.get_json(force=True) or {}
         evidence = str(body.get("evidence") or "").strip()
+        requested_mode = str(body.get("mode") or "paid").strip().lower()
         if len(evidence) > 250_000:
             return _operator_json({"error": "evidence exceeds the bounded input limit"}, 400)
         if _operator_contains_secret(evidence):
@@ -758,11 +841,81 @@ def register_controller_board_routes(
             _close(conn)
 
         try:
+            execution_resolution = load_execution_resolution(
+                get_connection,
+                user_id=owner_id,
+                requested_mode=requested_mode,
+            )
+        except (ExecutionResolutionError, LookupError) as exc:
+            family = (
+                exc.failure_family
+                if isinstance(exc, ExecutionResolutionError)
+                else "AGENT_BILLING_USER_NOT_FOUND"
+            )
+            status_code = (
+                exc.status_code
+                if isinstance(exc, ExecutionResolutionError)
+                else 404
+            )
+            state = _persist_execution_resolution_blocker(
+                get_connection,
+                user_id=owner_id,
+                run_id=claim.run.run_id,
+                trace_id=trace_id,
+                status="BLOCKED",
+                blocker=family,
+                reason=str(exc),
+                next_action="REPAIR_OR_SELECT_VERIFIED_EXECUTION_ROUTE",
+                error_type=type(exc).__name__,
+                task_id=claim.task_id,
+                expected_lease_token=claim.lease_token,
+            )
+            return _operator_json({
+                "ok": False,
+                "runId": claim.run.run_id,
+                "status": state["status"],
+                "blocker": family,
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+                "requestedMode": requested_mode,
+                "protectedValuesReturned": False,
+            }, status_code)
+        if (
+            execution_resolution is None
+            or execution_resolution.profile_id != PAID_SWARM_PROFILE
+        ):
+            state = _persist_execution_resolution_blocker(
+                get_connection,
+                user_id=owner_id,
+                run_id=claim.run.run_id,
+                trace_id=trace_id,
+                status="BLOCKED",
+                blocker="CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
+                reason="The six-agent controller cannot change transport mid-run.",
+                next_action="START_NEW_FREE_SINGLE_AGENT_RUN",
+                task_id=claim.task_id,
+                expected_lease_token=claim.lease_token,
+            )
+            return _operator_json({
+                "ok": False,
+                "runId": claim.run.run_id,
+                "status": state["status"],
+                "blocker": "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+                "requestedMode": requested_mode,
+                "protectedValuesReturned": False,
+            }, 409)
+        resolved_model = route_provider_model(execution_resolution.primary_route)
+        try:
             stage_billing = AgentStageBilling(
                 get_connection=get_connection,
                 user_id=owner_id,
                 run_id=claim.run.run_id,
                 trace_id=trace_id,
+                main_route=execution_resolution.primary_route,
+                agent_route=execution_resolution.agent_route,
+                requested_mode=execution_resolution.requested_mode,
             )
         except AgentBillingError as exc:
             try:
@@ -854,7 +1007,9 @@ def register_controller_board_routes(
             trace_id=trace_id,
             mission=claim.run.mission_summary,
             evidence=execution_evidence,
-            model=None,
+            model=resolved_model,
+            route=execution_resolution.primary_route,
+            agent_route=execution_resolution.agent_route,
             task_id=claim.task_id,
             lease_token=claim.lease_token,
             repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
@@ -867,6 +1022,7 @@ def register_controller_board_routes(
                 "resumed": True,
                 "operatorBridge": True,
                 "resumeClaimEvidenceId": claim.evidence_id,
+                "executionResolution": execution_resolution.safe_payload(),
                 "recoveryTask": {
                     "taskId": claim.task_id,
                     "workPackage": claim.work_package,
@@ -1328,29 +1484,35 @@ _CONTROLLER_HTML = r"""<!doctype html>
 <title>Sovereign Controller</title>
 <style>
 :root{color-scheme:dark;--bg:#080b10;--panel:#121821;--panel2:#19212c;--line:#2b3542;--text:#edf3f8;--muted:#91a0af;--ok:#52d273;--warn:#f1b84b;--bad:#ff6b6b;--accent:#69a7ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min-height:100vh}button,input,textarea{font:inherit}button{min-height:48px;border:0;border-radius:12px;padding:.7rem 1rem;font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#07111f}.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}.danger{background:#632b32;color:#fff}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}input,textarea{width:100%;min-height:48px;background:#0b1017;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:.8rem}textarea{min-height:110px;resize:vertical}.shell{width:min(100%,1100px);margin:auto;padding:max(12px,env(safe-area-inset-top)) 12px max(20px,env(safe-area-inset-bottom))}.top{position:sticky;top:0;z-index:5;background:rgba(8,11,16,.94);backdrop-filter:blur(12px);padding:8px 0 12px}.head{display:flex;align-items:center;gap:10px}.head h1{font-size:1.05rem;margin:0}.head .state{margin-left:auto;font-size:.78rem}.tabs{display:flex;gap:8px;overflow:auto;padding-top:10px}.tabs button{white-space:nowrap;background:var(--panel);color:var(--muted);border:1px solid var(--line)}.tabs button.active{color:var(--text);border-color:var(--accent)}.view{display:none}.view.active{display:block}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{background:var(--panel2);border-radius:13px;padding:12px}.metric strong{display:block;font-size:1.45rem}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.badge{display:inline-flex;align-items:center;min-height:26px;padding:3px 9px;border-radius:999px;background:var(--panel2);font-size:.72rem;border:1px solid var(--line)}.list{display:grid;gap:8px}.item{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px;overflow-wrap:anywhere}.item h3{font-size:.92rem;margin:0 0 5px}.item p{font-size:.8rem;margin:4px 0;color:var(--muted)}.auth{width:min(100%,440px);margin:10vh auto}.hidden{display:none!important}.code{font-family:ui-monospace,monospace;font-size:.72rem;white-space:pre-wrap;overflow-wrap:anywhere}.timeline{border-left:2px solid var(--line);padding-left:12px}.timeline .item{margin:8px 0}.split{display:grid;gap:10px}.link{color:var(--accent);text-decoration:none}.notice{border-left:4px solid var(--warn)}@media(min-width:720px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.split{grid-template-columns:1fr 1fr}.shell{padding-inline:20px}}@media(max-width:420px){.head h1{font-size:.95rem}.card{padding:12px}.tabs button{padding:.65rem .8rem}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min-height:100vh}button,input,textarea,select{font:inherit}button{min-height:48px;border:0;border-radius:12px;padding:.7rem 1rem;font-weight:700;cursor:pointer}.primary{background:var(--accent);color:#07111f}.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}.danger{background:#632b32;color:#fff}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}input,textarea,select{width:100%;min-height:48px;background:#0b1017;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:.8rem}select{margin-top:5px}textarea{min-height:110px;resize:vertical}.shell{width:min(100%,1100px);margin:auto;padding:max(12px,env(safe-area-inset-top)) 12px max(20px,env(safe-area-inset-bottom))}.top{position:sticky;top:0;z-index:5;background:rgba(8,11,16,.94);backdrop-filter:blur(12px);padding:8px 0 12px}.head{display:flex;align-items:center;gap:10px}.head h1{font-size:1.05rem;margin:0}.head .state{margin-left:auto;font-size:.78rem}.tabs{display:flex;gap:8px;overflow:auto;padding-top:10px}.tabs button{white-space:nowrap;background:var(--panel);color:var(--muted);border:1px solid var(--line)}.tabs button.active{color:var(--text);border-color:var(--accent)}.view{display:none}.view.active{display:block}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{background:var(--panel2);border-radius:13px;padding:12px}.metric strong{display:block;font-size:1.45rem}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.badge{display:inline-flex;align-items:center;min-height:26px;padding:3px 9px;border-radius:999px;background:var(--panel2);font-size:.72rem;border:1px solid var(--line)}.list{display:grid;gap:8px}.item{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px;overflow-wrap:anywhere}.item h3{font-size:.92rem;margin:0 0 5px}.item p{font-size:.8rem;margin:4px 0;color:var(--muted)}.auth{width:min(100%,440px);margin:10vh auto}.hidden{display:none!important}.code{font-family:ui-monospace,monospace;font-size:.72rem;white-space:pre-wrap;overflow-wrap:anywhere}.timeline{border-left:2px solid var(--line);padding-left:12px}.timeline .item{margin:8px 0}.split{display:grid;gap:10px}.link{color:var(--accent);text-decoration:none}.notice{border-left:4px solid var(--warn)}@media(min-width:720px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.split{grid-template-columns:1fr 1fr}.shell{padding-inline:20px}}@media(max-width:420px){.head h1{font-size:.95rem}.card{padding:12px}.tabs button{padding:.65rem .8rem}}
 </style></head><body><main class="shell">
 <section id="login" class="auth card"><h1>Sovereign Controller</h1><p class="muted">Diese Anmeldung erzeugt die echte Sovereign-Benutzersitzung für Agents-SDK-Läufe.</p><input id="email" type="email" placeholder="E-Mail" autocomplete="username"><input id="password" type="password" placeholder="Passwort" autocomplete="current-password" style="margin-top:8px"><button class="primary" style="width:100%;margin-top:10px" onclick="login()">Anmelden</button><p id="loginMsg" class="bad"></p></section>
 <section id="app" class="hidden"><div class="top"><div class="head"><h1>Sovereign Controller Board</h1><span id="sessionState" class="state badge">Sitzung wird geprüft</span><button class="ghost" onclick="logout()">Abmelden</button></div><div class="tabs"><button class="active" data-view="overview">Monitor</button><button data-view="agents">Agenten</button><button data-view="code">Code</button><button data-view="playwright">Playwright</button><button data-view="approvals">Bestätigungen</button><button data-view="admin">Admin</button></div></div>
 <section id="overview" class="view active"><div id="metrics" class="grid"></div><div class="split"><div class="card"><div class="row between"><h2>Aktive Agenten</h2><button class="ghost" onclick="refreshAll()">Aktualisieren</button></div><div id="activeAgents" class="list"></div></div><div class="card"><h2>Letzte Runs</h2><div id="recentRuns" class="list"></div></div></div></section>
-<section id="agents" class="view"><div class="card"><h2>Neue Agents-SDK-Mission</h2><textarea id="mission" placeholder="Mission ohne Secrets"></textarea><textarea id="evidence" placeholder="Optionale Runtime-Evidence ohne Zugangsdaten" style="margin-top:8px"></textarea><div class="row" style="margin-top:10px"><button class="primary" onclick="startMission()">Mission starten</button><span id="missionMsg" class="muted"></span></div></div><div class="card"><h2>Run-Status</h2><div id="runs" class="list"></div></div><div id="runDetail" class="card hidden"></div></section>
+<section id="agents" class="view"><div class="card"><h2>Neue Agents-SDK-Mission</h2><textarea id="mission" placeholder="Mission ohne Secrets"></textarea><textarea id="evidence" placeholder="Optionale Runtime-Evidence ohne Zugangsdaten" style="margin-top:8px"></textarea><div class="split" style="margin-top:10px"><label class="muted">Ausführungsmodus<select id="executionMode" onchange="syncExecutionMode()"><option value="auto">Automatisch (Paid, sonst Free)</option><option value="paid">Paid · OpenRouter + 6 Agenten</option><option value="free">Free · FreeLLM, 1 Agent</option></select></label><span></span></div><div id="paidModelSelection" class="split" style="margin-top:10px"><label class="muted">Paid-Hauptmodell<select id="mainModel" onchange="renderModelPrice()"></select></label><label class="muted">Gemeinsames Modell der 6 Agenten<select id="agentModel" onchange="renderModelPrice()"></select></label></div><p id="modelPrice" class="muted">OpenRouter-Katalog wird geladen…</p><div class="row" style="margin-top:10px"><button class="primary" onclick="startMission()">Mission starten</button><span id="missionMsg" class="muted"></span></div></div><div class="card"><h2>Run-Status</h2><div id="runs" class="list"></div></div><div id="runDetail" class="card hidden"></div></section>
 <section id="code" class="view"><div class="card"><div class="row between"><h2>Commits & Änderungen</h2><button class="ghost" onclick="loadGithub()">Neu laden</button></div><div id="latestCommit"></div><div id="commits" class="list"></div></div></section>
 <section id="playwright" class="view"><div id="playwrightMetrics" class="grid"></div><div class="card"><h2>Playwright / E2E Evidence</h2><p class="muted">Nur echte GitHub-Actions-Läufe; keine simulierten Browserzustände.</p><div id="playwrightRuns" class="list"></div></div><div class="card"><h2>Weitere Workflows</h2><div id="workflowRuns" class="list"></div></div></section>
 <section id="approvals" class="view"><div class="card notice"><h2>Bestätigungen des aktiven Nutzers</h2><p class="muted">Zustimmung speichert Evidence und startet anschließend den echten Resume-Pfad. Geschützte Eingaben bleiben im Owner-Panel.</p><div id="approvalList" class="list"></div></div></section>
 <section id="admin" class="view"><div class="card"><h2>Admin-Unlock</h2><p class="muted">Der Admin-Key bleibt nur im Arbeitsspeicher dieser Seite und wird nicht gespeichert.</p><input id="adminKey" type="password" placeholder="Admin API Key" autocomplete="off"><div class="row" style="margin-top:10px"><button class="primary" onclick="unlockAdmin()">Admin prüfen</button><button class="ghost" onclick="lockAdmin()">Sperren</button></div><p id="adminMsg" class="muted"></p></div><div class="card"><h2>Owner-Anfragen</h2><div id="ownerRequests" class="list"><p class="muted">Admin-Unlock erforderlich.</p></div></div></section>
 </section></main><script>
-let state={user:null,overview:null,github:null,adminKey:'',timer:null};const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let state={user:null,overview:null,github:null,modelCatalog:null,adminKey:'',timer:null};const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,opt={}){const r=await fetch(path,{credentials:'include',...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={error:t}}if(!r.ok)throw Object.assign(new Error(d.error||('HTTP '+r.status)),{status:r.status,data:d});return d}
 async function login(){const password=$('password');try{await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:$('email').value.trim(),password:password.value})});password.value='';await boot()}catch(e){password.value='';$('loginMsg').textContent=e.message}}
 async function logout(){if(state.timer)clearInterval(state.timer);state.timer=null;state.adminKey='';try{await api('/api/auth/logout',{method:'POST',body:'{}'})}finally{location.reload()}}
 async function boot(){try{state.user=await api('/api/auth/me');$('login').classList.add('hidden');$('app').classList.remove('hidden');$('sessionState').textContent=state.user.email+' · '+state.user.role;await refreshAll();if(state.timer)clearInterval(state.timer);state.timer=setInterval(refreshAll,15000)}catch(e){$('app').classList.add('hidden');$('login').classList.remove('hidden')}}
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));b.classList.add('active');$(b.dataset.view).classList.add('active')});
 function badge(s){const c=['COMPLETED','READY_FOR_DRAFT_PR','success'].includes(s)?'ok':['FAILED_FINAL','failure','BLOCKED'].includes(s)?'bad':['WAITING_FOR_OWNER','queued','in_progress'].includes(s)?'warn':'muted';return `<span class="badge ${c}">${esc(s||'unknown')}</span>`}
-async function refreshAll(){await Promise.allSettled([loadOverview(),loadApprovals(),loadGithub()]);if(state.adminKey)loadOwnerRequests()}
+async function refreshAll(){await Promise.allSettled([loadOverview(),loadApprovals(),loadGithub(),loadModelCatalog()]);if(state.adminKey)loadOwnerRequests()}
 async function loadOverview(){const d=await api('/api/controller/overview');state.overview=d;const c=d.statusCounts||{},t=d.totals||{};$('metrics').innerHTML=[['Laufend',(c.RUNNING||0)+(c.VERIFYING||0)],['Warten',c.WAITING_FOR_OWNER||0],['Evidence',t.evidence_count||0],['Tool Calls',t.tool_call_count||0],['Fehler',t.unresolved_failures||0],['Bestätigungen',t.pending_approvals||0]].map(x=>`<div class="metric"><span class="muted">${x[0]}</span><strong>${x[1]}</strong></div>`).join('');$('activeAgents').innerHTML=(d.activeTasks||[]).map(x=>`<div class="item"><div class="row between"><h3>${esc(x.agent_id)} ${x.specialist_role?'· '+esc(x.specialist_role):''}</h3>${badge(x.status)}</div><p>${esc(x.reason)}</p><p>Nächster Schritt: ${esc(x.next_action)}</p></div>`).join('')||'<p class="muted">Keine aktiven Tasks.</p>';const runs=d.runs||[];$('recentRuns').innerHTML=runs.slice(0,6).map(runCard).join('')||'<p class="muted">Noch keine Runs.</p>';$('runs').innerHTML=runs.map(runCard).join('')||'<p class="muted">Noch keine Runs.</p>'}
 function runCard(r){return `<div class="item"><div class="row between"><h3>${esc(r.mission_summary)}</h3>${badge(r.status)}</div><p class="code">${esc(r.run_id)}</p><p>${esc(r.reason)}</p><div class="row"><button class="ghost" onclick="runDetail('${esc(r.run_id)}')">Details</button>${!['COMPLETED','FAILED_FINAL','DRAFT_PR_CREATED','READY_FOR_DRAFT_PR','WAITING_FOR_OWNER'].includes(r.status)&&!r.lease_active?`<button class="primary" onclick="resumeRun('${esc(r.run_id)}','Manueller Resume aus Controller Board; keine Secrets.')">Resume</button>`:''}</div></div>`}
-async function startMission(){const m=$('mission').value.trim();if(!m)return;$('missionMsg').textContent='Runtime läuft…';try{const d=await api('/api/user/agent/swarm/run',{method:'POST',body:JSON.stringify({mission:m,evidence:$('evidence').value.trim()})});$('missionMsg').textContent=(d.status||'')+' · '+(d.reason||'');await loadOverview();if(d.runId)runDetail(d.runId)}catch(e){$('missionMsg').textContent=(e.data?.status||'Fehler')+' · '+(e.data?.reason||e.message);await loadOverview()}}
-async function resumeRun(id,evidence){try{const d=await api('/api/user/agent/swarm/runs/'+encodeURIComponent(id)+'/resume',{method:'POST',body:JSON.stringify({evidence})});await loadOverview();await runDetail(id);return d}catch(e){await loadOverview();alert(e.data?.reason||e.message)}}
+function modelOptionLabel(model){const p=model.prices||{};return (model.displayName||model.selectionId)+' · Preis Input $'+(p.input||'–')+'/M · Output $'+(p.output||'–')+'/M'}
+function selectedModel(id){return (state.modelCatalog?.models||[]).find(model=>model.selectionId===$(id)?.value)}
+function renderModelPrice(){const mode=$('executionMode')?.value||'auto';if(mode==='free'){$('modelPrice').textContent='FreeLLM wählt automatisch nach verfügbarem Modellkontingent · 1 Agent · 0 Zusatz-/Workspace-Agenten.';return}const main=selectedModel('mainModel'),agents=selectedModel('agentModel');if(!main||!agents){$('modelPrice').textContent='Paid-Katalog ist noch nicht aktiviert oder nicht verfügbar.';return}const mp=main.prices||{},ap=agents.prices||{};$('modelPrice').textContent='Euer Preis · Hauptmodell: $'+mp.input+'/M Input, $'+mp.output+'/M Output · 6-Agenten-Modell: $'+ap.input+'/M Input, $'+ap.output+'/M Output.'}
+function syncExecutionMode(){const free=($('executionMode')?.value||'auto')==='free';$('paidModelSelection').classList.toggle('hidden',free);$('mainModel').disabled=free||!state.modelCatalog;$('agentModel').disabled=free||!state.modelCatalog;renderModelPrice()}
+async function loadModelCatalog(){const main=$('mainModel'),agents=$('agentModel');if(!main||!agents)return;const previousMain=main.value,previousAgent=agents.value;try{const d=await api('/api/user/agent/swarm/models');state.modelCatalog=d;const options=(d.models||[]).map(model=>'<option value="'+esc(model.selectionId)+'">'+esc(modelOptionLabel(model))+'</option>').join('');main.innerHTML=options;agents.innerHTML=options;const defaults=d.defaults||{};main.value=(d.models||[]).some(x=>x.selectionId===previousMain)?previousMain:(defaults.mainModel||'');agents.value=(d.models||[]).some(x=>x.selectionId===previousAgent)?previousAgent:(defaults.agentModel||'')}catch(e){state.modelCatalog=null;main.innerHTML='<option value="">OpenRouter noch nicht aktiviert</option>';agents.innerHTML='<option value="">OpenRouter noch nicht aktiviert</option>'}syncExecutionMode()}
+function executionSelectionPayload(){const mode=$('executionMode')?.value||'auto',payload={mode};if(mode!=='free'&&state.modelCatalog){payload.mainModel=$('mainModel').value;payload.agentModel=$('agentModel').value}return payload}
+async function startMission(){const m=$('mission').value.trim();if(!m)return;$('missionMsg').textContent='Runtime läuft…';try{const d=await api('/api/user/agent/swarm/run',{method:'POST',body:JSON.stringify({mission:m,evidence:$('evidence').value.trim(),...executionSelectionPayload()})});$('missionMsg').textContent=(d.status||'')+' · '+(d.reason||'');await loadOverview();if(d.runId)runDetail(d.runId)}catch(e){$('missionMsg').textContent=(e.data?.status||'Fehler')+' · '+(e.data?.reason||e.message);await loadOverview()}}
+async function resumeRun(id,evidence){try{const d=await api('/api/user/agent/swarm/runs/'+encodeURIComponent(id)+'/resume',{method:'POST',body:JSON.stringify({evidence,...executionSelectionPayload()})});await loadOverview();await runDetail(id);return d}catch(e){await loadOverview();alert(e.data?.reason||e.message)}}
 async function runDetail(id){const d=await api('/api/controller/runs/'+encodeURIComponent(id));const r=d.run,h=d.releaseHunt||{};$('runDetail').classList.remove('hidden');$('runDetail').innerHTML=`<div class="row between"><h2>${esc(r.mission_summary)}</h2>${badge(r.status)}</div><p>${esc(r.reason)}</p>${h.outcome?`<div class="item"><div class="row between"><b>Release-Jagd · ${esc(h.errorFamily||'unbekannte Familie')}</b>${badge(h.outcome)}</div><p>Nullfund bestätigt: ${h.nullfindConfirmed?'ja':'nein'}</p>${h.nextErrorFamily?`<p>Nächste Familie: ${esc(h.nextErrorFamily)}</p>`:''}</div>`:''}<p class="code">Evidence: ${esc(r.evidence_id)}<br>Trace: ${esc(r.trace_id)}<br>Next: ${esc(r.next_action)}</p><h3>Tasks</h3><div class="list">${(d.tasks||[]).map(x=>`<div class="item"><div class="row between"><b>${esc(x.agent_id)}</b><span>${badge(x.status)} ${badge(x.taskLifecycle||'historical')}</span></div><p>${esc(x.work_package)}</p>${x.isActiveBlocker?'<p class="bad">Aktiver Blocker</p>':x.taskLifecycle==='historical'?'<p class="muted">Historische Evidence, kein aktiver Blocker.</p>':''}</div>`).join('')||'<p class="muted">Keine Tasks.</p>'}</div><h3>Failures</h3><div class="list">${(d.failures||[]).map(x=>{const q=x.diagnostics||{};return `<div class="item"><div class="row between"><b>${esc(x.family)}</b>${badge(x.recoverable?'FAILED_RECOVERABLE':'FAILED_FINAL')}</div><p>${esc(x.summary)}</p><p class="code">Stage: ${esc(q.failureStage||'unknown')}<br>Error: ${esc(q.errorType||'unknown')}<br>HTTP: ${esc(q.httpStatus??'–')}<br>Request: ${esc(q.requestId||'–')}<br>Next: ${esc(q.nextAction||'–')}</p></div>`}).join('')||'<p class="muted">Keine Failure-Evidence.</p>'}</div><h3>Events</h3><div class="timeline">${(d.events||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)} · ${esc(x.type)}</b> ${badge(x.status)}<p>${esc(x.summary)}</p></div>`).join('')}</div>`;$('runDetail').scrollIntoView({behavior:'smooth'})}
 async function loadApprovals(){const d=await api('/api/controller/approvals');$('approvalList').innerHTML=(d.approvals||[]).map(a=>`<div class="item"><div class="row between"><h3>${esc(a.kind)} · ${esc(a.requested_by_agent)}</h3>${badge(a.status)}</div><p>${esc(a.reason)}</p><p class="code">Run: ${esc(a.run_id)}</p>${a.requiresProtectedOwnerInput?`<a class="link" href="/owner-approvals" target="_blank">Geschützte Eingabe im Owner-Panel öffnen</a>`:`<div class="row"><button class="primary" onclick="decide('${esc(a.approval_id)}','approve')">Bestätigen</button><button class="danger" onclick="decide('${esc(a.approval_id)}','reject')">Ablehnen</button></div>`}</div>`).join('')||'<p class="muted">Keine offenen Bestätigungen.</p>'}
 async function decide(id,decision){const d=await api('/api/controller/approvals/'+encodeURIComponent(id)+'/decision',{method:'POST',body:JSON.stringify({decision})});if(d.resumeRequired)await resumeRun(d.runId,d.resumeEvidence);await refreshAll()}

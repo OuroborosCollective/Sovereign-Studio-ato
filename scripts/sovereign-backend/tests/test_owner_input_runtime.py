@@ -72,6 +72,7 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
     assert set(targets) == {
         "openai_api_key",
+        "openrouter_api_key",
         "litellm_provider_key",
         "revolver_provider_key",
         "proven_learning_confirmation",
@@ -82,6 +83,11 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert openai_target["label"] == "OpenAI Provider für LiteLLM"
     assert openai_target["fieldLabel"] == "OpenAI API-Key"
     assert openai_target["maxBytes"] == 8192
+
+    openrouter_target = targets["openrouter_api_key"]
+    assert openrouter_target["path"] == (tmp_path / "openrouter_api_key.txt").resolve()
+    assert openrouter_target["fieldLabel"] == "OpenRouter API-Key"
+    assert openrouter_target["maxBytes"] == 8192
 
     provider_target = targets["litellm_provider_key"]
     assert provider_target["path"] == (tmp_path / "litellm_provider_key.txt").resolve()

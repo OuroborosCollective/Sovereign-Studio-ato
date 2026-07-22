@@ -1,8 +1,8 @@
-"""Evidence-first provider onboarding for the Free Revolver control plane.
+"""Evidence-first direct-provider onboarding for the FreeLLM Revolver control plane.
 
-The raw provider key is accepted only through owner_input_runtime, used once for
-OpenAI-compatible model discovery and private LiteLLM registration, then wiped.
-PostgreSQL stores metadata, fingerprints, route state and health evidence only.
+Managed FreeLLM stays on its private OpenAI-compatible API and never traverses
+LiteLLM. PostgreSQL stores route metadata, fingerprints and bounded health
+evidence only; protected key values remain owner-managed.
 """
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from typing import Any, Callable
 import requests
 from flask import jsonify, request
 
-from litellm_runtime import fetch_litellm, litellm_completion_canary
 from free_revolver_provider_contracts import (
     assert_provider_target_allowed,
     is_managed_internal_provider_url,
@@ -116,6 +115,92 @@ def _auth_headers(auth_mode: str, key: str) -> dict[str, str]:
     return headers
 
 
+def _direct_completion_canary(
+    *,
+    api_base: str,
+    auth_mode: str,
+    key: str,
+    model_id: str,
+) -> dict[str, Any]:
+    """Run one bounded direct chat completion without exposing response bodies."""
+
+    endpoint = f"{str(api_base).rstrip('/')}/chat/completions"
+    assert_provider_target_allowed(endpoint)
+    headers = {
+        **_auth_headers(auth_mode, key),
+        "Content-Type": "application/json",
+    }
+    try:
+        with requests.Session() as provider_session:
+            provider_session.trust_env = False
+            with provider_session.post(
+                endpoint,
+                headers=headers,
+                json={
+                    "model": model_id,
+                    "messages": [{"role": "user", "content": "Reply with OK."}],
+                    "max_tokens": 8,
+                    "temperature": 0,
+                },
+                timeout=30,
+                allow_redirects=False,
+                stream=True,
+            ) as response:
+                status = int(response.status_code)
+                request_id = (
+                    response.headers.get("x-request-id")
+                    or response.headers.get("X-Request-Id")
+                )
+                if status in {401, 403}:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_credentials_rejected",
+                        "httpStatus": status,
+                    }
+                if status == 429:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_rate_limited",
+                        "httpStatus": status,
+                    }
+                response.raise_for_status()
+                raw = response.raw.read(
+                    _MAX_MODELS_RESPONSE_BYTES + 1,
+                    decode_content=True,
+                )
+                if len(raw) > _MAX_MODELS_RESPONSE_BYTES:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_canary_response_too_large",
+                        "httpStatus": status,
+                    }
+        payload = json.loads(raw.decode("utf-8"))
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        if not isinstance(choices, list) or not choices:
+            return {
+                "ok": False,
+                "blocker": "freellm_canary_response_invalid",
+                "httpStatus": status,
+            }
+        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+        provider_cost = usage.get("cost")
+        generation_id = str(payload.get("id") or request_id or "")[:200] or None
+        return {
+            "ok": True,
+            "evidence": {
+                "upstreamRequestId": generation_id,
+                "providerCostUsd": provider_cost,
+                "httpStatus": status,
+                "transport": "freellm",
+                "rawResponsePersisted": False,
+            },
+        }
+    except requests.Timeout:
+        return {"ok": False, "blocker": "freellm_timeout"}
+    except (requests.RequestException, UnicodeDecodeError, json.JSONDecodeError):
+        return {"ok": False, "blocker": "freellm_upstream_unavailable"}
+
+
 def _alias(source_id: str, model_id: str, key_fingerprint: str) -> str:
     source_slug = source_id.replace("-", "")[:10]
     model_slug = _ALIAS_RE.sub("-", model_id.lower()).strip("-")[:36] or "model"
@@ -162,7 +247,7 @@ def _request_owner_input(
                    RETURNING id::text""",
                 (
                     f"Free-Revolver-Zugang für {label}",
-                    "Einmalige geschützte Eingabe für Models-Discovery, Nullkostenprüfung und private LiteLLM-Registrierung.",
+                    "Einmalige geschützte Eingabe für Models-Discovery, Nullkostenprüfung und direkte FreeLLM-Aktivierung.",
                 ),
             )
             request_id = str(cursor.fetchone()["id"])
@@ -255,9 +340,9 @@ def register_free_revolver_provider_runtime(
         return jsonify({
             "ok": True,
             "schemaVersion": "sovereign.free-revolver-provider-admin.v1",
-            "truthOwner": "postgresql-owner-input-private-litellm",
+            "truthOwner": "postgresql-owner-input-direct-freellm",
             "providers": result,
-            "keyStorage": "one-time-owner-input-then-private-litellm",
+            "keyStorage": "owner-managed-direct-freellm",
             "activationRule": "explicit-provider-zero-pricing-and-noncontradictory-canary",
             "orphanedSecretFilesRemoved": orphaned_secret_files_removed,
         })
@@ -398,35 +483,21 @@ def register_free_revolver_provider_runtime(
             model_id,
             str(source.get("key_fingerprint") or ""),
         )
-        litellm_params: dict[str, Any] = {
-            "model": f"openai/{model_id}",
-            "api_base": str(source["api_base"]),
-            "api_key": key if source.get("auth_mode") in {"bearer", _MANAGED_AUTH_MODE} else "",
-        }
-        if source.get("auth_mode") == "x-api-key":
-            litellm_params["extra_headers"] = {"X-API-Key": key}
-        registration, registration_error = fetch_litellm(
-            "/model/new",
-            method="POST",
-            json_data={
-                "model_name": alias,
-                "litellm_params": litellm_params,
-                "model_info": {
-                    "description": "Sovereign Free Revolver provider-priced route candidate",
-                    "metadata": {
-                        "sovereign_free_revolver_source_id": source_id,
-                        "pricing_source": model["pricingSource"],
-                        "discovery_payload_sha256": model["payloadSha256"],
-                    },
-                },
-            },
+        if (
+            str(source.get("auth_mode") or "") != _MANAGED_AUTH_MODE
+            or not is_managed_internal_provider_url(str(source.get("api_base") or ""))
+        ):
+            return {
+                "ok": False,
+                "alias": alias,
+                "error": "free_direct_runtime_credentials_unavailable",
+            }
+        canary = _direct_completion_canary(
+            api_base=str(source["api_base"]),
+            auth_mode=str(source["auth_mode"]),
+            key=key,
+            model_id=model_id,
         )
-        litellm_params["api_key"] = ""
-        if isinstance(litellm_params.get("extra_headers"), dict):
-            litellm_params["extra_headers"]["X-API-Key"] = ""
-        if registration_error or registration is None or (not registration.ok and registration.status_code != 409):
-            return {"ok": False, "alias": alias, "error": "litellm_model_registration_failed"}
-        canary = litellm_completion_canary(alias)
         if not canary.get("ok"):
             return {
                 "ok": False,
@@ -454,11 +525,19 @@ def register_free_revolver_provider_runtime(
             uuid.NAMESPACE_URL,
             f"sovereign-free-revolver:{source_id}:{model_id}",
         ))
-        quota_scope = f"revolver:key:{str(source.get('key_fingerprint') or '')[:24]}"
+        quota_scope = (
+            "freellm:model:"
+            f"{str(source.get('key_fingerprint') or '')[:12]}:"
+            f"{hashlib.sha256(model_id.encode()).hexdigest()[:12]}"
+        )
+        api_base = str(source["api_base"]).rstrip("/")
         config = {
             "routingOwner": "free-revolver-v3",
             "managedBy": "sovereign-admin",
             "revolverProviderSourceId": source_id,
+            "transport": "freellm",
+            "direct": True,
+            "authMode": _MANAGED_AUTH_MODE,
             "providerModel": model_id,
             "billingCategory": "free",
             "billingClass": "free",
@@ -475,6 +554,7 @@ def register_free_revolver_provider_runtime(
                 "canaryCostState": canary_cost_state,
                 "canaryRequestId": evidence.get("upstreamRequestId") or None,
             },
+            "canaryVerified": True,
             "revolverEligible": True,
             "executionProfile": "free_single_agent",
             "resolverMode": "revolver",
@@ -482,6 +562,7 @@ def register_free_revolver_provider_runtime(
             "maxBackgroundAgents": 0,
             "repositoryExecutionAllowed": True,
             "quotaScope": quota_scope,
+            "quotaEvidence": "per-model-runtime-cooldown-and-provider-catalog",
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
         }
         connection = get_connection()
@@ -491,15 +572,21 @@ def register_free_revolver_provider_runtime(
                     """INSERT INTO llm_routes
                            (id, model_id, model_name, provider, base_url, credits_per_unit,
                             disabled, priority, runtime_kind, tier, config, updated_at)
-                       VALUES (%s,%s,%s,'litellm','http://litellm:4000',0,
-                               false,50,'litellm','free',%s::jsonb,NOW())
+                       VALUES (%s,%s,%s,'freellm',%s,0,
+                               false,50,'freellm','free',%s::jsonb,NOW())
                        ON CONFLICT (id) DO UPDATE SET
                            model_id=EXCLUDED.model_id,
-                           model_name=EXCLUDED.model_name, provider='litellm',
-                           base_url='http://litellm:4000', credits_per_unit=0,
-                           disabled=false, runtime_kind='litellm', tier='free',
+                           model_name=EXCLUDED.model_name, provider='freellm',
+                           base_url=EXCLUDED.base_url, credits_per_unit=0,
+                           disabled=false, runtime_kind='freellm', tier='free',
                            config=EXCLUDED.config, updated_at=NOW()""",
-                    (route_id, alias, model["displayName"], json.dumps(config, ensure_ascii=False)),
+                    (
+                        route_id,
+                        alias,
+                        model["displayName"],
+                        api_base,
+                        json.dumps(config, ensure_ascii=False),
+                    ),
                 )
                 cursor.execute(
                     """UPDATE llm_revolver_provider_models
@@ -526,6 +613,7 @@ def register_free_revolver_provider_runtime(
             "ok": True,
             "alias": alias,
             "routeId": route_id,
+            "transport": "freellm",
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
             "canaryCostState": canary_cost_state,
         }
@@ -804,9 +892,9 @@ def register_free_revolver_provider_runtime(
                 "blocked": blocked,
                 "unverified": [model["modelId"] for model in models if not model["freeVerified"]],
                 "keyStoredBy": (
-                    "owner-managed-file-and-private-litellm"
+                    "owner-managed-direct-freellm"
                     if source["auth_mode"] == _MANAGED_AUTH_MODE
-                    else "private-litellm-only"
+                    else "ephemeral-discovery-only"
                 ),
             }), 200 if activated else 409
         except PermissionError as exc:
@@ -853,6 +941,22 @@ def register_free_revolver_provider_runtime(
             source_id = normalize_provider_source_id(source_id)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        source = query(
+            """SELECT id::text, api_base, auth_mode
+               FROM llm_revolver_provider_sources
+               WHERE id=%s::uuid AND enabled=true LIMIT 1""",
+            (source_id,),
+            one=True,
+        )
+        if (
+            not source
+            or str(source.get("auth_mode") or "") != _MANAGED_AUTH_MODE
+            or not is_managed_internal_provider_url(str(source.get("api_base") or ""))
+        ):
+            return jsonify({
+                "error": "Nur die verwaltete direkte FreeLLM-Route kann erneut geprüft werden.",
+                "blocker": "free_direct_managed_source_required",
+            }), 409
         models = query(
             """SELECT id::text, upstream_model_id, litellm_alias
                FROM llm_revolver_provider_models
@@ -867,99 +971,149 @@ def register_free_revolver_provider_runtime(
                 "blocker": "free_provider_no_recheckable_routes",
                 "nextAction": "discover_provider_models",
             }), 409
-        ready = []
-        blocked = []
-        for model in models:
-            alias = str(model["litellm_alias"])
-            canary = litellm_completion_canary(alias)
-            evidence = dict(canary.get("evidence") or {})
-            provider_cost = evidence.get("providerCostUsd")
-            cost_state = (
-                "nonzero"
-                if provider_cost not in (None, 0, 0.0)
-                else "zero"
-                if provider_cost in (0, 0.0)
-                else "unreported"
-            )
-            provider_cost_micros = (
-                int(round(float(provider_cost) * 1_000_000))
-                if provider_cost is not None
-                else None
-            )
-            blocker = (
-                str(canary.get("blocker") or "free_provider_canary_failed")
-                if not canary.get("ok")
-                else "free_provider_cost_not_zero"
-                if cost_state == "nonzero"
-                else None
-            )
-            canary_request_id = str(evidence.get("upstreamRequestId") or "") or None
-            if blocker:
-                blocked.append(str(model["upstream_model_id"]))
-                query(
-                    """UPDATE llm_revolver_provider_models
-                       SET status='blocked', enabled=false, last_error_code=%s,
-                           last_canary_request_id=%s, last_canary_at=NOW(),
-                           canary_cost_state=%s, last_provider_cost_usd_micros=%s,
-                           updated_at=NOW() WHERE id=%s::uuid""",
-                    (
-                        blocker, canary_request_id, cost_state,
-                        provider_cost_micros, model["id"],
-                    ),
-                    write=True,
+
+        protected = bytearray()
+        key = ""
+        try:
+            path = _managed_secret_path()
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
+                raise ValueError("free_provider_secret_permissions_invalid")
+            if info.st_size < 8 or info.st_size > 8192:
+                raise ValueError("free_provider_secret_invalid")
+            protected = bytearray(path.read_bytes())
+            key = protected.decode("utf-8").strip()
+            if len(key) < 8:
+                raise ValueError("free_provider_secret_invalid")
+
+            ready = []
+            blocked = []
+            for model in models:
+                alias = str(model["litellm_alias"])
+                canary = _direct_completion_canary(
+                    api_base=str(source["api_base"]),
+                    auth_mode=_MANAGED_AUTH_MODE,
+                    key=key,
+                    model_id=str(model["upstream_model_id"]),
                 )
-                query(
-                    "UPDATE llm_routes SET disabled=true, updated_at=NOW() WHERE model_id=%s",
-                    (alias,), write=True,
+                evidence = dict(canary.get("evidence") or {})
+                provider_cost = evidence.get("providerCostUsd")
+                cost_state = (
+                    "nonzero"
+                    if provider_cost not in (None, 0, 0.0)
+                    else "zero"
+                    if provider_cost in (0, 0.0)
+                    else "unreported"
                 )
-            else:
-                ready.append(str(model["upstream_model_id"]))
-                query(
-                    """UPDATE llm_revolver_provider_models
-                       SET status='ready', enabled=true, last_error_code=NULL,
-                           last_canary_request_id=%s, last_canary_at=NOW(),
-                           canary_cost_state=%s, last_provider_cost_usd_micros=%s,
-                           updated_at=NOW()
-                       WHERE id=%s::uuid""",
-                    (
-                        canary_request_id, cost_state,
-                        provider_cost_micros, model["id"],
-                    ),
-                    write=True,
+                provider_cost_micros = (
+                    int(round(float(provider_cost) * 1_000_000))
+                    if provider_cost is not None
+                    else None
                 )
-                query(
-                    """UPDATE llm_routes
-                       SET disabled=false,
-                           config=jsonb_set(
-                               jsonb_set(
-                                   config,
-                                   '{pricingEvidence,canaryCostState}',
-                                   COALESCE(to_jsonb(%s::text), 'null'::jsonb),
-                                   true
+                blocker = (
+                    str(canary.get("blocker") or "free_provider_canary_failed")
+                    if not canary.get("ok")
+                    else "free_provider_cost_not_zero"
+                    if cost_state == "nonzero"
+                    else None
+                )
+                canary_request_id = str(evidence.get("upstreamRequestId") or "") or None
+                if blocker:
+                    blocked.append(str(model["upstream_model_id"]))
+                    query(
+                        """UPDATE llm_revolver_provider_models
+                           SET status='blocked', enabled=false, last_error_code=%s,
+                               last_canary_request_id=%s, last_canary_at=NOW(),
+                               canary_cost_state=%s, last_provider_cost_usd_micros=%s,
+                               updated_at=NOW() WHERE id=%s::uuid""",
+                        (
+                            blocker, canary_request_id, cost_state,
+                            provider_cost_micros, model["id"],
+                        ),
+                        write=True,
+                    )
+                    query(
+                        "UPDATE llm_routes SET disabled=true, updated_at=NOW() WHERE model_id=%s",
+                        (alias,), write=True,
+                    )
+                else:
+                    ready.append(str(model["upstream_model_id"]))
+                    query(
+                        """UPDATE llm_revolver_provider_models
+                           SET status='ready', enabled=true, last_error_code=NULL,
+                               last_canary_request_id=%s, last_canary_at=NOW(),
+                               canary_cost_state=%s, last_provider_cost_usd_micros=%s,
+                               updated_at=NOW()
+                           WHERE id=%s::uuid""",
+                        (
+                            canary_request_id, cost_state,
+                            provider_cost_micros, model["id"],
+                        ),
+                        write=True,
+                    )
+                    query(
+                        """UPDATE llm_routes
+                           SET disabled=false,
+                               provider='freellm',
+                               runtime_kind='freellm',
+                               base_url=%s,
+                               config=(
+                                   jsonb_set(
+                                       jsonb_set(
+                                           config,
+                                           '{pricingEvidence,canaryCostState}',
+                                           COALESCE(to_jsonb(%s::text), 'null'::jsonb),
+                                           true
+                                       ),
+                                       '{pricingEvidence,canaryRequestId}',
+                                       COALESCE(to_jsonb(%s::text), 'null'::jsonb),
+                                       true
+                                   )
+                                   || jsonb_build_object(
+                                       'transport', 'freellm',
+                                       'direct', true,
+                                       'canaryVerified', true
+                                   )
                                ),
-                               '{pricingEvidence,canaryRequestId}',
-                               COALESCE(to_jsonb(%s::text), 'null'::jsonb),
-                               true
-                           ),
-                           updated_at=NOW()
-                       WHERE model_id=%s""",
-                    (cost_state, canary_request_id, alias),
-                    write=True,
-                )
-        status = "healthy" if ready and not blocked else "degraded" if ready else "blocked"
-        query(
-            """UPDATE llm_revolver_provider_sources
-               SET status=%s, last_error_code=%s, last_checked_at=NOW(), updated_at=NOW()
-               WHERE id=%s::uuid""",
-            (status, "route_canary_failed" if blocked else None, source_id), write=True,
-        )
-        persist_check(
-            source_id, check_kind="route_canary", models_url=None, http_status=None,
-            outcome="success" if not blocked else "degraded" if ready else "blocked",
-            model_count=len(models), free_count=len(ready),
-            evidence={"ready": ready, "blocked": blocked},
-        )
-        return jsonify({"ok": bool(ready), "status": status, "ready": ready, "blocked": blocked})
+                               updated_at=NOW()
+                           WHERE model_id=%s""",
+                        (
+                            str(source["api_base"]).rstrip("/"),
+                            cost_state,
+                            canary_request_id,
+                            alias,
+                        ),
+                        write=True,
+                    )
+            status = "healthy" if ready and not blocked else "degraded" if ready else "blocked"
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status=%s, last_error_code=%s, last_checked_at=NOW(), updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (status, "route_canary_failed" if blocked else None, source_id), write=True,
+            )
+            persist_check(
+                source_id, check_kind="direct_route_canary", models_url=None, http_status=None,
+                outcome="success" if not blocked else "degraded" if ready else "blocked",
+                model_count=len(models), free_count=len(ready),
+                evidence={"ready": ready, "blocked": blocked, "transport": "freellm"},
+            )
+            return jsonify({
+                "ok": bool(ready),
+                "status": status,
+                "transport": "freellm",
+                "ready": ready,
+                "blocked": blocked,
+            })
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            return jsonify({
+                "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher gelesen werden.",
+                "blocker": str(exc)[:120] or "free_provider_secret_invalid",
+            }), 503
+        finally:
+            key = ""
+            for index in range(len(protected)):
+                protected[index] = 0
 
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>", methods=["PATCH"])
     @require_admin

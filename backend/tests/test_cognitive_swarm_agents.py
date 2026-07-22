@@ -225,10 +225,11 @@ def test_provider_failures_are_classified_without_raw_error_text() -> None:
     failure = classify_swarm_exception(
         ProviderFailure("sensitive provider message must never persist"),
         stage="dispatcher",
+        transport="openrouter",
     )
 
     assert isinstance(failure, SwarmExecutionError)
-    assert failure.family == "LITELLM_OR_PROVIDER_RATE_LIMITED"
+    assert failure.family == "OPENROUTER_RATE_LIMITED"
     assert failure.stage == "dispatcher"
     assert failure.retryable is True
     assert failure.http_status == 429

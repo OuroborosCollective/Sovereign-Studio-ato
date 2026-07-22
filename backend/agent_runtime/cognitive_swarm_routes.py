@@ -61,10 +61,12 @@ from .pattern_vector_memory import persist_pattern_vector
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     PAID_SWARM_PROFILE,
+    ExecutionResolutionError,
     free_fallback_resolution,
     load_execution_resolution,
 )
 from llm_revolver import route_quota_scope
+from llm_transport import route_provider_model, route_transport
 
 
 ConnectionFactory = Callable[[], Any]
@@ -200,13 +202,29 @@ def _billing_blocker_contract(exc: AgentBillingError) -> tuple[str, str]:
     """Return a bounded reason/action pair without exposing provider details."""
 
     contracts = {
+        "OPENROUTER_PAID_ROUTE_NOT_READY": (
+            "The selected direct OpenRouter route is not active and ready.",
+            "ACTIVATE_VERIFIED_OPENROUTER_ROUTE",
+        ),
+        "OPENROUTER_PAID_ROUTE_REJECTED": (
+            "The selected route failed the direct OpenRouter policy contract.",
+            "REPAIR_OPENROUTER_ROUTE_POLICY",
+        ),
+        "OPENROUTER_ROUTE_CHANGED_BEFORE_RESERVATION": (
+            "The selected OpenRouter route or price changed before reservation.",
+            "REFRESH_OPENROUTER_MODELS_AND_RETRY",
+        ),
+        "AGENTS_OPENROUTER_ROUTE_REQUIRED": (
+            "Paid agent execution requires a direct OpenRouter route.",
+            "ACTIVATE_VERIFIED_OPENROUTER_ROUTE",
+        ),
         "AGENTS_LITELLM_ALIAS_NOT_READY": (
             "The Agents SDK LiteLLM alias is not active and ready for paid execution.",
             "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE",
         ),
         "AGENTS_ROUTE_PRICING_UNVERIFIED": (
             "The Agents SDK route has no verified provider pricing contract.",
-            "VERIFY_LITELLM_ROUTE_PRICING",
+            "VERIFY_OPENROUTER_ROUTE_PRICING",
         ),
         "AGENTS_PROVIDER_MODEL_MISMATCH": (
             "The Agents SDK route does not target the required provider model.",
@@ -214,7 +232,7 @@ def _billing_blocker_contract(exc: AgentBillingError) -> tuple[str, str]:
         ),
         "AGENTS_STANDARD_ROUTE_REQUIRED": (
             "The Agents SDK route does not satisfy the standard cost-policy floor.",
-            "CONFIGURE_STANDARD_LITELLM_ROUTE",
+            "CONFIGURE_STANDARD_OPENROUTER_ROUTE",
         ),
         "AGENT_INPUT_COST_BOUND_EXCEEDED": (
             "The Agents SDK input exceeds the bounded cost envelope.",
@@ -301,6 +319,8 @@ def execute_persisted_swarm(
     mission: str,
     evidence: str,
     model: str | None,
+    route: dict[str, Any],
+    agent_route: dict[str, Any] | None = None,
     task_id: str | None = None,
     lease_token: str | None = None,
     response_context: dict[str, object] | None = None,
@@ -353,6 +373,8 @@ def execute_persisted_swarm(
                 mission,
                 evidence=evidence,
                 model=model,
+                main_route=route,
+                agent_route=agent_route or route,
                 stage_observer=persist_stage_event,
                 repository_tool_factory=repository_tool_factory,
                 stage_billing=stage_billing,
@@ -666,6 +688,8 @@ def _persist_execution_resolution_blocker(
     reason: str,
     next_action: str,
     error_type: str = "",
+    task_id: str | None = None,
+    expected_lease_token: str | None = None,
 ) -> dict[str, str]:
     """Persist one route-resolution blocker after the run truth already exists."""
     conn = get_connection()
@@ -689,37 +713,58 @@ def _persist_execution_resolution_blocker(
                 "rawErrorPersisted": False,
             },
             agent_id="execution_resolver",
+            task_id=task_id,
+            expected_lease_token=expected_lease_token,
         )
     finally:
         _close_connection(conn)
 
 
-def _record_paid_route_cooldown(
+def _record_route_cooldown(
     get_connection: ConnectionFactory,
     *,
     execution_resolution: Any,
     failure: SwarmExecutionError,
 ) -> None:
-    """Persist a bounded cooldown so later runs skip one exhausted paid scope."""
+    """Persist a bounded cooldown so later runs skip one unavailable quota scope."""
     try:
-        route = dict(execution_resolution.primary_route)
+        failed_stage = str(getattr(failure, "stage", "") or "").casefold()
+        selected = (
+            execution_resolution.agent_route
+            if ":worker:" in failed_stage
+            else execution_resolution.primary_route
+        )
+        route = dict(selected)
         scope = route_quota_scope(route)
     except (AttributeError, TypeError, ValueError):
         return
+    family = str(getattr(failure, "family", "") or "").casefold()
+    cooldown_seconds = (
+        3600
+        if "quota" in family
+        else 60
+        if getattr(failure, "http_status", None) == 429
+        else 300
+    )
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO llm_route_revolver_state
                        (quota_scope, status, consecutive_failures, cooldown_until,
+                        quota_remaining, quota_reset_at,
                         last_route_id, last_http_status, last_blocker,
                         last_attempt_at, updated_at)
-                   VALUES (%s, 'cooldown', 1, NOW() + INTERVAL '5 minutes',
+                   VALUES (%s, 'cooldown', 1,
+                           NOW() + (%s * INTERVAL '1 second'),
+                           0, NOW() + (%s * INTERVAL '1 second'),
                            %s, %s, %s, NOW(), NOW())
                    ON CONFLICT (quota_scope) DO UPDATE SET
                        status='cooldown',
                        consecutive_failures=llm_route_revolver_state.consecutive_failures + 1,
-                       cooldown_until=NOW() + INTERVAL '5 minutes',
+                       cooldown_until=EXCLUDED.cooldown_until,
+                       quota_remaining=0,
+                       quota_reset_at=EXCLUDED.quota_reset_at,
                        last_route_id=EXCLUDED.last_route_id,
                        last_http_status=EXCLUDED.last_http_status,
                        last_blocker=EXCLUDED.last_blocker,
@@ -727,6 +772,8 @@ def _record_paid_route_cooldown(
                        updated_at=NOW()""",
                 (
                     scope,
+                    cooldown_seconds,
+                    cooldown_seconds,
                     str(route.get("id") or "")[:240],
                     failure.http_status,
                     failure.family[:240],
@@ -748,6 +795,9 @@ def start_cognitive_swarm_run(
     mission: str,
     evidence: str = "",
     model: str | None = None,
+    main_model: str | None = None,
+    agent_model: str | None = None,
+    mode: str = "auto",
     run_id: str | None = None,
     session_key: str | None = None,
     a2a_context_id: str | None = None,
@@ -761,6 +811,11 @@ def start_cognitive_swarm_run(
     normalized_mission = str(mission or "").strip()
     normalized_evidence = str(evidence or "").strip()
     normalized_model = str(model or "").strip() or None
+    normalized_main_model = str(main_model or normalized_model or "").strip() or None
+    normalized_agent_model = str(
+        agent_model or normalized_model or normalized_main_model or ""
+    ).strip() or None
+    normalized_mode = str(mode or "auto").strip().lower()
     if not normalized_mission:
         return {"error": "mission is required"}, 400
     if len(normalized_mission) > 20_000:
@@ -769,7 +824,10 @@ def start_cognitive_swarm_run(
         return {"error": "evidence exceeds the bounded input limit"}, 400
     if _contains_secret_shaped_text(normalized_mission) or _contains_secret_shaped_text(normalized_evidence):
         return {"error": "secret-shaped material is forbidden in swarm input"}, 400
-    if normalized_model and len(normalized_model) > 200:
+    if any(
+        selected and len(selected) > 240
+        for selected in (normalized_model, normalized_main_model, normalized_agent_model)
+    ):
         return {"error": "model identifier exceeds the bounded limit"}, 400
     if not user_id:
         return {"error": "authenticated user id is required"}, 401
@@ -808,12 +866,53 @@ def start_cognitive_swarm_run(
                 "errorType": type(exc).__name__,
             }, 503
 
+    resolver_mode = "free" if _force_free_profile else normalized_mode
     try:
         execution_resolution = load_execution_resolution(
             get_connection,
             user_id=user_id,
-            requested_model=normalized_model or "",
+            requested_model="" if _force_free_profile else normalized_model or "",
+            requested_main_model=(
+                "" if _force_free_profile else normalized_main_model or ""
+            ),
+            requested_agent_model=(
+                "" if _force_free_profile else normalized_agent_model or ""
+            ),
+            requested_mode=resolver_mode,
         )
+    except ExecutionResolutionError as exc:
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker=exc.failure_family,
+            reason=str(exc),
+            next_action=(
+                "PURCHASE_CREDITS"
+                if exc.failure_family == "paid_purchase_required"
+                else "ADD_PROVIDER_FUNDED_CREDITS"
+                if exc.failure_family == "paid_credits_required"
+                else "ACTIVATE_VERIFIED_OPENROUTER_ROUTE"
+            ),
+            error_type=type(exc).__name__,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": exc.failure_family,
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+            "requestedMode": normalized_mode,
+            "secretValuesReturned": False,
+        }, exc.status_code
     except LookupError as exc:
         state = _persist_execution_resolution_blocker(
             get_connection,
@@ -872,9 +971,9 @@ def start_cognitive_swarm_run(
             run_id=resolved_run_id,
             trace_id=resolved_trace_id,
             status="BLOCKED",
-            blocker="NO_PRICE_VERIFIED_LITELLM_ROUTE_READY",
-            reason="No active paid route or free revolver route is currently ready.",
-            next_action="ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE",
+            blocker="NO_VERIFIED_EXECUTION_ROUTE_READY",
+            reason="No active OpenRouter paid route or direct FreeLLM route is ready.",
+            next_action="ACTIVATE_OPENROUTER_OR_FREELLM_ROUTE_WITH_CANARY_EVIDENCE",
         )
         return {
             "ok": False,
@@ -885,7 +984,7 @@ def start_cognitive_swarm_run(
             "source": state["source"],
             "evidenceId": state["evidenceId"],
             "receivedEvidenceId": received_state["evidenceId"],
-            "blocker": "NO_PRICE_VERIFIED_LITELLM_ROUTE_READY",
+            "blocker": "NO_VERIFIED_EXECUTION_ROUTE_READY",
             "reason": state["reason"],
             "nextAction": state["nextAction"],
         }, 503
@@ -921,21 +1020,18 @@ def start_cognitive_swarm_run(
                 "reason": state["reason"],
                 "nextAction": state["nextAction"],
             }, 503
-    resolved_model = str(
-        execution_resolution.primary_route.get("model_id")
-        or execution_resolution.primary_route.get("modelId")
-        or ""
-    ).strip()
-    if not resolved_model:
+    resolved_model = route_provider_model(execution_resolution.primary_route)
+    resolved_agent_model = route_provider_model(execution_resolution.agent_route)
+    if not resolved_model or not resolved_agent_model:
         state = _persist_execution_resolution_blocker(
             get_connection,
             user_id=user_id,
             run_id=resolved_run_id,
             trace_id=resolved_trace_id,
             status="BLOCKED",
-            blocker="RESOLVED_LITELLM_ALIAS_MISSING",
-            reason="The selected execution route has no bounded LiteLLM alias.",
-            next_action="REPAIR_LITELLM_ROUTE_ALIAS",
+            blocker="RESOLVED_PROVIDER_MODEL_MISSING",
+            reason="The selected execution route has no bounded provider model.",
+            next_action="REPAIR_EXECUTION_ROUTE_PROVIDER_MODEL",
         )
         return {
             "ok": False,
@@ -946,7 +1042,7 @@ def start_cognitive_swarm_run(
             "source": state["source"],
             "evidenceId": state["evidenceId"],
             "receivedEvidenceId": received_state["evidenceId"],
-            "blocker": "RESOLVED_LITELLM_ALIAS_MISSING",
+            "blocker": "RESOLVED_PROVIDER_MODEL_MISSING",
             "reason": state["reason"],
             "nextAction": state["nextAction"],
         }, 503
@@ -960,6 +1056,7 @@ def start_cognitive_swarm_run(
             mission_intent = asyncio.run(classify_mission_intent(
                 normalized_mission,
                 model=resolved_model,
+                route=execution_resolution.primary_route,
                 stage_billing=None,
             ))
             if mission_intent.mode == "repository_execution":
@@ -1016,6 +1113,7 @@ def start_cognitive_swarm_run(
                 normalized_mission,
                 evidence=normalized_evidence,
                 model=resolved_model,
+                route=execution_resolution.primary_route,
                 repository_tool_factory=(
                     repository_toolset.tools_for_role if repository_toolset else None
                 ),
@@ -1157,8 +1255,18 @@ def start_cognitive_swarm_run(
             exc = (
                 raw_exc
                 if isinstance(raw_exc, SwarmExecutionError)
-                else classify_swarm_exception(raw_exc, stage="free-single-agent")
+                else classify_swarm_exception(
+                    raw_exc,
+                    stage="free-single-agent",
+                    transport=route_transport(execution_resolution.primary_route),
+                )
             )
+            if isinstance(exc, SwarmExecutionError) and exc.retryable:
+                _record_route_cooldown(
+                    get_connection,
+                    execution_resolution=execution_resolution,
+                    failure=exc,
+                )
             conn = get_connection()
             try:
                 failed_state = transition_agent_run(
@@ -1215,25 +1323,20 @@ def start_cognitive_swarm_run(
             "runtime": "openai-agents-sdk",
             "blocker": "EXECUTION_PROFILE_UNSUPPORTED",
         }, 503
-    if resolved_model not in _allowed_models():
-        return {
-            "ok": False,
-            "runtime": "openai-agents-sdk",
-            "blocker": "PAID_SWARM_ALIAS_NOT_ALLOWLISTED",
-            "resolvedModelId": resolved_model,
-            "nextAction": "ATTACH_EXPECTED_LITELLM_PROVIDER_MODEL",
-        }, 409
-
     try:
         stage_billing = AgentStageBilling(
             get_connection=get_connection,
             user_id=user_id,
             run_id=resolved_run_id,
             trace_id=resolved_trace_id,
+            main_route=execution_resolution.primary_route,
+            agent_route=execution_resolution.agent_route,
+            requested_mode=execution_resolution.requested_mode,
         )
         mission_intent = asyncio.run(classify_mission_intent(
             normalized_mission,
             model=resolved_model,
+            route=execution_resolution.primary_route,
             stage_billing=stage_billing,
         ))
     except AgentBillingError as exc:
@@ -1257,6 +1360,7 @@ def start_cognitive_swarm_run(
                     mission=normalized_mission,
                     evidence=normalized_evidence,
                     model=fallback_model,
+                    mode=execution_resolution.requested_mode,
                     run_id=resolved_run_id,
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
@@ -1302,7 +1406,11 @@ def start_cognitive_swarm_run(
         exc = (
             raw_exc
             if isinstance(raw_exc, SwarmExecutionError)
-            else classify_swarm_exception(raw_exc, stage="intent-router")
+            else classify_swarm_exception(
+                raw_exc,
+                stage="intent-router",
+                transport=route_transport(execution_resolution.primary_route),
+            )
         )
         if isinstance(exc, SwarmExecutionError) and exc.http_status == 429:
             fallback_resolution = free_fallback_resolution(
@@ -1310,7 +1418,7 @@ def start_cognitive_swarm_run(
                 reason="paid_provider_429_resolved_to_free_revolver",
             )
             if fallback_resolution is not None:
-                _record_paid_route_cooldown(
+                _record_route_cooldown(
                     get_connection,
                     execution_resolution=execution_resolution,
                     failure=exc,
@@ -1326,6 +1434,7 @@ def start_cognitive_swarm_run(
                     mission=normalized_mission,
                     evidence=normalized_evidence,
                     model=fallback_model,
+                    mode=execution_resolution.requested_mode,
                     run_id=resolved_run_id,
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
@@ -1488,6 +1597,8 @@ def start_cognitive_swarm_run(
         mission=normalized_mission,
         evidence=normalized_evidence,
         model=resolved_model,
+        route=execution_resolution.primary_route,
+        agent_route=execution_resolution.agent_route,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
         job_id=implementation_job.job_id if implementation_job else None,
@@ -1505,6 +1616,9 @@ def start_cognitive_swarm_run(
             "learningState": "PENDING_EVIDENCE" if implementation_job else "NOT_REQUESTED",
             "executionResolution": execution_resolution.safe_payload(),
             "resolvedModelId": resolved_model,
+            "resolvedMainModelId": resolved_model,
+            "resolvedAgentModelId": resolved_agent_model,
+            "sixAgentModelShared": True,
             "maxBackgroundAgents": execution_resolution.max_background_agents,
             "autoMerge": False,
         },
@@ -1518,6 +1632,9 @@ def resume_cognitive_swarm_run(
     run_id: str,
     evidence: str = "",
     model: str | None = None,
+    main_model: str | None = None,
+    agent_model: str | None = None,
+    mode: str = "auto",
     trace_id: str | None = None,
 ) -> tuple[dict[str, object], int]:
     """Resume one owner-scoped persisted run through its existing bounded lease path."""
@@ -1525,14 +1642,22 @@ def resume_cognitive_swarm_run(
     normalized_run_id = str(run_id or "").strip()
     normalized_evidence = str(evidence or "").strip()
     normalized_model = str(model or "").strip() or None
+    normalized_main_model = str(main_model or normalized_model or "").strip() or None
+    normalized_agent_model = str(
+        agent_model or normalized_model or normalized_main_model or ""
+    ).strip() or None
+    normalized_mode = str(mode or "auto").strip().lower()
     if not normalized_run_id:
         return {"error": "run id is required"}, 400
     if len(normalized_evidence) > 250_000:
         return {"error": "evidence exceeds the bounded input limit"}, 400
     if _contains_secret_shaped_text(normalized_evidence):
         return {"error": "secret-shaped material is forbidden in swarm input"}, 400
-    if normalized_model and normalized_model not in _allowed_models():
-        return {"error": "model is not allowlisted"}, 400
+    if any(
+        selected and len(selected) > 240
+        for selected in (normalized_model, normalized_main_model, normalized_agent_model)
+    ):
+        return {"error": "model identifier exceeds the bounded limit"}, 400
     if not user_id:
         return {"error": "authenticated user id is required"}, 401
 
@@ -1709,11 +1834,109 @@ def resume_cognitive_swarm_run(
         f"{normalized_evidence or '[no new evidence supplied]'}"
     )
     try:
+        execution_resolution = load_execution_resolution(
+            get_connection,
+            user_id=user_id,
+            requested_model=normalized_model or "",
+            requested_main_model=normalized_main_model or "",
+            requested_agent_model=normalized_agent_model or "",
+            requested_mode=normalized_mode,
+        )
+    except (ExecutionResolutionError, LookupError) as exc:
+        failure_family = (
+            exc.failure_family
+            if isinstance(exc, ExecutionResolutionError)
+            else "AGENT_BILLING_USER_NOT_FOUND"
+        )
+        status_code = (
+            exc.status_code
+            if isinstance(exc, ExecutionResolutionError)
+            else 404
+        )
+        blocked_state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=claim.run.run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker=failure_family,
+            reason=str(exc),
+            next_action="START_NEW_RUN_OR_REPAIR_REQUESTED_ROUTE",
+            error_type=type(exc).__name__,
+            task_id=claim.task_id,
+            expected_lease_token=claim.lease_token,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "traceId": resolved_trace_id,
+            "status": blocked_state["status"],
+            "source": blocked_state["source"],
+            "evidenceId": blocked_state["evidenceId"],
+            "resumeClaimEvidenceId": claim.evidence_id,
+            "resumed": True,
+            "blocker": failure_family,
+            "reason": blocked_state["reason"],
+            "nextAction": blocked_state["nextAction"],
+            "requestedMode": normalized_mode,
+        }, status_code
+    if execution_resolution is None:
+        blocked_state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=claim.run.run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="NO_VERIFIED_EXECUTION_ROUTE_READY",
+            reason="No verified execution route is ready for the resume boundary.",
+            next_action="START_NEW_RUN_OR_ACTIVATE_VERIFIED_ROUTE",
+            task_id=claim.task_id,
+            expected_lease_token=claim.lease_token,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "status": blocked_state["status"],
+            "blocker": "NO_VERIFIED_EXECUTION_ROUTE_READY",
+            "nextAction": blocked_state["nextAction"],
+            "requestedMode": normalized_mode,
+        }, 503
+    if execution_resolution.profile_id != PAID_SWARM_PROFILE:
+        blocked_state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=claim.run.run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="FREE_MODE_REQUIRES_NEW_SINGLE_AGENT_RUN",
+            reason="A paid swarm resume cannot change transport mid-run.",
+            next_action="START_NEW_FREE_SINGLE_AGENT_RUN",
+            task_id=claim.task_id,
+            expected_lease_token=claim.lease_token,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "status": blocked_state["status"],
+            "blocker": "FREE_MODE_REQUIRES_NEW_SINGLE_AGENT_RUN",
+            "reason": blocked_state["reason"],
+            "nextAction": blocked_state["nextAction"],
+            "requestedMode": normalized_mode,
+        }, 409
+    resolved_model = route_provider_model(execution_resolution.primary_route)
+    resolved_agent_model = route_provider_model(execution_resolution.agent_route)
+    try:
         stage_billing = AgentStageBilling(
             get_connection=get_connection,
             user_id=user_id,
             run_id=claim.run.run_id,
             trace_id=resolved_trace_id,
+            main_route=execution_resolution.primary_route,
+            agent_route=execution_resolution.agent_route,
+            requested_mode=execution_resolution.requested_mode,
         )
     except AgentBillingError as exc:
         try:
@@ -1760,7 +1983,9 @@ def resume_cognitive_swarm_run(
         trace_id=resolved_trace_id,
         mission=claim.run.mission_summary,
         evidence=execution_evidence,
-        model=normalized_model,
+        model=resolved_model,
+        route=execution_resolution.primary_route,
+        agent_route=execution_resolution.agent_route,
         task_id=claim.task_id,
         lease_token=claim.lease_token,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
@@ -1773,6 +1998,11 @@ def resume_cognitive_swarm_run(
             "a2aContextId": claim.run.a2a_context_id,
             "resumed": True,
             "resumeClaimEvidenceId": claim.evidence_id,
+            "executionResolution": execution_resolution.safe_payload(),
+            "resolvedModelId": resolved_model,
+            "resolvedMainModelId": resolved_model,
+            "resolvedAgentModelId": resolved_agent_model,
+            "sixAgentModelShared": True,
             "recoveryTask": {
                 "taskId": claim.task_id,
                 "workPackage": claim.work_package,
@@ -1794,8 +2024,11 @@ def register_cognitive_swarm_routes(
         return jsonify({
             "ok": True,
             "runtime": "openai-agents-sdk",
-            "configured": ensure_openai_runtime_key(),
-            "allowedModels": sorted(_allowed_models()),
+            "configured": None,
+            "configurationResolution": "request-time-persisted-route",
+            "executionModes": ["auto", "paid", "free"],
+            "allowedModels": [],
+            "modelsResolvedFromDatabase": True,
             "manifest": manifest_payload(),
         })
 
@@ -1840,6 +2073,9 @@ def register_cognitive_swarm_routes(
             run_id=run_id,
             evidence=str(body.get("evidence") or body.get("evidenceText") or ""),
             model=str(body.get("model") or "") or None,
+            main_model=str(body.get("mainModel") or "") or None,
+            agent_model=str(body.get("agentModel") or "") or None,
+            mode=str(body.get("mode") or "auto"),
         )
         return jsonify(payload), status_code
 
@@ -1853,6 +2089,9 @@ def register_cognitive_swarm_routes(
             mission=str(body.get("mission") or ""),
             evidence=str(body.get("evidence") or body.get("evidenceText") or ""),
             model=str(body.get("model") or "") or None,
+            main_model=str(body.get("mainModel") or "") or None,
+            agent_model=str(body.get("agentModel") or "") or None,
+            mode=str(body.get("mode") or "auto"),
         )
         return jsonify(payload), status_code
 

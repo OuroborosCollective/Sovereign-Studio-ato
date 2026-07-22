@@ -139,7 +139,7 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     owner_runtime = (BACKEND / "owner_input_runtime.py").read_text("utf-8")
     assert "register_free_revolver_provider_runtime(" in app
     assert "032_free_revolver_provider_control.sql" in app
-    assert "033_freellmapi_managed_provider.sql" in app
+    assert "033_openrouter_paid_freellm_direct.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     assert '"revolver_provider_key"' in owner_runtime
@@ -178,7 +178,8 @@ def test_provider_recovery_and_key_rotation_are_fail_closed() -> None:
     assert "_cleanup_orphaned_secret_files(query)" in runtime
     assert 'glob("revolver_provider_key.*.txt")' in runtime
     assert "f\"{source_id}\\n{model_id}\\n{key_fingerprint}\"" in runtime
-    assert 'source.get("auth_mode") in {"bearer", _MANAGED_AUTH_MODE}' in runtime
+    assert 'str(source.get("auth_mode") or "") != _MANAGED_AUTH_MODE' in runtime
+    assert "is_managed_internal_provider_url" in runtime
     assert "ON CONFLICT (id) DO UPDATE SET" in runtime
     assert "model_id=EXCLUDED.model_id" in runtime
 
@@ -189,7 +190,8 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     migration = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
     assert '"input_cost_per_token": 0' not in runtime
     assert '"output_cost_per_token": 0' not in runtime
-    assert "litellm_completion_canary(alias)" in runtime
+    assert "_direct_completion_canary(" in runtime
+    assert "never traverses\nLiteLLM" in runtime
     assert "provider_cost not in (None, 0, 0.0)" in runtime
     assert "canary_cost_state" in migration
     assert "pricing_verified_at" in migration
