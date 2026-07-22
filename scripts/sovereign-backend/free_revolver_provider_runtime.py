@@ -710,9 +710,7 @@ def register_free_revolver_provider_runtime(
 
         protected = bytearray()
         path = (
-            _managed_secret_path()
-            if source["auth_mode"] == _MANAGED_AUTH_MODE
-            else _secret_path(owner_request_id)
+            _secret_path(owner_request_id)
             if source["auth_mode"] in {"bearer", "x-api-key"}
             else _owner_root() / ".no-key-provider"
         )
@@ -720,7 +718,9 @@ def register_free_revolver_provider_runtime(
         last_status = None
         key = ""
         try:
-            if source["auth_mode"] != "none":
+            if source["auth_mode"] == _MANAGED_AUTH_MODE:
+                protected, key = _read_managed_key()
+            elif source["auth_mode"] != "none":
                 info = path.lstat()
                 if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
                     raise ValueError("free_provider_secret_permissions_invalid")
@@ -1120,11 +1120,13 @@ def register_free_revolver_provider_runtime(
 
         protected = bytearray()
         key = ""
+        reconcile_stage = "managed_key_read"
         try:
             protected, key = _read_managed_key(
                 str(source.get("key_fingerprint") or "")
             )
 
+            reconcile_stage = "model_activation"
             source_payload = dict(source)
             ready = []
             blocked = []
@@ -1137,16 +1139,22 @@ def register_free_revolver_provider_runtime(
                 )
                 if not bool(stored.get("free_verified")):
                     pricing_source = "managed-freellm-zero-cost-quota-contract"
-                result = activate_model(
-                    source_payload,
-                    {
-                        "modelId": model_id,
-                        "displayName": str(stored.get("display_name") or model_id),
-                        "pricingSource": pricing_source,
-                        "payloadSha256": str(stored.get("discovery_payload_sha256") or ""),
-                    },
-                    key,
-                )
+                try:
+                    result = activate_model(
+                        source_payload,
+                        {
+                            "modelId": model_id,
+                            "displayName": str(stored.get("display_name") or model_id),
+                            "pricingSource": pricing_source,
+                            "payloadSha256": str(stored.get("discovery_payload_sha256") or ""),
+                        },
+                        key,
+                    )
+                except (ArithmeticError, TypeError, ValueError):
+                    result = {
+                        "ok": False,
+                        "blocker": "freellm_model_activation_invalid_evidence",
+                    }
                 if result.get("ok"):
                     ready.append({
                         "modelId": model_id,
@@ -1160,6 +1168,7 @@ def register_free_revolver_provider_runtime(
                     or "free_provider_canary_failed"
                 )[:120]
                 blocked.append({"modelId": model_id, "blocker": blocker})
+                reconcile_stage = "model_state_persistence"
                 query(
                     """UPDATE llm_revolver_provider_models
                        SET status='blocked', enabled=false, last_error_code=%s,
@@ -1168,6 +1177,7 @@ def register_free_revolver_provider_runtime(
                     (blocker, stored["id"]),
                     write=True,
                 )
+                reconcile_stage = "model_activation"
                 alias = str(stored.get("litellm_alias") or "")
                 if alias:
                     query(
@@ -1191,6 +1201,7 @@ def register_free_revolver_provider_runtime(
                 if ready
                 else "no_freellm_route_activated"
             )
+            reconcile_stage = "provider_state_persistence"
             query(
                 """UPDATE llm_revolver_provider_sources
                    SET status=%s, last_error_code=%s, last_checked_at=NOW(),
@@ -1199,6 +1210,7 @@ def register_free_revolver_provider_runtime(
                 (status, error_code, source_id),
                 write=True,
             )
+            reconcile_stage = "check_persistence"
             persist_check(
                 source_id,
                 check_kind="managed_quota_direct_canary",
@@ -1249,10 +1261,25 @@ def register_free_revolver_provider_runtime(
                 "sourceId": source_id,
                 "protectedValuesReturned": False,
             }), 503
-        except (OSError, UnicodeDecodeError, ValueError):
+        except (ArithmeticError, OSError, TypeError, UnicodeDecodeError, ValueError):
+            blocker = {
+                "managed_key_read": "freellm_managed_key_unavailable",
+                "model_activation": "freellm_model_reconcile_failed",
+                "model_state_persistence": "freellm_model_state_persistence_failed",
+                "provider_state_persistence": "freellm_provider_state_persistence_failed",
+                "check_persistence": "freellm_check_persistence_failed",
+            }.get(reconcile_stage, "freellm_reconcile_runtime_failed")
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status='degraded', last_error_code=%s,
+                       last_checked_at=NOW(), updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (blocker, source_id),
+                write=True,
+            )
             return jsonify({
-                "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher geprüft werden.",
-                "blocker": "freellm_managed_key_unavailable",
+                "error": "Der direkte FreeLLM-Abgleich konnte nicht abgeschlossen werden.",
+                "blocker": blocker,
                 "sourceId": source_id,
                 "protectedValuesReturned": False,
             }), 503
