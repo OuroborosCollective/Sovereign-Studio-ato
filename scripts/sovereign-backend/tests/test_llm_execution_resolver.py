@@ -60,7 +60,6 @@ def route(
                 "require_parameters": True,
                 "allow_fallbacks": False,
                 "data_collection": "deny",
-                "zdr": True,
             } if not free else {},
         },
     }

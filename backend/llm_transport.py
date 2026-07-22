@@ -85,7 +85,6 @@ def route_is_openrouter_paid(route: dict[str, Any]) -> bool:
         and policy.get("require_parameters") is True
         and policy.get("allow_fallbacks") is False
         and policy.get("data_collection") == "deny"
-        and policy.get("zdr") is True
     )
 
 

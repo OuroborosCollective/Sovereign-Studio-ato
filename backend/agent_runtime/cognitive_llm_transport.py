@@ -117,18 +117,17 @@ def _openrouter_policy(route: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(policy, dict):
         raise RouteRuntimeError(
             "OPENROUTER_PROVIDER_POLICY_MISSING",
-            "CONFIGURE_OPENROUTER_ZDR_PROVIDER_POLICY",
+            "CONFIGURE_OPENROUTER_PROVIDER_POLICY",
         )
     required = {
         "require_parameters": True,
         "allow_fallbacks": False,
         "data_collection": "deny",
-        "zdr": True,
     }
     if any(policy.get(key) != value for key, value in required.items()):
         raise RouteRuntimeError(
             "OPENROUTER_PROVIDER_POLICY_REJECTED",
-            "CONFIGURE_OPENROUTER_ZDR_PROVIDER_POLICY",
+            "CONFIGURE_OPENROUTER_PROVIDER_POLICY",
         )
     return dict(required)
 
