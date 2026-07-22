@@ -284,6 +284,7 @@ jobs:
           name: sovereign-freellmpool-upstream-${{ github.sha }}
           path: .sovereign-evidence/*.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
       - name: Cleanup isolated proxy
