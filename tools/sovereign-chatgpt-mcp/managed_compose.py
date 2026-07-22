@@ -209,6 +209,7 @@ FORBIDDEN_BIND_SOURCES = {
 MAX_TEMPLATE_FILES = 20
 MAX_TEMPLATE_BYTES = 500_000
 MAX_STACK_ENV_BYTES = 64_000
+MANAGED_TEMPLATE_FILE_MODE = 0o644
 _SECRET_VALUE_RE = re.compile(r"^[A-Za-z0-9_-]{32,160}$")
 
 
@@ -637,6 +638,19 @@ class ManagedComposeRuntime:
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
+
+    @classmethod
+    def _write_template_files(
+        cls,
+        deploy_root: Path,
+        files: list[tuple[str, bytes]],
+    ) -> None:
+        for name, payload in files:
+            destination = deploy_root / name
+            if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+                raise RuntimeError(f"Deploy-Template-Datei ist ungültig: {name}")
+            cls._write_atomic(destination, payload, mode=MANAGED_TEMPLATE_FILE_MODE)
+            os.chmod(destination, MANAGED_TEMPLATE_FILE_MODE)
 
     @staticmethod
     def _bounded_env_value(value: str) -> str:
@@ -1678,8 +1692,7 @@ const call = async (names, payload) => {
             return {"ok": False, "status": "BLOCKED", "blocker": "Deploy-Root darf kein Symlink sein"}
         deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
         os.chmod(deploy_root, 0o750)
-        for name, payload in files:
-            self._write_atomic(deploy_root / name, payload)
+        self._write_template_files(deploy_root, files)
         compose_name = next(name for name, _ in files if name in {"docker-compose.yml", "compose.yml", "compose.yaml"})
         compose_argv = [
             "docker",
