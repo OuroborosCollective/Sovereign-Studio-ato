@@ -32,10 +32,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   settings, buildProduct, blueprint, setBlueprint, addCard, log, selectedFile, setSelectedFile, setWorkView,
   repoUrl, setRepoUrl, setShowSettings, isWorking
 }) => {
+  const [searchQuery, setSearchQuery] = React.useState('');
+
   const handleChipClick = (chip: string) => {
     setBlueprint(chip);
     log(`Idee ausgewaehlt: ${chip}`);
   };
+
+  const filteredFiles = demoFiles.filter((file) =>
+    file.path.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <section className="w-full md:w-64 shrink-0 border-r border-stone-200 bg-white flex flex-col">
@@ -125,11 +131,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-2 bg-indigo-50/50 border-b border-stone-200 flex items-center gap-2 shrink-0">
         <input
           placeholder="Datei suchen"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner"
           aria-label="Datei suchen"
         />
         <button
-          onClick={() => log('Dateisuche vorbereitet.')}
+          onClick={() => log(`Dateisuche nach "${searchQuery}" gestartet.`)}
           aria-label="Datei im Repository suchen"
           title="Datei im Repository suchen"
           className="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold uppercase shrink-0"
@@ -139,17 +147,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto bg-white">
-        {demoFiles.map((file) => (
-          <button
-            key={file.path}
-            onClick={() => { setSelectedFile(file); setWorkView('editor'); log(`Datei gewaehlt: ${file.path}`); }}
-            title={file.path}
-            className={`w-full p-3 border-b border-stone-100 text-[13px] flex items-center gap-2 text-left hover:bg-stone-50 ${selectedFile.path === file.path ? 'bg-teal-50 text-teal-700 border-l-4 border-l-teal-600 font-semibold' : 'text-stone-600'}`}
-          >
-            <span>{file.icon}</span>
-            <span className="truncate">{file.path}</span>
-          </button>
-        ))}
+        {filteredFiles.length > 0 ? (
+          filteredFiles.map((file) => (
+            <button
+              key={file.path}
+              onClick={() => { setSelectedFile(file); setWorkView('editor'); log(`Datei gewaehlt: ${file.path}`); }}
+              title={file.path}
+              className={`w-full p-3 border-b border-stone-100 text-[13px] flex items-center gap-2 text-left hover:bg-stone-50 ${selectedFile.path === file.path ? 'bg-teal-50 text-teal-700 border-l-4 border-l-teal-600 font-semibold' : 'text-stone-600'}`}
+            >
+              <span>{file.icon}</span>
+              <span className="truncate">{file.path}</span>
+            </button>
+          ))
+        ) : (
+          <div className="p-4 text-[11px] text-stone-500 text-center italic">
+            Keine passenden Dateien gefunden
+          </div>
+        )}
       </div>
     </section>
   );

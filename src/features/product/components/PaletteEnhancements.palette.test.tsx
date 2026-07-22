@@ -212,6 +212,36 @@ describe('Palette Accessibility Enhancements', () => {
       const chipButton = screen.getByRole('button', { name: 'Idee übernehmen: CI Fehleranalyse' });
       expect(chipButton).toHaveAttribute('title', 'Idee übernehmen: CI Fehleranalyse');
     });
+
+    it('filters files dynamically based on search input', () => {
+      const sidebarProps = {
+        settings: { repoMode: 'single', packageManager: 'npm', linter: 'eslint', maxFixLoops: 3, specialization: '' },
+        buildProduct: vi.fn(),
+        blueprint: '',
+        setBlueprint: vi.fn(),
+        addCard: vi.fn(),
+        log: vi.fn(),
+        selectedFile: { path: 'src/App.tsx', icon: 'TS' },
+        setSelectedFile: vi.fn(),
+        setWorkView: vi.fn(),
+        repoUrl: '',
+        setRepoUrl: vi.fn(),
+        setShowSettings: vi.fn(),
+      };
+      render(<Sidebar {...sidebarProps as any} />);
+
+      const searchInput = screen.getByLabelText('Datei suchen');
+      fireEvent.change(searchInput, { target: { value: 'package' } });
+
+      // package.json should be visible
+      expect(screen.getByRole('button', { name: /PKG.*package\.json/i })).toBeInTheDocument();
+      // src/App.tsx should NOT be visible
+      expect(screen.queryByRole('button', { name: /TS.*src\/App\.tsx/i })).not.toBeInTheDocument();
+
+      // Clear input / no match
+      fireEvent.change(searchInput, { target: { value: 'nonexistent-file-xyz' } });
+      expect(screen.getByText('Keine passenden Dateien gefunden')).toBeInTheDocument();
+    });
   });
 
   describe('AgentQuestionCard Enhancements', () => {
