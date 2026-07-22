@@ -45,6 +45,8 @@ MCP_HOST_PORT="8090"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_CROSS_RUNTIME_PARITY="true"
+MCP_IMAGE_PULL_ATTEMPTS="${SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS:-36}"
+MCP_IMAGE_PULL_DELAY_SECONDS="${SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS:-10}"
 REQUIRE_TUNNEL="${SOVEREIGN_MCP_REQUIRE_TUNNEL:-0}"
 TUNNEL_MODE="${SOVEREIGN_MCP_TUNNEL_MODE:-auto}"
 INSTALL_STAGE="initializing"
@@ -170,6 +172,50 @@ valid_mcp_image_digest() {
   local value="$1"
   [[ "$value" == "$MCP_IMAGE_REPOSITORY"@sha256:* ]] \
     && [[ "${value#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
+}
+
+classify_mcp_image_pull_failure() {
+  local log_file="$1"
+  if grep -Eqi '(manifest unknown|manifest[^[:cntrl:]]*(not found|unknown)|name unknown|repository does not exist)' "$log_file"; then
+    printf 'image_not_published\n'
+  elif grep -Eqi '(unauthorized|denied|authentication required|insufficient[_ -]scope)' "$log_file"; then
+    printf 'registry_auth_denied\n'
+  elif grep -Eqi '(timeout|timed out|connection reset|temporary failure|tls handshake timeout|service unavailable|(^|[^0-9])(502|503|504)([^0-9]|$))' "$log_file"; then
+    printf 'registry_transport\n'
+  else
+    printf 'unexpected_pull_failure\n'
+  fi
+}
+
+pull_exact_mcp_image() {
+  if [[ -n "$DOCKER_CONFIG_VALUE" ]]; then
+    docker --config "$DOCKER_CONFIG_VALUE" pull "$MCP_TAGGED_IMAGE"
+  else
+    docker pull "$MCP_TAGGED_IMAGE"
+  fi
+}
+
+wait_for_exact_mcp_image() {
+  local attempt failure_family pull_log
+  pull_log="$(mktemp)"
+  for attempt in $(seq 1 "$MCP_IMAGE_PULL_ATTEMPTS"); do
+    if pull_exact_mcp_image >"$pull_log" 2>&1; then
+      rm -f "$pull_log"
+      return 0
+    fi
+    failure_family="$(classify_mcp_image_pull_failure "$pull_log")"
+    if [[ "$failure_family" == "registry_auth_denied" || "$failure_family" == "unexpected_pull_failure" ]]; then
+      rm -f "$pull_log"
+      fail "immutable MCP image pull failed: family=$failure_family attempt=$attempt/$MCP_IMAGE_PULL_ATTEMPTS"
+    fi
+    if (( attempt >= MCP_IMAGE_PULL_ATTEMPTS )); then
+      rm -f "$pull_log"
+      fail "immutable MCP image pull failed: family=$failure_family attempts=$MCP_IMAGE_PULL_ATTEMPTS"
+    fi
+    sleep "$MCP_IMAGE_PULL_DELAY_SECONDS"
+  done
+  rm -f "$pull_log"
+  fail "immutable MCP image pull failed without a terminal classification"
 }
 
 resolve_running_mcp_image_digest() {
@@ -299,6 +345,10 @@ INSTALL_STAGE="preflight"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
 [[ "$REQUIRE_TUNNEL" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_REQUIRE_TUNNEL must be 0 or 1"
 [[ "$TUNNEL_MODE" =~ ^(auto|required|disabled)$ ]] || fail "SOVEREIGN_MCP_TUNNEL_MODE must be auto, required or disabled"
+[[ "$MCP_IMAGE_PULL_ATTEMPTS" =~ ^[0-9]+$ ]] && (( MCP_IMAGE_PULL_ATTEMPTS >= 1 && MCP_IMAGE_PULL_ATTEMPTS <= 120 )) \
+  || fail "SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS must be between 1 and 120"
+[[ "$MCP_IMAGE_PULL_DELAY_SECONDS" =~ ^[0-9]+$ ]] && (( MCP_IMAGE_PULL_DELAY_SECONDS >= 1 && MCP_IMAGE_PULL_DELAY_SECONDS <= 60 )) \
+  || fail "SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS must be between 1 and 60"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
 for command in docker systemctl python3 git ss openssl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
@@ -598,11 +648,7 @@ fi
 
 INSTALL_STAGE="pull_immutable_image"
 MCP_TAGGED_IMAGE="$MCP_IMAGE_REPOSITORY:$EXPECTED_REVISION"
-if [[ -n "$DOCKER_CONFIG_VALUE" ]]; then
-  docker --config "$DOCKER_CONFIG_VALUE" pull "$MCP_TAGGED_IMAGE"
-else
-  docker pull "$MCP_TAGGED_IMAGE"
-fi
+wait_for_exact_mcp_image
 MCP_IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MCP_TAGGED_IMAGE")"
 [[ "$MCP_IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "MCP image revision label does not match expected revision"
 MCP_IMAGE_CROSS_RUNTIME_PARITY="$(docker image inspect --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}' "$MCP_TAGGED_IMAGE")"
