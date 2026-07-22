@@ -255,6 +255,7 @@ jobs:
               "nonRootUid": 10001,
               "readOnlyRootFilesystem": True,
               "hostPortsPublished": False,
+              "portBindingsVerifiedEmpty": True,
               "dockerSocketMounted": False,
               "healthVerified": True,
               "catalogVerified": True,
