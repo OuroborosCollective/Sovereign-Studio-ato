@@ -17,6 +17,7 @@ from free_revolver_provider_contracts import (
     assert_provider_target_allowed,
     assert_public_https_host,
     is_managed_internal_provider_url,
+    managed_internal_source_spec,
     models_url_candidates,
     normalize_api_base,
     normalize_max_auto_activate,
@@ -44,17 +45,24 @@ def test_provider_url_rejects_credentials_in_url() -> None:
         normalize_api_base("https://user:secret@api.example.test/v1")
 
 
-def test_only_exact_managed_freellmapi_endpoint_bypasses_public_https_resolution() -> None:
-    managed = "http://freellmapi:3001/v1"
-    assert normalize_api_base(managed) == managed
-    assert is_managed_internal_provider_url(managed) is True
-    assert is_managed_internal_provider_url(f"{managed}/models") is True
-    assert is_managed_internal_provider_url(f"{managed}/chat/completions") is True
-    assert_provider_target_allowed(f"{managed}/models")
-    assert_provider_target_allowed(f"{managed}/chat/completions")
+def test_only_exact_managed_free_endpoints_bypass_public_https_resolution() -> None:
+    managed_sources = {
+        "freellmapi-direct": "http://freellmapi:3001/v1",
+        "freellmpool-private": "http://freellmpool:8080/v1",
+    }
+    for source_type, managed in managed_sources.items():
+        assert normalize_api_base(managed) == managed
+        assert is_managed_internal_provider_url(managed) is True
+        assert is_managed_internal_provider_url(f"{managed}/models") is True
+        assert is_managed_internal_provider_url(f"{managed}/chat/completions") is True
+        assert managed_internal_source_spec(managed)["sourceId"] == source_type
+        assert_provider_target_allowed(f"{managed}/models")
+        assert_provider_target_allowed(f"{managed}/chat/completions")
     for blocked in (
         "http://freellmapi:3002/v1",
         "http://freellmapi:3001/admin",
+        "http://freellmpool:8081/v1",
+        "http://freellmpool:8080/admin",
         "http://sovereign-backend:8787/v1",
         "http://127.0.0.1:3001/v1",
     ):
@@ -209,6 +217,7 @@ def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_key
     migration_32 = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
     migration_33 = (BACKEND / "migrations" / "033_freellmapi_managed_provider.sql").read_text("utf-8")
     migration_34 = (BACKEND / "migrations" / "034_freellm_provider_check_kinds.sql").read_text("utf-8")
+    migration_35 = (BACKEND / "migrations" / "035_freellmpool_private_source.sql").read_text("utf-8")
 
     assert "tenant_id UUID NULL REFERENCES admin_users" not in migration_31
     assert "tenant_id UUID NOT NULL REFERENCES admin_users" not in migration_31
@@ -232,6 +241,9 @@ def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_key
     assert "managed_quota_direct_canary" in migration_34
     assert "direct_route_canary" in migration_34
     assert "VALIDATE CONSTRAINT llm_revolver_provider_checks_check_kind_check" in migration_34
+    assert "c79ff468-ee08-5686-97df-756fa58b74f0" in migration_35
+    assert "http://freellmpool:8080/v1" in migration_35
+    assert "api_key" not in migration_35.lower()
 
 
 def test_app_registers_provider_runtime_and_readiness_requires_migration() -> None:
@@ -240,6 +252,9 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "register_free_revolver_provider_runtime(" in app
     assert "032_free_revolver_provider_control.sql" in app
     assert "033_openrouter_paid_freellm_direct.sql" in app
+    assert "033_freellmapi_managed_provider.sql" in app
+    assert "034_freellm_provider_check_kinds.sql" in app
+    assert "035_freellmpool_private_source.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     ast.parse(provider_runtime)
@@ -256,7 +271,7 @@ def test_provider_route_identifiers_and_activation_limits_fail_closed() -> None:
     with pytest.raises(ValueError, match="source_id_invalid"):
         normalize_provider_source_id("not-a-uuid")
     assert normalize_max_auto_activate(0) == 1
-    assert normalize_max_auto_activate(999) == 50
+    assert normalize_max_auto_activate(999) == 100
     with pytest.raises(ValueError, match="ganze Zahl"):
         normalize_max_auto_activate("20")
     with pytest.raises(ValueError, match="ganze Zahl"):
@@ -292,11 +307,15 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert '"input_cost_per_token": 0' not in runtime
     assert '"output_cost_per_token": 0' not in runtime
     assert "_direct_completion_canary(" in runtime
+    assert "_confirmed_completion_canary(" in runtime
+    assert 'for confirmation_index in (1, 2)' in runtime
+    assert '"confirmationCount": 2' in runtime
+    assert '"x_freellmpool"' in runtime
     assert "never traverses\nLiteLLM" in runtime
-    assert "provider_cost not in (None, 0, 0.0)" in runtime
+    assert "any(value not in (None, 0, 0.0) for value in provider_costs)" in runtime
     assert "def _normalized_provider_cost" in runtime
     assert "math.isfinite(parsed)" in runtime
-    assert runtime.count("_normalized_provider_cost(evidence.get(\"providerCostUsd\"))") >= 2
+    assert runtime.count('evidence.get("providerCostsUsd")') >= 2
     assert "canary_cost_state" in migration
     assert "pricing_verified_at" in migration
     assert "last_discovered_at" in migration
@@ -305,8 +324,11 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "provider_session.trust_env = False" in runtime
     assert runtime.count("COALESCE(to_jsonb(%s::text), 'null'::jsonb)") >= 2
     contracts = (BACKEND / "free_revolver_provider_contracts.py").read_text("utf-8")
-    assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in runtime
-    assert 'candidate.name != _MANAGED_KEY_FILENAME' in contracts
+    assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in contracts
+    assert 'SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' in contracts
+    assert 'candidate.name != filename' in contracts
+    assert '"freellmpool-private"' in contracts
+    assert '"freellmpool_proxy_key.txt"' in contracts
     assert "read_managed_freellm_key_file" in runtime
     assert "ManagedKeyContractError" in runtime
     assert "_managed_secret_path" not in runtime
