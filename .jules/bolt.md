@@ -25,3 +25,7 @@
 ## 2026-07-05 - [Pre-filtering Query Spaces by Known Store Domains]
 **Learning:** When matching database/store patterns based on dynamically gathered repository traits (such as all file extensions), querying the store for every unique trait results in $O(T \times P)$ complexity. Pre-filtering the traits to only those actually present in the store's domain completely eliminates wasteful iterations on non-matching traits.
 **Action:** Always pre-filter traits (like extensions or paths) against a Set of the store's known/indexed values before performing nested pattern-matching or search queries.
+
+## 2026-07-06 - [1-Slot Input Cache and Regex Hoisting in Masking Systems]
+**Learning:** Utility functions like `maskSecrets` that run regex-heavy redaction processes are frequently called in high-frequency rendering and logging loops (e.g., for every terminal line, log output, or telemetry transmission). Re-instantiating 12+ regexes on every single invocation creates massive GC pressure. Combining regex hoisting with a fast 1-slot input/output memoization cache yields massive, O(1) performance improvements for repeated identical strings.
+**Action:** For string manipulation/redaction utilities on hot-paths, hoist all static RegExp literals and add a simple 1-slot memoization cache to skip regular expression execution entirely.

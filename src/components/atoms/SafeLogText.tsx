@@ -23,7 +23,7 @@ declare global {
   }
 }
 
-export const SafeLogText: React.FC<SafeLogTextProps> = ({
+export const SafeLogText: React.FC<SafeLogTextProps> = React.memo(({
   text,
   isSensitive = false,
   className = '',
@@ -77,4 +77,6 @@ export const SafeLogText: React.FC<SafeLogTextProps> = ({
       {maskSensitiveData(text)}
     </span>
   );
-};
+});
+
+SafeLogText.displayName = 'SafeLogText';
