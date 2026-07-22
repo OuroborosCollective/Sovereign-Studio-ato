@@ -300,6 +300,10 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert 'candidate.name != _MANAGED_KEY_FILENAME' in contracts
     assert "read_managed_freellm_key_file" in runtime
     assert "ManagedKeyContractError" in runtime
+    assert "_managed_secret_path" not in runtime
+    assert runtime.count("protected, key = _read_managed_key(") >= 3
+    assert "freellm_model_activation_invalid_evidence" in runtime
+    assert "freellm_model_reconcile_failed" in runtime
     assert '"managedKeyAvailable"' in runtime
     assert '"managedKeyBlocker"' in runtime
     assert '"keyFingerprintMatchesFile"' in runtime
