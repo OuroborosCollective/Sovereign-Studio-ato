@@ -279,9 +279,9 @@ def test_migration_and_image_build_contain_live_contracts() -> None:
     assert "USING hnsw" in migration
     assert "are_learning_quarantine" in are_migration
     assert "UNIQUE (user_id, content_sha256)" in are_migration
-    assert "COPY security_runtime.py" in dockerfile
-    assert "COPY knowledge_library.py" in dockerfile
-    assert "COPY are_inference.py" in dockerfile
+    assert "COPY *.py ./" in dockerfile
+    assert "COPY agent_runtime/ ./agent_runtime/" in dockerfile
+    assert "COPY migrations ./migrations" in dockerfile
     assert "webauthn>=2.7.0,<3" in requirements
     assert "pypdf>=5.0.0,<6" in requirements
     assert "requests>=2.31.0" in requirements
@@ -312,7 +312,7 @@ def test_pnpm_action_setup_uses_package_manager_as_single_version_source() -> No
 
 
 def test_payment_and_credit_security_are_server_authoritative() -> None:
-    for path in (BACKEND / "app.py", DEPLOY / "app.py"):
+    for path in (DEPLOY / "app.py",):
         source = read(path)
         assert '@app.route("/api/billing/purchase/google-play/validate", methods=["POST"])\n@require_session\ndef google_play_validate' in source
         assert "user_id        = request.session_user_id" in source

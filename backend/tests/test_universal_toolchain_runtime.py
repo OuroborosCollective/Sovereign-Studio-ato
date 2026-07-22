@@ -117,7 +117,7 @@ def test_rollback_preview_blocks_sha_drift_and_unbounded_repair() -> None:
 
 def test_routes_handoff_to_existing_agent_and_keep_draft_pr_separate() -> None:
     routes = read(BACKEND / "agent_runtime" / "routes.py")
-    app_source = read(BACKEND / "app.py")
+    app_source = read(DEPLOY / "app.py")
 
     assert '/api/user/agent/toolchain/handoff' in routes
     assert "create_sovereign_agent_job(" in routes

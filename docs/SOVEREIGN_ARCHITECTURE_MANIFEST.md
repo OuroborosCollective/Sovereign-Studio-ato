@@ -277,7 +277,7 @@ Die Admin-Backend-Instanz unter
 `https://sovereign-backend.arelorian.de/admin`
 ist der vorgesehene kanonische Backend-/Admin-Livepfad.
 
-**BELEGT:** Die produktive Backend-Anwendung besitzt eine eindeutige kanonische Quelle: `scripts/sovereign-backend/app.py`. Das immutable Backend-Image wird ausschließlich aus diesem Deploymentbaum gebaut. `backend/app.py` bleibt als nicht deployte Kompatibilitäts-/Analysequelle sichtbar, ist aber weder Endpoint-Wahrheit noch bytegleichheitspflichtiger Produktionsspiegel.
+**BELEGT:** Die produktive Backend-Anwendung besitzt eine eindeutige kanonische Quelle: `scripts/sovereign-backend/app.py`. Das immutable Backend-Image wird ausschließlich aus diesem Deploymentbaum gebaut. Eine zweite Datei `backend/app.py` existiert nicht; nur ausgewählte Supportmodule besitzen weiterhin bytegleich geprüfte Analyse-/Kompatibilitätsspiegel.
 
 **BELEGT:** Die tatsächlich gespiegelten Agent-Runtime-, A2A-, ARE-, Knowledge-, Security-, LiteLLM-, `knowledge_library.py`- und `r2_storage.py`-Dateien sind im Architektur-Snapshot bytegleich. Der produktive R2-Adapter verwendet die vollständige fail-closed Implementierung einschließlich Pfad-, MIME-, Hash-, Evidence- und 33-MiB-PDF-Grenzen.
 

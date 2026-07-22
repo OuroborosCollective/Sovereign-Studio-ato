@@ -50,6 +50,14 @@ def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
     assert "SET api_key = NULL" in migration
 
 
+def test_provider_route_path_ids_are_validated_before_database_access() -> None:
+    runtime = (BACKEND / "llm_provider_runtime.py").read_text("utf-8")
+    assert "def _normalize_route_id(value: Any) -> str:" in runtime
+    assert "_ROUTE_ID_RE.fullmatch(candidate)" in runtime
+    assert runtime.count("route_id = _normalize_route_id(route_id)") == 3
+    assert runtime.count('"blocker": "provider_route_id_invalid"') == 3
+
+
 def test_mcp_provider_operator_never_accepts_a_secret_argument() -> None:
     server = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "server.py").read_text("utf-8")
     client = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "owner_input_client.py").read_text("utf-8")

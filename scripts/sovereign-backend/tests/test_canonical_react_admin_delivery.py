@@ -32,6 +32,26 @@ def test_backend_serves_only_revision_bound_react_admin() -> None:
     assert 'data-sovereign-free-revolver="enabled"' in wrapper
 
 
+def test_android_admin_recovery_never_overwrites_a_mounted_shell_and_remains_scrollable() -> None:
+    fallback = (REPO_ROOT / "scripts" / "release-html-runtime-fix.mjs").read_text("utf-8")
+    admin_css = (REPO_ROOT / "src" / "features" / "admin" / "AdminPanel.css").read_text("utf-8")
+
+    assert '[data-sovereign-admin-producer]' in fallback
+    assert ".admin-shell,.admin-auth-shell" in fallback
+    assert "if(!root||hasMountedShell())return;" in fallback
+    assert "setTimeout(function(){bootFallback(lastBootError||'startup timeout')},15000)" in fallback
+    assert "startup timeout')},2200" not in fallback
+    assert "window.addEventListener('error',function(event)" in fallback
+    assert "bootFallback('runtime error')" not in fallback
+
+    assert '[data-sovereign-admin-producer="CANONICAL_REACT_ADMIN"]' in admin_css
+    assert "height: 100dvh;" in admin_css
+    assert "min-height: 100dvh;" in admin_css
+    assert "overflow-y: auto;" in admin_css
+    assert "touch-action: pan-y;" in admin_css
+    assert "-webkit-overflow-scrolling: touch;" in admin_css
+
+
 def test_pr_image_is_loaded_without_release_attestations_for_runtime_inspection() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-backend-image.yml").read_text("utf-8")
 

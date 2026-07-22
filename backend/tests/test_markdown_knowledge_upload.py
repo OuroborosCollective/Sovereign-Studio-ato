@@ -96,7 +96,6 @@ def test_markdown_upload_contract_is_visible_in_backend_and_both_surfaces() -> N
     runtime_module = (BACKEND / "knowledge_library.py").read_text(encoding="utf-8")
     deploy_module = (DEPLOY / "knowledge_library.py").read_text(encoding="utf-8")
     user_panel = (ROOT / "src/features/knowledge/KnowledgeLibraryPanel.tsx").read_text(encoding="utf-8")
-    backend_admin = (BACKEND / "app.py").read_text(encoding="utf-8")
     deploy_admin = (DEPLOY / "app.py").read_text(encoding="utf-8")
     markdown_migration = (
         DEPLOY / "migrations/014_knowledge_source_markdown_type.sql"
@@ -110,8 +109,8 @@ def test_markdown_upload_contract_is_visible_in_backend_and_both_surfaces() -> N
     assert "NOT VALID" in markdown_migration
     assert "VALIDATE CONSTRAINT" in markdown_migration
 
-    for surface in (user_panel, backend_admin, deploy_admin):
-        assert "Markdown" in surface
-        assert ".md" in surface
-        assert ".markdown" in surface
-        assert ".mdx" in surface
+    assert "Markdown" in user_panel
+    assert ".md" in user_panel
+    assert ".markdown" in user_panel
+    assert ".mdx" in user_panel
+    assert "register_admin_knowledge_routes(" in deploy_admin

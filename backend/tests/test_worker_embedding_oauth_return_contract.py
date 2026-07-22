@@ -1,8 +1,8 @@
 """Cross-surface contracts for Worker embeddings and GitHub OAuth return flow.
 
 These checks prevent repository truth from drifting away from deployment and UI
-truth. They intentionally inspect both backend mirrors, the Worker deployment
-workflow, and the browser callback transport.
+truth. They inspect the canonical deployed backend, mirrored support modules,
+the Worker deployment workflow, and the browser callback transport.
 """
 
 from pathlib import Path
@@ -34,7 +34,10 @@ def test_worker_deploy_requires_real_live_embedding_evidence():
         "CLOUDFLARE_ACCOUNT_ID",
     ):
         assert secret in workflow
-    assert "wrangler@4" in workflow
+    worker_package = read("cloudflare-worker-ai-proxy/package.json")
+    assert '"wrangler": "4.110.0"' in worker_package
+    assert "npx wrangler --version" in workflow
+    assert "npx wrangler deploy" in workflow
     assert 'EXPECTED_WORKER_VERSION: \'1.2.0\'' in workflow
     assert 'POST "${WORKER_URL}/v1/embeddings"' in workflow
     assert "vector.length !== 768" in workflow
@@ -64,8 +67,8 @@ def test_oauth_callback_uses_state_bound_opener_origin():
     assert "postMessage(message, '*')" not in callback
 
 
-def test_backend_mirrors_validate_and_preserve_oauth_return_contract():
-    for path in ("backend/app.py", "scripts/sovereign-backend/app.py"):
+def test_canonical_backend_validates_and_preserves_oauth_return_contract():
+    for path in ("scripts/sovereign-backend/app.py",):
         source = read(path)
         assert "def auth_github_callback_context" in source
         assert "_peek_oauth_state(state)" in source
