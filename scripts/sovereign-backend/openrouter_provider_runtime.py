@@ -38,7 +38,6 @@ _PROVIDER_POLICY = {
     "require_parameters": True,
     "allow_fallbacks": False,
     "data_collection": "deny",
-    "zdr": True,
 }
 _REQUIRED_AGENT_PARAMETERS = frozenset({"tools", "tool_choice"})
 _REQUIRED_CANARY_PARAMETERS = frozenset({"tools", "tool_choice", "max_tokens"})
@@ -231,8 +230,8 @@ def _fetch_models(key: str) -> tuple[list[dict[str, Any]], str]:
     return [row for row in rows[:_MAX_MODELS] if isinstance(row, dict)], request_id
 
 
-def _fetch_zdr_agent_endpoints(key: str) -> tuple[dict[str, dict[str, Any]], str]:
-    endpoint = f"{OPENROUTER_BASE_URL}/endpoints/zdr"
+def _fetch_agent_models(key: str) -> tuple[dict[str, dict[str, Any]], str]:
+    endpoint = f"{OPENROUTER_BASE_URL}/models"
     try:
         with requests.Session() as session:
             session.trust_env = False
@@ -251,7 +250,7 @@ def _fetch_zdr_agent_endpoints(key: str) -> tuple[dict[str, dict[str, Any]], str
                     raise OpenRouterRuntimeError("openrouter_rate_limited", status_code=429)
                 if response.status_code >= 400:
                     raise OpenRouterRuntimeError(
-                        "openrouter_zdr_catalog_unavailable", status_code=503
+                        "openrouter_agent_catalog_unavailable", status_code=503
                     )
                 payload = _bounded_json_response(response, limit=_MAX_CATALOG_BYTES)
                 request_id = str(
@@ -262,16 +261,16 @@ def _fetch_zdr_agent_endpoints(key: str) -> tuple[dict[str, dict[str, Any]], str
     except requests.Timeout as exc:
         raise OpenRouterRuntimeError("openrouter_timeout") from exc
     except requests.RequestException as exc:
-        raise OpenRouterRuntimeError("openrouter_zdr_catalog_unavailable") from exc
+        raise OpenRouterRuntimeError("openrouter_agent_catalog_unavailable") from exc
 
     rows = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
-        raise OpenRouterRuntimeError("openrouter_zdr_catalog_invalid")
+        raise OpenRouterRuntimeError("openrouter_agent_catalog_invalid")
     eligible: dict[str, dict[str, Any]] = {}
     for item in rows[:_MAX_MODELS * 10]:
         if not isinstance(item, dict):
             continue
-        model_id = str(item.get("model_id") or "").strip()
+        model_id = str(item.get("id") or item.get("model_id") or "").strip()
         supported = {
             str(value).strip()
             for value in (item.get("supported_parameters") or [])
@@ -288,12 +287,11 @@ def _fetch_zdr_agent_endpoints(key: str) -> tuple[dict[str, dict[str, Any]], str
             or output_price is None
             or Decimal(input_price) <= 0
             or Decimal(output_price) <= 0
-            or int(item.get("status") or 0) != 0
         ):
             continue
         candidate = {
             "modelId": model_id,
-            "providerName": str(item.get("provider_name") or "")[:120],
+            "providerName": str(item.get("provider_name") or "OpenRouter")[:120],
             "inputUsdPerMillion": input_price,
             "outputUsdPerMillion": output_price,
             "supportedParameters": sorted(supported),
@@ -310,11 +308,11 @@ def _fetch_zdr_agent_endpoints(key: str) -> tuple[dict[str, dict[str, Any]], str
         ):
             eligible[model_id] = candidate
     if not eligible:
-        raise OpenRouterRuntimeError("openrouter_zdr_agent_catalog_empty")
+        raise OpenRouterRuntimeError("openrouter_agent_catalog_empty")
     return eligible, request_id
 
 
-def _select_zdr_canary_model(endpoints: dict[str, dict[str, Any]]) -> str:
+def _select_agent_canary_model(endpoints: dict[str, dict[str, Any]]) -> str:
     if OPENROUTER_DEFAULT_MODEL in endpoints:
         return OPENROUTER_DEFAULT_MODEL
     return min(
@@ -501,15 +499,15 @@ def _sync_catalog(
     key_fingerprint: str,
     key_hint: str,
     canary: dict[str, Any],
-    zdr_endpoints: dict[str, dict[str, Any]],
-    zdr_catalog_request_id: str,
+    agent_models: dict[str, dict[str, Any]],
+    agent_catalog_request_id: str,
 ) -> dict[str, Any]:
     rows, catalog_request_id = _fetch_models(key)
     models = [
         model
         for row in rows
         if (model := _normalize_model(row))
-        and model["modelId"] in zdr_endpoints
+        and model["modelId"] in agent_models
     ]
     default_model = str(canary.get("modelId") or "")
     if not models or not any(model["modelId"] == default_model for model in models):
@@ -557,9 +555,9 @@ def _sync_catalog(
                     "repositoryExecutionAllowed": True,
                     "quotaScope": f"openrouter:model:{hashlib.sha256(model_id.encode()).hexdigest()[:24]}",
                     "providerPolicy": dict(_PROVIDER_POLICY),
-                    "zdrEndpointVerified": True,
-                    "zdrEndpointProvider": zdr_endpoints[model_id]["providerName"],
-                    "zdrCatalogRequestId": zdr_catalog_request_id or None,
+                    "agentModelVerified": True,
+                    "agentModelProvider": agent_models[model_id]["providerName"],
+                    "agentCatalogRequestId": agent_catalog_request_id or None,
                     "catalogVerified": True,
                     "catalogPayloadSha256": model["payloadSha256"],
                     "catalogSnapshotSha256": catalog_sha,
@@ -664,7 +662,7 @@ def _sync_catalog(
         "catalogSnapshotSha256": catalog_sha,
         "catalogRequestId": catalog_request_id or None,
         "defaultModel": default_model,
-        "zdrCatalogRequestId": zdr_catalog_request_id or None,
+        "agentCatalogRequestId": agent_catalog_request_id or None,
     }
 
 
@@ -742,8 +740,8 @@ def activate_openrouter_provider(
         with _protected_key() as key:
             key_fingerprint = hashlib.sha256(key.encode()).hexdigest()
             key_hint = f"…{key[-4:]}"
-            zdr_endpoints, zdr_catalog_request_id = _fetch_zdr_agent_endpoints(key)
-            canary_model = _select_zdr_canary_model(zdr_endpoints)
+            agent_models, agent_catalog_request_id = _fetch_agent_models(key)
+            canary_model = _select_agent_canary_model(agent_models)
             canary = _completion_canary(key, model_id=canary_model)
             catalog = _sync_catalog(
                 get_connection,
@@ -751,8 +749,8 @@ def activate_openrouter_provider(
                 key_fingerprint=key_fingerprint,
                 key_hint=key_hint,
                 canary=canary,
-                zdr_endpoints=zdr_endpoints,
-                zdr_catalog_request_id=zdr_catalog_request_id,
+                agent_models=agent_models,
+                agent_catalog_request_id=agent_catalog_request_id,
             )
     except OpenRouterRuntimeError as exc:
         _mark_blocked(query, route_id=normalized_route, family=exc.family)
@@ -833,7 +831,7 @@ def _catalog_identity(row: dict[str, Any], config: dict[str, Any]) -> dict[str, 
         "contextLength": int(config.get("contextLength") or 0),
         "maxCompletionTokens": int(config.get("maxCompletionTokens") or 0),
         "selectable": bool(config.get("selectable")) and not bool(row.get("disabled")),
-        "zdrRequired": True,
+        "dataCollectionDenied": True,
     }
 
 
@@ -992,8 +990,8 @@ def register_openrouter_provider_runtime(
                     raise OpenRouterRuntimeError(
                         "openrouter_secret_fingerprint_mismatch", status_code=409
                     )
-                zdr_endpoints, zdr_catalog_request_id = _fetch_zdr_agent_endpoints(key)
-                canary_model = _select_zdr_canary_model(zdr_endpoints)
+                agent_models, agent_catalog_request_id = _fetch_agent_models(key)
+                canary_model = _select_agent_canary_model(agent_models)
                 canary = _completion_canary(key, model_id=canary_model)
                 catalog = _sync_catalog(
                     get_connection,
@@ -1001,8 +999,8 @@ def register_openrouter_provider_runtime(
                     key_fingerprint=fingerprint,
                     key_hint=f"…{key[-4:]}",
                     canary=canary,
-                    zdr_endpoints=zdr_endpoints,
-                    zdr_catalog_request_id=zdr_catalog_request_id,
+                    agent_models=agent_models,
+                    agent_catalog_request_id=agent_catalog_request_id,
                 )
         except OpenRouterRuntimeError as exc:
             return jsonify(

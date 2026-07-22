@@ -59,7 +59,7 @@ def test_catalog_normalization_requires_paid_tool_and_structured_output_model() 
     assert runtime._normalize_model(free_model) is None
 
 
-def test_zdr_canary_selection_prefers_default_then_cheapest_compatible_model() -> None:
+def test_agent_canary_selection_prefers_default_then_cheapest_compatible_model() -> None:
     default = {
         "openai/gpt-5.4-mini": {
             "modelId": "openai/gpt-5.4-mini",
@@ -72,7 +72,7 @@ def test_zdr_canary_selection_prefers_default_then_cheapest_compatible_model() -
             "outputUsdPerMillion": "10",
         },
     }
-    assert runtime._select_zdr_canary_model(default) == "openai/gpt-5.4-mini"
+    assert runtime._select_agent_canary_model(default) == "openai/gpt-5.4-mini"
 
     fallback = {
         "vendor/expensive": {
@@ -86,23 +86,23 @@ def test_zdr_canary_selection_prefers_default_then_cheapest_compatible_model() -
             "outputUsdPerMillion": "2",
         },
     }
-    assert runtime._select_zdr_canary_model(fallback) == "vendor/cheap"
+    assert runtime._select_agent_canary_model(fallback) == "vendor/cheap"
     assert runtime._route_id("vendor/cheap", default_model="vendor/cheap") == (
         runtime.OPENROUTER_ROOT_ROUTE_ID
     )
 
 
-def test_zdr_contract_requires_tools_tool_choice_and_max_tokens() -> None:
+def test_agent_catalog_contract_requires_tools_tool_choice_and_max_tokens() -> None:
     assert runtime._REQUIRED_CANARY_PARAMETERS == {
         "tools",
         "tool_choice",
         "max_tokens",
     }
     source = (BACKEND / "openrouter_provider_runtime.py").read_text("utf-8")
-    assert 'f"{OPENROUTER_BASE_URL}/endpoints/zdr"' in source
-    assert "model[\"modelId\"] in zdr_endpoints" in source
-    assert source.count("zdr_endpoints=zdr_endpoints") == 2
-    assert source.count("zdr_catalog_request_id=zdr_catalog_request_id") == 2
+    assert 'f"{OPENROUTER_BASE_URL}/models"' in source
+    assert "model[\"modelId\"] in agent_models" in source
+    assert source.count("agent_models=agent_models") == 2
+    assert source.count("agent_catalog_request_id=agent_catalog_request_id") == 2
 
 
 def test_user_catalog_exposes_only_customer_prices_and_separate_role_selection() -> None:
@@ -134,7 +134,7 @@ def test_user_catalog_exposes_only_customer_prices_and_separate_role_selection()
     assert row["prices"]["output"] == "18"
     assert row["prices"]["inputCredits"] == 3000
     assert row["selectable"] is True
-    assert row["zdrRequired"] is True
+    assert row["dataCollectionDenied"] is True
     serialized = json.dumps(row, sort_keys=True)
     assert "providerInput" not in serialized
     assert "providerOutput" not in serialized
@@ -181,7 +181,6 @@ def test_provider_policy_is_fail_closed_and_application_headers_are_configurable
         "require_parameters": True,
         "allow_fallbacks": False,
         "data_collection": "deny",
-        "zdr": True,
     }
 
 

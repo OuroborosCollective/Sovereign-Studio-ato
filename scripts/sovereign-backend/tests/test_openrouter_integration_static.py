@@ -73,7 +73,8 @@ def test_secret_and_provider_boundaries_are_fail_closed() -> None:
     assert "route_priority = 10 if model_id == OPENROUTER_DEFAULT_MODEL" in openrouter
     assert '"allow_fallbacks": False' in openrouter
     assert '"data_collection": "deny"' in openrouter
-    assert '"zdr": True' in openrouter
+    assert '"zdr": True' not in openrouter
+    assert '"data_collection": "deny"' in openrouter
 
 
 def test_additive_migration_keeps_transports_disjoint() -> None:
