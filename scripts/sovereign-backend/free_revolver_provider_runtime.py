@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import stat
@@ -232,6 +233,18 @@ def _direct_completion_canary(
         return {"ok": False, "blocker": "freellm_timeout"}
     except (requests.RequestException, UnicodeDecodeError, json.JSONDecodeError):
         return {"ok": False, "blocker": "freellm_upstream_unavailable"}
+
+
+def _normalized_provider_cost(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed) or parsed < 0:
+        return None
+    return parsed
 
 
 def _alias(source_id: str, model_id: str, key_fingerprint: str) -> str:
@@ -539,7 +552,7 @@ def register_free_revolver_provider_runtime(
                 "blocker": str(canary.get("blocker") or "free_provider_canary_failed"),
             }
         evidence = dict(canary.get("evidence") or {})
-        provider_cost = evidence.get("providerCostUsd")
+        provider_cost = _normalized_provider_cost(evidence.get("providerCostUsd"))
         if provider_cost not in (None, 0, 0.0):
             return {
                 "ok": False,
@@ -1344,7 +1357,7 @@ def register_free_revolver_provider_runtime(
                     model_id=str(model["upstream_model_id"]),
                 )
                 evidence = dict(canary.get("evidence") or {})
-                provider_cost = evidence.get("providerCostUsd")
+                provider_cost = _normalized_provider_cost(evidence.get("providerCostUsd"))
                 cost_state = (
                     "nonzero"
                     if provider_cost not in (None, 0, 0.0)
