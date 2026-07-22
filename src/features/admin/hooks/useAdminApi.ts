@@ -176,6 +176,7 @@ export interface UseAdminLlmRoutesResult {
   billingCategories: LlmBillingCategoryOption[];
   revolverStats: LlmRevolverStats | null;
   revolverV3: LlmRevolverV3Status | null;
+  legacyDirectRouteCount: number;
   catalog: LlmModelCatalogEntry[];
   catalogError: string | null;
   loading: boolean;
@@ -196,6 +197,7 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
   const [billingCategories, setBillingCategories] = useState<LlmBillingCategoryOption[]>([]);
   const [revolverStats, setRevolverStats] = useState<LlmRevolverStats | null>(null);
   const [revolverV3, setRevolverV3] = useState<LlmRevolverV3Status | null>(null);
+  const [legacyDirectRouteCount, setLegacyDirectRouteCount] = useState(0);
   const [catalog, setCatalog] = useState<LlmModelCatalogEntry[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -218,6 +220,7 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
         setBillingCategories(routesResult.value.billingCategories);
         setRevolverStats(routesResult.value.revolverStats);
         setRevolverV3(routesResult.value.revolverV3);
+        setLegacyDirectRouteCount(routesResult.value.legacyDirectRouteCount ?? 0);
       } else {
         setError(String(routesResult.reason));
       }
@@ -263,6 +266,7 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
     billingCategories,
     revolverStats,
     revolverV3,
+    legacyDirectRouteCount,
     catalog,
     catalogError,
     loading,
@@ -377,6 +381,7 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
 
 export interface UseAdminPaymentMethodsResult {
   methods: PaymentMethod[];
+  legacyIgnoredCount: number;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -387,6 +392,7 @@ export interface UseAdminPaymentMethodsResult {
 
 export function useAdminPaymentMethods(): UseAdminPaymentMethodsResult {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [legacyIgnoredCount, setLegacyIgnoredCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [tick, setTick]       = useState(0);
@@ -396,7 +402,12 @@ export function useAdminPaymentMethods(): UseAdminPaymentMethodsResult {
     let cancelled = false;
     setLoading(true);
     adminApiClient.getPaymentMethods()
-      .then(r => { if (!cancelled) setMethods(r.paymentMethods); })
+      .then(r => {
+        if (!cancelled) {
+          setMethods(r.paymentMethods);
+          setLegacyIgnoredCount(r.legacyIgnoredCount ?? 0);
+        }
+      })
       .catch(e => { if (!cancelled) setError(String(e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -417,7 +428,16 @@ export function useAdminPaymentMethods(): UseAdminPaymentMethodsResult {
     reload();
   }, [reload]);
 
-  return { methods, loading, error, reload, toggleMethod, saveConfig, initDefaults };
+  return {
+    methods,
+    legacyIgnoredCount,
+    loading,
+    error,
+    reload,
+    toggleMethod,
+    saveConfig,
+    initDefaults,
+  };
 }
 
 

@@ -34,11 +34,11 @@ export function UserTable({ api, onEdit }: UserTableProps) {
         <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:C.textSub }} />
         <input type="text" placeholder="E-Mail oder Name suchen…" value={search}
           onChange={e => { setSearch(e.target.value); setPage(1); }}
-          style={{ width:'100%', boxSizing:'border-box', background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 10px 8px 30px', fontSize:12, color:C.text, outline:'none' }} />
+          style={{ width:'100%', minHeight:48, boxSizing:'border-box', background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'10px 12px 10px 34px', fontSize:12, color:C.text, outline:'none' }} />
       </div>
 
-      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, overflow:'hidden' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 60px 80px 60px 36px', gap:6, padding:'8px 12px', borderBottom:`1px solid ${C.border}`, fontSize:10, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.06em' }}>
+      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, overflowX:'auto', overflowY:'hidden', WebkitOverflowScrolling:'touch' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(180px,1fr) 72px 88px 72px 48px', gap:8, minWidth:500, padding:'9px 12px', borderBottom:`1px solid ${C.border}`, fontSize:10, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.06em' }}>
           <span>Nutzer</span><span>Rolle</span><span>Abo</span><span>Credits</span><span />
         </div>
 
@@ -46,7 +46,7 @@ export function UserTable({ api, onEdit }: UserTableProps) {
         {error   && <div style={{ padding:16, color:C.danger, fontSize:12, textAlign:'center' }}>{error}</div>}
 
         {!loading && users.map(u => (
-          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'1fr 60px 80px 60px 36px', gap:6, padding:'8px 12px', borderBottom:`1px solid ${C.border}`, opacity:u.isBanned ? 0.5 : 1, alignItems:'center' }}>
+          <div key={u.id} style={{ display:'grid', gridTemplateColumns:'minmax(180px,1fr) 72px 88px 72px 48px', gap:8, minWidth:500, minHeight:58, padding:'9px 12px', borderBottom:`1px solid ${C.border}`, opacity:u.isBanned ? 0.5 : 1, alignItems:'center' }}>
             <div style={{ minWidth:0 }}>
               <div style={{ fontSize:12, color:C.text, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:4 }}>
                 {u.displayName}{u.isBanned && <Ban size={11} color={C.danger} />}
@@ -56,7 +56,7 @@ export function UserTable({ api, onEdit }: UserTableProps) {
             <div>{roleBadge(u.role)}</div>
             <div>{subBadge(u.subscriptionStatus)}</div>
             <div style={{ fontSize:12, color:C.text, fontWeight:600 }}>{u.credits.toLocaleString('de')}</div>
-            <button type="button" onClick={() => onEdit(u)} style={{ background:'transparent', border:'none', cursor:'pointer', padding:4, borderRadius:6, color:C.textSub, display:'flex', alignItems:'center' }} aria-label="Bearbeiten"><Edit2 size={13} /></button>
+            <button type="button" onClick={() => onEdit(u)} style={{ width:44, minWidth:44, minHeight:44, background:'transparent', border:`1px solid ${C.border}`, cursor:'pointer', padding:4, borderRadius:8, color:C.textSub, display:'flex', alignItems:'center', justifyContent:'center' }} aria-label={`${u.displayName} bearbeiten`}><Edit2 size={16} /></button>
           </div>
         ))}
 
@@ -67,9 +67,9 @@ export function UserTable({ api, onEdit }: UserTableProps) {
 
       {totalPages > 1 && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', fontSize:11, color:C.textSub }}>
-          <button type="button" disabled={page<=1} onClick={() => setPage(page-1)} style={{ background:'transparent', border:`1px solid ${C.border}`, borderRadius:6, padding:'4px 8px', cursor:page<=1?'not-allowed':'pointer', color:C.textSub, opacity:page<=1?0.4:1 }}><ChevronLeft size={13} /></button>
+          <button type="button" disabled={page<=1} onClick={() => setPage(page-1)} style={{ minWidth:44, minHeight:44, background:'transparent', border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 10px', cursor:page<=1?'not-allowed':'pointer', color:C.textSub, opacity:page<=1?0.4:1 }} aria-label="Vorherige Nutzerseite"><ChevronLeft size={16} /></button>
           <span>Seite {page} / {totalPages} ({total})</span>
-          <button type="button" disabled={page>=totalPages} onClick={() => setPage(page+1)} style={{ background:'transparent', border:`1px solid ${C.border}`, borderRadius:6, padding:'4px 8px', cursor:page>=totalPages?'not-allowed':'pointer', color:C.textSub, opacity:page>=totalPages?0.4:1 }}><ChevronRight size={13} /></button>
+          <button type="button" disabled={page>=totalPages} onClick={() => setPage(page+1)} style={{ minWidth:44, minHeight:44, background:'transparent', border:`1px solid ${C.border}`, borderRadius:8, padding:'8px 10px', cursor:page>=totalPages?'not-allowed':'pointer', color:C.textSub, opacity:page>=totalPages?0.4:1 }} aria-label="Nächste Nutzerseite"><ChevronRight size={16} /></button>
         </div>
       )}
     </div>

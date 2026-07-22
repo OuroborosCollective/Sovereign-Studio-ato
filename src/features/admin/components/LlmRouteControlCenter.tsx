@@ -321,6 +321,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
     routes,
     revolverStats,
     revolverV3,
+    legacyDirectRouteCount,
     catalog,
     catalogError,
     loading,
@@ -334,7 +335,10 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
   const [surface, setSurface] = useState<'paid' | 'free'>('paid');
   const [busyId, setBusyId] = useState<string | null>(null);
   const paidRoutes = useMemo(
-    () => routes.filter(route => route.billingCategory !== 'free'),
+    () => routes.filter(route => (
+      route.provider.trim().toLowerCase() === 'litellm'
+      && route.billingCategory !== 'free'
+    )),
     [routes],
   );
   const activePaidRoutes = useMemo(
@@ -400,8 +404,8 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
           <div className="llm-control-center__hero">
             <div>
               <span className="llm-kicker">LiteLLM / bezahlte Modelle</span>
-              <h1>Preisverifizierte Standard- und Premium-Routen</h1>
-              <p>Dieser Bereich verwaltet nur bezahlte LiteLLM-Routen. Kostenfreie Provider gehören ausschließlich in den getrennten Free-Revolver-Bereich.</p>
+              <h1>Standard- und Premium-LiteLLM-Routen</h1>
+              <p>Aktivieren lassen sich ausschließlich Routen mit bestätigten Providerpreisen und erfolgreicher Live-Canary. Kostenfreie Provider gehören in den getrennten Free-Revolver-Bereich.</p>
             </div>
             <button type="button" className="llm-button" onClick={reload} disabled={loading || busyId !== null}>
               <RefreshCw className={loading ? 'llm-spin' : ''} size={18} /> Aktualisieren
@@ -417,6 +421,16 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
 
           {error && <div className="llm-alert llm-alert--danger">{error}</div>}
           {catalogError && <div className="llm-alert">Modellkatalog derzeit nicht verfügbar: {catalogError}</div>}
+          {legacyDirectRouteCount > 0 && (
+            <div className="llm-alert">
+              {legacyDirectRouteCount} historische Direktprovider-Routen bleiben deaktiviert und werden hier bewusst nicht als LiteLLM-Routen angezeigt.
+            </div>
+          )}
+          {paidRoutes.length > 0 && paidRoutes.every(route => !route.pricingVerified) && (
+            <div className="llm-alert llm-alert--danger">
+              Noch keine Paid-Route besitzt frische Preisevidence. Aktivierung bleibt deshalb fail-closed gesperrt.
+            </div>
+          )}
 
           <CatalogAttach
             catalog={catalog.filter(model => !model.freeEligible)}
@@ -429,7 +443,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
 
           <section>
             <div className="llm-section-title">
-              <div><Activity size={21} /><div><h2>Bezahlte Konfiguration</h2><p>{paidRoutes.length} persistierte Standard-/Premium-Routen</p></div></div>
+              <div><Activity size={21} /><div><h2>Bezahlte Konfiguration</h2><p>{paidRoutes.length} private LiteLLM-Standard-/Premium-Routen</p></div></div>
             </div>
             <div className="llm-route-grid">
               {paidRoutes.map(route => (

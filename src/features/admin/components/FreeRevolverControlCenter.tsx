@@ -264,7 +264,9 @@ export function FreeRevolverControlCenter({
                     onClick={() => void run(
                       `toggle-${provider.id}`,
                       () => api.toggle(provider.id, !provider.enabled),
-                      provider.enabled ? 'Provider und Free-Routen deaktiviert.' : 'Provider freigegeben; bitte Healthcheck ausführen.',
+                      provider.enabled
+                        ? 'Providerquelle deaktiviert. Alle zugehörigen Routen bleiben gesperrt.'
+                        : 'Providerquelle freigegeben. Routen bleiben fail-closed gesperrt, bis Discovery und Completion-Healthcheck erfolgreich sind.',
                     )}>
                     <Power size={19} />
                   </button>
@@ -324,7 +326,7 @@ export function FreeRevolverControlCenter({
                       onClick={() => void run(
                         `discover-${provider.id}`,
                         () => api.discover(provider.id),
-                        'Providerpreise und Modelle wurden neu erkannt; nur frische Nullpreis-Evidence bleibt aktiv.',
+                        'Discovery abgeschlossen. Nur Modelle mit frischer Nullpreis-Evidence und erfolgreicher Completion-Canary wurden aktiviert; alle anderen bleiben gesperrt.',
                       )}>
                       <Search size={17} /> Modelle + Preise neu erkennen
                     </button>
@@ -336,8 +338,13 @@ export function FreeRevolverControlCenter({
                       'Alle bekannten Free-Routen wurden erneut mit echter Completion geprüft.',
                     )}>
                     <RefreshCw className={busyId === `recheck-${provider.id}` ? 'llm-spin' : ''} size={17} />
-                    Healthcheck
+                    Completion-Healthcheck
                   </button>
+                  {provider.enabled && recheckableModels.length === 0 && (
+                    <p className="llm-route-card__evidence">
+                      Noch kein Modell ist healthcheckfähig. Zuerst Modelle und Preise neu erkennen.
+                    </p>
+                  )}
                 </footer>
 
                 {(provider.authMode === 'bearer' || provider.authMode === 'x-api-key') && (

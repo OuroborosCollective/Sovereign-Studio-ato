@@ -287,7 +287,12 @@ def register_free_revolver_provider_runtime(
             (api_base,), one=True,
         )
         if existing:
-            return jsonify({"error": "Diese API-Basis ist bereits eingetragen", "sourceId": existing["id"]}), 409
+            return jsonify({
+                "error": "Diese API-Basis ist bereits eingetragen. Nutze die vorhandene Providerkarte für Discovery oder Healthcheck.",
+                "blocker": "free_provider_api_base_already_registered",
+                "sourceId": existing["id"],
+                "nextAction": "use_existing_provider",
+            }), 409
         admin = get_current_admin() or {}
         source = query(
             """INSERT INTO llm_revolver_provider_sources
@@ -573,7 +578,11 @@ def register_free_revolver_provider_runtime(
             (source_id,), one=True, write=True,
         )
         if not claimed:
-            return jsonify({"error": "Provider ist deaktiviert oder wird bereits geprüft"}), 409
+            return jsonify({
+                "error": "Provider ist deaktiviert oder eine Discovery läuft bereits. Status neu laden, bevor erneut gestartet wird.",
+                "blocker": "free_provider_not_discoverable",
+                "nextAction": "reload_provider_status",
+            }), 409
 
         protected = bytearray()
         path = (
@@ -853,7 +862,11 @@ def register_free_revolver_provider_runtime(
             (source_id,),
         ) or []
         if not models:
-            return jsonify({"error": "Keine verifizierten Free-Routen zum Prüfen"}), 409
+            return jsonify({
+                "error": "Keine healthcheckfähigen Free-Routen vorhanden. Zuerst Discovery und Preisprüfung ausführen.",
+                "blocker": "free_provider_no_recheckable_routes",
+                "nextAction": "discover_provider_models",
+            }), 409
         ready = []
         blocked = []
         for model in models:

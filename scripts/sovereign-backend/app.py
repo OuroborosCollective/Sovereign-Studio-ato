@@ -692,7 +692,7 @@ def admin_transactions():
     )
     rows = query(
         f"""SELECT id::text, user_id::text AS "userId", user_email AS "userEmail",
-                   type, amount, currency, status, description,
+                   type, amount::float AS amount, currency, status, description,
                    to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAt"
             FROM transactions {w}
             ORDER BY created_at DESC LIMIT %s OFFSET %s""",
@@ -1000,8 +1000,15 @@ def admin_llm_routes():
                   provider, credits_per_unit AS "creditsPerUnit",
                   disabled, priority, config
            FROM llm_routes
+           WHERE lower(provider) = 'litellm'
            ORDER BY priority ASC, model_name ASC"""
     )
+    legacy_direct_routes = query(
+        """SELECT COUNT(*)::integer AS count
+           FROM llm_routes
+           WHERE lower(provider) <> 'litellm'""",
+        one=True,
+    ) or {}
     revolver_stats = query(
         """SELECT COUNT(*)::integer AS attempts,
                   COUNT(*) FILTER (WHERE outcome='success')::integer AS successes,
@@ -1082,6 +1089,8 @@ def admin_llm_routes():
             "pricingEvidenceTtlHours": FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
         },
         "manualCreditsPerUnitEditing": False,
+        "legacyDirectRouteCount": int(legacy_direct_routes.get("count") or 0),
+        "legacyDirectRoutePolicy": "disabled-and-hidden-from-private-litellm-admin",
     })
 
 
@@ -2566,6 +2575,11 @@ def _create_user_with_initial_credits(
 
 # ── Admin: Payment Methods ─────────────────────────────────────────────────────
 
+_CANONICAL_PAYMENT_METHOD_TYPES = (
+    "paypal", "skrill", "crypto_btc", "crypto_eth", "crypto_usdt", "google_play",
+)
+
+
 @app.route("/api/admin/payment-methods")
 @require_admin
 def admin_get_payment_methods():
@@ -2573,9 +2587,22 @@ def admin_get_payment_methods():
         rows = query(
             """SELECT id::text, type, label, enabled, config,
                       to_char(updated_at,'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "updatedAt"
-               FROM payment_methods ORDER BY type ASC"""
+               FROM payment_methods
+               WHERE type = ANY(%s)
+               ORDER BY type ASC""",
+            (list(_CANONICAL_PAYMENT_METHOD_TYPES),),
         )
-        return jsonify({"paymentMethods": [dict(r) for r in (rows or [])]})
+        legacy = query(
+            """SELECT COUNT(*)::integer AS count
+               FROM payment_methods
+               WHERE NOT (type = ANY(%s))""",
+            (list(_CANONICAL_PAYMENT_METHOD_TYPES),),
+            one=True,
+        ) or {}
+        return jsonify({
+            "paymentMethods": [dict(r) for r in (rows or [])],
+            "legacyIgnoredCount": int(legacy.get("count") or 0),
+        })
     except Exception as exc:
         return jsonify({"paymentMethods": [], "error": str(exc), "runtimeState": "failed"}), 500
 
@@ -2584,6 +2611,18 @@ def admin_get_payment_methods():
 @require_admin
 def admin_update_payment_method(mid):
     body = request.get_json(force=True) or {}
+    current = query(
+        "SELECT type FROM payment_methods WHERE id = %s::uuid LIMIT 1",
+        (mid,),
+        one=True,
+    )
+    if not current:
+        return jsonify({"error": "Zahlungsmethode nicht gefunden"}), 404
+    if str(current.get("type") or "") not in _CANONICAL_PAYMENT_METHOD_TYPES:
+        return jsonify({
+            "error": "Legacy-Zahlungsmethode ist nur noch historische Evidenz und nicht editierbar",
+            "blocker": "legacy_payment_method_read_only",
+        }), 409
     sets, vals = [], []
     if "enabled" in body:
         sets.append("enabled = %s")
