@@ -310,7 +310,6 @@ def _completion_canary(key: str, *, model_id: str) -> dict[str, Any]:
         ],
         "tool_choice": {"type": "function", "function": {"name": "canary_ok"}},
         "max_tokens": 64,
-        "temperature": 0,
         "provider": dict(_PROVIDER_POLICY),
         "stream": False,
     }
