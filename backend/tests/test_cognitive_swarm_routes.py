@@ -413,8 +413,8 @@ def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monk
     )
     payload = response.get_json()
 
-    assert response.status_code == 502
-    assert payload["status"] == "FAILED_RECOVERABLE"
+    assert response.status_code == 503
+    assert payload["status"] == "BLOCKED"
     assert payload["blocker"] == "OPENROUTER_PERMISSION_DENIED"
     assert payload["failureStage"] == "dispatcher"
     assert payload["httpStatus"] == 403
@@ -457,7 +457,7 @@ def test_swarm_resume_claims_run_reconstructs_task_and_finishes_with_same_lease(
     assert payload["recoveryTask"]["taskId"].startswith("task-resume-")
     assert payload["recoveryTask"]["workPackage"] == "RETRY_FROM_PERSISTED_RUN_STATE"
     assert payload["recoveryTask"]["leaseSeconds"] == 900
-    assert factory.commits == 2
+    assert factory.commits == 3
     assert sum("UPDATE agent_runs" in sql for sql, _ in factory.calls) == 2
     assert any("UPDATE agent_tasks" in sql for sql, _ in factory.calls)
     assert any("lease_token = %s" in sql for sql, _ in factory.calls)
