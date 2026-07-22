@@ -18,8 +18,18 @@ from pathlib import Path
 from typing import Any, Callable
 
 import requests
-from flask import jsonify, request
+from flask import jsonify, make_response, request
 
+from freellm_provider_admin_page import FREELLM_PROVIDER_KEYS_PAGE as _FREELLM_PROVIDER_KEYS_PAGE
+from freellm_provider_credentials import (
+    FREELLM_PROVIDER_SPECS,
+    FREELLM_RUNTIME_GID,
+    FREELLM_RUNTIME_UID,
+    normalize_freellm_provider_id,
+    provider_keyless_marker_path,
+    provider_secret_path,
+    provider_target_id,
+)
 from free_revolver_provider_contracts import (
     ManagedKeyContractError,
     assert_provider_target_allowed,
@@ -350,6 +360,69 @@ def _source_payload(source: dict[str, Any], models: list[dict[str, Any]]) -> dic
     }
 
 
+def _freellm_provider_credential_state(provider_id: str) -> dict[str, Any]:
+    spec = FREELLM_PROVIDER_SPECS[provider_id]
+    root = _owner_root()
+    if bool(spec.get("keyless")):
+        marker = provider_keyless_marker_path(root, provider_id)
+        enabled = marker.is_file() and not marker.is_symlink()
+        return {
+            "configured": enabled,
+            "mode": "keyless",
+            "fingerprintSha256": None,
+            "permissionsValid": enabled and stat.S_IMODE(marker.stat().st_mode) & 0o077 == 0,
+        }
+    path = provider_secret_path(root, provider_id)
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return {
+            "configured": False,
+            "mode": "credential",
+            "fingerprintSha256": None,
+            "permissionsValid": None,
+        }
+    valid = stat.S_ISREG(info.st_mode) and not path.is_symlink() and not (stat.S_IMODE(info.st_mode) & 0o077)
+    fingerprint = None
+    if valid and 1 <= info.st_size <= 8192:
+        protected = bytearray(path.read_bytes())
+        try:
+            fingerprint = hashlib.sha256(bytes(protected).strip()).hexdigest()
+        finally:
+            for index in range(len(protected)):
+                protected[index] = 0
+    return {
+        "configured": bool(valid and fingerprint),
+        "mode": "credential",
+        "fingerprintSha256": fingerprint,
+        "permissionsValid": valid,
+    }
+
+
+def _write_keyless_marker(provider_id: str, enabled: bool) -> None:
+    path = provider_keyless_marker_path(_owner_root(), provider_id)
+    if not enabled:
+        raise ValueError("freellm_keyless_disable_requires_provider_runtime_support")
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.geteuid() != 0:
+        raise OSError("freellm_keyless_marker_owner_change_requires_root")
+    os.chown(path.parent, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
+    os.chmod(path.parent, 0o700)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(descriptor, b"enabled\n")
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary, path)
+        os.chown(path, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
+        os.chmod(path, 0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def register_free_revolver_provider_runtime(
     app: Any,
     *,
@@ -359,6 +432,142 @@ def register_free_revolver_provider_runtime(
     get_current_admin: Callable[[], dict[str, Any] | None],
     audit: Callable[..., Any],
 ) -> None:
+    @app.route("/freellm-provider-keys", methods=["GET"])
+    def freellm_provider_credentials_page():
+        response = make_response(_FREELLM_PROVIDER_KEYS_PAGE)
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+            "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        )
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    @app.route("/api/admin/llm/freellm/provider-credentials", methods=["GET"])
+    @require_admin
+    def admin_freellm_provider_credentials():
+        providers = []
+        for provider_id, spec in FREELLM_PROVIDER_SPECS.items():
+            state = _freellm_provider_credential_state(provider_id)
+            providers.append({
+                "providerId": provider_id,
+                "label": str(spec["label"]),
+                "keyless": bool(spec.get("keyless")),
+                "privacyNotice": spec.get("privacyNotice"),
+                **state,
+            })
+        return jsonify({
+            "ok": True,
+            "providers": providers,
+            "rawCredentialsReturned": False,
+            "databaseCredentialStorage": False,
+            "nextAction": "Einzelnen Provider sicher eintragen oder Keyless-Tier aktivieren.",
+        })
+
+    @app.route(
+        "/api/admin/llm/freellm/provider-credentials/<provider_id>/owner-input",
+        methods=["POST"],
+    )
+    @require_admin
+    def admin_prepare_freellm_provider_credential(provider_id: str):
+        try:
+            provider_id = normalize_freellm_provider_id(provider_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        spec = FREELLM_PROVIDER_SPECS[provider_id]
+        if bool(spec.get("keyless")):
+            return jsonify({
+                "error": "Dieser Provider kann ohne Key aktiviert werden.",
+                "blocker": "freellm_provider_is_keyless",
+            }), 409
+        target_id = provider_target_id(provider_id)
+        connection = get_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE owner_input_requests
+                       SET status='expired', resolved_at=NOW(), result_code='superseded'
+                       WHERE target_id=%s AND status IN ('pending','processing')""",
+                    (target_id,),
+                )
+                cursor.execute(
+                    """INSERT INTO owner_input_requests
+                           (target_id, title, reason, field_label, expires_at)
+                       VALUES (%s,%s,%s,%s,NOW() + INTERVAL '15 minutes')
+                       RETURNING id::text""",
+                    (
+                        target_id,
+                        f"FreeLLMAPI-Zugang für {spec['label']}",
+                        "Der Key wird ausschließlich als geschützte 0600-Datei gespeichert und von FreeLLMAPI verschlüsselt importiert.",
+                        f"{spec['label']} API-Key",
+                    ),
+                )
+                request_id = str(cursor.fetchone()["id"])
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            return jsonify({
+                "error": "Geschützte Provider-Key-Eingabe konnte nicht vorbereitet werden.",
+                "blocker": "freellm_provider_owner_input_prepare_failed",
+            }), 500
+        finally:
+            connection.close()
+        audit("admin_freellm_provider_owner_input_prepared", provider_id, {
+            "targetId": target_id,
+            "rawCredentialPersistedInDatabase": False,
+        })
+        return jsonify({
+            "ok": True,
+            "providerId": provider_id,
+            "ownerRequestId": request_id,
+            "ownerUrl": f"/owner-approvals?request_id={request_id}",
+            "rawCredentialReturned": False,
+        }), 201
+
+    @app.route(
+        "/api/admin/llm/freellm/provider-credentials/<provider_id>/keyless",
+        methods=["POST"],
+    )
+    @require_admin
+    def admin_toggle_freellm_keyless_provider(provider_id: str):
+        try:
+            provider_id = normalize_freellm_provider_id(provider_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        spec = FREELLM_PROVIDER_SPECS[provider_id]
+        if not bool(spec.get("keyless")):
+            return jsonify({
+                "error": "Dieser Provider benötigt einen eigenen API-Key.",
+                "blocker": "freellm_provider_key_required",
+            }), 409
+        body = request.get_json(silent=True) or {}
+        enabled = bool(body.get("enabled", True))
+        if not enabled:
+            return jsonify({
+                "error": "Keyless-Deaktivierung benötigt einen bestätigten FreeLLM-Runtime-Delete-Pfad.",
+                "blocker": "freellm_keyless_disable_not_supported",
+            }), 409
+        try:
+            _write_keyless_marker(provider_id, enabled)
+        except (OSError, ValueError):
+            return jsonify({
+                "error": "Keyless-Providerstatus konnte nicht sicher gespeichert werden.",
+                "blocker": "freellm_keyless_marker_write_failed",
+            }), 500
+        audit("admin_freellm_keyless_provider_toggled", provider_id, {
+            "enabled": enabled,
+            "privacyNoticePresent": bool(spec.get("privacyNotice")),
+        })
+        return jsonify({
+            "ok": True,
+            "providerId": provider_id,
+            "enabled": enabled,
+            "privacyNotice": spec.get("privacyNotice"),
+            "rawCredentialReturned": False,
+        })
+
     @app.route("/api/admin/llm/revolver-v3/providers", methods=["GET"])
     @require_admin
     def admin_free_revolver_providers():

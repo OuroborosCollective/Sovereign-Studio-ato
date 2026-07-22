@@ -17,6 +17,14 @@ from typing import Any, Callable
 
 from flask import jsonify, make_response, request
 
+from freellm_provider_credentials import (
+    FREELLM_PROVIDER_SPECS,
+    FREELLM_RUNTIME_GID,
+    FREELLM_RUNTIME_UID,
+    provider_secret_path,
+    provider_target_id,
+)
+
 ConnectionFactory = Callable[[], Any]
 
 DEFAULT_TTL_SECONDS = 900
@@ -83,6 +91,17 @@ def _target_map() -> dict[str, dict[str, Any]]:
     targets["openrouter_api_key"]["path"] = str(_root() / "openrouter_api_key.txt")
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")
+    for provider_id, provider in FREELLM_PROVIDER_SPECS.items():
+        if bool(provider.get("keyless")):
+            continue
+        target_id = provider_target_id(provider_id)
+        targets[target_id] = {
+            "label": f"FreeLLMAPI · {provider['label']}",
+            "fieldLabel": f"{provider['label']} API-Key",
+            "path": str(provider_secret_path(_root(), provider_id)),
+            "maxBytes": 8192,
+            "kind": "freellm_provider_credential",
+        }
     configured = os.getenv("SOVEREIGN_OWNER_INPUT_TARGETS_JSON", "").strip()
     if configured:
         parsed = json.loads(configured)
@@ -179,6 +198,11 @@ def _atomic_write(target: dict[str, Any], protected_value: bytes | bytearray | s
     path = Path(target["path"])
     root = _root()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if target.get("kind") == "freellm_provider_credential":
+        if os.geteuid() != 0:
+            raise ValueError("FreeLLM Provider-Key-Ziel benötigt Root-Eigentümerwechsel")
+        os.chown(path.parent, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
+        os.chmod(path.parent, 0o700)
     resolved_parent = path.parent.resolve()
     if resolved_parent != root and root not in resolved_parent.parents:
         raise ValueError("Das Ziel liegt außerhalb des Owner-Verzeichnisses")
@@ -194,6 +218,8 @@ def _atomic_write(target: dict[str, Any], protected_value: bytes | bytearray | s
         finally:
             os.close(descriptor)
         os.replace(temporary, path)
+        if target.get("kind") == "freellm_provider_credential":
+            os.chown(path, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
         os.chmod(path, 0o600)
     finally:
         temporary.unlink(missing_ok=True)
