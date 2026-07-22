@@ -248,7 +248,7 @@ mcp = FastMCP(
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
-        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bestehende Fremdprovider-Routen verwende litellm_provider_deployments und litellm_provider_route_activate. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, LiteLLM-Registrierung, Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. "
+        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für Paid-Fremdprovider-Routen verwende litellm_provider_deployments und litellm_provider_route_activate als kompatible Operatorwerkzeuge; OpenRouter-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, direkte Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_discover und freellm_provider_recheck. Diese Werkzeuge akzeptieren ebenfalls keinen Key und aktivieren nur Modelle aus einem frischen verwalteten Katalog nach direkter Nullkosten-Canary. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Nutze controller_run_external_event nur für exakt identifizierte externe GitHub-, Broker-, MCP-, Dokument- oder Datenbank-Evidence; das Tool darf weder Run-/Task-Status noch aktive Blocker verändern. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
         "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt ein echtes flüchtiges DOCX, konvertiert es über Gotenbergs LibreOffice-Pfad zu PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
@@ -754,6 +754,24 @@ def litellm_provider_deployments() -> dict[str, Any]:
 def litellm_provider_route_activate(route_id: str) -> dict[str, Any]:
     """Activate one existing owner-confirmed provider route; no secret argument is accepted."""
     return provider_runtime.activate(route_id)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def freellm_provider_status() -> dict[str, Any]:
+    """Read secret-free managed FreeLLM key, catalog and ready-route metadata."""
+    return provider_runtime.freellm_status()
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def freellm_provider_discover(source_id: str, max_models: int = 20) -> dict[str, Any]:
+    """Reconcile a fresh managed catalog and directly canary eligible FreeLLM models."""
+    return provider_runtime.freellm_reconcile(source_id, max_models=max_models)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def freellm_provider_recheck(source_id: str, max_models: int = 20) -> dict[str, Any]:
+    """Repeat direct fail-closed canaries for managed FreeLLM candidates."""
+    return provider_runtime.freellm_reconcile(source_id, max_models=max_models)
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)

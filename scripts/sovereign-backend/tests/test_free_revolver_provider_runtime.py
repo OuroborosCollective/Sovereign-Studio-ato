@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import socket
 import sys
@@ -101,6 +102,30 @@ def test_model_names_and_free_flags_never_activate_without_price_evidence() -> N
     assert by_id["verified-free"]["capabilities"] == ["chat", "json"]
 
 
+def test_managed_quota_contract_only_promotes_missing_price_fields() -> None:
+    models = normalize_models_payload(
+        {
+            "data": [
+                {"id": "unreported"},
+                {"id": "incomplete", "pricing": {"prompt": 0}},
+                {"id": "nonzero", "pricing": {"prompt": 0, "completion": 0.1}},
+                {"id": "invalid", "pricing": {"prompt": "unknown", "completion": 0}},
+            ],
+        },
+        managed_quota_contract=True,
+    )
+    by_id = {model["modelId"]: model for model in models}
+    assert by_id["unreported"]["freeVerified"] is True
+    assert by_id["incomplete"]["freeVerified"] is True
+    assert by_id["unreported"]["pricingSource"] == (
+        "managed-freellm-zero-cost-quota-contract"
+    )
+    assert by_id["nonzero"]["freeVerified"] is False
+    assert by_id["nonzero"]["pricingSource"] == "provider-pricing-nonzero"
+    assert by_id["invalid"]["freeVerified"] is False
+    assert by_id["invalid"]["pricingSource"] == "provider-pricing-invalid"
+
+
 def test_database_never_receives_raw_provider_keys() -> None:
     migration = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
     assert "api_key" not in migration.lower()
@@ -142,6 +167,7 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "033_openrouter_paid_freellm_direct.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    ast.parse(provider_runtime)
     assert '"revolver_provider_key"' in owner_runtime
     assert 'f"revolver_provider_key.{safe_request_id}.txt"' in owner_runtime
     assert "_secret_path(owner_request_id)" in provider_runtime
@@ -203,3 +229,12 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in runtime
     assert 'candidate.name != "freellmapi_unified_key.txt"' in runtime
     assert 'source.get("auth_mode") in {"bearer", "x-api-key"}' in runtime
+    assert "managed_quota_contract=(" in runtime
+    assert "managed-freellm-zero-cost-quota-contract" in runtime
+    assert "hmac.compare_digest(expected, presented)" in runtime
+    assert '"/api/internal/llm/freellm/providers"' in runtime
+    assert '"/api/internal/llm/freellm/providers/<source_id>/reconcile"' in runtime
+    assert "actual_fingerprint = hashlib.sha256(key.encode()).hexdigest()" in runtime
+    assert "free_verified=true, pricing_source=%s" in runtime
+    assert '"maxForegroundAgents": 1' in runtime
+    assert '"maxBackgroundAgents": 0' in runtime

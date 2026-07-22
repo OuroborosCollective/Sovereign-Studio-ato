@@ -153,7 +153,11 @@ def zero_price_evidence(item: dict[str, Any]) -> tuple[bool, str]:
     return False, "provider-pricing-unreported-or-incomplete"
 
 
-def normalize_models_payload(payload: Any) -> list[dict[str, Any]]:
+def normalize_models_payload(
+    payload: Any,
+    *,
+    managed_quota_contract: bool = False,
+) -> list[dict[str, Any]]:
     rows: Any = payload
     if isinstance(payload, dict):
         rows = payload.get("data", payload.get("models", payload.get("items", [])))
@@ -177,6 +181,13 @@ def normalize_models_payload(payload: Any) -> list[dict[str, Any]]:
             or model_id
         ).strip()[:160]
         free_verified, pricing_source = zero_price_evidence(item)
+        if (
+            managed_quota_contract
+            and not free_verified
+            and pricing_source == "provider-pricing-unreported-or-incomplete"
+        ):
+            free_verified = True
+            pricing_source = "managed-freellm-zero-cost-quota-contract"
         capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), list) else ["chat"]
         normalized.append({
             "modelId": model_id,

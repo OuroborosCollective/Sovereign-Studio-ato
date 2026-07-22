@@ -33,6 +33,7 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
+    "openrouter_api_key": "OpenRouter API-Key",
     "litellm_provider_key": "LiteLLM Provider API-Key",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
@@ -277,7 +278,15 @@ class OwnerInputClient:
 
 
 class ProviderRuntimeClient(OwnerInputClient):
-    """Secret-free operator client for existing owner-confirmed LiteLLM routes."""
+    """Secret-free operator client for paid routes and managed direct FreeLLM."""
+
+    @staticmethod
+    def _source_id(source_id: str) -> str:
+        selected = str(source_id or "").strip()
+        try:
+            return str(uuid.UUID(selected))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ValueError("source_id ist ungültig") from exc
 
     @staticmethod
     def _route_id(route_id: str) -> str:
@@ -297,6 +306,38 @@ class ProviderRuntimeClient(OwnerInputClient):
             **payload,
             "deployments": deployments if isinstance(deployments, list) else [],
             "protected_values_returned": False,
+        }
+
+    def freellm_status(self) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            "/api/internal/llm/freellm/providers",
+            timeout=30,
+        )
+        providers = payload.get("providers")
+        return {
+            **payload,
+            "providers": providers if isinstance(providers, list) else [],
+            "protected_values_returned": False,
+        }
+
+    def freellm_reconcile(self, source_id: str, max_models: int = 20) -> dict[str, Any]:
+        selected = self._source_id(source_id)
+        if isinstance(max_models, bool) or not isinstance(max_models, int):
+            raise ValueError("max_models muss eine ganze Zahl sein")
+        bounded_max = max(1, min(max_models, 50))
+        payload = self._request(
+            "POST",
+            f"/api/internal/llm/freellm/providers/{selected}/reconcile",
+            json_body={"maxModels": bounded_max},
+            expected=(200, 409, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "sourceId": str(payload.get("sourceId") or selected),
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
         }
 
     def activate(self, route_id: str) -> dict[str, Any]:
