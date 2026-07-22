@@ -591,6 +591,12 @@ def execute_persisted_swarm(
         failure_family = str(failure["failureFamily"])
         failure_stage = str(failure["failureStage"])
         failure_next_action = str(failure["nextAction"])
+        failure_retryable = bool(failure["retryable"])
+        failure_status = (
+            "BLOCKED"
+            if billing_failure or not failure_retryable
+            else "FAILED_RECOVERABLE"
+        )
         failure_reason = (
             billing_reason
             if billing_failure
@@ -603,7 +609,7 @@ def execute_persisted_swarm(
                     conn,
                     user_id=user_id,
                     run_id=run_id,
-                    status="BLOCKED" if billing_failure else "FAILED_RECOVERABLE",
+                    status=failure_status,
                     source="agents-sdk",
                     trace_id=trace_id,
                     reason=failure_reason,
@@ -621,7 +627,7 @@ def execute_persisted_swarm(
                     family=failure_family,
                     summary=failure_reason,
                     evidence_id=failed_state["evidenceId"],
-                    recoverable=bool(failure["retryable"]),
+                    recoverable=failure_retryable,
                     task_id=task_id,
                 )
             finally:
@@ -649,12 +655,12 @@ def execute_persisted_swarm(
             "nextAction": failed_state["nextAction"],
             "blocker": failure_family,
             "failureStage": failure_stage,
-            "retryable": bool(failure["retryable"]),
+            "retryable": failure_retryable,
             "httpStatus": failure["httpStatus"],
             "requestId": failure["requestId"],
             "error": str(failure["errorType"]),
             **(response_context or {}),
-        }, exc.status_code if billing_failure else 502)
+        }, exc.status_code if billing_failure else (502 if failure_retryable else 503))
 
     status_code = (
         202 if final_state["status"] == "WAITING_FOR_OWNER"
@@ -1898,8 +1904,14 @@ def resume_cognitive_swarm_run(
             "ok": False,
             "runtime": "openai-agents-sdk",
             "runId": claim.run.run_id,
+            "traceId": resolved_trace_id,
             "status": blocked_state["status"],
+            "source": blocked_state["source"],
+            "evidenceId": blocked_state["evidenceId"],
+            "resumeClaimEvidenceId": claim.evidence_id,
+            "resumed": True,
             "blocker": "NO_VERIFIED_EXECUTION_ROUTE_READY",
+            "reason": blocked_state["reason"],
             "nextAction": blocked_state["nextAction"],
             "requestedMode": normalized_mode,
         }, 503
