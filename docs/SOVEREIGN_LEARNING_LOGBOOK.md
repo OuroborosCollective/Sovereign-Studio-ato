@@ -89,3 +89,23 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Changed-path ownership coverage (repository_check, SHA-256 971198cc655d82145b38b5faee6f32b01df0ad2084e4eb8d14323f5a2a443759): All changed MCP deployment and test paths are covered by the repository owner.
 - Revision-bound PR evidence graph (repository_check, SHA-256 c8fe70ca64a62221095daba694ad3b8195a30ddcc034c64c748a1f15a730cd7e): Exact-head tests, GitHub checks and CODEOWNERS evidence were bound into a complete release-ready graph.
 
+<!-- proven-learning:c6bff5e4a01f06cb5417c35a3771ff71e42dfaa81b28b93bef82cae7ecf1e49d -->
+## Normalize controlled Compose staging binds before boundary validation
+
+- Zeitpunkt: 2026-07-22T21:33:43Z
+- Vorgang: fix
+- Inhalts-Hash: sha256:c6bff5e4a01f06cb5417c35a3771ff71e42dfaa81b28b93bef82cae7ecf1e49d
+- Quellrevision: c6e4e20e030366267f1f818e8c7cfe1b8cf996e0
+- Merge-Ziel: main
+- Erwarteter PR-Head: c6e4e20e030366267f1f818e8c7cfe1b8cf996e0
+- Geänderte Pfade: tools/sovereign-chatgpt-mcp/managed_compose.py, tools/sovereign-chatgpt-mcp/tests/test_freellmapi_managed_compose.py
+- Problem: A fixed Compose template can contain a safe relative bind mount. During `docker compose config`, that source is resolved against a controlled temporary staging directory, but validating the temporary absolute path against final deployment allowlists falsely blocks the deployment before any mutation.
+- Lösung: Pass the trusted internal staging root into rendered-Compose validation. Canonicalize each bind source; only sources that are true descendants of that staging root are converted to the corresponding relative path beneath the fixed stack deploy root. Then apply the unchanged forbidden-source and allowed-root checks. Sources outside the staging root are never rewritten and remain blocked unless independently allowlisted.
+- Gültigkeit: Managed Compose systems that render immutable multi-file templates in a private temporary directory before atomically copying them to a fixed deploy root.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@c6e4e20e030366267f1f818e8c7cfe1b8cf996e0:tools/sovereign-chatgpt-mcp/managed_compose.py; OuroborosCollective/Sovereign-Studio-ato@c6e4e20e030366267f1f818e8c7cfe1b8cf996e0:tools/sovereign-chatgpt-mcp/tests/test_freellmapi_managed_compose.py
+
+### Nachweise
+
+- Changed-path ownership coverage (repository_check, SHA-256 22cafe14b67e852f34b3d376100e19c54cbcd75fb23d790c9d11e25c2d78d768): Both changed MCP control-plane paths have explicit repository owner coverage.
+- PR 938 exact-head evidence graph (repository_check, SHA-256 22b6fbd35584a93d81e65d13f1bd0e7a21cbc73df4fadcc48304a2437304c766): The exact PR head has complete test, GitHub Actions and ownership evidence with no graph findings.
+

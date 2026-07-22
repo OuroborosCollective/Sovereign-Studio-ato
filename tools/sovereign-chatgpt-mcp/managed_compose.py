@@ -473,7 +473,13 @@ class ManagedComposeRuntime:
             values.add(f"{host_ip + ':' if host_ip else ''}{published}:{target}")
         return values
 
-    def _validate_rendered(self, stack: ManagedStack, rendered: dict[str, Any]) -> None:
+    def _validate_rendered(
+        self,
+        stack: ManagedStack,
+        rendered: dict[str, Any],
+        *,
+        staging_root: Path | None = None,
+    ) -> None:
         services = rendered.get("services")
         if not isinstance(services, dict) or not services:
             raise RuntimeError("Compose enthält keine Services")
@@ -553,7 +559,15 @@ class ManagedComposeRuntime:
                 source = self._volume_source(volume)
                 if not source or not source.startswith("/"):
                     continue
-                resolved = str(Path(source).resolve())
+                resolved_path = Path(source).resolve()
+                if staging_root is not None:
+                    try:
+                        staged_relative = resolved_path.relative_to(staging_root.resolve())
+                    except ValueError:
+                        staged_relative = None
+                    if staged_relative is not None:
+                        resolved_path = (Path(stack.deploy_root) / staged_relative).resolve()
+                resolved = str(resolved_path)
                 if resolved in FORBIDDEN_BIND_SOURCES or resolved.startswith("/var/run/docker.sock"):
                     raise RuntimeError(f"Gesperrter Bind-Mount: {service_name}")
                 if not any(resolved == root or resolved.startswith(root.rstrip("/") + "/") for root in stack.allowed_bind_roots):
@@ -607,7 +621,7 @@ class ManagedComposeRuntime:
         except json.JSONDecodeError as exc:
             temporary.cleanup()
             raise RuntimeError("Gerenderte Compose-Konfiguration ist kein JSON") from exc
-        self._validate_rendered(stack, rendered)
+        self._validate_rendered(stack, rendered, staging_root=root)
         return compose_path, temporary, rendered
 
     @staticmethod

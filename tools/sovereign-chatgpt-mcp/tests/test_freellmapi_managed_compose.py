@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from managed_compose import (
     FREELLMAPI_BOOTSTRAP_COMMAND,
     FREELLMAPI_DATA_VOLUME,
@@ -37,6 +39,52 @@ def test_freellmapi_template_is_private_immutable_and_source_bound() -> None:
     assert 'user: "0:0"' not in template
     assert "- /opt/sovereign/freellm-bootstrap.mjs" in template
     assert "/var/run/docker.sock" not in template
+
+
+def test_freellmapi_staging_bind_maps_to_final_deploy_root_without_weakening_boundary(
+    tmp_path: Path,
+) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+    deploy_root = tmp_path / "deploy"
+    provider_root = tmp_path / "owner" / "freellm-provider-keys"
+    original = STACKS["sovereign-freellmapi"]
+    stack = type(original)(
+        **{
+            **original.__dict__,
+            "deploy_root": str(deploy_root),
+            "allowed_bind_roots": (str(deploy_root), str(provider_root)),
+        }
+    )
+    rendered = {
+        "services": {
+            "freellmapi": {
+                "image": FREELLMAPI_IMAGE,
+                "command": FREELLMAPI_BOOTSTRAP_COMMAND,
+                "networks": ["sovereign-private"],
+                "volumes": [
+                    {
+                        "type": "bind",
+                        "source": str(staging_root / "sovereign-freellm-bootstrap.mjs"),
+                        "target": "/opt/sovereign/freellm-bootstrap.mjs",
+                    },
+                    {
+                        "type": "bind",
+                        "source": str(provider_root),
+                        "target": "/run/secrets/freellm-provider-keys",
+                    },
+                ],
+            }
+        },
+        "networks": {"sovereign-private": {}},
+    }
+
+    runtime._validate_rendered(stack, rendered, staging_root=staging_root)
+
+    rendered["services"]["freellmapi"]["volumes"][0]["source"] = str(tmp_path / "outside.mjs")
+    with pytest.raises(RuntimeError, match="Bind-Mount außerhalb der Stack-Grenzen"):
+        runtime._validate_rendered(stack, rendered, staging_root=staging_root)
 
 
 def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: Path, monkeypatch) -> None:
