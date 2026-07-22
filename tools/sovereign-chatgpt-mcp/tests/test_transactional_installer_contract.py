@@ -189,6 +189,25 @@ def test_self_update_persists_only_bounded_installer_stage_evidence() -> None:
     assert "tail -n 200 \"$INSTALL_LOG\"" not in updater
 
 
+def test_immutable_image_pull_wait_is_bounded_and_failure_classified() -> None:
+    installer = INSTALLER.read_text("utf-8")
+
+    assert 'MCP_IMAGE_PULL_ATTEMPTS="${SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS:-36}"' in installer
+    assert 'MCP_IMAGE_PULL_DELAY_SECONDS="${SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS:-10}"' in installer
+    assert 'classify_mcp_image_pull_failure()' in installer
+    assert "printf 'image_not_published\\n'" in installer
+    assert "printf 'registry_auth_denied\\n'" in installer
+    assert "printf 'registry_transport\\n'" in installer
+    assert "printf 'unexpected_pull_failure\\n'" in installer
+    assert 'wait_for_exact_mcp_image' in installer
+    assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
+    assert 'attempt=$attempt/$MCP_IMAGE_PULL_ATTEMPTS' in installer
+    assert 'attempts=$MCP_IMAGE_PULL_ATTEMPTS' in installer
+    assert 'sleep "$MCP_IMAGE_PULL_DELAY_SECONDS"' in installer
+    assert 'cat "$pull_log"' not in installer
+    assert 'tail -n 200 "$pull_log"' not in installer
+
+
 def test_validated_self_update_wrapper_survives_wider_installer_rollback() -> None:
     installer = INSTALLER.read_text("utf-8")
 
