@@ -313,6 +313,7 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "code-server compose template is missing"
 [[ -f "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "milvus compose template is missing"
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "FreeLLM API compose template is missing"
+[[ -f "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" ]] || fail "FreeLLM API bootstrap template is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-governance/SKILL.md" ]] || fail "operational governance skill manifest is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-assurance/SKILL.md" ]] || fail "operational assurance skill manifest is missing"
 bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
@@ -390,6 +391,7 @@ backup_control_plane_file "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml"
+backup_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report; do
   backup_control_plane_file "$BIN_DIR/$file"
 done
@@ -426,6 +428,7 @@ install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLA
 install -m 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml"
+install -m 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs"
 install -m 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend"
 install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database"
