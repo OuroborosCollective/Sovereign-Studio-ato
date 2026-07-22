@@ -159,6 +159,39 @@ def _bounded_json_response(response: requests.Response, *, limit: int) -> Any:
         raise OpenRouterRuntimeError("openrouter_response_invalid_json") from exc
 
 
+def _safe_openrouter_error_token(value: Any) -> str:
+    token = re.sub(r"[^a-z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+    return token[:60]
+
+
+def _openrouter_error_family(response: requests.Response) -> str:
+    """Map bounded typed OpenRouter errors without retaining raw messages."""
+
+    status = int(response.status_code)
+    try:
+        payload = _bounded_json_response(response, limit=65_536)
+    except OpenRouterRuntimeError:
+        payload = {}
+    error = payload.get("error") if isinstance(payload, dict) else None
+    error = error if isinstance(error, dict) else {}
+    metadata = error.get("metadata") if isinstance(error.get("metadata"), dict) else {}
+    error_type = _safe_openrouter_error_token(metadata.get("error_type"))
+    provider_code = _safe_openrouter_error_token(metadata.get("provider_code"))
+
+    if status == 404:
+        return "openrouter_no_provider_meets_policy"
+    if error_type:
+        return f"openrouter_{error_type}"[:120]
+    if provider_code:
+        return f"openrouter_provider_{provider_code}"[:120]
+    return {
+        400: "openrouter_invalid_request",
+        408: "openrouter_timeout",
+        502: "openrouter_provider_unavailable",
+        503: "openrouter_provider_unavailable",
+    }.get(status, "openrouter_zdr_agent_canary_rejected")
+
+
 def _fetch_models(key: str) -> tuple[list[dict[str, Any]], str]:
     endpoint = f"{OPENROUTER_BASE_URL}/models"
     try:
@@ -304,12 +337,11 @@ def _completion_canary(key: str, *, model_id: str) -> dict[str, Any]:
                         "required": ["value"],
                         "additionalProperties": False,
                     },
-                    "strict": True,
                 },
             }
         ],
         "tool_choice": {"type": "function", "function": {"name": "canary_ok"}},
-        "max_completion_tokens": 64,
+        "max_tokens": 64,
         "provider": dict(_PROVIDER_POLICY),
         "stream": False,
     }
@@ -342,7 +374,7 @@ def _completion_canary(key: str, *, model_id: str) -> dict[str, Any]:
                     raise OpenRouterRuntimeError("openrouter_rate_limited", status_code=429)
                 if status >= 400:
                     raise OpenRouterRuntimeError(
-                        "openrouter_zdr_agent_canary_rejected", status_code=503
+                        _openrouter_error_family(response), status_code=503
                     )
                 payload = _bounded_json_response(response, limit=1_000_000)
     except requests.Timeout as exc:

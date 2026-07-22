@@ -103,14 +103,23 @@ def test_user_catalog_exposes_only_customer_prices_and_separate_role_selection()
     assert admin_row["pricingAdmin"]["minimumMarkupMultiplier"] == 4
 
 
-def test_openrouter_canary_omits_unsupported_temperature_parameter() -> None:
+def test_openrouter_canary_matches_documented_chat_completions_shape() -> None:
     source = (BACKEND / "openrouter_provider_runtime.py").read_text("utf-8")
     canary_source = source.split("def _completion_canary", 1)[1].split("def _sync_catalog", 1)[0]
 
     assert '"temperature"' not in canary_source
-    assert '"max_tokens"' not in canary_source
-    assert '"max_completion_tokens": 64' in canary_source
+    assert '"max_tokens": 64' in canary_source
+    assert '"max_completion_tokens"' not in canary_source
+    assert '"strict": True' not in canary_source
     assert '"require_parameters": True' in source
+    assert "_openrouter_error_family(response)" in canary_source
+
+
+def test_openrouter_error_tokens_are_bounded_and_secret_safe() -> None:
+    assert runtime._safe_openrouter_error_token("No endpoints found that support ZDR") == (
+        "no_endpoints_found_that_support_zdr"
+    )
+    assert runtime._safe_openrouter_error_token("x" * 200) == "x" * 60
 
 
 def test_provider_policy_is_fail_closed_and_application_headers_are_configurable(
