@@ -13,17 +13,32 @@ on:
       - 'scripts/sovereign-backend/llm_transport.py'
       - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
       - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
+  push:
+    branches:
+      - 'sovereign/chatgpt/1784761323-integrate-private-freellmpool-free-sourc-7f530f'
+    paths:
+      - '.github/workflows/sovereign-freellmpool-verify.yml'
+      - 'tools/sovereign-chatgpt-mcp/managed_compose.py'
+      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**'
+      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_contracts.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_runtime.py'
+      - 'scripts/sovereign-backend/llm_transport.py'
+      - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
+      - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  UPSTREAM_IMAGE: ghcr.io/0xzr/freellmpool:v0.11.4
+  PUBLISH_IMAGE: ghcr.io/ouroboroscollective/sovereign-freellmpool
+  LOCAL_IMAGE: sovereign-freellmpool-ci
   UPSTREAM_VERSION: '0.11.4'
   UPSTREAM_REVISION: f9e09e536682083297cfd6fec3ea5d3aac5262c8
 
@@ -36,30 +51,63 @@ jobs:
       - name: Checkout Sovereign revision
         uses: actions/checkout@v4
 
-      - name: Pull release image and resolve immutable identity
+      - name: Checkout exact upstream revision
+        uses: actions/checkout@v4
+        with:
+          repository: 0xzr/freellmpool
+          ref: ${{ env.UPSTREAM_REVISION }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Build exact source and optionally publish immutable image
         id: image
         shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          docker pull "${UPSTREAM_IMAGE}"
-          repo_digest="$(docker image inspect "${UPSTREAM_IMAGE}" --format '{{index .RepoDigests 0}}')"
-          image_id="$(docker image inspect "${UPSTREAM_IMAGE}" --format '{{.Id}}')"
-          test -n "${repo_digest}"
-          test -n "${image_id}"
-          case "${repo_digest}" in
-            ghcr.io/0xzr/freellmpool@sha256:*) ;;
-            *) echo "unexpected repository digest: ${repo_digest}" >&2; exit 1 ;;
+          test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_REVISION}"
+          test "$(python -c 'import tomllib; print(tomllib.load(open("upstream/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
+
+          docker pull python:3.12-slim
+          base_repo_digest="$(docker image inspect python:3.12-slim --format '{{index .RepoDigests 0}}')"
+          case "${base_repo_digest}" in
+            python@sha256:*) ;;
+            *) echo "unexpected Python base digest: ${base_repo_digest}" >&2; exit 1 ;;
           esac
-          digest="${repo_digest##*@}"
+          sed "s|^FROM python:3.12-slim$|FROM ${base_repo_digest}|" \
+            upstream/Dockerfile > upstream/Dockerfile.sovereign
+          grep -qx "FROM ${base_repo_digest}" upstream/Dockerfile.sovereign
+
+          local_ref="${LOCAL_IMAGE}:${GITHUB_SHA}"
+          docker build --file upstream/Dockerfile.sovereign --tag "${local_ref}" upstream
+          image_id="$(docker image inspect "${local_ref}" --format '{{.Id}}')"
+          test -n "${image_id}"
+
+          repo_digest=""
+          runtime_ref="${local_ref}"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+            publish_tag="${PUBLISH_IMAGE}:upstream-${UPSTREAM_REVISION}"
+            docker tag "${local_ref}" "${publish_tag}"
+            push_output="$(docker push "${publish_tag}")"
+            digest="$(printf '%s\n' "${push_output}" | sed -nE 's/^.*digest: (sha256:[0-9a-f]{64}).*$/\1/p' | tail -n1)"
+            test -n "${digest}"
+            repo_digest="${PUBLISH_IMAGE}@${digest}"
+            docker pull "${repo_digest}"
+            runtime_ref="${repo_digest}"
+          fi
+
           echo "repo_digest=${repo_digest}" >> "$GITHUB_OUTPUT"
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "runtime_ref=${runtime_ref}" >> "$GITHUB_OUTPUT"
+          echo "base_repo_digest=${base_repo_digest}" >> "$GITHUB_OUTPUT"
           echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
 
       - name: Verify package version and non-root execution
         shell: bash
         run: |
           set -euo pipefail
-          digest_ref="${{ steps.image.outputs.repo_digest }}"
+          digest_ref="${{ steps.image.outputs.runtime_ref }}"
           version="$(docker run --rm \
             --user 10001:10001 \
             --read-only \
@@ -87,7 +135,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          digest_ref="${{ steps.image.outputs.repo_digest }}"
+          digest_ref="${{ steps.image.outputs.runtime_ref }}"
           docker network create sovereign-freellmpool-ci >/dev/null
           docker run -d \
             --name sovereign-freellmpool-ci \
@@ -201,6 +249,7 @@ jobs:
               "releaseVersion": "0.11.4",
               "image": "${{ steps.image.outputs.repo_digest }}",
               "imageId": "${{ steps.image.outputs.image_id }}",
+              "baseImage": "${{ steps.image.outputs.base_repo_digest }}",
               "nonRootUid": 10001,
               "readOnlyRootFilesystem": True,
               "hostPortsPublished": False,
