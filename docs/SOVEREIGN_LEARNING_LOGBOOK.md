@@ -69,3 +69,23 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Milvus collection lifecycle canary (runtime_readback, SHA-256 1af5bab266494d9e44f1653549f47963e23247f5b78d19d335ad8e3683891b62): The private gateway created, wrote, queried, vector-searched and removed an ephemeral Milvus collection.
 - Office document live canary (runtime_readback, SHA-256 01026049ee852a62f0ea4ae4e6adbac2f4d70d6063bfdb612c110844462b3c35): An ephemeral DOCX was converted through Gotenberg LibreOffice to PDF and its marker was extracted by Tika without persistence.
 
+<!-- proven-learning:4c01019fedf1e058c640e42c8150cb1c307b1defd3f8245ff89796ff79cd5e87 -->
+## Revision-bound MCP self-update registry authentication
+
+- Zeitpunkt: 2026-07-22T21:06:08Z
+- Vorgang: fix
+- Inhalts-Hash: sha256:4c01019fedf1e058c640e42c8150cb1c307b1defd3f8245ff89796ff79cd5e87
+- Quellrevision: 5c98d8791853956edff21ef60e0eb7fbdcea272f
+- Merge-Ziel: main
+- Erwarteter PR-Head: 5c98d8791853956edff21ef60e0eb7fbdcea272f
+- Geänderte Pfade: tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh, tools/sovereign-chatgpt-mcp/deploy/self-update-chatgpt-mcp.sh, tools/sovereign-chatgpt-mcp/tests/test_transactional_installer_contract.py
+- Problem: A private MCP self-update may begin before the immutable GHCR tag for the exact merge revision is published, while the local systemd service does not automatically inherit workflow-scoped registry credentials.
+- Lösung: Classify authentication denial before not-found publication states; retry only bounded image_not_published or transient registry transport failures; create a temporary per-run Docker auth configuration from protected host metadata with directory mode 0700 and file mode 0600; remove it after execution; preserve exact revision, immutable digest, revision label and cross-runtime parity gates.
+- Gültigkeit: Private revision-bound container deployments where merges trigger self-updates asynchronously and CI registry credentials are isolated from the host service context.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@5c98d8791853956edff21ef60e0eb7fbdcea272f:tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh; OuroborosCollective/Sovereign-Studio-ato@5c98d8791853956edff21ef60e0eb7fbdcea272f:tools/sovereign-chatgpt-mcp/deploy/self-update-chatgpt-mcp.sh; OuroborosCollective/Sovereign-Studio-ato@5c98d8791853956edff21ef60e0eb7fbdcea272f:tools/sovereign-chatgpt-mcp/tests/test_transactional_installer_contract.py
+
+### Nachweise
+
+- Changed-path ownership coverage (repository_check, SHA-256 971198cc655d82145b38b5faee6f32b01df0ad2084e4eb8d14323f5a2a443759): All changed MCP deployment and test paths are covered by the repository owner.
+- Revision-bound PR evidence graph (repository_check, SHA-256 c8fe70ca64a62221095daba694ad3b8195a30ddcc034c64c748a1f15a730cd7e): Exact-head tests, GitHub checks and CODEOWNERS evidence were bound into a complete release-ready graph.
+
