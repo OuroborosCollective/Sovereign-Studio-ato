@@ -206,6 +206,7 @@ def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_key
     migration_31 = (BACKEND / "migrations" / "031_sovereign_free_revolver_v3.sql").read_text("utf-8")
     migration_32 = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
     migration_33 = (BACKEND / "migrations" / "033_freellmapi_managed_provider.sql").read_text("utf-8")
+    migration_34 = (BACKEND / "migrations" / "034_freellm_provider_check_kinds.sql").read_text("utf-8")
 
     assert "tenant_id UUID NULL REFERENCES admin_users" not in migration_31
     assert "tenant_id UUID NOT NULL REFERENCES admin_users" not in migration_31
@@ -226,6 +227,9 @@ def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_key
     assert "fk_llm_revolver_provider_created_by" in migration_32
     assert "managed-bearer" in migration_33
     assert "api_key" not in migration_33.lower()
+    assert "managed_quota_direct_canary" in migration_34
+    assert "direct_route_canary" in migration_34
+    assert "VALIDATE CONSTRAINT llm_revolver_provider_checks_check_kind_check" in migration_34
 
 
 def test_app_registers_provider_runtime_and_readiness_requires_migration() -> None:
