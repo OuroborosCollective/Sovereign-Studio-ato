@@ -199,6 +199,9 @@ def test_immutable_image_pull_wait_is_bounded_and_failure_classified() -> None:
     assert "printf 'registry_auth_denied\\n'" in installer
     assert "printf 'registry_transport\\n'" in installer
     assert "printf 'unexpected_pull_failure\\n'" in installer
+    assert installer.index("printf 'registry_auth_denied\\n'") < installer.index("printf 'image_not_published\\n'")
+    assert 'no basic auth credentials' in installer
+    assert 'failed to resolve reference' in installer
     assert 'wait_for_exact_mcp_image' in installer
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
     assert 'attempt=$attempt/$MCP_IMAGE_PULL_ATTEMPTS' in installer
@@ -206,6 +209,26 @@ def test_immutable_image_pull_wait_is_bounded_and_failure_classified() -> None:
     assert 'sleep "$MCP_IMAGE_PULL_DELAY_SECONDS"' in installer
     assert 'cat "$pull_log"' not in installer
     assert 'tail -n 200 "$pull_log"' not in installer
+
+
+def test_self_update_uses_ephemeral_secret_safe_registry_auth() -> None:
+    updater = UPDATER.read_text("utf-8")
+
+    assert 'CURRENT_STAGE="prepare_registry_auth"' in updater
+    assert 'REGISTRY_AUTH_DIR="$(mktemp -d)"' in updater
+    assert 'cleanup_sensitive_runtime()' in updater
+    assert 'rm -rf "$ASKPASS_DIR" "$REGISTRY_AUTH_DIR"' in updater
+    assert 'protected GHCR metadata file has unsafe permissions' in updater
+    assert 'https://api.github.com/user' in updater
+    assert 'SOVEREIGN_GHCR_USERNAME' in updater
+    assert 'SOVEREIGN_GHCR_TOKEN' in updater
+    assert 'Path(sys.argv[1]).write_text' in updater
+    assert 'chmod 0600 "$REGISTRY_AUTH_DIR/config.json"' in updater
+    assert 'export DOCKER_CONFIG="$REGISTRY_AUTH_DIR"' in updater
+    assert 'unset SOVEREIGN_GHCR_USERNAME SOVEREIGN_GHCR_TOKEN REGISTRY_TOKEN' in updater
+    assert 'docker login' not in updater
+    assert 'echo "$REGISTRY_TOKEN"' not in updater
+    assert 'printf \'%s\' "$REGISTRY_TOKEN"' not in updater
 
 
 def test_validated_self_update_wrapper_survives_wider_installer_rollback() -> None:
