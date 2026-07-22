@@ -8,6 +8,7 @@ STATE_DIR="${SOVEREIGN_MCP_SELF_UPDATE_STATE_DIR:-/var/lib/sovereign-chatgpt-sel
 STATUS_FILE="$STATE_DIR/status.json"
 INSTALLER="$SOURCE_DIR/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
 BROKER_ENV="/opt/sovereign-chatgpt-tools/broker.env"
+GHCR_ENV="${SOVEREIGN_MCP_GHCR_ENV:-/opt/sovereign-chatgpt-tools/.ghcr.env}"
 SELF_UPDATE_TUNNEL_MODE="${SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE:-disabled}"
 
 mkdir -p "$STATE_DIR"
@@ -123,9 +124,18 @@ print(revision)
 PY
 )"
 
+CURRENT_STAGE="prepare_registry_auth"
 TOKEN="$(sed -n 's/^GITHUB_TOKEN=//p' "$BROKER_ENV" | tail -n 1)"
+if [[ -z "$TOKEN" ]]; then
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; protected GitHub token metadata is missing"
+  exit 1
+fi
 ASKPASS_DIR="$(mktemp -d)"
-trap 'rm -rf "$ASKPASS_DIR"' EXIT
+REGISTRY_AUTH_DIR="$(mktemp -d)"
+cleanup_sensitive_runtime() {
+  rm -rf "$ASKPASS_DIR" "$REGISTRY_AUTH_DIR"
+}
+trap cleanup_sensitive_runtime EXIT
 cat > "$ASKPASS_DIR/askpass.sh" <<'SH'
 #!/bin/sh
 case "$1" in
@@ -134,10 +144,83 @@ case "$1" in
 esac
 SH
 chmod 0700 "$ASKPASS_DIR/askpass.sh"
+chmod 0700 "$REGISTRY_AUTH_DIR"
 
 export GITHUB_TOKEN="$TOKEN"
 export GIT_ASKPASS="$ASKPASS_DIR/askpass.sh"
 export GIT_TERMINAL_PROMPT=0
+
+REGISTRY_USERNAME=""
+REGISTRY_TOKEN="$TOKEN"
+if [[ -f "$GHCR_ENV" ]]; then
+  python3 - "$GHCR_ENV" <<'PY'
+import os
+import stat
+import sys
+
+mode = stat.S_IMODE(os.stat(sys.argv[1]).st_mode)
+if mode & 0o077:
+    raise SystemExit("protected GHCR metadata file has unsafe permissions")
+PY
+  CONFIGURED_GHCR_USERNAME="$(sed -n 's/^GHCR_USERNAME=//p' "$GHCR_ENV" | tail -n 1)"
+  CONFIGURED_GHCR_TOKEN="$(sed -n 's/^GHCR_TOKEN=//p' "$GHCR_ENV" | tail -n 1)"
+  if [[ -n "$CONFIGURED_GHCR_USERNAME" || -n "$CONFIGURED_GHCR_TOKEN" ]]; then
+    if [[ -z "$CONFIGURED_GHCR_USERNAME" || -z "$CONFIGURED_GHCR_TOKEN" ]]; then
+      write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; protected GHCR username/token metadata is incomplete"
+      exit 1
+    fi
+    REGISTRY_USERNAME="$CONFIGURED_GHCR_USERNAME"
+    REGISTRY_TOKEN="$CONFIGURED_GHCR_TOKEN"
+  fi
+fi
+if [[ -z "$REGISTRY_USERNAME" ]]; then
+  REGISTRY_USERNAME="$(python3 - <<'PY'
+import json
+import os
+import urllib.request
+
+request = urllib.request.Request(
+    "https://api.github.com/user",
+    headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+        "User-Agent": "sovereign-mcp-self-update",
+        "X-GitHub-Api-Version": "2026-03-10",
+    },
+)
+with urllib.request.urlopen(request, timeout=20) as response:
+    payload = json.load(response)
+login = str(payload.get("login") or "").strip()
+if not login:
+    raise SystemExit("GitHub identity response has no login")
+print(login)
+PY
+)"
+fi
+if [[ ! "$REGISTRY_USERNAME" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]; then
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; registry username metadata is invalid"
+  exit 1
+fi
+export SOVEREIGN_GHCR_USERNAME="$REGISTRY_USERNAME"
+export SOVEREIGN_GHCR_TOKEN="$REGISTRY_TOKEN"
+python3 - "$REGISTRY_AUTH_DIR/config.json" <<'PY'
+from pathlib import Path
+import base64
+import json
+import os
+import sys
+
+username = os.environ["SOVEREIGN_GHCR_USERNAME"]
+token = os.environ["SOVEREIGN_GHCR_TOKEN"]
+auth = base64.b64encode(f"{username}:{token}".encode("utf-8")).decode("ascii")
+Path(sys.argv[1]).write_text(
+    json.dumps({"auths": {"ghcr.io": {"auth": auth}}}, separators=(",", ":")) + "\n",
+    "utf-8",
+)
+PY
+chmod 0600 "$REGISTRY_AUTH_DIR/config.json"
+export DOCKER_CONFIG="$REGISTRY_AUTH_DIR"
+unset SOVEREIGN_GHCR_USERNAME SOVEREIGN_GHCR_TOKEN REGISTRY_TOKEN CONFIGURED_GHCR_TOKEN TOKEN
 
 CURRENT_STAGE="fetch_confirmed_revision"
 write_status RUNNING "$EXPECTED_REVISION" "fetching confirmed main revision"

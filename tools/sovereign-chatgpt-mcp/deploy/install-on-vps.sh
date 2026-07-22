@@ -176,10 +176,10 @@ valid_mcp_image_digest() {
 
 classify_mcp_image_pull_failure() {
   local log_file="$1"
-  if grep -Eqi '(manifest unknown|manifest[^[:cntrl:]]*(not found|unknown)|name unknown|repository does not exist)' "$log_file"; then
-    printf 'image_not_published\n'
-  elif grep -Eqi '(unauthorized|denied|authentication required|insufficient[_ -]scope)' "$log_file"; then
+  if grep -Eqi '(unauthorized|denied|authentication required|insufficient[_ -]scope|no basic auth credentials)' "$log_file"; then
     printf 'registry_auth_denied\n'
+  elif grep -Eqi '(manifest unknown|manifest[^[:cntrl:]]*(not found|unknown)|name unknown|repository does not exist|failed to resolve reference[^[:cntrl:]]*not found|(^|[^[:alpha:]])not found([^[:alpha:]]|$))' "$log_file"; then
+    printf 'image_not_published\n'
   elif grep -Eqi '(timeout|timed out|connection reset|temporary failure|tls handshake timeout|service unavailable|(^|[^0-9])(502|503|504)([^0-9]|$))' "$log_file"; then
     printf 'registry_transport\n'
   else
