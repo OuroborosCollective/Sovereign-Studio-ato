@@ -7,6 +7,7 @@ evidence only; protected key values remain owner-managed.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -32,6 +33,12 @@ _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
 _MANAGED_AUTH_MODE = "managed-bearer"
 _AUTH_MODES = {"bearer", "x-api-key", "none", _MANAGED_AUTH_MODE}
 _MAX_MODELS_RESPONSE_BYTES = 2_000_000
+
+
+def _internal_owner_authorized() -> bool:
+    expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    presented = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
+    return bool(expected and presented) and hmac.compare_digest(expected, presented)
 
 
 def _owner_root() -> Path:
@@ -591,12 +598,15 @@ def register_free_revolver_provider_runtime(
                 cursor.execute(
                     """UPDATE llm_revolver_provider_models
                        SET litellm_alias=%s, status='ready', enabled=true,
+                           free_verified=true, pricing_source=%s,
+                           pricing_verified_at=NOW(),
                            last_canary_request_id=%s, last_canary_at=NOW(),
                            canary_cost_state=%s, last_provider_cost_usd_micros=%s,
                            last_error_code=NULL, updated_at=NOW()
                        WHERE source_id=%s::uuid AND upstream_model_id=%s""",
                     (
-                        alias, str(evidence.get("upstreamRequestId") or "") or None,
+                        alias, model["pricingSource"],
+                        str(evidence.get("upstreamRequestId") or "") or None,
                         canary_cost_state, provider_cost_micros,
                         source_id, model_id,
                     ),
@@ -742,7 +752,13 @@ def register_free_revolver_provider_runtime(
                         break
             if selected_url is None or payload is None:
                 raise ValueError("free_provider_models_endpoint_missing")
-            models = normalize_models_payload(payload)
+            models = normalize_models_payload(
+                payload,
+                managed_quota_contract=(
+                    str(source.get("auth_mode") or "") == _MANAGED_AUTH_MODE
+                    and is_managed_internal_provider_url(str(source.get("api_base") or ""))
+                ),
+            )
             model_ids = [model["modelId"] for model in models]
             free_models = [model for model in models if model["freeVerified"]]
             connection = get_connection()
@@ -933,6 +949,283 @@ def register_free_revolver_provider_runtime(
                 protected[index] = 0
             if source.get("auth_mode") in {"bearer", "x-api-key"}:
                 _securely_remove(path)
+
+    @app.route("/api/internal/llm/freellm/providers", methods=["GET"])
+    def internal_freellm_provider_status():
+        if not _internal_owner_authorized():
+            return jsonify({"error": "forbidden", "protectedValuesReturned": False}), 403
+        rows = query(
+            """SELECT source.id::text, source.label, source.api_base, source.auth_mode,
+                      source.status, source.enabled, source.last_http_status,
+                      source.last_error_code, source.last_discovered_at,
+                      source.last_checked_at,
+                      (source.key_fingerprint IS NOT NULL) AS key_fingerprint_present,
+                      COUNT(model.id)::int AS model_count,
+                      COUNT(model.id) FILTER (WHERE model.free_verified=true)::int AS free_verified_count,
+                      COUNT(model.id) FILTER (
+                          WHERE model.status='ready' AND model.enabled=true
+                      )::int AS ready_count
+               FROM llm_revolver_provider_sources AS source
+               LEFT JOIN llm_revolver_provider_models AS model
+                 ON model.source_id=source.id
+               WHERE source.auth_mode=%s
+               GROUP BY source.id
+               ORDER BY source.created_at DESC""",
+            (_MANAGED_AUTH_MODE,),
+        ) or []
+        providers = []
+        for row in rows:
+            source = dict(row)
+            if not is_managed_internal_provider_url(str(source.get("api_base") or "")):
+                continue
+            providers.append({
+                "sourceId": str(source.get("id") or ""),
+                "label": str(source.get("label") or ""),
+                "apiBase": str(source.get("api_base") or ""),
+                "authMode": str(source.get("auth_mode") or ""),
+                "status": str(source.get("status") or "blocked"),
+                "enabled": bool(source.get("enabled")),
+                "lastHttpStatus": source.get("last_http_status"),
+                "lastErrorCode": source.get("last_error_code"),
+                "lastDiscoveredAt": (
+                    source["last_discovered_at"].isoformat()
+                    if source.get("last_discovered_at") else None
+                ),
+                "lastCheckedAt": (
+                    source["last_checked_at"].isoformat()
+                    if source.get("last_checked_at") else None
+                ),
+                "keyFingerprintPresent": bool(source.get("key_fingerprint_present")),
+                "modelCount": int(source.get("model_count") or 0),
+                "freeVerifiedCount": int(source.get("free_verified_count") or 0),
+                "readyCount": int(source.get("ready_count") or 0),
+            })
+        return jsonify({
+            "ok": True,
+            "status": "FREELLM_PROVIDER_STATUS",
+            "providers": providers,
+            "protectedValuesReturned": False,
+        })
+
+    @app.route(
+        "/api/internal/llm/freellm/providers/<source_id>/reconcile",
+        methods=["POST"],
+    )
+    def internal_reconcile_freellm_provider(source_id: str):
+        if not _internal_owner_authorized():
+            return jsonify({"error": "forbidden", "protectedValuesReturned": False}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            source_id = normalize_provider_source_id(source_id)
+            max_models = normalize_max_auto_activate(body.get("maxModels", 20))
+        except ValueError as exc:
+            return jsonify({
+                "error": str(exc),
+                "protectedValuesReturned": False,
+            }), 409
+        source = query(
+            """SELECT id::text, label, api_base, auth_mode, key_fingerprint,
+                      models_url, last_http_status, last_discovered_at, enabled,
+                      (
+                          last_discovered_at IS NOT NULL
+                          AND last_discovered_at >= NOW() - INTERVAL '24 hours'
+                      ) AS catalog_fresh
+               FROM llm_revolver_provider_sources
+               WHERE id=%s::uuid
+               LIMIT 1""",
+            (source_id,),
+            one=True,
+        )
+        if (
+            not source
+            or not bool(source.get("enabled"))
+            or str(source.get("auth_mode") or "") != _MANAGED_AUTH_MODE
+            or not is_managed_internal_provider_url(str(source.get("api_base") or ""))
+        ):
+            return jsonify({
+                "error": "Nur die aktivierte verwaltete direkte FreeLLM-Quelle kann abgeglichen werden.",
+                "blocker": "free_direct_managed_source_required",
+                "protectedValuesReturned": False,
+            }), 409
+        if (
+            not source.get("key_fingerprint")
+            or int(source.get("last_http_status") or 0) != 200
+            or not bool(source.get("catalog_fresh"))
+        ):
+            return jsonify({
+                "error": "Ein frischer, authentifizierter HTTP-200-Modellkatalog ist erforderlich.",
+                "blocker": "freellm_fresh_catalog_required",
+                "sourceId": source_id,
+                "keyFingerprintPresent": bool(source.get("key_fingerprint")),
+                "protectedValuesReturned": False,
+            }), 409
+        models = query(
+            """SELECT id::text, upstream_model_id, display_name, litellm_alias,
+                      discovery_payload_sha256, free_verified, pricing_source,
+                      status, enabled
+               FROM llm_revolver_provider_models
+               WHERE source_id=%s::uuid
+                 AND last_seen_at >= NOW() - INTERVAL '24 hours'
+                 AND (
+                     free_verified=true
+                     OR (
+                         free_verified=false
+                         AND pricing_source='provider-pricing-unreported-or-incomplete'
+                     )
+                 )
+               ORDER BY (status='ready' AND enabled=true) ASC,
+                        free_verified DESC, display_name ASC
+               LIMIT %s""",
+            (source_id, max_models),
+        ) or []
+        if not models:
+            return jsonify({
+                "error": "Der frische Katalog enthält keine sicher abgleichbaren Modelle.",
+                "blocker": "freellm_no_reconcilable_models",
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 409
+
+        protected = bytearray()
+        key = ""
+        try:
+            path = _managed_secret_path()
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
+                raise ValueError("free_provider_secret_permissions_invalid")
+            if info.st_size < 8 or info.st_size > 8192:
+                raise ValueError("free_provider_secret_invalid")
+            protected = bytearray(path.read_bytes())
+            key = protected.decode("utf-8").strip()
+            if len(key) < 8:
+                raise ValueError("free_provider_secret_invalid")
+            actual_fingerprint = hashlib.sha256(key.encode()).hexdigest()
+            if not hmac.compare_digest(
+                actual_fingerprint,
+                str(source.get("key_fingerprint") or ""),
+            ):
+                raise ValueError("free_provider_secret_fingerprint_mismatch")
+
+            source_payload = dict(source)
+            ready = []
+            blocked = []
+            for row in models:
+                stored = dict(row)
+                model_id = str(stored.get("upstream_model_id") or "")
+                pricing_source = str(
+                    stored.get("pricing_source")
+                    or "provider-pricing-unreported-or-incomplete"
+                )
+                if not bool(stored.get("free_verified")):
+                    pricing_source = "managed-freellm-zero-cost-quota-contract"
+                result = activate_model(
+                    source_payload,
+                    {
+                        "modelId": model_id,
+                        "displayName": str(stored.get("display_name") or model_id),
+                        "pricingSource": pricing_source,
+                        "payloadSha256": str(stored.get("discovery_payload_sha256") or ""),
+                    },
+                    key,
+                )
+                if result.get("ok"):
+                    ready.append({
+                        "modelId": model_id,
+                        "routeId": result.get("routeId"),
+                        "canaryCostState": result.get("canaryCostState"),
+                    })
+                    continue
+                blocker = str(
+                    result.get("blocker")
+                    or result.get("error")
+                    or "free_provider_canary_failed"
+                )[:120]
+                blocked.append({"modelId": model_id, "blocker": blocker})
+                query(
+                    """UPDATE llm_revolver_provider_models
+                       SET status='blocked', enabled=false, last_error_code=%s,
+                           updated_at=NOW()
+                       WHERE id=%s::uuid""",
+                    (blocker, stored["id"]),
+                    write=True,
+                )
+                alias = str(stored.get("litellm_alias") or "")
+                if alias:
+                    query(
+                        """UPDATE llm_routes
+                           SET disabled=true, updated_at=NOW()
+                           WHERE model_id=%s""",
+                        (alias,),
+                        write=True,
+                    )
+            status = (
+                "healthy"
+                if ready and not blocked
+                else "degraded"
+                if ready
+                else "blocked"
+            )
+            error_code = (
+                "some_freellm_routes_blocked"
+                if ready and blocked
+                else None
+                if ready
+                else "no_freellm_route_activated"
+            )
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status=%s, last_error_code=%s, last_checked_at=NOW(),
+                       updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (status, error_code, source_id),
+                write=True,
+            )
+            persist_check(
+                source_id,
+                check_kind="managed_quota_direct_canary",
+                models_url=str(source.get("models_url") or "") or None,
+                http_status=source.get("last_http_status"),
+                outcome=(
+                    "success"
+                    if ready and not blocked
+                    else "degraded"
+                    if ready
+                    else "blocked"
+                ),
+                model_count=len(models),
+                free_count=len(ready),
+                evidence={
+                    "readyModelIds": [item["modelId"] for item in ready],
+                    "blockedModelIds": [item["modelId"] for item in blocked],
+                    "transport": "freellm",
+                    "managedQuotaContract": True,
+                    "rawProviderResponsesPersisted": False,
+                },
+            )
+            return jsonify({
+                "ok": bool(ready),
+                "status": status,
+                "sourceId": source_id,
+                "keyFingerprintPresent": True,
+                "ready": ready,
+                "blocked": blocked,
+                "transport": "freellm",
+                "executionProfile": "free_single_agent",
+                "maxForegroundAgents": 1,
+                "maxBackgroundAgents": 0,
+                "protectedValuesReturned": False,
+            }), 200 if ready else 409
+        except (OSError, UnicodeDecodeError, ValueError):
+            return jsonify({
+                "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher geprüft werden.",
+                "blocker": "freellm_managed_key_unavailable",
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 503
+        finally:
+            key = ""
+            for index in range(len(protected)):
+                protected[index] = 0
 
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>/recheck", methods=["POST"])
     @require_admin

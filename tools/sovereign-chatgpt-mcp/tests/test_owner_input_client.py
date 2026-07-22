@@ -104,6 +104,35 @@ def test_create_request_allows_litellm_provider_target(monkeypatch) -> None:
     assert result["llm_can_receive_protected_value"] is False
 
 
+def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "55555555-5555-4555-8555-555555555555"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "openrouter_api_key",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="openrouter_api_key",
+        title="OpenRouter Paid-Route aktivieren",
+        reason="Der direkte Paid-Pfad benötigt eine geschützte Owner-Eingabe.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "openrouter_api_key"
+    assert call["json"]["fieldLabel"] == "OpenRouter API-Key"
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+
+
 def test_activate_provider_route_uses_private_owner_bridge(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
@@ -330,6 +359,57 @@ def test_provider_deployments_are_read_without_protected_values(monkeypatch) -> 
     assert call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
     assert result["protected_values_returned"] is False
     assert result["deployments"][0]["routeId"] == "litellm-admin-route-1"
+
+
+def test_freellm_status_and_reconcile_are_secret_free(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    source_id = "1a866402-68c4-4f40-8d09-55ed8deabf68"
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "providers": [{
+                "sourceId": source_id,
+                "keyFingerprintPresent": True,
+                "readyCount": 0,
+            }],
+            "protectedValuesReturned": False,
+        }),
+        FakeResponse(200, {
+            "ok": True,
+            "sourceId": source_id,
+            "ready": [{"modelId": "free-model", "routeId": "route-1"}],
+            "protectedValuesReturned": False,
+        }),
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    status = client.freellm_status()
+    reconciled = client.freellm_reconcile(source_id, max_models=50)
+
+    status_call, reconcile_call = session.calls
+    assert status_call["method"] == "GET"
+    assert status_call["url"] == "http://backend:8787/api/internal/llm/freellm/providers"
+    assert reconcile_call["method"] == "POST"
+    assert reconcile_call["url"] == (
+        "http://backend:8787/api/internal/llm/freellm/providers/"
+        f"{source_id}/reconcile"
+    )
+    assert reconcile_call["json"] == {"maxModels": 50}
+    assert reconcile_call["timeout"] == 1200
+    assert status["protected_values_returned"] is False
+    assert reconciled["protected_values_returned"] is False
+    assert reconciled["secret_argument_accepted"] is False
+
+
+def test_freellm_reconcile_rejects_invalid_source_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([])
+    client = ProviderRuntimeClient(session=session)
+
+    with pytest.raises(ValueError, match="source_id ist ungültig"):
+        client.freellm_reconcile("../../owner-secret")
+    assert session.calls == []
 
 
 def test_provider_activation_accepts_only_route_identity(monkeypatch) -> None:

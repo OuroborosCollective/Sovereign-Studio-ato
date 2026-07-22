@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -26,6 +27,9 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
     assert "owner_approval_widget_open" in workflow
+    assert "freellm_provider_status" in workflow
+    assert "freellm_provider_discover" in workflow
+    assert "freellm_provider_recheck" in workflow
     assert "controller_run_start" in workflow
     assert "controller_run_list" in workflow
     assert "controller_run_status" in workflow
@@ -109,6 +113,8 @@ def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
 def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     server = (ROOT / "server.py").read_text("utf-8")
     client = (ROOT / "owner_input_client.py").read_text("utf-8")
+    ast.parse(server)
+    ast.parse(client)
 
     signature = server.split("def owner_approval_request_create(", 1)[1].split(") ->", 1)[0]
     open_signature = server.split("def owner_approval_widget_open(", 1)[1].split(") ->", 1)[0]
@@ -119,6 +125,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "secret" not in open_signature.lower()
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
+    assert '"openrouter_api_key": "OpenRouter API-Key"' in client
     assert '"litellm_provider_key": "LiteLLM Provider API-Key"' in client
     assert '"proven_learning_confirmation": "Exakter Learning-Plan-Hash"' in client
     assert "def activate_provider_route(" in client
@@ -132,6 +139,13 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "owner_input.create_request(" in server
     assert server.count("def litellm_provider_route_activate(") == 1
     assert "provider_runtime.activate(route_id)" in server
+    assert server.count("def freellm_provider_status(") == 1
+    assert server.count("def freellm_provider_discover(") == 1
+    assert server.count("def freellm_provider_recheck(") == 1
+    assert "provider_runtime.freellm_status()" in server
+    assert server.count("provider_runtime.freellm_reconcile(") == 2
+    assert "def freellm_status(" in client
+    assert "def freellm_reconcile(" in client
     assert "payload = owner_input.status(request_id)" in server
     assert "def owner_approval_widget_open(" in server
     assert "meta=OWNER_INPUT_TOOL_META" in server
