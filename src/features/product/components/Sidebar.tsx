@@ -86,12 +86,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={buildProduct}
             disabled={isWorking}
+            aria-label="Idee übernehmen"
+            title="Idee übernehmen"
             className="flex-1 bg-stone-800 hover:bg-black disabled:bg-stone-400 text-white py-1.5 rounded text-[11px] font-bold uppercase shadow-sm"
           >
             <Wand2 size={13} className="inline mr-1"/>Uebernehmen
           </button>
           <button
             onClick={addCard}
+            aria-label="Notiz hinzufügen"
+            title="Notiz hinzufügen"
             className="shrink-0 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-800 py-1.5 px-3 rounded text-[11px] font-bold uppercase shadow-sm"
           >
             <Plus size={13} className="inline mr-1"/>Notiz
@@ -105,6 +109,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={chip}
                 onClick={() => handleChipClick(chip)}
+                aria-label={`Idee übernehmen: ${chip}`}
+                title={`Idee übernehmen: ${chip}`}
                 className="border border-indigo-200 rounded-full bg-indigo-50 text-indigo-700 px-2 py-1 text-[9px] font-bold hover:bg-indigo-100 transition-colors"
               >
                 {chip}
@@ -122,7 +128,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="flex-1 text-[11px] p-1.5 border border-stone-300 rounded focus:outline-none focus:border-indigo-500 shadow-inner"
           aria-label="Datei suchen"
         />
-        <button onClick={() => log('Dateisuche vorbereitet.')} className="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold uppercase shrink-0">Suche</button>
+        <button
+          onClick={() => log('Dateisuche vorbereitet.')}
+          aria-label="Datei im Repository suchen"
+          title="Datei im Repository suchen"
+          className="bg-indigo-100 hover:bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded text-[10px] font-bold uppercase shrink-0"
+        >
+          Suche
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto bg-white">

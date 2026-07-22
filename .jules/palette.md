@@ -17,3 +17,7 @@
 ## 2025-07-20 - [Hover Tooltips for Truncated Paths]
 **Learning:** In sidebar navigators where workspace files or repository structures are listed, long paths and deeply-nested file names are often visually truncated (`text-overflow: ellipsis`) to fit narrow column views. This leaves users guessing or clicking through to find the correct file.
 **Action:** Always assign a native `title` attribute matching the full, untruncated path (e.g., `title={file.path}`) on file list items to ensure they are fully discoverable on hover for sighted and keyboard-navigated users.
+
+## 2025-07-21 - [Avoiding Label Ambiguity between Inputs and Trigger Buttons]
+**Learning:** Assigning identical aria-labels to adjacent components (e.g., "Datei suchen" on both a text input field and its executing submit button) creates ambiguity for screen readers and breaks testing frameworks' element queries (e.g., `getByLabelText`).
+**Action:** Ensure that input fields retain object-oriented labels (e.g., `aria-label="Datei suchen"`) while their corresponding trigger buttons utilize action-oriented names (e.g., `aria-label="Datei im Repository suchen"`).
