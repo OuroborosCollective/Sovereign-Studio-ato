@@ -59,6 +59,52 @@ def test_catalog_normalization_requires_paid_tool_and_structured_output_model() 
     assert runtime._normalize_model(free_model) is None
 
 
+def test_zdr_canary_selection_prefers_default_then_cheapest_compatible_model() -> None:
+    default = {
+        "openai/gpt-5.4-mini": {
+            "modelId": "openai/gpt-5.4-mini",
+            "inputUsdPerMillion": "0.75",
+            "outputUsdPerMillion": "4.5",
+        },
+        "openai/gpt-4o": {
+            "modelId": "openai/gpt-4o",
+            "inputUsdPerMillion": "2.5",
+            "outputUsdPerMillion": "10",
+        },
+    }
+    assert runtime._select_zdr_canary_model(default) == "openai/gpt-5.4-mini"
+
+    fallback = {
+        "vendor/expensive": {
+            "modelId": "vendor/expensive",
+            "inputUsdPerMillion": "1",
+            "outputUsdPerMillion": "8",
+        },
+        "vendor/cheap": {
+            "modelId": "vendor/cheap",
+            "inputUsdPerMillion": "0.5",
+            "outputUsdPerMillion": "2",
+        },
+    }
+    assert runtime._select_zdr_canary_model(fallback) == "vendor/cheap"
+    assert runtime._route_id("vendor/cheap", default_model="vendor/cheap") == (
+        runtime.OPENROUTER_ROOT_ROUTE_ID
+    )
+
+
+def test_zdr_contract_requires_tools_tool_choice_and_max_tokens() -> None:
+    assert runtime._REQUIRED_CANARY_PARAMETERS == {
+        "tools",
+        "tool_choice",
+        "max_tokens",
+    }
+    source = (BACKEND / "openrouter_provider_runtime.py").read_text("utf-8")
+    assert 'f"{OPENROUTER_BASE_URL}/endpoints/zdr"' in source
+    assert "model[\"modelId\"] in zdr_endpoints" in source
+    assert source.count("zdr_endpoints=zdr_endpoints") == 2
+    assert source.count("zdr_catalog_request_id=zdr_catalog_request_id") == 2
+
+
 def test_user_catalog_exposes_only_customer_prices_and_separate_role_selection() -> None:
     source_row = {
         "id": "openrouter-paid-model",

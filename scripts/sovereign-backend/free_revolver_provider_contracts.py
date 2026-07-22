@@ -142,7 +142,12 @@ def is_managed_internal_provider_url(url: str) -> bool:
         and parsed.password is None
         and parsed.query == ""
         and parsed.fragment == ""
-        and parsed.path.rstrip("/") in {"/v1", "/v1/models", "/models"}
+        and parsed.path.rstrip("/") in {
+            "/v1",
+            "/v1/models",
+            "/models",
+            "/v1/chat/completions",
+        }
     )
 
 

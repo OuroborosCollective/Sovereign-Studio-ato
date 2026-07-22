@@ -49,7 +49,9 @@ def test_only_exact_managed_freellmapi_endpoint_bypasses_public_https_resolution
     assert normalize_api_base(managed) == managed
     assert is_managed_internal_provider_url(managed) is True
     assert is_managed_internal_provider_url(f"{managed}/models") is True
+    assert is_managed_internal_provider_url(f"{managed}/chat/completions") is True
     assert_provider_target_allowed(f"{managed}/models")
+    assert_provider_target_allowed(f"{managed}/chat/completions")
     for blocked in (
         "http://freellmapi:3002/v1",
         "http://freellmapi:3001/admin",
