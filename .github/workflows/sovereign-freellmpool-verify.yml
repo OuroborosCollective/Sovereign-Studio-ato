@@ -170,7 +170,7 @@ jobs:
             fi
             sleep 2
           done
-          docker exec --user 10001:10001 sovereign-freellmpool-ci python - <<'PY'
+          docker exec -i --user 10001:10001 sovereign-freellmpool-ci python - <<'PY'
           import json
           import urllib.request
 
@@ -180,7 +180,7 @@ jobs:
           assert isinstance(rows, list) and rows, "catalog unavailable"
           print(json.dumps({"catalogCount": len(rows), "catalogIsReadinessProof": False}))
           PY
-          docker exec --user 10001:10001 sovereign-freellmpool-ci python - <<'PY' > .sovereign-evidence/freellmpool-keyless-canaries.json
+          docker exec -i --user 10001:10001 sovereign-freellmpool-ci python - <<'PY' > .sovereign-evidence/freellmpool-keyless-canaries.json
           import json
           import urllib.error
           import urllib.request
