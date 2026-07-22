@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import ipaddress
 import json
 import re
 import socket
+import stat
 import urllib.parse
 import uuid
+from pathlib import Path
 from typing import Any
 
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,239}$")
@@ -16,6 +19,71 @@ _MAX_AUTO_ACTIVATE = 50
 _MANAGED_INTERNAL_API_BASE = "http://freellmapi:3001/v1"
 _MANAGED_INTERNAL_HOST = "freellmapi"
 _MANAGED_INTERNAL_PORT = 3001
+_MANAGED_KEY_FILENAME = "freellmapi_unified_key.txt"
+
+
+class ManagedKeyContractError(ValueError):
+    """Bounded key-file contract failure that never contains protected material."""
+
+    def __init__(self, code: str) -> None:
+        self.code = str(code)[:120]
+        super().__init__(self.code)
+
+
+def read_managed_freellm_key_file(
+    *,
+    owner_root: Path,
+    configured_path: str,
+    expected_fingerprint: str = "",
+) -> tuple[bytearray, str]:
+    root = Path(owner_root).resolve()
+    raw_path = str(configured_path or root / _MANAGED_KEY_FILENAME).strip()
+    candidate_path = Path(raw_path)
+    if candidate_path.is_symlink():
+        raise ManagedKeyContractError("freellm_managed_key_path_invalid")
+    try:
+        candidate = candidate_path.resolve(strict=False)
+    except OSError as exc:
+        raise ManagedKeyContractError("freellm_managed_key_path_invalid") from exc
+    if candidate.parent != root or candidate.name != _MANAGED_KEY_FILENAME:
+        raise ManagedKeyContractError("freellm_managed_key_path_invalid")
+    try:
+        info = candidate.lstat()
+    except FileNotFoundError as exc:
+        raise ManagedKeyContractError("freellm_managed_key_missing") from exc
+    except OSError as exc:
+        raise ManagedKeyContractError("freellm_managed_key_unreadable") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise ManagedKeyContractError("freellm_managed_key_type_invalid")
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise ManagedKeyContractError("freellm_managed_key_permissions_invalid")
+    if info.st_size < 8 or info.st_size > 8192:
+        raise ManagedKeyContractError("freellm_managed_key_size_invalid")
+
+    protected = bytearray()
+    try:
+        try:
+            protected = bytearray(candidate.read_bytes())
+        except OSError as exc:
+            raise ManagedKeyContractError("freellm_managed_key_unreadable") from exc
+        try:
+            key = protected.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise ManagedKeyContractError("freellm_managed_key_encoding_invalid") from exc
+        if len(key) < 8 or any(marker in key for marker in ("\x00", "\n", "\r")):
+            raise ManagedKeyContractError("freellm_managed_key_value_invalid")
+        actual_fingerprint = hashlib.sha256(key.encode()).hexdigest()
+        expected = str(expected_fingerprint or "").strip().lower()
+        if expected and (
+            not re.fullmatch(r"[0-9a-f]{64}", expected)
+            or not hmac.compare_digest(actual_fingerprint, expected)
+        ):
+            raise ManagedKeyContractError("freellm_managed_key_fingerprint_mismatch")
+        return protected, key
+    except Exception:
+        for index in range(len(protected)):
+            protected[index] = 0
+        raise
 
 
 def normalize_provider_source_id(value: Any) -> str:
