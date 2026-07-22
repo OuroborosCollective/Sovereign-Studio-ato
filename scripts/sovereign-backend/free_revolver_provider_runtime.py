@@ -20,6 +20,7 @@ import requests
 from flask import jsonify, request
 
 from free_revolver_provider_contracts import (
+    ManagedKeyContractError,
     assert_provider_target_allowed,
     is_managed_internal_provider_url,
     models_url_candidates,
@@ -27,6 +28,7 @@ from free_revolver_provider_contracts import (
     normalize_max_auto_activate,
     normalize_models_payload,
     normalize_provider_source_id,
+    read_managed_freellm_key_file,
 )
 
 _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
@@ -50,15 +52,39 @@ def _secret_path(owner_request_id: str) -> Path:
     return _owner_root() / f"revolver_provider_key.{safe_request_id}.txt"
 
 
-def _managed_secret_path() -> Path:
+def _read_managed_key(expected_fingerprint: str = "") -> tuple[bytearray, str]:
     root = _owner_root()
-    candidate = Path(os.getenv(
+    configured_path = os.getenv(
         "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE",
         str(root / "freellmapi_unified_key.txt"),
-    )).resolve()
-    if candidate.parent != root or candidate.name != "freellmapi_unified_key.txt":
-        raise RuntimeError("free_provider_managed_secret_path_invalid")
-    return candidate
+    )
+    return read_managed_freellm_key_file(
+        owner_root=root,
+        configured_path=configured_path,
+        expected_fingerprint=expected_fingerprint,
+    )
+
+
+def _managed_key_state(expected_fingerprint: str = "") -> dict[str, Any]:
+    protected = bytearray()
+    key = ""
+    try:
+        protected, key = _read_managed_key(expected_fingerprint)
+        return {
+            "available": True,
+            "fingerprintMatches": bool(expected_fingerprint),
+            "blocker": None,
+        }
+    except ManagedKeyContractError as exc:
+        return {
+            "available": False,
+            "fingerprintMatches": False if expected_fingerprint else None,
+            "blocker": exc.code,
+        }
+    finally:
+        key = ""
+        for index in range(len(protected)):
+            protected[index] = 0
 
 
 def _securely_remove(path: Path) -> None:
@@ -958,7 +984,7 @@ def register_free_revolver_provider_runtime(
             """SELECT source.id::text, source.label, source.api_base, source.auth_mode,
                       source.status, source.enabled, source.last_http_status,
                       source.last_error_code, source.last_discovered_at,
-                      source.last_checked_at,
+                      source.last_checked_at, source.key_fingerprint,
                       (source.key_fingerprint IS NOT NULL) AS key_fingerprint_present,
                       COUNT(model.id)::int AS model_count,
                       COUNT(model.id) FILTER (WHERE model.free_verified=true)::int AS free_verified_count,
@@ -978,6 +1004,9 @@ def register_free_revolver_provider_runtime(
             source = dict(row)
             if not is_managed_internal_provider_url(str(source.get("api_base") or "")):
                 continue
+            managed_key = _managed_key_state(
+                str(source.get("key_fingerprint") or "")
+            )
             providers.append({
                 "sourceId": str(source.get("id") or ""),
                 "label": str(source.get("label") or ""),
@@ -996,6 +1025,9 @@ def register_free_revolver_provider_runtime(
                     if source.get("last_checked_at") else None
                 ),
                 "keyFingerprintPresent": bool(source.get("key_fingerprint_present")),
+                "managedKeyAvailable": bool(managed_key["available"]),
+                "managedKeyBlocker": managed_key["blocker"],
+                "keyFingerprintMatchesFile": managed_key["fingerprintMatches"],
                 "modelCount": int(source.get("model_count") or 0),
                 "freeVerifiedCount": int(source.get("free_verified_count") or 0),
                 "readyCount": int(source.get("ready_count") or 0),
@@ -1089,22 +1121,9 @@ def register_free_revolver_provider_runtime(
         protected = bytearray()
         key = ""
         try:
-            path = _managed_secret_path()
-            info = path.lstat()
-            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
-                raise ValueError("free_provider_secret_permissions_invalid")
-            if info.st_size < 8 or info.st_size > 8192:
-                raise ValueError("free_provider_secret_invalid")
-            protected = bytearray(path.read_bytes())
-            key = protected.decode("utf-8").strip()
-            if len(key) < 8:
-                raise ValueError("free_provider_secret_invalid")
-            actual_fingerprint = hashlib.sha256(key.encode()).hexdigest()
-            if not hmac.compare_digest(
-                actual_fingerprint,
-                str(source.get("key_fingerprint") or ""),
-            ):
-                raise ValueError("free_provider_secret_fingerprint_mismatch")
+            protected, key = _read_managed_key(
+                str(source.get("key_fingerprint") or "")
+            )
 
             source_payload = dict(source)
             ready = []
@@ -1215,6 +1234,21 @@ def register_free_revolver_provider_runtime(
                 "maxBackgroundAgents": 0,
                 "protectedValuesReturned": False,
             }), 200 if ready else 409
+        except ManagedKeyContractError as exc:
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status='degraded', last_error_code=%s,
+                       last_checked_at=NOW(), updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (exc.code, source_id),
+                write=True,
+            )
+            return jsonify({
+                "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher geprüft werden.",
+                "blocker": exc.code,
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 503
         except (OSError, UnicodeDecodeError, ValueError):
             return jsonify({
                 "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher geprüft werden.",
@@ -1235,7 +1269,7 @@ def register_free_revolver_provider_runtime(
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         source = query(
-            """SELECT id::text, api_base, auth_mode
+            """SELECT id::text, api_base, auth_mode, key_fingerprint
                FROM llm_revolver_provider_sources
                WHERE id=%s::uuid AND enabled=true LIMIT 1""",
             (source_id,),
@@ -1268,16 +1302,9 @@ def register_free_revolver_provider_runtime(
         protected = bytearray()
         key = ""
         try:
-            path = _managed_secret_path()
-            info = path.lstat()
-            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
-                raise ValueError("free_provider_secret_permissions_invalid")
-            if info.st_size < 8 or info.st_size > 8192:
-                raise ValueError("free_provider_secret_invalid")
-            protected = bytearray(path.read_bytes())
-            key = protected.decode("utf-8").strip()
-            if len(key) < 8:
-                raise ValueError("free_provider_secret_invalid")
+            protected, key = _read_managed_key(
+                str(source.get("key_fingerprint") or "")
+            )
 
             ready = []
             blocked = []
@@ -1398,10 +1425,15 @@ def register_free_revolver_provider_runtime(
                 "ready": ready,
                 "blocked": blocked,
             })
-        except (OSError, UnicodeDecodeError, ValueError) as exc:
+        except ManagedKeyContractError as exc:
             return jsonify({
                 "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher gelesen werden.",
-                "blocker": str(exc)[:120] or "free_provider_secret_invalid",
+                "blocker": exc.code,
+            }), 503
+        except (OSError, UnicodeDecodeError, ValueError):
+            return jsonify({
+                "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher gelesen werden.",
+                "blocker": "freellm_managed_key_unavailable",
             }), 503
         finally:
             key = ""

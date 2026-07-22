@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from pathlib import Path
 import socket
 import sys
@@ -12,6 +13,7 @@ REPO = BACKEND.parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from free_revolver_provider_contracts import (
+    ManagedKeyContractError,
     assert_provider_target_allowed,
     assert_public_https_host,
     is_managed_internal_provider_url,
@@ -20,6 +22,7 @@ from free_revolver_provider_contracts import (
     normalize_max_auto_activate,
     normalize_models_payload,
     normalize_provider_source_id,
+    read_managed_freellm_key_file,
     zero_price_evidence,
 )
 
@@ -55,6 +58,72 @@ def test_only_exact_managed_freellmapi_endpoint_bypasses_public_https_resolution
     ):
         with pytest.raises(ValueError):
             normalize_api_base(blocked)
+
+
+def test_managed_key_contract_reads_only_the_exact_owner_file(tmp_path: Path) -> None:
+    key = "freellmapi-" + ("a" * 48)
+    path = tmp_path / "freellmapi_unified_key.txt"
+    path.write_text(f"{key}\n", encoding="utf-8")
+    path.chmod(0o600)
+
+    protected, resolved_key = read_managed_freellm_key_file(
+        owner_root=tmp_path,
+        configured_path=str(path),
+        expected_fingerprint=hashlib.sha256(key.encode()).hexdigest(),
+    )
+    try:
+        assert resolved_key == key
+        assert bytes(protected) == f"{key}\n".encode()
+    finally:
+        for index in range(len(protected)):
+            protected[index] = 0
+    assert not any(protected)
+
+
+def test_managed_key_contract_rejects_non_owner_permissions(tmp_path: Path) -> None:
+    path = tmp_path / "freellmapi_unified_key.txt"
+    path.write_text("freellmapi-" + ("b" * 48), encoding="utf-8")
+    path.chmod(0o640)
+
+    with pytest.raises(ManagedKeyContractError) as caught:
+        read_managed_freellm_key_file(
+            owner_root=tmp_path,
+            configured_path=str(path),
+        )
+    assert caught.value.code == "freellm_managed_key_permissions_invalid"
+
+
+def test_managed_key_contract_reports_fingerprint_mismatch_without_values(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "freellmapi_unified_key.txt"
+    path.write_text("freellmapi-" + ("c" * 48), encoding="utf-8")
+    path.chmod(0o600)
+
+    with pytest.raises(ManagedKeyContractError) as caught:
+        read_managed_freellm_key_file(
+            owner_root=tmp_path,
+            configured_path=str(path),
+            expected_fingerprint="0" * 64,
+        )
+    assert caught.value.code == "freellm_managed_key_fingerprint_mismatch"
+
+
+def test_managed_key_contract_rejects_paths_outside_owner_root(
+    tmp_path: Path,
+) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    path = nested / "freellmapi_unified_key.txt"
+    path.write_text("freellmapi-" + ("d" * 48), encoding="utf-8")
+    path.chmod(0o600)
+
+    with pytest.raises(ManagedKeyContractError) as caught:
+        read_managed_freellm_key_file(
+            owner_root=tmp_path,
+            configured_path=str(path),
+        )
+    assert caught.value.code == "freellm_managed_key_path_invalid"
 
 
 def test_ssrf_guard_rejects_private_resolved_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -226,15 +295,22 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "provider_model.pricing_verified_at" in route_runtime
     assert "provider_session.trust_env = False" in runtime
     assert runtime.count("COALESCE(to_jsonb(%s::text), 'null'::jsonb)") >= 2
+    contracts = (BACKEND / "free_revolver_provider_contracts.py").read_text("utf-8")
     assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in runtime
-    assert 'candidate.name != "freellmapi_unified_key.txt"' in runtime
+    assert 'candidate.name != _MANAGED_KEY_FILENAME' in contracts
+    assert "read_managed_freellm_key_file" in runtime
+    assert "ManagedKeyContractError" in runtime
+    assert '"managedKeyAvailable"' in runtime
+    assert '"managedKeyBlocker"' in runtime
+    assert '"keyFingerprintMatchesFile"' in runtime
     assert 'source.get("auth_mode") in {"bearer", "x-api-key"}' in runtime
     assert "managed_quota_contract=(" in runtime
     assert "managed-freellm-zero-cost-quota-contract" in runtime
     assert "hmac.compare_digest(expected, presented)" in runtime
     assert '"/api/internal/llm/freellm/providers"' in runtime
     assert '"/api/internal/llm/freellm/providers/<source_id>/reconcile"' in runtime
-    assert "actual_fingerprint = hashlib.sha256(key.encode()).hexdigest()" in runtime
+    assert "protected, key = _read_managed_key(" in runtime
+    assert "freellm_managed_key_unavailable" in runtime
     assert "free_verified=true, pricing_source=%s" in runtime
     assert '"maxForegroundAgents": 1' in runtime
     assert '"maxBackgroundAgents": 0' in runtime
