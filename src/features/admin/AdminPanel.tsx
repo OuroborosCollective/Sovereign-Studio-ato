@@ -4,7 +4,7 @@
  * Access flow (until Issue #459 adds real JWT auth):
  *   1. User opens admin tool → API key setup screen shown (no gate yet).
  *   2. Valid API key → ping() succeeds → user set in store as admin.
- *   3. AdminGate unlocks → ReadyContent mounts and all hooks fire.
+ *   3. AdminGate unlocks → ReadyContent mounts; only the active tab loads its API.
  *
  * AdminGate wraps ONLY ReadyContent, NOT the key-setup screen.
  * This avoids the deadlock where the gate blocks the only screen that
@@ -13,7 +13,7 @@
  * Issue #460
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import './AdminPanel.css';
 import {
   Users, CreditCard, Grid, Cpu, FileText,
@@ -151,38 +151,186 @@ function ApiKeySetup({ onReady }: { onReady: () => void }) {
   );
 }
 
+// ── Per-section recovery boundary ─────────────────────────────────────────────
+
+type AdminSectionErrorBoundaryProps = {
+  section: string;
+  children: React.ReactNode;
+};
+
+type AdminSectionErrorBoundaryState = {
+  failed: boolean;
+  message: string;
+};
+
+class AdminSectionErrorBoundary extends React.Component<
+  AdminSectionErrorBoundaryProps,
+  AdminSectionErrorBoundaryState
+> {
+  state: AdminSectionErrorBoundaryState = { failed: false, message: '' };
+
+  static getDerivedStateFromError(error: unknown): AdminSectionErrorBoundaryState {
+    return {
+      failed: true,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error('[admin-section-error]', {
+      section: this.props.section,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <section className="admin-section-error" role="alert">
+        <AlertTriangle size={24} />
+        <div>
+          <strong>{this.props.section} konnte nicht dargestellt werden.</strong>
+          <p>{this.state.message || 'Unbekannter Darstellungsfehler'}</p>
+          <p>Die Admin-Sitzung bleibt aktiv. Andere Bereiche können weiterhin geöffnet werden.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => this.setState({ failed: false, message: '' })}
+        >
+          Bereich erneut versuchen
+        </button>
+      </section>
+    );
+  }
+}
+
 // ── Audit log view ────────────────────────────────────────────────────────────
+
+function safeAuditChanges(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
 
 function AuditLogView() {
   const { entries, total, loading, error, reload } = useAdminAuditLog();
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return entries;
+    return entries.filter(entry => [
+      entry.action,
+      entry.adminEmail,
+      entry.targetId ?? '',
+      JSON.stringify(safeAuditChanges(entry.changes)),
+    ].some(value => value.toLowerCase().includes(needle)));
+  }, [entries, search]);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 10, color: C.textSub }}>{total} Einträge</span>
-        <button type="button" onClick={reload} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '4px 10px', fontSize: 10, color: C.textSub, cursor: 'pointer' }}>Neu laden</button>
+    <div className="admin-audit">
+      <div className="admin-audit__toolbar">
+        <div>
+          <strong>{total} Einträge</strong>
+          <span>{filtered.length} auf dieser Seite sichtbar</span>
+        </div>
+        <button type="button" onClick={reload}>Neu laden</button>
       </div>
-      {loading && <div style={{ padding: 24, textAlign: 'center', color: C.textSub, fontSize: 12 }}>Lade…</div>}
-      {error   && <div style={{ padding: 16, color: C.danger, fontSize: 12 }}>{error}</div>}
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
-        {entries.length === 0 && !loading && <div style={{ padding: 24, textAlign: 'center', color: C.textSub, fontSize: 12 }}>Noch keine Einträge.</div>}
-        {entries.map(e => (
-          <div key={e.id} style={{ padding: '8px 14px', borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CheckCircle size={11} color={C.accent} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{e.action}</span>
-              <span style={{ fontSize: 10, color: C.textSub, marginLeft: 'auto' }}>{new Date(e.createdAt).toLocaleString('de')}</span>
-            </div>
-            {e.targetId && <div style={{ fontSize: 10, color: C.textSub, marginTop: 2, paddingLeft: 19 }}>target: {e.targetId}</div>}
-            {Object.keys(e.changes).length > 0 && (
-              <div style={{ fontSize: 9, color: C.textSub, marginTop: 2, paddingLeft: 19, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                {JSON.stringify(e.changes)}
-              </div>
-            )}
-          </div>
-        ))}
+      <input
+        className="admin-audit__search"
+        type="search"
+        value={search}
+        onChange={event => setSearch(event.target.value)}
+        placeholder="Aktion, Admin, Ziel oder Änderung filtern…"
+      />
+      {loading && <div className="admin-audit__state">Lade Audit-Evidence…</div>}
+      {error && <div className="admin-audit__state admin-audit__state--error">{error}</div>}
+      <div className="admin-audit__list">
+        {filtered.length === 0 && !loading && (
+          <div className="admin-audit__state">Keine passenden Einträge.</div>
+        )}
+        {filtered.map(entry => {
+          const changes = safeAuditChanges(entry.changes);
+          const changeCount = Object.keys(changes).length;
+          return (
+            <article key={entry.id} className="admin-audit__entry">
+              <header>
+                <CheckCircle size={16} color={C.accent} />
+                <div>
+                  <strong>{entry.action.replaceAll('_', ' ')}</strong>
+                  <span>{entry.adminEmail} · {new Date(entry.createdAt).toLocaleString('de')}</span>
+                </div>
+              </header>
+              {entry.targetId && <p><b>Ziel:</b> {entry.targetId}</p>}
+              {changeCount > 0 && (
+                <details>
+                  <summary>{changeCount} Änderungsfeld{changeCount === 1 ? '' : 'er'} anzeigen</summary>
+                  <pre>{JSON.stringify(changes, null, 2)}</pre>
+                </details>
+              )}
+            </article>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+// ── Lazy tab content ──────────────────────────────────────────────────────────
+// Each data hook lives inside its tab component. Hidden tabs therefore do not
+// produce API traffic or allow an unrelated response to crash the active view.
+
+function UsersTab() {
+  const api = useAdminUsers();
+  const [editUser, setEditUser] = useState<AdminUser | null>(null);
+  return (
+    <>
+      <UserTable api={api} onEdit={setEditUser} />
+      {editUser && (
+        <UserEditModal
+          user={editUser}
+          api={api}
+          onClose={() => { setEditUser(null); api.reload(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function BillingTab() {
+  const api = useAdminTransactions();
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <BillingStats />
+      <TransactionTable api={api} />
+    </div>
+  );
+}
+
+function PaymentsTab() {
+  const api = useAdminPaymentMethods();
+  return <PaymentMethodEditor api={api} />;
+}
+
+function LauncherTab() {
+  const api = useAdminLauncherTools();
+  return <LauncherToolEditor api={api} />;
+}
+
+function LlmTab() {
+  const api = useAdminLlmRoutes();
+  return <LlmRouteEditor api={api} />;
+}
+
+function ActiveTab({ tab }: { tab: Tab }) {
+  switch (tab) {
+    case 'platform': return <EnterpriseBackendPanel />;
+    case 'users': return <UsersTab />;
+    case 'billing': return <BillingTab />;
+    case 'payments': return <PaymentsTab />;
+    case 'launcher': return <LauncherTab />;
+    case 'llm': return <LlmTab />;
+    case 'audit': return <AuditLogView />;
+  }
 }
 
 // ── Ready content ─────────────────────────────────────────────────────────────
@@ -190,61 +338,36 @@ function AuditLogView() {
 // AdminGate lives here — NOT around the whole panel.
 
 function ReadyContent() {
-  const [tab, setTab]           = useState<Tab>('platform');
-  const [editUser, setEditUser] = useState<AdminUser | null>(null);
-
-  const usersApi      = useAdminUsers();
-  const txApi         = useAdminTransactions();
-  const launcherApi   = useAdminLauncherTools();
-  const llmApi        = useAdminLlmRoutes();
-  const paymentsApi   = useAdminPaymentMethods();
+  const [tab, setTab] = useState<Tab>('platform');
+  const activeLabel = TABS.find(item => item.id === tab)?.label ?? tab;
 
   return (
     <AdminGate>
       <div className="admin-shell">
-        {/* Tab bar */}
         <nav className="admin-shell__tabs" aria-label="Admin-Bereiche">
-          {TABS.map(t => {
-            const Icon = t.icon;
-            const active = tab === t.id;
+          {TABS.map(item => {
+            const Icon = item.icon;
+            const active = tab === item.id;
             return (
               <button
-                key={t.id}
+                key={item.id}
                 type="button"
-                onClick={() => setTab(t.id)}
+                onClick={() => setTab(item.id)}
                 className={`admin-shell__tab${active ? ' admin-shell__tab--active' : ''}`}
                 aria-current={active ? 'page' : undefined}
               >
-                <Icon size={14} />
-                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.label}</span>
+                <Icon size={17} />
+                <span>{item.label}</span>
               </button>
             );
           })}
         </nav>
 
-        {/* Content */}
         <main className={`admin-shell__content${tab === 'platform' ? ' admin-shell__content--platform' : ''}`}>
-          {tab === 'platform' && <EnterpriseBackendPanel />}
-          {tab === 'users'    && <UserTable api={usersApi} onEdit={setEditUser} />}
-          {tab === 'billing'  && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <BillingStats />
-              <TransactionTable api={txApi} />
-            </div>
-          )}
-          {tab === 'payments' && <PaymentMethodEditor api={paymentsApi} />}
-          {tab === 'launcher' && <LauncherToolEditor api={launcherApi} />}
-          {tab === 'llm'      && <LlmRouteEditor api={llmApi} />}
-          {tab === 'audit'    && <AuditLogView />}
+          <AdminSectionErrorBoundary key={tab} section={activeLabel}>
+            <ActiveTab tab={tab} />
+          </AdminSectionErrorBoundary>
         </main>
-
-        {editUser && (
-          <UserEditModal
-            user={editUser}
-            api={usersApi}
-            onClose={() => { setEditUser(null); usersApi.reload(); }}
-          />
-        )}
       </div>
     </AdminGate>
   );

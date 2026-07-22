@@ -52,6 +52,22 @@ export interface Transaction {
   createdAt: string;
 }
 
+type TransactionWire = Omit<Transaction, 'amount'> & {
+  amount: number | string | null;
+};
+
+function normalizeFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function normalizeTransaction(transaction: TransactionWire): Transaction {
+  return {
+    ...transaction,
+    amount: normalizeFiniteNumber(transaction.amount),
+  };
+}
+
 export interface BillingStats {
   mrr: number;
   activeSubscriptions: number;
@@ -489,13 +505,19 @@ export const adminApiClient = {
     });
   },
 
-  getTransactions(p?: { userId?: string; type?: string; page?: number; limit?: number }) {
+  async getTransactions(p?: { userId?: string; type?: string; page?: number; limit?: number }) {
     const q = new URLSearchParams();
     if (p?.userId) q.set('user_id', p.userId);
     if (p?.type)   q.set('type',    p.type);
     if (p?.page)   q.set('page',    String(p.page));
     if (p?.limit)  q.set('limit',   String(p.limit));
-    return req<{ transactions: Transaction[]; total: number; page: number }>(`/api/admin/transactions?${q}`);
+    const result = await req<{ transactions: TransactionWire[]; total: number; page: number }>(
+      `/api/admin/transactions?${q}`,
+    );
+    return {
+      ...result,
+      transactions: result.transactions.map(normalizeTransaction),
+    };
   },
 
   getBillingStats() {
@@ -520,6 +542,8 @@ export const adminApiClient = {
       revolverStats: LlmRevolverStats;
       revolverV3: LlmRevolverV3Status;
       manualCreditsPerUnitEditing: false;
+      legacyDirectRouteCount: number;
+      legacyDirectRoutePolicy: string;
     }>('/api/admin/llm/routes');
   },
 
@@ -650,9 +674,11 @@ export const adminApiClient = {
   // ── Payment Methods ──────────────────────────────────────────────────────
 
   getPaymentMethods() {
-    return req<{ paymentMethods: PaymentMethod[]; error?: string }>(
-      '/api/admin/payment-methods',
-    );
+    return req<{
+      paymentMethods: PaymentMethod[];
+      legacyIgnoredCount: number;
+      error?: string;
+    }>('/api/admin/payment-methods');
   },
 
   updatePaymentMethod(

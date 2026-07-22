@@ -4,7 +4,7 @@
  * Issue #457, #456
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { ToggleLeft, ToggleRight, ChevronDown, ChevronUp, RefreshCw, Plus } from 'lucide-react';
 import { adminApiClient, type PaymentMethod } from '../api/adminApiClient';
 
@@ -85,8 +85,8 @@ function ConfigForm({
               placeholder={f.placeholder}
               style={{
                 background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6,
-                padding: '6px 8px', fontSize: 10, color: C.text, outline: 'none',
-                fontFamily: 'monospace', resize: 'vertical', minHeight: 80,
+                padding: '10px 12px', fontSize: 12, color: C.text, outline: 'none',
+                fontFamily: 'monospace', resize: 'vertical', minHeight: 96,
               }}
             />
           ) : (
@@ -97,7 +97,7 @@ function ConfigForm({
               placeholder={f.placeholder}
               style={{
                 background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6,
-                padding: '6px 8px', fontSize: 11, color: C.text, outline: 'none',
+                padding: '10px 12px', minHeight: 44, fontSize: 12, color: C.text, outline: 'none',
                 fontFamily: f.secret ? 'monospace' : 'inherit',
               }}
             />
@@ -110,7 +110,7 @@ function ConfigForm({
         disabled={saving}
         style={{
           alignSelf: 'flex-start', background: C.accent, border: 'none', borderRadius: 6,
-          padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#000',
+          minHeight: 44, padding: '9px 16px', fontSize: 12, fontWeight: 700, color: '#000',
           cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
         }}
       >
@@ -142,7 +142,7 @@ function MethodRow({
           type="button"
           onClick={() => void onToggle(method.id, !method.enabled)}
           disabled={busy}
-          style={{ background: 'transparent', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', color: method.enabled ? C.accent : C.textSub, padding: 0, display: 'flex', flexShrink: 0 }}
+          style={{ width:44, minWidth:44, minHeight:44, alignItems:'center', justifyContent:'center', background: 'transparent', border: 'none', cursor: busy ? 'not-allowed' : 'pointer', color: method.enabled ? C.accent : C.textSub, padding: 0, display: 'flex', flexShrink: 0 }}
           title={method.enabled ? 'Deaktivieren' : 'Aktivieren'}
         >
           {method.enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
@@ -166,7 +166,7 @@ function MethodRow({
         <button
           type="button"
           onClick={() => setExpanded(e => !e)}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.textSub, padding: 2, display: 'flex' }}
+          style={{ width:44, minWidth:44, minHeight:44, alignItems:'center', justifyContent:'center', background: 'transparent', border: 'none', cursor: 'pointer', color: C.textSub, padding: 2, display: 'flex' }}
           title="Konfigurieren"
         >
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -184,6 +184,7 @@ function MethodRow({
 
 export interface UseAdminPaymentMethodsResult {
   methods: PaymentMethod[];
+  legacyIgnoredCount: number;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -193,7 +194,16 @@ export interface UseAdminPaymentMethodsResult {
 }
 
 export function PaymentMethodEditor({ api }: { api: UseAdminPaymentMethodsResult }) {
-  const { methods, loading, error, reload, toggleMethod, saveConfig, initDefaults } = api;
+  const {
+    methods,
+    legacyIgnoredCount,
+    loading,
+    error,
+    reload,
+    toggleMethod,
+    saveConfig,
+    initDefaults,
+  } = api;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [initBusy, setInitBusy] = useState(false);
 
@@ -223,7 +233,7 @@ export function PaymentMethodEditor({ api }: { api: UseAdminPaymentMethodsResult
         <button
           type="button"
           onClick={reload}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 10px', fontSize: 10, color: C.textSub, cursor: 'pointer' }}
+          style={{ minHeight:44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 11, color: C.textSub, cursor: 'pointer' }}
         >
           <RefreshCw size={11} /> Neu laden
         </button>
@@ -231,7 +241,7 @@ export function PaymentMethodEditor({ api }: { api: UseAdminPaymentMethodsResult
           type="button"
           onClick={() => void handleInit()}
           disabled={initBusy}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 10px', fontSize: 10, color: C.accent, cursor: initBusy ? 'not-allowed' : 'pointer', opacity: initBusy ? 0.6 : 1 }}
+          style={{ minHeight:44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 11, color: C.accent, cursor: initBusy ? 'not-allowed' : 'pointer', opacity: initBusy ? 0.6 : 1 }}
         >
           <Plus size={11} /> Standard-Methoden anlegen
         </button>
@@ -239,6 +249,11 @@ export function PaymentMethodEditor({ api }: { api: UseAdminPaymentMethodsResult
 
       {loading && <div style={{ padding: 24, textAlign: 'center', color: C.textSub, fontSize: 12 }}>Lade Zahlungsmethoden…</div>}
       {error   && <div style={{ padding: 12, color: C.danger, fontSize: 12, background: '#f8717120', borderRadius: 8 }}>{error}</div>}
+      {legacyIgnoredCount > 0 && (
+        <div style={{ padding: 12, color: '#fbbf24', fontSize: 12, lineHeight: 1.5, background: '#fbbf2414', border: '1px solid #fbbf2438', borderRadius: 8 }}>
+          {legacyIgnoredCount} alte Alias-Datensätze werden als historische Evidenz behalten, aber nicht mehr als konfigurierbare Zahlungsmethoden angezeigt.
+        </div>
+      )}
 
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
         <div style={{ padding: '8px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.textSub, textTransform: 'uppercase', letterSpacing: '0.08em' }}>

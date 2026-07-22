@@ -67,7 +67,27 @@ def test_transaction_schema_matches_admin_reader_and_writer() -> None:
     for path in (CANONICAL_APP,):
         source = read(path)
         assert 'user_email AS "userEmail"' in source
+        assert "amount::float AS amount" in source
         assert "INSERT INTO transactions" in source
+    client = read(ADMIN_CLIENT)
+    assert "type TransactionWire" in client
+    assert "normalizeFiniteNumber(transaction.amount)" in client
+    assert "result.transactions.map(normalizeTransaction)" in client
+
+
+def test_private_litellm_admin_excludes_disabled_legacy_direct_routes() -> None:
+    source = read(CANONICAL_APP)
+    assert "WHERE lower(provider) = 'litellm'" in source
+    assert "legacyDirectRouteCount" in source
+    assert "disabled-and-hidden-from-private-litellm-admin" in source
+
+
+def test_payment_admin_hides_legacy_aliases_and_blocks_legacy_mutation() -> None:
+    source = read(CANONICAL_APP)
+    assert "_CANONICAL_PAYMENT_METHOD_TYPES" in source
+    assert '"legacyIgnoredCount": int(legacy.get("count") or 0)' in source
+    assert "legacy_payment_method_read_only" in source
+    assert "WHERE type = ANY(%s)" in source
 
 
 def test_credit_package_list_errors_are_not_false_empty_successes() -> None:

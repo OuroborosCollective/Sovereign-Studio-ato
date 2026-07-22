@@ -21,6 +21,17 @@ def test_changed_recovery_shell_assets_parse() -> None:
         assert result.returncode == 0, f"{relative}: {result.stderr}"
 
 
+def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
+    deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+    rollback = (MCP_ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
+
+    assert deploy.count('--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"') == 2
+    assert '--env "SOVEREIGN_SOURCE_REVISION=$EXPECTED_REVISION"' in deploy
+    assert '--env "SOVEREIGN_SOURCE_REVISION=$revision"' in deploy
+    assert '--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"' in rollback
+    assert '--env "SOVEREIGN_SOURCE_REVISION=$REVISION"' in rollback
+
+
 def test_operator_deployment_path_has_no_curl_dependency() -> None:
     for relative in (
         "deploy/deploy-sovereign-backend",
