@@ -10,6 +10,7 @@ from managed_compose import (
     FREELLMAPI_DATA_VOLUME,
     FREELLMAPI_IMAGE,
     FREELLMAPI_REPO_DIGEST,
+    MANAGED_TEMPLATE_FILE_MODE,
     ManagedComposeRuntime,
     STACKS,
 )
@@ -85,6 +86,38 @@ def test_freellmapi_staging_bind_maps_to_final_deploy_root_without_weakening_bou
     rendered["services"]["freellmapi"]["volumes"][0]["source"] = str(tmp_path / "outside.mjs")
     with pytest.raises(RuntimeError, match="Bind-Mount außerhalb der Stack-Grenzen"):
         runtime._validate_rendered(stack, rendered, staging_root=staging_root)
+
+
+def test_managed_template_files_are_world_readable_while_secret_env_stays_private(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    deploy_root = tmp_path / "deploy"
+    deploy_root.mkdir()
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+
+    runtime._write_template_files(
+        deploy_root,
+        [
+            ("docker-compose.yml", b"services: {}\n"),
+            ("sovereign-freellm-bootstrap.mjs", b"export {};\n"),
+        ],
+    )
+
+    assert MANAGED_TEMPLATE_FILE_MODE == 0o644
+    assert (deploy_root / "docker-compose.yml").stat().st_mode & 0o777 == 0o644
+    assert (deploy_root / "sovereign-freellm-bootstrap.mjs").stat().st_mode & 0o777 == 0o644
+
+    provider_root = tmp_path / "owner" / "freellm-provider-keys"
+    monkeypatch.setattr("managed_compose.FREELLMAPI_PROVIDER_SECRET_ROOT", str(provider_root))
+    monkeypatch.setattr("managed_compose.os.geteuid", lambda: 0)
+    monkeypatch.setattr("managed_compose.os.chown", lambda path, uid, gid: None)
+    original = STACKS["sovereign-freellmapi"]
+    stack = type(original)(**{**original.__dict__, "deploy_root": str(deploy_root)})
+    secret = runtime._ensure_stack_secret_env(stack)
+
+    assert Path(secret["path"]).stat().st_mode & 0o777 == 0o600
+    assert provider_root.stat().st_mode & 0o777 == 0o700
 
 
 def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: Path, monkeypatch) -> None:
