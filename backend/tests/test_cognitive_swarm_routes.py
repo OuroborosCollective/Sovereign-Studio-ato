@@ -22,6 +22,7 @@ async def _read_only_intent(
     mission: str,
     *,
     model: str | None = None,
+    route: dict[str, Any] | None = None,
     stage_billing: Any = None,
 ) -> MissionIntent:
     return MissionIntent(
@@ -35,7 +36,7 @@ async def _read_only_intent(
 
 
 @pytest.fixture(autouse=True)
-def isolate_internal_litellm_configuration(monkeypatch, tmp_path: Path) -> None:
+def isolate_internal_provider_configuration(monkeypatch, tmp_path: Path) -> None:
     owner_root = tmp_path / "missing-owner-secrets"
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(owner_root))
     monkeypatch.setenv(
@@ -43,6 +44,17 @@ def isolate_internal_litellm_configuration(monkeypatch, tmp_path: Path) -> None:
         str(owner_root / "litellm_master_key.txt"),
     )
     monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
+    monkeypatch.setenv(
+        "SOVEREIGN_OPENROUTER_API_KEY_FILE",
+        str(owner_root / "openrouter_api_key.txt"),
+    )
+    monkeypatch.setattr(routes_runtime, "AgentStageBilling", FakeStageBilling)
+
+
+class FakeStageBilling:
+    def __init__(self, **kwargs: Any) -> None:
+        self.main_route = kwargs.get("main_route") or kwargs.get("route")
+        self.agent_route = kwargs.get("agent_route") or self.main_route
 
 
 class FakeCursor:
@@ -73,22 +85,38 @@ class FakeCursor:
                 "id": "route-paid-sovereign-fast",
                 "model_id": "sovereign-fast",
                 "model_name": "Sovereign Fast",
-                "provider": "litellm",
-                "base_url": "http://litellm:4000",
+                "provider": "openrouter",
+                "runtime_kind": "openrouter",
+                "tier": "standard",
+                "base_url": "https://openrouter.ai/api/v1",
                 "credits_per_unit": 1.0,
                 "disabled": False,
                 "priority": 10,
                 "config": {
-                    "providerModel": "gpt-5.4-mini",
+                    "transport": "openrouter",
+                    "direct": True,
+                    "providerModel": "openai/gpt-5.4-mini",
                     "billingCategory": "standard",
+                    "billingClass": "standard",
+                    "fundingMode": "provider_priced",
                     "markupMultiplier": 4,
-                    "inputUsdPerMillion": "0.25",
-                    "cachedInputUsdPerMillion": "0.025",
-                    "outputUsdPerMillion": "2.00",
+                    "inputUsdPerMillion": "0.75",
+                    "cachedInputUsdPerMillion": "0.075",
+                    "outputUsdPerMillion": "4.50",
                     "pricingVerified": True,
                     "pricingSource": "test-fixture",
-                    "quotaScope": "litellm:test:paid-route",
+                    "quotaScope": "openrouter:test:paid-route",
                     "executionProfile": "paid_swarm_6",
+                    "catalogVerified": True,
+                    "transportCanaryVerified": True,
+                    "selectable": True,
+                    "supportedExecutionRoles": ["main", "swarm_agents"],
+                    "providerPolicy": {
+                        "require_parameters": True,
+                        "allow_fallbacks": False,
+                        "data_collection": "deny",
+                        "zdr": True,
+                    },
                 },
             }
         if self.factory.fetchone_rows:
@@ -193,12 +221,14 @@ def test_swarm_manifest_route_reports_exact_topology(monkeypatch) -> None:
     payload = response.get_json()
     assert response.status_code == 200
     assert payload["runtime"] == "openai-agents-sdk"
-    assert payload["configured"] is False
+    assert payload["configured"] is None
     assert payload["manifest"]["agentCount"] == 20
     assert payload["manifest"]["coreAgentCount"] == 8
     assert payload["manifest"]["maxActiveSpecialists"] == 4
     assert payload["manifest"]["autoMerge"] is False
-    assert payload["allowedModels"] == ["sovereign-fast"]
+    assert payload["allowedModels"] == []
+    assert payload["modelsResolvedFromDatabase"] is True
+    assert payload["executionModes"] == ["auto", "paid", "free"]
 
 
 def test_allowed_models_drop_direct_provider_identifiers(monkeypatch) -> None:
@@ -207,6 +237,32 @@ def test_allowed_models_drop_direct_provider_identifiers(monkeypatch) -> None:
         "direct-provider-model,sovereign-fast",
     )
     assert routes_runtime._allowed_models() == frozenset({"sovereign-fast"})
+
+
+
+def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_start(**kwargs: Any):
+        captured.update(kwargs)
+        return {"ok": True, "status": "captured"}, 200
+
+    monkeypatch.setattr(routes_runtime, "start_cognitive_swarm_run", fake_start)
+    client = _app().test_client()
+    response = client.post(
+        "/api/user/agent/swarm/run",
+        json={
+            "mission": "Inspect the selected paid models.",
+            "mode": "paid",
+            "mainModel": "openai/gpt-5.4-mini",
+            "agentModel": "anthropic/claude-haiku-4.5",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["main_model"] == "openai/gpt-5.4-mini"
+    assert captured["agent_model"] == "anthropic/claude-haiku-4.5"
+    assert captured["mode"] == "paid"
 
 
 def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
@@ -224,8 +280,8 @@ def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:
     assert payload["evidenceId"].startswith("evidence-")
     assert payload["receivedEvidenceId"].startswith("evidence-")
     assert payload["reason"]
-    assert payload["nextAction"] == "VERIFY_LITELLM_SERVICE_KEY"
-    assert payload["blocker"] == "LITELLM_RUNTIME_CONFIGURATION_MISSING"
+    assert payload["nextAction"] == "PROVIDE_OPENROUTER_PROTECTED_KEY"
+    assert payload["blocker"] == "OPENROUTER_KEY_FILE_MISSING"
     assert payload["receivedEvidenceId"].startswith("evidence-")
     assert factory.commits == 2
     assert any("INSERT INTO agent_runs" in sql for sql, _ in factory.calls)
@@ -245,8 +301,8 @@ def test_swarm_start_persists_route_blocker_before_provider_execution(monkeypatc
 
     assert response.status_code == 503
     assert payload["status"] == "BLOCKED"
-    assert payload["blocker"] == "NO_PRICE_VERIFIED_LITELLM_ROUTE_READY"
-    assert payload["nextAction"] == "ACTIVATE_PROVIDER_ROUTE_WITH_CANARY_EVIDENCE"
+    assert payload["blocker"] == "NO_VERIFIED_EXECUTION_ROUTE_READY"
+    assert payload["nextAction"] == "ACTIVATE_OPENROUTER_OR_FREELLM_ROUTE_WITH_CANARY_EVIDENCE"
     assert payload["receivedEvidenceId"].startswith("evidence-")
     assert payload["evidenceId"].startswith("evidence-")
     assert factory.commits == 2
@@ -340,9 +396,9 @@ def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monk
     async def fail_swarm(*args, **kwargs):
         raise SwarmExecutionError(
             stage="dispatcher",
-            family="LITELLM_OR_PROVIDER_PERMISSION_DENIED",
+            family="OPENROUTER_PERMISSION_DENIED",
             error_type="PermissionDeniedError",
-            next_action="VERIFY_LITELLM_ALIAS_AND_PROVIDER_ACCESS",
+            next_action="VERIFY_OPENROUTER_MODEL_ACCESS",
             retryable=False,
             http_status=403,
             request_id="req-safe-456",
@@ -357,13 +413,13 @@ def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monk
     )
     payload = response.get_json()
 
-    assert response.status_code == 502
-    assert payload["status"] == "FAILED_RECOVERABLE"
-    assert payload["blocker"] == "LITELLM_OR_PROVIDER_PERMISSION_DENIED"
+    assert response.status_code == 503
+    assert payload["status"] == "BLOCKED"
+    assert payload["blocker"] == "OPENROUTER_PERMISSION_DENIED"
     assert payload["failureStage"] == "dispatcher"
     assert payload["httpStatus"] == 403
     assert payload["requestId"] == "req-safe-456"
-    assert payload["nextAction"] == "VERIFY_LITELLM_ALIAS_AND_PROVIDER_ACCESS"
+    assert payload["nextAction"] == "VERIFY_OPENROUTER_MODEL_ACCESS"
     assert payload["retryable"] is False
     assert "provider message" not in str(payload)
     assert any("INSERT INTO agent_failures" in sql for sql, _ in factory.calls)
@@ -401,7 +457,7 @@ def test_swarm_resume_claims_run_reconstructs_task_and_finishes_with_same_lease(
     assert payload["recoveryTask"]["taskId"].startswith("task-resume-")
     assert payload["recoveryTask"]["workPackage"] == "RETRY_FROM_PERSISTED_RUN_STATE"
     assert payload["recoveryTask"]["leaseSeconds"] == 900
-    assert factory.commits == 2
+    assert factory.commits == 3
     assert sum("UPDATE agent_runs" in sql for sql, _ in factory.calls) == 2
     assert any("UPDATE agent_tasks" in sql for sql, _ in factory.calls)
     assert any("lease_token = %s" in sql for sql, _ in factory.calls)
@@ -422,8 +478,8 @@ def test_swarm_resume_persists_route_blocker_with_claimed_lease(monkeypatch) -> 
     assert response.status_code == 503
     assert payload["status"] == "BLOCKED"
     assert payload["resumed"] is True
-    assert payload["blocker"] == "AGENTS_LITELLM_ALIAS_NOT_READY"
-    assert payload["nextAction"] == "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE"
+    assert payload["blocker"] == "NO_VERIFIED_EXECUTION_ROUTE_READY"
+    assert payload["nextAction"] == "START_NEW_RUN_OR_ACTIVATE_VERIFIED_ROUTE"
     assert payload["resumeClaimEvidenceId"].startswith("evidence-")
     assert factory.commits == 2
     assert any("lease_token = %s" in sql for sql, _ in factory.calls)

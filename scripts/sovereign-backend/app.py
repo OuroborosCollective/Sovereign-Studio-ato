@@ -87,6 +87,7 @@ from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
 from proven_learning_runtime import register_proven_learning_routes
 from llm_provider_runtime import register_llm_provider_routes
+from openrouter_provider_runtime import register_openrouter_provider_runtime
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
 
@@ -2119,10 +2120,12 @@ def health_ready():
             """SELECT model_id, provider FROM llm_routes
                WHERE disabled=false ORDER BY priority ASC"""
         )
+        allowed_route_providers = {"litellm", "openrouter", "freellm"}
         invalid_routes = [
             str(row.get("model_id") or "")
             for row in (routes or [])
-            if str(row.get("provider") or "").strip().lower() != "litellm"
+            if str(row.get("provider") or "").strip().lower()
+            not in allowed_route_providers
         ]
         schema_ready = all(bool(schema.get(name)) for name in (
             "revolver_attempts",
@@ -2147,7 +2150,7 @@ def health_ready():
                 "030_llm_execution_profiles.sql",
                 "031_sovereign_free_revolver_v3.sql",
                 "032_free_revolver_provider_control.sql",
-                "033_freellmapi_managed_provider.sql",
+                "033_openrouter_paid_freellm_direct.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -5439,6 +5442,14 @@ register_llm_provider_routes(
     query=query,
     get_connection=get_agent_runtime_connection,
     get_current_admin=get_current_admin,
+    audit=audit,
+)
+register_openrouter_provider_runtime(
+    app,
+    require_admin=require_admin,
+    require_session=require_session,
+    query=query,
+    get_connection=get_agent_runtime_connection,
     audit=audit,
 )
 register_controller_board_routes(

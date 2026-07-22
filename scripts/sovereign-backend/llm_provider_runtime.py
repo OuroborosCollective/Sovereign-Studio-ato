@@ -21,6 +21,7 @@ from typing import Any, Callable
 from flask import jsonify, request
 
 from litellm_runtime import extract_litellm_evidence, fetch_litellm
+from openrouter_provider_runtime import activate_openrouter_provider
 from llm_cost_policy import (
     BillingPolicyError,
     FREE_CATEGORY,
@@ -1011,6 +1012,13 @@ def register_llm_provider_routes(
             return jsonify({"error": "Providerroute nicht gefunden"}), 404
         if _provider_route_is_ready(dict(deployment)):
             return jsonify({"ok": True, "status": "ready", "routeId": route_id})
+        if str(deployment.get("provider_prefix") or "").strip().lower() == "openrouter":
+            return activate_openrouter_provider(
+                route_id,
+                query=query,
+                get_connection=get_connection,
+                audit=audit,
+            )
         owner_request_id = str(deployment.get("owner_request_id") or "")
         owner_request = query(
             """SELECT status, target_id FROM owner_input_requests

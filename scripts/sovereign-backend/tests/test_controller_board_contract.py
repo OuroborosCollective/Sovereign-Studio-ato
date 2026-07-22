@@ -122,7 +122,7 @@ def test_controller_uses_real_user_session_and_never_browser_storage() -> None:
     assert "sovereign_session" not in controller
     assert "localStorage" not in controller
     assert "sessionStorage" not in controller
-    assert "state={user:null,overview:null,github:null,adminKey:''" in controller
+    assert "state={user:null,overview:null,github:null,modelCatalog:null,adminKey:''" in controller
 
 
 def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_credentials() -> None:
@@ -377,6 +377,28 @@ def test_code_and_playwright_monitors_are_read_only_github_evidence() -> None:
     assert '"playwrightStats": {' in controller
     assert '"successRate": success_rate' in controller
     assert 'id="playwrightMetrics"' in controller
+
+
+
+def test_controller_exposes_paid_free_switch_and_priced_model_pair() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+
+    assert 'id="executionMode"' in controller
+    assert '<option value="auto">' in controller
+    assert '<option value="paid">' in controller
+    assert '<option value="free">' in controller
+    assert 'id="mainModel"' in controller
+    assert 'id="agentModel"' in controller
+    assert "loadModelCatalog()" in controller
+    assert "api('/api/user/agent/swarm/models')" in controller
+    assert "(p.input||'–')" in controller
+    assert "(p.output||'–')" in controller
+    assert "providerInput" not in controller
+    assert "providerOutput" not in controller
+    assert "Sovereign-Faktor" not in controller
+    assert "...executionSelectionPayload()" in controller
+    assert "FreeLLM wählt automatisch" in controller
+    assert "0 Zusatz-/Workspace-Agenten" in controller
 
 
 def test_controller_is_android_first_and_touch_safe() -> None:

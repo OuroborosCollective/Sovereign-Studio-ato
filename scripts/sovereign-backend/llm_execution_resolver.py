@@ -1,8 +1,8 @@
-"""Database-driven LLM route and agent-profile resolution.
+"""Database-driven LLM transport, route, and agent-profile resolution.
 
-Provider identities and aliases remain in PostgreSQL/LiteLLM. This module only
-selects among already active, price-verified routes. It never reads credentials,
-registers providers, or treats a provider name as a billing contract.
+The paid OpenRouter transport and direct managed FreeLLM transport remain
+independent. This module selects only active, policy-verified routes; it never
+reads credentials, registers providers, or treats a model alias as a transport.
 """
 from __future__ import annotations
 
@@ -18,24 +18,68 @@ from llm_cost_policy import (
     route_billing_policy,
 )
 from llm_revolver import build_revolver_candidates, route_is_verified_free, route_quota_scope
+from llm_transport import (
+    OPENROUTER_TRANSPORT,
+    route_is_openrouter_paid,
+    route_provider_model,
+    route_snapshot_hashes,
+    route_transport,
+)
 
 FREE_SINGLE_AGENT_PROFILE = "free_single_agent"
 PAID_SWARM_PROFILE = "paid_swarm_6"
+AUTO_MODE = "auto"
+PAID_MODE = "paid"
+FREE_MODE = "free"
+EXECUTION_MODES = frozenset({AUTO_MODE, PAID_MODE, FREE_MODE})
+
+
+class ExecutionResolutionError(RuntimeError):
+    """Typed, secret-safe resolution failure for an explicitly requested mode."""
+
+    def __init__(self, failure_family: str, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.failure_family = str(failure_family)
+        self.status_code = int(status_code)
+
+    def safe_payload(self) -> dict[str, Any]:
+        return {
+            "error": self.failure_family,
+            "message": str(self),
+            "statusCode": self.status_code,
+            "secretValuesReturned": False,
+        }
+
+
+def normalize_execution_mode(value: Any) -> str:
+    mode = str(value or AUTO_MODE).strip().lower()
+    if mode not in EXECUTION_MODES:
+        raise ExecutionResolutionError(
+            "invalid_execution_mode",
+            "execution mode must be one of: auto, paid, free",
+            status_code=422,
+        )
+    return mode
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionResolution:
     profile_id: str
     primary_route: dict[str, Any]
+    agent_route: dict[str, Any]
     candidate_routes: tuple[dict[str, Any], ...]
     max_foreground_agents: int
     max_background_agents: int
     repository_execution_allowed: bool
     paid_purchase_verified: bool
     provider_funded_credits: int
+    requested_mode: str
     reason: str
+    fallback_from_transport: str | None = None
 
     def safe_payload(self) -> dict[str, Any]:
+        main_route_hash, main_price_hash = route_snapshot_hashes(self.primary_route)
+        agent_route_hash, agent_price_hash = route_snapshot_hashes(self.agent_route)
         return {
             "profileId": self.profile_id,
             "primaryRouteId": str(self.primary_route.get("id") or ""),
@@ -44,6 +88,14 @@ class ExecutionResolution:
                 or self.primary_route.get("modelId")
                 or ""
             ),
+            "providerModel": route_provider_model(self.primary_route),
+            "mainRouteId": str(self.primary_route.get("id") or ""),
+            "mainModel": route_provider_model(self.primary_route),
+            "agentRouteId": str(self.agent_route.get("id") or ""),
+            "agentModel": route_provider_model(self.agent_route),
+            "resolvedTransport": route_transport(self.primary_route),
+            "requestedMode": self.requested_mode,
+            "fallbackFromTransport": self.fallback_from_transport,
             "candidateRouteIds": [
                 str(route.get("id") or "") for route in self.candidate_routes
             ],
@@ -52,6 +104,12 @@ class ExecutionResolution:
             "repositoryExecutionAllowed": self.repository_execution_allowed,
             "paidPurchaseVerified": self.paid_purchase_verified,
             "providerFundedCredits": self.provider_funded_credits,
+            "routeSnapshotSha256": main_route_hash,
+            "priceSnapshotSha256": main_price_hash,
+            "mainRouteSnapshotSha256": main_route_hash,
+            "mainPriceSnapshotSha256": main_price_hash,
+            "agentRouteSnapshotSha256": agent_route_hash,
+            "agentPriceSnapshotSha256": agent_price_hash,
             "reason": self.reason,
             "secretValuesReturned": False,
         }
@@ -68,6 +126,15 @@ def _model_id(route: dict[str, Any]) -> str:
 
 def _route_id(route: dict[str, Any]) -> str:
     return str(route.get("id") or "").strip()
+
+
+def _route_matches(route: dict[str, Any], requested: str) -> bool:
+    normalized = str(requested or "").strip()
+    return normalized in {
+        _route_id(route),
+        _model_id(route),
+        route_provider_model(route),
+    }
 
 
 def _route_profile(route: dict[str, Any]) -> str:
@@ -96,9 +163,9 @@ def _state_available(state: dict[str, Any] | None, now: datetime) -> bool:
 
 
 def route_is_verified_paid(route: dict[str, Any]) -> bool:
-    if bool(route.get("disabled")):
+    if not route_is_openrouter_paid(route):
         return False
-    if str(route.get("provider") or "").strip().lower() != "litellm":
+    if route_transport(route) != OPENROUTER_TRANSPORT:
         return False
     try:
         policy = route_billing_policy(route)
@@ -154,9 +221,8 @@ def build_paid_to_free_candidates(
 ) -> list[dict[str, Any]]:
     """Return a paid primary followed by independent ready free quota scopes.
 
-    A free primary keeps the existing free-only revolver behavior. Provider names
-    are irrelevant; only active LiteLLM routes and verified billing contracts are
-    considered.
+    A free primary keeps the existing free-only revolver behavior. Paid and free
+    candidates retain disjoint transports and quota scopes.
     """
     states = state_by_scope or {}
     current_time = now or datetime.now(timezone.utc)
@@ -195,70 +261,112 @@ def resolve_execution_profile(
     paid_purchase_verified: bool,
     provider_funded_credits: int,
     requested_model: str = "",
+    requested_main_model: str = "",
+    requested_agent_model: str = "",
+    requested_mode: str = AUTO_MODE,
     now: datetime | None = None,
 ) -> ExecutionResolution | None:
-    """Resolve the allowed execution profile from persisted account and route truth."""
+    """Resolve one explicit paid model pair or an automatic direct-FreeLLM route."""
+    mode = normalize_execution_mode(requested_mode)
     all_routes = [dict(route) for route in routes]
     states = state_by_scope or {}
     current_time = now or datetime.now(timezone.utc)
-    normalized_requested = str(requested_model or "").strip()
-
-    paid_routes = [
-        route
-        for route in _ordered_paid_routes(all_routes)
-        if _paid_route_available(route, state_by_scope=states, now=current_time)
-    ]
-    if normalized_requested:
-        requested_paid = next(
-            (
-                route
-                for route in paid_routes
-                if normalized_requested in {_route_id(route), _model_id(route)}
-            ),
-            None,
-        )
-        if requested_paid:
-            paid_routes = [requested_paid, *(
-                route for route in paid_routes if _route_id(route) != _route_id(requested_paid)
-            )]
-
+    legacy_requested = str(requested_model or "").strip()
+    main_requested = str(requested_main_model or legacy_requested).strip()
+    agent_requested = str(requested_agent_model or legacy_requested).strip()
     funded = max(0, int(provider_funded_credits))
-    if paid_purchase_verified and funded > 0 and paid_routes:
-        primary = paid_routes[0]
-        candidates = build_paid_to_free_candidates(
-            primary,
-            all_routes,
-            state_by_scope=states,
-            now=current_time,
+
+    verified_paid_routes: list[dict[str, Any]] = []
+    paid_routes: list[dict[str, Any]] = []
+    if mode != FREE_MODE:
+        verified_paid_routes = [
+            route
+            for route in _ordered_paid_routes(all_routes)
+            if route_is_verified_paid(route)
+        ]
+        paid_routes = [
+            route
+            for route in verified_paid_routes
+            if _paid_route_available(route, state_by_scope=states, now=current_time)
+        ]
+
+    if (
+        mode != FREE_MODE
+        and paid_purchase_verified
+        and funded > 0
+        and paid_routes
+    ):
+        main_route = (
+            next((route for route in paid_routes if _route_matches(route, main_requested)), None)
+            if main_requested
+            else paid_routes[0]
         )
+        agent_route = (
+            next((route for route in paid_routes if _route_matches(route, agent_requested)), None)
+            if agent_requested
+            else main_route
+        )
+        if main_route is None:
+            raise ExecutionResolutionError(
+                "openrouter_main_model_not_selectable",
+                "the requested paid main model is not in the active OpenRouter agent catalog",
+                status_code=422,
+            )
+        if agent_route is None:
+            raise ExecutionResolutionError(
+                "openrouter_agent_model_not_selectable",
+                "the requested six-agent model is not in the active OpenRouter agent catalog",
+                status_code=422,
+            )
+
+        candidates: list[dict[str, Any]] = [main_route]
+        if _route_id(agent_route) != _route_id(main_route):
+            candidates.append(agent_route)
+        if mode == AUTO_MODE:
+            for route in build_paid_to_free_candidates(
+                main_route,
+                all_routes,
+                state_by_scope=states,
+                now=current_time,
+            ):
+                if _route_id(route) not in {_route_id(candidate) for candidate in candidates}:
+                    candidates.append(route)
         return ExecutionResolution(
             profile_id=PAID_SWARM_PROFILE,
-            primary_route=primary,
-            candidate_routes=tuple(candidates or [primary]),
+            primary_route=main_route,
+            agent_route=agent_route,
+            candidate_routes=tuple(candidates),
             max_foreground_agents=1,
             max_background_agents=6,
             repository_execution_allowed=True,
             paid_purchase_verified=True,
             provider_funded_credits=funded,
-            reason="verified_purchase_and_paid_route_ready",
+            requested_mode=mode,
+            reason="verified_purchase_credits_and_selected_openrouter_model_pair_ready",
+        )
+
+    if mode == PAID_MODE:
+        if not paid_purchase_verified:
+            raise ExecutionResolutionError(
+                "paid_purchase_required",
+                "paid execution requires at least one verified completed purchase",
+                status_code=403,
+            )
+        if funded <= 0:
+            raise ExecutionResolutionError(
+                "paid_credits_required",
+                "paid execution requires a positive provider-funded credit balance",
+                status_code=402,
+            )
+        raise ExecutionResolutionError(
+            "openrouter_paid_route_unavailable",
+            "the verified OpenRouter paid model catalog is not currently available",
+            status_code=503,
         )
 
     free_routes = _ordered_free_routes(
         route for route in all_routes if route_is_verified_free(route)
     )
-    if normalized_requested:
-        requested_free = next(
-            (
-                route
-                for route in free_routes
-                if normalized_requested in {_route_id(route), _model_id(route)}
-            ),
-            None,
-        )
-        if requested_free:
-            free_routes = [requested_free, *(
-                route for route in free_routes if _route_id(route) != _route_id(requested_free)
-            )]
     if not free_routes:
         return None
     candidates = build_revolver_candidates(
@@ -272,51 +380,75 @@ def resolve_execution_profile(
     return ExecutionResolution(
         profile_id=FREE_SINGLE_AGENT_PROFILE,
         primary_route=candidates[0],
+        agent_route=candidates[0],
         candidate_routes=tuple(candidates),
         max_foreground_agents=1,
         max_background_agents=0,
         repository_execution_allowed=True,
         paid_purchase_verified=bool(paid_purchase_verified),
         provider_funded_credits=funded,
+        requested_mode=mode,
         reason=(
             "paid_route_unavailable_resolved_to_free_revolver"
-            if paid_purchase_verified
-            else "free_profile_without_verified_purchase"
+            if (
+                mode == AUTO_MODE
+                and paid_purchase_verified
+                and funded > 0
+                and verified_paid_routes
+            )
+            else "auto_resolved_to_quota_aware_direct_freellm"
+            if mode == AUTO_MODE
+            else "explicit_quota_aware_direct_freellm"
         ),
     )
-
 
 def free_fallback_resolution(
     resolution: ExecutionResolution,
     *,
     reason: str,
 ) -> ExecutionResolution | None:
-    """Derive a free single-agent resolution from one paid route magazine."""
-    free_candidates = tuple(
-        route
-        for route in resolution.candidate_routes
-        if route_is_verified_free(route)
-    )
+    """Derive a direct-FreeLLM fallback from automatic paid or forced-free resolution."""
+    if resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
+        free_candidates = tuple(
+            route
+            for route in resolution.candidate_routes
+            if route_is_verified_free(route)
+        )
+        fallback_transport = resolution.fallback_from_transport or OPENROUTER_TRANSPORT
+    elif resolution.requested_mode == AUTO_MODE:
+        free_candidates = tuple(
+            route
+            for route in resolution.candidate_routes
+            if route_is_verified_free(route)
+        )
+        fallback_transport = route_transport(resolution.primary_route)
+    else:
+        return None
     if not free_candidates:
         return None
     return ExecutionResolution(
         profile_id=FREE_SINGLE_AGENT_PROFILE,
         primary_route=free_candidates[0],
+        agent_route=free_candidates[0],
         candidate_routes=free_candidates,
         max_foreground_agents=1,
         max_background_agents=0,
         repository_execution_allowed=True,
         paid_purchase_verified=resolution.paid_purchase_verified,
         provider_funded_credits=resolution.provider_funded_credits,
-        reason=str(reason or "paid_route_failed_resolved_to_free_revolver")[:240],
+        requested_mode=AUTO_MODE,
+        fallback_from_transport=fallback_transport,
+        reason=str(reason or "openrouter_failed_resolved_to_direct_freellm")[:240],
     )
-
 
 def load_execution_resolution(
     get_connection: Callable[[], Any],
     *,
     user_id: str,
     requested_model: str = "",
+    requested_main_model: str = "",
+    requested_agent_model: str = "",
+    requested_mode: str = AUTO_MODE,
 ) -> ExecutionResolution | None:
     """Load account entitlement, active routes and revolver state from PostgreSQL."""
     connection = get_connection()
@@ -346,9 +478,11 @@ def load_execution_resolution(
             cursor.execute(
                 """SELECT id::text, model_id, model_name, provider, base_url,
                           credits_per_unit::float AS credits_per_unit,
-                          disabled, priority, config
+                          disabled, priority, runtime_kind, tier, config
                    FROM llm_routes
-                   WHERE disabled = false AND lower(provider) = 'litellm'
+                   WHERE disabled = false
+                     AND lower(COALESCE(runtime_kind, provider))
+                         IN ('openrouter', 'freellm')
                    ORDER BY priority ASC, model_name ASC"""
             )
             routes = [dict(row) for row in cursor.fetchall()]
@@ -360,7 +494,9 @@ def load_execution_resolution(
                     continue
             if scopes:
                 cursor.execute(
-                    """SELECT quota_scope, status, cooldown_until
+                    """SELECT quota_scope, status, cooldown_until,
+                              quota_remaining, quota_limit, quota_reset_at,
+                              consecutive_failures, last_attempt_at
                        FROM llm_route_revolver_state
                        WHERE quota_scope = ANY(%s)""",
                     (scopes,),
@@ -382,4 +518,7 @@ def load_execution_resolution(
         paid_purchase_verified=bool(account["paid_purchase_verified"]),
         provider_funded_credits=int(account["provider_funded_credits"] or 0),
         requested_model=requested_model,
+        requested_main_model=requested_main_model,
+        requested_agent_model=requested_agent_model,
+        requested_mode=requested_mode,
     )

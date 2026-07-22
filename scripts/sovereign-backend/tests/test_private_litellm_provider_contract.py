@@ -170,9 +170,10 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
         "COALESCE(config->>'pricingVerified', 'false') <> 'true'"
     ) == 2
 
-    assert "_load_agent_policy" in billing
-    assert "AGENTS_LITELLM_ALIAS_NOT_READY" in billing
-    assert "AGENTS_PROVIDER_MODEL_MISMATCH" in billing
+    assert "_load_agent_route_policy" in billing
+    assert "OPENROUTER_PAID_ROUTE_NOT_READY" in billing
+    assert "OPENROUTER_ROUTE_CHANGED_BEFORE_RESERVATION" in billing
+    assert "AGENTS_OPENROUTER_ROUTE_REQUIRED" in billing
     assert "AGENTS_STANDARD_ROUTE_REQUIRED" in billing
     assert "funded_credits_reserved" in billing
 

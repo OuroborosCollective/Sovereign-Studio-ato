@@ -35,34 +35,40 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     owner_runtime = (ROOT / "owner_input_runtime.py").read_text("utf-8")
     swarm_agents = (ROOT / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
     swarm_routes = (ROOT / "agent_runtime" / "cognitive_swarm_routes.py").read_text("utf-8")
+    transport = (ROOT / "agent_runtime" / "cognitive_llm_transport.py").read_text("utf-8")
     assert '"openai_api_key"' in owner_runtime
+    assert '"openrouter_api_key"' in owner_runtime
     assert '"openhands_api_key"' not in owner_runtime
     assert '"openai_api_key.txt"' in owner_runtime
+    assert '"openrouter_api_key.txt"' in owner_runtime
     assert "SET status='expired', resolved_at=NOW(), result_code='expired'" in owner_runtime
     assert "ON CONFLICT (target_id) WHERE status IN ('pending','processing') DO NOTHING" in owner_runtime
     assert "content_length > int(target[\"maxBytes\"])" in owner_runtime
     assert "def ensure_openai_runtime_key()" in swarm_agents
     assert 'os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")' in swarm_agents
-    assert '_LITELLM_SERVICE_KEY_FILENAME: Final[str] = "litellm_master_key.txt"' in swarm_agents
-    assert '_DEFAULT_LITELLM_BASE_URL: Final[str] = "http://litellm:4000"' in swarm_agents
-    assert 'provider_module = importlib.import_module("agents.models.openai_provider")' in swarm_agents
-    assert 'run_config_module = importlib.import_module("agents.run_config")' in swarm_agents
-    assert 'provider_class = getattr(provider_module, "OpenAIProvider")' in swarm_agents
-    assert 'run_config_class = getattr(run_config_module, "RunConfig")' in swarm_agents
-    assert 'base_url=f"{base_url}/v1"' in swarm_agents
-    assert "use_responses=False" in swarm_agents
-    assert "tracing_disabled=True" in swarm_agents
-    assert "trace_include_sensitive_data=False" in swarm_agents
-    assert "run_config=_require_litellm_run_config()" in swarm_agents
+    assert "build_route_run_config(" in swarm_agents
+    assert "run_config=route_runtime.run_config if route_runtime else None" in swarm_agents
+    assert '_OPENROUTER_KEY_FILENAME: Final[str] = "openrouter_api_key.txt"' in transport
+    assert '_FREELLM_KEY_FILENAME: Final[str] = "freellmapi_unified_key.txt"' in transport
+    assert 'provider_module = importlib.import_module("agents.models.openai_provider")' in transport
+    assert 'run_config_module = importlib.import_module("agents.run_config")' in transport
+    assert 'provider_class = getattr(provider_module, "OpenAIProvider")' in transport
+    assert 'run_config_class = getattr(run_config_module, "RunConfig")' in transport
+    assert "base_url=route_api_base(route)" in transport
+    assert "use_responses=False" in transport
+    assert "tracing_disabled=True" in transport
+    assert "trace_include_sensitive_data=False" in transport
     assert "set_default_openai_api" not in swarm_agents
     assert "set_tracing_disabled" not in swarm_agents
     assert 'os.environ["OPENAI_API_KEY"]' not in swarm_agents
     assert 'os.environ["OPENAI_BASE_URL"]' not in swarm_agents
-    assert 'candidate.name != _LITELLM_SERVICE_KEY_FILENAME' in swarm_agents
-    assert 'openai_api_key.txt' not in swarm_agents
+    assert "candidate.name != filename" in transport
+    assert 'openai_api_key.txt' not in transport
     assert 'https://api.openai.com' not in swarm_agents
     assert 'if not ensure_openai_runtime_key()' in swarm_agents
-    assert '"configured": ensure_openai_runtime_key()' in swarm_routes
+    assert '"configured": None' in swarm_routes
+    assert '"configurationResolution": "request-time-persisted-route"' in swarm_routes
+    assert '"executionModes": ["auto", "paid", "free"]' in swarm_routes
 
 
 def test_broker_deploy_keeps_secure_mounts_bounded_and_ci_stays_queue_only() -> None:

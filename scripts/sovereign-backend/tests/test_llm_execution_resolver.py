@@ -14,6 +14,7 @@ from llm_execution_resolver import (
     free_fallback_resolution,
     resolve_execution_profile,
 )
+from llm_transport import FREELLM_BASE_URL, OPENROUTER_BASE_URL
 
 
 def route(
@@ -26,14 +27,19 @@ def route(
 ) -> dict:
     free = category == "free"
     price = 1.0
+    transport = "freellm" if free else "openrouter"
     return {
         "id": route_id,
         "model_id": f"alias-{route_id}",
         "model_name": route_id,
-        "provider": "litellm",
+        "provider": transport,
+        "runtime_kind": transport,
+        "base_url": FREELLM_BASE_URL if free else OPENROUTER_BASE_URL,
         "disabled": False,
         "priority": priority,
         "config": {
+            "transport": transport,
+            "direct": True,
             "providerModel": f"provider/model-{route_id}",
             "billingCategory": category,
             "billingClass": category,
@@ -46,6 +52,16 @@ def route(
             "pricingSource": "test",
             "quotaScope": scope,
             "executionProfile": profile,
+            "catalogVerified": not free,
+            "transportCanaryVerified": not free,
+            "selectable": not free,
+            "supportedExecutionRoles": ["main", "swarm_agents"] if not free else ["free_single_agent"],
+            "providerPolicy": {
+                "require_parameters": True,
+                "allow_fallbacks": False,
+                "data_collection": "deny",
+                "zdr": True,
+            } if not free else {},
         },
     }
 
@@ -226,3 +242,74 @@ def test_paid_provider_failure_derives_free_single_agent_fallback() -> None:
     assert fallback.max_background_agents == 0
     assert fallback.repository_execution_allowed is True
     assert fallback.reason == "paid_provider_429_resolved_to_free_revolver"
+
+
+
+def test_paid_resolver_selects_distinct_main_and_shared_six_agent_models() -> None:
+    main = route(
+        "paid-main",
+        category="standard",
+        scope="paid:main",
+        priority=10,
+        profile=PAID_SWARM_PROFILE,
+    )
+    workers = route(
+        "paid-workers",
+        category="standard",
+        scope="paid:workers",
+        priority=20,
+        profile=PAID_SWARM_PROFILE,
+    )
+    free = route(
+        "free",
+        category="free",
+        scope="free:key-a",
+        priority=30,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+
+    resolution = resolve_execution_profile(
+        routes=[workers, free, main],
+        state_by_scope={},
+        paid_purchase_verified=True,
+        provider_funded_credits=100,
+        requested_main_model="paid-main",
+        requested_agent_model="provider/model-paid-workers",
+        requested_mode="paid",
+    )
+
+    assert resolution is not None
+    assert resolution.primary_route["id"] == "paid-main"
+    assert resolution.agent_route["id"] == "paid-workers"
+    assert resolution.max_background_agents == 6
+    payload = resolution.safe_payload()
+    assert payload["mainModel"] == "provider/model-paid-main"
+    assert payload["agentModel"] == "provider/model-paid-workers"
+
+
+def test_forced_free_resolution_preserves_openrouter_fallback_context() -> None:
+    free = route(
+        "free",
+        category="free",
+        scope="free:key-a",
+        priority=10,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    resolution = resolve_execution_profile(
+        routes=[free],
+        state_by_scope={},
+        paid_purchase_verified=True,
+        provider_funded_credits=100,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    fallback = free_fallback_resolution(
+        resolution,
+        reason="paid_provider_429_resolved_to_free_revolver",
+    )
+
+    assert fallback is not None
+    assert fallback.requested_mode == "auto"
+    assert fallback.fallback_from_transport == "openrouter"
+    assert fallback.primary_route["id"] == "free"

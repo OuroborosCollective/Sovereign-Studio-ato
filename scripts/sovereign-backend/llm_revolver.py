@@ -1,8 +1,8 @@
-"""Deterministic, price-gated free-route revolver policy.
+"""Deterministic, price-gated direct-FreeLLM revolver policy.
 
-The module is intentionally side-effect free. PostgreSQL persistence and LiteLLM
-network calls stay in app.py so candidate selection and retry decisions can be
-unit-tested without credentials or a running provider.
+The module is intentionally side-effect free. PostgreSQL persistence and provider
+network calls stay in runtime modules so candidate selection and retry decisions
+can be unit-tested without credentials or a running provider.
 """
 from __future__ import annotations
 
@@ -12,24 +12,43 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from llm_cost_policy import BillingPolicyError, FREE_CATEGORY, route_billing_policy
+from llm_transport import (
+    FREELLM_TRANSPORT,
+    LEGACY_LITELLM_TRANSPORT,
+    route_is_direct_freellm,
+    route_transport,
+)
 
 _SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 _RETRY_WINDOWS_SECONDS = {
     "provider_quota_exhausted": 3600,
     "provider_rate_limited": 60,
     "litellm_upstream_unavailable": 30,
+    "openrouter_rate_limited": 60,
+    "openrouter_upstream_unavailable": 30,
+    "freellm_upstream_unavailable": 30,
 }
 _BLOCKED_FAILURES = {
     "provider_credentials_rejected",
     "litellm_model_alias_missing",
     "litellm_model_alias_invalid",
+    "openrouter_credentials_rejected",
+    "freellm_credentials_rejected",
 }
 
 
-def default_quota_scope(route_id: Any) -> str:
+def default_quota_scope(
+    route_id: Any,
+    *,
+    transport: str = LEGACY_LITELLM_TRANSPORT,
+) -> str:
     """Return an opaque stable fallback scope without exposing route or key material."""
+    normalized_transport = route_transport({
+        "provider": transport,
+        "runtime_kind": transport,
+    }) or LEGACY_LITELLM_TRANSPORT
     digest = hashlib.sha256(str(route_id or "missing-route").encode("utf-8")).hexdigest()
-    return f"litellm:route:{digest[:24]}"
+    return f"{normalized_transport}:route:{digest[:24]}"
 
 
 def normalize_quota_scope(value: Any, *, route_id: Any) -> str:
@@ -46,13 +65,19 @@ def normalize_quota_scope(value: Any, *, route_id: Any) -> str:
 
 def route_quota_scope(route: dict[str, Any]) -> str:
     config = route.get("config") if isinstance(route.get("config"), dict) else {}
-    return normalize_quota_scope(config.get("quotaScope"), route_id=route.get("id"))
+    configured = config.get("quotaScope")
+    if configured:
+        return normalize_quota_scope(configured, route_id=route.get("id"))
+    return default_quota_scope(
+        route.get("id"),
+        transport=route_transport(route) or LEGACY_LITELLM_TRANSPORT,
+    )
 
 
 def route_is_verified_free(route: dict[str, Any]) -> bool:
-    if bool(route.get("disabled")):
+    if not route_is_direct_freellm(route):
         return False
-    if str(route.get("provider") or "").strip().lower() != "litellm":
+    if route_transport(route) != FREELLM_TRANSPORT:
         return False
     try:
         policy = route_billing_policy(route)
@@ -65,25 +90,87 @@ def route_is_verified_free(route: dict[str, Any]) -> bool:
     )
 
 
+def _number(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        if value is None:
+            continue
+        parsed = _number(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _quota_rank(
+    route: dict[str, Any],
+    state: dict[str, Any] | None,
+    *,
+    primary_id: str,
+) -> tuple[Any, ...]:
+    config = route.get("config") if isinstance(route.get("config"), dict) else {}
+    current = state or {}
+    remaining = _first_number(
+        current.get("quota_remaining"),
+        current.get("quotaRemaining"),
+        config.get("quotaRemaining"),
+    )
+    limit = _first_number(
+        current.get("quota_limit"),
+        current.get("quotaLimit"),
+        config.get("quotaLimit"),
+    )
+    ratio = remaining / limit if remaining is not None and limit and limit > 0 else remaining
+    availability = 0 if remaining is not None and remaining > 0 else 2 if remaining == 0 else 1
+    return (
+        availability,
+        -(ratio if ratio is not None else 0),
+        int(current.get("consecutive_failures") or current.get("consecutiveFailures") or 0),
+        int(route.get("priority") or 0),
+        0 if str(route.get("id") or "") == primary_id else 1,
+        str(route.get("model_id") or route.get("modelId") or "").casefold(),
+        str(route.get("id") or ""),
+    )
+
+
 def _state_available(state: dict[str, Any] | None, now: datetime) -> bool:
     if not state:
         return True
     status = str(state.get("status") or "ready").strip().lower()
     if status == "blocked":
         return False
-    cooldown_until = state.get("cooldown_until") or state.get("cooldownUntil")
-    if status != "cooldown" or cooldown_until is None:
-        return True
-    if isinstance(cooldown_until, str):
-        try:
-            cooldown_until = datetime.fromisoformat(cooldown_until.replace("Z", "+00:00"))
-        except ValueError:
-            return False
-    if not isinstance(cooldown_until, datetime):
+    remaining = _first_number(
+        state.get("quota_remaining"),
+        state.get("quotaRemaining"),
+    )
+    quota_reset = _as_datetime(
+        state.get("quota_reset_at") or state.get("quotaResetAt")
+    )
+    if remaining == 0 and quota_reset is not None and quota_reset > now:
         return False
-    if cooldown_until.tzinfo is None:
-        cooldown_until = cooldown_until.replace(tzinfo=timezone.utc)
-    return cooldown_until <= now
+    cooldown_until = _as_datetime(
+        state.get("cooldown_until") or state.get("cooldownUntil")
+    )
+    if status != "cooldown":
+        return True
+    return cooldown_until is not None and cooldown_until <= now
 
 
 def build_revolver_candidates(
@@ -98,14 +185,20 @@ def build_revolver_candidates(
         return [primary]
     state_by_scope = state_by_scope or {}
     current_time = now or datetime.now(timezone.utc)
-    ordered = [primary, *sorted(
-        (route for route in routes if str(route.get("id")) != str(primary.get("id"))),
-        key=lambda route: (
-            int(route.get("priority") or 0),
-            str(route.get("model_id") or route.get("modelId") or "").casefold(),
-            str(route.get("id") or ""),
+    primary_id = str(primary.get("id") or "")
+    verified_routes = [
+        route for route in routes if route_is_verified_free(route)
+    ]
+    if not any(str(route.get("id") or "") == primary_id for route in verified_routes):
+        verified_routes.append(primary)
+    ordered = sorted(
+        verified_routes,
+        key=lambda route: _quota_rank(
+            route,
+            state_by_scope.get(route_quota_scope(route)),
+            primary_id=primary_id,
         ),
-    )]
+    )
     candidates: list[dict[str, Any]] = []
     seen_scopes: set[str] = set()
     for route in ordered:
