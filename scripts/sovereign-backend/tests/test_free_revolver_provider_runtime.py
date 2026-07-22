@@ -292,6 +292,9 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "_direct_completion_canary(" in runtime
     assert "never traverses\nLiteLLM" in runtime
     assert "provider_cost not in (None, 0, 0.0)" in runtime
+    assert "def _normalized_provider_cost" in runtime
+    assert "math.isfinite(parsed)" in runtime
+    assert runtime.count("_normalized_provider_cost(evidence.get(\"providerCostUsd\"))") >= 2
     assert "canary_cost_state" in migration
     assert "pricing_verified_at" in migration
     assert "last_discovered_at" in migration

@@ -108,6 +108,8 @@ def test_openrouter_canary_omits_unsupported_temperature_parameter() -> None:
     canary_source = source.split("def _completion_canary", 1)[1].split("def _sync_catalog", 1)[0]
 
     assert '"temperature"' not in canary_source
+    assert '"max_tokens"' not in canary_source
+    assert '"max_completion_tokens": 64' in canary_source
     assert '"require_parameters": True' in source
 
 
