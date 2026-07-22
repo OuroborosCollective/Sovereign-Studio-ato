@@ -85,6 +85,8 @@ jobs:
           test -n "${image_id}"
 
           repo_digest=""
+          digest=""
+          digest_hex=""
           runtime_ref="${local_ref}"
           if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
@@ -93,12 +95,15 @@ jobs:
             push_output="$(docker push "${publish_tag}")"
             digest="$(printf '%s\n' "${push_output}" | sed -nE 's/^.*digest: (sha256:[0-9a-f]{64}).*$/\1/p' | tail -n1)"
             test -n "${digest}"
+            digest_hex="${digest#sha256:}"
+            test "${#digest_hex}" = "64"
             repo_digest="${PUBLISH_IMAGE}@${digest}"
             docker pull "${repo_digest}"
             runtime_ref="${repo_digest}"
           fi
 
           echo "repo_digest=${repo_digest}" >> "$GITHUB_OUTPUT"
+          echo "digest_hex=${digest_hex}" >> "$GITHUB_OUTPUT"
           echo "runtime_ref=${runtime_ref}" >> "$GITHUB_OUTPUT"
           echo "base_repo_digest=${base_repo_digest}" >> "$GITHUB_OUTPUT"
           echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
@@ -245,6 +250,15 @@ jobs:
           }, sort_keys=True))
           PY
           python -m json.tool .sovereign-evidence/freellmpool-keyless-canaries.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(
+              Path('.sovereign-evidence/freellmpool-keyless-canaries.json').read_text('utf-8')
+          )
+          assert int(receipt.get('successful') or 0) >= 1, 'no keyless provider canary succeeded'
+          PY
 
       - name: Write immutable evidence receipt
         shell: bash
@@ -292,7 +306,7 @@ jobs:
       - name: Upload secret-free verification evidence
         uses: actions/upload-artifact@v4
         with:
-          name: sovereign-freellmpool-upstream-${{ github.sha }}
+          name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}
           path: .sovereign-evidence/*.json
           if-no-files-found: error
           include-hidden-files: true
