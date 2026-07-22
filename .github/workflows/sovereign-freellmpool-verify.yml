@@ -150,7 +150,9 @@ jobs:
             "${digest_ref}" \
             proxy --host 0.0.0.0 --port 8080 >/dev/null
           test "$(docker inspect sovereign-freellmpool-ci --format '{{.Config.User}}')" = "10001:10001"
-          test "$(docker inspect sovereign-freellmpool-ci --format '{{json .HostConfig.PortBindings}}')" = "null"
+          port_bindings="$(docker inspect sovereign-freellmpool-ci --format '{{json .HostConfig.PortBindings}}')"
+          test "${port_bindings}" = "null" || test "${port_bindings}" = "{}"
+          test -z "$(docker port sovereign-freellmpool-ci)"
           test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
           test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.Privileged}}')" = "false"
           test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.NetworkMode}}')" = "sovereign-freellmpool-ci"
