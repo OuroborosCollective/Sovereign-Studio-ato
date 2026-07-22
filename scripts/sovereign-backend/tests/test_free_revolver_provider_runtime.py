@@ -16,7 +16,9 @@ from free_revolver_provider_contracts import (
     is_managed_internal_provider_url,
     models_url_candidates,
     normalize_api_base,
+    normalize_max_auto_activate,
     normalize_models_payload,
+    normalize_provider_source_id,
     zero_price_evidence,
 )
 
@@ -145,6 +147,27 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "_secret_path(owner_request_id)" in provider_runtime
     assert "allow_redirects=False" in provider_runtime
     assert "_MAX_MODELS_RESPONSE_BYTES" in provider_runtime
+
+
+def test_provider_route_identifiers_and_activation_limits_fail_closed() -> None:
+    source_id = "1a866402-68c4-4f40-8d09-55ed8deabf68"
+    assert normalize_provider_source_id(source_id) == source_id
+    with pytest.raises(ValueError, match="source_id_invalid"):
+        normalize_provider_source_id("not-a-uuid")
+    assert normalize_max_auto_activate(0) == 1
+    assert normalize_max_auto_activate(999) == 50
+    with pytest.raises(ValueError, match="ganze Zahl"):
+        normalize_max_auto_activate("20")
+    with pytest.raises(ValueError, match="ganze Zahl"):
+        normalize_max_auto_activate(True)
+
+
+def test_provider_toggle_requires_fresh_recheck_before_routes_reactivate() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    assert "UPDATE llm_routes SET disabled=true" in runtime
+    assert "provider_recheck_required" in runtime
+    assert "SET enabled=false" in runtime
+    assert "SET disabled=%s" not in runtime
 
 
 def test_provider_recovery_and_key_rotation_are_fail_closed() -> None:

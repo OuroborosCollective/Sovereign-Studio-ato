@@ -25,14 +25,18 @@ function injectBootFallback(html) {
   const script = `
 <script id="SOVEREIGN_BOOT_FALLBACK_V2">
 (function(){
+  var lastBootError='';
+  function hasMountedShell(){
+    return Boolean(document.querySelector('[data-testid="app-shell__root"],[data-testid="repo-snapshot-container"],[data-testid="builder-container"],[data-testid="operator-monitor"],.sovereign-login-shell,[data-sovereign-admin-producer],.admin-shell,.admin-auth-shell'));
+  }
   function bootFallback(reason){
     var root=document.getElementById('root');
-    if(!root)return;
-    var text=root.textContent||'';
-    var hasAppShell=document.querySelector('[data-testid="app-shell__root"],[data-testid="repo-snapshot-container"],[data-testid="builder-container"],[data-testid="operator-monitor"],.sovereign-login-shell');
-    if(hasAppShell)return;
-    if(!/Loading|Sovereign|Refactor/i.test(text)&&text.trim().length>80)return;
-    root.innerHTML='<main style="min-height:100vh;box-sizing:border-box;padding:24px 16px;background:#0f172a;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">' +
+    if(!root||hasMountedShell())return;
+    var text=(root.textContent||'').trim();
+    var hasRenderedContent=root.childElementCount>0&&text.length>120;
+    if(hasRenderedContent)return;
+    if(text&&!/^(Loading|Lade|Refactor)/i.test(text))return;
+    root.innerHTML='<main style="min-height:100dvh;box-sizing:border-box;padding:24px 16px;background:#0f172a;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;overflow:auto;-webkit-overflow-scrolling:touch">' +
       '<section style="max-width:720px;margin:0 auto;border:1px solid #334155;padding:18px;background:#111827">' +
       '<p style="margin:0 0 8px;color:#38bdf8;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">Sovereign Studio · Android Recovery</p>' +
       '<h1 style="margin:0 0 12px;color:#f8fafc;font-size:24px">App-Bundle konnte nicht starten</h1>' +
@@ -41,10 +45,12 @@ function injectBootFallback(html) {
       '<pre style="white-space:pre-wrap;border:1px solid #1f2937;background:#020617;color:#93c5fd;padding:10px;font-size:12px">npm run build:web\\nnpx cap sync android</pre>' +
       '<button onclick="location.reload()" style="margin-top:14px;border:1px solid #38bdf8;padding:12px 14px;background:#0ea5e9;color:#020617;font-weight:800">Neu laden</button>' +
       '</section></main>';
-    if(window.console&&console.warn)console.warn('[Sovereign Recovery] Android boot fallback shown:',reason||'startup timeout');
+    if(window.console&&console.warn)console.warn('[Sovereign Recovery] Android boot fallback shown:',reason||lastBootError||'startup timeout');
   }
-  window.addEventListener('error',function(){setTimeout(function(){bootFallback('runtime error')},100)});
-  setTimeout(function(){bootFallback('startup timeout')},2200);
+  window.addEventListener('error',function(event){
+    lastBootError=event&&event.message?String(event.message).slice(0,160):'runtime error';
+  });
+  setTimeout(function(){bootFallback(lastBootError||'startup timeout')},15000);
 })();
 </script>
 `;

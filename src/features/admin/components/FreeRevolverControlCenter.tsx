@@ -243,6 +243,9 @@ export function FreeRevolverControlCenter({
               && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
             ));
             const blockedModels = provider.models.filter(model => model.status === 'blocked');
+            const recheckableModels = provider.models.filter(model => (
+              model.freeVerified && Boolean(model.litellmAlias)
+            ));
             const renewalKey = renewalKeys[provider.id] ?? '';
             return (
               <article key={provider.id} className={`llm-route-card free-revolver-provider free-revolver-provider--${provider.status}`}>
@@ -326,7 +329,7 @@ export function FreeRevolverControlCenter({
                       <Search size={17} /> Modelle + Preise neu erkennen
                     </button>
                   )}
-                  <button type="button" className="llm-button" disabled={busyId !== null || !provider.enabled || readyModels.length === 0}
+                  <button type="button" className="llm-button" disabled={busyId !== null || !provider.enabled || recheckableModels.length === 0}
                     onClick={() => void run(
                       `recheck-${provider.id}`,
                       () => api.recheck(provider.id),

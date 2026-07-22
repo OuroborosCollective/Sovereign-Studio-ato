@@ -7,13 +7,28 @@ import json
 import re
 import socket
 import urllib.parse
+import uuid
 from typing import Any
 
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,239}$")
 _MAX_DISCOVERED_MODELS = 200
+_MAX_AUTO_ACTIVATE = 50
 _MANAGED_INTERNAL_API_BASE = "http://freellmapi:3001/v1"
 _MANAGED_INTERNAL_HOST = "freellmapi"
 _MANAGED_INTERNAL_PORT = 3001
+
+
+def normalize_provider_source_id(value: Any) -> str:
+    try:
+        return str(uuid.UUID(str(value or "")))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("free_provider_source_id_invalid") from exc
+
+
+def normalize_max_auto_activate(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("maxAutoActivate muss eine ganze Zahl sein")
+    return max(1, min(value, _MAX_AUTO_ACTIVATE))
 
 
 def normalize_api_base(value: Any) -> str:

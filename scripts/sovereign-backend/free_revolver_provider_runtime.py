@@ -24,13 +24,14 @@ from free_revolver_provider_contracts import (
     is_managed_internal_provider_url,
     models_url_candidates,
     normalize_api_base,
+    normalize_max_auto_activate,
     normalize_models_payload,
+    normalize_provider_source_id,
 )
 
 _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
 _MANAGED_AUTH_MODE = "managed-bearer"
 _AUTH_MODES = {"bearer", "x-api-key", "none", _MANAGED_AUTH_MODE}
-_MAX_AUTO_ACTIVATE = 50
 _MAX_MODELS_RESPONSE_BYTES = 2_000_000
 
 
@@ -330,6 +331,10 @@ def register_free_revolver_provider_runtime(
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>/owner-input", methods=["POST"])
     @require_admin
     def admin_refresh_free_revolver_provider_key(source_id: str):
+        try:
+            source_id = normalize_provider_source_id(source_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         source = query(
             "SELECT id::text, label FROM llm_revolver_provider_sources WHERE id=%s::uuid LIMIT 1",
             (source_id,), one=True,
@@ -524,7 +529,11 @@ def register_free_revolver_provider_runtime(
     @require_admin
     def admin_discover_free_revolver_provider(source_id: str):
         body = request.get_json(silent=True) or {}
-        max_auto = max(1, min(int(body.get("maxAutoActivate") or 20), _MAX_AUTO_ACTIVATE))
+        try:
+            source_id = normalize_provider_source_id(source_id)
+            max_auto = normalize_max_auto_activate(body.get("maxAutoActivate", 20))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         source = query(
             """SELECT id::text, label, api_base, models_url, auth_mode,
                       owner_request_id::text, key_fingerprint, key_hint, status, enabled
@@ -831,6 +840,10 @@ def register_free_revolver_provider_runtime(
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>/recheck", methods=["POST"])
     @require_admin
     def admin_recheck_free_revolver_provider(source_id: str):
+        try:
+            source_id = normalize_provider_source_id(source_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         models = query(
             """SELECT id::text, upstream_model_id, litellm_alias
                FROM llm_revolver_provider_models
@@ -938,6 +951,10 @@ def register_free_revolver_provider_runtime(
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>", methods=["PATCH"])
     @require_admin
     def admin_update_free_revolver_provider(source_id: str):
+        try:
+            source_id = normalize_provider_source_id(source_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         body = request.get_json(force=True) or {}
         if "enabled" not in body:
             return jsonify({"error": "Nur enabled kann hier geändert werden"}), 400
@@ -955,16 +972,19 @@ def register_free_revolver_provider_runtime(
                     connection.rollback()
                     return jsonify({"error": "Free-Provider nicht gefunden"}), 404
                 cursor.execute(
-                    """UPDATE llm_routes SET disabled=%s, updated_at=NOW()
+                    """UPDATE llm_routes SET disabled=true, updated_at=NOW()
                        WHERE config->>'revolverProviderSourceId'=%s""",
-                    (not enabled, source_id),
+                    (source_id,),
                 )
                 cursor.execute(
                     """UPDATE llm_revolver_provider_models
-                       SET enabled=CASE WHEN %s AND status='ready' THEN true ELSE false END,
-                           status=CASE WHEN %s THEN status ELSE 'disabled' END,
-                           updated_at=NOW() WHERE source_id=%s::uuid""",
-                    (enabled, enabled, source_id),
+                       SET enabled=false,
+                           last_error_code=CASE WHEN %s
+                               THEN 'provider_recheck_required'
+                               ELSE last_error_code END,
+                           updated_at=NOW()
+                       WHERE source_id=%s::uuid""",
+                    (enabled, source_id),
                 )
             connection.commit()
         except Exception:

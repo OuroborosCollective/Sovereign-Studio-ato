@@ -40,6 +40,13 @@ _ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 _DEFAULT_SECRET_ROOT = Path("/opt/sovereign-owner-managed")
 
 
+def _normalize_route_id(value: Any) -> str:
+    candidate = str(value or "").strip()
+    if not _ROUTE_ID_RE.fullmatch(candidate):
+        raise ValueError("provider_route_id_invalid")
+    return candidate
+
+
 def _secret_path() -> Path:
     root = Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", str(_DEFAULT_SECRET_ROOT))).resolve()
     return root / "litellm_provider_key.txt"
@@ -828,6 +835,10 @@ def register_llm_provider_routes(
     @app.route("/api/admin/llm/provider-deployments/<route_id>/owner-input", methods=["POST"])
     @require_admin
     def admin_refresh_llm_provider_owner_input(route_id: str):
+        try:
+            route_id = _normalize_route_id(route_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc), "blocker": "provider_route_id_invalid"}), 400
         deployment = query(
             """SELECT deployment.route_id, deployment.provider_name,
                       deployment.litellm_model_name, deployment.status,
@@ -975,6 +986,10 @@ def register_llm_provider_routes(
         }), 202
 
     def _activate_llm_provider(route_id: str):
+        try:
+            route_id = _normalize_route_id(route_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc), "blocker": "provider_route_id_invalid"}), 400
         deployment = query(
             """SELECT deployment.route_id, deployment.provider_name,
                       deployment.provider_prefix, deployment.upstream_model_id,
@@ -1302,6 +1317,10 @@ def register_llm_provider_routes(
 
     @app.route("/api/internal/llm/provider-deployments/<route_id>/activate", methods=["POST"])
     def internal_activate_llm_provider(route_id: str):
+        try:
+            route_id = _normalize_route_id(route_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc), "blocker": "provider_route_id_invalid"}), 400
         expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
         supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
         if not expected or not supplied or not hmac.compare_digest(expected, supplied):

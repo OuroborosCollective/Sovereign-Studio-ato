@@ -3,7 +3,7 @@
 Status: production-path implementation  
 Architecture: hardened modular monolith  
 Canonical runtime: `scripts/sovereign-backend/app.py`  
-Deployment mirror: `backend/app.py`
+Compatibility modules: selected `backend/` support modules only; there is no `backend/app.py` runtime mirror.
 
 ## Decision
 
@@ -15,7 +15,7 @@ The existing Flask service remains the only production backend. A second NestJS 
 - migration 025: append-only runtime evidence receipts.
 - `EnterpriseBackendPanel.tsx`: Android/WebView-friendly operator surface.
 
-The canonical deployment copy and the backend test mirror must remain byte-identical. CI contract tests enforce that invariant.
+Shared support modules that exist in both trees must remain byte-identical. The Flask application itself has one canonical source only: `scripts/sovereign-backend/app.py`.
 
 ## Trust boundaries
 
