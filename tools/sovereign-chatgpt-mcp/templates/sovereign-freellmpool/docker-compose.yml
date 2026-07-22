@@ -1,0 +1,55 @@
+services:
+  freellmpool:
+    image: ghcr.io/ouroboroscollective/sovereign-freellmpool@sha256:260caba24d04c380b080ddc85cd8cf05d51586984814bc4ae4f3ec10ba232200
+    container_name: sovereign-freellmpool
+    init: true
+    user: "10001:10001"
+    command:
+      - python
+      - /opt/sovereign/freellmpool-entrypoint.py
+    read_only: true
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    environment:
+      HOME: /var/lib/freellmpool
+      FREELLMPOOL_QUOTA_PATH: /var/lib/freellmpool/quota.json
+      FREELLMPOOL_QUOTA_FLUSH_EVERY: "1"
+      FREELLMPOOL_LOG: WARNING
+    volumes:
+      - freellmpool-data:/var/lib/freellmpool
+      - ./freellmpool-entrypoint.py:/opt/sovereign/freellmpool-entrypoint.py:ro
+      - /opt/sovereign-owner-managed/freellmpool_proxy_key.txt:/run/secrets/freellmpool_proxy_key:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    restart: unless-stopped
+    networks:
+      sovereign-private:
+        aliases:
+          - freellmpool
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=3))['status']=='ok'"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    labels:
+      sovereign.component: freellmpool
+      sovereign.version: "0.11.4"
+      sovereign.upstream-revision: f9e09e536682083297cfd6fec3ea5d3aac5262c8
+      sovereign.image-digest: sha256:260caba24d04c380b080ddc85cd8cf05d51586984814bc4ae4f3ec10ba232200
+
+networks:
+  sovereign-private:
+    external: true
+
+volumes:
+  freellmpool-data:
+    name: sovereign-freellmpool-data
