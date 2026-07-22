@@ -70,13 +70,19 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
     targets = runtime._target_map()
 
-    assert set(targets) == {
+    assert {
         "openai_api_key",
         "openrouter_api_key",
         "litellm_provider_key",
         "revolver_provider_key",
         "proven_learning_confirmation",
-    }
+    }.issubset(set(targets))
+    groq_target = targets["freellm_provider_groq_key"]
+    assert groq_target["path"] == (
+        tmp_path / "freellm-provider-keys" / "groq.key"
+    ).resolve()
+    assert groq_target["fieldLabel"] == "Groq API-Key"
+    assert groq_target["maxBytes"] == 8192
 
     openai_target = targets["openai_api_key"]
     assert openai_target["path"] == (tmp_path / "openai_api_key.txt").resolve()

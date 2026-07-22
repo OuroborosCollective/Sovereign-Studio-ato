@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from managed_compose import (
+    FREELLMAPI_BOOTSTRAP_COMMAND,
     FREELLMAPI_DATA_VOLUME,
     FREELLMAPI_IMAGE,
     FREELLMAPI_REPO_DIGEST,
@@ -31,10 +32,18 @@ def test_freellmapi_template_is_private_immutable_and_source_bound() -> None:
     assert "sovereign-private:" in template
     assert "external: true" in template
     assert "freellmapi-data:/app/server/data" in template
+    assert "sovereign-freellm-bootstrap.mjs:/opt/sovereign/freellm-bootstrap.mjs:ro" in template
+    assert "/opt/sovereign-owner-managed/freellm-provider-keys:/run/secrets/freellm-provider-keys:ro" in template
+    assert 'user: "0:0"' not in template
+    assert "- /opt/sovereign/freellm-bootstrap.mjs" in template
     assert "/var/run/docker.sock" not in template
 
 
-def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: Path) -> None:
+def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: Path, monkeypatch) -> None:
+    provider_root = tmp_path / "owner" / "freellm-provider-keys"
+    monkeypatch.setattr("managed_compose.FREELLMAPI_PROVIDER_SECRET_ROOT", str(provider_root))
+    monkeypatch.setattr("managed_compose.os.geteuid", lambda: 0)
+    monkeypatch.setattr("managed_compose.os.chown", lambda path, uid, gid: None)
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     original = STACKS["sovereign-freellmapi"]
     stack = type(original)(**{**original.__dict__, "deploy_root": str(tmp_path / "deploy")})
@@ -53,6 +62,9 @@ def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: P
     assert env_path.stat().st_mode & 0o777 == 0o600
     assert len(values["ENCRYPTION_KEY"]) == 64
     assert values["ENCRYPTION_KEY"] not in str(result)
+    assert provider_root.is_dir()
+    assert provider_root.stat().st_mode & 0o777 == 0o700
+    assert FREELLMAPI_BOOTSTRAP_COMMAND == ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
 
 
 def test_freellmapi_transport_requires_private_network_digest_volume_and_no_ports(tmp_path: Path) -> None:

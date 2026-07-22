@@ -61,6 +61,10 @@ FREELLMAPI_REPO_DIGEST = (
 )
 FREELLMAPI_DATA_VOLUME = "sovereign-freellmapi-data"
 FREELLMAPI_OWNER_KEY_PATH = "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
+FREELLMAPI_PROVIDER_SECRET_ROOT = "/opt/sovereign-owner-managed/freellm-provider-keys"
+FREELLMAPI_BOOTSTRAP_COMMAND = ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
+FREELLMAPI_RUNTIME_UID = 1000
+FREELLMAPI_RUNTIME_GID = 1000
 
 
 @dataclass(frozen=True)
@@ -184,7 +188,10 @@ STACKS: dict[str, ManagedStack] = {
         deploy_root="/opt/sovereign-freellmapi",
         template_name="sovereign-freellmapi",
         allowed_networks=("sovereign-private",),
-        allowed_bind_roots=("/opt/sovereign-freellmapi",),
+        allowed_bind_roots=(
+            "/opt/sovereign-freellmapi",
+            FREELLMAPI_PROVIDER_SECRET_ROOT,
+        ),
     ),
 }
 
@@ -512,7 +519,16 @@ class ManagedComposeRuntime:
                 and service_name in allowed_milvus_commands
                 and command == allowed_milvus_commands[service_name]
             )
-            if command and not (allowed_patchmon_redis_command or allowed_milvus_command):
+            allowed_freellmapi_command = (
+                stack.stack_id == "sovereign-freellmapi"
+                and service_name == "freellmapi"
+                and command == FREELLMAPI_BOOTSTRAP_COMMAND
+            )
+            if command and not (
+                allowed_patchmon_redis_command
+                or allowed_milvus_command
+                or allowed_freellmapi_command
+            ):
                 raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
             image = str(service.get("image") or "")
             if image and (image.endswith(":latest") or ":latest@" in image):
@@ -828,6 +844,22 @@ class ManagedComposeRuntime:
         os.chmod(env_path, 0o600)
 
         additional_files: list[dict[str, Any]] = []
+        if stack.stack_id == "sovereign-freellmapi":
+            provider_secret_root = Path(FREELLMAPI_PROVIDER_SECRET_ROOT)
+            if provider_secret_root.is_symlink() or (
+                provider_secret_root.exists() and not provider_secret_root.is_dir()
+            ):
+                raise RuntimeError("FreeLLM Provider-Secret-Verzeichnis ist ungültig")
+            provider_secret_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if os.geteuid() != 0:
+                raise RuntimeError("FreeLLM Provider-Secret-Verzeichnis benötigt Root-Eigentümerwechsel")
+            os.chown(provider_secret_root, FREELLMAPI_RUNTIME_UID, FREELLMAPI_RUNTIME_GID)
+            os.chmod(provider_secret_root, 0o700)
+            additional_files.append({
+                "path": str(provider_secret_root),
+                "mode": "0700",
+                "type": "directory",
+            })
         if stack.stack_id == "patchmon-sovereign":
             redis_path = deploy_root / "redis.conf"
             redis_payload = (

@@ -3,6 +3,9 @@ services:
     image: ghcr.io/tashfeenahmed/freellmapi:v0.5.0@sha256:e3ffcd7f78527cf16113fa196174bebdd6fa5dd0c84adfa9e577f43f4a48a784
     container_name: sovereign-freellmapi
     init: true
+    command:
+      - node
+      - /opt/sovereign/freellm-bootstrap.mjs
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -17,6 +20,8 @@ services:
       FREEAPI_DB_PATH: /app/server/data/freeapi.db
     volumes:
       - freellmapi-data:/app/server/data
+      - ./sovereign-freellm-bootstrap.mjs:/opt/sovereign/freellm-bootstrap.mjs:ro
+      - /opt/sovereign-owner-managed/freellm-provider-keys:/run/secrets/freellm-provider-keys:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     restart: unless-stopped
