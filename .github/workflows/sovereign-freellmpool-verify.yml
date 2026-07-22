@@ -1,0 +1,242 @@
+name: Sovereign FreeLLMPool Upstream Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sovereign-freellmpool-verify.yml'
+      - 'tools/sovereign-chatgpt-mcp/managed_compose.py'
+      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**'
+      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_contracts.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_runtime.py'
+      - 'scripts/sovereign-backend/llm_transport.py'
+      - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
+      - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UPSTREAM_IMAGE: ghcr.io/0xzr/freellmpool:v0.11.4
+  UPSTREAM_VERSION: '0.11.4'
+  UPSTREAM_REVISION: f9e09e536682083297cfd6fec3ea5d3aac5262c8
+
+jobs:
+  verify:
+    name: Resolve digest and verify private non-root proxy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Sovereign revision
+        uses: actions/checkout@v4
+
+      - name: Pull release image and resolve immutable identity
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "${UPSTREAM_IMAGE}"
+          repo_digest="$(docker image inspect "${UPSTREAM_IMAGE}" --format '{{index .RepoDigests 0}}')"
+          image_id="$(docker image inspect "${UPSTREAM_IMAGE}" --format '{{.Id}}')"
+          test -n "${repo_digest}"
+          test -n "${image_id}"
+          case "${repo_digest}" in
+            ghcr.io/0xzr/freellmpool@sha256:*) ;;
+            *) echo "unexpected repository digest: ${repo_digest}" >&2; exit 1 ;;
+          esac
+          digest="${repo_digest##*@}"
+          echo "repo_digest=${repo_digest}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package version and non-root execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_ref="${{ steps.image.outputs.repo_digest }}"
+          version="$(docker run --rm \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/tmp/freellmpool \
+            --entrypoint python \
+            "${digest_ref}" \
+            -c 'import freellmpool; print(freellmpool.__version__)')"
+          test "${version}" = "${UPSTREAM_VERSION}"
+          uid="$(docker run --rm \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/tmp/freellmpool \
+            --entrypoint python \
+            "${digest_ref}" \
+            -c 'import os; print(os.getuid())')"
+          test "${uid}" = "10001"
+
+      - name: Start isolated proxy with no published ports
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_ref="${{ steps.image.outputs.repo_digest }}"
+          docker network create sovereign-freellmpool-ci >/dev/null
+          docker run -d \
+            --name sovereign-freellmpool-ci \
+            --network sovereign-freellmpool-ci \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/tmp/freellmpool \
+            "${digest_ref}" \
+            proxy --host 0.0.0.0 --port 8080 >/dev/null
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.Config.User}}')" = "10001:10001"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{json .HostConfig.PortBindings}}')" = "null"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.Privileged}}')" = "false"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.NetworkMode}}')" = "sovereign-freellmpool-ci"
+
+      - name: Verify liveness, catalog and bounded keyless canaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-evidence
+          for attempt in $(seq 1 30); do
+            if docker exec --user 10001:10001 sovereign-freellmpool-ci python -c \
+              'import json, urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3))["status"])' \
+              | grep -qx ok; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec --user 10001:10001 sovereign-freellmpool-ci python - <<'PY'
+          import json
+          import urllib.request
+
+          with urllib.request.urlopen("http://127.0.0.1:8080/v1/models", timeout=10) as response:
+              payload = json.load(response)
+          rows = payload.get("data") if isinstance(payload, dict) else None
+          assert isinstance(rows, list) and rows, "catalog unavailable"
+          print(json.dumps({"catalogCount": len(rows), "catalogIsReadinessProof": False}))
+          PY
+          docker exec --user 10001:10001 sovereign-freellmpool-ci python - <<'PY' > .sovereign-evidence/freellmpool-keyless-canaries.json
+          import json
+          import urllib.error
+          import urllib.request
+
+          candidates = [
+              "pollinations/openai",
+              "ovh/Llama-3.1-8B-Instruct",
+              "kilo/openrouter/free",
+              "llm7/codestral-latest",
+          ]
+          receipts = []
+          for model in candidates:
+              request = urllib.request.Request(
+                  "http://127.0.0.1:8080/v1/chat/completions",
+                  data=json.dumps({
+                      "model": model,
+                      "messages": [{"role": "user", "content": "Reply with OK."}],
+                      "max_tokens": 8,
+                      "temperature": 0,
+                  }).encode("utf-8"),
+                  headers={"Content-Type": "application/json"},
+                  method="POST",
+              )
+              receipt = {"requestedModel": model, "ok": False, "httpStatus": 0}
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      raw = response.read(2_000_001)
+                      assert len(raw) <= 2_000_000
+                      payload = json.loads(raw)
+                      choices = payload.get("choices") if isinstance(payload, dict) else None
+                      used = payload.get("x_freellmpool") if isinstance(payload, dict) else None
+                      receipt.update({
+                          "ok": bool(isinstance(choices, list) and choices),
+                          "httpStatus": int(response.status),
+                          "provider": str((used or {}).get("provider") or "")[:80],
+                          "providerModel": str((used or {}).get("model") or "")[:160],
+                          "responseModel": str(payload.get("model") or "")[:240],
+                          "responseContentPersisted": False,
+                      })
+              except urllib.error.HTTPError as error:
+                  receipt.update({"httpStatus": int(error.code), "failureFamily": "http_error"})
+              except Exception as error:
+                  receipt.update({"failureFamily": type(error).__name__[:80]})
+              receipts.append(receipt)
+          print(json.dumps({
+              "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+              "releaseVersion": "0.11.4",
+              "receipts": receipts,
+              "successful": sum(1 for item in receipts if item["ok"]),
+              "responseContentPersisted": False,
+          }, sort_keys=True))
+          PY
+          python -m json.tool .sovereign-evidence/freellmpool-keyless-canaries.json
+
+      - name: Write immutable evidence receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          canaries = json.loads(Path('.sovereign-evidence/freellmpool-keyless-canaries.json').read_text('utf-8'))
+          receipt = {
+              "schemaVersion": "sovereign.freellmpool-upstream-image.v1",
+              "sovereignRevision": "${{ github.sha }}",
+              "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+              "releaseVersion": "0.11.4",
+              "image": "${{ steps.image.outputs.repo_digest }}",
+              "imageId": "${{ steps.image.outputs.image_id }}",
+              "nonRootUid": 10001,
+              "readOnlyRootFilesystem": True,
+              "hostPortsPublished": False,
+              "dockerSocketMounted": False,
+              "healthVerified": True,
+              "catalogVerified": True,
+              "catalogIsReadinessProof": False,
+              "keylessCanaries": canaries,
+          }
+          Path('.sovereign-evidence/freellmpool-image.json').write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          PY
+          python -m json.tool .sovereign-evidence/freellmpool-image.json
+          {
+            echo '### Sovereign FreeLLMPool upstream verification'
+            echo '- Release: `v0.11.4`'
+            echo '- Upstream revision: `${{ env.UPSTREAM_REVISION }}`'
+            echo '- Immutable image: `${{ steps.image.outputs.repo_digest }}`'
+            echo '- Forced runtime UID: `10001`'
+            echo '- Host ports: `none`'
+            echo '- Root filesystem: `read-only`'
+            echo '- Catalog treated as readiness proof: `false`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload secret-free verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-freellmpool-upstream-${{ github.sha }}
+          path: .sovereign-evidence/*.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup isolated proxy
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f sovereign-freellmpool-ci >/dev/null 2>&1 || true
+          docker network rm sovereign-freellmpool-ci >/dev/null 2>&1 || true
