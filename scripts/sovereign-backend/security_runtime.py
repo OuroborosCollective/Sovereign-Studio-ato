@@ -392,7 +392,11 @@ def register_security_routes(
     @app.route("/api/security/policy", methods=["PATCH"])
     @require_session
     def security_policy_update():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         allowed = {
             "requirePurchaseStepUp": "require_purchase_step_up",
             "purchaseThresholdEur": "purchase_threshold_eur",
@@ -483,7 +487,11 @@ def register_security_routes(
     @app.route("/api/security/passkeys/register/verify", methods=["POST"])
     @require_session
     def passkey_register_verify():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         api = _webauthn()
         conn = get_connection()
         try:
@@ -553,7 +561,11 @@ def register_security_routes(
 
     @app.route("/api/auth/passkey/options", methods=["POST"])
     def passkey_login_options():
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is not None and not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         email = str(body.get("email") or "").strip().lower()
         api = _webauthn()
         origin = _request_origin()
@@ -594,7 +606,11 @@ def register_security_routes(
 
     @app.route("/api/auth/passkey/verify", methods=["POST"])
     def passkey_login_verify():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         credential = body.get("credential")
         if not isinstance(credential, dict):
             return jsonify({"error": "Credential payload must be a dictionary"}), 400
@@ -654,7 +670,11 @@ def register_security_routes(
     @app.route("/api/security/account-keys", methods=["POST"])
     @require_session
     def account_key_create():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         label = str(body.get("label") or "Sovereign Account Key").strip()[:80]
         raw_key = "svk_" + secrets.token_urlsafe(36)
         hint = raw_key[:12] + "…" + raw_key[-6:]
@@ -705,7 +725,11 @@ def register_security_routes(
         )
         if not allowed:
             return jsonify({"error": "Too many account-key attempts"}), 429
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         raw_key = str(body.get("key") or "").strip()
         if not raw_key.startswith("svk_"):
             return jsonify({"error": "Invalid account key"}), 401
@@ -738,7 +762,11 @@ def register_security_routes(
     @app.route("/api/security/step-up/options", methods=["POST"])
     @require_session
     def step_up_options():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         action = str(body.get("action") or "").strip()[:80]
         context = body.get("context") if isinstance(body.get("context"), dict) else {}
         if not action:
@@ -775,7 +803,11 @@ def register_security_routes(
     @app.route("/api/security/step-up/verify", methods=["POST"])
     @require_session
     def step_up_verify():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         credential = body.get("credential")
         if not isinstance(credential, dict):
             return jsonify({"error": "Credential payload must be a dictionary"}), 400
@@ -845,7 +877,11 @@ def register_security_routes(
         )
         if not allowed:
             return jsonify({"error": "Too many account-key attempts"}), 429
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Payload must be a dictionary"}), 400
+        if not body:
+            body = {}
         raw_key = str(body.get("key") or "").strip()
         action = str(body.get("action") or "").strip()[:80]
         context = body.get("context") if isinstance(body.get("context"), dict) else {}
