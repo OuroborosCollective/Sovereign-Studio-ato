@@ -184,8 +184,8 @@ def test_inventory_and_router_use_live_registry_without_executing_tools(register
     _, _, _ = registered
     inventory = tools.operational_skill_inventory()
     assert inventory.status == "OPERATIONAL_SKILL_SUITE_READY"
-    assert inventory.skillCount == 43
-    assert inventory.toolCount == 48
+    assert inventory.skillCount == 44
+    assert inventory.toolCount == 50
     assert inventory.boundaries["naturalLanguageInterpretation"] == "model_only"
     assert inventory.boundaries["autoMerge"] is False
 

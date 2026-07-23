@@ -1,0 +1,129 @@
+{
+  "schemaVersion": "sovereign.mcp-operating-profile.v1",
+  "profileId": "sovereign-mcp-optimal-operation",
+  "profileVersion": "1.0.0",
+  "purpose": "Persist and technically enforce mission-first, contract-bound, evidence-first operation across ChatGPT sessions and MCP revisions.",
+  "enforcementMode": "fail-closed",
+  "naturalLanguageBoundary": {
+    "onlineUnderstanding": "llm-only",
+    "runtimeResponsibility": [
+      "tool-contract validation",
+      "effect boundaries",
+      "authorization gates",
+      "state transitions",
+      "revision binding",
+      "evidence validation"
+    ],
+    "runtimeMustNotInfer": [
+      "free-language intent",
+      "owner approval",
+      "missing success evidence",
+      "route equivalence"
+    ]
+  },
+  "missionPreflight": {
+    "tool": "sovereign_mission_preflight",
+    "requiredFor": [
+      "multi-step work",
+      "repository mutation",
+      "database mutation",
+      "deployment",
+      "runtime mutation",
+      "provider activation",
+      "release or rollback"
+    ],
+    "sequence": [
+      "inventory live tool contracts",
+      "map mission to structured capabilities, allowed effects and required evidence",
+      "select the smallest eligible tool set",
+      "compile a non-executing toolchain",
+      "validate the toolchain against the same live registry snapshot",
+      "execute one separately governed tool call at a time",
+      "verify each declared effect through authoritative readback"
+    ]
+  },
+  "mutationGate": {
+    "enabled": true,
+    "automatic": true,
+    "failClosed": true,
+    "allowedEffects": [
+      "workspace-write",
+      "external-write"
+    ],
+    "requiredGovernanceTools": [
+      "operational_skill_inventory",
+      "mcp_tool_contract_registry",
+      "tool_recommend_for_mission",
+      "mcp_registry_snapshot_verify",
+      "mcp_toolchain_contract_inventory",
+      "mcp_toolchain_compile",
+      "mcp_toolchain_validate",
+      "mcp_toolchain_next_step",
+      "sovereign_operating_profile_status",
+      "sovereign_mission_preflight"
+    ],
+    "requiredEvidence": [
+      "live tool registry",
+      "explicit output schema",
+      "declared effect class",
+      "validated single-tool contract chain",
+      "non-secret invocation arguments"
+    ],
+    "argumentRules": {
+      "ownerApprovedMustBeTrueWhenPresent": true,
+      "exactRevisionMustBeFullShaWhenPresent": true,
+      "confirmationValuesMustBeNonEmptyWhenPresent": true,
+      "secretShapedValuesAreBlocked": true
+    }
+  },
+  "truthAndCompletion": {
+    "successRequiresAuthoritativeReadback": true,
+    "noMockStubFacadeAsLiveTruth": true,
+    "noGreenClaimFromUiOnly": true,
+    "releaseRequires": [
+      "exact revision",
+      "green required CI on that revision",
+      "immutable image digest",
+      "deployment readback",
+      "runtime protocol canary"
+    ],
+    "learningRequires": [
+      "proven fix or integration",
+      "relevant tests green",
+      "deployed exact revision when runtime-affecting",
+      "successful runtime canary",
+      "bounded secret-free learning record"
+    ]
+  },
+  "routeIsolation": {
+    "freeRoute": "FreeLLM direct transport only",
+    "paidRoute": "Paid OpenRouter/LiteLLM transport only",
+    "automaticFreeToPaidFallback": false,
+    "automaticPaidToFreeFallback": false,
+    "pricingRuleAppliesTo": "paid route only",
+    "freeRoutePrice": "zero-cost evidence required"
+  },
+  "secretPolicy": {
+    "chatArgumentsAllowed": false,
+    "mcpArgumentsAllowed": false,
+    "logsAllowed": false,
+    "repositoryAllowed": false,
+    "databaseAllowed": false,
+    "protectedInputPath": "authenticated owner UI only"
+  },
+  "forbiddenToolNames": [
+    "shell",
+    "exec",
+    "run_command",
+    "generic_shell",
+    "arbitrary_sql",
+    "docker_socket"
+  ],
+  "persistence": {
+    "authoritativeProfilePath": "tools/sovereign-chatgpt-mcp/config/sovereign-mcp-operating-profile.json",
+    "skillPath": "tools/sovereign-chatgpt-mcp/skills/sovereign-mcp-optimal-operation/SKILL.md",
+    "handoffPath": "docs/SOVEREIGN_MCP_OPERATING_PROFILE_HANDOFF.md",
+    "runtimeStatusTool": "sovereign_operating_profile_status",
+    "memoryRole": "pointer and user preference only; repository profile and runtime evidence remain authoritative"
+  }
+}
