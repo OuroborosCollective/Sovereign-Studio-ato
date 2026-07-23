@@ -244,7 +244,7 @@ def register_enterprise_platform_routes(
         except PlatformModelRejected:
             return jsonify(api_error(
                 "platform_completion_model_not_active",
-                "Der gewählte Modellalias ist nicht als aktive LiteLLM-Route registriert.",
+                "Der gewählte Modellalias ist nicht als aktive Legacy-LiteLLM-Route registriert. Direkte OpenRouter-/FreeLLM-Canaries laufen in den jeweiligen Providerbereichen.",
                 _request_id(),
                 blocker="completion_model_not_active",
             )), 400

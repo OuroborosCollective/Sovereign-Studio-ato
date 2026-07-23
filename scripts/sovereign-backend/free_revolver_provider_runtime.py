@@ -1,7 +1,7 @@
 """Evidence-first direct-provider onboarding for the FreeLLM Revolver control plane.
 
 Managed FreeLLM stays on its private OpenAI-compatible API and never traverses
-LiteLLM. PostgreSQL stores route metadata, fingerprints and bounded health
+Legacy LiteLLM. PostgreSQL stores route metadata, fingerprints and bounded health
 evidence only; protected key values remain owner-managed.
 """
 from __future__ import annotations

@@ -19,7 +19,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe('sovereignLiteLlmIntentRuntime', () => {
-  it('resolves an enabled backend route and interprets language through LiteLLM', async () => {
+  it('resolves an enabled backend route and interprets language through the Sovereign direct LLM runtime', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
         routes: [
@@ -157,7 +157,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(result.diagnostic?.nextAction).toContain('Offline-Fallback');
   });
 
-  it('does not fall back to the legacy Cloudflare worker when no LiteLLM route is enabled', async () => {
+  it('does not fall back to the legacy Cloudflare worker when no direct LLM route is enabled', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
       routes: [{ id: 'disabled', defaultModelId: 'old-model', enabled: false }],
     }));
@@ -169,7 +169,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('Keine aktivierte LiteLLM-Route');
+    expect(result.error).toContain('Keine aktivierte OpenRouter- oder FreeLLM-Route');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some(([url]) => String(url) === SOVEREIGN_WORKER_CHAT)).toBe(false);
   });

@@ -11,7 +11,7 @@ def test_legacy_primary_bridge_is_a_read_only_tombstone() -> None:
     source = WORKFLOW.read_text("utf-8")
     assert "Legacy Primary LLM Bridge Disabled" in source
     assert "permissions:\n  contents: read" in source
-    assert "App -> Sovereign Backend -> private LiteLLM" in source
+    assert "App -> Sovereign Backend -> direct OpenRouter Paid or direct FreeLLM Free" in source
     assert "wrangler" not in source
     assert "workers.dev" not in source
     assert "VITE_SOVEREIGN_LLM_PROXY_URL" not in source

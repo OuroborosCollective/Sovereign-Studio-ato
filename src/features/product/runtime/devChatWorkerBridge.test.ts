@@ -33,7 +33,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe('devChatWorkerBridge', () => {
-  it('keeps only backend LiteLLM routes and abstract aliases', () => {
+  it('keeps only backend direct LLM routes and abstract aliases', () => {
     expect(SOVEREIGN_WORKER_CHAT).toContain('/api/llm/chat');
     expect(SOVEREIGN_WORKER_KV).toContain('/api/auth/me');
     expect(SOVEREIGN_WORKER_HEALTH).toContain('/health/ready');

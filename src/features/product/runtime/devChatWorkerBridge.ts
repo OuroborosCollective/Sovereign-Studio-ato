@@ -72,7 +72,7 @@ async function resolveActiveBackendModel(requestedModel: string, signal?: AbortS
   const requested = active.find((route) => route.defaultModelId === requestedModel || route.id === requestedModel);
   const selected = requested ?? active.find((route) => route.defaultModelId) ?? active.find((route) => route.id);
   const model = selected?.defaultModelId || selected?.id || '';
-  if (!model) throw new Error('Keine owner-bestätigte LiteLLM-Route ist aktiv.');
+  if (!model) throw new Error('Keine owner-bestätigte OpenRouter- oder FreeLLM-Route ist aktiv.');
   return model;
 }
 
@@ -97,7 +97,7 @@ export type DevChatWorkerFailureScope =
 
 export interface DevChatWorkerDiagnostic {
   /** Concrete runtime route that produced the evidence. Legacy Worker and
-   * LiteLLM-backed backend diagnostics share this envelope. */
+   * Provider-neutrale Backend-Diagnosen für OpenRouter/FreeLLM teilen diesen Envelope. */
   readonly route: string;
   readonly model: string;
   readonly messageCount: number;
@@ -579,12 +579,12 @@ export async function fetchDevChatWorkerReply(
       messageCount: messages.length,
       scope: 'worker_config',
       canClientFix: false,
-      nextAction: 'Im Admin eine owner-bestätigte LiteLLM-Route aktivieren.',
+      nextAction: 'Im Admin eine owner-bestätigte OpenRouter-Paid- oder FreeLLM-Free-Route aktivieren.',
       bodySnippet: error instanceof Error ? error.message : undefined,
     };
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'LiteLLM-Routenkatalog nicht verfügbar.',
+      error: error instanceof Error ? error.message : 'Sovereign LLM-Routenkatalog nicht verfügbar.',
       route: SOVEREIGN_WORKER_CHAT,
       diagnostic,
     };
@@ -975,14 +975,14 @@ export async function* streamDevChatWorkerReply(
   const bounded = await fetchDevChatWorkerReply(request, { maxRetries: 0 });
   if (!bounded.ok || !bounded.content) {
     throw createWorkerRuntimeError({
-      message: bounded.error || 'LiteLLM Runtime lieferte keine Antwort.',
+      message: bounded.error || 'Sovereign LLM-Direktruntime lieferte keine Antwort.',
       diagnostic: bounded.diagnostic ?? {
         route: SOVEREIGN_WORKER_CHAT,
         model: request.model,
         messageCount: request.messages.length,
         scope: 'worker_runtime',
         canClientFix: false,
-        nextAction: 'Backend- und LiteLLM-Readiness prüfen.',
+        nextAction: 'Backend- sowie OpenRouter-/FreeLLM-Readiness prüfen.',
       },
     });
   }

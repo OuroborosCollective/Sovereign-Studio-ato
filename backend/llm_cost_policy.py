@@ -6,7 +6,7 @@ The categories are deliberately small and stable:
 - premium: at least 8x real provider cost
 
 All money calculations use integer micro-US-dollars. Paid calls are reserved
-before provider execution and settled from LiteLLM cost evidence or verified
+before provider execution and settled from direct-provider cost evidence or verified
 usage/pricing metadata. Multipliers may only be raised, never lowered below the
 category floor.
 """

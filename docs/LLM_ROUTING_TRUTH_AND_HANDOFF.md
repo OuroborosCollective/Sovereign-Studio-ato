@@ -56,6 +56,19 @@ LiteLLM bleibt für historische Providerkonfiguration, Rollback, ältere Evidenz
 
 Jede Oberfläche, die LiteLLM erwähnt, muss ausdrücklich `Legacy`, `Rollback` oder einen tatsächlich LiteLLM-spezifischen Werkzeugkontext nennen.
 
+### 2.4 Agents-SDK- und Swarm-Grenze
+
+Der produktive REST-, A2A-, Start- und Resume-Pfad beginnt in `agent_runtime/cognitive_swarm_routes.py` und muss vor jedem Modellaufruf `load_execution_resolution(...)` ausführen. Danach gelten harte Verträge:
+
+- Paid-Swarm: `main_route` und `agent_route` sind datenbankaufgelöste direkte OpenRouter-Routen.
+- Free-Profil: genau eine datenbankaufgelöste direkte FreeLLM-Route und keine Hintergrundagenten.
+- `execute_persisted_swarm(...)` übergibt die aufgelösten Routen ausdrücklich an `run_cognitive_swarm(...)`.
+- Ein produktiver Run darf `run_cognitive_swarm(...)` niemals ohne Route aufrufen.
+
+In `agent_runtime/cognitive_swarm_agents.py` verbleiben `_ensure_litellm_runtime_key`, `ensure_openai_runtime_key`, `DEFAULT_MODEL`, historische LiteLLM-Aliasnamen und der No-Route-Zweig ausschließlich als begrenzte Legacy-Test-/Operator-Kompatibilität. Diese Symbole sind kein Beweis für einen aktiven LiteLLM-Produktpfad. Das Flask-Routenmodul importiert oder verwendet den Legacy-Key-Helfer nicht mehr.
+
+Auch Dateinamen und Datenbankspalten wie `sovereignLiteLlmIntentRuntime.ts` oder `litellm_alias` können aus Kompatibilitätsgründen historisch bleiben. Transportwahrheit entsteht ausschließlich aus der aufgelösten Route und ihrer Runtime-Evidence, niemals aus einem alten Symbolnamen.
+
 ## 3. Vier verschiedene Schlüsselklassen
 
 Die frühere Fehlinterpretation entstand unter anderem dadurch, dass verschiedene Schlüsselarten begrifflich vermischt wurden.

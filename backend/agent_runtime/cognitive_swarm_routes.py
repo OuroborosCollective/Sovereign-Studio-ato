@@ -32,13 +32,10 @@ from .cognitive_run_store import (
     transition_agent_run,
 )
 from .cognitive_swarm_agents import (
-    ALLOWED_LITELLM_MODEL_ALIASES,
-    DEFAULT_MODEL,
     RepositoryToolFactory,
     SwarmExecutionError,
     classify_mission_intent,
     classify_swarm_exception,
-    ensure_openai_runtime_key,
     run_cognitive_swarm,
     run_free_single_agent,
 )
@@ -88,11 +85,6 @@ _SECRET_MARKERS = (
 def _contains_secret_shaped_text(value: str) -> bool:
     normalized = value.casefold()
     return any(marker in normalized for marker in _SECRET_MARKERS)
-
-
-def _allowed_models() -> frozenset[str]:
-    # Cost safety is a code contract, not an environment-controlled preference.
-    return frozenset({DEFAULT_MODEL}) & ALLOWED_LITELLM_MODEL_ALIASES
 
 
 def _current_session_user_id() -> str:

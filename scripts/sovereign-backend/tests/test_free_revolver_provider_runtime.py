@@ -335,7 +335,7 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert 'for confirmation_index in (1, 2)' in runtime
     assert '"confirmationCount": 2' in runtime
     assert '"x_freellmpool"' in runtime
-    assert "never traverses\nLiteLLM" in runtime
+    assert "never traverses\nLegacy LiteLLM" in runtime
     assert "any(value not in (None, 0, 0.0) for value in provider_costs)" in runtime
     assert "def _normalized_provider_cost" in runtime
     assert "math.isfinite(parsed)" in runtime

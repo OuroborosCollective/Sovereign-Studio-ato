@@ -1360,7 +1360,7 @@ def admin_reset_llm_revolver_route(rid):
 @require_admin
 def admin_worker_ai_status():
     return jsonify({
-        "error": "Legacy Worker-AI-Verwaltung wurde durch private LiteLLM-Routen ersetzt",
+        "error": "Legacy Worker-AI-Verwaltung wurde durch direkte OpenRouter-Paid- und FreeLLM-Free-Routen ersetzt",
         "blocker": "legacy_direct_provider_disabled",
     }), 410
     """Legacy endpoint retained only as an explicit tombstone."""
@@ -6047,7 +6047,7 @@ def _sync_worker_routes_from_live_source() -> dict:
 @require_admin
 def admin_llm_gateway_sync():
     return jsonify({
-        "error": "Direkte AI-Gateway-Synchronisierung ist deaktiviert; Provider werden owner-gated in LiteLLM angelegt",
+        "error": "Legacy AI-Gateway-Synchronisierung ist deaktiviert; Provider werden owner-gated über die getrennten OpenRouter-/FreeLLM-Verträge angelegt",
         "blocker": "legacy_direct_provider_disabled",
     }), 410
     try:

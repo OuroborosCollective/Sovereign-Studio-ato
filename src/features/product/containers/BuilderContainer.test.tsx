@@ -131,7 +131,7 @@ async function normalizeLiteLlmMockResponse(
     const parsed = JSON.parse(content) as { readonly mode?: unknown };
     if (parsed.mode === 'chat' || parsed.mode === 'action') return response;
   } catch {
-    // Legacy test replies are wrapped below into the strict LiteLLM intent envelope.
+    // Legacy test replies are wrapped below into the strict Sovereign LLM intent envelope.
   }
   return jsonResponse({
     ...payload,
@@ -685,7 +685,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText("Interne Sovereign Agent Runtime für Code/Draft-PR-Aufträge")).toBeDefined();
   });
 
-  it("promotes the LLM runtime source only after a successful LiteLLM response", async () => {
+  it("promotes the LLM runtime source only after a successful direct LLM response", async () => {
     const restoreUser = setRuntimeTestUser();
     let rejectInference: ((reason?: unknown) => void) | null = null;
     vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
@@ -711,7 +711,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       expect(screen.queryByText("LLM Runtime nicht geprüft")).toBeNull();
     } finally {
       await act(async () => {
-        rejectInference?.(new Error('LiteLLM evidence assertion completed.'));
+        rejectInference?.(new Error('Sovereign LLM evidence assertion completed.'));
         await Promise.resolve();
       });
       restoreUser();
@@ -813,7 +813,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     }
   });
 
-  it("replaces successful LiteLLM response evidence with the latest failed call", async () => {
+  it("replaces successful direct LLM response evidence with the latest failed call", async () => {
     const restoreUser = setRuntimeTestUser();
     vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
       (input) => Promise.resolve(localAreInferenceResult(input.onlineAvailable)),
@@ -830,11 +830,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
             model: TEST_LITELLM_MODEL,
             choices: [{ message: { content: JSON.stringify(testIntentEnvelope(
               userText,
-              'Der erste LiteLLM-Aufruf war erfolgreich.',
+              'Der erste Sovereign LLM-Aufruf war erfolgreich.',
             )) } }],
           });
         }
-        return jsonResponse({ error: 'litellm_unavailable' }, 503);
+        return jsonResponse({ error: 'freellm_upstream_unavailable' }, 503);
       }
       return runtimeSupportResponse(url, init)
         ?? jsonResponse({ choices: [{ message: { content: 'unused' } }] });
@@ -845,7 +845,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den ersten Runtime-State.' } });
       fireEvent.click(sendButton());
       await waitFor(() =>
-        expect(screen.getByText('Der erste LiteLLM-Aufruf war erfolgreich.')).toBeDefined(),
+        expect(screen.getByText('Der erste Sovereign LLM-Aufruf war erfolgreich.')).toBeDefined(),
       );
 
       fireEvent.change(chatField(), { target: { value: 'Erkläre mir den neuen Runtime-State.' } });
@@ -1026,7 +1026,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onMissionChange).not.toHaveBeenCalled();
   });
 
-  it("routes normal text after repo load through the LiteLLM runtime instead of Sovereign Agent", async () => {
+  it("routes normal text after repo load through the direct LLM runtime instead of Sovereign Agent", async () => {
     const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 123 }], truncated: false }),
@@ -1044,7 +1044,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(3);
   });
 
-  it("renders the final non-streaming LiteLLM interpretation response", async () => {
+  it("renders the final non-streaming direct LLM interpretation response", async () => {
     mockFetchSequence(jsonResponse({
       choices: [{ message: { content: "Erste Antwort" } }],
       model: TEST_LITELLM_MODEL,
@@ -1056,10 +1056,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() => expect(screen.getByText("Erste Antwort")).toBeDefined());
   });
 
-  it("turns LiteLLM HTTP 500 into a runtime diagnostic and allows a fresh language follow-up", async () => {
+  it("turns direct LLM HTTP 500 into a runtime diagnostic and allows a fresh language follow-up", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ choices: [{ message: { content: "Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
+      jsonResponse({ choices: [{ message: { content: "Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge für bessere UI?" } });
@@ -1069,11 +1069,11 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/secret=ok/i)).toBeNull();
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined());
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(4);
   });
 
-  it("retries the original LiteLLM request after a diagnostic follow-up", async () => {
+  it("retries the original direct LLM request after a diagnostic follow-up", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
       jsonResponse({ choices: [{ message: { content: "Der erste Aufruf ist fehlgeschlagen; die Runtime hält den Blocker fest." } }] }),
@@ -1418,14 +1418,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     await waitFor(() =>
       expect(screen.getByText(/Nein/i)).toBeDefined(),
     );
-    // Language understanding uses LiteLLM; the answer itself is still runtime-derived.
+    // Language understanding uses the Sovereign direct LLM runtime; the answer itself is still runtime-derived.
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(2);
   });
 
-  it("LiteLLM HTTP 500 followed by 'Warum?' is interpreted by a fresh online call", async () => {
+  it("Direct LLM HTTP 500 followed by 'Warum?' is interpreted by a fresh online call", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ error: { message: "Gateway exploded", type: "server_error" } }, 500),
-      jsonResponse({ choices: [{ message: { content: "Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
+      jsonResponse({ choices: [{ message: { content: "Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen; die Runtime hat keinen Erfolg übernommen." } }] }),
     );
     renderWithProviders(<BuilderContainer {...baseProps()} repoReady agentReady />);
     fireEvent.change(chatField(), { target: { value: "Hast du Vorschläge?" } });
@@ -1434,7 +1434,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const callsAfterBlock = nonAuthFetchCalls(fetchMock).length;
     fireEvent.change(chatField(), { target: { value: "Warum?" } });
     fireEvent.click(sendButton());
-    await waitFor(() => expect(screen.getByText(/Der vorherige LiteLLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Der vorherige Sovereign LLM-Aufruf ist serverseitig fehlgeschlagen/i)).toBeDefined());
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsAfterBlock + 2);
   });
 
