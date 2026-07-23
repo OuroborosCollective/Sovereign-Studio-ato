@@ -387,3 +387,17 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "free_verified=true, pricing_source=%s" in runtime
     assert '"maxForegroundAgents": 1' in runtime
     assert '"maxBackgroundAgents": 0' in runtime
+
+
+def test_managed_reconcile_prioritizes_ready_routes_and_reports_total_ready_state() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+
+    assert "ORDER BY (status='ready' AND enabled=true) DESC" in runtime
+    assert "overall_ready_count = int(ready_state.get(\"ready_count\") or 0)" in runtime
+    assert "overall_blocked_count = int(ready_state.get(\"blocked_count\") or 0)" in runtime
+    assert '"overallReadyCount": overall_ready_count' in runtime
+    assert '"overallBlockedCount": overall_blocked_count' in runtime
+    assert '"readyCount": overall_ready_count' in runtime
+    assert '"ok": overall_ready_count > 0' in runtime
+    assert "200 if overall_ready_count > 0 else 409" in runtime
+    assert "ORDER BY (status='ready' AND enabled=true) ASC" not in runtime

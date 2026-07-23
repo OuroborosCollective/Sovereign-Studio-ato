@@ -441,6 +441,56 @@ def free_fallback_resolution(
         reason=str(reason or "openrouter_failed_resolved_to_direct_freellm")[:240],
     )
 
+def advance_free_revolver_resolution(
+    resolution: ExecutionResolution,
+    *,
+    failed_route_id: str,
+    reason: str,
+) -> ExecutionResolution | None:
+    """Advance to the next verified free quota scope after one failed route.
+
+    Runtime code must persist the failed route cooldown before using the returned
+    resolution. Paid routes are never reintroduced into this failover chain.
+    """
+    normalized_failed = str(failed_route_id or "").strip()
+    free_candidates = tuple(
+        route
+        for route in resolution.candidate_routes
+        if route_is_verified_free(route)
+    )
+    failed_index = next(
+        (
+            index
+            for index, route in enumerate(free_candidates)
+            if _route_id(route) == normalized_failed
+        ),
+        -1,
+    )
+    remaining = (
+        free_candidates[failed_index + 1 :]
+        if failed_index >= 0
+        else tuple(
+            route for route in free_candidates if _route_id(route) != normalized_failed
+        )
+    )
+    if not remaining:
+        return None
+    return ExecutionResolution(
+        profile_id=FREE_SINGLE_AGENT_PROFILE,
+        primary_route=remaining[0],
+        agent_route=remaining[0],
+        candidate_routes=remaining,
+        max_foreground_agents=1,
+        max_background_agents=0,
+        repository_execution_allowed=True,
+        paid_purchase_verified=resolution.paid_purchase_verified,
+        provider_funded_credits=resolution.provider_funded_credits,
+        requested_mode=resolution.requested_mode,
+        fallback_from_transport=resolution.fallback_from_transport,
+        reason=str(reason or "free_route_failed_advanced_to_next_quota_scope")[:240],
+    )
+
+
 def load_execution_resolution(
     get_connection: Callable[[], Any],
     *,

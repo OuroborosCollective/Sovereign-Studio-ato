@@ -1920,7 +1920,7 @@ def register_free_revolver_provider_runtime(
                          AND pricing_source='provider-pricing-unreported-or-incomplete'
                      )
                  )
-               ORDER BY (status='ready' AND enabled=true) ASC,
+               ORDER BY (status='ready' AND enabled=true) DESC,
                         free_verified DESC, display_name ASC
                LIMIT %s""",
             (source_id, max_models),
@@ -2024,18 +2024,33 @@ def register_free_revolver_provider_runtime(
                         (alias,),
                         write=True,
                     )
+            ready_state = query(
+                """SELECT
+                       COUNT(*) FILTER (
+                           WHERE status='ready' AND enabled=true
+                       )::int AS ready_count,
+                       COUNT(*) FILTER (
+                           WHERE status='blocked'
+                       )::int AS blocked_count
+                   FROM llm_revolver_provider_models
+                   WHERE source_id=%s::uuid""",
+                (source_id,),
+                one=True,
+            ) or {}
+            overall_ready_count = int(ready_state.get("ready_count") or 0)
+            overall_blocked_count = int(ready_state.get("blocked_count") or 0)
             status = (
                 "healthy"
-                if ready and not blocked
+                if overall_ready_count > 0 and overall_blocked_count == 0
                 else "degraded"
-                if ready
+                if overall_ready_count > 0
                 else "blocked"
             )
             error_code = (
                 "some_freellm_routes_blocked"
-                if ready and blocked
+                if overall_ready_count > 0 and overall_blocked_count > 0
                 else None
-                if ready
+                if overall_ready_count > 0
                 else "no_freellm_route_activated"
             )
             reconcile_stage = "provider_state_persistence"
@@ -2055,26 +2070,29 @@ def register_free_revolver_provider_runtime(
                 http_status=source.get("last_http_status"),
                 outcome=(
                     "success"
-                    if ready and not blocked
+                    if status == "healthy"
                     else "degraded"
-                    if ready
+                    if overall_ready_count > 0
                     else "blocked"
                 ),
                 model_count=len(models),
-                free_count=len(ready),
+                free_count=overall_ready_count,
                 evidence={
-                    "readyModelIds": [item["modelId"] for item in ready],
-                    "blockedModelIds": [item["modelId"] for item in blocked],
+                    "checkedReadyModelIds": [item["modelId"] for item in ready],
+                    "checkedBlockedModelIds": [item["modelId"] for item in blocked],
+                    "overallReadyCount": overall_ready_count,
+                    "overallBlockedCount": overall_blocked_count,
                     "transport": "freellm",
                     "managedQuotaContract": True,
                     "rawProviderResponsesPersisted": False,
                 },
             )
             return jsonify({
-                "ok": bool(ready),
+                "ok": overall_ready_count > 0,
                 "status": status,
                 "sourceId": source_id,
                 "keyFingerprintPresent": True,
+                "readyCount": overall_ready_count,
                 "ready": ready,
                 "blocked": blocked,
                 "transport": "freellm",
@@ -2082,7 +2100,7 @@ def register_free_revolver_provider_runtime(
                 "maxForegroundAgents": 1,
                 "maxBackgroundAgents": 0,
                 "protectedValuesReturned": False,
-            }), 200 if ready else 409
+            }), 200 if overall_ready_count > 0 else 409
         except ManagedKeyContractError as exc:
             query(
                 """UPDATE llm_revolver_provider_sources
