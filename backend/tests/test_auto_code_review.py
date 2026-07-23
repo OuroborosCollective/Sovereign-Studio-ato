@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -216,6 +217,34 @@ def test_signal_contains_no_secret_fields():
     signal = review.auto_code_review_signal(result)
     assert signal["secretValuesReturned"] is False
     assert "apiKey" not in signal and "token" not in signal
+
+
+def test_review_prompt_redacts_generated_github_credential():
+    credential = "_".join(("github", "pat", "x" * 40))
+    prompt = review._build_review_prompt(review.AutoCodeReviewInput(diff_text=f"+token={credential}"))
+    assert credential not in prompt
+    assert "[REDACTED_SECRET]" in prompt
+
+
+def test_review_prompt_redacts_generated_bearer_credential():
+    credential = "".join(("Bear", "er ", "a" * 40))
+    prompt = review._build_review_prompt(review.AutoCodeReviewInput(diff_text=f"+header={credential}"))
+    assert credential not in prompt
+    assert "[REDACTED_SECRET]" in prompt
+
+
+def test_model_findings_are_redacted_before_api_projection():
+    credential = "_".join(("github", "pat", "y" * 40))
+    raw = json.dumps([{
+        "severity": "HIGH",
+        "category": "security",
+        "file": "a.py",
+        "line_hint": "1",
+        "description": f"exposed {credential}",
+    }])
+    findings = review._parse_findings(raw)
+    assert credential not in findings[0].description
+    assert "[REDACTED_SECRET]" in findings[0].description
 
 
 def test_backend_and_deployment_reviewer_are_exact_mirrors():

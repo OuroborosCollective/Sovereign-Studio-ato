@@ -70,6 +70,22 @@ HIGH is reserved for exploitable security flaws, data loss, secret exposure, aut
 MEDIUM is a probable functional defect or breaking public contract. LOW is a bounded maintainability or style issue.
 If no supported finding exists, return []. Never claim that tests ran and never invent files or lines."""
 
+_SECRET_PATTERNS = (
+    re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
+    re.compile(r"gh[pousr]_[A-Za-z0-9_]{10,}", re.IGNORECASE),
+    re.compile(r"sk-(?:or-v1-|proj-|ant-)?[A-Za-z0-9_-]{16,}", re.IGNORECASE),
+    re.compile(r"Authorization:\s*Bearer\s+[^\s]+", re.IGNORECASE),
+    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE),
+    re.compile(r"(?:token|password|secret|api[_-]?key)\s*[=:]\s*[^\s]+", re.IGNORECASE),
+)
+
+
+def _redact_secret_shaped_text(value: str) -> str:
+    redacted = str(value or "")
+    for pattern in _SECRET_PATTERNS:
+        redacted = pattern.sub("[REDACTED_SECRET]", redacted)
+    return redacted
+
 
 def _truncate_diff(diff_text: str, max_chars: int) -> str:
     bounded = max(256, int(max_chars))
@@ -80,14 +96,16 @@ def _truncate_diff(diff_text: str, max_chars: int) -> str:
 
 
 def _build_review_prompt(input_value: AutoCodeReviewInput) -> str:
-    diff = _truncate_diff(input_value.diff_text, input_value.max_diff_chars)
+    diff = _redact_secret_shaped_text(
+        _truncate_diff(input_value.diff_text, input_value.max_diff_chars)
+    )
     files_note = (
-        f"Changed files: {', '.join(input_value.changed_files[:40])}\n"
+        f"Changed files: {_redact_secret_shaped_text(', '.join(input_value.changed_files[:40]))}\n"
         if input_value.changed_files
         else "Changed files: derived from the diff.\n"
     )
     mission_note = (
-        f"Mission context: {input_value.mission[:500]}\n"
+        f"Mission context: {_redact_secret_shaped_text(input_value.mission[:500])}\n"
         if input_value.mission
         else ""
     )
@@ -123,14 +141,20 @@ def _parse_findings(raw_json: str) -> tuple[AutoCodeReviewFinding, ...]:
         category = str(item.get("category", "quality")).lower()
         if category not in ("security", "breaking_change", "quality", "style"):
             category = "quality"
-        description = str(item.get("description", "")).strip()[:500]
+        description = _redact_secret_shaped_text(
+            str(item.get("description", "")).strip()
+        )[:500]
         if not description:
             continue
         findings.append(AutoCodeReviewFinding(
             severity=severity,
             category=category,
-            file=str(item.get("file", "general")).strip()[:200] or "general",
-            line_hint=str(item.get("line_hint", "")).strip()[:200],
+            file=_redact_secret_shaped_text(
+                str(item.get("file", "general")).strip()
+            )[:200] or "general",
+            line_hint=_redact_secret_shaped_text(
+                str(item.get("line_hint", "")).strip()
+            )[:200],
             description=description,
         ))
     return tuple(findings)
