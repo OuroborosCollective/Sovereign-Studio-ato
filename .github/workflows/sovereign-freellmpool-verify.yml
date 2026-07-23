@@ -59,7 +59,7 @@ jobs:
           path: upstream
           persist-credentials: false
 
-      - name: Build exact source and optionally publish immutable image
+      - name: Build exact source reproducibly and optionally publish immutable image
         id: image
         shell: bash
         env:
@@ -69,20 +69,79 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_REVISION}"
           test "$(python -c 'import tomllib; print(tomllib.load(open("upstream/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
 
+          source_epoch="$(git -C upstream show -s --format=%ct "${UPSTREAM_REVISION}")"
+          test "${source_epoch}" -gt 0
+          source_created="$(date -u -d "@${source_epoch}" '+%Y-%m-%dT%H:%M:%SZ')"
+
+          rm -rf upstream-normalized
+          mkdir -p upstream-normalized
+          git -C upstream archive --format=tar "${UPSTREAM_REVISION}" \
+            | tar --extract --directory upstream-normalized
+          test "$(python -c 'import tomllib; print(tomllib.load(open("upstream-normalized/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
+          find upstream-normalized -exec touch -h -d "@${source_epoch}" {} +
+
           docker pull python:3.12-slim
           base_repo_digest="$(docker image inspect python:3.12-slim --format '{{index .RepoDigests 0}}')"
           case "${base_repo_digest}" in
             python@sha256:*) ;;
             *) echo "unexpected Python base digest: ${base_repo_digest}" >&2; exit 1 ;;
           esac
-          sed "s|^FROM python:3.12-slim$|FROM ${base_repo_digest}|" \
-            upstream/Dockerfile > upstream/Dockerfile.sovereign
-          grep -qx "FROM ${base_repo_digest}" upstream/Dockerfile.sovereign
 
-          local_ref="${LOCAL_IMAGE}:${GITHUB_SHA}"
-          docker build --file upstream/Dockerfile.sovereign --tag "${local_ref}" upstream
-          image_id="$(docker image inspect "${local_ref}" --format '{{.Id}}')"
-          test -n "${image_id}"
+          BASE_REPO_DIGEST="${base_repo_digest}" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('upstream-normalized/Dockerfile')
+          lines = path.read_text('utf-8').splitlines()
+          expected = 'FROM python:3.12-slim'
+          if not lines or lines[0].strip() != expected:
+              raise SystemExit('unexpected upstream Dockerfile base contract')
+          base = os.environ['BASE_REPO_DIGEST']
+          lines[0] = f'FROM {base}'
+          lines[1:1] = [
+              'ARG SOURCE_DATE_EPOCH',
+              'ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}',
+              'ENV PYTHONDONTWRITEBYTECODE=1',
+              'ENV PIP_NO_COMPILE=1',
+              'ENV PIP_DISABLE_PIP_VERSION_CHECK=1',
+          ]
+          Path('upstream-normalized/Dockerfile.sovereign').write_text(
+              '\n'.join(lines) + '\n', encoding='utf-8'
+          )
+          PY
+          touch -h -d "@${source_epoch}" upstream-normalized/Dockerfile.sovereign
+          grep -qx "FROM ${base_repo_digest}" upstream-normalized/Dockerfile.sovereign
+
+          local_ref_a="${LOCAL_IMAGE}:${GITHUB_SHA}-a"
+          local_ref_b="${LOCAL_IMAGE}:${GITHUB_SHA}-b"
+          common_build_args=(
+            --file upstream-normalized/Dockerfile.sovereign
+            --build-arg "SOURCE_DATE_EPOCH=${source_epoch}"
+            --label "org.opencontainers.image.created=${source_created}"
+            --label "org.opencontainers.image.revision=${UPSTREAM_REVISION}"
+            --label "org.opencontainers.image.version=${UPSTREAM_VERSION}"
+            --no-cache
+            --provenance=false
+            --sbom=false
+            --load
+          )
+          SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
+            "${common_build_args[@]}" --tag "${local_ref_a}" upstream-normalized
+          SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
+            "${common_build_args[@]}" --tag "${local_ref_b}" upstream-normalized
+
+          image_id_a="$(docker image inspect "${local_ref_a}" --format '{{.Id}}')"
+          image_id_b="$(docker image inspect "${local_ref_b}" --format '{{.Id}}')"
+          test -n "${image_id_a}"
+          test "${image_id_a}" = "${image_id_b}"
+          local_ref="${local_ref_a}"
+          image_id="${image_id_a}"
+
+          dependency_freeze="$(docker run --rm --entrypoint python "${local_ref}" -m pip freeze --all \
+            | LC_ALL=C sort)"
+          test -n "${dependency_freeze}"
+          dependency_lock_sha256="$(printf '%s\n' "${dependency_freeze}" | sha256sum | cut -d' ' -f1)"
+          test "${#dependency_lock_sha256}" = "64"
 
           repo_digest=""
           digest=""
@@ -107,6 +166,9 @@ jobs:
           echo "runtime_ref=${runtime_ref}" >> "$GITHUB_OUTPUT"
           echo "base_repo_digest=${base_repo_digest}" >> "$GITHUB_OUTPUT"
           echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
+          echo "source_epoch=${source_epoch}" >> "$GITHUB_OUTPUT"
+          echo "dependency_lock_sha256=${dependency_lock_sha256}" >> "$GITHUB_OUTPUT"
+          echo "reproducible_build_verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify package version and non-root execution
         shell: bash
@@ -277,6 +339,10 @@ jobs:
               "image": "${{ steps.image.outputs.repo_digest }}",
               "imageId": "${{ steps.image.outputs.image_id }}",
               "baseImage": "${{ steps.image.outputs.base_repo_digest }}",
+              "sourceDateEpoch": int("${{ steps.image.outputs.source_epoch }}"),
+              "dependencyLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
+              "reproducibleBuildVerified": "${{ steps.image.outputs.reproducible_build_verified }}" == "true",
+              "independentNoCacheBuilds": 2,
               "nonRootUid": 10001,
               "readOnlyRootFilesystem": True,
               "hostPortsPublished": False,
@@ -297,6 +363,8 @@ jobs:
             echo '- Release: `v0.11.4`'
             echo '- Upstream revision: `${{ env.UPSTREAM_REVISION }}`'
             echo '- Immutable image: `${{ steps.image.outputs.repo_digest }}`'
+            echo '- Reproducible no-cache builds: `2/2 identical`'
+            echo '- Dependency lock SHA-256: `${{ steps.image.outputs.dependency_lock_sha256 }}`'
             echo '- Forced runtime UID: `10001`'
             echo '- Host ports: `none`'
             echo '- Root filesystem: `read-only`'
@@ -306,7 +374,7 @@ jobs:
       - name: Upload secret-free verification evidence
         uses: actions/upload-artifact@v4
         with:
-          name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}
+          name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}-${{ steps.image.outputs.dependency_lock_sha256 }}
           path: .sovereign-evidence/*.json
           if-no-files-found: error
           include-hidden-files: true
