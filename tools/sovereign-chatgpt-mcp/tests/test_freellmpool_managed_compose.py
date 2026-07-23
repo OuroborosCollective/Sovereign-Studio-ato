@@ -13,6 +13,7 @@ from managed_compose import (
     FREELLMPOOL_IMAGE,
     FREELLMPOOL_OWNER_KEY_PATH,
     FREELLMPOOL_REPO_DIGEST,
+    FREELLMPOOL_RUNTIME_CONTENT_SHA256,
     FREELLMPOOL_RUNTIME_GID,
     FREELLMPOOL_RUNTIME_UID,
     ManagedComposeRuntime,
@@ -34,7 +35,8 @@ def test_freellmpool_template_is_private_immutable_non_root_and_secret_file_boun
     entrypoint = (root / "freellmpool-entrypoint.py").read_text("utf-8")
 
     assert FREELLMPOOL_IMAGE in template
-    assert "260caba24d04c380b080ddc85cd8cf05d51586984814bc4ae4f3ec10ba232200" in template
+    assert "b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa" in template
+    assert FREELLMPOOL_RUNTIME_CONTENT_SHA256 in template
     assert 'user: "10001:10001"' in template
     assert "read_only: true" in template
     assert "privileged: false" in template

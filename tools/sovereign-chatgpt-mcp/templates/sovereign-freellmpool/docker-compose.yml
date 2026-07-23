@@ -1,6 +1,6 @@
 services:
   freellmpool:
-    image: ghcr.io/ouroboroscollective/sovereign-freellmpool@sha256:260caba24d04c380b080ddc85cd8cf05d51586984814bc4ae4f3ec10ba232200
+    image: ghcr.io/ouroboroscollective/sovereign-freellmpool@sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa
     container_name: sovereign-freellmpool
     init: true
     user: "10001:10001"
@@ -44,7 +44,8 @@ services:
       sovereign.component: freellmpool
       sovereign.version: "0.11.4"
       sovereign.upstream-revision: f9e09e536682083297cfd6fec3ea5d3aac5262c8
-      sovereign.image-digest: sha256:260caba24d04c380b080ddc85cd8cf05d51586984814bc4ae4f3ec10ba232200
+      sovereign.image-digest: sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa
+      sovereign.runtime-content-sha256: 3b42eb46786e1fa0b867e3f5cb2adf8e3c5ba7114beb6b4bd97073c67c02e46f
 
 networks:
   sovereign-private:

@@ -68,9 +68,10 @@ FREELLMAPI_RUNTIME_GID = 1000
 FREELLMPOOL_CONTAINER = "sovereign-freellmpool"
 FREELLMPOOL_IMAGE = (
     "ghcr.io/ouroboroscollective/sovereign-freellmpool@"
-    "sha256:260caba24d04c380b080ddc85cd8cf05d51586984814bc4ae4f3ec10ba232200"
+    "sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa"
 )
 FREELLMPOOL_REPO_DIGEST = FREELLMPOOL_IMAGE
+FREELLMPOOL_RUNTIME_CONTENT_SHA256 = "3b42eb46786e1fa0b867e3f5cb2adf8e3c5ba7114beb6b4bd97073c67c02e46f"
 FREELLMPOOL_DATA_VOLUME = "sovereign-freellmpool-data"
 FREELLMPOOL_OWNER_KEY_PATH = "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
 FREELLMPOOL_ENTRYPOINT_COMMAND = [
