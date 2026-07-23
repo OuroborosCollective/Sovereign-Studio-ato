@@ -14,9 +14,11 @@ def main() -> None:
         raise SystemExit("freellmpool_proxy_key_invalid")
     os.environ["FREELLMPOOL_PROXY_KEY"] = key
     os.execvp(
-        "freellmpool",
+        "python",
         [
-            "freellmpool",
+            "python",
+            "-m",
+            "freellmpool.cli",
             "proxy",
             "--host",
             "0.0.0.0",

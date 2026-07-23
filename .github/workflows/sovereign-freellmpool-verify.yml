@@ -92,6 +92,16 @@ jobs:
           git -C upstream archive --format=tar "${UPSTREAM_REVISION}" \
             | tar --extract --directory upstream-normalized
           test "$(python -c 'import tomllib; print(tomllib.load(open("upstream-normalized/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
+          python - <<'PY'
+          import re
+          import tomllib
+
+          project = tomllib.load(open('upstream-normalized/pyproject.toml', 'rb'))['project']
+          dependencies = project.get('dependencies') or []
+          names = [re.split(r'[<>=!~;\[ ]', str(value), maxsplit=1)[0].lower() for value in dependencies]
+          if names != ['httpx']:
+              raise SystemExit(f'unexpected runtime dependency contract: {names}')
+          PY
           find upstream-normalized -exec touch -h -d "@${source_epoch}" {} +
 
           failure_family="base_image_resolution"
@@ -102,33 +112,63 @@ jobs:
             *) echo "unexpected Python base digest: ${base_repo_digest}" >&2; exit 1 ;;
           esac
 
-          failure_family="dockerfile_normalization"
-          BASE_REPO_DIGEST="${base_repo_digest}" python - <<'PY'
-          import os
+          failure_family="deterministic_dependency_bundle"
+          cat > upstream-normalized/sovereign-runtime-requirements.txt <<'EOF'
+          anyio==4.10.0
+          certifi==2025.8.3
+          h11==0.16.0
+          httpcore==1.0.9
+          httpx==0.28.1
+          idna==3.10
+          sniffio==1.3.1
+          typing_extensions==4.14.1
+          EOF
+          rm -rf upstream-normalized/wheelhouse upstream-normalized/runtime-site
+          mkdir -p upstream-normalized/wheelhouse upstream-normalized/runtime-site
+          python -m pip download \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --no-deps \
+            --requirement upstream-normalized/sovereign-runtime-requirements.txt \
+            --dest upstream-normalized/wheelhouse
+          test "$(find upstream-normalized/wheelhouse -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 8
+          (
+            cd upstream-normalized/wheelhouse
+            sha256sum -- *.whl | LC_ALL=C sort
+          ) > upstream-normalized/sovereign-wheelhouse.sha256
+          dependency_lock_sha256="$(sha256sum upstream-normalized/sovereign-wheelhouse.sha256 | cut -d' ' -f1)"
+          test "${#dependency_lock_sha256}" = "64"
+          python - <<'PY'
+          import zipfile
           from pathlib import Path
 
-          path = Path('upstream-normalized/Dockerfile')
-          lines = path.read_text('utf-8').splitlines()
-          expected = 'FROM python:3.12-slim'
-          matches = [index for index, line in enumerate(lines) if line.strip() == expected]
-          if len(matches) != 1:
-              raise SystemExit('unexpected upstream Dockerfile base contract')
-          base = os.environ['BASE_REPO_DIGEST']
-          from_index = matches[0]
-          lines[from_index] = f'FROM {base}'
-          lines[from_index + 1:from_index + 1] = [
-              'ARG SOURCE_DATE_EPOCH',
-              'ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}',
-              'ENV PYTHONDONTWRITEBYTECODE=1',
-              'ENV PIP_NO_COMPILE=1',
-              'ENV PIP_DISABLE_PIP_VERSION_CHECK=1',
-          ]
-          Path('upstream-normalized/Dockerfile.sovereign').write_text(
-              '\n'.join(lines) + '\n', encoding='utf-8'
-          )
+          target = Path('upstream-normalized/runtime-site')
+          for wheel in sorted(Path('upstream-normalized/wheelhouse').glob('*.whl')):
+              with zipfile.ZipFile(wheel) as archive:
+                  archive.extractall(target)
           PY
+          find upstream-normalized/runtime-site -exec touch -h -d "@${source_epoch}" {} +
+          touch -h -d "@${source_epoch}" \
+            upstream-normalized/sovereign-runtime-requirements.txt \
+            upstream-normalized/sovereign-wheelhouse.sha256
+
+          failure_family="dockerfile_normalization"
+          cat > upstream-normalized/Dockerfile.sovereign <<EOF
+          FROM ${base_repo_digest}
+          ARG SOURCE_DATE_EPOCH
+          ENV SOURCE_DATE_EPOCH=\${SOURCE_DATE_EPOCH}
+          ENV PYTHONDONTWRITEBYTECODE=1
+          ENV PYTHONPATH=/opt/freellmpool/src
+          ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+          WORKDIR /opt/freellmpool
+          COPY runtime-site/ /usr/local/lib/python3.12/site-packages/
+          COPY src/ /opt/freellmpool/src/
+          COPY pyproject.toml README.md LICENSE /opt/freellmpool/
+          ENTRYPOINT ["python", "-m", "freellmpool.cli"]
+          EOF
           touch -h -d "@${source_epoch}" upstream-normalized/Dockerfile.sovereign
           grep -qx "FROM ${base_repo_digest}" upstream-normalized/Dockerfile.sovereign
+          grep -qx 'ENTRYPOINT \["python", "-m", "freellmpool.cli"\]' upstream-normalized/Dockerfile.sovereign
 
           local_ref_a="${LOCAL_IMAGE}:${GITHUB_SHA}-a"
           local_ref_b="${LOCAL_IMAGE}:${GITHUB_SHA}-b"
@@ -157,13 +197,6 @@ jobs:
           test "${image_id_a}" = "${image_id_b}"
           local_ref="${local_ref_a}"
           image_id="${image_id_a}"
-
-          failure_family="dependency_lock_capture"
-          dependency_freeze="$(docker run --rm --entrypoint python "${local_ref}" -m pip freeze --all \
-            | LC_ALL=C sort)"
-          test -n "${dependency_freeze}"
-          dependency_lock_sha256="$(printf '%s\n' "${dependency_freeze}" | sha256sum | cut -d' ' -f1)"
-          test "${#dependency_lock_sha256}" = "64"
 
           repo_digest=""
           digest=""

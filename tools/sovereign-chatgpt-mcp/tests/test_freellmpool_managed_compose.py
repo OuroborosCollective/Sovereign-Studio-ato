@@ -48,6 +48,7 @@ def test_freellmpool_template_is_private_immutable_non_root_and_secret_file_boun
     assert "FREELLMPOOL_PROXY_KEY:" not in template
     assert "KEY_PATH = Path(\"/run/secrets/freellmpool_proxy_key\")" in entrypoint
     assert "os.execvp(" in entrypoint
+    assert '"python",\n            "-m",\n            "freellmpool.cli"' in entrypoint
 
 
 def test_freellmpool_render_contract_rejects_root_mutable_or_env_secret(tmp_path: Path) -> None:
