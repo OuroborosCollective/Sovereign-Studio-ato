@@ -92,6 +92,7 @@ def test_freellmpool_candidate_build_is_exact_reproducible_and_does_not_change_r
     assert '"baseImageClaimed": False' in workflow
     assert '"runtimeContentReproducibleVerified": "${{ steps.image.outputs.runtime_content_reproducible_verified }}" == "true"' in workflow
     assert '"rebuildPerformed": True' in workflow
+    assert "Upload secret-free verification evidence\n        if: always()" in workflow
 
 
 def test_freellmpool_render_contract_rejects_root_mutable_or_env_secret(tmp_path: Path) -> None:

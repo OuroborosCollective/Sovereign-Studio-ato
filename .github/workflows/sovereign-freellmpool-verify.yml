@@ -598,6 +598,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload secret-free verification evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}-${{ steps.image.outputs.runtime_content_sha256 }}
