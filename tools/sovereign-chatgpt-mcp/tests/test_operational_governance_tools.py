@@ -90,6 +90,8 @@ def repository(tmp_path: Path) -> tuple[Path, str]:
         "utf-8",
     )
     (repo / "scripts" / "sovereign-backend" / "migrations" / "002_jobs.sql").write_text(
+        "-- CREATE TABLE IF NOT EXISTS does not repair historical schemas.\n"
+        "/* CREATE TABLE cannot be inferred from comments. */\n"
         "CREATE TABLE jobs (id text primary key);\n",
         "utf-8",
     )
@@ -264,6 +266,9 @@ def test_schema_reconciler_compares_migrations_with_live_names_without_rows(regi
     assert "DB_DRIFT_MISSING_LIVE_TABLE" in families
     assert "DB_DRIFT_UNMAPPED_LIVE_TABLE" in families
     assert "MIGRATION_TABLE_MULTIPLE_OWNERS" not in families
+    assert result.evidence["missingLiveTables"] == ["public.jobs"]
+    assert "public.does" not in result.evidence["missingLiveTables"]
+    assert "public.cannot" not in result.evidence["missingLiveTables"]
     assert result.evidence["byteEqualMigrationMirrors"] == [
         {
             "table": "public.users",

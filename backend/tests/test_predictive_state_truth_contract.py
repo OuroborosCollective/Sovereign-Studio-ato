@@ -69,7 +69,8 @@ def test_state_store_can_explicitly_clear_a_stale_blocker():
         )
 
         sql, params = conn.cursor_value.calls[0]
-        assert "blocker = CASE WHEN %s THEN NULL ELSE COALESCE(%s, blocker) END" in sql
+        assert "WHEN input.clear_blocker THEN NULL" in sql
+        assert "ELSE COALESCE(input.blocker, sovereign_agent_jobs.blocker)" in sql
         assert params[-3:] == (True, None, "agent-1")
         assert conn.commits == 1
 
