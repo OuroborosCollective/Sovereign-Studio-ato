@@ -46,9 +46,8 @@ FREELLM_PROVIDER_SPECS: dict[str, dict[str, Any]] = {
         "privacyNotice": "Prompts und Ausgaben können laut Provider für Training protokolliert werden.",
     },
     "pollinations": {
-        "label": "Pollinations (anonym)",
-        "keyless": True,
-        "privacyNotice": "Anonymer, IP-basierter Community-Tier mit geringer Parallelität.",
+        "label": "Pollinations (Publishable Key)",
+        "keyless": False,
     },
     "ovh": {
         "label": "OVH AI Endpoints (anonym)",

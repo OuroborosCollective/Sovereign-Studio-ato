@@ -148,6 +148,22 @@ def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: P
     assert FREELLMAPI_BOOTSTRAP_COMMAND == ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
 
 
+def test_freellmapi_keyless_markers_are_imported_by_the_real_bootstrap_loop() -> None:
+    bootstrap = (
+        Path(__file__).resolve().parents[1]
+        / "templates"
+        / "sovereign-freellmapi"
+        / "sovereign-freellm-bootstrap.mjs"
+    ).read_text("utf-8")
+
+    assert "^([a-z][a-z0-9-]{1,31})\\.(key|keyless)$" in bootstrap
+    assert "match[2] === 'keyless' ? undefined : value" in bootstrap
+    assert "label: match[2] === 'keyless' ? 'sovereign-keyless' : 'sovereign-owner'" in bootstrap
+    assert "applyDeclarativeConfig({ keys: changed }, 'sovereign-owner-secret-files')" in bootstrap
+    assert "SOVEREIGN_FREELLM_PROVIDER_KEYS_IMPORTED" in bootstrap
+    assert "}, 15_000).unref();" in bootstrap
+
+
 def test_freellmapi_transport_requires_private_network_digest_volume_and_no_ports(tmp_path: Path) -> None:
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     state = {
