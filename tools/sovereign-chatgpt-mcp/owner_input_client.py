@@ -20,6 +20,7 @@ ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
+FREELLM_KEYLESS_PROVIDER_IDS = frozenset({"kilo", "ovh"})
 MAX_TEXT = 1000
 MAX_OPERATOR_MISSION = 20_000
 MAX_OPERATOR_EVIDENCE = 250_000
@@ -319,6 +320,33 @@ class ProviderRuntimeClient(OwnerInputClient):
             **payload,
             "providers": providers if isinstance(providers, list) else [],
             "protected_values_returned": False,
+        }
+
+    @staticmethod
+    def _keyless_provider_id(provider_id: str) -> str:
+        selected = str(provider_id or "").strip().lower()
+        if selected not in FREELLM_KEYLESS_PROVIDER_IDS:
+            raise ValueError("provider_id ist nicht als aktueller keyless Provider allowlistet")
+        return selected
+
+    def freellm_keyless_activate(self, provider_id: str) -> dict[str, Any]:
+        selected = self._keyless_provider_id(provider_id)
+        payload = self._request(
+            "POST",
+            (
+                "/api/internal/llm/freellm/provider-credentials/"
+                f"{urllib.parse.quote(selected, safe='')}/keyless"
+            ),
+            json_body={"enabled": True},
+            expected=(200, 409, 500),
+            timeout=30,
+        )
+        return {
+            **payload,
+            "providerId": str(payload.get("providerId") or selected),
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+            "route_ready_claimed": False,
         }
 
     @staticmethod

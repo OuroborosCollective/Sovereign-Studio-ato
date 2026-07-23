@@ -28,6 +28,7 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_approval_request_status" in workflow
     assert "owner_approval_widget_open" in workflow
     assert "freellm_provider_status" in workflow
+    assert "freellm_provider_keyless_activate" in workflow
     assert "freellm_provider_discover" in workflow
     assert "freellm_provider_recheck" in workflow
     assert "controller_run_start" in workflow
@@ -140,14 +141,22 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert server.count("def litellm_provider_route_activate(") == 1
     assert "provider_runtime.activate(route_id)" in server
     assert server.count("def freellm_provider_status(") == 1
+    assert server.count("def freellm_provider_keyless_activate(") == 1
     assert server.count("def freellm_provider_discover(") == 1
     assert server.count("def freellm_provider_recheck(") == 1
     assert "provider_runtime.freellm_status()" in server
+    assert "provider_runtime.freellm_keyless_activate(provider_id)" in server
     assert server.count("provider_runtime.freellm_discover(") == 1
     assert server.count("provider_runtime.freellm_reconcile(") == 1
+    assert 'FREELLM_KEYLESS_PROVIDER_IDS = frozenset({"kilo", "ovh"})' in client
     assert "def freellm_status(" in client
+    assert "def freellm_keyless_activate(" in client
+    assert "provider_id ist nicht als aktueller keyless Provider allowlistet" in client
     assert "def freellm_discover(" in client
     assert "def freellm_reconcile(" in client
+    assert '"/api/internal/llm/freellm/provider-credentials/"' in client
+    assert 'f"{urllib.parse.quote(selected, safe=\'\')}/keyless"' in client
+    assert '"route_ready_claimed": False' in client
     assert 'f"/api/internal/llm/freellm/providers/{selected}/discover"' in client
     assert 'f"/api/internal/llm/freellm/providers/{selected}/reconcile"' in client
     assert "payload = owner_input.status(request_id)" in server

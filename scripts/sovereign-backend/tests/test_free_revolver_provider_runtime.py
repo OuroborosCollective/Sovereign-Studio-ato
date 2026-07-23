@@ -265,6 +265,27 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "_MAX_MODELS_RESPONSE_BYTES" in provider_runtime
 
 
+def test_keyless_activation_is_owner_bounded_current_and_not_readiness() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    credentials = (BACKEND / "freellm_provider_credentials.py").read_text("utf-8")
+
+    assert '_KNOWN_KEYLESS_POOL_PROVIDERS = {"ovh", "ovhcloud", "kilo", "llm7"}' in runtime
+    assert '_KNOWN_KEYLESS_POOL_PROVIDERS = {"pollinations"' not in runtime
+    assert '"label": "Pollinations (Publishable Key)"' in credentials
+    pollinations_block = credentials.split('"pollinations": {', 1)[1].split("},", 1)[0]
+    assert '"keyless": False' in pollinations_block
+    assert '"/api/internal/llm/freellm/provider-credentials/<provider_id>/keyless"' in runtime
+    assert "def internal_activate_freellm_keyless_provider(" in runtime
+    assert "if not _internal_owner_authorized():" in runtime
+    assert "normalize_freellm_provider_id(provider_id)" in runtime
+    assert "if not bool(spec.get(\"keyless\")):" in runtime
+    assert "_write_keyless_marker(provider_id, True)" in runtime
+    assert '"runtimeImportPending": True' in runtime
+    assert '"routeReady": False' in runtime
+    assert '"protectedValuesReturned": False' in runtime
+    assert '"rawCredentialReturned": False' in runtime
+
+
 def test_provider_route_identifiers_and_activation_limits_fail_closed() -> None:
     source_id = "1a866402-68c4-4f40-8d09-55ed8deabf68"
     assert normalize_provider_source_id(source_id) == source_id

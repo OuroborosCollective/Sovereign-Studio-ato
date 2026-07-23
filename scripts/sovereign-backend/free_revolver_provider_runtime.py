@@ -47,7 +47,7 @@ _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
 _MANAGED_AUTH_MODE = "managed-bearer"
 _AUTH_MODES = {"bearer", "x-api-key", "none", _MANAGED_AUTH_MODE}
 _MAX_MODELS_RESPONSE_BYTES = 2_000_000
-_KNOWN_KEYLESS_POOL_PROVIDERS = {"pollinations", "ovh", "ovhcloud", "kilo", "llm7"}
+_KNOWN_KEYLESS_POOL_PROVIDERS = {"ovh", "ovhcloud", "kilo", "llm7"}
 
 
 def _internal_owner_authorized() -> bool:
@@ -692,6 +692,68 @@ def register_free_revolver_provider_runtime(
             "privacyNotice": spec.get("privacyNotice"),
             "rawCredentialReturned": False,
         })
+
+    @app.route(
+        "/api/internal/llm/freellm/provider-credentials/<provider_id>/keyless",
+        methods=["POST"],
+    )
+    def internal_activate_freellm_keyless_provider(provider_id: str):
+        if not _internal_owner_authorized():
+            return jsonify({
+                "error": "forbidden",
+                "protectedValuesReturned": False,
+            }), 403
+        try:
+            provider_id = normalize_freellm_provider_id(provider_id)
+        except ValueError as exc:
+            return jsonify({
+                "error": str(exc),
+                "protectedValuesReturned": False,
+            }), 409
+        spec = FREELLM_PROVIDER_SPECS[provider_id]
+        if not bool(spec.get("keyless")):
+            return jsonify({
+                "error": "Dieser Provider benötigt einen eigenen API-Key.",
+                "blocker": "freellm_provider_key_required",
+                "providerId": provider_id,
+                "protectedValuesReturned": False,
+            }), 409
+        body = request.get_json(silent=True) or {}
+        if body.get("enabled", True) is not True:
+            return jsonify({
+                "error": "Keyless-Deaktivierung ist über diesen bounded Toolpfad nicht erlaubt.",
+                "blocker": "freellm_keyless_disable_not_supported",
+                "providerId": provider_id,
+                "protectedValuesReturned": False,
+            }), 409
+        try:
+            _write_keyless_marker(provider_id, True)
+            state = _freellm_provider_credential_state(provider_id)
+        except (OSError, ValueError):
+            return jsonify({
+                "error": "Keyless-Providerstatus konnte nicht sicher gespeichert werden.",
+                "blocker": "freellm_keyless_marker_write_failed",
+                "providerId": provider_id,
+                "protectedValuesReturned": False,
+            }), 500
+        audit("internal_freellm_keyless_provider_activated", provider_id, {
+            "enabled": True,
+            "privacyNoticePresent": bool(spec.get("privacyNotice")),
+            "rawCredentialPersistedInDatabase": False,
+        })
+        return jsonify({
+            "ok": bool(state.get("configured")) and bool(state.get("permissionsValid")),
+            "status": "FREELLM_KEYLESS_MARKER_CONFIGURED",
+            "providerId": provider_id,
+            "configured": bool(state.get("configured")),
+            "permissionsValid": state.get("permissionsValid"),
+            "privacyNotice": spec.get("privacyNotice"),
+            "runtimeImportPending": True,
+            "routeReady": False,
+            "nextAction": "FreeLLMAPI-Import abwarten und anschließend Managed-Discovery mit Doppel-Canary ausführen.",
+            "rawCredentialReturned": False,
+            "protectedValuesReturned": False,
+        }), 200
 
     @app.route("/api/admin/llm/revolver-v3/providers", methods=["GET"])
     @require_admin
