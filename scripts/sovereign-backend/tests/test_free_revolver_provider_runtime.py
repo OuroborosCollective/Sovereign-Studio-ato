@@ -350,6 +350,17 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert '"doubleCanaryRequired": True' in runtime
     assert '"authenticatedCatalogHttpStatus": last_status' in runtime
     assert '"rawProviderResponsesReturned": False' in runtime
+    assert '"failureFamily": "upstream_http_4xx"' in runtime
+    assert '"failureFamily": "upstream_http_5xx"' in runtime
+    assert '"failureFamily": "transport_request_exception"' in runtime
+    assert '"failureFamily": "response_decode_invalid"' in runtime
+    assert '"requestExceptionType": type(exc).__name__[:80]' in runtime
+    assert '"failedConfirmation": confirmation_index' in runtime
+    assert '"httpStatus": result.get("httpStatus")' in runtime
+    assert '"failureFamily": result.get("failureFamily")' in runtime
+    assert '"requestExceptionType": result.get("requestExceptionType")' in runtime
+    assert "exceptionMessage" not in runtime
+    assert "rawProviderResponseBody" not in runtime
     assert "protected, key = _read_managed_key(" in runtime
     assert "freellm_managed_key_unavailable" in runtime
     assert "free_verified=true, pricing_source=%s" in runtime

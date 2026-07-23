@@ -185,6 +185,7 @@ def _direct_completion_canary(
         **_auth_headers(auth_mode, key),
         "Content-Type": "application/json",
     }
+    status: int | None = None
     try:
         with requests.Session() as provider_session:
             provider_session.trust_env = False
@@ -211,12 +212,42 @@ def _direct_completion_canary(
                         "ok": False,
                         "blocker": "freellm_credentials_rejected",
                         "httpStatus": status,
+                        "failureFamily": "upstream_auth_rejected",
                     }
                 if status == 429:
                     return {
                         "ok": False,
                         "blocker": "freellm_rate_limited",
                         "httpStatus": status,
+                        "failureFamily": "upstream_rate_limited",
+                    }
+                if status in {408, 504}:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_timeout",
+                        "httpStatus": status,
+                        "failureFamily": "upstream_http_timeout",
+                    }
+                if 300 <= status < 400:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_upstream_unavailable",
+                        "httpStatus": status,
+                        "failureFamily": "upstream_redirect_rejected",
+                    }
+                if 400 <= status < 500:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_upstream_unavailable",
+                        "httpStatus": status,
+                        "failureFamily": "upstream_http_4xx",
+                    }
+                if status >= 500:
+                    return {
+                        "ok": False,
+                        "blocker": "freellm_upstream_unavailable",
+                        "httpStatus": status,
+                        "failureFamily": "upstream_http_5xx",
                     }
                 response.raise_for_status()
                 raw = response.raw.read(
@@ -265,10 +296,30 @@ def _direct_completion_canary(
                 "rawResponsePersisted": False,
             },
         }
-    except requests.Timeout:
-        return {"ok": False, "blocker": "freellm_timeout"}
-    except (requests.RequestException, UnicodeDecodeError, json.JSONDecodeError):
-        return {"ok": False, "blocker": "freellm_upstream_unavailable"}
+    except requests.Timeout as exc:
+        return {
+            "ok": False,
+            "blocker": "freellm_timeout",
+            "httpStatus": status,
+            "failureFamily": "transport_timeout",
+            "requestExceptionType": type(exc).__name__[:80],
+        }
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "blocker": "freellm_upstream_unavailable",
+            "httpStatus": status,
+            "failureFamily": "transport_request_exception",
+            "requestExceptionType": type(exc).__name__[:80],
+        }
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return {
+            "ok": False,
+            "blocker": "freellm_canary_response_invalid",
+            "httpStatus": status,
+            "failureFamily": "response_decode_invalid",
+            "requestExceptionType": type(exc).__name__[:80],
+        }
 
 
 def _confirmed_completion_canary(
@@ -294,6 +345,9 @@ def _confirmed_completion_canary(
                 "blocker": str(result.get("blocker") or "free_provider_canary_failed"),
                 "failedConfirmation": confirmation_index,
                 "confirmationCount": len(confirmations),
+                "httpStatus": result.get("httpStatus"),
+                "failureFamily": result.get("failureFamily"),
+                "requestExceptionType": result.get("requestExceptionType"),
             }
         confirmations.append(dict(result.get("evidence") or {}))
     return {
@@ -830,6 +884,11 @@ def register_free_revolver_provider_runtime(
                 "alias": alias,
                 "error": "free_provider_canary_failed",
                 "blocker": str(canary.get("blocker") or "free_provider_canary_failed"),
+                "failedConfirmation": canary.get("failedConfirmation"),
+                "confirmationCount": canary.get("confirmationCount"),
+                "httpStatus": canary.get("httpStatus"),
+                "failureFamily": canary.get("failureFamily"),
+                "requestExceptionType": canary.get("requestExceptionType"),
             }
         evidence = dict(canary.get("evidence") or {})
         raw_costs = evidence.get("providerCostsUsd")
@@ -1519,7 +1578,15 @@ def register_free_revolver_provider_runtime(
                     or result.get("error")
                     or "free_provider_canary_failed"
                 )[:120]
-                blocked.append({"modelId": model["modelId"], "blocker": blocker})
+                blocked.append({
+                    "modelId": model["modelId"],
+                    "blocker": blocker,
+                    "failedConfirmation": result.get("failedConfirmation"),
+                    "confirmationCount": result.get("confirmationCount"),
+                    "httpStatus": result.get("httpStatus"),
+                    "failureFamily": result.get("failureFamily"),
+                    "requestExceptionType": result.get("requestExceptionType"),
+                })
                 query(
                     """UPDATE llm_revolver_provider_models
                        SET status='blocked', enabled=false, last_error_code=%s,
@@ -1867,7 +1934,15 @@ def register_free_revolver_provider_runtime(
                     or result.get("error")
                     or "free_provider_canary_failed"
                 )[:120]
-                blocked.append({"modelId": model_id, "blocker": blocker})
+                blocked.append({
+                    "modelId": model_id,
+                    "blocker": blocker,
+                    "failedConfirmation": result.get("failedConfirmation"),
+                    "confirmationCount": result.get("confirmationCount"),
+                    "httpStatus": result.get("httpStatus"),
+                    "failureFamily": result.get("failureFamily"),
+                    "requestExceptionType": result.get("requestExceptionType"),
+                })
                 reconcile_stage = "model_state_persistence"
                 query(
                     """UPDATE llm_revolver_provider_models
