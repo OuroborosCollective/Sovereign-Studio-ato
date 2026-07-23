@@ -84,6 +84,7 @@ import { TestRunnerResultCard } from "../components/TestRunnerResultCard";
 import { AutoCodeReviewCard } from "../components/AutoCodeReviewCard";
 import { FileContentPreviewSheet } from "../components/FileContentPreviewSheet";
 import { PromptLibraryPanel } from "../components/PromptLibraryPanel";
+import { MissionValidatorCard } from "../components/MissionValidatorCard";
 import { ActionSuggestionStrip } from "../components/ActionSuggestionStrip";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
 import {
@@ -111,6 +112,11 @@ import {
   type PersistedSession,
 } from "../runtime/sessionPersistenceRuntime";
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
+import { renderKeepAChangelog } from "../runtime/changelogRuntime";
+import {
+  validateMissionLocally,
+  type MissionValidationResult,
+} from "../runtime/preflightMissionRuntime";
 import {
   requestAutoCodeReview,
   type AutoCodeReviewResult,
@@ -2606,6 +2612,11 @@ export function BuilderContainer({
   const [testRunnerBusy, setTestRunnerBusy] = useState(false);
   const [autoCodeReviewResult, setAutoCodeReviewResult] = useState<AutoCodeReviewResult | null>(null);
   const [autoCodeReviewBusy, setAutoCodeReviewBusy] = useState(false);
+  const [pendingMissionValidation, setPendingMissionValidation] = useState<{
+    readonly text: string;
+    readonly intent: SovereignExecutorIntentKind;
+    readonly result: MissionValidationResult;
+  } | null>(null);
   const [showRepoSetup, setShowRepoSetup] = useState(false);
   const [repoSetupUrl, setRepoSetupUrl] = useState('');
   const [repoSetupError, setRepoSetupError] = useState<string | null>(null);
@@ -3673,8 +3684,22 @@ export function BuilderContainer({
   const startAgentFromText = async (
     text: string,
     interpretedIntent: SovereignExecutorIntentKind,
+    options: { readonly bypassPreflight?: boolean } = {},
   ): Promise<boolean> => {
     const intent = interpretedIntent;
+    const missionValidation = validateMissionLocally(text);
+    if (!options.bypassPreflight && !missionValidation.canStart) {
+      setPendingMissionValidation({ text, intent, result: missionValidation });
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'agent-job',
+        label: 'Mission Pre-flight wartet auf Entscheidung',
+        detail: `Confidence ${missionValidation.confidence}/100 · ${missionValidation.questions.map((question) => question.question).join(' ')}`,
+        kind: 'blocked',
+      }));
+      appendRuntimeNotice(`Mission Pre-flight: Confidence ${missionValidation.confidence}/100. Bitte Mission präzisieren oder ausdrücklich trotzdem starten.`);
+      return false;
+    }
+    setPendingMissionValidation(null);
     if (!effectiveRepoReady || !chatRepoSnapshot) {
       // Preserve the exact execution request across the repo gate. Loading the
       // repository is only a prerequisite; it must not erase the user's job.
@@ -3994,6 +4019,37 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         appendRuntimeNotice(outcome === 'downloaded'
           ? 'Sitzung als Markdown exportiert. Secret-Muster wurden im Export redigiert.'
           : 'Sitzungsexport ist in dieser Umgebung nicht verfügbar.');
+        return;
+      }
+      if (command.action === "changelog") {
+        const commitSha = agentWorkSnapshot.commitSha?.trim();
+        if (!commitSha) {
+          appendRuntimeNotice('Changelog blockiert: Es liegt noch keine bestätigte Commit-SHA aus der Runtime vor.');
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'runtime',
+            label: 'Changelog blockiert',
+            detail: 'Keine bestätigte Commit-SHA vorhanden.',
+            kind: 'blocked',
+          }));
+          return;
+        }
+        const changelog = renderKeepAChangelog(
+          argument || 'Unreleased',
+          new Date().toISOString().slice(0, 10),
+          [{
+            sha: commitSha,
+            message: lastMissionRef.current.trim() || mission.trim() || 'Evidence-backed runtime change',
+            changedFiles: scopedAgentJob?.changedFiles ?? [],
+          }],
+        );
+        appendChatLine({ role: 'assistant', text: `**Evidence-backed Changelog**\n\n\`\`\`markdown\n${changelog}\`\`\`` });
+        appendActionEvent({
+          kind: 'done',
+          route: 'runtime',
+          label: 'Changelog erzeugt',
+          detail: `Commit ${commitSha.slice(0, 12)} wurde in Keep-a-Changelog-Format projiziert.`,
+          state: 'done',
+        });
         return;
       }
       if (command.action === "skills") {
@@ -6076,6 +6132,20 @@ Das echte Repo-Setup wurde geöffnet.`,
                 <AutoCodeReviewCard
                   result={autoCodeReviewResult}
                   onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
+                />
+              )}
+              {pendingMissionValidation && (
+                <MissionValidatorCard
+                  result={pendingMissionValidation.result}
+                  onEdit={() => {
+                    setWishText(pendingMissionValidation.text);
+                    setPendingMissionValidation(null);
+                  }}
+                  onStartAnyway={() => {
+                    const pending = pendingMissionValidation;
+                    setPendingMissionValidation(null);
+                    void startAgentFromText(pending.text, pending.intent, { bypassPreflight: true });
+                  }}
                 />
               )}
               <SovereignActionStreamPanel stream={actionStream} />

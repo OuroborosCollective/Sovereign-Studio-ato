@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { renderKeepAChangelog } from './changelogRuntime';
+import { compareContractSurfaces } from './contractDriftSentinelRuntime';
 import { buildImpactReport, findImporters } from './dependencyImpactRuntime';
+import { buildEvidenceLineage } from './evidenceLineageRuntime';
+import { buildMergeBlastRadiusGate } from './mergeBlastRadiusGateRuntime';
 import { validateMissionLocally } from './preflightMissionRuntime';
 import { buildDeterministicNarrations } from './semanticDiffNarratorRuntime';
 
@@ -46,5 +49,37 @@ describe('architecture enhancement runtimes', () => {
       preview: '+content',
     }]);
     expect(narrations).toEqual([{ path: 'src/new.ts', sentence: 'Creates src/new.ts with 12 lines.', source: 'deterministic' }]);
+  });
+
+  it('builds evidence lineage in deterministic time order', () => {
+    const lineages = buildEvidenceLineage([
+      { id: 'b', source: 'runtime', scope: 'draft-pr', message: 'prepared', at: 20 },
+      { id: 'a', source: 'api', scope: 'draft-pr', message: 'requested', at: 10 },
+    ]);
+    expect(lineages[0].nodes.map((node) => node.id)).toEqual(['a', 'b']);
+    expect(lineages[0].nodes[1].parentId).toBe('a');
+  });
+
+  it('detects contract drift against the authoritative surface', () => {
+    const report = compareContractSurfaces(
+      { name: 'backend', fields: [{ name: 'ok', type: 'boolean', required: true }] },
+      [{ name: 'frontend', fields: [{ name: 'ok', type: 'string', required: true }] }],
+    );
+    expect(report.aligned).toBe(false);
+    expect(report.findings[0].kind).toBe('type-mismatch');
+  });
+
+  it('raises blast radius for critical high-impact changes', () => {
+    const result = buildMergeBlastRadiusGate({
+      changedPaths: ['backend/auth/routes.py', '.github/workflows/release.yml'],
+      totalAddedLines: 900,
+      totalRemovedLines: 200,
+      dependencyImpact: [{ path: 'backend/auth/routes.py', importers: Array.from({ length: 12 }, (_, index) => `src/${index}.ts`), importerCount: 12, risk: 'high' }],
+      testEvidenceReady: false,
+      securityEvidenceReady: false,
+      releaseEvidenceReady: false,
+    });
+    expect(['high', 'critical']).toContain(result.level);
+    expect(result.requiresAdditionalEvidence).toBe(true);
   });
 });
