@@ -225,6 +225,9 @@ def test_agent_catalog_contract_requires_tools_tool_choice_and_max_tokens() -> N
     assert source.count("agent_catalog_request_id=agent_catalog_request_id") == 2
     assert "_MAX_AGENT_CANARY_CANDIDATES = 12" in source
     assert "openrouter_no_eligible_policy_provider" in source
+    upsert = source.split("ON CONFLICT (id) DO UPDATE SET", 1)[1].split("updated_at=NOW()", 1)[0]
+    assert upsert.count("credits_per_unit=") == 1
+    assert "credits_per_unit=EXCLUDED.credits_per_unit" not in upsert
 
 
 def test_user_catalog_exposes_only_customer_prices_and_separate_role_selection() -> None:
