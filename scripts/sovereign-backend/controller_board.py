@@ -37,6 +37,7 @@ from agent_runtime.cognitive_swarm_routes import (
     _persist_billing_blocker,
     _persist_execution_resolution_blocker,
     execute_persisted_swarm,
+    start_cognitive_swarm_run,
 )
 from agent_runtime.cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
@@ -319,6 +320,38 @@ def register_controller_board_routes(
             return _operator_json({"error": "evidence exceeds the bounded input limit"}, 400)
         if _operator_contains_secret(mission) or _operator_contains_secret(evidence):
             return _operator_json({"error": "secret-shaped material is forbidden in operator input"}, 400)
+        if requested_mode not in {"paid", "free"}:
+            return _operator_json({"error": "mode must be paid or free"}, 400)
+
+        if requested_mode == "free":
+            conn = get_connection()
+            try:
+                owner_id = _operator_owner_user_id(conn)
+            except LookupError:
+                return _operator_json({"error": "configured owner was not found"}, 404)
+            except Exception as exc:
+                return _operator_json({
+                    "ok": False,
+                    "error": "owner identity resolution unavailable",
+                    "blocker": "OWNER_IDENTITY_RESOLUTION_UNAVAILABLE",
+                    "errorType": type(exc).__name__,
+                    "protectedValuesReturned": False,
+                }, 503)
+            finally:
+                _close(conn)
+            payload, status_code = start_cognitive_swarm_run(
+                get_connection=get_connection,
+                user_id=owner_id,
+                mission=mission,
+                evidence=evidence,
+                mode="free",
+            )
+            return _operator_json({
+                **payload,
+                "operatorBridge": True,
+                "requestedMode": "free",
+                "protectedValuesReturned": False,
+            }, status_code)
 
         manifest = manifest_payload()
         run_id = f"run-{uuid.uuid4().hex}"
