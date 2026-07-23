@@ -363,30 +363,45 @@ class ManagedComposeRuntime:
         read_only_rootfs = False
         privileged = False
         network_mode = ""
+        cap_drop: list[str] = []
+        security_opt: list[str] = []
+        pids_limit = 0
         security_result = self._run(
             [
                 "docker",
                 "inspect",
                 "--format",
-                "{{json .Config.User}}|{{json .HostConfig.ReadonlyRootfs}}|{{json .HostConfig.Privileged}}|{{json .HostConfig.NetworkMode}}",
+                "{{json .Config.User}}|{{json .HostConfig.ReadonlyRootfs}}|{{json .HostConfig.Privileged}}|{{json .HostConfig.NetworkMode}}|{{json .HostConfig.CapDrop}}|{{json .HostConfig.SecurityOpt}}|{{json .HostConfig.PidsLimit}}",
                 container,
             ],
             timeout=30,
         )
         if security_result.get("ok"):
             try:
-                user_raw, read_only_raw, privileged_raw, network_mode_raw = (
-                    security_result.get("stdout", "").strip().split("|", 3)
-                )
+                (
+                    user_raw,
+                    read_only_raw,
+                    privileged_raw,
+                    network_mode_raw,
+                    cap_drop_raw,
+                    security_opt_raw,
+                    pids_limit_raw,
+                ) = security_result.get("stdout", "").strip().split("|", 6)
                 runtime_user = str(json.loads(user_raw) or "")
                 read_only_rootfs = bool(json.loads(read_only_raw))
                 privileged = bool(json.loads(privileged_raw))
                 network_mode = str(json.loads(network_mode_raw) or "")
-            except (ValueError, json.JSONDecodeError):
+                cap_drop = [str(value) for value in (json.loads(cap_drop_raw) or [])]
+                security_opt = [str(value) for value in (json.loads(security_opt_raw) or [])]
+                pids_limit = int(json.loads(pids_limit_raw) or 0)
+            except (ValueError, TypeError, json.JSONDecodeError):
                 runtime_user = ""
                 read_only_rootfs = False
                 privileged = False
                 network_mode = ""
+                cap_drop = []
+                security_opt = []
+                pids_limit = 0
         return {
             "present": True,
             "container": container,
@@ -407,6 +422,9 @@ class ManagedComposeRuntime:
             "readOnlyRootfs": read_only_rootfs,
             "privileged": privileged,
             "networkMode": network_mode,
+            "capDrop": cap_drop,
+            "securityOpt": security_opt,
+            "pidsLimit": pids_limit,
             "environmentReturned": False,
         }
 
@@ -1573,12 +1591,23 @@ const Database = require('better-sqlite3');
             == f"{FREELLMPOOL_RUNTIME_UID}:{FREELLMPOOL_RUNTIME_GID}"
             and state.get("readOnlyRootfs") is True
             and state.get("privileged") is False
+            and set(state.get("capDrop") or []) == {"ALL"}
+            and "no-new-privileges:true" in set(state.get("securityOpt") or [])
+            and int(state.get("pidsLimit") or 0) == 128
+            and all(
+                item.get("source") not in {"/var/run/docker.sock", "/run/docker.sock"}
+                and item.get("destination") not in {"/var/run/docker.sock", "/run/docker.sock"}
+                for item in state.get("mounts") or []
+                if isinstance(item, dict)
+            )
             and len(data_mounts) == 1
             and data_mounts[0].get("type") == "volume"
             and data_mounts[0].get("name") == FREELLMPOOL_DATA_VOLUME
             and data_mounts[0].get("rw") is True
             and len(entrypoint_mounts) == 1
             and entrypoint_mounts[0].get("type") == "bind"
+            and entrypoint_mounts[0].get("source")
+            == "/opt/sovereign-freellmpool/freellmpool-entrypoint.py"
             and entrypoint_mounts[0].get("rw") is False
             and len(secret_mounts) == 1
             and secret_mounts[0].get("type") == "bind"

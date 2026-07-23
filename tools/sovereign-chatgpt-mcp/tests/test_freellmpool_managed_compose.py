@@ -146,6 +146,9 @@ def test_freellmpool_transport_requires_digest_security_mounts_private_network_a
         "runtimeUser": "10001:10001",
         "readOnlyRootfs": True,
         "privileged": False,
+        "capDrop": ["ALL"],
+        "securityOpt": ["no-new-privileges:true"],
+        "pidsLimit": 128,
         "mounts": [
             {
                 "type": "volume",
@@ -176,6 +179,9 @@ def test_freellmpool_transport_requires_digest_security_mounts_private_network_a
     assert ManagedComposeRuntime._freellmpool_transport_ready(state) is False
     state["runtimeUser"] = "10001:10001"
     state["readOnlyRootfs"] = False
+    assert ManagedComposeRuntime._freellmpool_transport_ready(state) is False
+    state["readOnlyRootfs"] = True
+    state["capDrop"] = []
     assert ManagedComposeRuntime._freellmpool_transport_ready(state) is False
 
 
