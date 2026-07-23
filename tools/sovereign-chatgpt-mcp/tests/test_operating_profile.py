@@ -140,3 +140,5 @@ def test_ci_and_vps_release_contract_require_live_profile_and_negative_canary() 
     assert "MUTATION_BLOCKED_BY_OPERATING_PROFILE" in installer
     assert "OPERATING_PROFILE_OWNER_APPROVAL_REQUIRED" in installer
     assert "negativeMutationCanary" in installer
+    assert installer.count("INSTALL_STAGE=\"verify_operating_profile_canaries\"") == 1
+    assert installer.count("negativeMutationCanary") == 1
