@@ -107,6 +107,111 @@ def test_agent_canary_selection_prefers_default_then_cheapest_compatible_model()
     )
 
 
+def test_agent_canary_order_is_bounded_default_first_then_cheapest() -> None:
+    candidates = {
+        "openai/gpt-5.4-mini": {
+            "modelId": "openai/gpt-5.4-mini",
+            "inputUsdPerMillion": "0.75",
+            "outputUsdPerMillion": "4.5",
+        },
+        "vendor/cheap": {
+            "modelId": "vendor/cheap",
+            "inputUsdPerMillion": "0.2",
+            "outputUsdPerMillion": "1",
+        },
+        "vendor/mid": {
+            "modelId": "vendor/mid",
+            "inputUsdPerMillion": "0.5",
+            "outputUsdPerMillion": "2",
+        },
+    }
+
+    assert runtime._ordered_agent_canary_models(candidates) == [
+        "openai/gpt-5.4-mini",
+        "vendor/cheap",
+        "vendor/mid",
+    ]
+
+
+def test_agent_canary_rotates_after_model_policy_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts: list[str] = []
+    candidates = {
+        "openai/gpt-5.4-mini": {
+            "modelId": "openai/gpt-5.4-mini",
+            "inputUsdPerMillion": "0.75",
+            "outputUsdPerMillion": "4.5",
+        },
+        "vendor/cheap": {
+            "modelId": "vendor/cheap",
+            "inputUsdPerMillion": "0.2",
+            "outputUsdPerMillion": "1",
+        },
+    }
+
+    def fake_canary(key: str, *, model_id: str) -> dict:
+        attempts.append(model_id)
+        if model_id == runtime.OPENROUTER_DEFAULT_MODEL:
+            raise runtime.OpenRouterRuntimeError("openrouter_no_provider_meets_policy")
+        return {
+            "requestId": "canary-ok",
+            "providerCostUsd": "0.001",
+            "httpStatus": 200,
+            "modelId": model_id,
+            "providerPolicySha256": "a" * 64,
+            "rawResponsePersisted": False,
+        }
+
+    monkeypatch.setattr(runtime, "_completion_canary", fake_canary)
+
+    result = runtime._completion_canary_with_rotation(
+        "protected-test-value",
+        agent_models=candidates,
+    )
+
+    assert attempts == ["openai/gpt-5.4-mini", "vendor/cheap"]
+    assert result["modelId"] == "vendor/cheap"
+    assert result["attemptedModelCount"] == 2
+    assert result["rejectedPolicyFamilies"] == [
+        "openrouter_no_provider_meets_policy"
+    ]
+
+
+def test_agent_canary_does_not_rotate_credentials_or_credit_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidates = {
+        "openai/gpt-5.4-mini": {
+            "modelId": "openai/gpt-5.4-mini",
+            "inputUsdPerMillion": "0.75",
+            "outputUsdPerMillion": "4.5",
+        },
+        "vendor/cheap": {
+            "modelId": "vendor/cheap",
+            "inputUsdPerMillion": "0.2",
+            "outputUsdPerMillion": "1",
+        },
+    }
+
+    def rejected_canary(key: str, *, model_id: str) -> dict:
+        raise runtime.OpenRouterRuntimeError(
+            "openrouter_account_credits_required",
+            status_code=402,
+        )
+
+    monkeypatch.setattr(runtime, "_completion_canary", rejected_canary)
+
+    with pytest.raises(runtime.OpenRouterRuntimeError) as captured:
+        runtime._completion_canary_with_rotation(
+            "protected-test-value",
+            agent_models=candidates,
+        )
+
+    assert captured.value.family == "openrouter_account_credits_required"
+    assert captured.value.status_code == 402
+
+
 def test_agent_catalog_contract_requires_tools_tool_choice_and_max_tokens() -> None:
     assert runtime._REQUIRED_CANARY_PARAMETERS == {
         "tools",
@@ -116,8 +221,10 @@ def test_agent_catalog_contract_requires_tools_tool_choice_and_max_tokens() -> N
     source = (BACKEND / "openrouter_provider_runtime.py").read_text("utf-8")
     assert 'f"{OPENROUTER_BASE_URL}/models"' in source
     assert "model[\"modelId\"] in agent_models" in source
-    assert source.count("agent_models=agent_models") == 2
+    assert source.count("agent_models=agent_models") == 4
     assert source.count("agent_catalog_request_id=agent_catalog_request_id") == 2
+    assert "_MAX_AGENT_CANARY_CANDIDATES = 12" in source
+    assert "openrouter_no_eligible_policy_provider" in source
 
 
 def test_user_catalog_exposes_only_customer_prices_and_separate_role_selection() -> None:
