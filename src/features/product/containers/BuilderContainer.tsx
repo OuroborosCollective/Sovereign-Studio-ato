@@ -113,9 +113,9 @@ import {
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
 import {
   requestAutoCodeReview,
-  reviewAllowsDraftPr,
   type AutoCodeReviewResult,
 } from "../runtime/autoCodeReviewRuntime";
+import { createRepoFilePrompt } from "../runtime/repoTreeExplorerRuntime";
 import {
   fetchFileContent,
   type FileContentResult,
@@ -2998,6 +2998,7 @@ export function BuilderContainer({
     async (path: string) => {
       const cleanPath = path.trim();
       if (!cleanPath) return;
+      setWishText(createRepoFilePrompt(cleanPath));
       setShowRepoExplorer(false);
       setFilePreviewPath(cleanPath);
       setFilePreviewResult(null);
@@ -3797,7 +3798,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       });
       setAutoCodeReviewResult(review);
       setAutoCodeReviewBusy(false);
-      if (!reviewAllowsDraftPr(review)) {
+      if (review.decision === 'blocked_high') {
         appendActionEvent(buildBlockedActionEvent({
           route: 'agent-job',
           label: 'Draft PR durch Auto Code Review blockiert',
@@ -3807,13 +3808,22 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         appendRuntimeNotice(review.summary);
         return;
       }
-      appendActionEvent({
-        kind: 'done',
-        route: 'agent-job',
-        label: 'Auto Code Review bestanden',
-        detail: `${review.resolvedTransport} · ${review.modelUsed} · ${review.mediumCount} MEDIUM · ${review.lowCount} LOW`,
-        state: 'done',
-      });
+      if (review.decision === 'blocked_unavailable') {
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'agent-job',
+          label: 'UI-Review nicht verfügbar; Server-Gate bleibt autoritativ',
+          detail: review.summary + (review.error ? ` Blocker: ${review.error}` : ''),
+          kind: 'blocked',
+        }));
+      } else {
+        appendActionEvent({
+          kind: 'done',
+          route: 'agent-job',
+          label: 'Auto Code Review bestanden',
+          detail: `${review.resolvedTransport} · ${review.modelUsed} · ${review.mediumCount} MEDIUM · ${review.lowCount} LOW`,
+          state: 'done',
+        });
+      }
     }
 
     appendActionEvent({
