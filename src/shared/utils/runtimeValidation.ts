@@ -19,6 +19,12 @@ export interface ValidationResult {
 // Global runtime validation mode - set to true for strict mode
 const RUNTIME_STRICT_MODE = true;
 
+// Hoisted regular expressions to module-level scope to avoid redundant compilation
+// and instantiation overhead on every call.
+const GITHUB_URL_PATTERN = /^(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}\/[a-zA-Z0-9._-]+(?:\.git)?\/?(?:tree\/[A-Za-z0-9._\/-]+)?\/?$/;
+const KNOWN_GITHUB_TOKEN_PATTERN = /^(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,255}$|^github_pat_[A-Za-z0-9_]{22}_[A-Za-z0-9_]{59,255}$/;
+const WHITESPACE_PATTERN = /\s/;
+
 /**
  * Validates that a value is not null or undefined
  */
@@ -72,9 +78,7 @@ export function validateGitHubUrl(url: string, fieldName: string = 'repoUrl'): V
   const warnings: string[] = [];
   const trimmed = url.trim();
 
-  const githubPattern = /^(https?:\/\/)?(www\.)?github\.com\/[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}\/[a-zA-Z0-9._-]+(?:\.git)?\/?(?:tree\/[A-Za-z0-9._\/-]+)?\/?$/;
-
-  if (!githubPattern.test(trimmed)) {
+  if (!GITHUB_URL_PATTERN.test(trimmed)) {
     errors.push(`[VALIDATION] Field '${fieldName}' is not a valid GitHub URL: ${url}`);
   }
 
@@ -114,13 +118,11 @@ export function validateGitHubToken(token: string | undefined | null, fieldName:
     return { valid: true, errors, warnings, error: errors[0] };
   }
 
-  if (/\s/.test(value)) {
+  if (WHITESPACE_PATTERN.test(value)) {
     errors.push(`[VALIDATION] Field '${fieldName}' must not contain whitespace`);
   }
 
-  const knownGitHubTokenPattern = /^(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,255}$|^github_pat_[A-Za-z0-9_]{22}_[A-Za-z0-9_]{59,255}$/;
-
-  if (!knownGitHubTokenPattern.test(value)) {
+  if (!KNOWN_GITHUB_TOKEN_PATTERN.test(value)) {
     warnings.push(`[VALIDATION] Field '${fieldName}' does not match a known GitHub token prefix/shape`);
   }
 
