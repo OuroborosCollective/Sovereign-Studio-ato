@@ -174,6 +174,11 @@ _PREFIX_CAPABILITIES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 )
 
 _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
+    "sovereign-mcp-optimal-operation": {
+        "priority": "P0",
+        "tools": ["sovereign_operating_profile_status", "sovereign_mission_preflight"],
+        "purpose": "Persist and technically enforce mission-first, contract-bound and evidence-first operation across sessions and revisions.",
+    },
     "sovereign-tool-capability-router": {
         "priority": "P0",
         "tools": ["tool_recommend_for_mission", "operational_skill_inventory"],

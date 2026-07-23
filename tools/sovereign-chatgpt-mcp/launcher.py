@@ -5,6 +5,7 @@ import deterministic_architecture_tools
 import enterprise_backend_tools
 import freemium_product_architect_tools
 import openai_project_access_tools
+import operating_profile
 import operational_assurance_tools
 import output_contracts
 import operational_governance_tools
@@ -28,7 +29,9 @@ operational_governance_tools.register(server.mcp, server.runtime, server.databas
 operational_assurance_tools.register(server.mcp, server.runtime, server.database, server.broker)
 proven_learning_tools.register(server.mcp, server.runtime, server.owner_input)
 toolchain_composition.register(server.mcp)
+operating_profile.register(server.mcp)
 OUTPUT_CONTRACT_INSTALLATION = output_contracts.install_output_contracts(server.mcp)
+OPERATING_PROFILE_ENFORCEMENT = operating_profile.install_enforcement(server.mcp)
 mcp = server.mcp
 
 

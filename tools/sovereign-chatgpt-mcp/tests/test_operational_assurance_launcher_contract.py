@@ -28,6 +28,8 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
         "mcp_toolchain_validate",
         "mcp_toolchain_next_step",
         "mcp_diagnostic_chain_plan",
+        "sovereign_operating_profile_status",
+        "sovereign_mission_preflight",
         "operational_assurance_skill_inventory",
         "vps_capacity_resource_pressure_assess",
         "runtime_dependency_health_matrix",
@@ -60,8 +62,8 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
     assert required.issubset(names), sorted(required - names)
 
     inventory = governance.operational_skill_inventory()
-    assert inventory.skillCount == 43
-    assert inventory.toolCount == 48
+    assert inventory.skillCount == 44
+    assert inventory.toolCount == 50
     assurance_inventory = assurance.operational_assurance_skill_inventory()
     assert assurance_inventory.evidence["newTools"] == 27
     assert assurance_inventory.evidence["existingReusedTools"] == ["mcp_tool_contract_registry"]
