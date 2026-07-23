@@ -383,7 +383,7 @@ describe('streamDevChatWorkerReply', () => {
     expect(chunks).toEqual(['Valid']);
     expect(onMetadata).toHaveBeenCalledWith({
       fallbackUsed: false,
-      preferredModel: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      preferredModel: ACTIVE_OPENROUTER_MODEL,
       actualModel: ACTIVE_OPENROUTER_MODEL,
       fallbackReason: undefined,
     });
