@@ -22,14 +22,22 @@ from freellm_provider_credentials import (
 
 def test_provider_allowlist_has_keyed_and_keyless_contracts(tmp_path: Path) -> None:
     assert FREELLM_PROVIDER_SPECS["groq"]["keyless"] is False
-    assert FREELLM_PROVIDER_SPECS["pollinations"]["keyless"] is True
+    assert FREELLM_PROVIDER_SPECS["pollinations"]["keyless"] is False
     assert FREELLM_PROVIDER_SPECS["ovh"]["keyless"] is True
     assert FREELLM_PROVIDER_SPECS["kilo"]["keyless"] is True
     assert FREELLM_PROVIDER_SPECS["aihorde"]["keyless"] is True
     assert provider_secret_path(tmp_path, "groq") == tmp_path / "freellm-provider-keys" / "groq.key"
-    assert provider_keyless_marker_path(tmp_path, "pollinations") == (
-        tmp_path / "freellm-provider-keys" / "pollinations.keyless"
+    assert provider_secret_path(tmp_path, "pollinations") == (
+        tmp_path / "freellm-provider-keys" / "pollinations.key"
     )
+    assert provider_keyless_marker_path(tmp_path, "kilo") == (
+        tmp_path / "freellm-provider-keys" / "kilo.keyless"
+    )
+    assert provider_keyless_marker_path(tmp_path, "ovh") == (
+        tmp_path / "freellm-provider-keys" / "ovh.keyless"
+    )
+    with pytest.raises(ValueError, match="provider_not_keyless"):
+        provider_keyless_marker_path(tmp_path, "pollinations")
 
 
 def test_provider_target_ids_round_trip_and_reject_unknown_values() -> None:
