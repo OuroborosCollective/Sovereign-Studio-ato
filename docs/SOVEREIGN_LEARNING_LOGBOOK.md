@@ -109,3 +109,29 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Changed-path ownership coverage (repository_check, SHA-256 22cafe14b67e852f34b3d376100e19c54cbcd75fb23d790c9d11e25c2d78d768): Both changed MCP control-plane paths have explicit repository owner coverage.
 - PR 938 exact-head evidence graph (repository_check, SHA-256 22b6fbd35584a93d81e65d13f1bd0e7a21cbc73df4fadcc48304a2437304c766): The exact PR head has complete test, GitHub Actions and ownership evidence with no graph findings.
 
+<!-- proven-learning:554ab837fad61bd97dd2aa1ebb54cd337fd863f9b2729b20911ead497d5d87a2 -->
+## Autonomous Free Revolver route scanner integration
+
+- Zeitpunkt: 2026-07-23T06:07:30+02:00
+- Vorgang: integration
+- Inhalts-Hash: sha256:554ab837fad61bd97dd2aa1ebb54cd337fd863f9b2729b20911ead497d5d87a2
+- Quellrevision: 4f7ce3c15bf057e82919c2266236d542d078e607
+- Merge-Ziel: main
+- Erwarteter PR-Head: 4f7ce3c15bf057e82919c2266236d542d078e607
+- Geänderte Pfade: scripts/sovereign-backend/app.py, scripts/sovereign-backend/docker-compose.yml, scripts/sovereign-backend/llm_route_scanner.py, scripts/sovereign-backend/migrations/036_llm_route_scanner_candidates.sql, scripts/sovereign-backend/tests/test_llm_route_scanner.py, tools/sovereign-chatgpt-mcp/deploy/deploy-sovereign-backend, tools/sovereign-chatgpt-mcp/deploy/rollback-sovereign-backend
+- Problem: The supplied standalone scanner would have created a competing web service and could have forwarded arbitrary user prompts to untrusted community endpoints outside the existing PostgreSQL and double-canary truth chain.
+- Lösung: Integrate the scanner as scripts/sovereign-backend/llm_route_scanner.py inside the existing Flask backend. Run it only in production as a PostgreSQL-leased worker, enforce HTTPS, public-DNS, no-redirect and bounded-response controls, require two fixed Ping canaries, persist candidate-only evidence, and keep routing_eligible false until a separate verified provider onboarding promotes a source.
+- Gültigkeit: Use this pattern when importing autonomous discovery code into a production routing system that already has a canonical provider registry, pricing evidence, route health checks, and fail-closed activation rules.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@4f7ce3c15bf057e82919c2266236d542d078e607:scripts/sovereign-backend/llm_route_scanner.py; OuroborosCollective/Sovereign-Studio-ato@4f7ce3c15bf057e82919c2266236d542d078e607:scripts/sovereign-backend/migrations/036_llm_route_scanner_candidates.sql; OuroborosCollective/Sovereign-Studio-ato@4f7ce3c15bf057e82919c2266236d542d078e607:scripts/sovereign-backend/tests/test_llm_route_scanner.py
+
+### Nachweise
+
+- migration preview (migration_readback, SHA-256 b49811d2d7babe3df27d9a61e3e1ad1f4dac3f58b7f15b93b5f2902dca9597a2): Migration 036 executed successfully in the preview database and was fully rolled back.
+- backend compile (repository_check, SHA-256 cb69a58565064e4622772c8815f17f540ccf6f6d516cf0fae85fc7df256722bb): The production backend app compiled successfully after scanner registration.
+- deployment contract regression (repository_check, SHA-256 019961133611167ed3ab7e11292670f0dfc4805d1d5207709ae0f70bfbde5911): Six backend deployment and rollback contract tests passed.
+- dynamic execution containment (repository_check, SHA-256 7db71cbfe4bc84eb6f9f095790a5349f39f18f81b8d539396bef49a53322fb1c): No uncontained dynamic execution pattern was found in the scanner module.
+- existing Free Revolver provider regression (repository_check, SHA-256 30c31cd34e6301d8068177c99d3a3a669b9f9335650363fe690b9447be01bc39): Twenty existing Free Revolver provider runtime tests passed unchanged.
+- runtime health schema regression (repository_check, SHA-256 c9fc150cddc3811dcf800f386d14597c4c11108f8e823ab3b6e0058a69d351ed): Three runtime health and required-migration schema contracts passed.
+- scanner unit and security tests (repository_check, SHA-256 f08b2f5a5be49a79ca018ae9a11481b8e26f154d97c3daea11dc36d663e06248): Seven focused scanner, SSRF, fixed-canary, lease, deployment and candidate-only tests passed.
+- secret literal triage (repository_check, SHA-256 71b9e748a4c58e44cbce932bfb3d609e2c16e6e7f1c5dfd02639225310ef49cd): No secret-shaped literal was found on the changed scanner surfaces.
+
