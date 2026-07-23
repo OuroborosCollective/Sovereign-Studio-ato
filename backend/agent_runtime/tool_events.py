@@ -248,7 +248,7 @@ def append_tool_result_to_job(conn: Any, job_id: str, tool_result: Any) -> Evide
         if tool_failed
         else "running"
     )
-    next_blocker = gate.reason if tool_failed else None
+    next_blocker = None if gate.passed else gate.reason
     update_agent_job_state(
         conn,
         job_id=job_id,

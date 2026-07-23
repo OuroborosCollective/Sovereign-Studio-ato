@@ -98,6 +98,75 @@ _CREATE_TABLE_RE: Final[re.Pattern[str]] = re.compile(
     r"(?P<table>[A-Za-z_][A-Za-z0-9_]*)[\"`]?",
     re.I,
 )
+
+
+def _strip_sql_comments(text: str) -> str:
+    """Remove SQL comments while preserving quoted strings and line positions."""
+    output: list[str] = []
+    index = 0
+    state = "code"
+    length = len(text)
+
+    while index < length:
+        current = text[index]
+        following = text[index + 1] if index + 1 < length else ""
+
+        if state == "code":
+            if current == "-" and following == "-":
+                output.extend((" ", " "))
+                index += 2
+                state = "line-comment"
+                continue
+            if current == "/" and following == "*":
+                output.extend((" ", " "))
+                index += 2
+                state = "block-comment"
+                continue
+            if current == "'":
+                state = "single-quote"
+            elif current == '"':
+                state = "double-quote"
+            output.append(current)
+            index += 1
+            continue
+
+        if state == "line-comment":
+            if current == "\n":
+                output.append("\n")
+                state = "code"
+            else:
+                output.append(" ")
+            index += 1
+            continue
+
+        if state == "block-comment":
+            if current == "*" and following == "/":
+                output.extend((" ", " "))
+                index += 2
+                state = "code"
+                continue
+            output.append("\n" if current == "\n" else " ")
+            index += 1
+            continue
+
+        output.append(current)
+        if state == "single-quote" and current == "'":
+            if following == "'":
+                output.append(following)
+                index += 2
+                continue
+            state = "code"
+        elif state == "double-quote" and current == '"':
+            if following == '"':
+                output.append(following)
+                index += 2
+                continue
+            state = "code"
+        index += 1
+
+    return "".join(output)
+
+
 _KEYWORD_INTENT_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     (
         "python_keyword_intent",
@@ -1026,7 +1095,8 @@ def schema_migration_reconcile(
             scanned_files += 1
             relative_path = str(path.relative_to(repo))
             migration_hashes[relative_path] = hashlib.sha256(text.encode("utf-8")).hexdigest()
-            for match in _CREATE_TABLE_RE.finditer(text):
+            ddl_text = _strip_sql_comments(text)
+            for match in _CREATE_TABLE_RE.finditer(ddl_text):
                 schema = (match.group("schema") or "public").lower()
                 table = match.group("table").lower()
                 identity = f"{schema}.{table}"
