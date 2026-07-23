@@ -493,8 +493,6 @@ def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch)
         "load_execution_resolution",
         lambda *args, **kwargs: resolution,
     )
-    monkeypatch.setattr(routes_runtime, "classify_mission_intent", _read_only_intent)
-
     async def routed_free_agent(*args, route=None, intent=None, **kwargs):
         route_id = str((route or {}).get("id") or "")
         attempts.append(route_id)
@@ -539,6 +537,7 @@ def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch)
         user_id=USER_ID,
         mission="Inspect the live FreeLLM resolver.",
         mode="free",
+        intent_mode="read_only_analysis",
         run_id="run-free-rotation",
         session_key="session-free-rotation",
         trace_id="trace-free-rotation",
@@ -556,6 +555,76 @@ def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch)
     assert intents[0] is not None and intents[0].mode == "read_only_analysis"
     assert cooldowns == ["free-a"]
     assert transitions == ["COMPLETED"]
+
+
+def test_free_runtime_defaults_to_non_mutating_conversation_without_classifier(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    resolution = _free_resolution()
+
+    monkeypatch.setattr(routes_runtime, "load_execution_resolution", lambda *args, **kwargs: resolution)
+    monkeypatch.setattr(
+        routes_runtime,
+        "classify_mission_intent",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("free classifier must not run")),
+    )
+
+    async def completed_free_agent(*args, intent=None, **kwargs):
+        captured["intent"] = intent
+        return {
+            "ok": True,
+            "status": "COMPLETED",
+            "result": {"mode": intent.mode, "assistant_text": "Free route ready."},
+            "executionProfile": FREE_SINGLE_AGENT_PROFILE,
+        }
+
+    monkeypatch.setattr(routes_runtime, "run_free_single_agent", completed_free_agent)
+    monkeypatch.setattr(
+        routes_runtime,
+        "transition_agent_run",
+        lambda *args, **kwargs: {
+            "status": kwargs["status"],
+            "source": kwargs["source"],
+            "evidenceId": "evidence-free-conversation",
+            "reason": kwargs["reason"],
+            "nextAction": kwargs["next_action"],
+        },
+    )
+
+    payload, status_code = routes_runtime.start_cognitive_swarm_run(
+        get_connection=FakeConnectionFactory(),
+        user_id=USER_ID,
+        mission="Answer one short sentence.",
+        mode="free",
+        run_id="run-free-conversation",
+        session_key="session-free-conversation",
+        trace_id="trace-free-conversation",
+        _reuse_received_state={"evidenceId": "evidence-free-received"},
+    )
+
+    assert status_code == 200
+    assert payload["status"] == "COMPLETED"
+    assert captured["intent"].mode == "conversation"
+    assert captured["intent"].requires_repository_workspace is False
+    assert payload["repositoryExecutionPerformed"] is False
+
+
+def test_free_runtime_rejects_invalid_intent_before_provider_execution(monkeypatch) -> None:
+    monkeypatch.setattr(
+        routes_runtime,
+        "load_execution_resolution",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("resolver must not run")),
+    )
+
+    payload, status_code = routes_runtime.start_cognitive_swarm_run(
+        get_connection=FakeConnectionFactory(),
+        user_id=USER_ID,
+        mission="Do not execute this invalid contract.",
+        mode="free",
+        intent_mode="semantic_guess",
+    )
+
+    assert status_code == 400
+    assert "intentMode must be" in payload["error"]
 
 
 def test_free_runtime_does_not_retry_after_repository_mutation(monkeypatch) -> None:

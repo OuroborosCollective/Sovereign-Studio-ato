@@ -34,6 +34,7 @@ from .cognitive_run_store import (
 from .cognitive_swarm_agents import (
     ALLOWED_LITELLM_MODEL_ALIASES,
     DEFAULT_MODEL,
+    MissionIntent,
     RepositoryToolFactory,
     SwarmExecutionError,
     classify_mission_intent,
@@ -72,6 +73,7 @@ from llm_transport import route_provider_model, route_transport
 
 ConnectionFactory = Callable[[], Any]
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_INTENT_MODES = frozenset({"auto", "conversation", "read_only_analysis", "repository_execution"})
 
 
 _SECRET_MARKERS = (
@@ -87,6 +89,28 @@ _SECRET_MARKERS = (
 def _contains_secret_shaped_text(value: str) -> bool:
     normalized = value.casefold()
     return any(marker in normalized for marker in _SECRET_MARKERS)
+
+
+def _normalize_intent_mode(value: str, *, free_profile: bool) -> str:
+    selected = str(value or "auto").strip().casefold().replace("-", "_").replace(" ", "_")
+    if selected not in _INTENT_MODES:
+        raise ValueError("intentMode must be auto, conversation, read_only_analysis or repository_execution")
+    if free_profile and selected == "auto":
+        return "conversation"
+    return selected
+
+
+def _explicit_mission_intent(intent_mode: str, mission: str) -> MissionIntent | None:
+    if intent_mode == "auto":
+        return None
+    return MissionIntent(
+        mode=intent_mode,
+        normalized_goal=str(mission or "").strip()[:2000],
+        requires_online_tools=intent_mode != "conversation",
+        requires_repository_workspace=intent_mode == "repository_execution",
+        learning_scope=[],
+        confidence=1.0,
+    )
 
 
 def _allowed_models() -> frozenset[str]:
@@ -810,6 +834,7 @@ def start_cognitive_swarm_run(
     main_model: str | None = None,
     agent_model: str | None = None,
     mode: str = "auto",
+    intent_mode: str = "auto",
     run_id: str | None = None,
     session_key: str | None = None,
     a2a_context_id: str | None = None,
@@ -834,6 +859,13 @@ def start_cognitive_swarm_run(
         agent_model or normalized_model or normalized_main_model or ""
     ).strip() or None
     normalized_mode = str(mode or "auto").strip().lower()
+    try:
+        normalized_intent_mode = _normalize_intent_mode(
+            intent_mode,
+            free_profile=normalized_mode == "free" or _force_free_profile,
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
     if not normalized_mission:
         return {"error": "mission is required"}, 400
     if len(normalized_mission) > 20_000:
@@ -1076,12 +1108,12 @@ def start_cognitive_swarm_run(
         mission_intent = _free_mission_intent
         try:
             if mission_intent is None:
-                mission_intent = asyncio.run(classify_mission_intent(
+                mission_intent = _explicit_mission_intent(
+                    _normalize_intent_mode(normalized_intent_mode, free_profile=True),
                     normalized_mission,
-                    model=resolved_model,
-                    route=execution_resolution.primary_route,
-                    stage_billing=None,
-                ))
+                )
+            if mission_intent is None:
+                raise RuntimeError("Free execution requires a deterministic intent mode.")
             if (
                 mission_intent.mode == "repository_execution"
                 and implementation_job is None
@@ -1317,6 +1349,7 @@ def start_cognitive_swarm_run(
                         evidence=normalized_evidence,
                         model=next_model,
                         mode=normalized_mode,
+                        intent_mode=normalized_intent_mode,
                         run_id=resolved_run_id,
                         session_key=resolved_session_key,
                         a2a_context_id=a2a_context_id,
@@ -1396,12 +1429,17 @@ def start_cognitive_swarm_run(
             agent_route=execution_resolution.agent_route,
             requested_mode=execution_resolution.requested_mode,
         )
-        mission_intent = asyncio.run(classify_mission_intent(
+        mission_intent = _explicit_mission_intent(
+            normalized_intent_mode,
             normalized_mission,
-            model=resolved_model,
-            route=execution_resolution.primary_route,
-            stage_billing=stage_billing,
-        ))
+        )
+        if mission_intent is None:
+            mission_intent = asyncio.run(classify_mission_intent(
+                normalized_mission,
+                model=resolved_model,
+                route=execution_resolution.primary_route,
+                stage_billing=stage_billing,
+            ))
     except AgentBillingError as exc:
         if exc.family in {
             "INSUFFICIENT_PROVIDER_FUNDED_CREDITS",
@@ -1424,6 +1462,7 @@ def start_cognitive_swarm_run(
                     evidence=normalized_evidence,
                     model=fallback_model,
                     mode=execution_resolution.requested_mode,
+                    intent_mode=normalized_intent_mode,
                     run_id=resolved_run_id,
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
@@ -1498,6 +1537,7 @@ def start_cognitive_swarm_run(
                     evidence=normalized_evidence,
                     model=fallback_model,
                     mode=execution_resolution.requested_mode,
+                    intent_mode=normalized_intent_mode,
                     run_id=resolved_run_id,
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
@@ -2161,6 +2201,7 @@ def register_cognitive_swarm_routes(
             main_model=str(body.get("mainModel") or "") or None,
             agent_model=str(body.get("agentModel") or "") or None,
             mode=str(body.get("mode") or "auto"),
+            intent_mode=str(body.get("intentMode") or "auto"),
         )
         return jsonify(payload), status_code
 
