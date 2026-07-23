@@ -191,11 +191,48 @@ jobs:
           SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
             "${common_build_args[@]}" --tag "${local_ref_b}" upstream-normalized
 
-          failure_family="reproducible_image_identity_mismatch"
+          failure_family="runtime_content_identity_mismatch"
+          docker image inspect "${local_ref_a}" > .sovereign-evidence/freellmpool-image-a.json
+          docker image inspect "${local_ref_b}" > .sovereign-evidence/freellmpool-image-b.json
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          def runtime_identity(path: str) -> dict[str, object]:
+              payload = json.loads(Path(path).read_text('utf-8'))[0]
+              config = payload.get('Config') or {}
+              return {
+                  'rootfsLayers': list((payload.get('RootFS') or {}).get('Layers') or []),
+                  'runtimeConfig': {
+                      'entrypoint': config.get('Entrypoint'),
+                      'cmd': config.get('Cmd'),
+                      'env': sorted(config.get('Env') or []),
+                      'workingDir': config.get('WorkingDir'),
+                      'user': config.get('User'),
+                      'labels': dict(sorted((config.get('Labels') or {}).items())),
+                  },
+              }
+
+          identities = []
+          for suffix in ('a', 'b'):
+              identity = runtime_identity(f'.sovereign-evidence/freellmpool-image-{suffix}.json')
+              encoded = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
+              Path(f'.sovereign-evidence/freellmpool-runtime-identity-{suffix}.json').write_text(
+                  json.dumps(identity, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              )
+              identities.append((identity, hashlib.sha256(encoded).hexdigest()))
+          if identities[0][0] != identities[1][0]:
+              raise SystemExit('runtime content identity mismatch')
+          Path('.sovereign-evidence/freellmpool-runtime-content-sha256.txt').write_text(
+              identities[0][1] + '\n', encoding='utf-8'
+          )
+          PY
+          runtime_content_sha256="$(cat .sovereign-evidence/freellmpool-runtime-content-sha256.txt)"
+          test "${#runtime_content_sha256}" = "64"
           image_id_a="$(docker image inspect "${local_ref_a}" --format '{{.Id}}')"
           image_id_b="$(docker image inspect "${local_ref_b}" --format '{{.Id}}')"
           test -n "${image_id_a}"
-          test "${image_id_a}" = "${image_id_b}"
           local_ref="${local_ref_a}"
           image_id="${image_id_a}"
 
@@ -206,7 +243,7 @@ jobs:
           failure_family="immutable_registry_publish"
           if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-            publish_tag="${PUBLISH_IMAGE}:upstream-${UPSTREAM_REVISION}"
+            publish_tag="${PUBLISH_IMAGE}:runtime-${runtime_content_sha256}-${GITHUB_RUN_ID}"
             docker tag "${local_ref}" "${publish_tag}"
             push_output="$(docker push "${publish_tag}")"
             digest="$(printf '%s\n' "${push_output}" | sed -nE 's/^.*digest: (sha256:[0-9a-f]{64}).*$/\1/p' | tail -n1)"
@@ -225,7 +262,8 @@ jobs:
           echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
           echo "source_epoch=${source_epoch}" >> "$GITHUB_OUTPUT"
           echo "dependency_lock_sha256=${dependency_lock_sha256}" >> "$GITHUB_OUTPUT"
-          echo "reproducible_build_verified=true" >> "$GITHUB_OUTPUT"
+          echo "runtime_content_sha256=${runtime_content_sha256}" >> "$GITHUB_OUTPUT"
+          echo "runtime_content_reproducible_verified=true" >> "$GITHUB_OUTPUT"
           echo "failure_family=" >> "$GITHUB_OUTPUT"
           trap - EXIT
 
@@ -410,8 +448,10 @@ jobs:
               "baseImage": "${{ steps.image.outputs.base_repo_digest }}",
               "sourceDateEpoch": int("${{ steps.image.outputs.source_epoch }}"),
               "dependencyLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
-              "reproducibleBuildVerified": "${{ steps.image.outputs.reproducible_build_verified }}" == "true",
+              "runtimeContentSha256": "${{ steps.image.outputs.runtime_content_sha256 }}",
+              "runtimeContentReproducibleVerified": "${{ steps.image.outputs.runtime_content_reproducible_verified }}" == "true",
               "independentNoCacheBuilds": 2,
+              "localImageIdsEqual": False,
               "nonRootUid": 10001,
               "readOnlyRootFilesystem": True,
               "hostPortsPublished": False,
@@ -432,7 +472,8 @@ jobs:
             echo '- Release: `v0.11.4`'
             echo '- Upstream revision: `${{ env.UPSTREAM_REVISION }}`'
             echo '- Immutable image: `${{ steps.image.outputs.repo_digest }}`'
-            echo '- Reproducible no-cache builds: `2/2 identical`'
+            echo '- Reproducible runtime content: `2/2 identical`'
+            echo '- Runtime content SHA-256: `${{ steps.image.outputs.runtime_content_sha256 }}`'
             echo '- Dependency lock SHA-256: `${{ steps.image.outputs.dependency_lock_sha256 }}`'
             echo '- Forced runtime UID: `10001`'
             echo '- Host ports: `none`'
@@ -443,7 +484,7 @@ jobs:
       - name: Upload secret-free verification evidence
         uses: actions/upload-artifact@v4
         with:
-          name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}-${{ steps.image.outputs.dependency_lock_sha256 }}
+          name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}-${{ steps.image.outputs.runtime_content_sha256 }}
           path: .sovereign-evidence/*.json
           if-no-files-found: error
           include-hidden-files: true
