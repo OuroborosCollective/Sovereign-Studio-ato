@@ -227,7 +227,7 @@ def test_code_missions_use_llm_intent_and_materialize_six_tool_bound_tasks() -> 
     assert "INSERT INTO agent_tool_calls" in run_store
     assert "tool_call_count = tool_call_count + 1" in run_store
     assert 'stage="agent_evidence_gate" if not evidence_pending else "agent_evidence_pending"' in tool_events
-    assert "next_blocker = gate.reason if tool_failed else None" in tool_events
+    assert "next_blocker = None if gate.passed else gate.reason" in tool_events
     assert "jsonb_agg(item ORDER BY item)" in job_store
     assert "COALESCE(sovereign_agent_jobs.changed_files" in job_store
     assert "LEFT(sovereign_agent_jobs.diff_summary || E'\\n---\\n' || input.diff_summary" in job_store
