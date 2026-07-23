@@ -10,7 +10,6 @@ import asyncio
 import importlib
 import importlib.metadata
 import json
-import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -31,12 +30,11 @@ from .cognitive_llm_transport import (
     build_route_run_config,
 )
 from .cognitive_usage_billing import AgentStageBilling
-from llm_cost_policy import AGENTS_LITELLM_ALIAS, AGENTS_PROVIDER_MODEL
-from llm_transport import LEGACY_LITELLM_TRANSPORT
 
 
-DEFAULT_MODEL: Final[str] = AGENTS_LITELLM_ALIAS
-ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset({AGENTS_LITELLM_ALIAS})
+DEFAULT_MODEL: Final[str] = ""
+ALLOWED_LITELLM_MODEL_ALIASES: Final[frozenset[str]] = frozenset()
+_DIRECT_ROUTE_REQUIRED_TRANSPORT: Final[str] = "unresolved"
 _AGENT_OUTPUT_TOKEN_LIMIT: Final[int] = 2_048
 _AGENT_WORKER_MAX_TURNS: Final[int] = 4
 _AGENT_FREE_WORKSPACE_MAX_TURNS: Final[int] = 12
@@ -51,16 +49,7 @@ RELEASE_HUNT_SKILL_PATH: Final[Path] = (
 
 _AGENT_CLASS: Any | None = None
 _RUNNER_CLASS: Any | None = None
-_RUN_CONFIG: Any | None = None
-_RUN_CONFIG_MODEL = ""
-_RUN_CONFIG_ERROR = ""
 _AGENTS_SDK_ERROR = ""
-_LITELLM_SERVICE_KEY_FILENAME: Final[str] = "litellm_master_key.txt"
-_LITELLM_SERVICE_KEY_MAX_BYTES: Final[int] = 8192
-_DEFAULT_LITELLM_BASE_URL: Final[str] = "http://litellm:4000"
-_SAFE_LITELLM_ALIAS: Final[re.Pattern[str]] = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$"
-)
 
 StageObserver = Callable[[dict[str, object]], None]
 RepositoryToolFactory = Callable[[str], list[Any]]
@@ -88,113 +77,6 @@ def _emit_stage(
     if loop is not None:
         payload["loop"] = loop
     observer(payload)
-
-
-def _ensure_litellm_runtime_key(model: str | None = None) -> bool:
-    """Build the isolated Legacy-LiteLLM compatibility RunConfig.
-
-    Persisted product runs must supply a database-resolved direct OpenRouter or
-    FreeLLM route and therefore do not enter this no-route compatibility path.
-    """
-
-    global _RUN_CONFIG, _RUN_CONFIG_MODEL, _RUN_CONFIG_ERROR
-    _RUN_CONFIG = None
-    _RUN_CONFIG_MODEL = ""
-    _RUN_CONFIG_ERROR = ""
-    selected_model = str(model or DEFAULT_MODEL).strip()
-    if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
-        _RUN_CONFIG_ERROR = "LITELLM_ALIAS_INVALID"
-        return False
-    os.environ.pop("OPENAI_API_KEY", None)
-    os.environ.pop("OPENAI_BASE_URL", None)
-    base_url = os.getenv("LITELLM_BASE_URL", _DEFAULT_LITELLM_BASE_URL).strip().rstrip("/")
-    if base_url != _DEFAULT_LITELLM_BASE_URL:
-        return False
-    expected_root = Path(
-        os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")
-    ).resolve()
-    configured_key_file = os.getenv(
-        "LITELLM_MASTER_KEY_FILE",
-        str(expected_root / _LITELLM_SERVICE_KEY_FILENAME),
-    ).strip()
-    candidate_path = Path(configured_key_file)
-    if candidate_path.is_symlink():
-        return False
-    candidate = candidate_path.resolve()
-    if candidate.parent != expected_root or candidate.name != _LITELLM_SERVICE_KEY_FILENAME or not candidate.is_file():
-        return False
-    try:
-        if candidate.stat().st_mode & 0o077:
-            return False
-        raw = candidate.read_bytes()
-    except OSError:
-        return False
-    if not raw or len(raw) > _LITELLM_SERVICE_KEY_MAX_BYTES:
-        return False
-    try:
-        value = raw.decode("utf-8").strip()
-    except UnicodeDecodeError:
-        return False
-    if len(value) < 16 or "\x00" in value or "\n" in value or "\r" in value:
-        return False
-    try:
-        provider_module = importlib.import_module("agents.models.openai_provider")
-        provider_class = getattr(provider_module, "OpenAIProvider")
-    except (AttributeError, ImportError):
-        _RUN_CONFIG_ERROR = "SDK_OPENAI_PROVIDER_API_UNAVAILABLE"
-        return False
-    try:
-        run_config_module = importlib.import_module("agents.run_config")
-        run_config_class = getattr(run_config_module, "RunConfig")
-    except (AttributeError, ImportError):
-        _RUN_CONFIG_ERROR = "SDK_RUN_CONFIG_API_UNAVAILABLE"
-        return False
-    try:
-        provider = provider_class(
-            api_key=value,
-            base_url=f"{base_url}/v1",
-            use_responses=False,
-        )
-    except (TypeError, ValueError):
-        _RUN_CONFIG_ERROR = "SDK_PROVIDER_CONFIGURATION_REJECTED"
-        return False
-    try:
-        model_settings_module = importlib.import_module("agents.model_settings")
-        model_settings_class = getattr(model_settings_module, "ModelSettings")
-        model_settings = model_settings_class(
-            max_tokens=_AGENT_OUTPUT_TOKEN_LIMIT,
-            include_usage=True,
-        )
-    except (AttributeError, ImportError, TypeError, ValueError):
-        _RUN_CONFIG_ERROR = "SDK_MODEL_SETTINGS_API_UNAVAILABLE"
-        return False
-    try:
-        _RUN_CONFIG = run_config_class(
-            model=selected_model,
-            model_provider=provider,
-            model_settings=model_settings,
-            tracing_disabled=True,
-            trace_include_sensitive_data=False,
-        )
-    except (TypeError, ValueError):
-        _RUN_CONFIG = None
-        _RUN_CONFIG_ERROR = "SDK_RUN_CONFIG_REJECTED"
-        return False
-    _RUN_CONFIG_MODEL = selected_model
-    return True
-
-
-def ensure_openai_runtime_key() -> bool:
-    """Build the bounded Legacy-LiteLLM test/operator compatibility provider."""
-    return _ensure_litellm_runtime_key(DEFAULT_MODEL)
-
-
-def _require_litellm_run_config(model: str | None = None) -> Any:
-    selected_model = str(model or DEFAULT_MODEL).strip()
-    if _RUN_CONFIG is None or _RUN_CONFIG_MODEL != selected_model:
-        if not _ensure_litellm_runtime_key(selected_model):
-            raise RuntimeError("The Legacy-LiteLLM compatibility RunConfig is unavailable.")
-    return _RUN_CONFIG
 
 
 class SwarmExecutionError(RuntimeError):
@@ -259,18 +141,18 @@ def classify_swarm_exception(
     exc: Exception,
     *,
     stage: str,
-    transport: str = LEGACY_LITELLM_TRANSPORT,
+    transport: str = _DIRECT_ROUTE_REQUIRED_TRANSPORT,
 ) -> SwarmExecutionError:
     error_type = type(exc).__name__
     lowered = error_type.casefold()
     status = _exception_status(exc)
-    normalized_transport = str(transport or LEGACY_LITELLM_TRANSPORT).strip().lower()
+    normalized_transport = str(transport or _DIRECT_ROUTE_REQUIRED_TRANSPORT).strip().lower()
     provider_name = (
         "OPENROUTER"
         if normalized_transport == "openrouter"
         else "FREELLM"
         if normalized_transport == "freellm"
-        else "LITELLM"
+        else "ROUTE"
     )
     if isinstance(exc, FileNotFoundError):
         family, next_action, retryable = "AGENTS_RUNTIME_ASSET_MISSING", "VERIFY_PRODUCTION_RUNTIME_ASSETS", False
@@ -356,7 +238,7 @@ async def _run_stage(
     stage: str,
     stage_billing: AgentStageBilling | None = None,
     run_config: Any | None = None,
-    transport: str = LEGACY_LITELLM_TRANSPORT,
+    transport: str = _DIRECT_ROUTE_REQUIRED_TRANSPORT,
 ) -> Any:
     reservation = (
         stage_billing.reserve(stage=stage, prompt=prompt)
@@ -364,11 +246,14 @@ async def _run_stage(
         else None
     )
     try:
-        selected_agent_model = str(getattr(agent, "model", "") or DEFAULT_MODEL)
         effective_run_config = run_config
         if effective_run_config is None:
-            effective_run_config = _require_litellm_run_config(
-                None if selected_agent_model == DEFAULT_MODEL else selected_agent_model
+            raise SwarmExecutionError(
+                stage=stage,
+                family="AGENTS_DIRECT_ROUTE_REQUIRED",
+                error_type="RuntimeConfigurationError",
+                next_action="RESOLVE_DATABASE_OPENROUTER_OR_FREELLM_ROUTE",
+                retryable=False,
             )
         result = await runner_class.run(
             agent,
@@ -420,13 +305,12 @@ async def _run_billed_stage(
     stage: str,
     stage_billing: AgentStageBilling | None,
     run_config: Any | None = None,
-    transport: str = LEGACY_LITELLM_TRANSPORT,
+    transport: str = _DIRECT_ROUTE_REQUIRED_TRANSPORT,
 ) -> Any:
     kwargs: dict[str, Any] = {"stage": stage}
     if run_config is not None:
         kwargs["run_config"] = run_config
-    if transport != LEGACY_LITELLM_TRANSPORT:
-        kwargs["transport"] = transport
+    kwargs["transport"] = transport
     if stage_billing is not None:
         kwargs["stage_billing"] = stage_billing
     return await _run_stage(runner_class, agent, prompt, **kwargs)
@@ -571,36 +455,28 @@ async def classify_mission_intent(
     normalized_mission = mission.strip()
     if not normalized_mission:
         raise ValueError("mission is required")
-    selected_model = (model or DEFAULT_MODEL).strip()
-    route_runtime: RouteRunConfig | None = None
-    if route is not None:
-        try:
-            route_runtime = build_route_run_config(
-                route,
-                output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
-            )
-        except RouteRuntimeError as exc:
-            raise SwarmExecutionError(
-                stage="intent-router",
-                family=exc.family,
-                error_type=type(exc).__name__,
-                next_action=exc.next_action,
-                retryable=False,
-            ) from exc
-        selected_model = route_runtime.model
-    else:
-        if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
-            raise ValueError("A valid Legacy-LiteLLM compatibility alias is required.")
-        if stage_billing is not None and selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
-            raise ValueError("A paid Legacy-LiteLLM compatibility alias is required.")
-        if not _ensure_litellm_runtime_key(selected_model):
-            raise SwarmExecutionError(
-                stage="intent-router",
-                family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
-                error_type="RuntimeConfigurationError",
-                next_action="VERIFY_LITELLM_SERVICE_KEY",
-                retryable=False,
-            )
+    if route is None:
+        raise SwarmExecutionError(
+            stage="intent-router",
+            family="AGENTS_DIRECT_ROUTE_REQUIRED",
+            error_type="RuntimeConfigurationError",
+            next_action="RESOLVE_DATABASE_OPENROUTER_OR_FREELLM_ROUTE",
+            retryable=False,
+        )
+    try:
+        route_runtime = build_route_run_config(
+            route,
+            output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
+        )
+    except RouteRuntimeError as exc:
+        raise SwarmExecutionError(
+            stage="intent-router",
+            family=exc.family,
+            error_type=type(exc).__name__,
+            next_action=exc.next_action,
+            retryable=False,
+        ) from exc
+    selected_model = route_runtime.model
     agent_class, runner_class = _require_agents_sdk()
     freellm_text_contract = bool(
         route_runtime is not None and route_runtime.transport == "freellm"
@@ -630,8 +506,8 @@ async def classify_mission_intent(
         f"User mission:\n{normalized_mission}",
         stage="intent-router",
         stage_billing=stage_billing,
-        run_config=route_runtime.run_config if route_runtime else None,
-        transport=route_runtime.transport if route_runtime else LEGACY_LITELLM_TRANSPORT,
+        run_config=route_runtime.run_config,
+        transport=route_runtime.transport,
     )
     intent = (
         _parse_freellm_intent_text(result.final_output, normalized_mission)
@@ -682,35 +558,30 @@ async def run_free_single_agent(
         raise ValueError("mission is required")
     if not isinstance(intent, MissionIntent):
         raise ValueError("A validated mission intent is required for the free profile.")
-    route_runtime: RouteRunConfig | None = None
-    if route is not None:
-        try:
-            route_runtime = build_route_run_config(
-                route,
-                output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
-            )
-        except RouteRuntimeError as exc:
-            raise SwarmExecutionError(
-                stage="free-single-agent",
-                family=exc.family,
-                error_type=type(exc).__name__,
-                next_action=exc.next_action,
-                retryable=False,
-            ) from exc
-        if route_runtime.transport != "freellm":
-            raise ValueError("The free profile requires a direct FreeLLM route.")
-        selected_model = route_runtime.model
-    else:
-        if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
-            raise ValueError("A valid Legacy-LiteLLM compatibility alias is required.")
-        if not _ensure_litellm_runtime_key(selected_model):
-            raise SwarmExecutionError(
-                stage="free-single-agent",
-                family="LITELLM_RUNTIME_CONFIGURATION_MISSING",
-                error_type="RuntimeConfigurationError",
-                next_action="VERIFY_LITELLM_SERVICE_KEY",
-                retryable=False,
-            )
+    if route is None:
+        raise SwarmExecutionError(
+            stage="free-single-agent",
+            family="AGENTS_DIRECT_ROUTE_REQUIRED",
+            error_type="RuntimeConfigurationError",
+            next_action="RESOLVE_DATABASE_FREELLM_ROUTE",
+            retryable=False,
+        )
+    try:
+        route_runtime = build_route_run_config(
+            route,
+            output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
+        )
+    except RouteRuntimeError as exc:
+        raise SwarmExecutionError(
+            stage="free-single-agent",
+            family=exc.family,
+            error_type=type(exc).__name__,
+            next_action=exc.next_action,
+            retryable=False,
+        ) from exc
+    if route_runtime.transport != "freellm":
+        raise ValueError("The free profile requires a direct FreeLLM route.")
+    selected_model = route_runtime.model
     agent_class, runner_class = _require_agents_sdk()
     repository_tools = (
         list(repository_tool_factory("free_single_agent"))
@@ -748,8 +619,8 @@ async def run_free_single_agent(
         ),
         stage="free-single-agent",
         stage_billing=None,
-        run_config=route_runtime.run_config if route_runtime else None,
-        transport=route_runtime.transport if route_runtime else LEGACY_LITELLM_TRANSPORT,
+        run_config=route_runtime.run_config,
+        transport=route_runtime.transport,
     )
     raw_output = result.final_output
     if not isinstance(raw_output, str) or not raw_output.strip():
@@ -913,18 +784,18 @@ def build_cognitive_swarm(
     main_run_config: Any | None = None,
     agent_run_config: Any | None = None,
 ) -> CognitiveSwarm:
-    selected_main_model = (main_model or model or DEFAULT_MODEL).strip()
-    selected_agent_model = (agent_model or selected_main_model).strip()
+    selected_main_model = str(main_model or model or "").strip()
+    selected_agent_model = str(agent_model or selected_main_model).strip()
     if not selected_main_model or not selected_agent_model:
         raise ValueError("Main and six-agent model identifiers are required.")
     resolved_main_config = main_run_config if main_run_config is not None else run_config
     resolved_agent_config = (
         agent_run_config if agent_run_config is not None else resolved_main_config
     )
-    if resolved_main_config is None and selected_main_model not in ALLOWED_LITELLM_MODEL_ALIASES:
-        raise ValueError("A Sovereign LiteLLM model alias is required for the legacy main model.")
-    if resolved_agent_config is None and selected_agent_model not in ALLOWED_LITELLM_MODEL_ALIASES:
-        raise ValueError("A Sovereign LiteLLM model alias is required for the legacy six-agent model.")
+    if resolved_main_config is None or resolved_agent_config is None:
+        raise ValueError(
+            "Database-resolved direct OpenRouter RunConfig values are required for the paid swarm."
+        )
     agent_class, _ = _require_agents_sdk()
 
     skill = _load_skill_instructions()
@@ -949,11 +820,7 @@ def build_cognitive_swarm(
             specialist.as_tool(
                 tool_name=f"specialist_{role}",
                 tool_description=f"Analyze one bounded {role} work package and return evidence-backed findings.",
-                run_config=(
-                    resolved_agent_config
-                    if resolved_agent_config is not None
-                    else _require_litellm_run_config(selected_agent_model)
-                ),
+                run_config=resolved_agent_config,
                 max_turns=2,
             )
         )
@@ -1078,75 +945,52 @@ async def run_cognitive_swarm(
     normalized_mission = mission.strip()
     if not normalized_mission:
         raise ValueError("mission is required")
-    selected_main_model = str(model or DEFAULT_MODEL).strip()
-    selected_agent_model = selected_main_model
     resolved_main_route = main_route or route
     resolved_agent_route = agent_route or resolved_main_route
-    main_runtime: RouteRunConfig | None = None
-    agent_runtime: RouteRunConfig | None = None
-    if resolved_main_route is not None:
-        try:
-            main_runtime = build_route_run_config(
-                resolved_main_route,
+    if resolved_main_route is None or resolved_agent_route is None:
+        raise SwarmExecutionError(
+            stage="swarm-build",
+            family="AGENTS_DIRECT_OPENROUTER_ROUTE_REQUIRED",
+            error_type="RuntimeConfigurationError",
+            next_action="RESOLVE_DATABASE_OPENROUTER_ROUTE",
+            retryable=False,
+        )
+    try:
+        main_runtime = build_route_run_config(
+            resolved_main_route,
+            output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
+        )
+        agent_runtime = (
+            main_runtime
+            if resolved_agent_route is resolved_main_route
+            or str(resolved_agent_route.get("id") or "")
+            == str(resolved_main_route.get("id") or "")
+            else build_route_run_config(
+                resolved_agent_route,
                 output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
             )
-            agent_runtime = (
-                main_runtime
-                if resolved_agent_route is resolved_main_route
-                or str(resolved_agent_route.get("id") or "")
-                == str(resolved_main_route.get("id") or "")
-                else build_route_run_config(
-                    resolved_agent_route,
-                    output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
-                )
-            )
-        except RouteRuntimeError as exc:
-            raise SwarmExecutionError(
-                stage="swarm-build",
-                family=exc.family,
-                error_type=type(exc).__name__,
-                next_action=exc.next_action,
-                retryable=False,
-            ) from exc
-        if main_runtime.transport != "openrouter" or agent_runtime.transport != "openrouter":
-            raise ValueError("The paid swarm requires direct OpenRouter model routes.")
-        selected_main_model = main_runtime.model
-        selected_agent_model = agent_runtime.model
-    else:
-        if (
-            selected_main_model not in ALLOWED_LITELLM_MODEL_ALIASES
-            or selected_agent_model not in ALLOWED_LITELLM_MODEL_ALIASES
-        ):
-            raise ValueError("A paid Sovereign LiteLLM model alias is required for legacy no-route execution.")
-        if selected_main_model == DEFAULT_MODEL:
-            if not ensure_openai_runtime_key():
-                return {
-                    "ok": False,
-                    "status": "BLOCKED",
-                    "blocker": "Legacy-LiteLLM compatibility key or internal base URL is not configured.",
-                    "manifest": manifest_payload(),
-                }
-        elif not _ensure_litellm_runtime_key(selected_main_model):
-            return {
-                "ok": False,
-                "status": "BLOCKED",
-                "blocker": "Legacy-LiteLLM compatibility key or internal base URL is not configured.",
-                "manifest": manifest_payload(),
-            }
+        )
+    except RouteRuntimeError as exc:
+        raise SwarmExecutionError(
+            stage="swarm-build",
+            family=exc.family,
+            error_type=type(exc).__name__,
+            next_action=exc.next_action,
+            retryable=False,
+        ) from exc
+    if main_runtime.transport != "openrouter" or agent_runtime.transport != "openrouter":
+        raise ValueError("The paid swarm requires direct OpenRouter model routes.")
+    selected_main_model = main_runtime.model
+    selected_agent_model = agent_runtime.model
 
     try:
         _, runner_class = _require_agents_sdk()
-        if main_runtime is None and agent_runtime is None:
-            # Preserve the bounded legacy test/operator entrypoint while every
-            # resolved paid execution uses the explicit direct-OpenRouter pair.
-            build_kwargs: dict[str, Any] = {"model": selected_main_model}
-        else:
-            build_kwargs = {
-                "main_model": selected_main_model,
-                "agent_model": selected_agent_model,
-                "main_run_config": main_runtime.run_config if main_runtime else None,
-                "agent_run_config": agent_runtime.run_config if agent_runtime else None,
-            }
+        build_kwargs: dict[str, Any] = {
+            "main_model": selected_main_model,
+            "agent_model": selected_agent_model,
+            "main_run_config": main_runtime.run_config,
+            "agent_run_config": agent_runtime.run_config,
+        }
         if repository_tool_factory is not None:
             build_kwargs["repository_tool_factory"] = repository_tool_factory
         swarm = build_cognitive_swarm(**build_kwargs)
@@ -1156,7 +1000,7 @@ async def run_cognitive_swarm(
         raise classify_swarm_exception(
             exc,
             stage="swarm-build",
-            transport=main_runtime.transport if main_runtime else LEGACY_LITELLM_TRANSPORT,
+            transport=main_runtime.transport,
         ) from exc
 
     _emit_stage(
@@ -1173,12 +1017,8 @@ async def run_cognitive_swarm(
         f"Mission:\n{normalized_mission}\n\nRuntime evidence:\n{evidence or '[no evidence supplied]'}",
         stage="dispatcher",
         stage_billing=stage_billing,
-        run_config=main_runtime.run_config if main_runtime else None,
-        transport=(
-            main_runtime.transport
-            if main_runtime
-            else LEGACY_LITELLM_TRANSPORT
-        ),
+        run_config=main_runtime.run_config,
+        transport=main_runtime.transport,
     )
     plan = plan_result.final_output
     if not isinstance(plan, DispatchPlan):
@@ -1225,12 +1065,8 @@ async def run_cognitive_swarm(
                 ),
                 stage=f"loop-{loop}:worker:{role}",
                 stage_billing=stage_billing,
-                run_config=agent_runtime.run_config if agent_runtime else None,
-                transport=(
-                    agent_runtime.transport
-                    if agent_runtime
-                    else LEGACY_LITELLM_TRANSPORT
-                ),
+                run_config=agent_runtime.run_config,
+                transport=agent_runtime.transport,
             )
             report = result.final_output
             if not isinstance(report, WorkerReport):
@@ -1284,12 +1120,8 @@ async def run_cognitive_swarm(
             ),
             stage=f"loop-{loop}:judge",
             stage_billing=stage_billing,
-            run_config=main_runtime.run_config if main_runtime else None,
-            transport=(
-                main_runtime.transport
-                if main_runtime
-                else LEGACY_LITELLM_TRANSPORT
-            ),
+            run_config=main_runtime.run_config,
+            transport=main_runtime.transport,
         )
         verdict = judge_result.final_output
         if not isinstance(verdict, JudgeVerdict):

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -85,9 +85,8 @@ function integrationEvidence(integration: EnterpriseIntegration) {
 export function EnterpriseBackendPanel() {
   const [overview, setOverview] = useState<EnterprisePlatformOverview | null>(null);
   const [evidence, setEvidence] = useState<EnterpriseEvidenceReceipt[]>([]);
-  const [selectedModel, setSelectedModel] = useState('');
   const [loading, setLoading] = useState(true);
-  const [runningCanary, setRunningCanary] = useState<'readiness' | 'completion' | null>(null);
+  const [runningCanary, setRunningCanary] = useState<'readiness' | null>(null);
   const [lastCanary, setLastCanary] = useState<EnterpriseCanaryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,42 +114,12 @@ export function EnterpriseBackendPanel() {
     void refresh();
   }, [refresh]);
 
-  const activeModelIds = useMemo(() => {
-    const routing = overview?.integrations.find(item => item.id === 'llm-routing');
-    const candidate = routing?.evidence['legacyLiteLlmModelIds'];
-    return Array.isArray(candidate)
-      ? candidate.filter((item): item is string => typeof item === 'string' && item.length > 0)
-      : [];
-  }, [overview]);
-
-  useEffect(() => {
-    if (!selectedModel || !activeModelIds.includes(selectedModel)) {
-      setSelectedModel(activeModelIds[0] ?? '');
-    }
-  }, [activeModelIds, selectedModel]);
-
-  const runCanary = async (scope: 'readiness' | 'completion') => {
-    if (scope === 'completion') {
-      if (!selectedModel) {
-        setError('Kein aktiver Legacy-LiteLLM-Transport verfügbar. Direkte OpenRouter- und FreeLLM-Canaries werden in ihren eigenen Providerbereichen ausgeführt.');
-        return;
-      }
-      const accepted = window.confirm(
-        'Der Completion-Canary erzeugt eine echte, kostenpflichtige Provider-Anfrage für "' +
-          selectedModel +
-          '". Jetzt ausführen?',
-      );
-      if (!accepted) return;
-    }
-
-    setRunningCanary(scope);
+  const runReadinessCanary = async () => {
+    setRunningCanary('readiness');
     setLastCanary(null);
     setError(null);
     try {
-      const result = await adminApiClient.runEnterprisePlatformCanary(
-        scope,
-        scope === 'completion' ? selectedModel : undefined,
-      );
+      const result = await adminApiClient.runEnterprisePlatformCanary('readiness');
       setLastCanary(result);
     } catch (nextError) {
       setError(String(nextError));
@@ -280,7 +249,7 @@ export function EnterpriseBackendPanel() {
         <div className="sbp-canary-result" data-status={lastCanary.status} aria-live="polite">
           <StatusIcon status={lastCanary.status} size={19} />
           <div>
-            <strong>{lastCanary.scope === 'completion' ? 'Completion' : 'Readiness'}-Canary gespeichert</strong>
+            <strong>Readiness-Canary gespeichert</strong>
             <span>
               Beleg {compactIdentity(lastCanary.receipt.evidenceSha256)} · Readback verifiziert
             </span>
@@ -397,37 +366,11 @@ export function EnterpriseBackendPanel() {
           <button
             className="sbp-button sbp-button-primary"
             type="button"
-            onClick={() => void runCanary('readiness')}
+            onClick={() => void runReadinessCanary()}
             disabled={runningCanary !== null}
           >
             <RefreshCw className={runningCanary === 'readiness' ? 'sbp-spin' : undefined} size={18} aria-hidden="true" />
             {runningCanary === 'readiness' ? 'Prüfung läuft…' : 'Readiness prüfen'}
-          </button>
-        </article>
-        <article className="sbp-action-card sbp-action-card-warning">
-          <div>
-            <h3>Legacy-LiteLLM-Completion</h3>
-            <p>Optionaler Alttransport-Canary. Direkte OpenRouter-Paid- und FreeLLM-Free-Prüfungen gehören in die jeweiligen Providerbereiche. Kann Provider-Kosten erzeugen.</p>
-          </div>
-          <label>
-            <span>Aktives Modell</span>
-            <select
-              value={selectedModel}
-              onChange={event => setSelectedModel(event.target.value)}
-              disabled={runningCanary !== null || activeModelIds.length === 0}
-            >
-              {activeModelIds.length === 0 && <option value="">Kein aktiver Legacy-Transport</option>}
-              {activeModelIds.map(modelId => <option value={modelId} key={modelId}>{modelId}</option>)}
-            </select>
-          </label>
-          <button
-            className="sbp-button sbp-button-warning"
-            type="button"
-            onClick={() => void runCanary('completion')}
-            disabled={runningCanary !== null || !selectedModel}
-          >
-            <Sparkles size={18} aria-hidden="true" />
-            {runningCanary === 'completion' ? 'Provider-Anfrage läuft…' : 'Completion verifizieren'}
           </button>
         </article>
       </div>
@@ -450,7 +393,7 @@ export function EnterpriseBackendPanel() {
           <article className="sbp-evidence-row" key={receipt.id}>
             <StatusBadge status={receipt.status} />
             <div className="sbp-evidence-main">
-              <strong>{receipt.scope === 'completion' ? 'Completion Canary' : 'Readiness Canary'}</strong>
+              <strong>{receipt.scope === 'completion' ? 'Historischer Completion-Beleg' : 'Readiness Canary'}</strong>
               <span>{localDate(receipt.observedAt)} · Revision {compactIdentity(receipt.sourceRevision)}</span>
             </div>
             <code title={receipt.evidenceSha256}>{compactIdentity(receipt.evidenceSha256)}</code>

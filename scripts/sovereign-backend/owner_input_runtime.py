@@ -32,20 +32,6 @@ MAX_TTL_SECONDS = 3600
 MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
-    "openai_api_key": {
-        "label": "OpenAI Provider für Legacy-LiteLLM",
-        "fieldLabel": "OpenAI API-Key",
-        "path": "/opt/sovereign-owner-managed/openai_api_key.txt",
-        "maxBytes": 8192,
-        "kind": "credential",
-    },
-    "litellm_provider_key": {
-        "label": "Einmaliger Fremdprovider-Zugang für Legacy-LiteLLM",
-        "fieldLabel": "Provider API-Key",
-        "path": "/opt/sovereign-owner-managed/litellm_provider_key.txt",
-        "maxBytes": 8192,
-        "kind": "credential",
-    },
     "openrouter_api_key": {
         "label": "Direkter OpenRouter-Zugang für bezahlte Agenten",
         "fieldLabel": "OpenRouter API-Key",
@@ -86,8 +72,6 @@ def _root() -> Path:
 
 def _target_map() -> dict[str, dict[str, Any]]:
     targets = {key: dict(value) for key, value in DEFAULT_TARGETS.items()}
-    targets["openai_api_key"]["path"] = str(_root() / "openai_api_key.txt")
-    targets["litellm_provider_key"]["path"] = str(_root() / "litellm_provider_key.txt")
     targets["openrouter_api_key"]["path"] = str(_root() / "openrouter_api_key.txt")
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")

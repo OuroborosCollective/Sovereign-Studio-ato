@@ -579,6 +579,24 @@ def _sync_catalog(
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT markup_multiplier
+                   FROM llm_provider_deployments
+                   WHERE route_id=%s
+                   LIMIT 1
+                   FOR UPDATE""",
+                (OPENROUTER_ROOT_ROUTE_ID,),
+            )
+            deployment_policy = cursor.fetchone() or {}
+            catalog_multiplier = min(
+                32_767,
+                max(
+                    _MARKUP_MULTIPLIER,
+                    _bounded_nonnegative_int(
+                        deployment_policy.get("markup_multiplier")
+                    ),
+                ),
+            )
             for priority, model in enumerate(models, start=100):
                 model_id = str(model["modelId"])
                 route_priority = 10 if model_id == default_model else priority
@@ -590,7 +608,7 @@ def _sync_catalog(
                     "canonicalModelSlug": model["canonicalModelSlug"],
                     "billingCategory": "standard",
                     "billingClass": "standard",
-                    "markupMultiplier": _MARKUP_MULTIPLIER,
+                    "markupMultiplier": catalog_multiplier,
                     "minimumMultiplier": _MARKUP_MULTIPLIER,
                     "fundingMode": "provider_priced",
                     "inputUsdPerMillion": model["inputUsdPerMillion"],
@@ -643,12 +661,12 @@ def _sync_catalog(
                                CEIL(
                                    (EXCLUDED.config->>'outputUsdPerMillion')::numeric
                                    * GREATEST(
-                                       4,
+                                       %s,
                                        CASE
                                            WHEN COALESCE(llm_routes.config->>'markupMultiplier', '')
                                                 ~ '^[0-9]+$'
                                            THEN (llm_routes.config->>'markupMultiplier')::integer
-                                           ELSE 4
+                                           ELSE %s
                                        END
                                    )
                                )::integer
@@ -656,12 +674,12 @@ def _sync_catalog(
                            config=EXCLUDED.config || jsonb_build_object(
                                'markupMultiplier',
                                GREATEST(
-                                   4,
+                                   %s,
                                    CASE
                                        WHEN COALESCE(llm_routes.config->>'markupMultiplier', '')
                                             ~ '^[0-9]+$'
                                        THEN (llm_routes.config->>'markupMultiplier')::integer
-                                       ELSE 4
+                                       ELSE %s
                                    END
                                )
                            ),
@@ -671,9 +689,16 @@ def _sync_catalog(
                         f"sovereign-openrouter:{model_id}",
                         model["displayName"],
                         OPENROUTER_BASE_URL,
-                        _credits_per_thousand(model["outputUsdPerMillion"]),
+                        _credits_per_thousand(
+                            model["outputUsdPerMillion"],
+                            catalog_multiplier,
+                        ),
                         route_priority,
                         json.dumps(config, ensure_ascii=True),
+                        catalog_multiplier,
+                        catalog_multiplier,
+                        catalog_multiplier,
+                        catalog_multiplier,
                     ),
                 )
             cursor.execute(

@@ -12,9 +12,7 @@ from flask import Blueprint, Flask, g, jsonify, request
 from .contracts import SCHEMA_VERSION, api_error
 from .service import (
     EnterprisePlatformService,
-    PlatformCanaryRateLimited,
     PlatformEvidenceWriteError,
-    PlatformModelRejected,
 )
 
 
@@ -54,7 +52,7 @@ def _openapi_contract() -> dict[str, Any]:
                     "responses": {
                         "200": {"description": "Verified and persisted canary"},
                         "400": {"description": "Invalid input"},
-                        "429": {"description": "Completion canary cooldown"},
+                        "410": {"description": "Legacy completion canary removed"},
                         "503": {"description": "Evidence persistence failed"},
                     },
                 }
@@ -76,14 +74,8 @@ def register_enterprise_platform_routes(
     query,
     get_current_admin,
     audit,
-    litellm_readiness,
-    litellm_completion_canary,
 ) -> EnterprisePlatformService:
-    service = EnterprisePlatformService(
-        query=query,
-        litellm_readiness=litellm_readiness,
-        litellm_completion_canary=litellm_completion_canary,
-    )
+    service = EnterprisePlatformService(query=query)
     app.extensions["sovereign_enterprise_platform"] = service
 
     try:
@@ -223,40 +215,28 @@ def register_enterprise_platform_routes(
                 blocker="admin_identity_missing",
             )), 403
 
+        scope = str(body.get("scope") or "").strip().lower()
+        if scope != "readiness":
+            return jsonify(api_error(
+                "platform_legacy_completion_canary_removed",
+                "Completion-Canaries über Legacy-LiteLLM wurden entfernt. OpenRouter- und FreeLLM-Prüfungen laufen ausschließlich in ihren direkten Providerbereichen.",
+                _request_id(),
+                blocker="legacy_litellm_replaced_by_direct_routes",
+            )), 410
+
         try:
             result = service.run_canary(
                 request_id=_request_id(),
                 actor_id=actor_id,
-                scope=body.get("scope"),
-                model_id=body.get("modelId"),
-                confirmed=body.get("confirmed") is True,
+                scope="readiness",
+                model_id=None,
+                confirmed=False,
             )
-        except PlatformCanaryRateLimited as exc:
-            response = jsonify(api_error(
-                "platform_canary_rate_limited",
-                "Der kostenpflichtige Completion-Canary ist kurzzeitig gesperrt.",
-                _request_id(),
-                blocker="completion_canary_cooldown",
-            ))
-            response.status_code = 429
-            response.headers["Retry-After"] = str(exc.retry_after_seconds)
-            return response
-        except PlatformModelRejected:
-            return jsonify(api_error(
-                "platform_completion_model_not_active",
-                "Der gewählte Modellalias ist nicht als aktive Legacy-LiteLLM-Route registriert. Direkte OpenRouter-/FreeLLM-Canaries laufen in den jeweiligen Providerbereichen.",
-                _request_id(),
-                blocker="completion_model_not_active",
-            )), 400
         except ValueError as exc:
             code = str(exc)
-            messages = {
-                "platform_canary_scope_invalid": "scope muss readiness oder completion sein.",
-                "platform_completion_confirmation_required": "Der Completion-Canary benötigt eine ausdrückliche Bestätigung.",
-            }
             return jsonify(api_error(
                 code,
-                messages.get(code, "Der Canary-Request ist ungültig."),
+                "Der Readiness-Canary-Request ist ungültig.",
                 _request_id(),
             )), 400
         except PlatformEvidenceWriteError:

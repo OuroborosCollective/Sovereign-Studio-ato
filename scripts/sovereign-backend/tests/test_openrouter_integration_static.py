@@ -19,6 +19,7 @@ def test_changed_python_surfaces_parse_without_importing_runtime_dependencies() 
         BACKEND / "agent_runtime" / "cognitive_usage_billing.py",
         SCRIPT_BACKEND / "app.py",
         SCRIPT_BACKEND / "controller_board.py",
+        SCRIPT_BACKEND / "enterprise_platform" / "routes.py",
         SCRIPT_BACKEND / "free_revolver_provider_runtime.py",
         SCRIPT_BACKEND / "llm_provider_runtime.py",
         SCRIPT_BACKEND / "openrouter_provider_runtime.py",
@@ -74,6 +75,67 @@ def test_secret_and_provider_boundaries_are_fail_closed() -> None:
     assert '"allow_fallbacks": False' in openrouter
     assert '"data_collection": "deny"' in openrouter
     assert '"zdr": True' in openrouter
+
+
+def test_admin_price_contract_separates_provider_cost_from_customer_sale() -> None:
+    app = (SCRIPT_BACKEND / "app.py").read_text("utf-8")
+
+    assert '"providerInputUsdPerMillion"' in app
+    assert '"customerInputUsdPerMillion"' in app
+    assert '"customerOutputUsdPerMillion"' in app
+    assert '"grossMarginPercent"' in app
+    assert '"priceDisplayContract": "provider-cost-and-customer-sale"' in app
+    assert "SET billing_category=%s," in app
+    assert "markup_multiplier=%s," in app
+    assert "WHERE route_id=%s" in app
+    assert '"deploymentPolicyUpdated": bool(deployment_policy_updated)' in app
+    assert "else (output_price * multiplier) / 1000" in app
+    assert '"039_openrouter_credit_rate_precision.sql"' in app
+
+
+def test_openrouter_catalog_sync_uses_persisted_deployment_multiplier_floor() -> None:
+    runtime = (
+        SCRIPT_BACKEND / "openrouter_provider_runtime.py"
+    ).read_text("utf-8")
+
+    assert "SELECT markup_multiplier" in runtime
+    assert "FROM llm_provider_deployments" in runtime
+    assert "catalog_multiplier = min(" in runtime
+    assert '"markupMultiplier": catalog_multiplier' in runtime
+    assert "_credits_per_thousand(" in runtime
+    assert "catalog_multiplier," in runtime
+    assert "GREATEST(\n                                       %s," in runtime
+
+
+def test_admin_and_readiness_reject_legacy_litellm_as_product_transport() -> None:
+    app = (SCRIPT_BACKEND / "app.py").read_text("utf-8")
+    enterprise_routes = (
+        SCRIPT_BACKEND / "enterprise_platform" / "routes.py"
+    ).read_text("utf-8")
+
+    assert "WHERE lower(COALESCE(runtime_kind, provider))='openrouter'" in app
+    assert '"blocker": "legacy_litellm_replaced_by_openrouter"' in app
+    assert 'allowed_route_providers = {"openrouter", "freellm"}' in app
+    assert '"providerProbePerformed": False' in app
+    assert '"policy": "direct-freellm-free-and-direct-openrouter-paid-only"' in app
+    assert '"platform_legacy_completion_canary_removed"' in enterprise_routes
+    assert 'blocker="legacy_litellm_replaced_by_direct_routes"' in enterprise_routes
+    assert 'scope="readiness"' in enterprise_routes
+
+
+def test_openrouter_credit_rate_precision_migration_is_schema_adaptive() -> None:
+    migration = (
+        SCRIPT_BACKEND / "migrations" / "039_openrouter_credit_rate_precision.sql"
+    ).read_text("utf-8")
+
+    assert "NUMERIC(18,12)" in migration
+    assert "outputUsdPerMillion" in migration
+    assert "markupMultiplier" in migration
+    assert "/ 1000" in migration
+    assert "20260723130039" in migration
+    assert "column_name = 'id'" in migration
+    assert "column_name = 'version'" in migration
+    assert "ON CONFLICT (version) DO NOTHING" in migration
 
 
 def test_additive_migration_keeps_transports_disjoint() -> None:

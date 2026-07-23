@@ -19,12 +19,14 @@ def test_only_canonical_backend_is_built_for_production() -> None:
     assert "context: backend" not in workflow
 
 
-def test_provider_onboarding_is_owner_gated_and_canary_bound() -> None:
+def test_legacy_provider_registry_has_no_owner_credential_target() -> None:
     runtime = (BACKEND / "llm_provider_runtime.py").read_text("utf-8")
     owner_input = (BACKEND / "owner_input_runtime.py").read_text("utf-8")
     migration = (BACKEND / "migrations" / "021_litellm_provider_registry.sql").read_text("utf-8")
 
-    assert '"litellm_provider_key"' in owner_input
+    assert '"litellm_provider_key"' not in owner_input
+    assert '"openai_api_key"' not in owner_input
+    assert '"openrouter_api_key"' in owner_input
     assert "owner_input_requests" in runtime
     assert '"/model/new"' in runtime
     assert '"/v1/chat/completions"' in runtime
@@ -165,7 +167,8 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert 'FREE_FUNDING_PROVIDER_QUOTA: Final[str] = "provider_free_quota"' in policy
     assert "normalize_funding_mode" in policy
     assert "provider_free_quota routes require positive verified provider list prices" in policy
-    assert "AGENTS_PROVIDER_MODEL: Final[str] = \"gpt-5.4-mini\"" in policy
+    assert "AGENTS_PROVIDER_MODEL" not in policy
+    assert "AGENTS_LITELLM_ALIAS" not in policy
 
     assert "provider_funded_credits" in migration
     assert "billing_category IN ('free', 'standard', 'premium')" in migration

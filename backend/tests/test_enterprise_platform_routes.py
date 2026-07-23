@@ -45,7 +45,10 @@ def test_route_contract_is_statically_present_without_runtime_dependencies() -> 
     assert 'url_prefix="/api/admin/platform/v1"' in source
     assert "@require_admin" in source
     assert 'response.headers["X-Content-Type-Options"] = "nosniff"' in source
-    assert "PlatformCanaryRateLimited" in source
+    assert "PlatformCanaryRateLimited" not in source
+    assert "PlatformModelRejected" not in source
+    assert '"platform_legacy_completion_canary_removed"' in source
+    assert 'blocker="legacy_litellm_replaced_by_direct_routes"' in source
 
 
 def build_app(monkeypatch: pytest.MonkeyPatch) -> Flask:
@@ -69,8 +72,6 @@ def build_app(monkeypatch: pytest.MonkeyPatch) -> Flask:
         query=RouteQueryDouble(),
         get_current_admin=lambda: {"id": ADMIN_ID},
         audit=lambda *_args, **_kwargs: None,
-        litellm_readiness=lambda: {"ok": True},
-        litellm_completion_canary=lambda _model: {"ok": False},
     )
     return app
 
@@ -123,6 +124,16 @@ def test_canary_route_requires_json_and_openapi_declares_bearer_security(
     assert contract.status_code == 200
     assert contract.json["openapi"] == "3.1.0"
     assert contract.json["components"]["securitySchemes"]["bearerAuth"]["scheme"] == "bearer"
+
+    removed = client.post(
+        "/api/admin/platform/v1/canaries",
+        headers={**headers, "Content-Type": "application/json"},
+        json={"scope": "completion", "modelId": "sovereign-fast", "confirmed": True},
+    )
+    assert removed.status_code == 410
+    assert removed.json["error"]["code"] == "platform_legacy_completion_canary_removed"
+    assert removed.json["error"]["blocker"] == "legacy_litellm_replaced_by_direct_routes"
+
     assert set(contract.json["paths"]) == {
         "/identity",
         "/overview",

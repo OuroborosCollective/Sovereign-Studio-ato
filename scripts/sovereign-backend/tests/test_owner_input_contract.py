@@ -36,18 +36,21 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     swarm_agents = (ROOT / "agent_runtime" / "cognitive_swarm_agents.py").read_text("utf-8")
     swarm_routes = (ROOT / "agent_runtime" / "cognitive_swarm_routes.py").read_text("utf-8")
     transport = (ROOT / "agent_runtime" / "cognitive_llm_transport.py").read_text("utf-8")
-    assert '"openai_api_key"' in owner_runtime
+    assert '"openai_api_key"' not in owner_runtime
+    assert '"litellm_provider_key"' not in owner_runtime
     assert '"openrouter_api_key"' in owner_runtime
     assert '"openhands_api_key"' not in owner_runtime
-    assert '"openai_api_key.txt"' in owner_runtime
+    assert '"openai_api_key.txt"' not in owner_runtime
+    assert '"litellm_provider_key.txt"' not in owner_runtime
     assert '"openrouter_api_key.txt"' in owner_runtime
     assert "SET status='expired', resolved_at=NOW(), result_code='expired'" in owner_runtime
     assert "ON CONFLICT (target_id) WHERE status IN ('pending','processing') DO NOTHING" in owner_runtime
     assert "content_length > int(target[\"maxBytes\"])" in owner_runtime
-    assert "def ensure_openai_runtime_key()" in swarm_agents
-    assert 'os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")' in swarm_agents
+    assert "def ensure_openai_runtime_key()" not in swarm_agents
+    assert "http://litellm:4000" not in swarm_agents
     assert "build_route_run_config(" in swarm_agents
-    assert "run_config=route_runtime.run_config if route_runtime else None" in swarm_agents
+    assert "run_config=route_runtime.run_config" in swarm_agents
+    assert "AGENTS_DIRECT_OPENROUTER_ROUTE_REQUIRED" in swarm_agents
     assert '_OPENROUTER_KEY_FILENAME: Final[str] = "openrouter_api_key.txt"' in transport
     assert '_FREELLM_KEY_FILENAME: Final[str] = "freellmapi_unified_key.txt"' in transport
     assert '_FREELLMPOOL_KEY_FILENAME: Final[str] = "freellmpool_proxy_key.txt"' in transport
@@ -71,7 +74,7 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     assert "candidate.name != filename" in transport
     assert 'openai_api_key.txt' not in transport
     assert 'https://api.openai.com' not in swarm_agents
-    assert 'if not ensure_openai_runtime_key()' in swarm_agents
+    assert 'if not ensure_openai_runtime_key()' not in swarm_agents
     assert '"configured": None' in swarm_routes
     assert '"configurationResolution": "request-time-persisted-route"' in swarm_routes
     assert '"executionModes": ["auto", "paid", "free"]' in swarm_routes

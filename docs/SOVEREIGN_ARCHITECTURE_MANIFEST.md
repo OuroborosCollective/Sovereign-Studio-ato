@@ -4,7 +4,7 @@
 
 **Evidence-Stand:** 23. Juli 2026
 
-**Verbindliche LLM-Routing-Aktualisierung:** Die aktuelle Transport-, Schlüssel-, Zustands- und Operatorwahrheit steht in [`LLM_ROUTING_TRUTH_AND_HANDOFF.md`](./LLM_ROUTING_TRUTH_AND_HANDOFF.md). Paid läuft direkt über OpenRouter, Free direkt über FreeLLM; LiteLLM bleibt optionaler Legacy-/Rollback-Transport. Ältere LiteLLM-Belege in diesem Manifest sind historische Provenance und keine aktuelle globale Routingregel.
+**Verbindliche LLM-Routing-Aktualisierung:** Die aktuelle Transport-, Schlüssel-, Zustands- und Operatorwahrheit steht in [`LLM_ROUTING_TRUTH_AND_HANDOFF.md`](./LLM_ROUTING_TRUTH_AND_HANDOFF.md). Paid läuft ausschließlich direkt über OpenRouter, Free ausschließlich direkt über FreeLLM. LiteLLM ist nur noch deaktivierte historische Evidence und kein aktivierbarer Produkt- oder Rollbacktransport. Ältere LiteLLM-Belege in diesem Manifest sind historische Provenance.
 
 - **Audit-Baseline dieses Manifest-Updates:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
 - **Produktive MCP-Revision:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
@@ -186,7 +186,7 @@ UI-Anzeige und nächste erlaubte Aktion
 
 1. **Frontend:** Chat, Eingabe, kompakte Statusanzeige, Inspektionsflächen.
 2. **Backend:** Auth, Credits, Admin, LLM-Route, Toolchain, Persistenz.
-3. **LLM-Transporte:** OpenRouter Paid direkt, FreeLLM Free direkt; LiteLLM nur optionaler Legacy-/Rollback-Transport.
+3. **LLM-Transporte:** OpenRouter Paid direkt und FreeLLM Free direkt; LiteLLM ausschließlich als deaktivierte historische Evidence.
 4. **Runtime Library:** Verträge, Gates, State Machine, Evidence, Recovery.
 5. **Executor Layer:** interne Agent Runtime, MCP, GitHub, Workspaces, Tests.
 6. **Storage:** PostgreSQL, pgvector/Knowledge, Audit, Learning Candidates.
@@ -406,7 +406,7 @@ Der PostgreSQL-gebundene Resolver trennt zwei aktive direkte Transportklassen:
 - `openrouter` für bezahlte Standard-/Premium-Ausführung,
 - `freellm` für kostenfreie, quota-bewusste Einzelagent-Ausführung.
 
-LiteLLM ist nur noch ein optionaler Legacy-/Rollback-Transport. Es darf weder als alleiniger Produktionsrouter noch als globales Readiness-Gate dargestellt werden.
+LiteLLM ist kein aktiver Produkttransport mehr. Historische Datensätze bleiben deaktiviert lesbar, dürfen aber weder aktiviert, gecanaryt noch als Readiness-Ersatz verwendet werden.
 
 ## 8.2 Aktuelle Architektur
 
@@ -450,7 +450,7 @@ Request
 
 **BELEGT:** Die Backend-Policy trennt `free`, `standard` und `premium`. `standard` verlangt mindestens `×4`, `premium` mindestens `×8`, und `free` ist nur mit verifizierten Nullkosten zulässig. Kosten werden in Micro-USD berechnet und dann in Credits übersetzt. Provider-finanzierte Credits werden vor dem Provideraufruf reserviert und nach echter Usage-Evidence abgerechnet.
 
-**BELEGT:** Agents-SDK-Aufrufe sind code-seitig auf den Alias `sovereign-fast` beschränkt. Dieser Alias muss auf `gpt-5.4-mini` zeigen, als Standardroute mit mindestens `×4` konfiguriert sein, aktiv sein und verifizierte Preis-Metadaten besitzen. Fehlt eine dieser Bedingungen, blockiert der Agents-SDK-Lauf vor Provider-Ausführung.
+**BELEGT:** Agents-SDK-Aufrufe benötigen vor jeder Ausführung einen datenbankaufgelösten direkten Route-`RunConfig`. Paid-Swarms akzeptieren ausschließlich OpenRouter; Free-Single-Agent-Läufe ausschließlich FreeLLM. `sovereign-fast` und `sovereign-balanced` sind nur UI-Leistungstarife und werden vor dem Request auf aktuelle aktive OpenRouter-Routen aufgelöst.
 
 **BELEGT:** Sowohl die sichtbare Swarm-Route als auch die owner-scoped Controller-Bridge erzeugen für Start und Resume denselben `AgentStageBilling`-Vertrag. Ein fehlender Alias oder ungeprüfter Preis wird als persistierter `BLOCKED`-Zustand mit konkreter `nextAction` zurückgegeben; bei Resume wird dabei die bereits beanspruchte Lease gebunden und freigegeben. Die Runtime-Contracts prüfen zusätzlich, dass in diesem Blockerpfad keine Usage-Reservation und damit keine Provider-Ausführung begonnen wurde.
 
@@ -463,7 +463,7 @@ Request
 
 ## 8.6 Schlüsselgrenzen
 
-OpenRouter-Key, FreeLLM-Unified-Key, FreeLLM-Upstream-Provider-Keys, Keyless-Marker und Legacy-LiteLLM-Master-Key sind getrennte Schlüsselklassen. Alle bleiben serverseitig in exakt allowlisteten 0600-Dateien; Rohwerte erscheinen weder in PostgreSQL noch in UI, Logs oder Chat.
+Erlaubte produktive Schlüsselklassen sind OpenRouter-Key, FreeLLM-Unified-Key, FreeLLM-Upstream-Provider-Keys und Keyless-Marker. Sie bleiben serverseitig in exakt allowlisteten 0600-Dateien; Rohwerte erscheinen weder in PostgreSQL noch in UI, Logs oder Chat. Direkte OpenAI- und LiteLLM-Master-Key-Ziele sind aus dem Owner-Input-Vertrag entfernt.
 
 ## 8.7 Historischer LiteLLM-Betriebsbeweis
 
@@ -941,9 +941,9 @@ Direkter bezahlter Providertransport; kein öffentlicher Clientzugriff und keine
 
 Direkter verwalteter Free-Pooltransport; kein öffentlicher Clientzugriff, nur doppelt gecanaryte Nullkostenrouten aktiv.
 
-### Legacy LiteLLM
+### Historische LiteLLM-Evidence
 
-Optionaler historischer Provider-Router und Rollbackpfad; kein globales Produktions-Gate.
+Deaktivierte Alt-Datensätze und Receipts; kein Router, kein Rollbackpfad, kein Canary und kein globales Produktions-Gate.
 
 ### PostgreSQL
 
@@ -1022,7 +1022,7 @@ Die folgenden Familien sind im Backendvertrag belegt oder als kanonische Gruppen
 - `/api/admin/llm/worker-ai/models`
 - `/api/admin/llm/worker-ai/sync`
 
-Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar. Produktive Paid-Modelle laufen direkt über OpenRouter, produktive Free-Routen direkt über FreeLLM; LiteLLM ist nur optionaler Legacy-/Rollback-Transport.
+Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar. Produktive Paid-Modelle laufen direkt über OpenRouter, produktive Free-Routen direkt über FreeLLM; LiteLLM bleibt ausschließlich deaktivierte historische Evidence.
 
 ## 21.5 Admin Benutzer, Credits und Billing
 
@@ -1187,7 +1187,7 @@ GitHub Intent
 8. Keine Mocks, Stubs oder Fassaden im Live-Pfad.
 9. Keine statischen Provider-Routen im Frontend.
 10. Keine hartcodierten Provider wie Pollinations, Groq oder vergleichbare direkte Clientprovider.
-11. Provider werden ausschließlich über Backend, Datenbank und den transportgerechten OpenRouter-/FreeLLM-Adminvertrag verwaltet; LiteLLM bleibt Legacy.
+11. Provider werden ausschließlich über Backend, Datenbank und den transportgerechten OpenRouter-/FreeLLM-Adminvertrag verwaltet; LiteLLM darf nicht aktivierbar sein.
 12. Offline-Fallback muss klar markiert sein.
 13. Keine Secrets im Frontend, APK, WebView, Chat, Logs oder Repository.
 14. Normale Requests mutieren keine Admin-/Providerkonfiguration.

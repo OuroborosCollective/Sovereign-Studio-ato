@@ -35,7 +35,8 @@ def test_canonical_backend_registers_modular_platform_with_existing_admin_auth()
     assert "register_enterprise_platform_routes(" in source
     assert "require_admin=require_admin" in source
     assert "query=query" in source
-    assert "litellm_completion_canary=litellm_completion_canary" in source
+    assert "litellm_completion_canary=litellm_completion_canary" not in source
+    assert "litellm_readiness=litellm_readiness" not in source
     assert '@app.route("/api/admin/system/health", methods=["GET"])' in source
     assert "enterprise_platform_service.overview()" in source
 
@@ -81,8 +82,10 @@ def test_android_admin_surface_uses_real_api_and_large_touch_contracts() -> None
         assert endpoint in client
     assert "credentials: 'omit'" in client
     assert "AbortController" in client
-    assert "window.confirm(" in panel
-    assert "activeModelIds" in panel
+    assert "window.confirm(" not in panel
+    assert "activeModelIds" not in panel
+    assert "Legacy-LiteLLM-Completion" not in panel
+    assert "runReadinessCanary" in panel
     assert "Runtime Control Center" in panel
     assert "pgvector-Wissensvektoren" in panel
     assert "Milvus-Projektion" in panel

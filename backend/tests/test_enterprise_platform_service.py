@@ -10,11 +10,7 @@ import pytest
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from enterprise_platform.service import (
-    EnterprisePlatformService,
-    PlatformCanaryRateLimited,
-    PlatformModelRejected,
-)
+from enterprise_platform.service import EnterprisePlatformService
 
 
 ADMIN_ID = "11111111-1111-4111-8111-111111111111"
@@ -26,8 +22,16 @@ IMAGE_DIGEST = "sha256:" + "b" * 64
 class QueryDouble:
     """Contract-level DB test double; production probes still execute only against PostgreSQL."""
 
-    def __init__(self, *, retry_after: int = 0):
-        self.retry_after = retry_after
+    def __init__(
+        self,
+        *,
+        freellm_ready: int = 1,
+        openrouter_ready: int = 2,
+        litellm_active: int = 0,
+    ):
+        self.freellm_ready = freellm_ready
+        self.openrouter_ready = openrouter_ready
+        self.litellm_active = litellm_active
         self.calls: list[str] = []
 
     def __call__(
@@ -39,10 +43,12 @@ class QueryDouble:
         write: bool = False,
     ) -> Any:
         self.calls.append(statement)
-        if "platform:models:active" in statement:
-            return [{"model_id": "sovereign-fast"}, {"model_id": "sovereign-balanced"}]
-        if "platform:canary:cooldown" in statement:
-            return {"retry_after": self.retry_after}
+        if "platform:probe:llm-routing" in statement:
+            return {
+                "freellm_ready": self.freellm_ready,
+                "openrouter_ready": self.openrouter_ready,
+                "litellm_active": self.litellm_active,
+            }
         if "platform:probe:postgresql" in statement:
             return {
                 "database": "sovereign",
@@ -99,28 +105,8 @@ def runtime_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SOVEREIGN_RUNTIME_ENVIRONMENT", "test")
 
 
-def service(query: QueryDouble, completion=None) -> EnterprisePlatformService:
-    return EnterprisePlatformService(
-        query=query,
-        litellm_readiness=lambda: {
-            "ok": True,
-            "status": "ready",
-            "db": "connected",
-            "httpStatus": 200,
-        },
-        litellm_completion_canary=completion
-        or (
-            lambda model_id: {
-                "ok": True,
-                "health": "verified",
-                "completionVerified": True,
-                "readinessVerified": True,
-                "httpStatus": 200,
-                "responseTimeMs": 12,
-                "evidence": {"modelId": model_id, "contentObserved": True},
-            }
-        ),
-    )
+def service(query: QueryDouble) -> EnterprisePlatformService:
+    return EnterprisePlatformService(query=query)
 
 
 def test_runtime_identity_fails_closed_for_unverified_build(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -154,52 +140,33 @@ def test_overall_status_never_turns_unprobed_or_blocked_truth_green() -> None:
     ) == "degraded"
 
 
-def test_completion_canary_requires_confirmation_before_provider_call() -> None:
+def test_completion_canary_is_removed_without_provider_or_evidence_call() -> None:
     query = QueryDouble()
-    invoked: list[str] = []
-    subject = service(query, completion=lambda model_id: invoked.append(model_id))
+    subject = service(query)
 
-    with pytest.raises(ValueError, match="platform_completion_confirmation_required"):
+    with pytest.raises(ValueError, match="platform_legacy_completion_canary_removed"):
         subject.run_canary(
             request_id=REQUEST_ID,
             actor_id=ADMIN_ID,
             scope="completion",
             model_id="sovereign-fast",
-            confirmed=False,
-        )
-
-    assert invoked == []
-    assert not any("platform:evidence:insert" in item for item in query.calls)
-
-
-def test_completion_canary_rejects_non_active_model() -> None:
-    query = QueryDouble()
-    subject = service(query)
-
-    with pytest.raises(PlatformModelRejected):
-        subject.run_canary(
-            request_id=REQUEST_ID,
-            actor_id=ADMIN_ID,
-            scope="completion",
-            model_id="unregistered-provider-model",
             confirmed=True,
         )
 
+    assert not any("platform:evidence:insert" in item for item in query.calls)
 
-def test_completion_canary_persists_sha256_receipt_after_exact_readback() -> None:
+
+def test_readiness_canary_persists_sha256_receipt_after_exact_readback() -> None:
     query = QueryDouble()
     subject = service(query)
 
     result = subject.run_canary(
         request_id=REQUEST_ID,
         actor_id=ADMIN_ID,
-        scope="completion",
-        model_id="sovereign-fast",
-        confirmed=True,
+        scope="readiness",
     )
 
-    assert result["ok"] is True
-    assert result["status"] == "verified"
+    assert result["scope"] == "readiness"
     assert result["receipt"]["readbackVerified"] is True
     assert len(result["receipt"]["evidenceSha256"]) == 64
     assert result["evidence"]["secretValuesReturned"] is False
@@ -207,34 +174,30 @@ def test_completion_canary_persists_sha256_receipt_after_exact_readback() -> Non
     assert any("platform:evidence:insert" in item for item in query.calls)
 
 
-def test_completion_canary_enforces_database_backed_cooldown() -> None:
-    query = QueryDouble(retry_after=17)
-    subject = service(query)
-
-    with pytest.raises(PlatformCanaryRateLimited) as raised:
-        subject.run_canary(
-            request_id=REQUEST_ID,
-            actor_id=ADMIN_ID,
-            scope="completion",
-            model_id="sovereign-fast",
-            confirmed=True,
-        )
-
-    assert raised.value.retry_after_seconds == 17
-
-
-def test_litellm_probe_exposes_only_active_aliases_and_no_credentials() -> None:
-    query = QueryDouble()
+def test_direct_route_probe_exposes_only_direct_counts_and_no_credentials() -> None:
+    query = QueryDouble(freellm_ready=3, openrouter_ready=4, litellm_active=0)
     result = service(query)._litellm_probe()
 
     assert result["status"] == "verified"
-    assert result["evidence"]["activeModelIds"] == [
-        "sovereign-balanced",
-        "sovereign-fast",
-    ]
+    assert result["evidence"] == {
+        "freellmReadyRoutes": 3,
+        "openrouterReadyRoutes": 4,
+        "legacyLiteLlmActiveRoutes": 0,
+        "legacyProviderProbePerformed": False,
+        "routingPolicy": "direct-freellm-free-and-direct-openrouter-paid-only",
+    }
     serialized = str(result).lower()
     assert "api_key" not in serialized
     assert "secret_access_key" not in serialized
+
+
+def test_active_legacy_litellm_route_blocks_direct_routing_contract() -> None:
+    query = QueryDouble(freellm_ready=1, openrouter_ready=2, litellm_active=1)
+    result = service(query)._litellm_probe()
+
+    assert result["status"] == "blocked"
+    assert result["blocker"] == "legacy_litellm_route_still_active"
+    assert result["evidence"]["legacyProviderProbePerformed"] is False
 
 
 def test_milvus_projection_counts_are_visible_without_claiming_direct_readback() -> None:

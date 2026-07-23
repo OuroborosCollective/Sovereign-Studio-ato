@@ -1,5 +1,4 @@
 import asyncio
-import secrets
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -32,40 +31,31 @@ from agent_runtime.cognitive_swarm_agents import (
 )
 
 
-def _configure_internal_litellm(monkeypatch, tmp_path: Path) -> None:
-    owner_root = tmp_path / "owner-secrets"
-    owner_root.mkdir(mode=0o700)
-    key_path = owner_root / "litellm_master_key.txt"
-    key_path.write_text(secrets.token_urlsafe(32), encoding="utf-8")
-    key_path.chmod(0o600)
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(owner_root))
-    monkeypatch.setenv("LITELLM_MASTER_KEY_FILE", str(key_path))
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
-    assert swarm_module.ensure_openai_runtime_key() is True
-
-
-def test_default_model_uses_the_internal_litellm_alias() -> None:
-    assert DEFAULT_MODEL == "sovereign-fast"
-    assert ALLOWED_LITELLM_MODEL_ALIASES == frozenset({"sovereign-fast"})
+def test_default_model_has_no_legacy_litellm_alias() -> None:
+    assert DEFAULT_MODEL == ""
+    assert ALLOWED_LITELLM_MODEL_ALIASES == frozenset()
     production_agents = (
         PRODUCTION_BACKEND / "agent_runtime" / "cognitive_swarm_agents.py"
     ).read_text("utf-8")
-    assert "DEFAULT_MODEL: Final[str] = AGENTS_LITELLM_ALIAS" in production_agents
-    assert "ALLOWED_LITELLM_MODEL_ALIASES" in production_agents
+    assert "ensure_openai_runtime_key" not in production_agents
+    assert "http://litellm:4000" not in production_agents
+    assert "AGENTS_DIRECT_OPENROUTER_ROUTE_REQUIRED" in production_agents
 
 
-def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists_or_fails_closed(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
+def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists_or_fails_closed() -> None:
+    kwargs = {
+        "main_model": "openai/gpt-5.4-mini",
+        "agent_model": "openai/gpt-5.4-mini",
+        "main_run_config": object(),
+        "agent_run_config": object(),
+    }
     status = agents_sdk_status()
     if status["available"] is False:
         with pytest.raises(RuntimeError, match="openai-agents"):
-            build_cognitive_swarm(model=DEFAULT_MODEL)
+            build_cognitive_swarm(**kwargs)
         return
 
-    _configure_internal_litellm(monkeypatch, tmp_path)
-    swarm = build_cognitive_swarm(model=DEFAULT_MODEL)
+    swarm = build_cognitive_swarm(**kwargs)
     assert swarm.agent_count == 12
     assert swarm.dispatcher.name == "The Dispatcher"
     assert len(swarm.workers) == 6
@@ -73,14 +63,22 @@ def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists
     assert swarm.judge.name == "The Judge"
 
 
-def test_swarm_build_rejects_direct_provider_model_identifiers() -> None:
-    with pytest.raises(ValueError, match="LiteLLM model alias"):
-        build_cognitive_swarm(model="direct-provider-model")
+def test_swarm_build_rejects_missing_database_resolved_run_config() -> None:
+    with pytest.raises(ValueError, match="Database-resolved direct OpenRouter RunConfig"):
+        build_cognitive_swarm(model="openai/gpt-5.4-mini")
 
 
 def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> None:
-    monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
     monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="openai/gpt-5.4-mini",
+            transport="openrouter",
+            run_config=object(),
+        ),
+    )
 
     dispatcher = object()
     workers = tuple(object() for _ in range(6))
@@ -93,10 +91,10 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     )
     worker_roles = {id(worker): role for worker, role in zip(workers, swarm_module.WORKER_ROLES, strict=True)}
 
-    def fake_build(*, model=None):
+    def fake_build(**kwargs):
         return fake_swarm
 
-    async def fake_run_stage(runner_class, agent, prompt, *, stage):
+    async def fake_run_stage(runner_class, agent, prompt, *, stage, **kwargs):
         if agent is dispatcher:
             output = DispatchPlan(
                 mission="Inspect evidence.",
@@ -136,6 +134,8 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     result = asyncio.run(
         run_cognitive_swarm(
             "Inspect bounded runtime evidence.",
+            main_route={"id": "paid-main"},
+            agent_route={"id": "paid-main"},
             stage_observer=events.append,
         )
     )
@@ -155,8 +155,16 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
 
 
 def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> None:
-    monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
     monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="openai/gpt-5.4-mini",
+            transport="openrouter",
+            run_config=object(),
+        ),
+    )
 
     dispatcher = object()
     workers = tuple(object() for _ in range(6))
@@ -169,9 +177,9 @@ def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> N
     )
     worker_roles = {id(worker): role for worker, role in zip(workers, swarm_module.WORKER_ROLES, strict=True)}
 
-    monkeypatch.setattr(swarm_module, "build_cognitive_swarm", lambda *, model=None: fake_swarm)
+    monkeypatch.setattr(swarm_module, "build_cognitive_swarm", lambda **kwargs: fake_swarm)
 
-    async def fake_run_stage(runner_class, agent, prompt, *, stage):
+    async def fake_run_stage(runner_class, agent, prompt, *, stage, **kwargs):
         if agent is dispatcher:
             output = DispatchPlan(
                 mission="Confirm the release-readiness nullfund.",
@@ -211,7 +219,11 @@ def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> N
 
     monkeypatch.setattr(swarm_module, "_run_stage", fake_run_stage)
 
-    result = asyncio.run(run_cognitive_swarm("Confirm the release-readiness nullfund."))
+    result = asyncio.run(run_cognitive_swarm(
+        "Confirm the release-readiness nullfund.",
+        main_route={"id": "paid-main"},
+        agent_route={"id": "paid-main"},
+    ))
 
     assert result["ok"] is True
     assert result["status"] == "COMPLETED"
@@ -452,16 +464,28 @@ def test_provider_failures_are_classified_without_raw_error_text() -> None:
 
 
 def test_swarm_build_failure_is_classified_before_first_model_call(monkeypatch) -> None:
-    monkeypatch.setattr(swarm_module, "ensure_openai_runtime_key", lambda: True)
     monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="openai/gpt-5.4-mini",
+            transport="openrouter",
+            run_config=object(),
+        ),
+    )
 
-    def fail_build(*, model=None):
+    def fail_build(**kwargs):
         raise TypeError("raw build detail must not persist")
 
     monkeypatch.setattr(swarm_module, "build_cognitive_swarm", fail_build)
 
     with pytest.raises(SwarmExecutionError) as captured:
-        asyncio.run(run_cognitive_swarm("Inspect bounded runtime evidence."))
+        asyncio.run(run_cognitive_swarm(
+            "Inspect bounded runtime evidence.",
+            main_route={"id": "paid-main"},
+            agent_route={"id": "paid-main"},
+        ))
 
     failure = captured.value
     assert failure.stage == "swarm-build"
@@ -571,21 +595,9 @@ def test_production_image_source_contains_the_same_cognitive_skill_bundle() -> N
     assert production_release_hunt_skill.read_bytes() == RELEASE_HUNT_SKILL_PATH.read_bytes()
 
 
-def test_legacy_swarm_fails_closed_without_litellm_compatibility_key(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    owner_root = tmp_path / "missing-owner-secrets"
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(owner_root))
-    monkeypatch.setenv(
-        "LITELLM_MASTER_KEY_FILE",
-        str(owner_root / "litellm_master_key.txt"),
-    )
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
-    result = asyncio.run(run_cognitive_swarm("Inspect the current runtime evidence."))
-    assert result["ok"] is False
-    assert result["status"] == "BLOCKED"
-    assert "Legacy-LiteLLM compatibility key" in result["blocker"]
-    assert result["manifest"]["agentCount"] == 20
-    assert result["manifest"]["coreAgentCount"] == 8
-    assert result["manifest"]["maxActiveSpecialists"] == 4
+def test_swarm_fails_closed_without_database_resolved_openrouter_route() -> None:
+    with pytest.raises(SwarmExecutionError) as captured:
+        asyncio.run(run_cognitive_swarm("Inspect the current runtime evidence."))
+    assert captured.value.family == "AGENTS_DIRECT_OPENROUTER_ROUTE_REQUIRED"
+    assert captured.value.next_action == "RESOLVE_DATABASE_OPENROUTER_ROUTE"
+    assert captured.value.retryable is False

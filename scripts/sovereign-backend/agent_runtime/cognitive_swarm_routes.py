@@ -32,8 +32,6 @@ from .cognitive_run_store import (
     transition_agent_run,
 )
 from .cognitive_swarm_agents import (
-    ALLOWED_LITELLM_MODEL_ALIASES,
-    DEFAULT_MODEL,
     MissionIntent,
     RepositoryToolFactory,
     SwarmExecutionError,
@@ -111,16 +109,6 @@ def _explicit_mission_intent(intent_mode: str, mission: str) -> MissionIntent | 
         learning_scope=[],
         confidence=1.0,
     )
-
-
-def _allowed_models() -> frozenset[str]:
-    """Keep the legacy alias allowlist fail-closed for old test/operator callers.
-
-    Product execution ignores environment-provided model lists and resolves
-    direct OpenRouter or FreeLLM routes from PostgreSQL instead.
-    """
-
-    return frozenset({DEFAULT_MODEL}) & ALLOWED_LITELLM_MODEL_ALIASES
 
 
 def _current_session_user_id() -> str:
@@ -248,17 +236,14 @@ def _billing_blocker_contract(exc: AgentBillingError) -> tuple[str, str]:
             "Paid agent execution requires a direct OpenRouter route.",
             "ACTIVATE_VERIFIED_OPENROUTER_ROUTE",
         ),
-        "AGENTS_LITELLM_ALIAS_NOT_READY": (
-            "The Agents SDK LiteLLM alias is not active and ready for paid execution.",
-            "ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE",
-        ),
+
         "AGENTS_ROUTE_PRICING_UNVERIFIED": (
             "The Agents SDK route has no verified provider pricing contract.",
             "VERIFY_OPENROUTER_ROUTE_PRICING",
         ),
         "AGENTS_PROVIDER_MODEL_MISMATCH": (
-            "The Agents SDK route does not target the required provider model.",
-            "ATTACH_EXPECTED_LITELLM_PROVIDER_MODEL",
+            "The Agents SDK route does not target the database-resolved provider model.",
+            "REPAIR_DATABASE_RESOLVED_PROVIDER_MODEL",
         ),
         "AGENTS_STANDARD_ROUTE_REQUIRED": (
             "The Agents SDK route does not satisfy the standard cost-policy floor.",
