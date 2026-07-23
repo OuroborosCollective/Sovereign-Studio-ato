@@ -373,7 +373,7 @@ def test_swarm_fails_closed_without_litellm_service_key(
     result = asyncio.run(run_cognitive_swarm("Inspect the current runtime evidence."))
     assert result["ok"] is False
     assert result["status"] == "BLOCKED"
-    assert "LiteLLM internal service key" in result["blocker"]
+    assert "Legacy-LiteLLM compatibility key" in result["blocker"]
     assert result["manifest"]["agentCount"] == 20
     assert result["manifest"]["coreAgentCount"] == 8
     assert result["manifest"]["maxActiveSpecialists"] == 4
