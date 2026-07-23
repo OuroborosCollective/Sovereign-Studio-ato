@@ -636,7 +636,6 @@ def _sync_catalog(
                            model_id=EXCLUDED.model_id,
                            model_name=EXCLUDED.model_name,
                            provider='openrouter', base_url=EXCLUDED.base_url,
-                           credits_per_unit=EXCLUDED.credits_per_unit,
                            disabled=false, priority=EXCLUDED.priority,
                            runtime_kind='openrouter', tier='standard',
                            credits_per_unit=GREATEST(
