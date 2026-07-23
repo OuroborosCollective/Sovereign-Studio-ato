@@ -400,4 +400,12 @@ def test_managed_reconcile_prioritizes_ready_routes_and_reports_total_ready_stat
     assert '"readyCount": overall_ready_count' in runtime
     assert '"ok": overall_ready_count > 0' in runtime
     assert "200 if overall_ready_count > 0 else 409" in runtime
+    assert 'reconcile_stage = "route_activation_parity"' in runtime
+    assert "SET disabled=NOT (" in runtime
+    assert "model.status='ready'" in runtime
+    assert "AND model.enabled=true" in runtime
+    assert "AND model.free_verified=true" in runtime
+    assert "AND route.disabled=false" in runtime
+    assert "OR route.id IS NULL" in runtime
+    assert '"route_activation_parity": "freellm_route_activation_parity_failed"' in runtime
     assert "ORDER BY (status='ready' AND enabled=true) ASC" not in runtime
