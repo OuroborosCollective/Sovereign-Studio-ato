@@ -33,6 +33,7 @@ import {
 import { formatCuteWorkStateLabel } from "../runtime/cuteThinkingStatus";
 import {
   DEV_CHAT_WORKER_MODELS,
+  SOVEREIGN_WORKER_BASE,
   SOVEREIGN_WORKER_CHAT,
   SOVEREIGN_WORKER_HEALTH,
   SOVEREIGN_WORKER_KV,
@@ -79,6 +80,10 @@ import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { CompactRepoSetupSheet } from "../components/CompactRepoSetupSheet";
 import { PatchDiffEvidenceSheet } from "../components/PatchDiffEvidenceSheet";
 import { RuntimeEvidenceLogSheet } from "../components/RuntimeEvidenceLogSheet";
+import { TestRunnerResultCard } from "../components/TestRunnerResultCard";
+import { AutoCodeReviewCard } from "../components/AutoCodeReviewCard";
+import { FileContentPreviewSheet } from "../components/FileContentPreviewSheet";
+import { PromptLibraryPanel } from "../components/PromptLibraryPanel";
 import { ActionSuggestionStrip } from "../components/ActionSuggestionStrip";
 import { SlashCommandMenu } from "../components/SlashCommandMenu";
 import {
@@ -99,8 +104,27 @@ import {
   getSovereignPresetAction,
   type SovereignPresetActionId,
 } from "../runtime/sovereignPresetActionRuntime";
-import { loadSessionMemory, formatSessionMemoryAge } from "../runtime/sovereignSessionMemory";
+import {
+  downloadSessionMarkdown,
+  getOrCreateCurrentSession,
+  saveSession,
+  type PersistedSession,
+} from "../runtime/sessionPersistenceRuntime";
+import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
+import {
+  requestAutoCodeReview,
+  type AutoCodeReviewResult,
+} from "../runtime/autoCodeReviewRuntime";
 import { createRepoFilePrompt } from "../runtime/repoTreeExplorerRuntime";
+import {
+  fetchFileContent,
+  type FileContentResult,
+} from "../runtime/fileContentBrowserRuntime";
+import {
+  isNearBottom as isScrollNearBottom,
+  shouldAutoScroll,
+  shouldShowUnreadBadge,
+} from "../runtime/scrollLockBehavior";
 import {
   copyAndroidBubbleText,
   createAndroidFollowUpDraft,
@@ -2574,6 +2598,14 @@ export function BuilderContainer({
   const [showRuntimeSheet, setShowRuntime] = useState(false);
   const [showSideMenu, setShowSide] = useState(false);
   const [showRepoExplorer, setShowRepoExplorer] = useState(false);
+  const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null);
+  const [filePreviewResult, setFilePreviewResult] = useState<FileContentResult | null>(null);
+  const [filePreviewLoading, setFilePreviewLoading] = useState(false);
+  const [testRunnerResult, setTestRunnerResult] = useState<TestRunnerResult | null>(null);
+  const [testRunnerBusy, setTestRunnerBusy] = useState(false);
+  const [autoCodeReviewResult, setAutoCodeReviewResult] = useState<AutoCodeReviewResult | null>(null);
+  const [autoCodeReviewBusy, setAutoCodeReviewBusy] = useState(false);
   const [showRepoSetup, setShowRepoSetup] = useState(false);
   const [repoSetupUrl, setRepoSetupUrl] = useState('');
   const [repoSetupError, setRepoSetupError] = useState<string | null>(null);
@@ -2603,6 +2635,8 @@ export function BuilderContainer({
   const chatLineIndexRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nowRef = useRef(Date.now());
+  const persistedSessionRef = useRef<PersistedSession | null>(null);
+  const hydratedSessionScopeRef = useRef<string | null>(null);
   const clearPatchEvidence = useCallback(() => {
     setPatchDiffReport(null);
     setPatchPreviewReady(false);
@@ -2961,14 +2995,30 @@ export function BuilderContainer({
   }, []);
 
   const handleRepoExplorerFileClick = useCallback(
-    (path: string) => {
+    async (path: string) => {
       const cleanPath = path.trim();
       if (!cleanPath) return;
       setWishText(createRepoFilePrompt(cleanPath));
       setShowRepoExplorer(false);
-      addLog("info", `Repo file prompt prepared: ${cleanPath}`, "router");
+      setFilePreviewPath(cleanPath);
+      setFilePreviewResult(null);
+      setFilePreviewLoading(true);
+      const result = await fetchFileContent({
+        jobId: scopedAgentJob?.jobId ?? '',
+        backendBase: SOVEREIGN_WORKER_BASE,
+        filePath: cleanPath,
+      });
+      setFilePreviewResult(result);
+      setFilePreviewLoading(false);
+      addLog(
+        result.status === 'loaded' ? 'info' : 'warn',
+        result.status === 'loaded'
+          ? `Workspace file loaded: ${cleanPath} · ${result.sizeBytes} bytes`
+          : `Workspace file preview blocked: ${cleanPath} · ${result.error}`,
+        'router',
+      );
     },
-    [addLog],
+    [addLog, scopedAgentJob?.jobId],
   );
 
   const appendChatLine = useCallback(
@@ -3084,18 +3134,57 @@ export function BuilderContainer({
     currentRepositoryTargetKey,
   ]);
 
-  // ── Issue #557: Show session restore age on startup
   useEffect(() => {
-    const snapshot = loadSessionMemory(localStorage);
-    if (!snapshot) return;
-    const age = formatSessionMemoryAge(snapshot, Date.now());
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    const isVeryOld = Date.now() - snapshot.savedAt > ONE_DAY_MS;
-    const message = isVeryOld
-      ? `Ältere Sitzung wiederhergestellt — bitte Repo/Status prüfen. (${age})`
-      : `Letzte Sitzung von vor ${age} wiederhergestellt.`;
-    appendRuntimeNotice(message);
-  }, [appendRuntimeNotice]);
+    if (!chatRepoSnapshot || !currentRepoScopeKey) {
+      persistedSessionRef.current = null;
+      hydratedSessionScopeRef.current = null;
+      return;
+    }
+    if (hydratedSessionScopeRef.current === currentRepoScopeKey) return;
+    const session = getOrCreateCurrentSession(
+      localStorage,
+      chatRepoSnapshot.repoUrl,
+      chatRepoSnapshot.branch,
+    );
+    persistedSessionRef.current = session;
+    hydratedSessionScopeRef.current = currentRepoScopeKey;
+    if (session.messages.length === 0 || chatHistory.length > 0) return;
+    const restored = session.messages.map((message, index) => ({
+      id: message.id || createChatLineId(message.role, index + 1),
+      role: message.role,
+      text: message.content,
+      createdAt: message.timestamp,
+    })) as ChatLine[];
+    chatLineIndexRef.current = restored.length;
+    nowRef.current = restored[restored.length - 1]?.createdAt ?? Date.now();
+    setChatHistory(restored);
+    addLog('info', 'Chat session restored with ' + restored.length + ' messages', 'sys');
+  }, [addLog, chatHistory.length, chatRepoSnapshot, currentRepoScopeKey]);
+
+  useEffect(() => {
+    if (
+      !chatRepoSnapshot
+      || !currentRepoScopeKey
+      || hydratedSessionScopeRef.current !== currentRepoScopeKey
+      || !persistedSessionRef.current
+    ) return;
+    const current = persistedSessionRef.current;
+    const messages = chatHistory
+      .filter((line) => line.role === 'user' || line.role === 'assistant' || line.role === 'system')
+      .map((line) => ({
+        id: line.id,
+        role: line.role as 'user' | 'assistant' | 'system',
+        content: line.text,
+        timestamp: line.createdAt ?? Date.now(),
+      }));
+    persistedSessionRef.current = saveSession(localStorage, {
+      sessionId: current.sessionId,
+      repoUrl: chatRepoSnapshot.repoUrl,
+      repoBranch: chatRepoSnapshot.branch,
+      messages,
+      createdAt: current.createdAt,
+    });
+  }, [chatHistory, chatRepoSnapshot, currentRepoScopeKey]);
 
   // ── Issue #447: Project only server-accepted learning evidence into local cache
   usePatternMemoryStore({
@@ -3359,7 +3448,7 @@ export function BuilderContainer({
   // badge (see chatActivitySignal effect above), never yanks the viewport.
   useEffect(() => {
     if (!scrollRef.current) return;
-    if (userScrolledAway) return;
+    if (!shouldAutoScroll(userScrolledAway)) return;
     const node = scrollRef.current;
     const raf = requestAnimationFrame(() => {
       if (typeof node.scrollTo === "function") {
@@ -3701,6 +3790,42 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       return;
     }
 
+    if (scopedAgentJob?.jobId) {
+      setAutoCodeReviewBusy(true);
+      const review = await requestAutoCodeReview({
+        jobId: scopedAgentJob.jobId,
+        backendBase: SOVEREIGN_WORKER_BASE,
+      });
+      setAutoCodeReviewResult(review);
+      setAutoCodeReviewBusy(false);
+      if (review.decision === 'blocked_high') {
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'agent-job',
+          label: 'Draft PR durch Auto Code Review blockiert',
+          detail: review.summary + (review.error ? ` Blocker: ${review.error}` : ''),
+          kind: 'blocked',
+        }));
+        appendRuntimeNotice(review.summary);
+        return;
+      }
+      if (review.decision === 'blocked_unavailable') {
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'agent-job',
+          label: 'UI-Review nicht verfügbar; Server-Gate bleibt autoritativ',
+          detail: review.summary + (review.error ? ` Blocker: ${review.error}` : ''),
+          kind: 'blocked',
+        }));
+      } else {
+        appendActionEvent({
+          kind: 'done',
+          route: 'agent-job',
+          label: 'Auto Code Review bestanden',
+          detail: `${review.resolvedTransport} · ${review.modelUsed} · ${review.mediumCount} MEDIUM · ${review.lowCount} LOW`,
+          state: 'done',
+        });
+      }
+    }
+
     appendActionEvent({
       kind: 'agent_job_requested',
       route: 'agent-job',
@@ -3814,6 +3939,61 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         setBudgetLedger(createBudgetLedger());
         triggerHaptic("light");
         appendRuntimeNotice("Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.");
+        return;
+      }
+      if (command.action === "test") {
+        if (!scopedAgentJob?.jobId) {
+          appendRuntimeNotice('Test-Runner blockiert: Es gibt keinen echten Agent-Workspace-Job. Starte zuerst einen Repository-Auftrag.');
+          return;
+        }
+        setTestRunnerBusy(true);
+        const result = await runTests({
+          jobId: scopedAgentJob.jobId,
+          backendBase: SOVEREIGN_WORKER_BASE,
+          testPath: argument || undefined,
+        });
+        setTestRunnerResult(result);
+        setTestRunnerBusy(false);
+        appendActionEvent({
+          kind: result.status === 'passed' ? 'done' : result.status === 'failed' ? 'failed' : 'blocked',
+          route: 'runtime',
+          label: result.status === 'passed' ? 'Workspace-Tests bestanden' : 'Workspace-Testlauf beendet',
+          detail: result.summary,
+          state: result.status === 'passed' ? 'done' : result.status === 'failed' ? 'failed' : 'blocked',
+        });
+        addLog(result.status === 'passed' ? 'info' : 'warn', result.summary, 'orchestr');
+        return;
+      }
+      if (command.action === "templates") {
+        setShowPromptLibrary(true);
+        return;
+      }
+      if (command.action === "export") {
+        const current = persistedSessionRef.current;
+        if (!current) {
+          appendRuntimeNotice('Export blockiert: Für die aktuelle Ansicht existiert noch keine repo-gebundene Sitzung.');
+          return;
+        }
+        const messages = chatHistory
+          .filter((line) => line.role === 'user' || line.role === 'assistant' || line.role === 'system')
+          .map((line) => ({
+            id: line.id,
+            role: line.role as 'user' | 'assistant' | 'system',
+            content: line.text,
+            timestamp: line.createdAt ?? Date.now(),
+          }));
+        const saved = saveSession(localStorage, {
+          sessionId: current.sessionId,
+          repoUrl: current.repoUrl,
+          repoBranch: current.repoBranch,
+          messages,
+          createdAt: current.createdAt,
+        });
+        persistedSessionRef.current = saved;
+        const outcome = downloadSessionMarkdown(saved);
+        appendRuntimeNotice(outcome === 'downloaded'
+          ? 'Sitzung als Markdown exportiert. Secret-Muster wurden im Export redigiert.'
+          : 'Sitzungsexport ist in dieser Umgebung nicht verfügbar.');
         return;
       }
       if (command.action === "skills") {
@@ -5802,9 +5982,7 @@ Das echte Repo-Setup wurde geöffnet.`,
           aria-label="Sovereign Chat Verlauf"
           onScroll={(e) => {
             const el = e.currentTarget;
-            const isNearBottom =
-              el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-            setUserScrolledAway(!isNearBottom);
+            setUserScrolledAway(!isScrollNearBottom(el));
           }}
           style={{
             flex: 1,
@@ -5878,6 +6056,28 @@ Das echte Repo-Setup wurde geöffnet.`,
                 <ThinkingDots />
               )}
               <OutcomeHints hints={outcomeHints} />
+              {testRunnerBusy && (
+                <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
+                  Echte Workspace-Tests laufen…
+                </div>
+              )}
+              {testRunnerResult && (
+                <TestRunnerResultCard
+                  result={testRunnerResult}
+                  onRepair={(prompt) => setWishText(prompt)}
+                />
+              )}
+              {autoCodeReviewBusy && (
+                <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.violet}44`, borderRadius: 10, color: C.violet }}>
+                  Auto Code Review läuft über den aufgelösten OpenRouter-/FreeLLM-Pfad…
+                </div>
+              )}
+              {autoCodeReviewResult && (
+                <AutoCodeReviewCard
+                  result={autoCodeReviewResult}
+                  onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
+                />
+              )}
               <SovereignActionStreamPanel stream={actionStream} />
 
               {/* ── Issue #520 + #522: Integration Intent Draft Card — runtime-contracted routing */}
@@ -6303,7 +6503,7 @@ Das echte Repo-Setup wurde geöffnet.`,
               )}
 
               {/* ── Issue #425: Jump Badge */}
-              {unseenCount > 0 && (
+              {shouldShowUnreadBadge(userScrolledAway, unseenCount > 0) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -6475,6 +6675,29 @@ Das echte Repo-Setup wurde geöffnet.`,
         <RuntimeEvidenceLogSheet
           entries={runtimeEvidenceLog}
           onClose={() => setShowRuntimeEvidenceLogs(false)}
+        />
+      )}
+      {showPromptLibrary && (
+        <PromptLibraryPanel
+          onSelectTemplate={(prompt) => setWishText(prompt)}
+          onClose={() => setShowPromptLibrary(false)}
+        />
+      )}
+      {filePreviewPath && (
+        <FileContentPreviewSheet
+          filePath={filePreviewPath}
+          result={filePreviewResult}
+          loading={filePreviewLoading}
+          onClose={() => {
+            setFilePreviewPath(null);
+            setFilePreviewResult(null);
+            setFilePreviewLoading(false);
+          }}
+          onSendToChat={(prompt) => {
+            setWishText(prompt);
+            setFilePreviewPath(null);
+            setFilePreviewResult(null);
+          }}
         />
       )}
       {showPatchDiffEvidence && patchDiffReport && (

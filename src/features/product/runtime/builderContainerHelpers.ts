@@ -14,16 +14,12 @@
  * Next recommended extractions (not yet done):
  * - buildChatLines, buildWorkerSystemPrompt, buildWorkerMessages,
  *   buildWorkerBlockerAnswer, composerRouteHint, palRoute
- *   (depend on more types — map those imports before moving)
- * - UI sub-components (Ampel, TopBar, StatusPanel, FileBadge, etc.)
- *   → src/features/product/components/**
+ *   (depend on more types; map those imports before moving)
+ * - UI sub-components -> src/features/product/components/**
  */
 
 import type { SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
-
-// ─────────────────────────────────────────────────────────────
-// LOCAL TYPES  (extracted from BuilderContainer)
-// ─────────────────────────────────────────────────────────────
+import { formatMissionPreflight, validateMissionSpecificity } from './missionValidatorRuntime';
 
 export interface IdeaOption {
   readonly label: string;
@@ -37,10 +33,6 @@ export interface ChatOutcomeHint {
 }
 
 export type AgentStatus = 'idle' | 'thinking' | 'editing' | 'running' | 'error';
-
-// ─────────────────────────────────────────────────────────────
-// PURE HELPERS
-// ─────────────────────────────────────────────────────────────
 
 export function appendOption(current: string, option: IdeaOption): string {
   const clean = current.trim();
@@ -104,9 +96,12 @@ export function buildAnalyzedMission(args: {
   const repoState = args.repoReady
     ? 'Repo-Snapshot ist geladen und darf für konkrete Dateiänderungen analysiert werden.'
     : `Repo-Snapshot ist noch nicht bereit: ${args.repoReason}`;
+  const preflight = validateMissionSpecificity(wish);
   return [
     'Ideenfabrik Auftrag:',
     wish,
+    '',
+    formatMissionPreflight(preflight),
     '',
     'Repository-Kontext:',
     repoState,
