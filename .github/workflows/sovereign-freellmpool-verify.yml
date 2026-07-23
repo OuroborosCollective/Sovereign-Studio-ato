@@ -194,29 +194,60 @@ jobs:
           failure_family="runtime_content_identity_mismatch"
           docker image inspect "${local_ref_a}" > .sovereign-evidence/freellmpool-image-a.json
           docker image inspect "${local_ref_b}" > .sovereign-evidence/freellmpool-image-b.json
+          container_a="$(docker create "${local_ref_a}")"
+          container_b="$(docker create "${local_ref_b}")"
+          trap 'docker rm -f "${container_a:-}" "${container_b:-}" >/dev/null 2>&1 || true; on_exit' EXIT
+          docker export "${container_a}" > .sovereign-evidence/freellmpool-rootfs-a.tar
+          docker export "${container_b}" > .sovereign-evidence/freellmpool-rootfs-b.tar
+          docker rm "${container_a}" "${container_b}" >/dev/null
+          container_a=""
+          container_b=""
           python - <<'PY'
           import hashlib
           import json
+          import tarfile
           from pathlib import Path
 
-          def runtime_identity(path: str) -> dict[str, object]:
+          def filesystem_identity(path: str) -> dict[str, object]:
+              records = []
+              with tarfile.open(path, 'r:*') as archive:
+                  for member in sorted(archive.getmembers(), key=lambda item: item.name):
+                      record = {
+                          'path': member.name,
+                          'type': member.type.decode('latin1') if isinstance(member.type, bytes) else str(member.type),
+                          'mode': int(member.mode),
+                          'uid': int(member.uid),
+                          'gid': int(member.gid),
+                          'linkname': member.linkname,
+                          'size': int(member.size),
+                      }
+                      if member.isfile():
+                          stream = archive.extractfile(member)
+                          if stream is None:
+                              raise SystemExit(f'missing tar payload: {member.name}')
+                          record['contentSha256'] = hashlib.sha256(stream.read()).hexdigest()
+                      records.append(record)
+              encoded = json.dumps(records, sort_keys=True, separators=(',', ':')).encode('utf-8')
+              return {'filesystemSha256': hashlib.sha256(encoded).hexdigest(), 'entryCount': len(records)}
+
+          def runtime_config(path: str) -> dict[str, object]:
               payload = json.loads(Path(path).read_text('utf-8'))[0]
               config = payload.get('Config') or {}
               return {
-                  'rootfsLayers': list((payload.get('RootFS') or {}).get('Layers') or []),
-                  'runtimeConfig': {
-                      'entrypoint': config.get('Entrypoint'),
-                      'cmd': config.get('Cmd'),
-                      'env': sorted(config.get('Env') or []),
-                      'workingDir': config.get('WorkingDir'),
-                      'user': config.get('User'),
-                      'labels': dict(sorted((config.get('Labels') or {}).items())),
-                  },
+                  'entrypoint': config.get('Entrypoint'),
+                  'cmd': config.get('Cmd'),
+                  'env': sorted(config.get('Env') or []),
+                  'workingDir': config.get('WorkingDir'),
+                  'user': config.get('User'),
+                  'labels': dict(sorted((config.get('Labels') or {}).items())),
               }
 
           identities = []
           for suffix in ('a', 'b'):
-              identity = runtime_identity(f'.sovereign-evidence/freellmpool-image-{suffix}.json')
+              identity = {
+                  **filesystem_identity(f'.sovereign-evidence/freellmpool-rootfs-{suffix}.tar'),
+                  'runtimeConfig': runtime_config(f'.sovereign-evidence/freellmpool-image-{suffix}.json'),
+              }
               encoded = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
               Path(f'.sovereign-evidence/freellmpool-runtime-identity-{suffix}.json').write_text(
                   json.dumps(identity, indent=2, sort_keys=True) + '\n', encoding='utf-8'
@@ -228,6 +259,7 @@ jobs:
               identities[0][1] + '\n', encoding='utf-8'
           )
           PY
+          rm -f .sovereign-evidence/freellmpool-rootfs-a.tar .sovereign-evidence/freellmpool-rootfs-b.tar
           runtime_content_sha256="$(cat .sovereign-evidence/freellmpool-runtime-content-sha256.txt)"
           test "${#runtime_content_sha256}" = "64"
           image_id_a="$(docker image inspect "${local_ref_a}" --format '{{.Id}}')"
