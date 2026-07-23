@@ -78,6 +78,7 @@ from free_revolver_runtime import (
     resolve_free_revolver_plan,
 )
 from free_revolver_provider_runtime import register_free_revolver_provider_runtime
+from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.routes import register_sovereign_agent_routes
@@ -465,6 +466,12 @@ register_free_revolver_provider_runtime(
     query=query,
     get_connection=get_agent_runtime_connection,
     get_current_admin=get_current_admin,
+    audit=audit,
+)
+llm_route_scanner_service = register_llm_route_scanner(
+    app,
+    require_admin=require_admin,
+    query=query,
     audit=audit,
 )
 
@@ -2099,6 +2106,9 @@ def health_ready():
                    to_regclass('llm_revolver_provider_sources') IS NOT NULL AS revolver_v3_provider_sources,
                    to_regclass('llm_revolver_provider_models') IS NOT NULL AS revolver_v3_provider_models,
                    to_regclass('llm_revolver_provider_checks') IS NOT NULL AS revolver_v3_provider_checks,
+                   to_regclass('llm_route_scanner_runtime') IS NOT NULL AS route_scanner_runtime,
+                   to_regclass('llm_route_scanner_runs') IS NOT NULL AS route_scanner_runs,
+                   to_regclass('llm_route_scanner_candidates') IS NOT NULL AS route_scanner_candidates,
                    to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
                    to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
                    to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
@@ -2135,6 +2145,9 @@ def health_ready():
             "revolver_v3_provider_sources",
             "revolver_v3_provider_models",
             "revolver_v3_provider_checks",
+            "route_scanner_runtime",
+            "route_scanner_runs",
+            "route_scanner_candidates",
             "package_uniqueness",
             "github_app_credits",
             "github_app_credit_transactions",
@@ -2154,6 +2167,7 @@ def health_ready():
                 "033_freellmapi_managed_provider.sql",
                 "034_freellm_provider_check_kinds.sql",
                 "035_freellmpool_private_source.sql",
+                "036_llm_route_scanner_candidates.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
