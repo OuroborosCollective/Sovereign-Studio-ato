@@ -89,7 +89,7 @@ async function resolveActiveBackendModel(requestedModel: string, signal?: AbortS
   } else {
     selected = active.find((route) => (
       route.defaultModelId === requestedModel || route.id === requestedModel
-    ));
+    )) ?? paidOpenRouter[0];
   }
 
   const model = concreteRouteModel(selected);
