@@ -321,11 +321,32 @@ class ProviderRuntimeClient(OwnerInputClient):
             "protected_values_returned": False,
         }
 
-    def freellm_reconcile(self, source_id: str, max_models: int = 20) -> dict[str, Any]:
-        selected = self._source_id(source_id)
+    @staticmethod
+    def _bounded_model_count(max_models: int) -> int:
         if isinstance(max_models, bool) or not isinstance(max_models, int):
             raise ValueError("max_models muss eine ganze Zahl sein")
-        bounded_max = max(1, min(max_models, 50))
+        return max(1, min(max_models, 100))
+
+    def freellm_discover(self, source_id: str, max_models: int = 20) -> dict[str, Any]:
+        selected = self._source_id(source_id)
+        bounded_max = self._bounded_model_count(max_models)
+        payload = self._request(
+            "POST",
+            f"/api/internal/llm/freellm/providers/{selected}/discover",
+            json_body={"maxModels": bounded_max},
+            expected=(200, 409, 502, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "sourceId": str(payload.get("sourceId") or selected),
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def freellm_reconcile(self, source_id: str, max_models: int = 20) -> dict[str, Any]:
+        selected = self._source_id(source_id)
+        bounded_max = self._bounded_model_count(max_models)
         payload = self._request(
             "POST",
             f"/api/internal/llm/freellm/providers/{selected}/reconcile",

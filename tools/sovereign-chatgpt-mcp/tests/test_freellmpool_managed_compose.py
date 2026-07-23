@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -53,6 +54,38 @@ def test_freellmpool_template_is_private_immutable_non_root_and_secret_file_boun
     assert "KEY_PATH = Path(\"/run/secrets/freellmpool_proxy_key\")" in entrypoint
     assert "os.execvp(" in entrypoint
     assert '"python",\n            "-m",\n            "freellmpool.cli"' in entrypoint
+
+
+def test_freellmpool_image_lock_matches_runtime_and_ci_verifies_without_rebuild() -> None:
+    root = Path(__file__).resolve().parents[1]
+    lock_path = (
+        root
+        / "templates"
+        / "sovereign-freellmpool"
+        / "freellmpool-image.lock.json"
+    )
+    lock = json.loads(lock_path.read_text("utf-8"))
+    workflow = (
+        root.parents[1]
+        / ".github"
+        / "workflows"
+        / "sovereign-freellmpool-verify.yml"
+    ).read_text("utf-8")
+
+    assert lock["image"] == FREELLMPOOL_IMAGE
+    assert lock["upstreamRevision"] == "f9e09e536682083297cfd6fec3ea5d3aac5262c8"
+    assert lock["releaseVersion"] == "0.11.4"
+    assert lock["verifiedContract"]["dockerSocketMounted"] is False
+    assert lock["verifiedContract"]["hostPortsPublished"] is False
+    assert lock["verifiedContract"]["minimumSuccessfulKeylessCanaries"] >= 1
+    assert "Experimental upstream rebuild (manual maintenance only)" in workflow
+    assert "if: ${{ false }}" in workflow
+    assert "Resolve and verify the approved immutable image lock" in workflow
+    assert 'docker pull "${repo_digest}"' in workflow
+    assert "REPO_DIGEST" in workflow
+    assert 'assert os.environ["REPO_DIGEST"] in values' in workflow
+    assert '"baseImageClaimed": False' in workflow
+    assert '"rebuildPerformed": False' in workflow
 
 
 def test_freellmpool_render_contract_rejects_root_mutable_or_env_secret(tmp_path: Path) -> None:
