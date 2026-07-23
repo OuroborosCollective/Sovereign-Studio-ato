@@ -253,7 +253,7 @@ function CatalogAttach({
   return (
     <section className="llm-catalog">
       <div className="llm-section-title">
-        <div><DatabaseZap size={21} /><div><h2>LiteLLM-Modellkatalog</h2><p>Nur live erkannte Modelle mit Providerpreisen.</p></div></div>
+        <div><DatabaseZap size={21} /><div><h2>OpenRouter-Modellkatalog</h2><p>Nur live erkannte Paid-Modelle mit verifizierten Providerpreisen.</p></div></div>
       </div>
       <div className="llm-catalog__form">
         <label className="llm-catalog__model">
@@ -336,7 +336,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const paidRoutes = useMemo(
     () => routes.filter(route => (
-      route.provider.trim().toLowerCase() === 'litellm'
+      route.provider.trim().toLowerCase() === 'openrouter'
       && route.billingCategory !== 'free'
     )),
     [routes],
@@ -364,7 +364,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
       <nav className="llm-runtime-tabs" aria-label="LLM-Laufzeitbereiche">
         <button type="button" className={surface === 'paid' ? 'llm-runtime-tab llm-runtime-tab--active' : 'llm-runtime-tab'}
           aria-pressed={surface === 'paid'} onClick={() => setSurface('paid')}>
-          <BadgeDollarSign size={18} /> LiteLLM & bezahlt
+          <BadgeDollarSign size={18} /> OpenRouter Paid
         </button>
         <button type="button" className={surface === 'free' ? 'llm-runtime-tab llm-runtime-tab--active' : 'llm-runtime-tab'}
           aria-pressed={surface === 'free'} onClick={() => setSurface('free')}>
@@ -379,7 +379,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
               <div className="llm-section-title">
                 <div><RotateCcw size={21} /><div>
                   <h2>Resolver-Livepfad</h2>
-                  <p>PostgreSQL-Zustand, private LiteLLM-Ausführung und persistierte Attempts.</p>
+                  <p>PostgreSQL-Zustand, direkte FreeLLM-Ausführung und persistierte Attempts.</p>
                 </div></div>
               </div>
               <div className="llm-stat-grid">
@@ -403,8 +403,8 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
         <>
           <div className="llm-control-center__hero">
             <div>
-              <span className="llm-kicker">LiteLLM / bezahlte Modelle</span>
-              <h1>Standard- und Premium-LiteLLM-Routen</h1>
+              <span className="llm-kicker">OpenRouter / bezahlte Modelle</span>
+              <h1>Standard- und Premium-OpenRouter-Routen</h1>
               <p>Aktivieren lassen sich ausschließlich Routen mit bestätigten Providerpreisen und erfolgreicher Live-Canary. Kostenfreie Provider gehören in den getrennten Free-Revolver-Bereich.</p>
             </div>
             <button type="button" className="llm-button" onClick={reload} disabled={loading || busyId !== null}>
@@ -423,7 +423,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
           {catalogError && <div className="llm-alert">Modellkatalog derzeit nicht verfügbar: {catalogError}</div>}
           {legacyDirectRouteCount > 0 && (
             <div className="llm-alert">
-              {legacyDirectRouteCount} historische Direktprovider-Routen bleiben deaktiviert und werden hier bewusst nicht als LiteLLM-Routen angezeigt.
+              {legacyDirectRouteCount} unbekannte oder historische Transport-Routen bleiben deaktiviert und werden weder als OpenRouter Paid noch als FreeLLM angezeigt.
             </div>
           )}
           {paidRoutes.length > 0 && paidRoutes.every(route => !route.pricingVerified) && (
@@ -443,7 +443,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
 
           <section>
             <div className="llm-section-title">
-              <div><Activity size={21} /><div><h2>Bezahlte Konfiguration</h2><p>{paidRoutes.length} private LiteLLM-Standard-/Premium-Routen</p></div></div>
+              <div><Activity size={21} /><div><h2>Bezahlte Konfiguration</h2><p>{paidRoutes.length} direkte OpenRouter-Standard-/Premium-Routen</p></div></div>
             </div>
             <div className="llm-route-grid">
               {paidRoutes.map(route => (
@@ -456,7 +456,7 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
                 />
               ))}
               {paidRoutes.length === 0 && (
-                <div className="llm-empty">Noch keine bezahlte, preisverifizierte LiteLLM-Route.</div>
+                <div className="llm-empty">Noch keine bezahlte, preisverifizierte OpenRouter-Route.</div>
               )}
             </div>
           </section>

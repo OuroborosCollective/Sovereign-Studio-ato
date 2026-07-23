@@ -72,13 +72,19 @@ def test_mcp_provider_operator_never_accepts_a_secret_argument() -> None:
     assert "protected_values_returned" in client
 
 
-def test_live_chat_and_catalog_accept_only_private_litellm_routes() -> None:
+def test_live_chat_and_catalog_use_verified_direct_transports() -> None:
     app = (BACKEND / "app.py").read_text("utf-8")
-    assert "WHERE lower(provider)='litellm'" in app
-    assert "direct_provider_route_blocked" in app
-    assert "classify_litellm_failure" in app
+    direct_runtime = (BACKEND / "direct_llm_runtime.py").read_text("utf-8")
+    assert "IN ('openrouter', 'freellm')" in app
+    assert "fetch_direct_llm(" in app
+    assert "classify_direct_llm_failure(" in app
+    assert "extract_direct_llm_evidence(" in app
     assert "free_route_revolver_exhausted" in app
-    assert "Keine preisverifizierte LiteLLM-Route verfügbar" in app
+    assert "Keine preisverifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar" in app
+    assert "allow_redirects=False" in direct_runtime
+    assert "session.trust_env = False" in direct_runtime
+    assert "_MAX_RESPONSE_BYTES" in direct_runtime
+    assert "fetch_litellm(" not in app
     assert "Automatische Direktprovider-Routenerzeugung ist deaktiviert" in app
     assert '"status": "Always available (free)"' not in app
 

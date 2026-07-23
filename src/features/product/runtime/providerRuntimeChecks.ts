@@ -44,7 +44,7 @@ export function getProviderStatus(providerId: string, _keys: UserApiKeys): Provi
     return {
       providerId,
       status: 'free_available',
-      label: 'Sovereign Backend · private LiteLLM',
+      label: 'Sovereign Backend · OpenRouter Paid + FreeLLM Free',
       priority,
       isAvailable: true,
     };

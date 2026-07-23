@@ -2,7 +2,9 @@
 
 **Status:** Lebendes Architekturhandbuch  
 
-**Evidence-Stand:** 20. Juli 2026
+**Evidence-Stand:** 23. Juli 2026
+
+**Verbindliche LLM-Routing-Aktualisierung:** Die aktuelle Transport-, Schlüssel-, Zustands- und Operatorwahrheit steht in [`LLM_ROUTING_TRUTH_AND_HANDOFF.md`](./LLM_ROUTING_TRUTH_AND_HANDOFF.md). Paid läuft direkt über OpenRouter, Free direkt über FreeLLM; LiteLLM bleibt optionaler Legacy-/Rollback-Transport. Ältere LiteLLM-Belege in diesem Manifest sind historische Provenance und keine aktuelle globale Routingregel.
 
 - **Audit-Baseline dieses Manifest-Updates:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
 - **Produktive MCP-Revision:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
@@ -161,9 +163,11 @@ Android/Web Frontend
   ↓
 Sovereign Backend
   ↓
-LiteLLM
+PostgreSQL-gebundener Route Resolver
   ↓
-Provider
+OpenRouter Paid direkt | FreeLLM Free direkt
+  ↓
+Provider beziehungsweise FreeLLM-Pool
   ↓
 LLM-Antwort + strukturierte Intent-Evidence
   ↓
@@ -182,7 +186,7 @@ UI-Anzeige und nächste erlaubte Aktion
 
 1. **Frontend:** Chat, Eingabe, kompakte Statusanzeige, Inspektionsflächen.
 2. **Backend:** Auth, Credits, Admin, LLM-Route, Toolchain, Persistenz.
-3. **LiteLLM:** Providerabstraktion, Modellalias, Kosten- und Nutzungsdaten.
+3. **LLM-Transporte:** OpenRouter Paid direkt, FreeLLM Free direkt; LiteLLM nur optionaler Legacy-/Rollback-Transport.
 4. **Runtime Library:** Verträge, Gates, State Machine, Evidence, Recovery.
 5. **Executor Layer:** interne Agent Runtime, MCP, GitHub, Workspaces, Tests.
 6. **Storage:** PostgreSQL, pgvector/Knowledge, Audit, Learning Candidates.
@@ -264,7 +268,7 @@ Das Backend ist die kanonische Serverinstanz für:
 - Nutzer- und Adminzugriffe,
 - Credit-Reservierung und Settlement,
 - PostgreSQL-Persistenz,
-- LLM-Routing über LiteLLM,
+- providerneutrales LLM-Routing über direkte OpenRouter-/FreeLLM-Transporte,
 - MCP-/Toolchain-Bridges,
 - GitHub- und Draft-PR-Verträge,
 - Agent-Job-Persistenz,
@@ -307,7 +311,7 @@ Das Admin Backend verwaltet keine bloßen UI-Listen, sondern serverseitige Vertr
 - Zahlungstransaktionen,
 - provider-finanzierte Credits aus echten Käufen,
 - Reservierung vor Provider-Ausführung,
-- Settlement aus LiteLLM-/Providerkosten und Usage-Evidence,
+- Settlement aus direkten Providerkosten und Usage-Evidence,
 - Refund bei belegtem Fehlschlag,
 - Admin-Statistiken.
 
@@ -316,7 +320,7 @@ Das Admin Backend verwaltet keine bloßen UI-Listen, sondern serverseitige Vertr
 ## 6.3 Modelle, Provider und Routen
 
 - Provider Registry,
-- LiteLLM-Modellkatalog,
+- getrennte OpenRouter-Paid- und FreeLLM-Free-Modellkataloge,
 - drei Kostenkategorien,
 - Modellinventar,
 - Modellalias,
@@ -327,7 +331,7 @@ Das Admin Backend verwaltet keine bloßen UI-Listen, sondern serverseitige Vertr
 
 Die drei Kostenkategorien sind verbindlich:
 
-1. `free`: nur Revolver-/Free-Routen mit von LiteLLM bestätigten Providerkosten von exakt `0`.
+1. `free`: nur direkte FreeLLM-Revolver-Routen mit bestätigtem Nullkostenvertrag und zwei echten Completion-Canaries.
 2. `standard`: bezahlte Standardrouten mit mindestens `×4` auf echte Providerkosten.
 3. `premium`: Premiumrouten mit mindestens `×8` auf echte Providerkosten.
 
@@ -370,8 +374,8 @@ Protected Owner Input
   → Preise abrufen oder Admin-Ergänzung anfordern
   → Modellaliase planen
   → Datenbankeinträge erzeugen
-  → LiteLLM-Konfiguration aktualisieren
-  → Readiness prüfen
+  → passenden Direkttransport und PostgreSQL-Route aktualisieren
+  → transportgerechte Readiness prüfen
   → Canary je Alias ausführen
   → passende Backend-Routen atomar aktivieren
   → Runtime-Evidence speichern
@@ -384,7 +388,7 @@ Keine Route wird aktiviert, solange eines fehlt:
 - Provider-Credential vorhanden,
 - Inventar bestätigt,
 - Modellalias deployt,
-- LiteLLM readiness grün,
+- transportgerechte OpenRouter- oder FreeLLM-Readiness und Completion-Evidence grün,
 - Completion-Canary grün,
 - Preis-/Credit-Regel vorhanden,
 - passender Datenbankeintrag vorhanden.
@@ -393,27 +397,32 @@ Ein normaler Nutzerrequest darf niemals Provider- oder Routentabellen reparieren
 
 ---
 
-# 8. LiteLLM
+# 8. LLM-Transporte: OpenRouter, FreeLLM und Legacy LiteLLM
 
-## 8.1 Aufgabe
+## 8.1 Aktuelle Aufgabe
 
-LiteLLM ist der private Provider-Router. Es abstrahiert externe Anbieter, Modelle und Kostenmetadaten hinter einem internen OpenAI-kompatiblen Vertrag.
+Der PostgreSQL-gebundene Resolver trennt zwei aktive direkte Transportklassen:
 
-## 8.2 Architektur
+- `openrouter` für bezahlte Standard-/Premium-Ausführung,
+- `freellm` für kostenfreie, quota-bewusste Einzelagent-Ausführung.
+
+LiteLLM ist nur noch ein optionaler Legacy-/Rollback-Transport. Es darf weder als alleiniger Produktionsrouter noch als globales Readiness-Gate dargestellt werden.
+
+## 8.2 Aktuelle Architektur
 
 ```text
 Sovereign Backend
-  → interner LiteLLM Service Key
-  → LiteLLM im privaten Docker-Netz
-  → Provider Credential nur im LiteLLM-Prozess
-  → externer Provider
+  → PostgreSQL-Route + Billing-/Canary-/Quota-Evidence
+  → direkter OpenRouter-Transport für Paid
+     oder direkter FreeLLM-Transport für Free
+  → externer Provider beziehungsweise verwalteter FreeLLM-Pool
 ```
 
-Frontend, Android und Agents SDK erhalten niemals den echten Provider-Key.
+Frontend, Android und Agents SDK erhalten niemals echte Provider- oder Service-Keys.
 
 ## 8.3 Modelle und Aliase
 
-Produktcode verwendet stabile Aliase, nicht hartcodierte Providerbezeichnungen.
+Produktcode verwendet stabile Sovereign-Routenaliase, nicht hartcodierte Providerbezeichnungen. Der historische Datenbankfeldname `litellm_alias` ist kein Transportbeweis.
 
 Beispiel:
 
@@ -426,14 +435,14 @@ Providerwechsel erfolgen hinter dem Alias.
 
 ## 8.4 Preisberechnung
 
-LiteLLM liefert Nutzungs- und Kostenmetadaten. Sovereign Backend führt das Nutzer-Creditkonto.
+Der jeweilige Direkttransport liefert Usage- und, sofern verfügbar, Providerkosten-Evidence. Sovereign Backend führt das Nutzer-Creditkonto.
 
 ```text
 Request
-  → Route und Kostenkategorie bestimmen
-  → echte Providerpreise aus LiteLLM-Modellinfo prüfen
-  → provider-finanzierte Credits atomar reservieren
-  → LiteLLM-Aufruf
+  → Route, Transport und Kostenkategorie bestimmen
+  → transportgerechte Preis-/Nullkosten-Evidence prüfen
+  → provider-finanzierte Credits bei Paid atomar reservieren
+  → direkter OpenRouter- oder FreeLLM-Aufruf
   → echte Usage/Cost Evidence
   → Settlement
   → Differenz erstatten oder endgültig verbuchen
@@ -452,11 +461,13 @@ Request
 - Completion-Canary beweist einen echten Modellpfad.
 - Route-Aktivierung erfordert die vollständige Kette.
 
-## 8.6 Master Key
+## 8.6 Schlüsselgrenzen
 
-Der LiteLLM-Master-Key bleibt serverseitig. Nachgelagerte Services erhalten zweckgebundene interne Keys mit minimalen Rechten.
+OpenRouter-Key, FreeLLM-Unified-Key, FreeLLM-Upstream-Provider-Keys, Keyless-Marker und Legacy-LiteLLM-Master-Key sind getrennte Schlüsselklassen. Alle bleiben serverseitig in exakt allowlisteten 0600-Dateien; Rohwerte erscheinen weder in PostgreSQL noch in UI, Logs oder Chat.
 
-## 8.7 Aktueller Betriebsbeweis
+## 8.7 Historischer LiteLLM-Betriebsbeweis
+
+Die folgenden Absätze dokumentieren historische LiteLLM-/OpenAI-Provenance. Sie ersetzen nicht die aktuelle direkte Transportwahrheit aus `LLM_ROUTING_TRUTH_AND_HANDOFF.md`.
 
 **BELEGT — Inventar:** Der geschützte OpenAI-/LiteLLM-Inventarpfad lieferte 92 sichtbare Modelle und bestätigte `gpt-5.4-mini` als verfügbares Provider-Modell. Provider-Identität und Projektzugriff wurden ohne Secret-Ausgabe bestätigt.
 
@@ -922,9 +933,17 @@ Web-/Android-Artefakt; spricht nur mit dem Sovereign Backend.
 
 Auth, Credits, Runtime-API, Admin, Toolchain, LLM-Bridge und Persistenz.
 
-### LiteLLM
+### OpenRouter Paid
 
-Privater Provider-Router; kein öffentlicher Clientzugriff.
+Direkter bezahlter Providertransport; kein öffentlicher Clientzugriff und keine Secrets im Frontend.
+
+### FreeLLM Free
+
+Direkter verwalteter Free-Pooltransport; kein öffentlicher Clientzugriff, nur doppelt gecanaryte Nullkostenrouten aktiv.
+
+### Legacy LiteLLM
+
+Optionaler historischer Provider-Router und Rollbackpfad; kein globales Produktions-Gate.
 
 ### PostgreSQL
 
@@ -1003,7 +1022,7 @@ Die folgenden Familien sind im Backendvertrag belegt oder als kanonische Gruppen
 - `/api/admin/llm/worker-ai/models`
 - `/api/admin/llm/worker-ai/sync`
 
-Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar; produktive Online-Modelle dürfen nur über private LiteLLM-Routen laufen.
+Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar. Produktive Paid-Modelle laufen direkt über OpenRouter, produktive Free-Routen direkt über FreeLLM; LiteLLM ist nur optionaler Legacy-/Rollback-Transport.
 
 ## 21.5 Admin Benutzer, Credits und Billing
 
@@ -1073,7 +1092,7 @@ Vier weiterhin sichtbare Altflächen werden nicht verborgen, sondern getrennt au
 User Text
   → Backend Session prüfen
   → Creditfähigkeit prüfen
-  → Online-LLM über LiteLLM
+  → Online-LLM über verifizierte direkte OpenRouter-/FreeLLM-Route
   → Assistant Response + IntentEvidence
   → Runtime validiert Intent
   → reine Antwort oder Action Route
@@ -1132,7 +1151,7 @@ Code Intent
 Request
   → Route und Maximalverbrauch bestimmen
   → Credits atomar reservieren
-  → LiteLLM-Aufruf
+  → direkter OpenRouter-/FreeLLM-Aufruf
   → Usage/Cost Evidence
   → Settlement
   → Refund oder endgültige Abbuchung
@@ -1168,7 +1187,7 @@ GitHub Intent
 8. Keine Mocks, Stubs oder Fassaden im Live-Pfad.
 9. Keine statischen Provider-Routen im Frontend.
 10. Keine hartcodierten Provider wie Pollinations, Groq oder vergleichbare direkte Clientprovider.
-11. Provider werden ausschließlich über Backend, Datenbank und LiteLLM verwaltet.
+11. Provider werden ausschließlich über Backend, Datenbank und den transportgerechten OpenRouter-/FreeLLM-Adminvertrag verwaltet; LiteLLM bleibt Legacy.
 12. Offline-Fallback muss klar markiert sein.
 13. Keine Secrets im Frontend, APK, WebView, Chat, Logs oder Repository.
 14. Normale Requests mutieren keine Admin-/Providerkonfiguration.

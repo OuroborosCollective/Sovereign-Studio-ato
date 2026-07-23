@@ -50,7 +50,7 @@ export function resolvePrimaryBridgeConfig(overrides: { proxyUrl?: string; model
     routesUrl: `${backendBaseUrl}/api/llm/routes`,
     chatUrl: `${backendBaseUrl}/api/llm/chat`,
     ready: true,
-    reason: 'Online model traffic is routed through the authenticated Sovereign Backend and private LiteLLM.',
+    reason: 'Online model traffic is routed through the authenticated Sovereign Backend: paid through direct OpenRouter and free through direct FreeLLM.',
   };
 }
 

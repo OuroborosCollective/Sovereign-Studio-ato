@@ -77,6 +77,7 @@ export function FreeRevolverControlCenter({
         && model.enabled
         && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
       )).length,
+      deferred: models.filter(model => model.status === 'discovered').length,
       blocked: models.filter(model => model.status === 'blocked').length,
       verified: models.filter(model => (
         model.freeVerified
@@ -140,8 +141,9 @@ export function FreeRevolverControlCenter({
           <p>
             Der Key wird einmalig über den geschützten Owner-Kanal übertragen und nie in der
             Sovereign-Datenbank gespeichert. Aktiviert werden ausschließlich Modelle mit
-            expliziter Provider-Nullpreis-Evidence und einer echten LiteLLM-Completion,
-            die keinen positiven Kostenwert meldet.
+            expliziter Nullkosten-Evidence und zwei echten direkten FreeLLM-Completion-Canaries,
+            die keinen positiven Kostenwert melden. Fehlende oder abgekühlte Upstreams bleiben
+            prüfbar und werden nicht mehr fälschlich als defekte Modelle dargestellt.
           </p>
         </div>
         <button type="button" className="llm-button" disabled={api.loading || busyId !== null} onClick={api.reload}>
@@ -153,7 +155,8 @@ export function FreeRevolverControlCenter({
         <div><Server /><span>Provider</span><strong>{totals.providers}</strong></div>
         <div><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
         <div><Search /><span>Nullkosten bestätigt</span><strong>{totals.verified}</strong></div>
-        <div><Lock /><span>Blockierte Modelle</span><strong>{totals.blocked}</strong></div>
+        <div><RefreshCw /><span>Wartet auf Upstream</span><strong>{totals.deferred}</strong></div>
+        <div><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>
       </div>
 
       <section className="llm-catalog free-revolver-admin__onboarding">
@@ -242,6 +245,7 @@ export function FreeRevolverControlCenter({
               && model.enabled
               && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
             ));
+            const deferredModels = provider.models.filter(model => model.status === 'discovered');
             const blockedModels = provider.models.filter(model => model.status === 'blocked');
             const recheckableModels = provider.models.filter(model => (
               model.freeVerified && Boolean(model.litellmAlias)
@@ -278,7 +282,8 @@ export function FreeRevolverControlCenter({
                   </span>
                   <span className="llm-badge"><KeyRound size={14} /> {provider.keyHint ?? AUTH_LABELS[provider.authMode]}</span>
                   <span className="llm-badge llm-badge--ok">{readyModels.length} aktiv</span>
-                  {blockedModels.length > 0 && <span className="llm-badge llm-badge--danger">{blockedModels.length} blockiert</span>}
+                  {deferredModels.length > 0 && <span className="llm-badge llm-badge--warn">{deferredModels.length} wartet auf Upstream</span>}
+                  {blockedModels.length > 0 && <span className="llm-badge llm-badge--danger">{blockedModels.length} hart blockiert</span>}
                 </div>
 
                 <div className="free-revolver-provider__facts">
@@ -302,12 +307,14 @@ export function FreeRevolverControlCenter({
                         <span>{model.modelId}</span>
                         <span>{pricingEvidenceExpiry(model.pricingVerifiedAt, pricingEvidenceTtlHours)}</span>
                       </div>
-                      <span className={`llm-badge llm-badge--${effectiveReady ? 'ok' : 'danger'}`}>
+                      <span className={`llm-badge llm-badge--${effectiveReady ? 'ok' : model.status === 'discovered' ? 'warn' : 'danger'}`}>
                         {!pricingFresh
                           ? 'Preis-Evidence abgelaufen'
-                          : model.status !== 'ready'
-                            ? model.lastErrorCode ?? model.pricingSource
-                            : model.canaryCostState === 'zero'
+                          : model.status === 'discovered'
+                            ? `wartet auf verfügbaren Upstream · ${model.lastErrorCode ?? 'noch nicht erfolgreich geprüft'}`
+                            : model.status !== 'ready'
+                              ? model.lastErrorCode ?? model.pricingSource
+                              : model.canaryCostState === 'zero'
                               ? 'Nullpreis + Canary Kosten 0'
                               : 'Nullpreis + Canary ohne Kostenangabe'}
                       </span>
@@ -326,7 +333,7 @@ export function FreeRevolverControlCenter({
                       onClick={() => void run(
                         `discover-${provider.id}`,
                         () => api.discover(provider.id),
-                        'Discovery abgeschlossen. Nur Modelle mit frischer Nullpreis-Evidence und erfolgreicher Completion-Canary wurden aktiviert; alle anderen bleiben gesperrt.',
+                        'Discovery abgeschlossen. Erfolgreich doppelt gecanaryte Modelle wurden aktiviert; temporär nicht erreichbare Upstreams bleiben sichtbar und erneut prüfbar, echte Policy-Verstöße bleiben blockiert.',
                       )}>
                       <Search size={17} /> Modelle + Preise neu erkennen
                     </button>

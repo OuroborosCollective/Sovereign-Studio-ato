@@ -69,7 +69,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
 
   return {
     id: 'optional-user-keys',
-    label: 'Sovereign Backend · private LiteLLM',
+    label: 'Sovereign Backend · OpenRouter Paid + FreeLLM Free',
     kind: 'existing',
     priority: -10,
     enabled: config.ready,

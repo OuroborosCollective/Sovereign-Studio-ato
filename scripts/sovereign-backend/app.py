@@ -39,12 +39,15 @@ from werkzeug.exceptions import NotFound
 import requests
 
 from litellm_runtime import (
-    classify_litellm_failure,
-    extract_litellm_evidence,
-    fetch_litellm,
     litellm_completion_canary,
     litellm_readiness,
 )
+from direct_llm_runtime import (
+    classify_direct_llm_failure,
+    extract_direct_llm_evidence,
+    fetch_direct_llm,
+)
+from llm_transport import route_transport
 from llm_cost_policy import (
     BillingPolicyError,
     FREE_CATEGORY,
@@ -1008,13 +1011,15 @@ def admin_llm_routes():
                   provider, credits_per_unit AS "creditsPerUnit",
                   disabled, priority, config
            FROM llm_routes
-           WHERE lower(provider) = 'litellm'
+           WHERE lower(COALESCE(runtime_kind, provider))
+                 IN ('openrouter', 'freellm', 'litellm')
            ORDER BY priority ASC, model_name ASC"""
     )
     legacy_direct_routes = query(
         """SELECT COUNT(*)::integer AS count
            FROM llm_routes
-           WHERE lower(provider) <> 'litellm'""",
+           WHERE lower(COALESCE(runtime_kind, provider))
+                 NOT IN ('openrouter', 'freellm', 'litellm')""",
         one=True,
     ) or {}
     revolver_stats = query(
@@ -1082,10 +1087,10 @@ def admin_llm_routes():
             "freeProfile": FREE_SINGLE_AGENT_PROFILE,
             "paidProfile": PAID_SWARM_PROFILE,
             "providersHardcoded": False,
-            "routingOwner": "postgresql-and-private-litellm",
+            "routingOwner": "postgresql-openrouter-paid-and-direct-freellm",
         },
         "revolverV3": {
-            "runtime": "postgresql-litellm-evidence",
+            "runtime": "postgresql-direct-freellm-evidence",
             "profile": dict(revolver_v3_profile),
             "structuredOutput24h": {
                 "checks": int(structured_stats.get("checks") or 0),
@@ -1098,7 +1103,7 @@ def admin_llm_routes():
         },
         "manualCreditsPerUnitEditing": False,
         "legacyDirectRouteCount": int(legacy_direct_routes.get("count") or 0),
-        "legacyDirectRoutePolicy": "disabled-and-hidden-from-private-litellm-admin",
+        "legacyDirectRoutePolicy": "unknown-transports-disabled-and-hidden",
     })
 
 
@@ -1114,17 +1119,26 @@ def admin_update_llm_route(rid):
         }), 400
 
     route = query(
-        """SELECT id::text, model_id, model_name, provider, disabled, priority,
-                  credits_per_unit, config
+        """SELECT id::text, model_id, model_name, provider, runtime_kind,
+                  disabled, priority, credits_per_unit, config
            FROM llm_routes WHERE id::text=%s LIMIT 1""",
         (rid,), one=True,
     )
     if not route:
         return jsonify({"error": "Route nicht gefunden"}), 404
-    if str(route.get("provider") or "").strip().lower() != "litellm":
+    transport = str(
+        route.get("runtime_kind") or route.get("provider") or ""
+    ).strip().lower()
+    if transport == "freellm":
         return jsonify({
-            "error": "Direkte Provider-Routen dürfen nicht verwaltet oder aktiviert werden.",
-            "blocker": "direct_provider_route_blocked",
+            "error": "FreeLLM-Routen werden ausschließlich im getrennten Free-Revolver-Bereich verwaltet.",
+            "blocker": "free_revolver_managed_route",
+            "requiredEndpoint": "/api/admin/llm/revolver-v3/providers",
+        }), 409
+    if transport not in {"openrouter", "litellm"}:
+        return jsonify({
+            "error": "Unbekannter oder historischer LLM-Transport ist nicht editierbar.",
+            "blocker": "unsupported_llm_transport",
         }), 409
 
     config = dict(route.get("config") or {})
@@ -1140,6 +1154,10 @@ def admin_update_llm_route(rid):
             or config.get("billingCategory")
             or config.get("billingClass")
         )
+        if transport == "openrouter" and category == FREE_CATEGORY:
+            raise BillingPolicyError(
+                "OpenRouter gehört ausschließlich in den bezahlten Standard-/Premium-Bereich"
+            )
         multiplier = normalized_multiplier(
             category,
             body.get("markupMultiplier", config.get("markupMultiplier")),
@@ -1184,42 +1202,72 @@ def admin_update_llm_route(rid):
     activation_evidence = None
     requested_disabled = bool(body.get("disabled", route.get("disabled")))
     if body.get("disabled") is False:
-        canary = litellm_completion_canary(str(route.get("model_id") or ""))
-        if not canary.get("ok"):
-            blocker = str(canary.get("blocker") or "litellm_route_canary_failed")
-            status_code = (
-                402 if blocker == "provider_quota_exhausted"
-                else 409 if blocker in {
-                    "provider_credentials_rejected",
-                    "litellm_model_alias_missing",
-                    "litellm_model_alias_invalid",
-                }
-                else 503 if canary.get("health") == "degraded"
-                else 502
+        if transport == "openrouter":
+            deployment = query(
+                """SELECT status, key_fingerprint, last_canary_request_id,
+                          last_canary_at, last_error_code
+                   FROM llm_provider_deployments
+                   WHERE route_id='openrouter-paid-gpt-5-4-mini'
+                   LIMIT 1""",
+                one=True,
+            ) or {}
+            openrouter_ready = bool(
+                deployment.get("status") == "ready"
+                and deployment.get("key_fingerprint")
+                and deployment.get("last_canary_at")
+                and config.get("pricingVerified") is True
+                and config.get("canaryVerified") is True
+                and config.get("transportCanaryVerified") is True
+                and config.get("selectable") is True
             )
-            return jsonify({
-                "ok": False,
-                "error": canary.get("error") or "Route bleibt deaktiviert, weil die LiteLLM-Canary fehlgeschlagen ist",
-                "blocker": blocker,
-                "health": canary.get("health") or "blocked",
-                "httpStatus": canary.get("httpStatus"),
-                "readinessVerified": bool(canary.get("readinessVerified")),
-                "completionVerified": False,
-                "routeRemainsDisabled": True,
-            }), status_code
-        activation_evidence = canary.get("evidence") or {}
-        if (
-            category == FREE_CATEGORY
-            and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
-            and activation_evidence.get("providerCostUsd") not in (0, 0.0)
-        ):
-            return jsonify({
-                "ok": False,
-                "error": "Free-Route bleibt deaktiviert: verified_zero_cost wurde nicht bestätigt.",
-                "blocker": "free_route_nonzero_or_unreported_cost",
-                "providerCostUsd": activation_evidence.get("providerCostUsd"),
-                "routeRemainsDisabled": True,
-            }), 409
+            if not openrouter_ready:
+                return jsonify({
+                    "ok": False,
+                    "error": "OpenRouter-Route bleibt deaktiviert, bis geschützter Key, Katalog, Preise und Completion-Canary erneut bestätigt sind.",
+                    "blocker": str(
+                        deployment.get("last_error_code")
+                        or "openrouter_activation_evidence_missing"
+                    ),
+                    "requiredEndpoint": "/api/admin/llm/openrouter/catalog/refresh",
+                    "routeRemainsDisabled": True,
+                }), 409
+            activation_evidence = {
+                "transport": "openrouter",
+                "upstreamRequestId": deployment.get("last_canary_request_id"),
+                "lastCanaryAt": (
+                    deployment.get("last_canary_at").isoformat()
+                    if deployment.get("last_canary_at")
+                    else None
+                ),
+                "catalogVerified": bool(config.get("catalogVerified")),
+                "pricingVerified": bool(config.get("pricingVerified")),
+                "completionVerified": bool(config.get("canaryVerified")),
+            }
+        else:
+            canary = litellm_completion_canary(str(route.get("model_id") or ""))
+            if not canary.get("ok"):
+                blocker = str(canary.get("blocker") or "litellm_route_canary_failed")
+                status_code = (
+                    402 if blocker == "provider_quota_exhausted"
+                    else 409 if blocker in {
+                        "provider_credentials_rejected",
+                        "litellm_model_alias_missing",
+                        "litellm_model_alias_invalid",
+                    }
+                    else 503 if canary.get("health") == "degraded"
+                    else 502
+                )
+                return jsonify({
+                    "ok": False,
+                    "error": canary.get("error") or "Legacy-LiteLLM-Route bleibt deaktiviert, weil die Completion-Canary fehlgeschlagen ist",
+                    "blocker": blocker,
+                    "health": canary.get("health") or "blocked",
+                    "httpStatus": canary.get("httpStatus"),
+                    "readinessVerified": bool(canary.get("readinessVerified")),
+                    "completionVerified": False,
+                    "routeRemainsDisabled": True,
+                }), status_code
+            activation_evidence = canary.get("evidence") or {}
         requested_disabled = False
 
     query(
@@ -1937,7 +1985,7 @@ def admin_llm_route_healthcheck(rid):
     """Return provider-aware route evidence without reading route secret columns."""
     route = query(
         """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
-                  provider, disabled
+                  provider, runtime_kind AS "runtimeKind", disabled, config
            FROM llm_routes WHERE id = %s""",
         (rid,), one=True,
     )
@@ -1945,16 +1993,110 @@ def admin_llm_route_healthcheck(rid):
         return jsonify({"error": "Route nicht gefunden"}), 404
 
     provider = str(route.get("provider") or "").strip().lower()
+    transport = str(route.get("runtimeKind") or provider).strip().lower()
     model_id = str(route.get("modelId") or "").strip()
     model_name = str(route.get("modelName") or model_id or "").strip()
-    if provider == "litellm":
+    config = route.get("config") if isinstance(route.get("config"), dict) else {}
+    if transport == "litellm":
         result = litellm_completion_canary(model_id)
+    elif transport == "openrouter":
+        deployment = query(
+            """SELECT status, last_canary_request_id, last_canary_at,
+                      last_error_code, key_fingerprint IS NOT NULL AS key_present
+               FROM llm_provider_deployments
+               WHERE route_id='openrouter-paid-gpt-5-4-mini'
+               LIMIT 1""",
+            one=True,
+        ) or {}
+        verified = bool(
+            deployment.get("status") == "ready"
+            and deployment.get("key_present")
+            and deployment.get("last_canary_at")
+            and config.get("pricingVerified") is True
+            and config.get("catalogVerified") is True
+            and config.get("canaryVerified") is True
+            and config.get("transportCanaryVerified") is True
+        )
+        result = {
+            "ok": verified,
+            "health": "ready" if verified else "blocked",
+            "blocker": None if verified else str(
+                deployment.get("last_error_code")
+                or "openrouter_activation_evidence_missing"
+            ),
+            "error": None if verified else "OpenRouter-Key, Katalog, Preis- oder Completion-Evidence ist nicht vollständig.",
+            "httpStatus": 200 if verified else None,
+            "responseTimeMs": None,
+            "readinessVerified": verified,
+            "completionVerified": verified,
+            "evidence": {
+                "transport": "openrouter",
+                "canaryRequestId": deployment.get("last_canary_request_id"),
+                "lastCanaryAt": (
+                    deployment.get("last_canary_at").isoformat()
+                    if deployment.get("last_canary_at")
+                    else None
+                ),
+                "rawSecretReturned": False,
+            },
+        }
+    elif transport == "freellm":
+        model_evidence = query(
+            """SELECT model.status, model.enabled, model.free_verified,
+                      model.last_canary_at, model.pricing_verified_at,
+                      model.last_error_code, source.enabled AS source_enabled,
+                      source.last_http_status
+               FROM llm_revolver_provider_models AS model
+               JOIN llm_revolver_provider_sources AS source
+                 ON source.id=model.source_id
+               WHERE model.litellm_alias=%s
+               ORDER BY model.updated_at DESC
+               LIMIT 1""",
+            (model_id,),
+            one=True,
+        ) or {}
+        verified = bool(
+            model_evidence.get("source_enabled")
+            and model_evidence.get("status") == "ready"
+            and model_evidence.get("enabled")
+            and model_evidence.get("free_verified")
+            and model_evidence.get("last_canary_at")
+            and model_evidence.get("pricing_verified_at")
+            and not route.get("disabled")
+        )
+        result = {
+            "ok": verified,
+            "health": "ready" if verified else "degraded",
+            "blocker": None if verified else str(
+                model_evidence.get("last_error_code")
+                or "freellm_route_not_currently_ready"
+            ),
+            "error": None if verified else "FreeLLM-Route wartet auf aktuelle Nullkosten- und Completion-Evidence.",
+            "httpStatus": model_evidence.get("last_http_status"),
+            "responseTimeMs": None,
+            "readinessVerified": verified,
+            "completionVerified": verified,
+            "evidence": {
+                "transport": "freellm",
+                "lastCanaryAt": (
+                    model_evidence.get("last_canary_at").isoformat()
+                    if model_evidence.get("last_canary_at")
+                    else None
+                ),
+                "pricingVerifiedAt": (
+                    model_evidence.get("pricing_verified_at").isoformat()
+                    if model_evidence.get("pricing_verified_at")
+                    else None
+                ),
+                "rawProviderResponseReturned": False,
+            },
+        }
     else:
         result = {
             "ok": False,
             "health": "blocked",
-            "blocker": "legacy_direct_provider_disabled",
-            "error": "Direkte Provider-Routen sind absichtlich deaktiviert. Nutzbar sind nur private LiteLLM-Routen.",
+            "blocker": "unsupported_llm_transport",
+            "error": "Unbekannter oder historischer LLM-Transport.",
             "httpStatus": None,
             "responseTimeMs": None,
             "readinessVerified": False,
@@ -2169,6 +2311,7 @@ def health_ready():
                 "035_freellmpool_private_source.sql",
                 "036_llm_route_scanner_candidates.sql",
                 "037_reenable_verified_direct_freellm_routes.sql",
+                "038_reclassify_retryable_freellm_canary_failures.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -2178,11 +2321,59 @@ def health_ready():
     except Exception:
         components["database"] = {"ok": False, "blocker": "database_not_ready"}
 
-    lite = litellm_readiness()
+    route_transport_state = query(
+        """SELECT
+               COUNT(*) FILTER (
+                   WHERE disabled=false
+                     AND lower(COALESCE(runtime_kind, provider))='freellm'
+                     AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+               )::integer AS freellm_ready,
+               COUNT(*) FILTER (
+                   WHERE disabled=false
+                     AND lower(COALESCE(runtime_kind, provider))='openrouter'
+                     AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+               )::integer AS openrouter_ready,
+               COUNT(*) FILTER (
+                   WHERE disabled=false
+                     AND lower(COALESCE(runtime_kind, provider))='litellm'
+               )::integer AS litellm_active
+           FROM llm_routes""",
+        one=True,
+    ) or {}
+    freellm_ready = int(route_transport_state.get("freellm_ready") or 0)
+    openrouter_ready = int(route_transport_state.get("openrouter_ready") or 0)
+    litellm_active = int(route_transport_state.get("litellm_active") or 0)
+    lite = litellm_readiness() if litellm_active > 0 else {
+        "ok": False,
+        "httpStatus": None,
+        "errorCode": "legacy_litellm_not_in_active_route_set",
+    }
+    components["freellm"] = {
+        "ok": freellm_ready > 0,
+        "activeVerifiedRoutes": freellm_ready,
+        "transport": "direct-freellm",
+    }
+    components["openrouter"] = {
+        "ok": openrouter_ready > 0,
+        "activeVerifiedRoutes": openrouter_ready,
+        "transport": "direct-openrouter",
+        "required": False,
+    }
     components["litellm"] = {
-        "ok": bool(lite.get("ok")),
+        "ok": bool(lite.get("ok")) if litellm_active > 0 else True,
+        "activeRoutes": litellm_active,
+        "legacy": True,
         "httpStatus": lite.get("httpStatus"),
-        "errorCode": lite.get("errorCode") if not lite.get("ok") else None,
+        "errorCode": lite.get("errorCode") if litellm_active > 0 and not lite.get("ok") else None,
+    }
+    components["llmRouting"] = {
+        "ok": freellm_ready > 0 or openrouter_ready > 0 or (
+            litellm_active > 0 and bool(lite.get("ok"))
+        ),
+        "freeReadyRoutes": freellm_ready,
+        "paidReadyRoutes": openrouter_ready,
+        "legacyLiteLlmActiveRoutes": litellm_active,
+        "policy": "direct-freellm-free-and-direct-openrouter-paid",
     }
     components["adminUi"] = {
         "ok": os.path.isfile(ADMIN_INDEX_PATH),
@@ -2193,7 +2384,7 @@ def health_ready():
     ready = bool(
         database.get("ok")
         and not database.get("invalidDirectRoutes")
-        and components["litellm"].get("ok")
+        and components["llmRouting"].get("ok")
         and components["adminUi"].get("ok")
     )
     return jsonify({
@@ -3562,6 +3753,7 @@ def _public_llm_route_payload(row) -> dict:
         "defaultModelId": admin_payload["modelId"],
         "label": admin_payload["modelName"],
         "description": admin_payload["modelName"],
+        "provider": admin_payload["provider"],
         "creditsPerKTokens": admin_payload["creditsPerUnit"],
         "enabled": not admin_payload["disabled"],
         "userKeyOverride": False,
@@ -3583,14 +3775,15 @@ def _public_llm_route_payload(row) -> dict:
 
 @app.route("/api/llm/routes")
 def public_llm_routes():
-    """Expose only safe private LiteLLM route metadata; never provider secrets."""
+    """Expose safe direct OpenRouter/FreeLLM route metadata; never provider secrets."""
     try:
         rows = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
                       disabled, priority, config
                FROM llm_routes
-               WHERE lower(provider)='litellm'
+               WHERE lower(COALESCE(runtime_kind, provider))
+                     IN ('openrouter', 'freellm')
                ORDER BY
                  CASE COALESCE(config->>'billingCategory', config->>'billingClass')
                    WHEN 'free' THEN 0 WHEN 'standard' THEN 1 ELSE 2 END,
@@ -3617,7 +3810,9 @@ def public_llm_route(route_id):
                       provider, credits_per_unit AS "creditsPerUnit",
                       disabled, priority, config
                FROM llm_routes
-               WHERE id::text = %s AND lower(provider)='litellm'
+               WHERE id::text = %s
+                 AND lower(COALESCE(runtime_kind, provider))
+                     IN ('openrouter', 'freellm')
                LIMIT 1""",
             (route_id,), one=True,
         )
@@ -6021,7 +6216,9 @@ def public_llm_auto_route():
                       provider, credits_per_unit AS "creditsPerUnit",
                       disabled, priority, config
                FROM llm_routes
-               WHERE disabled=false AND lower(provider)='litellm'
+               WHERE disabled=false
+                 AND lower(COALESCE(runtime_kind, provider))
+                     IN ('openrouter', 'freellm')
                ORDER BY
                  CASE COALESCE(config->>'billingCategory', config->>'billingClass')
                    WHEN 'free' THEN 0 WHEN 'standard' THEN 1 ELSE 2 END,
@@ -6035,9 +6232,9 @@ def public_llm_auto_route():
                 safe_routes.append(payload)
         if not safe_routes:
             return jsonify({
-                "error": "Keine preisverifizierte LiteLLM-Route verfügbar",
+                "error": "Keine preisverifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar",
                 "blocker": "llm_routes_empty",
-                "suggestion": "Im Admin ein LiteLLM-Modell auswählen, Kategorie setzen und die Canary ausführen.",
+                "suggestion": "OpenRouter Paid aktivieren oder im FreeLLM-Bereich eine direkte Route doppelt verifizieren.",
             }), 503
         selected = safe_routes[0]
         free_fallbacks = (
@@ -6052,8 +6249,8 @@ def public_llm_auto_route():
             "ok": True,
             "selected": {
                 **selected,
-                "provider": "litellm",
-                "routeType": "private-litellm",
+                "provider": selected.get("provider") if isinstance(selected, dict) else None,
+                "routeType": "direct-openrouter" if selected.get("provider") == "openrouter" else "direct-freellm",
             },
             "fallback": free_fallbacks,
             "revolverSelection": (
@@ -6061,11 +6258,11 @@ def public_llm_auto_route():
                 if selected["billingCategory"] == FREE_CATEGORY
                 else "paid-single-route"
             ),
-            "message": f"LiteLLM: {selected['label']} · {selected['billingCategory']}",
+            "message": f"{selected.get('provider', 'LLM')}: {selected['label']} · {selected['billingCategory']}",
         })
     except Exception:
         return jsonify({
-            "error": "Automatische LiteLLM-Routenwahl ist fehlgeschlagen",
+            "error": "Automatische direkte LLM-Routenwahl ist fehlgeschlagen",
             "blocker": "llm_auto_route_failed",
         }), 500
 
@@ -6093,9 +6290,11 @@ def _resolve_enabled_llm_route(model: str):
         return None
     route = query(
         """SELECT id::text, model_id, model_name, provider, base_url,
-                  credits_per_unit::float AS credits_per_unit, priority, config
+                  credits_per_unit::float AS credits_per_unit, priority,
+                  runtime_kind, tier, config
            FROM llm_routes
-           WHERE disabled=false AND lower(provider)='litellm'
+           WHERE disabled=false
+             AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
              AND (model_id=%s OR id::text=%s)
            ORDER BY priority ASC LIMIT 1""",
         (normalized, normalized),
@@ -6303,7 +6502,7 @@ def _reserve_provider_funded_llm_credits(
             f"LLM provider-funded reservation: {route_id}; "
             f"estimated_tokens={estimated_tokens}; request_id={request_id}"
         ),
-        provider="litellm",
+        provider="llm-runtime",
         provider_tx_id=f"{request_id}:reservation",
         provider_funded_delta=-amount,
     )
@@ -6326,7 +6525,7 @@ def _refund_reserved_llm_credits(
             amount,
             ledger_type="llm_usage_refund",
             reason=f"LLM provider-funded refund: {route_id}",
-            provider="litellm",
+            provider="llm-runtime",
             provider_tx_id=f"{request_id}:refund",
             provider_funded_delta=amount,
         )
@@ -6361,7 +6560,7 @@ def _settle_llm_usage(
     provider_cost_micros = provider_cost_usd_to_micros(
         evidence.get("providerCostUsd")
     )
-    charge_basis = "litellm_provider_cost"
+    charge_basis = "direct_provider_reported_cost"
     if provider_cost_micros is None:
         if total_tokens <= 0:
             try:
@@ -6454,7 +6653,7 @@ def _settle_llm_usage(
                 -additional_credits,
                 ledger_type="llm_usage_adjustment",
                 reason=f"LLM actual provider-cost adjustment: {route['model_id']}",
-                provider="litellm",
+                provider="llm-runtime",
                 provider_tx_id=f"{request_id}:actual-cost-adjustment",
                 provider_funded_delta=-additional_credits,
             )
@@ -6561,9 +6760,10 @@ def _load_llm_revolver_candidates(primary_route, *, user_id: str, request_id: st
     rows = query(
         """SELECT id::text, model_id, model_name, provider, base_url,
                   credits_per_unit::float AS credits_per_unit,
-                  disabled, priority, config
+                  disabled, priority, runtime_kind, tier, config
            FROM llm_routes
-           WHERE disabled=false AND lower(provider)='litellm'
+           WHERE disabled=false
+             AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
            ORDER BY priority ASC, model_name ASC
            LIMIT 100"""
     ) or []
@@ -6640,7 +6840,7 @@ def _record_llm_revolver_attempt(
                     attempt_number,
                     str(route["id"]),
                     str(route["model_id"]),
-                    "litellm",
+                    route_transport(dict(route)),
                     quota_scope,
                     outcome,
                     http_status,
@@ -6766,7 +6966,7 @@ def public_llm_chat():
         if body.get("stream") is True:
             return jsonify({
                 "error": "Streaming ist bis zur partiellen Usage-Reconciliation deaktiviert",
-                "blocker": "litellm_streaming_not_enabled",
+                "blocker": "llm_streaming_not_enabled",
             }), 400
         try:
             request_id = _normalize_llm_request_id(body)
@@ -6922,9 +7122,9 @@ def public_llm_chat():
         except Exception:
             return refund_failed_run("settlement_failed")
 
-        provider = str(route.get("provider") or "").strip().lower()
-        if provider != "litellm":
-            return refund_failed_run("direct_provider_route_blocked")
+        transport = route_transport(dict(route))
+        if transport not in {"openrouter", "freellm"}:
+            return refund_failed_run("unsupported_llm_transport")
 
         payload = {
             "messages": messages,
@@ -6942,24 +7142,28 @@ def public_llm_chat():
             "free-revolver" if revolver_enabled else "paid-to-free-fallback"
         )
         for attempt_count, candidate_route in enumerate(candidate_routes, start=1):
-            payload["model"] = str(candidate_route.get("model_id") or "").strip()
-            resp, err = fetch_litellm(
-                "/v1/chat/completions",
-                method="POST",
+            candidate_transport = route_transport(dict(candidate_route))
+            resp, err = fetch_direct_llm(
+                dict(candidate_route),
                 json_data=payload,
             )
-            if err or resp is None:
-                return refund_failed_run("litellm_unavailable")
             result = _safe_upstream_json(resp)
             evidence = (
-                extract_litellm_evidence(resp, result)
+                extract_direct_llm_evidence(
+                    resp,
+                    result,
+                    transport=candidate_transport,
+                )
                 if resp is not None
                 else {
                     "promptTokens": 0,
+                    "cachedPromptTokens": 0,
                     "completionTokens": 0,
                     "totalTokens": 0,
                     "upstreamRequestId": "",
                     "providerCostUsd": None,
+                    "resolvedTransport": candidate_transport,
+                    "rawProviderResponsePersisted": False,
                 }
             )
             attempt_usage_seen = revolver_provider_usage_seen(evidence)
@@ -6982,7 +7186,11 @@ def public_llm_chat():
                     fallback_route = candidate_route
                 break
 
-            classified = classify_litellm_failure(resp, err)
+            classified = classify_direct_llm_failure(
+                dict(candidate_route),
+                resp,
+                err,
+            )
             decision = failure_decision(
                 classified,
                 usage_seen=attempt_usage_seen,

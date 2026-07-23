@@ -2,7 +2,7 @@
  * DevChat runtime bridge.
  *
  * Legacy type names remain for compatibility, but every online request now
- * uses the authenticated Sovereign Backend and its private LiteLLM route.
+ * uses the authenticated Sovereign Backend and its verified direct OpenRouter/FreeLLM routes.
  */
 import { resolvePrimaryBridgeConfig } from '../llm/primaryBridgeConfig';
 
