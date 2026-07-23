@@ -56,7 +56,7 @@ def test_freellmpool_template_is_private_immutable_non_root_and_secret_file_boun
     assert '"python",\n            "-m",\n            "freellmpool.cli"' in entrypoint
 
 
-def test_freellmpool_image_lock_matches_runtime_and_ci_verifies_without_rebuild() -> None:
+def test_freellmpool_candidate_build_is_exact_reproducible_and_does_not_change_runtime_lock() -> None:
     root = Path(__file__).resolve().parents[1]
     lock_path = (
         root
@@ -78,14 +78,20 @@ def test_freellmpool_image_lock_matches_runtime_and_ci_verifies_without_rebuild(
     assert lock["verifiedContract"]["dockerSocketMounted"] is False
     assert lock["verifiedContract"]["hostPortsPublished"] is False
     assert lock["verifiedContract"]["minimumSuccessfulKeylessCanaries"] >= 1
-    assert "Experimental upstream rebuild (manual maintenance only)" in workflow
-    assert "if: ${{ false }}" in workflow
-    assert "Resolve and verify the approved immutable image lock" in workflow
+    assert "UPSTREAM_REVISION: d83b43e966676b684c29b482b4ae7a281d55234a" in workflow
+    assert "Build exact post-release upstream candidate" in workflow
+    assert "Build exact post-release upstream candidate\n        if: ${{ true }}\n        id: image" in workflow
+    assert "Resolve and verify the approved immutable image lock\n        if: ${{ false }}\n        id: locked_image" in workflow
+    assert "runtime content identity mismatch" in workflow
+    assert "llm7/minimax-m2.7" in workflow
+    assert "llm7/gpt-oss:20b" in workflow
+    assert "kilo/poolside/laguna-xs-2.1:free" in workflow
     assert 'docker pull "${repo_digest}"' in workflow
     assert "REPO_DIGEST" in workflow
     assert 'assert os.environ["REPO_DIGEST"] in values' in workflow
     assert '"baseImageClaimed": False' in workflow
-    assert '"rebuildPerformed": False' in workflow
+    assert '"runtimeContentReproducibleVerified": "${{ steps.image.outputs.runtime_content_reproducible_verified }}" == "true"' in workflow
+    assert '"rebuildPerformed": True' in workflow
 
 
 def test_freellmpool_render_contract_rejects_root_mutable_or_env_secret(tmp_path: Path) -> None:

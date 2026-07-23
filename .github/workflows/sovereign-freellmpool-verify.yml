@@ -39,7 +39,7 @@ env:
   PUBLISH_IMAGE: ghcr.io/ouroboroscollective/sovereign-freellmpool
   LOCAL_IMAGE: sovereign-freellmpool-ci
   UPSTREAM_VERSION: '0.11.4'
-  UPSTREAM_REVISION: f9e09e536682083297cfd6fec3ea5d3aac5262c8
+  UPSTREAM_REVISION: d83b43e966676b684c29b482b4ae7a281d55234a
 
 jobs:
   verify:
@@ -58,9 +58,9 @@ jobs:
           path: upstream
           persist-credentials: false
 
-      - name: Experimental upstream rebuild (manual maintenance only)
-        if: ${{ false }}
-        id: experimental_build
+      - name: Build exact post-release upstream candidate
+        if: ${{ true }}
+        id: image
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -272,6 +272,7 @@ jobs:
           digest=""
           digest_hex=""
           runtime_ref="${local_ref}"
+          immutable_digest_readback_verified="false"
           failure_family="immutable_registry_publish"
           if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
@@ -284,6 +285,9 @@ jobs:
             test "${#digest_hex}" = "64"
             repo_digest="${PUBLISH_IMAGE}@${digest}"
             docker pull "${repo_digest}"
+            docker image inspect "${repo_digest}" --format '{{json .RepoDigests}}' \
+              | REPO_DIGEST="${repo_digest}" python -c 'import json,os,sys; values=json.load(sys.stdin); assert os.environ["REPO_DIGEST"] in values, values'
+            immutable_digest_readback_verified="true"
             runtime_ref="${repo_digest}"
           fi
 
@@ -296,11 +300,13 @@ jobs:
           echo "dependency_lock_sha256=${dependency_lock_sha256}" >> "$GITHUB_OUTPUT"
           echo "runtime_content_sha256=${runtime_content_sha256}" >> "$GITHUB_OUTPUT"
           echo "runtime_content_reproducible_verified=true" >> "$GITHUB_OUTPUT"
+          echo "immutable_digest_readback_verified=${immutable_digest_readback_verified}" >> "$GITHUB_OUTPUT"
           echo "failure_family=" >> "$GITHUB_OUTPUT"
           trap - EXIT
 
       - name: Resolve and verify the approved immutable image lock
-        id: image
+        if: ${{ false }}
+        id: locked_image
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -474,10 +480,12 @@ jobs:
           import urllib.request
 
           candidates = [
-              "pollinations/openai",
-              "ovh/Llama-3.1-8B-Instruct",
-              "kilo/openrouter/free",
-              "llm7/codestral-latest",
+              "llm7/minimax-m2.7",
+              "llm7/gpt-oss:20b",
+              "kilo/kilo-auto/free",
+              "kilo/poolside/laguna-xs-2.1:free",
+              "kilo/stepfun/step-3.7-flash:free",
+              "ovh/Meta-Llama-3_3-70B-Instruct",
           ]
           receipts = []
           for model in candidates:
@@ -517,7 +525,7 @@ jobs:
                   receipt.update({"failureFamily": type(error).__name__[:80]})
               receipts.append(receipt)
           print(json.dumps({
-              "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+              "upstreamRevision": "d83b43e966676b684c29b482b4ae7a281d55234a",
               "releaseVersion": "0.11.4",
               "receipts": receipts,
               "successful": sum(1 for item in receipts if item["ok"]),
@@ -547,7 +555,7 @@ jobs:
           receipt = {
               "schemaVersion": "sovereign.freellmpool-upstream-image.v1",
               "sovereignRevision": "${{ github.sha }}",
-              "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+              "upstreamRevision": "d83b43e966676b684c29b482b4ae7a281d55234a",
               "releaseVersion": "0.11.4",
               "image": "${{ steps.image.outputs.repo_digest }}",
               "imageId": "${{ steps.image.outputs.image_id }}",
@@ -555,10 +563,10 @@ jobs:
               "sourceDateEpoch": int("${{ steps.image.outputs.source_epoch }}"),
               "dependencyLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
               "runtimeContentSha256": "${{ steps.image.outputs.runtime_content_sha256 }}",
-              "runtimeContentReproducibleVerified": False,
+              "runtimeContentReproducibleVerified": "${{ steps.image.outputs.runtime_content_reproducible_verified }}" == "true",
               "immutableDigestReadbackVerified": "${{ steps.image.outputs.immutable_digest_readback_verified }}" == "true",
               "imageLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
-              "rebuildPerformed": False,
+              "rebuildPerformed": True,
               "nonRootUid": 10001,
               "readOnlyRootFilesystem": True,
               "hostPortsPublished": False,
@@ -579,10 +587,10 @@ jobs:
             echo '- Release: `v0.11.4`'
             echo '- Upstream revision: `${{ env.UPSTREAM_REVISION }}`'
             echo '- Immutable image: `${{ steps.image.outputs.repo_digest }}`'
-            echo '- Approved immutable digest readback: `verified`'
+            echo '- Candidate immutable digest readback after publication: `${{ steps.image.outputs.immutable_digest_readback_verified }}`'
             echo '- Runtime digest SHA-256: `${{ steps.image.outputs.runtime_content_sha256 }}`'
             echo '- Image-lock SHA-256: `${{ steps.image.outputs.dependency_lock_sha256 }}`'
-            echo '- Rebuild performed by this verification run: `false`'
+            echo '- Rebuild performed by this verification run: `true`'
             echo '- Forced runtime UID: `10001`'
             echo '- Host ports: `none`'
             echo '- Root filesystem: `read-only`'
