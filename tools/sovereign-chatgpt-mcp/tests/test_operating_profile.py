@@ -129,10 +129,12 @@ def test_ci_and_vps_release_contract_require_live_profile_and_negative_canary() 
     assert "skills/sovereign-mcp-optimal-operation/SKILL.md" in workflow
     assert "OPERATING_PROFILE_ENFORCEMENT" in workflow
     assert "OPERATING_PROFILE_ENFORCED" in workflow
-    assert "MISSION_PREFLIGHT_VALID" in workflow
-    assert "OPERATING_PROFILE_OWNER_APPROVAL_REQUIRED" in workflow
     assert "operating_profile_enforced" in workflow
     assert "operating_profile.py" in installer
     assert "/app/config/sovereign-mcp-operating-profile.json" in installer
     assert "/app/skills/sovereign-mcp-optimal-operation/SKILL.md" in installer
     assert "OPERATING_PROFILE_ENFORCED" in installer
+    assert "INSTALL_STAGE=\"verify_operating_profile_canaries\"" in installer
+    assert "MISSION_PREFLIGHT_VALID" in installer
+    assert "MUTATION_BLOCKED_BY_OPERATING_PROFILE" in installer
+    assert "OPERATING_PROFILE_OWNER_APPROVAL_REQUIRED" in installer

@@ -942,55 +942,6 @@ jobs:
                 'widgetUri': str(cognitive_resource.uri),
             })
             PY
-            run_root docker exec -i sovereign-chatgpt-mcp python - <<'PY'
-            import json
-
-            import launcher
-            import operating_profile
-
-            status = operating_profile.sovereign_operating_profile_status()
-            assert status.ok is True, status
-            assert status.status == 'OPERATING_PROFILE_ENFORCED', status
-            assert status.enforcedToolCount == status.mutableToolCount, status
-            preflight = operating_profile.sovereign_mission_preflight(
-                mission_summary='Inspect and verify the live MCP operating-profile contract.',
-                required_capabilities=['mcp'],
-                allowed_effects=['read'],
-                required_evidence=['profile digest', 'registry snapshot', 'output schemas'],
-                max_nodes=4,
-            )
-            assert preflight.ok is True, preflight
-            assert preflight.status == 'MISSION_PREFLIGHT_VALID', preflight
-            merge_tool = next(
-                tool for tool in launcher.mcp._tool_manager.list_tools()
-                if tool.name == 'repository_merge_pr'
-            )
-            blocked = None
-            try:
-                merge_tool.fn(
-                    pr_number=1,
-                    expected_head_sha='a' * 40,
-                    merge_method='squash',
-                    self_update_after_merge=True,
-                    owner_approved=False,
-                    mark_ready_if_draft=False,
-                    allow_unrelated_android_pending=False,
-                )
-            except operating_profile.OperatingProfileBlocked as exc:
-                blocked = json.loads(str(exc))
-            assert blocked is not None, 'mutation unexpectedly reached the broker boundary'
-            assert blocked['status'] == 'MUTATION_BLOCKED_BY_OPERATING_PROFILE', blocked
-            assert blocked['failureFamily'] == 'OPERATING_PROFILE_OWNER_APPROVAL_REQUIRED', blocked
-            assert blocked['mutationPerformed'] is False, blocked
-            print({
-                'operatingProfile': status.status,
-                'profileSha256': status.profileSha256,
-                'registrySnapshotSha256': status.registrySnapshotSha256,
-                'mutableToolCount': status.mutableToolCount,
-                'missionPreflight': preflight.status,
-                'negativeMutationCanary': blocked['failureFamily'],
-            })
-            PY
             OPERATING_PROFILE_STATE=ready
             run_root docker exec sovereign-chatgpt-mcp python -c "import server; assert callable(server.repository_sync_workspace_to_pr_head)"
             INBOUND_MUTATION_STATE=forbidden
