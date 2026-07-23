@@ -21,6 +21,7 @@ export type ChatIntent =
   | 'watch-workflow'
   | 'repair-workflow'
   | 'search-patterns'
+  | 'run-tests'
   | 'unknown';
 
 /**
@@ -132,6 +133,14 @@ const INTENT_PRECONDITIONS: Record<ChatIntent, IntentPrecondition> = {
     minFileCount: 1, // Allow small repos with non-empty file list
     maxActiveBlockers: Infinity,
   },
+  'run-tests': {
+    requiredRepoReady: true,
+    requiredHasToken: false,
+    requiredHasPackage: false,
+    requiredHasDraft: false,
+    minFileCount: 1,
+    maxActiveBlockers: Infinity,
+  },
   'unknown': {
     requiredRepoReady: false,
     requiredHasToken: false,
@@ -191,6 +200,10 @@ export const INTENT_SIGNAL_HINTS: Record<ChatIntent, string[]> = {
     'suche muster', 'muster suchen', 'code muster finden',
     'analyse muster', 'struktur analyse', 'code analyse',
   ],
+  'run-tests': [
+    'run tests', 'test suite', 'pytest', 'vitest', 'jest',
+    'tests ausführen', 'teste das repo', 'testlauf starten',
+  ],
   'unknown': [],
 };
 
@@ -203,6 +216,7 @@ const DEFAULT_RECOMMENDED_ACTIONS: Record<ChatIntent, string> = {
   'watch-workflow': 'Erst Draft PR erstellen, dann Workflow beobachten.',
   'repair-workflow': 'Erst Draft PR erstellen, dann Workflow reparieren.',
   'search-patterns': 'Lade ein Repository mit genügend Dateien für Musteranalyse.',
+  'run-tests': 'Führe die relevanten Tests im echten Agent-Workspace aus.',
   'unknown': 'Gib einen klaren Auftrag oder eine Anfrage ein.',
 };
 
@@ -215,6 +229,7 @@ const TARGET_TABS: Record<ChatIntent, ChatIntentRouterOutput['targetTab'] | unde
   'watch-workflow': 'workflow',
   'repair-workflow': 'repair',
   'search-patterns': 'files',
+  'run-tests': 'workflow',
   'unknown': undefined,
 };
 

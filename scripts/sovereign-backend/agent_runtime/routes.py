@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from flask import jsonify, request
 
+from .auto_code_review import AutoCodeReviewInput, auto_code_review, auto_code_review_signal
 from .contracts import SovereignAgentEvent, normalize_agent_job_result
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
@@ -194,6 +195,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/tools/diff
     - POST /api/user/agent/jobs/<job_id>/tools/test
     - POST /api/user/agent/jobs/<job_id>/tools/janitor
+    - POST /api/user/agent/jobs/<job_id>/review
     - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
     - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
@@ -215,6 +217,23 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
     def _read_owned_job(conn, user_id: str, job_id: str):
         return read_agent_job(conn, user_id=user_id, job_id=job_id)
+
+    def _review_job_diff(job: Any, user_id: str):
+        diff_result = run_agent_job_tool(job, "diff", {}, _workspace_root())
+        diff_text = str(diff_result.output or diff_result.stdout or "")
+        if diff_result.status != "done":
+            diff_text = ""
+        return auto_code_review(
+            AutoCodeReviewInput(
+                diff_text=diff_text,
+                changed_files=tuple(job.changed_files),
+                job_id=job.job_id,
+                mission=job.mission,
+            ),
+            get_connection=_connection,
+            user_id=user_id,
+            requested_mode="auto",
+        )
 
     def _run_tool_route(job_id: str, action: str):
         user_id = _current_session_user_id()
@@ -559,6 +578,27 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     def user_run_agent_janitor_tool(job_id: str):
         return _run_tool_route(job_id, "janitor")
 
+    @app.route("/api/user/agent/jobs/<job_id>/review", methods=["POST"])
+    @require_session
+    def user_review_agent_job(job_id: str):
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            review = _review_job_diff(job, user_id)
+            signal = auto_code_review_signal(review)
+            append_agent_event(conn, job_id, SovereignAgentEvent(
+                stage="auto_code_review_completed" if review.passed else "auto_code_review_blocked",
+                level="success" if review.passed else "warning",
+                message=review.summary[:1200],
+            ))
+            status_code = 503 if review.decision == "blocked_unavailable" else 200
+            return jsonify(signal), status_code
+        finally:
+            _close(conn)
+
     @app.route("/api/user/agent/jobs/<job_id>/draft-pr/prepare", methods=["POST"])
     @require_session
     def user_prepare_agent_draft_pr(job_id: str):
@@ -569,6 +609,21 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             job = _read_owned_job(conn, user_id, job_id)
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
+            review = _review_job_diff(job, user_id)
+            review_signal = auto_code_review_signal(review)
+            if not review.passed:
+                append_agent_event(conn, job_id, SovereignAgentEvent(
+                    stage="draft_pr_blocked_by_auto_code_review",
+                    level="warning",
+                    message=review.summary[:1200],
+                ))
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "autoCodeReview": review_signal,
+                    "blocker": review.decision,
+                }), 409 if review.decision == "blocked_high" else 503
             preparation = prepare_draft_pr(draft_pr_input_from_job(job, head_branch=body.get("headBranch")))
             pattern_result = None
             candidate_id = None
@@ -599,6 +654,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "draftPrPreparation": draft_pr_preparation_signal(preparation),
+                "autoCodeReview": review_signal,
                 "candidateId": candidate_id,
                 "candidateCreated": candidate_created,
                 "patternLearning": pattern_learning_signal(pattern_result) if pattern_result else None,

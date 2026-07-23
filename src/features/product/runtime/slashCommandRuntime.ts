@@ -1,5 +1,6 @@
 export type SlashCommandAction =
   | 'analyze' | 'fix' | 'pr' | 'repo' | 'clear'
+  | 'test' | 'templates' | 'export'
   | 'skills' | 'scan-skills' | 'skill-run';
 
 export interface SlashCommandDefinition {
@@ -24,7 +25,10 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
   { cmd: '/pr',          label: 'Draft PR',      action: 'pr',          description: 'Draft PR erstellen' },
   { cmd: '/repo',        label: 'Repo laden',    action: 'repo',        description: 'GitHub-Repo URL laden' },
   { cmd: '/clear',       label: 'Chat leeren',   action: 'clear',       description: 'Nur lokalen Chat löschen' },
-  { cmd: '/skills',      label: 'Skills',        action: 'skills',      description: 'Installierte Skills anzeigen' },
+  { cmd: '/test',        label: 'Tests',          action: 'test',        description: 'Echte Tests im Agent-Workspace ausführen' },
+  { cmd: '/templates',   label: 'Templates',      action: 'templates',   description: 'Prompt-Bibliothek öffnen' },
+  { cmd: '/export',      label: 'Export',         action: 'export',      description: 'Aktuelle Sitzung als Markdown exportieren' },
+  { cmd: '/skills',      label: 'Skills',         action: 'skills',      description: 'Installierte Skills anzeigen' },
   { cmd: '/scan-skills', label: 'Skill-Scanner', action: 'scan-skills', description: 'Repo nach Skills scannen & installieren' },
 ];
 
