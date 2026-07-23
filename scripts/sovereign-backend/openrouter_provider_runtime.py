@@ -33,6 +33,7 @@ _OWNER_ROOT = Path("/opt/sovereign-owner-managed")
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{1,239}$")
 _MAX_CATALOG_BYTES = 16_000_000
 _MAX_MODELS = 700
+_MAX_AGENT_CANARY_CANDIDATES = 12
 _MARKUP_MULTIPLIER = 4
 _PROVIDER_POLICY = {
     "require_parameters": True,
@@ -43,6 +44,12 @@ _PROVIDER_POLICY = {
 _REQUIRED_AGENT_PARAMETERS = frozenset({"tools", "tool_choice"})
 _REQUIRED_CANARY_PARAMETERS = frozenset({"tools", "tool_choice", "max_tokens"})
 _STRUCTURED_PARAMETERS = frozenset({"response_format", "structured_outputs"})
+_MODEL_POLICY_REJECTION_FAMILIES = frozenset({
+    "openrouter_no_provider_meets_policy",
+    "openrouter_invalid_request",
+    "openrouter_provider_unavailable",
+    "openrouter_zdr_agent_canary_rejected",
+})
 
 
 class OpenRouterRuntimeError(RuntimeError):
@@ -323,17 +330,30 @@ def _fetch_agent_models(key: str) -> tuple[dict[str, dict[str, Any]], str]:
     return eligible, request_id
 
 
-def _select_agent_canary_model(endpoints: dict[str, dict[str, Any]]) -> str:
+def _ordered_agent_canary_models(endpoints: dict[str, dict[str, Any]]) -> list[str]:
+    ordered = [
+        item["modelId"]
+        for item in sorted(
+            endpoints.values(),
+            key=lambda item: (
+                Decimal(item["outputUsdPerMillion"]),
+                Decimal(item["inputUsdPerMillion"]),
+                item["modelId"].casefold(),
+            ),
+        )
+    ]
     if OPENROUTER_DEFAULT_MODEL in endpoints:
-        return OPENROUTER_DEFAULT_MODEL
-    return min(
-        endpoints.values(),
-        key=lambda item: (
-            Decimal(item["outputUsdPerMillion"]),
-            Decimal(item["inputUsdPerMillion"]),
-            item["modelId"].casefold(),
-        ),
-    )["modelId"]
+        ordered = [OPENROUTER_DEFAULT_MODEL] + [
+            model_id for model_id in ordered if model_id != OPENROUTER_DEFAULT_MODEL
+        ]
+    return ordered[:_MAX_AGENT_CANARY_CANDIDATES]
+
+
+def _select_agent_canary_model(endpoints: dict[str, dict[str, Any]]) -> str:
+    ordered = _ordered_agent_canary_models(endpoints)
+    if not ordered:
+        raise OpenRouterRuntimeError("openrouter_agent_catalog_empty")
+    return ordered[0]
 
 
 def _normalize_model(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -501,6 +521,29 @@ def _completion_canary(key: str, *, model_id: str) -> dict[str, Any]:
         ).hexdigest(),
         "rawResponsePersisted": False,
     }
+
+
+def _completion_canary_with_rotation(
+    key: str,
+    *,
+    agent_models: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    rejected_families: list[str] = []
+    for model_id in _ordered_agent_canary_models(agent_models):
+        try:
+            canary = _completion_canary(key, model_id=model_id)
+            return {
+                **canary,
+                "attemptedModelCount": len(rejected_families) + 1,
+                "rejectedPolicyFamilies": sorted(set(rejected_families)),
+            }
+        except OpenRouterRuntimeError as exc:
+            if exc.family not in _MODEL_POLICY_REJECTION_FAMILIES:
+                raise
+            rejected_families.append(exc.family)
+    if rejected_families:
+        raise OpenRouterRuntimeError("openrouter_no_eligible_policy_provider")
+    raise OpenRouterRuntimeError("openrouter_agent_catalog_empty")
 
 
 def _sync_catalog(
@@ -752,8 +795,10 @@ def activate_openrouter_provider(
             key_fingerprint = hashlib.sha256(key.encode()).hexdigest()
             key_hint = f"…{key[-4:]}"
             agent_models, agent_catalog_request_id = _fetch_agent_models(key)
-            canary_model = _select_agent_canary_model(agent_models)
-            canary = _completion_canary(key, model_id=canary_model)
+            canary = _completion_canary_with_rotation(
+                key,
+                agent_models=agent_models,
+            )
             catalog = _sync_catalog(
                 get_connection,
                 key=key,
@@ -798,6 +843,8 @@ def activate_openrouter_provider(
             "catalogSnapshotSha256": catalog["catalogSnapshotSha256"],
             "canaryRequestId": canary.get("requestId"),
             "providerPolicySha256": canary["providerPolicySha256"],
+            "attemptedModelCount": canary.get("attemptedModelCount"),
+            "rejectedPolicyFamilies": canary.get("rejectedPolicyFamilies", []),
             "rawSecretPersistedInDatabase": False,
         },
     )
@@ -1004,8 +1051,10 @@ def register_openrouter_provider_runtime(
                         "openrouter_secret_fingerprint_mismatch", status_code=409
                     )
                 agent_models, agent_catalog_request_id = _fetch_agent_models(key)
-                canary_model = _select_agent_canary_model(agent_models)
-                canary = _completion_canary(key, model_id=canary_model)
+                canary = _completion_canary_with_rotation(
+                    key,
+                    agent_models=agent_models,
+                )
                 catalog = _sync_catalog(
                     get_connection,
                     key=key,
