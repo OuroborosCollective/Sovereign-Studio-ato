@@ -589,7 +589,8 @@ def test_free_runtime_does_not_retry_after_repository_mutation(monkeypatch) -> N
 
     monkeypatch.setattr(routes_runtime, "transition_agent_run", transition)
     mutated_toolset = SimpleNamespace(
-        summary=lambda: {"rolesWithMutations": ["free_single_agent"]}
+        tools_for_role=lambda _role: [],
+        summary=lambda: {"rolesWithMutations": ["free_single_agent"]},
     )
 
     payload, status_code = routes_runtime.start_cognitive_swarm_run(
