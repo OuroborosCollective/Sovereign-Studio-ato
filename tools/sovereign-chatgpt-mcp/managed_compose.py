@@ -595,7 +595,15 @@ class ManagedComposeRuntime:
                 raise RuntimeError(f"Host-Namespace ist gesperrt: {service_name}")
             if service.get("devices") or service.get("cap_add"):
                 raise RuntimeError(f"Geräte oder zusätzliche Capabilities sind gesperrt: {service_name}")
-            if service.get("entrypoint") or service.get("build") or service.get("extra_hosts"):
+            entrypoint = service.get("entrypoint")
+            allowed_freellmpool_entrypoint = (
+                stack.stack_id == "sovereign-freellmpool"
+                and service_name == "freellmpool"
+                and entrypoint == FREELLMPOOL_ENTRYPOINT_COMMAND
+            )
+            if entrypoint and not allowed_freellmpool_entrypoint:
+                raise RuntimeError(f"Entrypoint-Override ist gesperrt: {service_name}")
+            if service.get("build") or service.get("extra_hosts"):
                 raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
             command = service.get("command")
             allowed_patchmon_redis_command = (
@@ -623,16 +631,10 @@ class ManagedComposeRuntime:
                 and service_name == "freellmapi"
                 and command == FREELLMAPI_BOOTSTRAP_COMMAND
             )
-            allowed_freellmpool_command = (
-                stack.stack_id == "sovereign-freellmpool"
-                and service_name == "freellmpool"
-                and command == FREELLMPOOL_ENTRYPOINT_COMMAND
-            )
             if command and not (
                 allowed_patchmon_redis_command
                 or allowed_milvus_command
                 or allowed_freellmapi_command
-                or allowed_freellmpool_command
             ):
                 raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
             image = str(service.get("image") or "")
