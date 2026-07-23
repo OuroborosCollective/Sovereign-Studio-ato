@@ -13,6 +13,7 @@ sys.path.insert(0, str(BACKEND))
 from agent_runtime import cognitive_swarm_routes as routes_runtime
 from agent_runtime.cognitive_swarm_agents import MissionIntent, SwarmExecutionError
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
+from llm_execution_resolver import ExecutionResolution, FREE_SINGLE_AGENT_PROFILE
 
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -423,6 +424,191 @@ def test_swarm_persists_bounded_failure_family_without_raw_provider_message(monk
     assert payload["retryable"] is False
     assert "provider message" not in str(payload)
     assert any("INSERT INTO agent_failures" in sql for sql, _ in factory.calls)
+
+
+def _verified_free_route(route_id: str, model: str, scope: str) -> dict[str, Any]:
+    return {
+        "id": route_id,
+        "model_id": f"alias-{route_id}",
+        "model_name": route_id,
+        "provider": "freellm",
+        "runtime_kind": "freellm",
+        "base_url": "http://freellmapi:3001/v1",
+        "disabled": False,
+        "priority": 50,
+        "tier": "free",
+        "config": {
+            "transport": "freellm",
+            "direct": True,
+            "providerModel": model,
+            "billingCategory": "free",
+            "billingClass": "free",
+            "fundingMode": "verified_zero_cost",
+            "markupMultiplier": 0,
+            "inputUsdPerMillion": 0,
+            "cachedInputUsdPerMillion": 0,
+            "outputUsdPerMillion": 0,
+            "pricingVerified": True,
+            "pricingSource": "test-double-canary",
+            "quotaScope": scope,
+            "executionProfile": FREE_SINGLE_AGENT_PROFILE,
+        },
+    }
+
+
+def _free_resolution() -> ExecutionResolution:
+    first = _verified_free_route("free-a", "auto", "freellm:test:scope-a")
+    second = _verified_free_route("free-b", "fusion", "freellm:test:scope-b")
+    return ExecutionResolution(
+        profile_id=FREE_SINGLE_AGENT_PROFILE,
+        primary_route=first,
+        agent_route=first,
+        candidate_routes=(first, second),
+        max_foreground_agents=1,
+        max_background_agents=0,
+        repository_execution_allowed=True,
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        requested_mode="free",
+        reason="explicit_quota_aware_direct_freellm",
+    )
+
+
+def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch) -> None:
+    attempts: list[str] = []
+    cooldowns: list[str] = []
+    transitions: list[str] = []
+    resolution = _free_resolution()
+
+    monkeypatch.setattr(
+        routes_runtime,
+        "load_execution_resolution",
+        lambda *args, **kwargs: resolution,
+    )
+    monkeypatch.setattr(routes_runtime, "classify_mission_intent", _read_only_intent)
+
+    async def routed_free_agent(*args, route=None, **kwargs):
+        route_id = str((route or {}).get("id") or "")
+        attempts.append(route_id)
+        if route_id == "free-a":
+            raise SwarmExecutionError(
+                stage="free-single-agent",
+                family="FREELLM_RATE_LIMITED",
+                error_type="RateLimitError",
+                next_action="RETRY_AFTER_PROVIDER_BACKOFF",
+                retryable=True,
+                http_status=429,
+            )
+        return {
+            "ok": True,
+            "status": "COMPLETED",
+            "result": {"mode": "read_only_analysis"},
+            "executionProfile": FREE_SINGLE_AGENT_PROFILE,
+        }
+
+    monkeypatch.setattr(routes_runtime, "run_free_single_agent", routed_free_agent)
+
+    def record_cooldown(*args, execution_resolution=None, **kwargs):
+        cooldowns.append(str(execution_resolution.primary_route["id"]))
+
+    monkeypatch.setattr(routes_runtime, "_record_route_cooldown", record_cooldown)
+
+    def transition(*args, **kwargs):
+        transitions.append(str(kwargs["status"]))
+        return {
+            "status": kwargs["status"],
+            "source": kwargs["source"],
+            "evidenceId": "evidence-free-completed",
+            "reason": kwargs["reason"],
+            "nextAction": kwargs["next_action"],
+        }
+
+    monkeypatch.setattr(routes_runtime, "transition_agent_run", transition)
+
+    payload, status_code = routes_runtime.start_cognitive_swarm_run(
+        get_connection=FakeConnectionFactory(),
+        user_id=USER_ID,
+        mission="Inspect the live FreeLLM resolver.",
+        mode="free",
+        run_id="run-free-rotation",
+        session_key="session-free-rotation",
+        trace_id="trace-free-rotation",
+        _reuse_received_state={"evidenceId": "evidence-free-received"},
+    )
+
+    assert status_code == 200
+    assert payload["status"] == "COMPLETED"
+    assert payload["resolvedModelId"] == "fusion"
+    assert payload["executionResolution"]["primaryRouteId"] == "free-b"
+    assert payload["freeRouteFailoverCount"] == 1
+    assert attempts == ["free-a", "free-b"]
+    assert cooldowns == ["free-a"]
+    assert transitions == ["COMPLETED"]
+
+
+def test_free_runtime_does_not_retry_after_repository_mutation(monkeypatch) -> None:
+    attempts: list[str] = []
+    resolution = _free_resolution()
+    intent = MissionIntent(
+        mode="read_only_analysis",
+        normalized_goal="Inspect mutation safety.",
+        requires_online_tools=True,
+        requires_repository_workspace=False,
+        learning_scope=[],
+        confidence=1.0,
+    )
+
+    monkeypatch.setattr(
+        routes_runtime,
+        "load_execution_resolution",
+        lambda *args, **kwargs: resolution,
+    )
+
+    async def failing_free_agent(*args, route=None, **kwargs):
+        attempts.append(str((route or {}).get("id") or ""))
+        raise SwarmExecutionError(
+            stage="free-single-agent",
+            family="FREELLM_RATE_LIMITED",
+            error_type="RateLimitError",
+            next_action="RETRY_AFTER_PROVIDER_BACKOFF",
+            retryable=True,
+            http_status=429,
+        )
+
+    monkeypatch.setattr(routes_runtime, "run_free_single_agent", failing_free_agent)
+    monkeypatch.setattr(routes_runtime, "_record_route_cooldown", lambda *args, **kwargs: None)
+
+    def transition(*args, **kwargs):
+        return {
+            "status": kwargs["status"],
+            "source": kwargs["source"],
+            "evidenceId": "evidence-free-failed",
+            "reason": kwargs["reason"],
+            "nextAction": kwargs["next_action"],
+        }
+
+    monkeypatch.setattr(routes_runtime, "transition_agent_run", transition)
+    mutated_toolset = SimpleNamespace(
+        summary=lambda: {"rolesWithMutations": ["free_single_agent"]}
+    )
+
+    payload, status_code = routes_runtime.start_cognitive_swarm_run(
+        get_connection=FakeConnectionFactory(),
+        user_id=USER_ID,
+        mission="Do not duplicate an already mutated repository action.",
+        mode="free",
+        run_id="run-free-mutation-guard",
+        session_key="session-free-mutation-guard",
+        trace_id="trace-free-mutation-guard",
+        _reuse_received_state={"evidenceId": "evidence-free-received"},
+        _free_repository_toolset=mutated_toolset,
+        _free_mission_intent=intent,
+    )
+
+    assert status_code == 502
+    assert payload["status"] == "FAILED_RECOVERABLE"
+    assert payload["freeRouteFailoverCount"] == 0
+    assert attempts == ["free-a"]
 
 
 def test_swarm_rejects_secret_shaped_input() -> None:

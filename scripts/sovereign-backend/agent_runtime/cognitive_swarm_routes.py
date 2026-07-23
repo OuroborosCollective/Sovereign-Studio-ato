@@ -61,7 +61,9 @@ from .pattern_vector_memory import persist_pattern_vector
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     PAID_SWARM_PROFILE,
+    ExecutionResolution,
     ExecutionResolutionError,
+    advance_free_revolver_resolution,
     free_fallback_resolution,
     load_execution_resolution,
 )
@@ -811,6 +813,12 @@ def start_cognitive_swarm_run(
     _reuse_received_state: dict[str, str] | None = None,
     _force_free_profile: bool = False,
     _fallback_reason: str = "",
+    _free_resolution_override: ExecutionResolution | None = None,
+    _free_retry_count: int = 0,
+    _free_implementation_job: Any | None = None,
+    _free_repository_toolset: Any | None = None,
+    _free_task_id: str | None = None,
+    _free_mission_intent: Any | None = None,
 ) -> tuple[dict[str, object], int]:
     """Execute the single persisted Agents SDK start path for REST and A2A."""
 
@@ -874,17 +882,21 @@ def start_cognitive_swarm_run(
 
     resolver_mode = "free" if _force_free_profile else normalized_mode
     try:
-        execution_resolution = load_execution_resolution(
-            get_connection,
-            user_id=user_id,
-            requested_model="" if _force_free_profile else normalized_model or "",
-            requested_main_model=(
-                "" if _force_free_profile else normalized_main_model or ""
-            ),
-            requested_agent_model=(
-                "" if _force_free_profile else normalized_agent_model or ""
-            ),
-            requested_mode=resolver_mode,
+        execution_resolution = (
+            _free_resolution_override
+            if _free_resolution_override is not None
+            else load_execution_resolution(
+                get_connection,
+                user_id=user_id,
+                requested_model="" if _force_free_profile else normalized_model or "",
+                requested_main_model=(
+                    "" if _force_free_profile else normalized_main_model or ""
+                ),
+                requested_agent_model=(
+                    "" if _force_free_profile else normalized_agent_model or ""
+                ),
+                requested_mode=resolver_mode,
+            )
         )
     except ExecutionResolutionError as exc:
         state = _persist_execution_resolution_blocker(
@@ -1054,18 +1066,22 @@ def start_cognitive_swarm_run(
         }, 503
 
     if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
-        implementation_job = None
-        repository_toolset = None
-        free_task_id: str | None = None
-        mission_intent = None
+        implementation_job = _free_implementation_job
+        repository_toolset = _free_repository_toolset
+        free_task_id: str | None = _free_task_id
+        mission_intent = _free_mission_intent
         try:
-            mission_intent = asyncio.run(classify_mission_intent(
-                normalized_mission,
-                model=resolved_model,
-                route=execution_resolution.primary_route,
-                stage_billing=None,
-            ))
-            if mission_intent.mode == "repository_execution":
+            if mission_intent is None:
+                mission_intent = asyncio.run(classify_mission_intent(
+                    normalized_mission,
+                    model=resolved_model,
+                    route=execution_resolution.primary_route,
+                    stage_billing=None,
+                ))
+            if (
+                mission_intent.mode == "repository_execution"
+                and implementation_job is None
+            ):
                 conn = get_connection()
                 try:
                     repository = _configured_repository()
@@ -1255,6 +1271,7 @@ def start_cognitive_swarm_run(
                     repository_requested and workspace_evidence_ready
                 ),
                 "maxBackgroundAgents": 0,
+                "freeRouteFailoverCount": _free_retry_count,
                 "autoMerge": False,
             }, 200 if not single_blocked else 503
         except Exception as raw_exc:
@@ -1273,6 +1290,40 @@ def start_cognitive_swarm_run(
                     execution_resolution=execution_resolution,
                     failure=exc,
                 )
+                repository_summary = (
+                    repository_toolset.summary()
+                    if repository_toolset is not None
+                    else {}
+                )
+                mutations = list(repository_summary.get("rolesWithMutations") or [])
+                next_resolution = advance_free_revolver_resolution(
+                    execution_resolution,
+                    failed_route_id=str(
+                        execution_resolution.primary_route.get("id") or ""
+                    ),
+                    reason="free_route_failed_advanced_to_next_quota_scope",
+                )
+                if next_resolution is not None and not mutations:
+                    next_model = route_provider_model(next_resolution.primary_route)
+                    return start_cognitive_swarm_run(
+                        get_connection=get_connection,
+                        user_id=user_id,
+                        mission=normalized_mission,
+                        evidence=normalized_evidence,
+                        model=next_model,
+                        mode=normalized_mode,
+                        run_id=resolved_run_id,
+                        session_key=resolved_session_key,
+                        a2a_context_id=a2a_context_id,
+                        trace_id=resolved_trace_id,
+                        _reuse_received_state=received_state,
+                        _free_resolution_override=next_resolution,
+                        _free_retry_count=_free_retry_count + 1,
+                        _free_implementation_job=implementation_job,
+                        _free_repository_toolset=repository_toolset,
+                        _free_task_id=free_task_id,
+                        _free_mission_intent=mission_intent,
+                    )
             conn = get_connection()
             try:
                 failed_state = transition_agent_run(
@@ -1321,6 +1372,7 @@ def start_cognitive_swarm_run(
                     implementation_job.result.workspace_id if implementation_job else None
                 ),
                 "maxBackgroundAgents": 0,
+                "freeRouteFailoverCount": _free_retry_count,
             }, 502 if exc.retryable else 503
 
     if execution_resolution.profile_id != PAID_SWARM_PROFILE:

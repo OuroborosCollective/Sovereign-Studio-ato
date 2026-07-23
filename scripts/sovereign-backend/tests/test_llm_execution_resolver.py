@@ -10,6 +10,7 @@ sys.path.insert(0, str(BACKEND))
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     PAID_SWARM_PROFILE,
+    advance_free_revolver_resolution,
     build_paid_to_free_candidates,
     free_fallback_resolution,
     resolve_execution_profile,
@@ -242,6 +243,74 @@ def test_paid_provider_failure_derives_free_single_agent_fallback() -> None:
     assert fallback.repository_execution_allowed is True
     assert fallback.reason == "paid_provider_429_resolved_to_free_revolver"
 
+
+
+def test_free_revolver_advances_to_next_verified_quota_scope() -> None:
+    free_a = route(
+        "free-a",
+        category="free",
+        scope="free:key-a",
+        priority=10,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    free_b = route(
+        "free-b",
+        category="free",
+        scope="free:key-b",
+        priority=20,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    paid = route(
+        "paid",
+        category="standard",
+        scope="paid:key-a",
+        priority=1,
+        profile=PAID_SWARM_PROFILE,
+    )
+    resolution = resolve_execution_profile(
+        routes=[paid, free_a, free_b],
+        state_by_scope={},
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    advanced = advance_free_revolver_resolution(
+        resolution,
+        failed_route_id="free-a",
+        reason="free_route_failed_advanced_to_next_quota_scope",
+    )
+
+    assert advanced is not None
+    assert advanced.primary_route["id"] == "free-b"
+    assert [item["id"] for item in advanced.candidate_routes] == ["free-b"]
+    assert advanced.requested_mode == "free"
+    assert all(item["id"] != "paid" for item in advanced.candidate_routes)
+
+
+def test_free_revolver_stops_after_last_verified_quota_scope() -> None:
+    free = route(
+        "free",
+        category="free",
+        scope="free:key-a",
+        priority=10,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    resolution = resolve_execution_profile(
+        routes=[free],
+        state_by_scope={},
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    assert advance_free_revolver_resolution(
+        resolution,
+        failed_route_id="free",
+        reason="free_route_failed_advanced_to_next_quota_scope",
+    ) is None
 
 
 def test_paid_resolver_selects_distinct_main_and_shared_six_agent_models() -> None:
