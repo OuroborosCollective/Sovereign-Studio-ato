@@ -1139,6 +1139,7 @@ def start_cognitive_swarm_run(
                 normalized_mission,
                 evidence=normalized_evidence,
                 model=resolved_model,
+                intent=mission_intent,
                 route=execution_resolution.primary_route,
                 repository_tool_factory=(
                     repository_toolset.tools_for_role if repository_toolset else None

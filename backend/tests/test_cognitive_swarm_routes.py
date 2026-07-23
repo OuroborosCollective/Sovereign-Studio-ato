@@ -483,6 +483,7 @@ def _free_resolution() -> ExecutionResolution:
 
 def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch) -> None:
     attempts: list[str] = []
+    intents: list[MissionIntent | None] = []
     cooldowns: list[str] = []
     transitions: list[str] = []
     resolution = _free_resolution()
@@ -494,9 +495,10 @@ def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch)
     )
     monkeypatch.setattr(routes_runtime, "classify_mission_intent", _read_only_intent)
 
-    async def routed_free_agent(*args, route=None, **kwargs):
+    async def routed_free_agent(*args, route=None, intent=None, **kwargs):
         route_id = str((route or {}).get("id") or "")
         attempts.append(route_id)
+        intents.append(intent)
         if route_id == "free-a":
             raise SwarmExecutionError(
                 stage="free-single-agent",
@@ -549,6 +551,9 @@ def test_free_runtime_rotates_to_next_route_after_retryable_failure(monkeypatch)
     assert payload["executionResolution"]["primaryRouteId"] == "free-b"
     assert payload["freeRouteFailoverCount"] == 1
     assert attempts == ["free-a", "free-b"]
+    assert len(intents) == 2
+    assert intents[0] is intents[1]
+    assert intents[0] is not None and intents[0].mode == "read_only_analysis"
     assert cooldowns == ["free-a"]
     assert transitions == ["COMPLETED"]
 

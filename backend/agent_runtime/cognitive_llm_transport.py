@@ -134,6 +134,7 @@ def _openrouter_policy(route: dict[str, Any]) -> dict[str, Any]:
         "require_parameters": True,
         "allow_fallbacks": False,
         "data_collection": "deny",
+        "zdr": True,
     }
     if any(policy.get(key) != value for key, value in required.items()):
         raise RouteRuntimeError(
