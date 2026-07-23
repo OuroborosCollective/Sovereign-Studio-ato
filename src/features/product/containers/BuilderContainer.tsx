@@ -452,7 +452,12 @@ import {
   isAlternativeWriteRouteIntent,
   buildAlternativeRouteStatusAnswer,
 } from "../runtime/workerIntentDetector";
-import type { GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
+import { buildGeneratedFileDiffReportFromUnifiedDiff, type GeneratedFileDiffReport } from "../runtime/generatedFileDiffPreview";
+import { requestSemanticDiffNarration, narrativeMap, type SemanticDiffNarrationResult } from "../runtime/semanticDiffNarratorRuntime";
+import { fetchCommitsSince, type ChangelogGenerationResult } from "../runtime/changelogRuntime";
+import { requestMissionValidation, type MissionValidationResult } from "../runtime/missionValidatorRuntime";
+import { MissionValidatorCard } from "../components/MissionValidatorCard";
+import { ChangelogPreviewCard } from "../components/ChangelogPreviewCard";
 import {
   buildSovereignInspectionResultEvent,
   buildSovereignRuntimeEvidenceLog,
@@ -2627,6 +2632,10 @@ export function BuilderContainer({
   const [lastWorkerRequestMessage, setLastWorkerRequestMessage] = useState<string | null>(null);
   const [patchPreviewReady, setPatchPreviewReady] = useState(false);
   const [patchConfirmed, setPatchConfirmed] = useState(false);
+  const [semanticDiffResult, setSemanticDiffResult] = useState<SemanticDiffNarrationResult | null>(null);
+  const [changelogResult, setChangelogResult] = useState<ChangelogGenerationResult | null>(null);
+  const [missionValidationPending, setMissionValidationPending] = useState<{ readonly mission: string; readonly intent: SovereignExecutorIntentKind; readonly result: MissionValidationResult } | null>(null);
+  const missionValidationBypassRef = useRef<string | null>(null);
   const [stagedChanges, setStagedChanges] = useState<SovereignStagedChange[]>([]);
   const [lastAnswerWasLocal, setLastAnswerWasLocal] = useState(false);
   const [localRepoLoading, setRepoLoading] = useState(false);
@@ -3697,6 +3706,24 @@ export function BuilderContainer({
       return false;
     }
 
+    const bypassPreflight = missionValidationBypassRef.current === text;
+    if (bypassPreflight) {
+      missionValidationBypassRef.current = null;
+    } else {
+      const validation = await requestMissionValidation(text);
+      if (!validation.specificEnough) {
+        setMissionValidationPending({ mission: text, intent, result: validation });
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'agent-job',
+          label: 'Mission Pre-flight Warnung',
+          detail: `Spezifität ${validation.score}/100. Nutzerentscheidung vor Start erforderlich.`,
+          kind: 'blocked',
+        }));
+        return false;
+      }
+    }
+    setMissionValidationPending(null);
+
     const clean = collapseRepeatedAnalyzedMission(
       buildAnalyzedMission({
         wish: text,
@@ -3994,6 +4021,40 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         appendRuntimeNotice(outcome === 'downloaded'
           ? 'Sitzung als Markdown exportiert. Secret-Muster wurden im Export redigiert.'
           : 'Sitzungsexport ist in dieser Umgebung nicht verfügbar.');
+        return;
+      }
+      if (command.action === "diff") {
+        if (!scopedAgentJob?.jobId) {
+          appendRuntimeNotice('Diff-Narrator blockiert: Es gibt keinen echten Agent-Workspace-Job.');
+          return;
+        }
+        const result = await requestSemanticDiffNarration(scopedAgentJob.jobId);
+        setSemanticDiffResult(result);
+        if (!result.diffText.trim()) {
+          appendRuntimeNotice(`Diff-Narrator ohne echte Diff-Evidence: ${result.error || 'kein Workspace-Diff'}`);
+          return;
+        }
+        const report = buildGeneratedFileDiffReportFromUnifiedDiff(result.diffText);
+        setPatchDiffReport(report);
+        setPatchConfirmed(false);
+        setShowPatchDiffEvidence(true);
+        appendRuntimeNotice(result.ok
+          ? `Semantic Diff Narrator: ${result.narratives.length} Datei-Erklärung(en) aus echter Workspace-Diff-Evidence.`
+          : `Workspace-Diff geöffnet; Modell-Narration nicht verfügbar: ${result.error || 'unbekannter Blocker'}`);
+        return;
+      }
+      if (command.action === "changelog") {
+        if (!scopedAgentJob?.jobId) {
+          appendRuntimeNotice('Changelog blockiert: Es gibt keinen echten Agent-Workspace-Job.');
+          return;
+        }
+        const result = await fetchCommitsSince(scopedAgentJob.jobId, argument ? Number(argument) || 30 : 30);
+        if (!result.ok) {
+          appendRuntimeNotice(`Changelog blockiert: ${result.error || 'keine echte Git-Evidence'}`);
+          return;
+        }
+        setChangelogResult(result);
+        appendRuntimeNotice(`Changelog aus ${result.commitCount} realen Commit(s) erzeugt · Quelle ${result.source}.`);
         return;
       }
       if (command.action === "skills") {
@@ -6657,6 +6718,31 @@ Das echte Repo-Setup wurde geöffnet.`,
           onClose={() => setShowRuntime(false)}
         />
       )}
+      {missionValidationPending && (
+        <MissionValidatorCard
+          result={missionValidationPending.result}
+          onEdit={() => {
+            setWishText(`${missionValidationPending.mission}\n\nBitte ergänzen:\n${missionValidationPending.result.questions.map((question) => `- ${question}`).join('\n')}`);
+            setMissionValidationPending(null);
+          }}
+          onContinue={() => {
+            const pending = missionValidationPending;
+            missionValidationBypassRef.current = pending.mission;
+            setMissionValidationPending(null);
+            void startAgentFromText(pending.mission, pending.intent);
+          }}
+        />
+      )}
+      {changelogResult && (
+        <ChangelogPreviewCard
+          result={changelogResult}
+          onClose={() => setChangelogResult(null)}
+          onUseAsMission={(markdown) => {
+            setWishText(`Aktualisiere CHANGELOG.md mit diesem evidenzbasierten Eintrag:\n\n${markdown}`);
+            setChangelogResult(null);
+          }}
+        />
+      )}
       {showRepoSetup && (
         <CompactRepoSetupSheet
           value={repoSetupUrl}
@@ -6704,6 +6790,7 @@ Das echte Repo-Setup wurde geöffnet.`,
         <PatchDiffEvidenceSheet
           report={patchDiffReport}
           confirmed={patchConfirmed}
+          narratives={narrativeMap(semanticDiffResult)}
           onConfirm={() => {
             setPatchConfirmed(true);
             appendActionEvent(buildLocalRuntimeResultEvent({
