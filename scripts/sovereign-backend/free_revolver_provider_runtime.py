@@ -1,7 +1,7 @@
 """Evidence-first direct-provider onboarding for the FreeLLM Revolver control plane.
 
 Managed FreeLLM stays on its private OpenAI-compatible API and never traverses
-LiteLLM. PostgreSQL stores route metadata, fingerprints and bounded health
+Legacy LiteLLM. PostgreSQL stores route metadata, fingerprints and bounded health
 evidence only; protected key values remain owner-managed.
 """
 from __future__ import annotations
@@ -20,6 +20,7 @@ from typing import Any, Callable
 import requests
 from flask import jsonify, make_response, request
 
+from direct_llm_runtime import classify_freellm_canary_state
 from freellm_provider_admin_page import FREELLM_PROVIDER_KEYS_PAGE as _FREELLM_PROVIDER_KEYS_PAGE
 from freellm_provider_credentials import (
     FREELLM_PROVIDER_SPECS,
@@ -378,6 +379,9 @@ def _normalized_provider_cost(value: Any) -> float | None:
     if not math.isfinite(parsed) or parsed < 0:
         return None
     return parsed
+
+
+_canary_failure_state = classify_freellm_canary_state
 
 
 def _alias(source_id: str, model_id: str, key_fingerprint: str) -> str:
@@ -1311,20 +1315,30 @@ def register_free_revolver_provider_runtime(
                 connection.close()
 
             activated = []
+            deferred = []
             blocked = []
             for model in free_models[:max_auto]:
                 result = activate_model(dict(source), model, key)
-                (activated if result.get("ok") else blocked).append({"modelId": model["modelId"], **result})
-                if not result.get("ok"):
-                    query(
-                        """UPDATE llm_revolver_provider_models
-                           SET status='blocked', enabled=false, last_error_code=%s, updated_at=NOW()
-                           WHERE source_id=%s::uuid AND upstream_model_id=%s""",
-                        (result.get("error"), source_id, model["modelId"]), write=True,
-                    )
+                if result.get("ok"):
+                    activated.append({"modelId": model["modelId"], **result})
+                    continue
+                model_status, blocker = _canary_failure_state(result)
+                finding = {
+                    "modelId": model["modelId"],
+                    **result,
+                    "modelStatus": model_status,
+                    "blocker": blocker,
+                }
+                (deferred if model_status == "discovered" else blocked).append(finding)
+                query(
+                    """UPDATE llm_revolver_provider_models
+                       SET status=%s, enabled=false, last_error_code=%s, updated_at=NOW()
+                       WHERE source_id=%s::uuid AND upstream_model_id=%s""",
+                    (model_status, blocker, source_id, model["modelId"]), write=True,
+                )
             status = (
                 "healthy"
-                if activated and not blocked
+                if activated and not blocked and not deferred
                 else "degraded"
                 if activated or models
                 else "blocked"
@@ -1332,6 +1346,8 @@ def register_free_revolver_provider_runtime(
             error_code = (
                 "some_zero_cost_routes_blocked"
                 if activated and blocked
+                else "some_zero_cost_routes_deferred"
+                if activated and deferred
                 else None
                 if activated
                 else "no_zero_cost_route_activated"
@@ -1353,8 +1369,10 @@ def register_free_revolver_provider_runtime(
                 free_count=len(free_models),
                 evidence={
                     "activatedModels": [item["modelId"] for item in activated],
+                    "deferredModels": [item["modelId"] for item in deferred],
                     "blockedModels": [item["modelId"] for item in blocked],
                     "pricingRule": "explicit-zero-fields-only",
+                    "availabilityFailuresAreRetryable": True,
                 },
             )
             audit("admin_free_revolver_provider_discovered", source_id, {
@@ -1372,6 +1390,7 @@ def register_free_revolver_provider_runtime(
                 "discovered": len(models),
                 "freeVerified": len(free_models),
                 "activated": activated,
+                "deferred": deferred,
                 "blocked": blocked,
                 "unverified": [model["modelId"] for model in models if not model["freeVerified"]],
                 "keyStoredBy": (
@@ -1619,6 +1638,7 @@ def register_free_revolver_provider_runtime(
 
             bootstrap_stage = "double_canary_activation"
             ready = []
+            deferred = []
             blocked = []
             for model in eligible_models[:max_models]:
                 result = activate_model(source_payload, model, key)
@@ -1635,31 +1655,29 @@ def register_free_revolver_provider_runtime(
                         "canaryCostState": result.get("canaryCostState"),
                     })
                     continue
-                blocker = str(
-                    result.get("blocker")
-                    or result.get("error")
-                    or "free_provider_canary_failed"
-                )[:120]
-                blocked.append({
+                model_status, blocker = _canary_failure_state(result)
+                finding = {
                     "modelId": model["modelId"],
                     "blocker": blocker,
+                    "modelStatus": model_status,
                     "failedConfirmation": result.get("failedConfirmation"),
                     "confirmationCount": result.get("confirmationCount"),
                     "httpStatus": result.get("httpStatus"),
                     "failureFamily": result.get("failureFamily"),
                     "requestExceptionType": result.get("requestExceptionType"),
-                })
+                }
+                (deferred if model_status == "discovered" else blocked).append(finding)
                 query(
                     """UPDATE llm_revolver_provider_models
-                       SET status='blocked', enabled=false, last_error_code=%s,
+                       SET status=%s, enabled=false, last_error_code=%s,
                            updated_at=NOW()
                        WHERE source_id=%s::uuid AND upstream_model_id=%s""",
-                    (blocker, source_id, model["modelId"]),
+                    (model_status, blocker, source_id, model["modelId"]),
                     write=True,
                 )
             status = (
                 "healthy"
-                if ready and not blocked
+                if ready and not blocked and not deferred
                 else "degraded"
                 if ready or models
                 else "blocked"
@@ -1667,6 +1685,8 @@ def register_free_revolver_provider_runtime(
             error_code = (
                 "some_freellm_routes_blocked"
                 if ready and blocked
+                else "some_freellm_routes_deferred"
+                if ready and deferred
                 else None
                 if ready
                 else "no_freellm_route_activated"
@@ -1695,6 +1715,7 @@ def register_free_revolver_provider_runtime(
                 free_count=len(ready),
                 evidence={
                     "readyModelIds": [item["modelId"] for item in ready],
+                    "deferredModelIds": [item["modelId"] for item in deferred],
                     "blockedModelIds": [item["modelId"] for item in blocked],
                     "transport": "freellm",
                     "managedCatalogBootstrap": True,
@@ -1713,6 +1734,7 @@ def register_free_revolver_provider_runtime(
                 "discovered": len(models),
                 "eligible": len(eligible_models),
                 "ready": ready,
+                "deferred": deferred,
                 "blocked": blocked,
                 "transport": "freellm",
                 "executionProfile": "free_single_agent",
@@ -1945,6 +1967,7 @@ def register_free_revolver_provider_runtime(
             reconcile_stage = "model_activation"
             source_payload = dict(source)
             ready = []
+            deferred = []
             blocked = []
             for row in models:
                 stored = dict(row)
@@ -1991,27 +2014,25 @@ def register_free_revolver_provider_runtime(
                         "canaryCostState": result.get("canaryCostState"),
                     })
                     continue
-                blocker = str(
-                    result.get("blocker")
-                    or result.get("error")
-                    or "free_provider_canary_failed"
-                )[:120]
-                blocked.append({
+                model_status, blocker = _canary_failure_state(result)
+                finding = {
                     "modelId": model_id,
                     "blocker": blocker,
+                    "modelStatus": model_status,
                     "failedConfirmation": result.get("failedConfirmation"),
                     "confirmationCount": result.get("confirmationCount"),
                     "httpStatus": result.get("httpStatus"),
                     "failureFamily": result.get("failureFamily"),
                     "requestExceptionType": result.get("requestExceptionType"),
-                })
+                }
+                (deferred if model_status == "discovered" else blocked).append(finding)
                 reconcile_stage = "model_state_persistence"
                 query(
                     """UPDATE llm_revolver_provider_models
-                       SET status='blocked', enabled=false, last_error_code=%s,
+                       SET status=%s, enabled=false, last_error_code=%s,
                            updated_at=NOW()
                        WHERE id=%s::uuid""",
-                    (blocker, stored["id"]),
+                    (model_status, blocker, stored["id"]),
                     write=True,
                 )
                 reconcile_stage = "model_activation"
@@ -2051,9 +2072,11 @@ def register_free_revolver_provider_runtime(
                              AND route.disabled=false
                        )::int AS ready_count,
                        COUNT(*) FILTER (
+                           WHERE model.status='discovered'
+                       )::int AS deferred_count,
+                       COUNT(*) FILTER (
                            WHERE model.status='blocked'
                               OR route.id IS NULL
-                              OR route.disabled=true
                        )::int AS blocked_count
                    FROM llm_revolver_provider_models AS model
                    LEFT JOIN llm_routes AS route
@@ -2064,17 +2087,20 @@ def register_free_revolver_provider_runtime(
                 one=True,
             ) or {}
             overall_ready_count = int(ready_state.get("ready_count") or 0)
+            overall_deferred_count = int(ready_state.get("deferred_count") or 0)
             overall_blocked_count = int(ready_state.get("blocked_count") or 0)
             status = (
                 "healthy"
-                if overall_ready_count > 0 and overall_blocked_count == 0
+                if overall_ready_count > 0 and overall_blocked_count == 0 and overall_deferred_count == 0
                 else "degraded"
-                if overall_ready_count > 0
+                if overall_ready_count > 0 or overall_deferred_count > 0
                 else "blocked"
             )
             error_code = (
                 "some_freellm_routes_blocked"
-                if overall_ready_count > 0 and overall_blocked_count > 0
+                if overall_blocked_count > 0
+                else "some_freellm_routes_deferred"
+                if overall_deferred_count > 0
                 else None
                 if overall_ready_count > 0
                 else "no_freellm_route_activated"
@@ -2098,15 +2124,17 @@ def register_free_revolver_provider_runtime(
                     "success"
                     if status == "healthy"
                     else "degraded"
-                    if overall_ready_count > 0
+                    if overall_ready_count > 0 or overall_deferred_count > 0
                     else "blocked"
                 ),
                 model_count=len(models),
                 free_count=overall_ready_count,
                 evidence={
                     "checkedReadyModelIds": [item["modelId"] for item in ready],
+                    "checkedDeferredModelIds": [item["modelId"] for item in deferred],
                     "checkedBlockedModelIds": [item["modelId"] for item in blocked],
                     "overallReadyCount": overall_ready_count,
+                    "overallDeferredCount": overall_deferred_count,
                     "overallBlockedCount": overall_blocked_count,
                     "transport": "freellm",
                     "managedQuotaContract": True,
@@ -2119,7 +2147,9 @@ def register_free_revolver_provider_runtime(
                 "sourceId": source_id,
                 "keyFingerprintPresent": True,
                 "readyCount": overall_ready_count,
+                "deferredCount": overall_deferred_count,
                 "ready": ready,
+                "deferred": deferred,
                 "blocked": blocked,
                 "transport": "freellm",
                 "executionProfile": "free_single_agent",
@@ -2217,6 +2247,7 @@ def register_free_revolver_provider_runtime(
             )
 
             ready = []
+            deferred = []
             blocked = []
             for model in models:
                 alias = str(model["litellm_alias"])
@@ -2248,26 +2279,38 @@ def register_free_revolver_provider_runtime(
                     if provider_cost is not None
                     else None
                 )
-                blocker = (
-                    str(canary.get("blocker") or "free_provider_canary_failed")
-                    if not canary.get("ok")
-                    else "freellm_double_canary_evidence_missing"
-                    if len(provider_costs) != 2
-                    else "free_provider_cost_not_zero"
-                    if cost_state == "nonzero"
-                    else None
-                )
+                if not canary.get("ok"):
+                    model_status, blocker = _canary_failure_state(canary)
+                elif len(provider_costs) != 2:
+                    model_status, blocker = (
+                        "blocked",
+                        "freellm_double_canary_evidence_missing",
+                    )
+                elif cost_state == "nonzero":
+                    model_status, blocker = (
+                        "blocked",
+                        "free_provider_cost_not_zero",
+                    )
+                else:
+                    model_status, blocker = "ready", None
                 canary_request_id = str(evidence.get("upstreamRequestId") or "") or None
                 if blocker:
-                    blocked.append(str(model["upstream_model_id"]))
+                    target = deferred if model_status == "discovered" else blocked
+                    target.append({
+                        "modelId": str(model["upstream_model_id"]),
+                        "blocker": blocker,
+                        "modelStatus": model_status,
+                        "failureFamily": canary.get("failureFamily"),
+                        "httpStatus": canary.get("httpStatus"),
+                    })
                     query(
                         """UPDATE llm_revolver_provider_models
-                           SET status='blocked', enabled=false, last_error_code=%s,
+                           SET status=%s, enabled=false, last_error_code=%s,
                                last_canary_request_id=%s, last_canary_at=NOW(),
                                canary_cost_state=%s, last_provider_cost_usd_micros=%s,
                                updated_at=NOW() WHERE id=%s::uuid""",
                         (
-                            blocker, canary_request_id, cost_state,
+                            model_status, blocker, canary_request_id, cost_state,
                             provider_cost_micros, model["id"],
                         ),
                         write=True,
@@ -2333,24 +2376,50 @@ def register_free_revolver_provider_runtime(
                         ),
                         write=True,
                     )
-            status = "healthy" if ready and not blocked else "degraded" if ready else "blocked"
+            status = (
+                "healthy"
+                if ready and not blocked and not deferred
+                else "degraded"
+                if ready or deferred
+                else "blocked"
+            )
+            error_code = (
+                "freellm_routes_hard_blocked"
+                if blocked
+                else "freellm_routes_awaiting_upstream_availability"
+                if deferred
+                else None
+            )
             query(
                 """UPDATE llm_revolver_provider_sources
                    SET status=%s, last_error_code=%s, last_checked_at=NOW(), updated_at=NOW()
                    WHERE id=%s::uuid""",
-                (status, "route_canary_failed" if blocked else None, source_id), write=True,
+                (status, error_code, source_id), write=True,
             )
             persist_check(
                 source_id, check_kind="direct_route_canary", models_url=None, http_status=None,
-                outcome="success" if not blocked else "degraded" if ready else "blocked",
+                outcome=(
+                    "success"
+                    if status == "healthy"
+                    else "degraded"
+                    if ready or deferred
+                    else "blocked"
+                ),
                 model_count=len(models), free_count=len(ready),
-                evidence={"ready": ready, "blocked": blocked, "transport": "freellm"},
+                evidence={
+                    "ready": ready,
+                    "deferred": deferred,
+                    "blocked": blocked,
+                    "transport": "freellm",
+                    "availabilityFailuresAreRetryable": True,
+                },
             )
             return jsonify({
                 "ok": bool(ready),
                 "status": status,
                 "transport": "freellm",
                 "ready": ready,
+                "deferred": deferred,
                 "blocked": blocked,
             })
         except ManagedKeyContractError as exc:

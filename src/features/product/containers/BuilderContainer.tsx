@@ -4291,7 +4291,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         if (interpretation.assistantText) {
           appendGuardedWorkerText(interpretation.assistantText);
         }
-        addLog('info', `LiteLLM intent accepted as draft evidence: ${draft.title} · model=${interpretation.model}`, 'router');
+        addLog('info', `Sovereign LLM intent accepted as draft evidence: ${draft.title} · model=${interpretation.model}`, 'router');
         return;
       }
 

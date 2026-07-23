@@ -90,7 +90,11 @@ def _emit_stage(
 
 
 def _ensure_litellm_runtime_key(model: str | None = None) -> bool:
-    """Build a per-model Agents SDK provider that can reach only internal LiteLLM."""
+    """Build the isolated Legacy-LiteLLM compatibility RunConfig.
+
+    Persisted product runs must supply a database-resolved direct OpenRouter or
+    FreeLLM route and therefore do not enter this no-route compatibility path.
+    """
 
     global _RUN_CONFIG, _RUN_CONFIG_MODEL, _RUN_CONFIG_ERROR
     _RUN_CONFIG = None
@@ -180,7 +184,7 @@ def _ensure_litellm_runtime_key(model: str | None = None) -> bool:
 
 
 def ensure_openai_runtime_key() -> bool:
-    """Build the default paid Agents SDK provider through internal LiteLLM."""
+    """Build the bounded Legacy-LiteLLM test/operator compatibility provider."""
     return _ensure_litellm_runtime_key(DEFAULT_MODEL)
 
 
@@ -188,7 +192,7 @@ def _require_litellm_run_config(model: str | None = None) -> Any:
     selected_model = str(model or DEFAULT_MODEL).strip()
     if _RUN_CONFIG is None or _RUN_CONFIG_MODEL != selected_model:
         if not _ensure_litellm_runtime_key(selected_model):
-            raise RuntimeError("The internal LiteLLM Agents SDK RunConfig is unavailable.")
+            raise RuntimeError("The Legacy-LiteLLM compatibility RunConfig is unavailable.")
     return _RUN_CONFIG
 
 
@@ -500,9 +504,9 @@ async def classify_mission_intent(
         selected_model = route_runtime.model
     else:
         if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
-            raise ValueError("A valid Sovereign LiteLLM model alias is required.")
+            raise ValueError("A valid Legacy-LiteLLM compatibility alias is required.")
         if stage_billing is not None and selected_model not in ALLOWED_LITELLM_MODEL_ALIASES:
-            raise ValueError("A paid Sovereign LiteLLM model alias is required.")
+            raise ValueError("A paid Legacy-LiteLLM compatibility alias is required.")
         if not _ensure_litellm_runtime_key(selected_model):
             raise SwarmExecutionError(
                 stage="intent-router",
@@ -595,7 +599,7 @@ async def run_free_single_agent(
         selected_model = route_runtime.model
     else:
         if not _SAFE_LITELLM_ALIAS.fullmatch(selected_model):
-            raise ValueError("A valid resolved LiteLLM alias is required.")
+            raise ValueError("A valid Legacy-LiteLLM compatibility alias is required.")
         if not _ensure_litellm_runtime_key(selected_model):
             raise SwarmExecutionError(
                 stage="free-single-agent",
@@ -1008,14 +1012,14 @@ async def run_cognitive_swarm(
                 return {
                     "ok": False,
                     "status": "BLOCKED",
-                    "blocker": "LiteLLM internal service key or internal base URL is not configured.",
+                    "blocker": "Legacy-LiteLLM compatibility key or internal base URL is not configured.",
                     "manifest": manifest_payload(),
                 }
         elif not _ensure_litellm_runtime_key(selected_main_model):
             return {
                 "ok": False,
                 "status": "BLOCKED",
-                "blocker": "LiteLLM internal service key or internal base URL is not configured.",
+                "blocker": "Legacy-LiteLLM compatibility key or internal base URL is not configured.",
                 "manifest": manifest_payload(),
             }
 

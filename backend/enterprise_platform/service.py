@@ -197,32 +197,70 @@ class EnterprisePlatformService:
             )
 
     def _litellm_probe(self) -> dict[str, Any]:
+        """Report the split routing truth; LiteLLM remains legacy-only."""
         started = time.monotonic()
         try:
-            result = self._litellm_readiness()
+            row = self._query(
+                """/* platform:probe:llm-routing */
+                   SELECT
+                     COUNT(*) FILTER (
+                       WHERE disabled=false
+                         AND lower(COALESCE(runtime_kind, provider))='freellm'
+                         AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+                     ) AS freellm_ready,
+                     COUNT(*) FILTER (
+                       WHERE disabled=false
+                         AND lower(COALESCE(runtime_kind, provider))='openrouter'
+                         AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+                     ) AS openrouter_ready,
+                     COUNT(*) FILTER (
+                       WHERE disabled=false
+                         AND lower(COALESCE(runtime_kind, provider))='litellm'
+                     ) AS litellm_active
+                   FROM llm_routes""",
+                one=True,
+            ) or {}
         except Exception:
-            result = {"ok": False, "errorCode": "litellm_readiness_exception"}
-        ok = bool(result.get("ok"))
+            row = {}
+        freellm_ready = bounded_int(row.get("freellm_ready"))
+        openrouter_ready = bounded_int(row.get("openrouter_ready"))
+        litellm_active = bounded_int(row.get("litellm_active"))
+        legacy_result: dict[str, Any] = {}
+        if litellm_active > 0:
+            try:
+                legacy_result = self._litellm_readiness()
+            except Exception:
+                legacy_result = {
+                    "ok": False,
+                    "errorCode": "litellm_readiness_exception",
+                }
         try:
-            active_model_ids = sorted(self._active_model_ids())
+            legacy_canary_models = sorted(self._active_model_ids())
         except Exception:
-            active_model_ids = []
+            legacy_canary_models = []
+        routing_ready = (
+            freellm_ready > 0
+            or openrouter_ready > 0
+            or (litellm_active > 0 and bool(legacy_result.get("ok")))
+        )
         return self._integration(
-            integration_id="litellm",
-            label="Private LiteLLM",
-            status=STATUS_VERIFIED if ok else STATUS_BLOCKED,
+            integration_id="llm-routing",
+            label="OpenRouter Paid + FreeLLM direkt",
+            status=STATUS_VERIFIED if routing_ready else STATUS_BLOCKED,
             required=True,
-            boundary="only provider routing path; provider keys remain isolated",
-            evidence={
-                "httpStatus": result.get("httpStatus"),
-                "readiness": bounded_text(result.get("status"), maximum=40),
-                "database": bounded_text(result.get("db"), maximum=40),
-                "activeModelIds": active_model_ids,
-            },
-            blocker=None if ok else bounded_text(
-                result.get("errorCode") or "litellm_not_ready",
-                maximum=120,
+            boundary=(
+                "Paid läuft direkt über OpenRouter, Free direkt über FreeLLM; "
+                "LiteLLM ist nur noch ein optionaler Legacy-Transport"
             ),
+            evidence={
+                "freellmReadyRoutes": freellm_ready,
+                "openrouterReadyRoutes": openrouter_ready,
+                "legacyLiteLlmActiveRoutes": litellm_active,
+                "legacyLiteLlmHttpStatus": legacy_result.get("httpStatus"),
+                "legacyLiteLlmModelIds": legacy_canary_models,
+                "routingPolicy": "direct-freellm-free-and-direct-openrouter-paid",
+            },
+            blocker=None if routing_ready else "no_verified_llm_route_available",
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),
         )
 

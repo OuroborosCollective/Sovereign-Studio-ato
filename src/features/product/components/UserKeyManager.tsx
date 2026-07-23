@@ -115,7 +115,7 @@ export function UserKeyManager({ onKeysChange }: UserKeyManagerProps) {
           <h3>🔐 API-Keys verwalten</h3>
           <p className="key-manager-description">
             Provider-Zugangsdaten werden nicht in Browser, WebView oder APK angenommen.
-            Neue Provider werden ausschließlich unter /admin → LLM Routes vorbereitet und über die geschützte Owner-Eingabe an das private LiteLLM übergeben.
+            Neue Provider werden ausschließlich unter /admin → LLM Routes vorbereitet und über die geschützte Owner-Eingabe an den passenden Direkttransport übergeben: OpenRouter für Paid, FreeLLM für Free. LiteLLM ist nur noch Legacy.
           </p>
         </div>
 

@@ -255,6 +255,9 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "033_freellmapi_managed_provider.sql" in app
     assert "034_freellm_provider_check_kinds.sql" in app
     assert "035_freellmpool_private_source.sql" in app
+    assert "036_llm_route_scanner_candidates.sql" in app
+    assert "037_reenable_verified_direct_freellm_routes.sql" in app
+    assert "038_reclassify_retryable_freellm_canary_failures.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     ast.parse(provider_runtime)
@@ -332,7 +335,7 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert 'for confirmation_index in (1, 2)' in runtime
     assert '"confirmationCount": 2' in runtime
     assert '"x_freellmpool"' in runtime
-    assert "never traverses\nLiteLLM" in runtime
+    assert "never traverses\nLegacy LiteLLM" in runtime
     assert "any(value not in (None, 0, 0.0) for value in provider_costs)" in runtime
     assert "def _normalized_provider_cost" in runtime
     assert "math.isfinite(parsed)" in runtime
@@ -396,9 +399,14 @@ def test_managed_reconcile_prioritizes_ready_routes_and_reports_total_ready_stat
     assert "overall_ready_count = int(ready_state.get(\"ready_count\") or 0)" in runtime
     assert "overall_blocked_count = int(ready_state.get(\"blocked_count\") or 0)" in runtime
     assert '"overallReadyCount": overall_ready_count' in runtime
+    assert '"overallDeferredCount": overall_deferred_count' in runtime
     assert '"overallBlockedCount": overall_blocked_count' in runtime
     assert '"readyCount": overall_ready_count' in runtime
+    assert '"deferredCount": overall_deferred_count' in runtime
     assert '"ok": overall_ready_count > 0' in runtime
+    assert "_canary_failure_state(result)" in runtime
+    assert '"deferred": deferred' in runtime
+    assert '"availabilityFailuresAreRetryable": True' in runtime
     assert "200 if overall_ready_count > 0 else 409" in runtime
     assert 'reconcile_stage = "route_activation_parity"' in runtime
     assert "SET disabled=NOT (" in runtime

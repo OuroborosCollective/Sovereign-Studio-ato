@@ -198,7 +198,7 @@ function createDiagnostic(args: {
       bodySnippet: boundedSnippet(body),
       scope: 'client_request',
       canClientFix: true,
-      nextAction: 'LiteLLM-Routenvertrag, Modell-ID, Request-ID und Nachrichtenformat prüfen.',
+      nextAction: 'Sovereign LLM-Routenvertrag, Transport, Modell-ID, Request-ID und Nachrichtenformat prüfen.',
     };
   }
   if (status === 429 || status === 502 || status === 503 || status === 504) {
@@ -211,7 +211,7 @@ function createDiagnostic(args: {
       bodySnippet: boundedSnippet(body),
       scope: 'upstream_provider',
       canClientFix: false,
-      nextAction: 'LiteLLM-/Provider-Route und Rate-Limit prüfen; lokal nur den Offline-Fallback verwenden.',
+      nextAction: 'OpenRouter-/FreeLLM-Route und Rate-Limit prüfen; lokal nur den Offline-Fallback verwenden.',
     };
   }
   if (status && status >= 500) {
@@ -224,7 +224,7 @@ function createDiagnostic(args: {
       bodySnippet: boundedSnippet(body),
       scope: 'worker_runtime',
       canClientFix: false,
-      nextAction: 'Backend- und LiteLLM-Runtime-Evidence prüfen; den Call nicht blind als erfolgreich behandeln.',
+      nextAction: 'Backend- und Direkttransport-Evidence prüfen; den Call nicht blind als erfolgreich behandeln.',
     };
   }
   return {
@@ -323,7 +323,7 @@ export async function fetchSovereignLiteLlmInterpretation(
     if (!routeResponse.ok) {
       return {
         ok: false,
-        error: `LiteLLM-Routenkatalog HTTP ${routeResponse.status}`,
+        error: `Sovereign LLM-Routenkatalog HTTP ${routeResponse.status}`,
         diagnostic: createDiagnostic({
           route: SOVEREIGN_LITELLM_ROUTES,
           model: fallbackModel,
@@ -340,7 +340,7 @@ export async function fetchSovereignLiteLlmInterpretation(
     if (!selected) {
       return {
         ok: false,
-        error: 'Keine aktivierte LiteLLM-Route mit Default-Modell gefunden.',
+        error: 'Keine aktivierte OpenRouter- oder FreeLLM-Route mit Default-Modell gefunden.',
         diagnostic: {
           route: SOVEREIGN_LITELLM_ROUTES,
           model: fallbackModel,
@@ -348,7 +348,7 @@ export async function fetchSovereignLiteLlmInterpretation(
           scope: 'worker_config',
           canClientFix: false,
           bodySnippet: boundedSnippet(routeText),
-          nextAction: 'Aktivierte Backend-Route und Default-Modell in der LiteLLM-Konfiguration prüfen.',
+          nextAction: 'Aktivierte Backend-Route, Direkttransport und Default-Modell prüfen.',
         },
       };
     }
@@ -389,7 +389,7 @@ export async function fetchSovereignLiteLlmInterpretation(
     if (!chatResponse.ok) {
       return {
         ok: false,
-        error: `LiteLLM Intent HTTP ${chatResponse.status}`,
+        error: `Sovereign LLM Intent HTTP ${chatResponse.status}`,
         diagnostic: createDiagnostic({
           route: SOVEREIGN_LITELLM_CHAT,
           model: selected.modelId,
@@ -406,7 +406,7 @@ export async function fetchSovereignLiteLlmInterpretation(
     if (!payload || !content) {
       return {
         ok: false,
-        error: 'LiteLLM lieferte keine auswertbare Intent-Antwort.',
+        error: 'Die Sovereign LLM-Direktruntime lieferte keine auswertbare Intent-Antwort.',
         diagnostic: {
           route: SOVEREIGN_LITELLM_CHAT,
           model: selected.modelId,
@@ -416,7 +416,7 @@ export async function fetchSovereignLiteLlmInterpretation(
           bodySnippet: boundedSnippet(chatText),
           scope: 'worker_runtime',
           canClientFix: false,
-          nextAction: 'LiteLLM-Antwortformat prüfen; die Antwort nicht als Aktions-Evidence akzeptieren.',
+          nextAction: 'Direkttransport-Antwortformat prüfen; die Antwort nicht als Aktions-Evidence akzeptieren.',
         },
       };
     }
@@ -430,7 +430,7 @@ export async function fetchSovereignLiteLlmInterpretation(
     if (!interpretation) {
       return {
         ok: false,
-        error: 'LiteLLM-Intent-Antwort verletzte das erlaubte Schema.',
+        error: 'Die Sovereign LLM-Intent-Antwort verletzte das erlaubte Schema.',
         rawContent: content,
         diagnostic: {
           route: SOVEREIGN_LITELLM_CHAT,
@@ -450,7 +450,7 @@ export async function fetchSovereignLiteLlmInterpretation(
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'LiteLLM-Intent-Anfrage fehlgeschlagen.',
+      error: error instanceof Error ? error.message : 'Sovereign LLM-Intent-Anfrage fehlgeschlagen.',
       diagnostic: createDiagnostic({
         route: SOVEREIGN_LITELLM_CHAT,
         model: fallbackModel,

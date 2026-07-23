@@ -38,7 +38,6 @@ from .cognitive_swarm_agents import (
     SwarmExecutionError,
     classify_mission_intent,
     classify_swarm_exception,
-    ensure_openai_runtime_key,
     run_cognitive_swarm,
     run_free_single_agent,
 )
@@ -91,7 +90,12 @@ def _contains_secret_shaped_text(value: str) -> bool:
 
 
 def _allowed_models() -> frozenset[str]:
-    # Cost safety is a code contract, not an environment-controlled preference.
+    """Keep the legacy alias allowlist fail-closed for old test/operator callers.
+
+    Product execution ignores environment-provided model lists and resolves
+    direct OpenRouter or FreeLLM routes from PostgreSQL instead.
+    """
+
     return frozenset({DEFAULT_MODEL}) & ALLOWED_LITELLM_MODEL_ALIASES
 
 

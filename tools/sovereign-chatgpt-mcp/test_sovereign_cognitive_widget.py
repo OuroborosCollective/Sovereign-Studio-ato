@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 import sys
 
@@ -9,6 +10,7 @@ sys.path.insert(0, str(MCP_ROOT))
 
 from sovereign_cognitive_widget import (
     STRICT_CSP,
+    WIDGET_DOMAIN,
     WIDGET_HTML,
     WIDGET_MANIFEST,
     WIDGET_URI,
@@ -81,6 +83,8 @@ def test_widget_contract_is_strict_and_evidence_only() -> None:
     assert 'id="recent-runs"' in WIDGET_HTML
     assert 'id="refresh-runs"' in WIDGET_HTML
     assert "sovereign_cognitive_architecture_status erneut" in WIDGET_HTML
+    assert WIDGET_URI == "ui://sovereign/dev_dashboard.v2.html"
+    assert WIDGET_DOMAIN == "https://sovereign-backend.arelorian.de"
 
 
 def test_widget_registers_one_resource_and_status_tool() -> None:
@@ -92,7 +96,25 @@ def test_widget_registers_one_resource_and_status_tool() -> None:
     )
     tools = mcp._tool_manager.list_tools()
     resources = mcp._resource_manager.list_resources()
+    listed_tools = asyncio.run(mcp.list_tools())
+    listed_resources = asyncio.run(mcp.list_resources())
+    read_contents = list(asyncio.run(mcp.read_resource(WIDGET_URI)))
+
     assert [tool.name for tool in tools] == ["sovereign_cognitive_architecture_status"]
     assert [str(resource.uri) for resource in resources] == [WIDGET_URI]
     assert tools[0].meta["ui"]["resourceUri"] == WIDGET_URI
+    assert tools[0].output_schema is not None
+    assert tools[0].output_schema["type"] == "object"
+    assert "manifest" in tools[0].output_schema["properties"]
+    assert listed_tools[0].outputSchema == tools[0].output_schema
+
     assert resources[0].meta["ui"]["csp"] == STRICT_CSP
+    assert resources[0].meta["ui"]["domain"] == WIDGET_DOMAIN
+    assert resources[0].meta["openai/widgetDomain"] == WIDGET_DOMAIN
+    assert listed_resources[0].meta["ui"]["domain"] == WIDGET_DOMAIN
+    assert listed_resources[0].meta["openai/widgetDomain"] == WIDGET_DOMAIN
+    serialized_resource = listed_resources[0].model_dump(by_alias=True)
+    assert serialized_resource["_meta"]["ui"]["domain"] == WIDGET_DOMAIN
+    assert serialized_resource["_meta"]["openai/widgetDomain"] == WIDGET_DOMAIN
+    assert read_contents[0].meta["ui"]["domain"] == WIDGET_DOMAIN
+    assert read_contents[0].meta["openai/widgetDomain"] == WIDGET_DOMAIN

@@ -8,22 +8,49 @@ import sys
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
-from free_revolver_v3 import Revolver, RevolverProfile, plan_routes, validate_schema
+from free_revolver_v3 import (
+    Revolver,
+    RevolverProfile,
+    eligible_free_routes,
+    plan_routes,
+    validate_schema,
+)
 
 
 def route(route_id: str, priority: int = 10) -> dict:
     return {
         "id": route_id,
         "model_id": f"alias-{route_id}",
-        "provider": "litellm",
+        "provider": "freellm",
+        "runtime_kind": "freellm",
         "disabled": False,
         "priority": priority,
         "config": {
+            "transport": "freellm",
             "billingCategory": "free",
+            "fundingMode": "verified_zero_cost",
+            "executionProfile": "free_single_agent",
             "pricingVerified": True,
+            "canaryVerified": True,
             "capabilities": ["chat", "structured_output"],
         },
     }
+
+
+def test_only_direct_double_verified_freellm_routes_are_eligible() -> None:
+    verified = route("verified")
+    legacy_litellm = {**route("legacy"), "provider": "litellm", "runtime_kind": "litellm"}
+    missing_canary = route("missing-canary")
+    missing_canary["config"] = {**missing_canary["config"], "canaryVerified": False}
+    wrong_profile = route("wrong-profile")
+    wrong_profile["config"] = {**wrong_profile["config"], "executionProfile": "paid_swarm"}
+
+    eligible = eligible_free_routes(
+        [verified, legacy_litellm, missing_canary, wrong_profile],
+        ["chat"],
+    )
+
+    assert [item["id"] for item in eligible] == ["verified"]
 
 
 def test_weighted_plan_is_deterministic_for_same_request_and_revision() -> None:

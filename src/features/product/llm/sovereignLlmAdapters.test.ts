@@ -14,7 +14,7 @@ describe('sovereignLlmAdapters', () => {
       'local-safe',
     ]);
     expect(adapters[0]).toMatchObject({
-      label: 'Sovereign Backend · private LiteLLM',
+      label: 'Sovereign Backend · OpenRouter Paid + FreeLLM Free',
       kind: 'existing',
       priority: -10,
       enabled: true,

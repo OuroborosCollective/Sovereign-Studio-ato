@@ -3,15 +3,46 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict, Field
 
 
-WIDGET_URI = "ui://sovereign/dev_dashboard.html"
+WIDGET_URI = "ui://sovereign/dev_dashboard.v2.html"
 WIDGET_MIME_TYPE = "text/html;profile=mcp-app"
 WIDGET_DOMAIN = "https://sovereign-backend.arelorian.de"
+
+
+class SovereignCognitiveStatusOutput(BaseModel):
+    """Model-visible, secret-free status contract for the cognitive widget."""
+
+    model_config = ConfigDict(extra="allow")
+
+    manifest: dict[str, Any] = Field(
+        description="Static eight-role, double-loop and Draft-PR-only manifest."
+    )
+    ok: bool = Field(description="Whether current control-plane evidence is ready.")
+    status: str = Field(description="Bounded overall runtime status family.")
+    summary: str = Field(description="Human-readable evidence summary.")
+    controlPlane: dict[str, Any] = Field(
+        description="Bounded broker and control-plane evidence."
+    )
+    agentsSdkState: str = Field(
+        description="Latest persisted Agents SDK state or configuration state."
+    )
+    controllerRuns: dict[str, Any] = Field(
+        description="Bounded persisted run, task, event and failure evidence."
+    )
+    draftPr: dict[str, Any] = Field(
+        description="Draft PR evidence; never authorizes merge automatically."
+    )
+    secretsExposed: bool = Field(
+        default=False,
+        description="Always false; protected values are excluded from this tool.",
+    )
+
 
 STRICT_CSP = {
     "connectDomains": [],
@@ -270,7 +301,10 @@ def register_sovereign_cognitive_widget(
         meta=TOOL_META,
         structured_output=True,
     )
-    def sovereign_cognitive_architecture_status() -> types.CallToolResult:
+    def sovereign_cognitive_architecture_status() -> Annotated[
+        types.CallToolResult,
+        SovereignCognitiveStatusOutput,
+    ]:
         payload = {"manifest": WIDGET_MANIFEST, **status_provider()}
         summary = str(payload.get("summary") or "Sovereign cognitive architecture status loaded.")
         return types.CallToolResult(
