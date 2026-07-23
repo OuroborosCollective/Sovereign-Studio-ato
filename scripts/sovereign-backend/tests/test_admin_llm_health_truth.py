@@ -125,14 +125,17 @@ def test_completion_canary_stops_before_provider_when_litellm_is_not_ready(monke
     assert called is False
 
 
-def test_admin_health_route_is_transport_aware_and_secret_safe() -> None:
+def test_admin_health_route_blocks_legacy_litellm_and_is_secret_safe() -> None:
     source = (BACKEND / "app.py").read_text("utf-8")
     ui = (BACKEND / "enterprise_admin_ui.py").read_text("utf-8")
     route_start = source.index('def admin_llm_route_healthcheck(rid):')
     route_end = source.index('@app.route("/api/admin/launcher/tools/<tid>/healthcheck"', route_start)
     route = source[route_start:route_end]
 
-    assert "litellm_completion_canary(model_id)" in route
+    assert "litellm_completion_canary(model_id)" not in route
+    assert 'transport == "litellm"' in route
+    assert '"blocker": "legacy_litellm_replaced_by_openrouter"' in route
+    assert '"providerExecutionPerformed": False' in route
     assert 'transport == "openrouter"' in route
     assert 'transport == "freellm"' in route
     assert "openrouter_activation_evidence_missing" in route
@@ -140,7 +143,7 @@ def test_admin_health_route_is_transport_aware_and_secret_safe() -> None:
     assert "unsupported_llm_transport" in route
     assert 'api_key AS "apiKey"' not in route
     assert "requests.get(" not in route
-    assert "provider_quota_exhausted" in source
+    assert "provider_quota_exhausted" not in route
     assert "Provider-Kontingent erschöpft" in ui
     assert "boundedFetch('/api/admin/llm/routes/'" in ui
     assert "_ADMIN_PANEL_HTML = r" not in source
