@@ -128,6 +128,31 @@ describe('chatClaimGuard', () => {
     expect(result.honestFallback).toContain('idle');
   });
 
+  it('blocks deployment and live claims without revision, digest and health evidence', () => {
+    const snap = createIdleSnapshot(TRACE);
+    const result = checkChatClaim('Auf dem VPS installiert und jetzt live verfügbar.', snap);
+    expect(result.allowed).toBe(false);
+    expect(result.violations).toContain('deployment_claimed_without_revision_digest');
+    expect(result.violations).toContain('live_claimed_without_runtime_health');
+  });
+
+  it('allows live claims only with complete immutable runtime evidence', () => {
+    const snap = createIdleSnapshot(TRACE);
+    const result = checkChatClaim('Auf dem VPS installiert und jetzt live verfügbar.', snap, {
+      deployedRevision: 'a'.repeat(40),
+      imageDigest: `sha256:${'b'.repeat(64)}`,
+      runtimeHealthy: true,
+    });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('blocks all-tests claims when skipped checks exist', () => {
+    const snap = createIdleSnapshot(TRACE);
+    const result = checkChatClaim('Alle Tests bestanden.', snap, { testsPassed: true, skippedTests: 1 });
+    expect(result.allowed).toBe(false);
+    expect(result.violations).toContain('all_tests_claimed_without_complete_evidence');
+  });
+
   it('hasAnyWorkClaim detects claim patterns', () => {
     expect(hasAnyWorkClaim('PR erstellt.')).toBe(true);
     expect(hasAnyWorkClaim('Branch erstellt.')).toBe(true);

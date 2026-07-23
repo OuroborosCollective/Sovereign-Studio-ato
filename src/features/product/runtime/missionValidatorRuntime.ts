@@ -1,4 +1,5 @@
 import { resolvePrimaryBridgeConfig } from '../llm/primaryBridgeConfig';
+import { compareContractSurfaces } from './contractDriftSentinelRuntime';
 
 export interface MissionValidationResult {
   readonly score: number;
@@ -87,8 +88,32 @@ export async function requestMissionValidation(mission: string): Promise<Mission
       body: JSON.stringify({ mission }),
     });
     const payload = await response.json() as Partial<MissionValidationResult>;
-    if (!response.ok || typeof payload.score !== 'number' || !Number.isFinite(payload.score)) {
-      return { ...fallback, status: 'deterministic_fallback', error: payload.error || `Mission validation HTTP ${response.status}` };
+    const contract = compareContractSurfaces(
+      {
+        name: 'mission-validation-backend',
+        fields: [
+          { name: 'score', type: 'number', required: true },
+          { name: 'specificEnough', type: 'boolean', required: true },
+          { name: 'questions', type: 'array', required: true },
+          { name: 'evidence', type: 'array', required: true },
+        ],
+      },
+      [{
+        name: 'mission-validation-response',
+        fields: [
+          { name: 'score', type: typeof payload.score, required: 'score' in payload },
+          { name: 'specificEnough', type: typeof payload.specificEnough, required: 'specificEnough' in payload },
+          { name: 'questions', type: Array.isArray(payload.questions) ? 'array' : typeof payload.questions, required: 'questions' in payload },
+          { name: 'evidence', type: Array.isArray(payload.evidence) ? 'array' : typeof payload.evidence, required: 'evidence' in payload },
+        ],
+      }],
+    );
+    if (!response.ok || !contract.aligned || typeof payload.score !== 'number' || !Number.isFinite(payload.score)) {
+      return {
+        ...fallback,
+        status: 'deterministic_fallback',
+        error: payload.error || (!contract.aligned ? `MISSION_VALIDATION_CONTRACT_DRIFT:${contract.findings.map((finding) => `${finding.field}:${finding.kind}`).join(',')}` : `Mission validation HTTP ${response.status}`),
+      };
     }
     return {
       score: Math.max(0, Math.min(100, Number(payload.score))),
