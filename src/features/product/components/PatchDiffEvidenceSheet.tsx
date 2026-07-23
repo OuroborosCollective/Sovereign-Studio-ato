@@ -2,6 +2,7 @@ import React from 'react';
 import type { GeneratedFileDiffReport } from '../runtime/generatedFileDiffPreview';
 import { formatDiffStats } from '../runtime/diffStatsFormatter';
 import { buildImpactReport } from '../runtime/dependencyImpactRuntime';
+import { buildMergeBlastRadiusGate } from '../runtime/mergeBlastRadiusGateRuntime';
 import { C } from './builderConstants';
 
 export function PatchDiffEvidenceSheet({ report, confirmed, narratives = {}, onConfirm, onClose }: { readonly report: GeneratedFileDiffReport; readonly confirmed: boolean; readonly narratives?: Readonly<Record<string, string>>; readonly onConfirm: () => void; readonly onClose: () => void }) {
@@ -11,6 +12,12 @@ export function PatchDiffEvidenceSheet({ report, confirmed, narratives = {}, onC
     report.files.map((file) => ({ path: file.path, content: file.preview })),
     { complete: false },
   );
+  const blastRadius = buildMergeBlastRadiusGate({
+    changedPaths: report.files.filter((file) => file.changed).map((file) => file.path),
+    totalAddedLines: report.totalAddedLines,
+    totalRemovedLines: report.totalRemovedLines,
+    dependencyImpact: Object.values(impact.byTarget),
+  });
   return (
     <div role="presentation" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 84, background: 'rgba(14,17,22,0.84)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
       <section role="dialog" aria-modal="true" aria-label="Patch Diff" onClick={(event) => event.stopPropagation()} style={{ width: '100%', maxWidth: 680, maxHeight: '82vh', overflowY: 'auto', margin: '0 auto', borderRadius: '20px 20px 0 0', border: `1px solid ${C.border}`, background: C.surface, padding: '16px 16px calc(22px + env(safe-area-inset-bottom, 0px))' }}>
@@ -24,6 +31,10 @@ export function PatchDiffEvidenceSheet({ report, confirmed, narratives = {}, onC
         <div data-testid="patch-diff-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginTop: 10 }}>
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: 9, background: C.bg }}><div style={{ color: C.sky, fontWeight: 700, fontSize: 12 }}>{stats.fileCountLabel}</div><div style={{ color: C.textMuted, fontSize: 9, marginTop: 3 }}>{stats.fileKindBreakdown || 'Keine Dateien'}</div></div>
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 9, padding: 9, background: C.bg }}><div style={{ color: stats.hasChanges ? C.green : C.textMuted, fontWeight: 700, fontSize: 12 }}>{stats.lineChangeSummary}</div><div style={{ color: C.textMuted, fontSize: 9, marginTop: 3 }}>deterministisch aus der Diff-Vorschau</div></div>
+        </div>
+        <div data-testid="merge-blast-radius" style={{ marginTop: 10, border: `1px solid ${blastRadius.level === 'critical' || blastRadius.level === 'high' ? C.rose : blastRadius.level === 'medium' ? C.amber : C.green}44`, borderRadius: 9, padding: 9, background: C.bg }}>
+          <div style={{ color: C.text, fontWeight: 700, fontSize: 11 }}>Merge Blast Radius: {blastRadius.level.toUpperCase()} · {blastRadius.score}/100</div>
+          <div style={{ color: C.textMuted, fontSize: 9, marginTop: 3 }}>{blastRadius.reasons.join(' ') || 'Bounded diff evidence indicates a low blast radius.'}</div>
         </div>
         {report.files.map((file) => {
           const fileImpact = impact.byTarget[file.path];
