@@ -202,7 +202,8 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "markupMultiplier:Number(document.getElementById('providerMarkupMultiplier').value||4)" in ui
     assert "refreshProviderOwnerInput" in ui
     assert "prepareProviderFreeQuota" not in ui
-    assert "Kostenfreie Provider werden im getrennten Free-Revolver-Interface verwaltet" in ui
+    assert "Legacy-LiteLLM-Modellkatalog · Rollback" in ui
+    assert "Aktuelle Paid-Routen werden direkt über OpenRouter, Free-Routen direkt über FreeLLM verwaltet" in ui
     assert "providerCredentialLabel" in ui
     assert "lastErrorCode" in ui
     assert "billingCategory" in ui

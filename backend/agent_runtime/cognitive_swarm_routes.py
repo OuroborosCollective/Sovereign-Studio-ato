@@ -32,6 +32,8 @@ from .cognitive_run_store import (
     transition_agent_run,
 )
 from .cognitive_swarm_agents import (
+    ALLOWED_LITELLM_MODEL_ALIASES,
+    DEFAULT_MODEL,
     RepositoryToolFactory,
     SwarmExecutionError,
     classify_mission_intent,
@@ -85,6 +87,16 @@ _SECRET_MARKERS = (
 def _contains_secret_shaped_text(value: str) -> bool:
     normalized = value.casefold()
     return any(marker in normalized for marker in _SECRET_MARKERS)
+
+
+def _allowed_models() -> frozenset[str]:
+    """Keep the legacy alias allowlist fail-closed for old test/operator callers.
+
+    Product execution ignores environment-provided model lists and resolves
+    direct OpenRouter or FreeLLM routes from PostgreSQL instead.
+    """
+
+    return frozenset({DEFAULT_MODEL}) & ALLOWED_LITELLM_MODEL_ALIASES
 
 
 def _current_session_user_id() -> str:

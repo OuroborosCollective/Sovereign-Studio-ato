@@ -359,7 +359,7 @@ def test_production_image_source_contains_the_same_cognitive_skill_bundle() -> N
     assert production_release_hunt_skill.read_bytes() == RELEASE_HUNT_SKILL_PATH.read_bytes()
 
 
-def test_swarm_fails_closed_without_litellm_service_key(
+def test_legacy_swarm_fails_closed_without_litellm_compatibility_key(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
