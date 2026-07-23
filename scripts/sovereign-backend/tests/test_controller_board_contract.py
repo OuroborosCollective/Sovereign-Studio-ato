@@ -137,6 +137,12 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "claim_agent_run_for_resume(" in controller
     assert "record_external_action_event(" in controller
     assert "execute_persisted_swarm(" in controller
+    assert "start_cognitive_swarm_run(" in controller
+    assert 'requested_mode not in {"paid", "free"}' in controller
+    assert 'if requested_mode == "free":' in controller
+    assert 'mode="free"' in controller
+    assert '"requestedMode": "free"' in controller
+    assert "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE" in controller
     assert '"operatorBridge": True' in controller
     assert '"protectedValuesReturned": False' in controller
     assert "secret-shaped material is forbidden in operator input" in controller

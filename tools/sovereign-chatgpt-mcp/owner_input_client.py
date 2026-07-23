@@ -422,9 +422,15 @@ class ControllerRuntimeClient(OwnerInputClient):
             raise ValueError("run_id ist ungültig")
         return selected
 
-    def start_run(self, mission: str, evidence: str = "") -> dict[str, Any]:
+    def start_run(
+        self,
+        mission: str,
+        evidence: str = "",
+        mode: str = "paid",
+    ) -> dict[str, Any]:
         bounded_mission = str(mission or "").strip()
         bounded_evidence = str(evidence or "").strip()
+        selected_mode = str(mode or "paid").strip().lower()
         if not bounded_mission:
             raise ValueError("mission ist erforderlich")
         if len(bounded_mission) > MAX_OPERATOR_MISSION:
@@ -434,10 +440,16 @@ class ControllerRuntimeClient(OwnerInputClient):
         normalized = f"{bounded_mission}\n{bounded_evidence}".casefold()
         if any(marker in normalized for marker in OPERATOR_SECRET_MARKERS):
             raise ValueError("Secret-förmiger Inhalt ist im Operator-Start verboten")
+        if selected_mode not in {"paid", "free"}:
+            raise ValueError("mode muss paid oder free sein")
         return self._request(
             "POST",
             "/api/internal/controller/runs",
-            json_body={"mission": bounded_mission, "evidence": bounded_evidence},
+            json_body={
+                "mission": bounded_mission,
+                "evidence": bounded_evidence,
+                "mode": selected_mode,
+            },
             expected=(200, 202, 502, 503),
             timeout=1200,
         )

@@ -647,9 +647,17 @@ def owner_approval_widget_open(request_id: str) -> types.CallToolResult:
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
-def controller_run_start(mission: str, evidence: str = "") -> dict[str, Any]:
-    """Start one owner-scoped persisted OpenAI Agents SDK run with bounded non-secret input."""
-    return controller_runtime.start_run(mission=mission, evidence=evidence)
+def controller_run_start(
+    mission: str,
+    evidence: str = "",
+    mode: str = "paid",
+) -> dict[str, Any]:
+    """Start one owner-scoped persisted paid or FreeLLM run with bounded non-secret input."""
+    return controller_runtime.start_run(
+        mission=mission,
+        evidence=evidence,
+        mode=mode,
+    )
 
 
 @mcp.tool(annotations=NETWORK_READ)
