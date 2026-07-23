@@ -232,12 +232,19 @@ def test_swarm_manifest_route_reports_exact_topology(monkeypatch) -> None:
     assert payload["executionModes"] == ["auto", "paid", "free"]
 
 
-def test_allowed_models_drop_direct_provider_identifiers(monkeypatch) -> None:
+def test_environment_model_allowlist_cannot_override_database_resolution(monkeypatch) -> None:
     monkeypatch.setenv(
         "SOVEREIGN_AGENTS_ALLOWED_MODELS",
         "direct-provider-model,sovereign-fast",
     )
-    assert routes_runtime._allowed_models() == frozenset({"sovereign-fast"})
+    client = _app().test_client()
+    response = client.get("/api/user/agent/swarm/manifest")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["allowedModels"] == []
+    assert payload["modelsResolvedFromDatabase"] is True
+    assert payload["executionModes"] == ["auto", "paid", "free"]
 
 
 

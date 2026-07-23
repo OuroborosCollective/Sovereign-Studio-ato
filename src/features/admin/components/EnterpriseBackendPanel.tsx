@@ -116,8 +116,8 @@ export function EnterpriseBackendPanel() {
   }, [refresh]);
 
   const activeModelIds = useMemo(() => {
-    const litellm = overview?.integrations.find(item => item.id === 'litellm');
-    const candidate = litellm?.evidence['activeModelIds'];
+    const routing = overview?.integrations.find(item => item.id === 'llm-routing');
+    const candidate = routing?.evidence['legacyLiteLlmModelIds'];
     return Array.isArray(candidate)
       ? candidate.filter((item): item is string => typeof item === 'string' && item.length > 0)
       : [];
@@ -132,7 +132,7 @@ export function EnterpriseBackendPanel() {
   const runCanary = async (scope: 'readiness' | 'completion') => {
     if (scope === 'completion') {
       if (!selectedModel) {
-        setError('Kein aktives, serverseitig freigegebenes LiteLLM-Modell verfügbar.');
+        setError('Kein aktiver Legacy-LiteLLM-Transport verfügbar. Direkte OpenRouter- und FreeLLM-Canaries werden in ihren eigenen Providerbereichen ausgeführt.');
         return;
       }
       const accepted = window.confirm(
@@ -406,8 +406,8 @@ export function EnterpriseBackendPanel() {
         </article>
         <article className="sbp-action-card sbp-action-card-warning">
           <div>
-            <h3>Completion-Beleg</h3>
-            <p>Sendet eine echte Anfrage ausschließlich über ein serverseitig aktives LiteLLM-Modell. Kann Provider-Kosten erzeugen.</p>
+            <h3>Legacy-LiteLLM-Completion</h3>
+            <p>Optionaler Alttransport-Canary. Direkte OpenRouter-Paid- und FreeLLM-Free-Prüfungen gehören in die jeweiligen Providerbereiche. Kann Provider-Kosten erzeugen.</p>
           </div>
           <label>
             <span>Aktives Modell</span>
@@ -416,7 +416,7 @@ export function EnterpriseBackendPanel() {
               onChange={event => setSelectedModel(event.target.value)}
               disabled={runningCanary !== null || activeModelIds.length === 0}
             >
-              {activeModelIds.length === 0 && <option value="">Kein aktives Modell</option>}
+              {activeModelIds.length === 0 && <option value="">Kein aktiver Legacy-Transport</option>}
               {activeModelIds.map(modelId => <option value={modelId} key={modelId}>{modelId}</option>)}
             </select>
           </label>

@@ -160,10 +160,10 @@ def build_sovereign_agent_card(
             id="sovereign-orchestration",
             name="Sovereign Agents SDK Orchestration",
             description=(
-                "Routes one bounded mission through LiteLLM, the OpenAI Agents SDK, "
-                "MCP tools and the persisted Sovereign truth chain."
+                "Routes one bounded mission through a verified direct OpenRouter or FreeLLM route, "
+                "the OpenAI Agents SDK, MCP tools and the persisted Sovereign truth chain."
             ),
-            tags=["agents-sdk", "litellm", "mcp", "truth-chain"],
+            tags=["agents-sdk", "openrouter", "freellm", "mcp", "truth-chain"],
             input_modes=list(A2A_INPUT_MODES),
             output_modes=list(A2A_OUTPUT_MODES),
         ),

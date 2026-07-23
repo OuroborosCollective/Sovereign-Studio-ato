@@ -33,7 +33,7 @@ export function buildSovereignLlmAdapters(options: SovereignLlmAdapterOptions): 
   }
 
   // The client has exactly one online model path. Provider credentials,
-  // routing, fallback and billing are owned by the backend and private LiteLLM.
+  // routing, fallback and billing are owned by the backend across direct OpenRouter Paid and direct FreeLLM Free transports.
   adapters.push(createLocalSafeAdapter({
     cards: options.cards,
     settings: options.settings,

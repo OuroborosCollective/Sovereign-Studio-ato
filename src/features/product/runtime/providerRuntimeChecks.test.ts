@@ -12,7 +12,7 @@ describe('providerRuntimeChecks', () => {
       status: 'free_available',
       isAvailable: true,
       priority: 1,
-      label: 'Sovereign Backend · private LiteLLM',
+      label: 'Sovereign Backend · OpenRouter Paid + FreeLLM Free',
     });
     expect(getProviderStatus('pollinations', {})).toMatchObject({
       status: 'not_configured',

@@ -71,7 +71,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 text-[11px] text-emerald-900">
-              🔐 Online-Modelle laufen ausschließlich über das Sovereign Backend und das private LiteLLM. Provider und Preise werden unter /admin → LLM Routes verwaltet.
+              🔐 Online-Modelle laufen ausschließlich über das Sovereign Backend: Paid direkt über OpenRouter, Free direkt über FreeLLM. LiteLLM ist nur noch ein optionaler Legacy-Transport. Provider, Preise und Evidenz werden unter /admin → LLM Routes verwaltet.
             </div>
 
             <div className="hidden" aria-hidden="true">

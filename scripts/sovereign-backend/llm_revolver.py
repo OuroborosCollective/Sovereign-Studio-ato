@@ -25,7 +25,10 @@ _RETRY_WINDOWS_SECONDS = {
     "provider_rate_limited": 60,
     "litellm_upstream_unavailable": 30,
     "openrouter_rate_limited": 60,
+    "openrouter_timeout": 30,
     "openrouter_upstream_unavailable": 30,
+    "freellm_rate_limited": 60,
+    "freellm_timeout": 30,
     "freellm_upstream_unavailable": 30,
 }
 _BLOCKED_FAILURES = {

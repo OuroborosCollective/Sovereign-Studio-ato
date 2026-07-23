@@ -61,7 +61,7 @@ export interface BuildImplementationInput {
 const EXISTING_ROUTE_INFO: Record<string, LlmRouteDescriptor> = {
   'optional-user-keys': {
     id: 'optional-user-keys',
-    label: 'Sovereign Backend · private LiteLLM',
+    label: 'Sovereign Backend · OpenRouter Paid + FreeLLM Free',
     status: 'primary',
     requiresApiKey: false,
     requiresUserOptIn: false,

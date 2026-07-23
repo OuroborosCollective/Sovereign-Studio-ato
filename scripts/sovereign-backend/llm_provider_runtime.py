@@ -1,4 +1,4 @@
-"""Owner-gated provider onboarding for the private LiteLLM gateway.
+"""Owner-gated provider onboarding for the private Legacy-LiteLLM gateway.
 
 Provider metadata is stored in Sovereign PostgreSQL. The protected provider
 value is accepted only by owner_input_runtime and is never stored in this DB.
@@ -78,7 +78,7 @@ FUNDING_MODE_OPTIONS = (
     {
         "id": FREE_FUNDING_VERIFIED_ZERO_COST,
         "label": "Verifizierte Providerkosten 0",
-        "description": "Nur aktiv, wenn LiteLLM Kosten von exakt 0 bestätigt.",
+        "description": "Legacy-Rollback: nur aktiv, wenn Legacy-LiteLLM Kosten von exakt 0 bestätigt.",
     },
     {
         "id": FREE_FUNDING_PROVIDER_QUOTA,
@@ -223,7 +223,7 @@ def _catalog_model_with_retry(
     attempts: int = 8,
     delay_seconds: float = 0.5,
 ) -> dict[str, Any] | None:
-    """Bound dynamic LiteLLM catalog propagation without re-registering a model."""
+    """Bound dynamic Legacy-LiteLLM catalog propagation without re-registering a model."""
     bounded_attempts = max(1, min(int(attempts), 20))
     bounded_delay = max(0.0, min(float(delay_seconds), 2.0))
     for attempt in range(bounded_attempts):
@@ -242,7 +242,7 @@ def _validate_category_pricing(
     funding_mode: str = FREE_FUNDING_VERIFIED_ZERO_COST,
 ) -> None:
     if not model.get("pricingVerified"):
-        raise BillingPolicyError("LiteLLM hat für dieses Modell keine verifizierten Kosten geliefert")
+        raise BillingPolicyError("Legacy-LiteLLM hat für dieses Modell keine verifizierten Kosten geliefert")
     normalized_funding = normalize_funding_mode(category, funding_mode)
     input_price = _non_negative_decimal(model.get("inputUsdPerMillion"))
     output_price = _non_negative_decimal(model.get("outputUsdPerMillion"))
@@ -266,7 +266,7 @@ def _normalize_provider_recovery_policy(
         return None
     if not model:
         raise BillingPolicyError(
-            "LiteLLM-Modellkatalog ist für die Policy-Umstellung nicht verfügbar"
+            "Legacy-LiteLLM-Modellkatalog ist für die Policy-Umstellung nicht verfügbar"
         )
     category = normalize_billing_category(
         body.get("billingCategory", deployment.get("billing_category"))
@@ -448,7 +448,7 @@ def register_llm_provider_routes(
                 "models": [],
                 "billingCategories": list(PAID_BILLING_CATEGORY_OPTIONS),
                 "blocker": error,
-                "error": "LiteLLM-Modellkatalog ist nicht verfügbar.",
+                "error": "Legacy-LiteLLM-Modellkatalog ist nicht verfügbar.",
             }), 503
         return jsonify({
             "models": models,
@@ -482,7 +482,7 @@ def register_llm_provider_routes(
         model = _catalog_model(model_id)
         if not model:
             return jsonify({
-                "error": "Modell ist im aktuellen LiteLLM-Katalog nicht vorhanden.",
+                "error": "Modell ist im aktuellen Legacy-LiteLLM-Katalog nicht vorhanden.",
                 "blocker": "litellm_model_not_found",
             }), 404
         try:
@@ -505,7 +505,7 @@ def register_llm_provider_routes(
         )
         if canary_error or canary_response is None or not canary_response.ok:
             return jsonify({
-                "error": "Das ausgewählte LiteLLM-Modell hat die echte Completion-Canary nicht bestanden.",
+                "error": "Das ausgewählte Legacy-LiteLLM-Modell hat die echte Completion-Canary nicht bestanden.",
                 "blocker": "provider_canary_failed",
             }), 502
         try:
@@ -588,7 +588,7 @@ def register_llm_provider_routes(
         except Exception:
             connection.rollback()
             return jsonify({
-                "error": "LiteLLM-Modell konnte nicht atomar als Sovereign-Route gespeichert werden.",
+                "error": "Legacy-LiteLLM-Modell konnte nicht atomar als Sovereign-Route gespeichert werden.",
                 "blocker": "route_attach_failed",
             }), 500
         finally:
@@ -735,7 +735,7 @@ def register_llm_provider_routes(
                        RETURNING id::text""",
                     (
                         f"Providerzugang für {config['displayName']}",
-                        f"Einmalig für private LiteLLM-Route {config['alias']}; wird nach Aktivierung gelöscht.",
+                        f"Einmalig für private Legacy-LiteLLM-Route {config['alias']}; wird nach Aktivierung gelöscht.",
                     ),
                 )
                 owner_request_id = str(cursor.fetchone()["id"])
@@ -1108,7 +1108,7 @@ def register_llm_provider_routes(
                 )
                 params["api_key"] = ""
                 if register_error or register_response is None or not register_response.ok:
-                    return fail("litellm_model_registration_failed", "LiteLLM konnte die Providerroute nicht persistent registrieren")
+                    return fail("litellm_model_registration_failed", "Legacy-LiteLLM konnte die Providerroute nicht persistent registrieren")
                 try:
                     parsed_registration = register_response.json()
                 except ValueError:
@@ -1160,7 +1160,7 @@ def register_llm_provider_routes(
             if not catalog_model:
                 return fail(
                     "litellm_pricing_unavailable",
-                    "Providerroute wurde nicht freigegeben, weil der dynamische LiteLLM-Katalog die Modellkosten noch nicht bestätigt hat. Die Registrierung bleibt für einen sicheren Wiederholungsversuch erhalten.",
+                    "Legacy-Providerroute wurde nicht freigegeben, weil der dynamische Legacy-LiteLLM-Katalog die Modellkosten noch nicht bestätigt hat. Die Registrierung bleibt für einen sicheren Wiederholungsversuch erhalten.",
                     409,
                 )
             try:

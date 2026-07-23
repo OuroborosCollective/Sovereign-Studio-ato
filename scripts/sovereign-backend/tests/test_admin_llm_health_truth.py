@@ -125,7 +125,7 @@ def test_completion_canary_stops_before_provider_when_litellm_is_not_ready(monke
     assert called is False
 
 
-def test_admin_health_route_and_ui_use_one_quota_aware_canary_contract() -> None:
+def test_admin_health_route_is_transport_aware_and_secret_safe() -> None:
     source = (BACKEND / "app.py").read_text("utf-8")
     ui = (BACKEND / "enterprise_admin_ui.py").read_text("utf-8")
     route_start = source.index('def admin_llm_route_healthcheck(rid):')
@@ -133,7 +133,11 @@ def test_admin_health_route_and_ui_use_one_quota_aware_canary_contract() -> None
     route = source[route_start:route_end]
 
     assert "litellm_completion_canary(model_id)" in route
-    assert "legacy_direct_provider_disabled" in route
+    assert 'transport == "openrouter"' in route
+    assert 'transport == "freellm"' in route
+    assert "openrouter_activation_evidence_missing" in route
+    assert "freellm_route_not_currently_ready" in route
+    assert "unsupported_llm_transport" in route
     assert 'api_key AS "apiKey"' not in route
     assert "requests.get(" not in route
     assert "provider_quota_exhausted" in source

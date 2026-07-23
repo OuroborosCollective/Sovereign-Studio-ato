@@ -94,7 +94,7 @@ export class SettingsErrorBoundary extends React.Component<SettingsErrorBoundary
 
           <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
             <p className="text-sm text-emerald-700">
-              <strong>💡 Hinweis:</strong> Online-Modelle laufen ausschließlich über das Sovereign Backend und das private LiteLLM.
+              <strong>💡 Hinweis:</strong> Online-Modelle laufen ausschließlich über das Sovereign Backend: Paid direkt über OpenRouter und Free direkt über FreeLLM. LiteLLM bleibt optionaler Legacy-Transport.
             </p>
           </div>
         </div>

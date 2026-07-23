@@ -1,8 +1,8 @@
 """Sovereign integration of the Revolver v3 free-route core.
 
 Provider credentials, billing, authentication and route truth remain owned by
-Sovereign/PostgreSQL/LiteLLM. This module only plans and executes verified free
-route magazines supplied by the caller.
+the Sovereign/PostgreSQL direct-FreeLLM contract. This module only plans and
+executes verified free route magazines supplied by the caller.
 """
 from __future__ import annotations
 
@@ -100,11 +100,24 @@ def eligible_free_routes(routes: Iterable[Mapping[str, Any]], capabilities: Iter
         route = dict(source)
         config = _config(route)
         route_capabilities = {str(item).lower() for item in config.get("capabilities", ["chat"])}
-        if route.get("disabled") or str(route.get("provider") or "").lower() != "litellm":
+        transport = str(
+            route.get("runtime_kind")
+            or route.get("runtimeKind")
+            or config.get("transport")
+            or route.get("provider")
+            or ""
+        ).strip().lower()
+        if route.get("disabled") or transport != "freellm":
             continue
         if str(config.get("billingCategory") or config.get("billingClass") or "") != "free":
             continue
-        if not config.get("pricingVerified") or not required.issubset(route_capabilities):
+        if str(config.get("fundingMode") or "") != "verified_zero_cost":
+            continue
+        if str(config.get("executionProfile") or "") != "free_single_agent":
+            continue
+        if not config.get("pricingVerified") or not config.get("canaryVerified"):
+            continue
+        if not required.issubset(route_capabilities):
             continue
         result.append(route)
     return result

@@ -33,14 +33,14 @@ MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
     "openai_api_key": {
-        "label": "OpenAI Provider für LiteLLM",
+        "label": "OpenAI Provider für Legacy-LiteLLM",
         "fieldLabel": "OpenAI API-Key",
         "path": "/opt/sovereign-owner-managed/openai_api_key.txt",
         "maxBytes": 8192,
         "kind": "credential",
     },
     "litellm_provider_key": {
-        "label": "Einmaliger Fremdprovider-Zugang für LiteLLM",
+        "label": "Einmaliger Fremdprovider-Zugang für Legacy-LiteLLM",
         "fieldLabel": "Provider API-Key",
         "path": "/opt/sovereign-owner-managed/litellm_provider_key.txt",
         "maxBytes": 8192,

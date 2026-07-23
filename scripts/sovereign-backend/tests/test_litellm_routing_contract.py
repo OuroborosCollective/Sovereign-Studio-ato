@@ -34,25 +34,24 @@ def test_litellm_usage_parser_prefers_real_total_and_bounds_values() -> None:
     assert fallback_total["totalTokens"] == 25
 
 
-def test_backend_routes_reserve_then_settle_from_runtime_usage() -> None:
+def test_backend_routes_reserve_then_settle_from_direct_runtime_usage() -> None:
     required_fragments = (
-        "from litellm_runtime import (",
+        "from direct_llm_runtime import (",
         "def _create_llm_usage_settlement(",
         "INSERT INTO llm_usage_settlements",
         "ON CONFLICT (request_id) DO NOTHING",
         '"blocker": "duplicate_llm_request_id"',
-        'if provider == "litellm":',
-        "fetch_litellm(",
-        '"direct_provider_route_blocked"',
-        '"litellm_unavailable"',
-        "extract_litellm_evidence(resp, result)",
-        'charge_basis = "litellm_provider_cost"',
+        "fetch_direct_llm(",
+        "classify_direct_llm_failure(",
+        "extract_direct_llm_evidence(",
+        'charge_basis = "direct_provider_reported_cost"',
         'charge_basis = "verified_usage_and_route_prices"',
         'provider_cost_micros = provider_cost_usd_to_micros(',
         'provider_cost_micros = provider_cost_micros_from_usage(',
         '"chargeBasis": charge_basis',
         'provider_tx_id=f"{request_id}:refund"',
-        '"blocker": "litellm_streaming_not_enabled"',
+        '"blocker": "llm_streaming_not_enabled"',
+        'transport not in {"openrouter", "freellm"}',
     )
     for path in APP_PATHS:
         source = path.read_text("utf-8")
@@ -60,7 +59,15 @@ def test_backend_routes_reserve_then_settle_from_runtime_usage() -> None:
             assert fragment in source, f"{fragment!r} missing from {path}"
         assert "OPENAI_API_KEY" not in source
         assert "getattr(resp, \"text\"" not in source
-        assert "return refund_failed_run(\"litellm_unavailable\")" in source
+        assert "fetch_litellm(" not in source
+        assert "return refund_failed_run(\"litellm_unavailable\")" not in source
+
+    direct_runtime = (SCRIPT_BACKEND / "direct_llm_runtime.py").read_text("utf-8")
+    assert "allow_redirects=False" in direct_runtime
+    assert "session.trust_env = False" in direct_runtime
+    assert "_MAX_RESPONSE_BYTES" in direct_runtime
+    assert "openrouter_api_key.txt" in direct_runtime
+    assert "freellmapi_unified_key.txt" in direct_runtime
 
 
 def test_migration_adds_two_litellm_routes_and_settlement_evidence() -> None:

@@ -54,7 +54,7 @@ export function palRoute(
         : powerCount >= 10
           ? "smart"
           : "power";
-  // PAL chooses only abstract LiteLLM aliases. The backend resolves the actual
+  // PAL chooses only abstract Sovereign LLM aliases. The backend resolves the actual
   // provider/model deployment from its active route catalog.
   const tierAliasMap: Record<string, string> = {
     fast: "sovereign-fast",

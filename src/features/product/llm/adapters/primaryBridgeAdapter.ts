@@ -69,7 +69,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
 
   return {
     id: 'optional-user-keys',
-    label: 'Sovereign Backend · private LiteLLM',
+    label: 'Sovereign Backend · OpenRouter Paid + FreeLLM Free',
     kind: 'existing',
     priority: -10,
     enabled: config.ready,
@@ -91,7 +91,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
         const selectedRoute = routesPayload.routes?.find((route) => route.enabled && route.defaultModelId)
           ?? routesPayload.routes?.find((route) => route.enabled && route.id);
         const selectedModel = config.model || selectedRoute?.defaultModelId || selectedRoute?.id || '';
-        if (!selectedModel) throw new Error('No owner-verified LiteLLM route is active.');
+        if (!selectedModel) throw new Error('No owner-verified OpenRouter or FreeLLM route is active.');
 
         const response = await fetch(`${backendBaseUrl}/api/llm/chat`, {
           method: 'POST',
@@ -118,7 +118,7 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
 
         return { providerId: 'optional-user-keys', brain: parsed, raw };
       } catch (error) {
-        throw new Error(`Sovereign LiteLLM route failed: ${maskSecrets(providerError(error))}`);
+        throw new Error(`Sovereign direct LLM route failed: ${maskSecrets(providerError(error))}`);
       }
     },
   };

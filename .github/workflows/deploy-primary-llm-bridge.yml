@@ -22,7 +22,7 @@ jobs:
           cat <<'EOF'
           This legacy public bridge is permanently disabled.
           Online model traffic must use:
-          App -> Sovereign Backend -> private LiteLLM -> owner-verified provider.
+          App -> Sovereign Backend -> direct OpenRouter Paid or direct FreeLLM Free -> owner-verified provider.
           Add providers only through /admin -> LLM Routes and the protected owner-input flow.
           No Worker deployment, repository-variable mutation, provider secret or direct browser route is allowed here.
           EOF
