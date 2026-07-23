@@ -2024,17 +2024,43 @@ def register_free_revolver_provider_runtime(
                         (alias,),
                         write=True,
                     )
+            reconcile_stage = "route_activation_parity"
+            query(
+                """UPDATE llm_routes AS route
+                   SET disabled=NOT (
+                           model.status='ready'
+                           AND model.enabled=true
+                           AND model.free_verified=true
+                       ),
+                       provider='freellm', runtime_kind='freellm',
+                       updated_at=NOW()
+                   FROM llm_revolver_provider_models AS model
+                   WHERE model.source_id=%s::uuid
+                     AND model.litellm_alias IS NOT NULL
+                     AND route.model_id=model.litellm_alias
+                     AND route.config->>'revolverProviderSourceId'=%s""",
+                (source_id, source_id),
+                write=True,
+            )
             ready_state = query(
                 """SELECT
                        COUNT(*) FILTER (
-                           WHERE status='ready' AND enabled=true
+                           WHERE model.status='ready'
+                             AND model.enabled=true
+                             AND model.free_verified=true
+                             AND route.disabled=false
                        )::int AS ready_count,
                        COUNT(*) FILTER (
-                           WHERE status='blocked'
+                           WHERE model.status='blocked'
+                              OR route.id IS NULL
+                              OR route.disabled=true
                        )::int AS blocked_count
-                   FROM llm_revolver_provider_models
-                   WHERE source_id=%s::uuid""",
-                (source_id,),
+                   FROM llm_revolver_provider_models AS model
+                   LEFT JOIN llm_routes AS route
+                     ON route.model_id=model.litellm_alias
+                    AND route.config->>'revolverProviderSourceId'=%s
+                   WHERE model.source_id=%s::uuid""",
+                (source_id, source_id),
                 one=True,
             ) or {}
             overall_ready_count = int(ready_state.get("ready_count") or 0)
@@ -2121,6 +2147,7 @@ def register_free_revolver_provider_runtime(
                 "managed_key_read": "freellm_managed_key_unavailable",
                 "model_activation": "freellm_model_reconcile_failed",
                 "model_state_persistence": "freellm_model_state_persistence_failed",
+                "route_activation_parity": "freellm_route_activation_parity_failed",
                 "provider_state_persistence": "freellm_provider_state_persistence_failed",
                 "check_persistence": "freellm_check_persistence_failed",
             }.get(reconcile_stage, "freellm_reconcile_runtime_failed")
