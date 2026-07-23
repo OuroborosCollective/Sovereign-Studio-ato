@@ -59,6 +59,21 @@ def test_catalog_normalization_requires_paid_tool_and_structured_output_model() 
     assert runtime._normalize_model(free_model) is None
 
 
+def test_catalog_normalization_tolerates_untrusted_numeric_metadata() -> None:
+    item = _catalog_item()
+    item["context_length"] = "unknown"
+    item["top_provider"] = {"max_completion_tokens": {"unexpected": True}}
+
+    model = runtime._normalize_model(item)
+
+    assert model is not None
+    assert model["contextLength"] == 0
+    assert model["maxCompletionTokens"] == 0
+    assert runtime._bounded_nonnegative_int(-1) == 0
+    assert runtime._bounded_nonnegative_int("2048") == 2048
+    assert runtime._bounded_nonnegative_int(True) == 0
+
+
 def test_agent_canary_selection_prefers_default_then_cheapest_compatible_model() -> None:
     default = {
         "openai/gpt-5.4-mini": {
@@ -181,6 +196,7 @@ def test_provider_policy_is_fail_closed_and_application_headers_are_configurable
         "require_parameters": True,
         "allow_fallbacks": False,
         "data_collection": "deny",
+        "zdr": True,
     }
 
 
@@ -210,6 +226,7 @@ def test_source_contract_never_persists_or_returns_raw_openrouter_key() -> None:
     assert "for index in range(len(protected)):" in source
     assert "protected[index] = 0" in source
     assert '"secretValuesReturned": False' in source
+    assert "error_type = _safe_openrouter_error_token(type(exc).__name__)" in source
     assert "providerPolicy" in source
     assert '"rawSecretPersistedInDatabase": False' in source
     assert '@app.route("/api/admin/llm/openrouter/models", methods=["GET"])' in source

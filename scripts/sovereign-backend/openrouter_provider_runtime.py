@@ -38,6 +38,7 @@ _PROVIDER_POLICY = {
     "require_parameters": True,
     "allow_fallbacks": False,
     "data_collection": "deny",
+    "zdr": True,
 }
 _REQUIRED_AGENT_PARAMETERS = frozenset({"tools", "tool_choice"})
 _REQUIRED_CANARY_PARAMETERS = frozenset({"tools", "tool_choice", "max_tokens"})
@@ -120,6 +121,16 @@ def _per_million(value: Any) -> str | None:
         return None
     result = parsed * Decimal(1_000_000)
     return format(result.normalize(), "f")
+
+
+def _bounded_nonnegative_int(value: Any) -> int:
+    if value in (None, "") or isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, parsed)
 
 
 def _credits_per_thousand(
@@ -365,9 +376,9 @@ def _normalize_model(item: dict[str, Any]) -> dict[str, Any] | None:
 
     canonical = str(item.get("canonical_slug") or model_id).strip()[:260]
     name = str(item.get("name") or model_id).strip()[:180] or model_id
-    context_length = max(0, int(item.get("context_length") or 0))
+    context_length = _bounded_nonnegative_int(item.get("context_length"))
     top_provider = item.get("top_provider") if isinstance(item.get("top_provider"), dict) else {}
-    max_completion = max(0, int(top_provider.get("max_completion_tokens") or 0))
+    max_completion = _bounded_nonnegative_int(top_provider.get("max_completion_tokens"))
     payload_hash = hashlib.sha256(
         json.dumps(item, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -762,17 +773,19 @@ def activate_openrouter_provider(
                 "secretValuesReturned": False,
             }
         ), exc.status_code
-    except Exception:
+    except Exception as exc:
+        error_type = _safe_openrouter_error_token(type(exc).__name__) or "unknown"
+        family = f"openrouter_activation_{error_type}"[:120]
         _mark_blocked(
             query,
             route_id=normalized_route,
-            family="openrouter_activation_failed",
+            family=family,
         )
         return jsonify(
             {
                 "ok": False,
                 "status": "blocked",
-                "blocker": "openrouter_activation_failed",
+                "blocker": family,
                 "secretValuesReturned": False,
             }
         ), 503
