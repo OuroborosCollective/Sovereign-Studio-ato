@@ -38,6 +38,8 @@ def test_freellmpool_template_is_private_immutable_non_root_and_secret_file_boun
     assert "b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa" in template
     assert FREELLMPOOL_RUNTIME_CONTENT_SHA256 in template
     assert 'user: "10001:10001"' in template
+    assert "entrypoint:\n      - python\n      - /opt/sovereign/freellmpool-entrypoint.py" in template
+    assert "command: []" in template
     assert "read_only: true" in template
     assert "privileged: false" in template
     assert "no-new-privileges:true" in template
@@ -70,7 +72,8 @@ def test_freellmpool_render_contract_rejects_root_mutable_or_env_secret(tmp_path
             "freellmpool": {
                 "image": FREELLMPOOL_IMAGE,
                 "user": "10001:10001",
-                "command": FREELLMPOOL_ENTRYPOINT_COMMAND,
+                "entrypoint": FREELLMPOOL_ENTRYPOINT_COMMAND,
+                "command": [],
                 "read_only": True,
                 "privileged": False,
                 "security_opt": ["no-new-privileges:true"],
@@ -105,6 +108,10 @@ def test_freellmpool_render_contract_rejects_root_mutable_or_env_secret(tmp_path
     with pytest.raises(RuntimeError, match="read-only"):
         runtime._validate_rendered(stack, rendered, staging_root=staging_root)
     rendered["services"]["freellmpool"]["read_only"] = True
+    rendered["services"]["freellmpool"]["entrypoint"] = ["python", "-m", "freellmpool.cli"]
+    with pytest.raises(RuntimeError, match="Entrypoint-Override"):
+        runtime._validate_rendered(stack, rendered, staging_root=staging_root)
+    rendered["services"]["freellmpool"]["entrypoint"] = FREELLMPOOL_ENTRYPOINT_COMMAND
     rendered["services"]["freellmpool"]["environment"]["FREELLMPOOL_PROXY_KEY"] = "forbidden"
     with pytest.raises(RuntimeError, match="Umgebungswerten"):
         runtime._validate_rendered(stack, rendered, staging_root=staging_root)

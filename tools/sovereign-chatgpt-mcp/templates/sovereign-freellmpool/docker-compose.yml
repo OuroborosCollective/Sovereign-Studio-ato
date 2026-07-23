@@ -4,9 +4,10 @@ services:
     container_name: sovereign-freellmpool
     init: true
     user: "10001:10001"
-    command:
+    entrypoint:
       - python
       - /opt/sovereign/freellmpool-entrypoint.py
+    command: []
     read_only: true
     privileged: false
     security_opt:
