@@ -50,11 +50,17 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
     assert "run_config=route_runtime.run_config if route_runtime else None" in swarm_agents
     assert '_OPENROUTER_KEY_FILENAME: Final[str] = "openrouter_api_key.txt"' in transport
     assert '_FREELLM_KEY_FILENAME: Final[str] = "freellmapi_unified_key.txt"' in transport
+    assert '_FREELLMPOOL_KEY_FILENAME: Final[str] = "freellmpool_proxy_key.txt"' in transport
+    assert '_FREELLMAPI_BASE: Final[str] = "http://freellmapi:3001/v1"' in transport
+    assert '_FREELLMPOOL_BASE: Final[str] = "http://freellmpool:8080/v1"' in transport
+    assert 'SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' in transport
+    assert 'def _key_spec(transport: str, api_base: str)' in transport
     assert 'provider_module = importlib.import_module("agents.models.openai_provider")' in transport
     assert 'run_config_module = importlib.import_module("agents.run_config")' in transport
     assert 'provider_class = getattr(provider_module, "OpenAIProvider")' in transport
     assert 'run_config_class = getattr(run_config_module, "RunConfig")' in transport
-    assert "base_url=route_api_base(route)" in transport
+    assert "api_base = route_api_base(route)" in transport
+    assert "base_url=api_base" in transport
     assert "use_responses=False" in transport
     assert "tracing_disabled=True" in transport
     assert "trace_include_sensitive_data=False" in transport

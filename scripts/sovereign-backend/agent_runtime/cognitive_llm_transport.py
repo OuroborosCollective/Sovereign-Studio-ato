@@ -23,6 +23,9 @@ _KEY_MAX_BYTES: Final[int] = 8192
 _SAFE_KEY_MIN_BYTES: Final[int] = 16
 _OPENROUTER_KEY_FILENAME: Final[str] = "openrouter_api_key.txt"
 _FREELLM_KEY_FILENAME: Final[str] = "freellmapi_unified_key.txt"
+_FREELLMPOOL_KEY_FILENAME: Final[str] = "freellmpool_proxy_key.txt"
+_FREELLMAPI_BASE: Final[str] = "http://freellmapi:3001/v1"
+_FREELLMPOOL_BASE: Final[str] = "http://freellmpool:8080/v1"
 
 
 class RouteRuntimeError(RuntimeError):
@@ -41,16 +44,24 @@ class RouteRunConfig:
     run_config: Any
 
 
-def _key_spec(transport: str) -> tuple[str, str]:
+def _key_spec(transport: str, api_base: str) -> tuple[str, str]:
     if transport == OPENROUTER_TRANSPORT:
         return "SOVEREIGN_OPENROUTER_API_KEY_FILE", _OPENROUTER_KEY_FILENAME
     if transport == FREELLM_TRANSPORT:
-        return "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE", _FREELLM_KEY_FILENAME
+        normalized = str(api_base or "").strip().rstrip("/")
+        if normalized == _FREELLMAPI_BASE:
+            return "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE", _FREELLM_KEY_FILENAME
+        if normalized == _FREELLMPOOL_BASE:
+            return "SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE", _FREELLMPOOL_KEY_FILENAME
+        raise RouteRuntimeError(
+            "FREELLM_API_BASE_REJECTED",
+            "SELECT_VERIFIED_MANAGED_FREELLM_SOURCE",
+        )
     raise RouteRuntimeError("UNSUPPORTED_LLM_TRANSPORT", "SELECT_OPENROUTER_OR_FREELLM_ROUTE")
 
 
-def _read_protected_key(transport: str) -> str:
-    env_name, filename = _key_spec(transport)
+def _read_protected_key(transport: str, api_base: str) -> str:
+    env_name, filename = _key_spec(transport, api_base)
     expected_root = Path(
         os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", "/opt/sovereign-owner-managed")
     ).resolve()
@@ -168,7 +179,8 @@ def build_route_run_config(
             f"{transport.upper()}_MODEL_INVALID",
             f"VERIFY_{transport.upper()}_PROVIDER_MODEL",
         )
-    api_key = _read_protected_key(transport)
+    api_base = route_api_base(route)
+    api_key = _read_protected_key(transport, api_base)
     try:
         provider_module = importlib.import_module("agents.models.openai_provider")
         provider_class = getattr(provider_module, "OpenAIProvider")
@@ -185,7 +197,7 @@ def build_route_run_config(
     try:
         provider = provider_class(
             api_key=api_key,
-            base_url=route_api_base(route),
+            base_url=api_base,
             use_responses=False,
         )
         settings_kwargs: dict[str, Any] = {

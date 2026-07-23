@@ -34,6 +34,7 @@ from free_revolver_provider_contracts import (
     ManagedKeyContractError,
     assert_provider_target_allowed,
     is_managed_internal_provider_url,
+    managed_internal_source_spec,
     models_url_candidates,
     normalize_api_base,
     normalize_max_auto_activate,
@@ -46,6 +47,7 @@ _ALIAS_RE = re.compile(r"[^a-z0-9-]+")
 _MANAGED_AUTH_MODE = "managed-bearer"
 _AUTH_MODES = {"bearer", "x-api-key", "none", _MANAGED_AUTH_MODE}
 _MAX_MODELS_RESPONSE_BYTES = 2_000_000
+_KNOWN_KEYLESS_POOL_PROVIDERS = {"pollinations", "ovh", "ovhcloud", "kilo", "llm7"}
 
 
 def _internal_owner_authorized() -> bool:
@@ -63,24 +65,33 @@ def _secret_path(owner_request_id: str) -> Path:
     return _owner_root() / f"revolver_provider_key.{safe_request_id}.txt"
 
 
-def _read_managed_key(expected_fingerprint: str = "") -> tuple[bytearray, str]:
+def _read_managed_key(
+    api_base: str,
+    expected_fingerprint: str = "",
+) -> tuple[bytearray, str]:
     root = _owner_root()
+    source = managed_internal_source_spec(api_base)
+    if source is None:
+        raise ManagedKeyContractError("managed_key_source_invalid")
+    filename = str(source["keyFilename"])
     configured_path = os.getenv(
-        "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE",
-        str(root / "freellmapi_unified_key.txt"),
+        str(source["keyEnv"]),
+        str(root / filename),
     )
     return read_managed_freellm_key_file(
         owner_root=root,
         configured_path=configured_path,
         expected_fingerprint=expected_fingerprint,
+        expected_filename=filename,
+        error_prefix=str(source["errorPrefix"]),
     )
 
 
-def _managed_key_state(expected_fingerprint: str = "") -> dict[str, Any]:
+def _managed_key_state(api_base: str, expected_fingerprint: str = "") -> dict[str, Any]:
     protected = bytearray()
     key = ""
     try:
-        protected, key = _read_managed_key(expected_fingerprint)
+        protected, key = _read_managed_key(api_base, expected_fingerprint)
         return {
             "available": True,
             "fingerprintMatches": bool(expected_fingerprint),
@@ -229,6 +240,12 @@ def _direct_completion_canary(
         usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
         provider_cost = usage.get("cost")
         generation_id = str(payload.get("id") or request_id or "")[:200] or None
+        pool_meta = payload.get("x_freellmpool") if isinstance(payload, dict) else None
+        pool_meta = pool_meta if isinstance(pool_meta, dict) else {}
+        provider_id = str(pool_meta.get("provider") or "")[:80]
+        provider_model = str(pool_meta.get("model") or "")[:200]
+        response_model = str(payload.get("model") or "")[:240] if isinstance(payload, dict) else ""
+        source = managed_internal_source_spec(api_base) or {}
         return {
             "ok": True,
             "evidence": {
@@ -236,6 +253,15 @@ def _direct_completion_canary(
                 "providerCostUsd": provider_cost,
                 "httpStatus": status,
                 "transport": "freellm",
+                "sourceType": str(source.get("sourceId") or "external-free-provider"),
+                "providerId": provider_id or None,
+                "providerModel": provider_model or None,
+                "responseModel": response_model or None,
+                "upstreamKeyless": (
+                    provider_id.casefold() in _KNOWN_KEYLESS_POOL_PROVIDERS
+                    if provider_id
+                    else None
+                ),
                 "rawResponsePersisted": False,
             },
         }
@@ -243,6 +269,49 @@ def _direct_completion_canary(
         return {"ok": False, "blocker": "freellm_timeout"}
     except (requests.RequestException, UnicodeDecodeError, json.JSONDecodeError):
         return {"ok": False, "blocker": "freellm_upstream_unavailable"}
+
+
+def _confirmed_completion_canary(
+    *,
+    api_base: str,
+    auth_mode: str,
+    key: str,
+    model_id: str,
+) -> dict[str, Any]:
+    """Require two sequential real completions before a route can become ready."""
+
+    confirmations: list[dict[str, Any]] = []
+    for confirmation_index in (1, 2):
+        result = _direct_completion_canary(
+            api_base=api_base,
+            auth_mode=auth_mode,
+            key=key,
+            model_id=model_id,
+        )
+        if not result.get("ok"):
+            return {
+                "ok": False,
+                "blocker": str(result.get("blocker") or "free_provider_canary_failed"),
+                "failedConfirmation": confirmation_index,
+                "confirmationCount": len(confirmations),
+            }
+        confirmations.append(dict(result.get("evidence") or {}))
+    return {
+        "ok": True,
+        "evidence": {
+            "confirmationCount": 2,
+            "confirmations": confirmations,
+            "upstreamRequestId": confirmations[-1].get("upstreamRequestId"),
+            "providerCostUsd": confirmations[-1].get("providerCostUsd"),
+            "providerCostsUsd": [item.get("providerCostUsd") for item in confirmations],
+            "sourceType": confirmations[-1].get("sourceType"),
+            "providerId": confirmations[-1].get("providerId"),
+            "providerModel": confirmations[-1].get("providerModel"),
+            "responseModel": confirmations[-1].get("responseModel"),
+            "upstreamKeyless": confirmations[-1].get("upstreamKeyless"),
+            "rawResponsePersisted": False,
+        },
+    }
 
 
 def _normalized_provider_cost(value: Any) -> float | None:
@@ -326,8 +395,10 @@ def _request_owner_input(
 
 
 def _source_payload(source: dict[str, Any], models: list[dict[str, Any]]) -> dict[str, Any]:
+    managed_source = managed_internal_source_spec(source.get("api_base")) or {}
     return {
         "id": str(source.get("id") or ""),
+        "sourceType": str(managed_source.get("sourceId") or "external-free-provider"),
         "label": str(source.get("label") or ""),
         "apiBase": str(source.get("api_base") or ""),
         "modelsUrl": source.get("models_url"),
@@ -747,7 +818,7 @@ def register_free_revolver_provider_runtime(
                 "alias": alias,
                 "error": "free_direct_runtime_credentials_unavailable",
             }
-        canary = _direct_completion_canary(
+        canary = _confirmed_completion_canary(
             api_base=str(source["api_base"]),
             auth_mode=str(source["auth_mode"]),
             key=key,
@@ -761,16 +832,28 @@ def register_free_revolver_provider_runtime(
                 "blocker": str(canary.get("blocker") or "free_provider_canary_failed"),
             }
         evidence = dict(canary.get("evidence") or {})
-        provider_cost = _normalized_provider_cost(evidence.get("providerCostUsd"))
-        if provider_cost not in (None, 0, 0.0):
+        raw_costs = evidence.get("providerCostsUsd")
+        if not isinstance(raw_costs, list) or len(raw_costs) != 2:
+            return {
+                "ok": False,
+                "alias": alias,
+                "error": "free_provider_confirmation_evidence_invalid",
+                "blocker": "freellm_double_canary_evidence_missing",
+            }
+        provider_costs = [_normalized_provider_cost(value) for value in raw_costs]
+        if any(value not in (None, 0, 0.0) for value in provider_costs):
             return {
                 "ok": False,
                 "alias": alias,
                 "error": "free_provider_cost_not_zero",
-                "providerCostUsd": provider_cost,
                 "canaryCostState": "nonzero",
             }
-        canary_cost_state = "zero" if provider_cost in (0, 0.0) else "unreported"
+        provider_cost = provider_costs[-1]
+        canary_cost_state = (
+            "zero"
+            if all(value in (0, 0.0) for value in provider_costs)
+            else "unreported"
+        )
         provider_cost_micros = (
             int(round(float(provider_cost) * 1_000_000))
             if provider_cost is not None
@@ -790,6 +873,7 @@ def register_free_revolver_provider_runtime(
             "routingOwner": "free-revolver-v3",
             "managedBy": "sovereign-admin",
             "revolverProviderSourceId": source_id,
+            "freeSourceType": evidence.get("sourceType"),
             "transport": "freellm",
             "direct": True,
             "authMode": _MANAGED_AUTH_MODE,
@@ -808,8 +892,16 @@ def register_free_revolver_provider_runtime(
                 "discoveryPayloadSha256": model["payloadSha256"],
                 "canaryCostState": canary_cost_state,
                 "canaryRequestId": evidence.get("upstreamRequestId") or None,
+                "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
+            },
+            "actualUpstream": {
+                "providerId": evidence.get("providerId"),
+                "providerModel": evidence.get("providerModel"),
+                "responseModel": evidence.get("responseModel"),
+                "keyless": evidence.get("upstreamKeyless"),
             },
             "canaryVerified": True,
+            "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
             "revolverEligible": True,
             "executionProfile": "free_single_agent",
             "resolverMode": "revolver",
@@ -872,6 +964,12 @@ def register_free_revolver_provider_runtime(
             "alias": alias,
             "routeId": route_id,
             "transport": "freellm",
+            "sourceType": evidence.get("sourceType"),
+            "providerId": evidence.get("providerId"),
+            "providerModel": evidence.get("providerModel"),
+            "responseModel": evidence.get("responseModel"),
+            "upstreamKeyless": evidence.get("upstreamKeyless"),
+            "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
             "canaryCostState": canary_cost_state,
         }
@@ -941,7 +1039,7 @@ def register_free_revolver_provider_runtime(
         key = ""
         try:
             if source["auth_mode"] == _MANAGED_AUTH_MODE:
-                protected, key = _read_managed_key()
+                protected, key = _read_managed_key(str(source["api_base"]))
             elif source["auth_mode"] != "none":
                 info = path.lstat()
                 if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
@@ -1227,10 +1325,13 @@ def register_free_revolver_provider_runtime(
             if not is_managed_internal_provider_url(str(source.get("api_base") or "")):
                 continue
             managed_key = _managed_key_state(
-                str(source.get("key_fingerprint") or "")
+                str(source.get("api_base") or ""),
+                str(source.get("key_fingerprint") or ""),
             )
+            managed_source = managed_internal_source_spec(source.get("api_base")) or {}
             providers.append({
                 "sourceId": str(source.get("id") or ""),
+                "sourceType": str(managed_source.get("sourceId") or "external-free-provider"),
                 "label": str(source.get("label") or ""),
                 "apiBase": str(source.get("api_base") or ""),
                 "authMode": str(source.get("auth_mode") or ""),
@@ -1345,7 +1446,8 @@ def register_free_revolver_provider_runtime(
         reconcile_stage = "managed_key_read"
         try:
             protected, key = _read_managed_key(
-                str(source.get("key_fingerprint") or "")
+                str(source.get("api_base") or ""),
+                str(source.get("key_fingerprint") or ""),
             )
 
             reconcile_stage = "model_activation"
@@ -1388,6 +1490,12 @@ def register_free_revolver_provider_runtime(
                     ready.append({
                         "modelId": model_id,
                         "routeId": result.get("routeId"),
+                        "sourceType": result.get("sourceType"),
+                        "providerId": result.get("providerId"),
+                        "providerModel": result.get("providerModel"),
+                        "responseModel": result.get("responseModel"),
+                        "upstreamKeyless": result.get("upstreamKeyless"),
+                        "canaryConfirmationCount": result.get("canaryConfirmationCount"),
                         "canaryCostState": result.get("canaryCostState"),
                     })
                     continue
@@ -1559,28 +1667,37 @@ def register_free_revolver_provider_runtime(
         key = ""
         try:
             protected, key = _read_managed_key(
-                str(source.get("key_fingerprint") or "")
+                str(source.get("api_base") or ""),
+                str(source.get("key_fingerprint") or ""),
             )
 
             ready = []
             blocked = []
             for model in models:
                 alias = str(model["litellm_alias"])
-                canary = _direct_completion_canary(
+                canary = _confirmed_completion_canary(
                     api_base=str(source["api_base"]),
                     auth_mode=_MANAGED_AUTH_MODE,
                     key=key,
                     model_id=str(model["upstream_model_id"]),
                 )
                 evidence = dict(canary.get("evidence") or {})
-                provider_cost = _normalized_provider_cost(evidence.get("providerCostUsd"))
+                raw_costs = evidence.get("providerCostsUsd")
+                provider_costs = (
+                    [_normalized_provider_cost(value) for value in raw_costs]
+                    if isinstance(raw_costs, list) and len(raw_costs) == 2
+                    else []
+                )
                 cost_state = (
                     "nonzero"
-                    if provider_cost not in (None, 0, 0.0)
+                    if provider_costs
+                    and any(value not in (None, 0, 0.0) for value in provider_costs)
                     else "zero"
-                    if provider_cost in (0, 0.0)
+                    if provider_costs
+                    and all(value in (0, 0.0) for value in provider_costs)
                     else "unreported"
                 )
+                provider_cost = provider_costs[-1] if provider_costs else None
                 provider_cost_micros = (
                     int(round(float(provider_cost) * 1_000_000))
                     if provider_cost is not None
@@ -1589,6 +1706,8 @@ def register_free_revolver_provider_runtime(
                 blocker = (
                     str(canary.get("blocker") or "free_provider_canary_failed")
                     if not canary.get("ok")
+                    else "freellm_double_canary_evidence_missing"
+                    if len(provider_costs) != 2
                     else "free_provider_cost_not_zero"
                     if cost_state == "nonzero"
                     else None
@@ -1613,7 +1732,15 @@ def register_free_revolver_provider_runtime(
                         (alias,), write=True,
                     )
                 else:
-                    ready.append(str(model["upstream_model_id"]))
+                    ready.append({
+                        "modelId": str(model["upstream_model_id"]),
+                        "sourceType": evidence.get("sourceType"),
+                        "providerId": evidence.get("providerId"),
+                        "providerModel": evidence.get("providerModel"),
+                        "responseModel": evidence.get("responseModel"),
+                        "upstreamKeyless": evidence.get("upstreamKeyless"),
+                        "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
+                    })
                     query(
                         """UPDATE llm_revolver_provider_models
                            SET status='ready', enabled=true, last_error_code=NULL,

@@ -65,6 +65,21 @@ FREELLMAPI_PROVIDER_SECRET_ROOT = "/opt/sovereign-owner-managed/freellm-provider
 FREELLMAPI_BOOTSTRAP_COMMAND = ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
 FREELLMAPI_RUNTIME_UID = 1000
 FREELLMAPI_RUNTIME_GID = 1000
+FREELLMPOOL_CONTAINER = "sovereign-freellmpool"
+FREELLMPOOL_IMAGE = (
+    "ghcr.io/ouroboroscollective/sovereign-freellmpool@"
+    "sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa"
+)
+FREELLMPOOL_REPO_DIGEST = FREELLMPOOL_IMAGE
+FREELLMPOOL_RUNTIME_CONTENT_SHA256 = "3b42eb46786e1fa0b867e3f5cb2adf8e3c5ba7114beb6b4bd97073c67c02e46f"
+FREELLMPOOL_DATA_VOLUME = "sovereign-freellmpool-data"
+FREELLMPOOL_OWNER_KEY_PATH = "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
+FREELLMPOOL_ENTRYPOINT_COMMAND = [
+    "python",
+    "/opt/sovereign/freellmpool-entrypoint.py",
+]
+FREELLMPOOL_RUNTIME_UID = 10001
+FREELLMPOOL_RUNTIME_GID = 10001
 
 
 @dataclass(frozen=True)
@@ -191,6 +206,20 @@ STACKS: dict[str, ManagedStack] = {
         allowed_bind_roots=(
             "/opt/sovereign-freellmapi",
             FREELLMAPI_PROVIDER_SECRET_ROOT,
+        ),
+    ),
+    "sovereign-freellmpool": ManagedStack(
+        stack_id="sovereign-freellmpool",
+        project_name="sovereign-freellmpool",
+        anchor_container=FREELLMPOOL_CONTAINER,
+        expected_containers=(FREELLMPOOL_CONTAINER,),
+        allowed_services=("freellmpool",),
+        deploy_root="/opt/sovereign-freellmpool",
+        template_name="sovereign-freellmpool",
+        allowed_networks=("sovereign-private",),
+        allowed_bind_roots=(
+            "/opt/sovereign-freellmpool",
+            FREELLMPOOL_OWNER_KEY_PATH,
         ),
     ),
 }
@@ -331,6 +360,49 @@ class ManagedComposeRuntime:
                     if isinstance(value, str)
                     and re.fullmatch(r"[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}", value)
                 )
+        runtime_user = ""
+        read_only_rootfs = False
+        privileged = False
+        network_mode = ""
+        cap_drop: list[str] = []
+        security_opt: list[str] = []
+        pids_limit = 0
+        security_result = self._run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{json .Config.User}}|{{json .HostConfig.ReadonlyRootfs}}|{{json .HostConfig.Privileged}}|{{json .HostConfig.NetworkMode}}|{{json .HostConfig.CapDrop}}|{{json .HostConfig.SecurityOpt}}|{{json .HostConfig.PidsLimit}}",
+                container,
+            ],
+            timeout=30,
+        )
+        if security_result.get("ok"):
+            try:
+                (
+                    user_raw,
+                    read_only_raw,
+                    privileged_raw,
+                    network_mode_raw,
+                    cap_drop_raw,
+                    security_opt_raw,
+                    pids_limit_raw,
+                ) = security_result.get("stdout", "").strip().split("|", 6)
+                runtime_user = str(json.loads(user_raw) or "")
+                read_only_rootfs = bool(json.loads(read_only_raw))
+                privileged = bool(json.loads(privileged_raw))
+                network_mode = str(json.loads(network_mode_raw) or "")
+                cap_drop = [str(value) for value in (json.loads(cap_drop_raw) or [])]
+                security_opt = [str(value) for value in (json.loads(security_opt_raw) or [])]
+                pids_limit = int(json.loads(pids_limit_raw) or 0)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                runtime_user = ""
+                read_only_rootfs = False
+                privileged = False
+                network_mode = ""
+                cap_drop = []
+                security_opt = []
+                pids_limit = 0
         return {
             "present": True,
             "container": container,
@@ -347,6 +419,13 @@ class ManagedComposeRuntime:
             "mounts": safe_mounts,
             "networks": sorted(networks.keys()),
             "publishedPorts": published,
+            "runtimeUser": runtime_user,
+            "readOnlyRootfs": read_only_rootfs,
+            "privileged": privileged,
+            "networkMode": network_mode,
+            "capDrop": cap_drop,
+            "securityOpt": security_opt,
+            "pidsLimit": pids_limit,
             "environmentReturned": False,
         }
 
@@ -444,6 +523,7 @@ class ManagedComposeRuntime:
                     "patchmon-sovereign",
                     "milvus-sovereign",
                     "sovereign-freellmapi",
+                    "sovereign-freellmpool",
                 }
                 else "external_or_not_required"
             ),
@@ -497,6 +577,18 @@ class ManagedComposeRuntime:
             if stack.stack_id == "patchmon-sovereign" and service_name == "redis":
                 if str(service.get("user") or "") != PATCHMON_REDIS_USER:
                     raise RuntimeError("PatchMon Redis muss mit der gepinnten Nicht-Root-Identität laufen")
+            if stack.stack_id == "sovereign-freellmpool" and service_name == "freellmpool":
+                if str(service.get("user") or "") != f"{FREELLMPOOL_RUNTIME_UID}:{FREELLMPOOL_RUNTIME_GID}":
+                    raise RuntimeError("FreeLLMPool muss mit der gepinnten Nicht-Root-Identität laufen")
+                if service.get("read_only") is not True:
+                    raise RuntimeError("FreeLLMPool benötigt ein read-only Root-Dateisystem")
+                if set(service.get("cap_drop") or []) != {"ALL"}:
+                    raise RuntimeError("FreeLLMPool muss alle Linux-Capabilities abwerfen")
+                if "no-new-privileges:true" not in set(service.get("security_opt") or []):
+                    raise RuntimeError("FreeLLMPool benötigt no-new-privileges")
+                environment = service.get("environment")
+                if isinstance(environment, dict) and "FREELLMPOOL_PROXY_KEY" in environment:
+                    raise RuntimeError("FreeLLMPool Proxy-Key darf nicht in Compose-Umgebungswerten stehen")
             if service.get("privileged"):
                 raise RuntimeError(f"privileged ist gesperrt: {service_name}")
             if service.get("network_mode") == "host" or service.get("pid") == "host" or service.get("ipc") == "host":
@@ -531,10 +623,16 @@ class ManagedComposeRuntime:
                 and service_name == "freellmapi"
                 and command == FREELLMAPI_BOOTSTRAP_COMMAND
             )
+            allowed_freellmpool_command = (
+                stack.stack_id == "sovereign-freellmpool"
+                and service_name == "freellmpool"
+                and command == FREELLMPOOL_ENTRYPOINT_COMMAND
+            )
             if command and not (
                 allowed_patchmon_redis_command
                 or allowed_milvus_command
                 or allowed_freellmapi_command
+                or allowed_freellmpool_command
             ):
                 raise RuntimeError(f"Ausführungs-Override ist gesperrt: {service_name}")
             image = str(service.get("image") or "")
@@ -546,6 +644,12 @@ class ManagedComposeRuntime:
                 and image != FREELLMAPI_IMAGE
             ):
                 raise RuntimeError("FreeLLM API muss exakt auf v0.5.0 und den freigegebenen Digest gepinnt sein")
+            if (
+                stack.stack_id == "sovereign-freellmpool"
+                and service_name == "freellmpool"
+                and image != FREELLMPOOL_IMAGE
+            ):
+                raise RuntimeError("FreeLLMPool muss exakt auf den verifizierten immutable Digest gepinnt sein")
             service_networks = service.get("networks")
             if isinstance(service_networks, dict):
                 used_networks = set(service_networks)
@@ -757,9 +861,60 @@ class ManagedComposeRuntime:
             "secretValuesReturned": False,
         }
 
+    def _ensure_freellmpool_proxy_key(self, stack: ManagedStack) -> dict[str, Any]:
+        deploy_root = Path(stack.deploy_root)
+        if deploy_root.is_symlink():
+            raise RuntimeError("FreeLLMPool Deploy-Root darf kein Symlink sein")
+        deploy_root.mkdir(parents=True, exist_ok=True, mode=0o750)
+        os.chmod(deploy_root, 0o750)
+
+        destination = Path(FREELLMPOOL_OWNER_KEY_PATH)
+        owner_root = destination.parent
+        if owner_root.is_symlink() or (owner_root.exists() and not owner_root.is_dir()):
+            raise RuntimeError("FreeLLMPool Owner-Secret-Root ist ungültig")
+        owner_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(owner_root, 0o700)
+        if os.geteuid() != 0:
+            raise RuntimeError("FreeLLMPool Proxy-Key benötigt Root-Eigentümerwechsel")
+        if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+            raise RuntimeError("FreeLLMPool Proxy-Key-Datei ist ungültig")
+
+        created = False
+        if destination.is_file():
+            payload = destination.read_bytes()
+            if len(payload) > 8192 or b"\0" in payload:
+                raise RuntimeError("FreeLLMPool Proxy-Key-Datei ist ungültig")
+            try:
+                key = payload.decode("utf-8").strip()
+            except UnicodeDecodeError as exc:
+                raise RuntimeError("FreeLLMPool Proxy-Key-Datei ist ungültig") from exc
+            if not 32 <= len(key) <= 160 or any(marker in key for marker in ("\x00", "\n", "\r")):
+                raise RuntimeError("FreeLLMPool Proxy-Key-Wert ist ungültig")
+        else:
+            key = secrets.token_urlsafe(48)
+            self._write_atomic(destination, (key + "\n").encode("utf-8"), mode=0o600)
+            created = True
+
+        os.chown(destination, FREELLMPOOL_RUNTIME_UID, FREELLMPOOL_RUNTIME_GID)
+        os.chmod(destination, 0o400)
+        fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        key = ""
+        return {
+            "required": True,
+            "created": created,
+            "path": str(destination),
+            "mode": "0400",
+            "ownerUid": FREELLMPOOL_RUNTIME_UID,
+            "ownerGid": FREELLMPOOL_RUNTIME_GID,
+            "keyFingerprintSha256": fingerprint,
+            "secretValuesReturned": False,
+        }
+
     def _ensure_stack_secret_env(self, stack: ManagedStack) -> dict[str, Any]:
         if stack.stack_id == "code-server-46bq":
             return self._ensure_code_server_env(stack)
+        if stack.stack_id == "sovereign-freellmpool":
+            return self._ensure_freellmpool_proxy_key(stack)
         if stack.stack_id not in {
             "pgbackweb-wq5r",
             "patchmon-sovereign",
@@ -1408,6 +1563,189 @@ const Database = require('better-sqlite3');
         }
 
     @staticmethod
+    def _freellmpool_transport_ready(state: dict[str, Any]) -> bool:
+        data_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict) and item.get("destination") == "/var/lib/freellmpool"
+        ]
+        entrypoint_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict)
+            and item.get("destination") == "/opt/sovereign/freellmpool-entrypoint.py"
+        ]
+        secret_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict)
+            and item.get("destination") == "/run/secrets/freellmpool_proxy_key"
+        ]
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and not (state.get("publishedPorts") or {})
+            and "sovereign-private" in set(state.get("networks") or [])
+            and state.get("imageReference") == FREELLMPOOL_IMAGE
+            and FREELLMPOOL_REPO_DIGEST in set(state.get("repoDigests") or [])
+            and state.get("runtimeUser")
+            == f"{FREELLMPOOL_RUNTIME_UID}:{FREELLMPOOL_RUNTIME_GID}"
+            and state.get("readOnlyRootfs") is True
+            and state.get("privileged") is False
+            and set(state.get("capDrop") or []) == {"ALL"}
+            and "no-new-privileges:true" in set(state.get("securityOpt") or [])
+            and int(state.get("pidsLimit") or 0) == 128
+            and all(
+                item.get("source") not in {"/var/run/docker.sock", "/run/docker.sock"}
+                and item.get("destination") not in {"/var/run/docker.sock", "/run/docker.sock"}
+                for item in state.get("mounts") or []
+                if isinstance(item, dict)
+            )
+            and len(data_mounts) == 1
+            and data_mounts[0].get("type") == "volume"
+            and data_mounts[0].get("name") == FREELLMPOOL_DATA_VOLUME
+            and data_mounts[0].get("rw") is True
+            and len(entrypoint_mounts) == 1
+            and entrypoint_mounts[0].get("type") == "bind"
+            and entrypoint_mounts[0].get("source")
+            == "/opt/sovereign-freellmpool/freellmpool-entrypoint.py"
+            and entrypoint_mounts[0].get("rw") is False
+            and len(secret_mounts) == 1
+            and secret_mounts[0].get("type") == "bind"
+            and secret_mounts[0].get("source") == FREELLMPOOL_OWNER_KEY_PATH
+            and secret_mounts[0].get("rw") is False
+        )
+
+    def _freellmpool_runtime_canary(self) -> dict[str, Any]:
+        script = r"""
+import json
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+key_path = Path('/run/secrets/freellmpool_proxy_key')
+if key_path.is_symlink() or not key_path.is_file():
+    raise SystemExit('proxy_key_missing')
+key = key_path.read_text(encoding='utf-8').strip()
+headers = {'Authorization': f'Bearer {key}'}
+with urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5) as response:
+    health = json.load(response)
+request = urllib.request.Request('http://127.0.0.1:8080/v1/models', headers=headers)
+with urllib.request.urlopen(request, timeout=10) as response:
+    models = json.load(response)
+rows = models.get('data') if isinstance(models, dict) else None
+if health.get('status') != 'ok' or not isinstance(rows, list) or not rows:
+    raise SystemExit('catalog_unavailable')
+
+candidates = [
+    'pollinations/openai',
+    'ovh/Llama-3.1-8B-Instruct',
+    'kilo/openrouter/free',
+    'llm7/codestral-latest',
+]
+receipts = []
+verified = None
+for model in candidates:
+    confirmations = []
+    for confirmation in (1, 2):
+        request = urllib.request.Request(
+            'http://127.0.0.1:8080/v1/chat/completions',
+            data=json.dumps({
+                'model': model,
+                'messages': [{'role': 'user', 'content': 'Reply with OK.'}],
+                'max_tokens': 8,
+                'temperature': 0,
+            }).encode('utf-8'),
+            headers={**headers, 'Content-Type': 'application/json'},
+            method='POST',
+        )
+        item = {'confirmation': confirmation, 'ok': False, 'httpStatus': 0}
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                raw = response.read(2_000_001)
+                if len(raw) > 2_000_000:
+                    raise ValueError('response_too_large')
+                payload = json.loads(raw)
+                choices = payload.get('choices') if isinstance(payload, dict) else None
+                upstream = payload.get('x_freellmpool') if isinstance(payload, dict) else None
+                upstream = upstream if isinstance(upstream, dict) else {}
+                item.update({
+                    'ok': bool(isinstance(choices, list) and choices),
+                    'httpStatus': int(response.status),
+                    'providerId': str(upstream.get('provider') or '')[:80],
+                    'providerModel': str(upstream.get('model') or '')[:200],
+                    'responseModel': str(payload.get('model') or '')[:240],
+                })
+        except urllib.error.HTTPError as error:
+            item.update({'httpStatus': int(error.code), 'failureFamily': 'http_error'})
+        except Exception as error:
+            item.update({'failureFamily': type(error).__name__[:80]})
+        confirmations.append(item)
+        if not item['ok']:
+            break
+    receipt = {'requestedModel': model, 'confirmations': confirmations}
+    receipts.append(receipt)
+    if len(confirmations) == 2 and all(item['ok'] for item in confirmations):
+        verified = {
+            'requestedModel': model,
+            'providerId': confirmations[-1].get('providerId'),
+            'providerModel': confirmations[-1].get('providerModel'),
+            'responseModel': confirmations[-1].get('responseModel'),
+            'confirmationCount': 2,
+        }
+        break
+print(json.dumps({
+    'ok': verified is not None,
+    'modelCount': len(rows),
+    'verified': verified,
+    'attemptedCandidates': len(receipts),
+    'rawResponsePersisted': False,
+}, sort_keys=True))
+raise SystemExit(0 if verified is not None else 2)
+"""
+        receipt: dict[str, Any] = {}
+        result = self._run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                f"{FREELLMPOOL_RUNTIME_UID}:{FREELLMPOOL_RUNTIME_GID}",
+                FREELLMPOOL_CONTAINER,
+                "python",
+                "-c",
+                script,
+            ],
+            timeout=420,
+        )
+        try:
+            receipt = json.loads(str(result.get("stdout") or "").strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            receipt = {}
+        verified = receipt.get("verified") if isinstance(receipt.get("verified"), dict) else {}
+        ok = bool(
+            result.get("ok")
+            and receipt.get("ok") is True
+            and int(verified.get("confirmationCount") or 0) == 2
+        )
+        return {
+            "ok": ok,
+            "status": (
+                "FREELLMPOOL_DOUBLE_CANARY_VERIFIED"
+                if ok
+                else "FREELLMPOOL_RUNTIME_CANARY_FAILED"
+            ),
+            "modelCount": int(receipt.get("modelCount") or 0),
+            "requestedModel": str(verified.get("requestedModel") or "") if ok else "",
+            "providerId": str(verified.get("providerId") or "") if ok else "",
+            "providerModel": str(verified.get("providerModel") or "") if ok else "",
+            "responseModel": str(verified.get("responseModel") or "") if ok else "",
+            "canaryConfirmationCount": int(verified.get("confirmationCount") or 0),
+            "attemptedCandidates": int(receipt.get("attemptedCandidates") or 0),
+            "rawProviderResponsesReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    @staticmethod
     def _patchmon_http_canary() -> dict[str, Any]:
         last_error = ""
         for _attempt in range(30):
@@ -1761,6 +2099,8 @@ const call = async (names, payload) => {
             transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "sovereign-freellmapi":
             transport_verified = self._freellmapi_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "sovereign-freellmpool":
+            transport_verified = self._freellmpool_transport_ready(states.get(stack.anchor_container, {}))
         else:
             transport_verified = True
 
@@ -1784,6 +2124,8 @@ const call = async (names, payload) => {
                 "authenticatedModels": authenticated_models,
                 "secretValuesReturned": False,
             }
+        elif stack.stack_id == "sovereign-freellmpool":
+            runtime_canary = self._freellmpool_runtime_canary()
         elif stack.stack_id == "milvus-sovereign":
             transport_canary = self._milvus_runtime_canary()
             collection_canary = (

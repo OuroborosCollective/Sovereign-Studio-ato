@@ -11,6 +11,10 @@ FREELLM_TRANSPORT: Final[str] = "freellm"
 LEGACY_LITELLM_TRANSPORT: Final[str] = "litellm"
 OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
 FREELLM_BASE_URL: Final[str] = "http://freellmapi:3001/v1"
+FREELLMPOOL_BASE_URL: Final[str] = "http://freellmpool:8080/v1"
+FREELLM_BASE_URLS: Final[frozenset[str]] = frozenset(
+    {FREELLM_BASE_URL, FREELLMPOOL_BASE_URL}
+)
 SUPPORTED_EXECUTION_TRANSPORTS: Final[frozenset[str]] = frozenset(
     {OPENROUTER_TRANSPORT, FREELLM_TRANSPORT}
 )
@@ -94,7 +98,7 @@ def route_is_direct_freellm(route: dict[str, Any]) -> bool:
         not bool(route.get("disabled"))
         and route_transport(route) == FREELLM_TRANSPORT
         and route_profile(route) == "free_single_agent"
-        and route_api_base(route) == FREELLM_BASE_URL
+        and route_api_base(route) in FREELLM_BASE_URLS
         and config.get("direct") is True
     )
 

@@ -1,0 +1,530 @@
+name: Sovereign FreeLLMPool Upstream Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sovereign-freellmpool-verify.yml'
+      - 'tools/sovereign-chatgpt-mcp/managed_compose.py'
+      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**'
+      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_contracts.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_runtime.py'
+      - 'scripts/sovereign-backend/llm_transport.py'
+      - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
+      - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
+  push:
+    branches:
+      - 'sovereign/chatgpt/1784761323-integrate-private-freellmpool-free-sourc-7f530f'
+    paths:
+      - '.github/workflows/sovereign-freellmpool-verify.yml'
+      - 'tools/sovereign-chatgpt-mcp/managed_compose.py'
+      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**'
+      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_contracts.py'
+      - 'scripts/sovereign-backend/free_revolver_provider_runtime.py'
+      - 'scripts/sovereign-backend/llm_transport.py'
+      - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
+      - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PUBLISH_IMAGE: ghcr.io/ouroboroscollective/sovereign-freellmpool
+  LOCAL_IMAGE: sovereign-freellmpool-ci
+  UPSTREAM_VERSION: '0.11.4'
+  UPSTREAM_REVISION: f9e09e536682083297cfd6fec3ea5d3aac5262c8
+
+jobs:
+  verify:
+    name: Resolve digest and verify private non-root proxy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Sovereign revision
+        uses: actions/checkout@v4
+
+      - name: Checkout exact upstream revision
+        uses: actions/checkout@v4
+        with:
+          repository: 0xzr/freellmpool
+          ref: ${{ env.UPSTREAM_REVISION }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Build exact source reproducibly and optionally publish immutable image
+        id: image
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-evidence
+          failure_family="build_initialization"
+          on_exit() {
+            status=$?
+            if [[ ${status} -ne 0 ]]; then
+              printf '{"ok":false,"failureFamily":"%s","secretValuesReturned":false}\n' \
+                "${failure_family}" > .sovereign-evidence/freellmpool-build-failure.json
+              echo "failure_family=${failure_family}" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          trap on_exit EXIT
+
+          failure_family="upstream_revision_contract"
+          test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_REVISION}"
+          test "$(python -c 'import tomllib; print(tomllib.load(open("upstream/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
+
+          failure_family="normalized_source_context"
+          source_epoch="$(git -C upstream show -s --format=%ct "${UPSTREAM_REVISION}")"
+          test "${source_epoch}" -gt 0
+          source_created="$(date -u -d "@${source_epoch}" '+%Y-%m-%dT%H:%M:%SZ')"
+
+          rm -rf upstream-normalized
+          mkdir -p upstream-normalized
+          git -C upstream archive --format=tar "${UPSTREAM_REVISION}" \
+            | tar --extract --directory upstream-normalized
+          test "$(python -c 'import tomllib; print(tomllib.load(open("upstream-normalized/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
+          python - <<'PY'
+          import re
+          import tomllib
+
+          project = tomllib.load(open('upstream-normalized/pyproject.toml', 'rb'))['project']
+          dependencies = project.get('dependencies') or []
+          names = [re.split(r'[<>=!~;\[ ]', str(value), maxsplit=1)[0].lower() for value in dependencies]
+          if names != ['httpx']:
+              raise SystemExit(f'unexpected runtime dependency contract: {names}')
+          PY
+          find upstream-normalized -exec touch -h -d "@${source_epoch}" {} +
+
+          failure_family="base_image_resolution"
+          docker pull python:3.12-slim
+          base_repo_digest="$(docker image inspect python:3.12-slim --format '{{index .RepoDigests 0}}')"
+          case "${base_repo_digest}" in
+            python@sha256:*) ;;
+            *) echo "unexpected Python base digest: ${base_repo_digest}" >&2; exit 1 ;;
+          esac
+
+          failure_family="deterministic_dependency_bundle"
+          cat > upstream-normalized/sovereign-runtime-requirements.txt <<'EOF'
+          anyio==4.10.0
+          certifi==2025.8.3
+          h11==0.16.0
+          httpcore==1.0.9
+          httpx==0.28.1
+          idna==3.10
+          sniffio==1.3.1
+          typing_extensions==4.14.1
+          EOF
+          rm -rf upstream-normalized/wheelhouse upstream-normalized/runtime-site
+          mkdir -p upstream-normalized/wheelhouse upstream-normalized/runtime-site
+          python -m pip download \
+            --disable-pip-version-check \
+            --only-binary=:all: \
+            --no-deps \
+            --requirement upstream-normalized/sovereign-runtime-requirements.txt \
+            --dest upstream-normalized/wheelhouse
+          test "$(find upstream-normalized/wheelhouse -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 8
+          (
+            cd upstream-normalized/wheelhouse
+            sha256sum -- *.whl | LC_ALL=C sort
+          ) > upstream-normalized/sovereign-wheelhouse.sha256
+          dependency_lock_sha256="$(sha256sum upstream-normalized/sovereign-wheelhouse.sha256 | cut -d' ' -f1)"
+          test "${#dependency_lock_sha256}" = "64"
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          target = Path('upstream-normalized/runtime-site')
+          for wheel in sorted(Path('upstream-normalized/wheelhouse').glob('*.whl')):
+              with zipfile.ZipFile(wheel) as archive:
+                  archive.extractall(target)
+          PY
+          find upstream-normalized/runtime-site -exec touch -h -d "@${source_epoch}" {} +
+          touch -h -d "@${source_epoch}" \
+            upstream-normalized/sovereign-runtime-requirements.txt \
+            upstream-normalized/sovereign-wheelhouse.sha256
+
+          failure_family="dockerfile_normalization"
+          cat > upstream-normalized/Dockerfile.sovereign <<EOF
+          FROM ${base_repo_digest}
+          ARG SOURCE_DATE_EPOCH
+          ENV SOURCE_DATE_EPOCH=\${SOURCE_DATE_EPOCH}
+          ENV PYTHONDONTWRITEBYTECODE=1
+          ENV PYTHONPATH=/opt/freellmpool/src
+          ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+          WORKDIR /opt/freellmpool
+          COPY runtime-site/ /usr/local/lib/python3.12/site-packages/
+          COPY src/ /opt/freellmpool/src/
+          COPY pyproject.toml README.md LICENSE /opt/freellmpool/
+          ENTRYPOINT ["python", "-m", "freellmpool.cli"]
+          EOF
+          touch -h -d "@${source_epoch}" upstream-normalized/Dockerfile.sovereign
+          grep -qx "FROM ${base_repo_digest}" upstream-normalized/Dockerfile.sovereign
+          grep -qx 'ENTRYPOINT \["python", "-m", "freellmpool.cli"\]' upstream-normalized/Dockerfile.sovereign
+
+          local_ref_a="${LOCAL_IMAGE}:${GITHUB_SHA}-a"
+          local_ref_b="${LOCAL_IMAGE}:${GITHUB_SHA}-b"
+          common_build_args=(
+            --file upstream-normalized/Dockerfile.sovereign
+            --build-arg "SOURCE_DATE_EPOCH=${source_epoch}"
+            --build-arg "BUILDKIT_MULTI_PLATFORM=1"
+            --label "org.opencontainers.image.created=${source_created}"
+            --label "org.opencontainers.image.revision=${UPSTREAM_REVISION}"
+            --label "org.opencontainers.image.version=${UPSTREAM_VERSION}"
+            --no-cache
+            --provenance=false
+            --sbom=false
+            --output "type=docker,rewrite-timestamp=true"
+          )
+          failure_family="first_no_cache_build"
+          SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
+            "${common_build_args[@]}" --tag "${local_ref_a}" upstream-normalized
+          failure_family="second_no_cache_build"
+          SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
+            "${common_build_args[@]}" --tag "${local_ref_b}" upstream-normalized
+
+          failure_family="runtime_content_identity_mismatch"
+          docker image inspect "${local_ref_a}" > .sovereign-evidence/freellmpool-image-a.json
+          docker image inspect "${local_ref_b}" > .sovereign-evidence/freellmpool-image-b.json
+          container_a="$(docker create "${local_ref_a}")"
+          container_b="$(docker create "${local_ref_b}")"
+          trap 'docker rm -f "${container_a:-}" "${container_b:-}" >/dev/null 2>&1 || true; on_exit' EXIT
+          docker export "${container_a}" > .sovereign-evidence/freellmpool-rootfs-a.tar
+          docker export "${container_b}" > .sovereign-evidence/freellmpool-rootfs-b.tar
+          docker rm "${container_a}" "${container_b}" >/dev/null
+          container_a=""
+          container_b=""
+          python - <<'PY'
+          import hashlib
+          import json
+          import tarfile
+          from pathlib import Path
+
+          def filesystem_identity(path: str) -> dict[str, object]:
+              records = []
+              with tarfile.open(path, 'r:*') as archive:
+                  for member in sorted(archive.getmembers(), key=lambda item: item.name):
+                      record = {
+                          'path': member.name,
+                          'type': member.type.decode('latin1') if isinstance(member.type, bytes) else str(member.type),
+                          'mode': int(member.mode),
+                          'uid': int(member.uid),
+                          'gid': int(member.gid),
+                          'linkname': member.linkname,
+                          'size': int(member.size),
+                      }
+                      if member.isfile():
+                          stream = archive.extractfile(member)
+                          if stream is None:
+                              raise SystemExit(f'missing tar payload: {member.name}')
+                          record['contentSha256'] = hashlib.sha256(stream.read()).hexdigest()
+                      records.append(record)
+              encoded = json.dumps(records, sort_keys=True, separators=(',', ':')).encode('utf-8')
+              return {'filesystemSha256': hashlib.sha256(encoded).hexdigest(), 'entryCount': len(records)}
+
+          def runtime_config(path: str) -> dict[str, object]:
+              payload = json.loads(Path(path).read_text('utf-8'))[0]
+              config = payload.get('Config') or {}
+              return {
+                  'entrypoint': config.get('Entrypoint'),
+                  'cmd': config.get('Cmd'),
+                  'env': sorted(config.get('Env') or []),
+                  'workingDir': config.get('WorkingDir'),
+                  'user': config.get('User'),
+                  'labels': dict(sorted((config.get('Labels') or {}).items())),
+              }
+
+          identities = []
+          for suffix in ('a', 'b'):
+              identity = {
+                  **filesystem_identity(f'.sovereign-evidence/freellmpool-rootfs-{suffix}.tar'),
+                  'runtimeConfig': runtime_config(f'.sovereign-evidence/freellmpool-image-{suffix}.json'),
+              }
+              encoded = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
+              Path(f'.sovereign-evidence/freellmpool-runtime-identity-{suffix}.json').write_text(
+                  json.dumps(identity, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              )
+              identities.append((identity, hashlib.sha256(encoded).hexdigest()))
+          if identities[0][0] != identities[1][0]:
+              raise SystemExit('runtime content identity mismatch')
+          Path('.sovereign-evidence/freellmpool-runtime-content-sha256.txt').write_text(
+              identities[0][1] + '\n', encoding='utf-8'
+          )
+          PY
+          rm -f .sovereign-evidence/freellmpool-rootfs-a.tar .sovereign-evidence/freellmpool-rootfs-b.tar
+          runtime_content_sha256="$(cat .sovereign-evidence/freellmpool-runtime-content-sha256.txt)"
+          test "${#runtime_content_sha256}" = "64"
+          image_id_a="$(docker image inspect "${local_ref_a}" --format '{{.Id}}')"
+          image_id_b="$(docker image inspect "${local_ref_b}" --format '{{.Id}}')"
+          test -n "${image_id_a}"
+          local_ref="${local_ref_a}"
+          image_id="${image_id_a}"
+
+          repo_digest=""
+          digest=""
+          digest_hex=""
+          runtime_ref="${local_ref}"
+          failure_family="immutable_registry_publish"
+          if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+            publish_tag="${PUBLISH_IMAGE}:runtime-${runtime_content_sha256}-${GITHUB_RUN_ID}"
+            docker tag "${local_ref}" "${publish_tag}"
+            push_output="$(docker push "${publish_tag}")"
+            digest="$(printf '%s\n' "${push_output}" | sed -nE 's/^.*digest: (sha256:[0-9a-f]{64}).*$/\1/p' | tail -n1)"
+            test -n "${digest}"
+            digest_hex="${digest#sha256:}"
+            test "${#digest_hex}" = "64"
+            repo_digest="${PUBLISH_IMAGE}@${digest}"
+            docker pull "${repo_digest}"
+            runtime_ref="${repo_digest}"
+          fi
+
+          echo "repo_digest=${repo_digest}" >> "$GITHUB_OUTPUT"
+          echo "digest_hex=${digest_hex}" >> "$GITHUB_OUTPUT"
+          echo "runtime_ref=${runtime_ref}" >> "$GITHUB_OUTPUT"
+          echo "base_repo_digest=${base_repo_digest}" >> "$GITHUB_OUTPUT"
+          echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
+          echo "source_epoch=${source_epoch}" >> "$GITHUB_OUTPUT"
+          echo "dependency_lock_sha256=${dependency_lock_sha256}" >> "$GITHUB_OUTPUT"
+          echo "runtime_content_sha256=${runtime_content_sha256}" >> "$GITHUB_OUTPUT"
+          echo "runtime_content_reproducible_verified=true" >> "$GITHUB_OUTPUT"
+          echo "failure_family=" >> "$GITHUB_OUTPUT"
+          trap - EXIT
+
+      - name: Upload secret-free build failure evidence
+        if: failure() && steps.image.outputs.failure_family != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-freellmpool-build-failure-${{ steps.image.outputs.failure_family }}
+          path: .sovereign-evidence/freellmpool-build-failure.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Verify package version and non-root execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_ref="${{ steps.image.outputs.runtime_ref }}"
+          version="$(docker run --rm \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/tmp/freellmpool \
+            --entrypoint python \
+            "${digest_ref}" \
+            -c 'import freellmpool; print(freellmpool.__version__)')"
+          test "${version}" = "${UPSTREAM_VERSION}"
+          uid="$(docker run --rm \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/tmp/freellmpool \
+            --entrypoint python \
+            "${digest_ref}" \
+            -c 'import os; print(os.getuid())')"
+          test "${uid}" = "10001"
+
+      - name: Start isolated proxy with no published ports
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_ref="${{ steps.image.outputs.runtime_ref }}"
+          docker network create sovereign-freellmpool-ci >/dev/null
+          proxy_key="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          docker run -d \
+            --name sovereign-freellmpool-ci \
+            --network sovereign-freellmpool-ci \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/tmp/freellmpool \
+            --env FREELLMPOOL_PROXY_KEY="${proxy_key}" \
+            "${digest_ref}" \
+            proxy --host 0.0.0.0 --port 8080 >/dev/null
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.Config.User}}')" = "10001:10001"
+          port_bindings="$(docker inspect sovereign-freellmpool-ci --format '{{json .HostConfig.PortBindings}}')"
+          test "${port_bindings}" = "null" || test "${port_bindings}" = "{}"
+          test -z "$(docker port sovereign-freellmpool-ci)"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.Privileged}}')" = "false"
+          test "$(docker inspect sovereign-freellmpool-ci --format '{{.HostConfig.NetworkMode}}')" = "sovereign-freellmpool-ci"
+
+      - name: Verify liveness, catalog and bounded keyless canaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-evidence
+          for attempt in $(seq 1 30); do
+            if docker exec --user 10001:10001 sovereign-freellmpool-ci python -c \
+              'import json, urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3))["status"])' \
+              | grep -qx ok; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec -i --user 10001:10001 sovereign-freellmpool-ci python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          request = urllib.request.Request(
+              "http://127.0.0.1:8080/v1/models",
+              headers={"Authorization": f"Bearer {os.environ['FREELLMPOOL_PROXY_KEY']}"},
+          )
+          with urllib.request.urlopen(request, timeout=10) as response:
+              payload = json.load(response)
+          rows = payload.get("data") if isinstance(payload, dict) else None
+          assert isinstance(rows, list) and rows, "catalog unavailable"
+          print(json.dumps({"catalogCount": len(rows), "catalogIsReadinessProof": False}))
+          PY
+          docker exec -i --user 10001:10001 sovereign-freellmpool-ci python - <<'PY' > .sovereign-evidence/freellmpool-keyless-canaries.json
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          candidates = [
+              "pollinations/openai",
+              "ovh/Llama-3.1-8B-Instruct",
+              "kilo/openrouter/free",
+              "llm7/codestral-latest",
+          ]
+          receipts = []
+          for model in candidates:
+              request = urllib.request.Request(
+                  "http://127.0.0.1:8080/v1/chat/completions",
+                  data=json.dumps({
+                      "model": model,
+                      "messages": [{"role": "user", "content": "Reply with OK."}],
+                      "max_tokens": 8,
+                      "temperature": 0,
+                  }).encode("utf-8"),
+                  headers={
+                      "Content-Type": "application/json",
+                      "Authorization": f"Bearer {os.environ['FREELLMPOOL_PROXY_KEY']}",
+                  },
+                  method="POST",
+              )
+              receipt = {"requestedModel": model, "ok": False, "httpStatus": 0}
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      raw = response.read(2_000_001)
+                      assert len(raw) <= 2_000_000
+                      payload = json.loads(raw)
+                      choices = payload.get("choices") if isinstance(payload, dict) else None
+                      used = payload.get("x_freellmpool") if isinstance(payload, dict) else None
+                      receipt.update({
+                          "ok": bool(isinstance(choices, list) and choices),
+                          "httpStatus": int(response.status),
+                          "provider": str((used or {}).get("provider") or "")[:80],
+                          "providerModel": str((used or {}).get("model") or "")[:160],
+                          "responseModel": str(payload.get("model") or "")[:240],
+                          "responseContentPersisted": False,
+                      })
+              except urllib.error.HTTPError as error:
+                  receipt.update({"httpStatus": int(error.code), "failureFamily": "http_error"})
+              except Exception as error:
+                  receipt.update({"failureFamily": type(error).__name__[:80]})
+              receipts.append(receipt)
+          print(json.dumps({
+              "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+              "releaseVersion": "0.11.4",
+              "receipts": receipts,
+              "successful": sum(1 for item in receipts if item["ok"]),
+              "responseContentPersisted": False,
+          }, sort_keys=True))
+          PY
+          python -m json.tool .sovereign-evidence/freellmpool-keyless-canaries.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          receipt = json.loads(
+              Path('.sovereign-evidence/freellmpool-keyless-canaries.json').read_text('utf-8')
+          )
+          assert int(receipt.get('successful') or 0) >= 1, 'no keyless provider canary succeeded'
+          PY
+
+      - name: Write immutable evidence receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          canaries = json.loads(Path('.sovereign-evidence/freellmpool-keyless-canaries.json').read_text('utf-8'))
+          receipt = {
+              "schemaVersion": "sovereign.freellmpool-upstream-image.v1",
+              "sovereignRevision": "${{ github.sha }}",
+              "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+              "releaseVersion": "0.11.4",
+              "image": "${{ steps.image.outputs.repo_digest }}",
+              "imageId": "${{ steps.image.outputs.image_id }}",
+              "baseImage": "${{ steps.image.outputs.base_repo_digest }}",
+              "sourceDateEpoch": int("${{ steps.image.outputs.source_epoch }}"),
+              "dependencyLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
+              "runtimeContentSha256": "${{ steps.image.outputs.runtime_content_sha256 }}",
+              "runtimeContentReproducibleVerified": "${{ steps.image.outputs.runtime_content_reproducible_verified }}" == "true",
+              "independentNoCacheBuilds": 2,
+              "localImageIdsEqual": False,
+              "nonRootUid": 10001,
+              "readOnlyRootFilesystem": True,
+              "hostPortsPublished": False,
+              "portBindingsVerifiedEmpty": True,
+              "dockerSocketMounted": False,
+              "healthVerified": True,
+              "catalogVerified": True,
+              "catalogIsReadinessProof": False,
+              "keylessCanaries": canaries,
+          }
+          Path('.sovereign-evidence/freellmpool-image.json').write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          PY
+          python -m json.tool .sovereign-evidence/freellmpool-image.json
+          {
+            echo '### Sovereign FreeLLMPool upstream verification'
+            echo '- Release: `v0.11.4`'
+            echo '- Upstream revision: `${{ env.UPSTREAM_REVISION }}`'
+            echo '- Immutable image: `${{ steps.image.outputs.repo_digest }}`'
+            echo '- Reproducible runtime content: `2/2 identical`'
+            echo '- Runtime content SHA-256: `${{ steps.image.outputs.runtime_content_sha256 }}`'
+            echo '- Dependency lock SHA-256: `${{ steps.image.outputs.dependency_lock_sha256 }}`'
+            echo '- Forced runtime UID: `10001`'
+            echo '- Host ports: `none`'
+            echo '- Root filesystem: `read-only`'
+            echo '- Catalog treated as readiness proof: `false`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload secret-free verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-freellmpool-${{ steps.image.outputs.digest_hex }}-${{ steps.image.outputs.runtime_content_sha256 }}
+          path: .sovereign-evidence/*.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Cleanup isolated proxy
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f sovereign-freellmpool-ci >/dev/null 2>&1 || true
+          docker network rm sovereign-freellmpool-ci >/dev/null 2>&1 || true
