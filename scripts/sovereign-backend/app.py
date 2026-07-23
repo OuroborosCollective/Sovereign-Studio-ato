@@ -2168,6 +2168,7 @@ def health_ready():
                 "034_freellm_provider_check_kinds.sql",
                 "035_freellmpool_private_source.sql",
                 "036_llm_route_scanner_candidates.sql",
+                "037_reenable_verified_direct_freellm_routes.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
