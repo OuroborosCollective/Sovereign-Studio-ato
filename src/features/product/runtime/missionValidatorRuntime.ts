@@ -1,8 +1,16 @@
+import { resolvePrimaryBridgeConfig } from '../llm/primaryBridgeConfig';
+
 export interface MissionValidationResult {
   readonly score: number;
   readonly specificEnough: boolean;
   readonly questions: readonly string[];
   readonly evidence: readonly string[];
+  readonly status?: 'ready' | 'deterministic_fallback';
+  readonly modelUsed?: string;
+  readonly resolvedTransport?: string;
+  readonly fallbackUsed?: boolean;
+  readonly attemptedRouteCount?: number;
+  readonly error?: string;
 }
 
 const ACTION_PATTERN = /\b(add|build|change|create|delete|fix|implement|integrate|migrate|refactor|remove|repair|replace|test|update|analyse|analysiere|baue|behebe|ändere|erstelle|füge|implementiere|integriere|lösche|migriere|prüfe|repariere|teste|überarbeite)\b/i;
@@ -66,6 +74,37 @@ export function validateMissionSpecificity(mission: string): MissionValidationRe
     questions: questions.slice(0, 3),
     evidence,
   };
+}
+
+export async function requestMissionValidation(mission: string): Promise<MissionValidationResult> {
+  const fallback = validateMissionSpecificity(mission);
+  try {
+    const base = resolvePrimaryBridgeConfig().backendBaseUrl;
+    const response = await fetch(`${base}/api/user/agent/validate-mission`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ mission }),
+    });
+    const payload = await response.json() as Partial<MissionValidationResult>;
+    if (!response.ok || typeof payload.score !== 'number' || !Number.isFinite(payload.score)) {
+      return { ...fallback, status: 'deterministic_fallback', error: payload.error || `Mission validation HTTP ${response.status}` };
+    }
+    return {
+      score: Math.max(0, Math.min(100, Number(payload.score))),
+      specificEnough: payload.specificEnough === true,
+      questions: Array.isArray(payload.questions) ? payload.questions.filter((value): value is string => typeof value === 'string').slice(0, 3) : fallback.questions,
+      evidence: Array.isArray(payload.evidence) ? payload.evidence.filter((value): value is string => typeof value === 'string') : fallback.evidence,
+      status: payload.status === 'ready' ? 'ready' : 'deterministic_fallback',
+      modelUsed: payload.modelUsed,
+      resolvedTransport: payload.resolvedTransport,
+      fallbackUsed: payload.fallbackUsed,
+      attemptedRouteCount: payload.attemptedRouteCount,
+      error: payload.error,
+    };
+  } catch (error) {
+    return { ...fallback, status: 'deterministic_fallback', error: error instanceof Error ? error.message : 'Mission validation unavailable' };
+  }
 }
 
 export function formatMissionPreflight(result: MissionValidationResult): string {

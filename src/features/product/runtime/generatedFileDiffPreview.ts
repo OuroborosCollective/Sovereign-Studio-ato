@@ -140,6 +140,46 @@ export function buildGeneratedFileDiffReport(
   };
 }
 
+export function buildGeneratedFileDiffReportFromUnifiedDiff(diffText: string): GeneratedFileDiffReport {
+  const sections = diffText.split(/^diff --git /m).map((section) => section.trim()).filter(Boolean);
+  const files: GeneratedFileDiffItem[] = sections.map((section) => {
+    const header = section.match(/^a\/(.+?) b\/(.+)$/m);
+    const plusPath = section.match(/^\+\+\+ (?:b\/)?(.+)$/m);
+    const path = (plusPath?.[1] && plusPath[1] !== '/dev/null' ? plusPath[1] : header?.[2] || header?.[1] || 'unknown').trim();
+    const lines = section.split(/\r?\n/);
+    const addedLines = lines.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
+    const removedLines = lines.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+    const kind: GeneratedFileDiffKind = section.includes('new file mode') ? 'created' : 'modified';
+    return {
+      path,
+      kind,
+      oldLineCount: 0,
+      newLineCount: 0,
+      addedLines,
+      removedLines,
+      changed: addedLines + removedLines > 0,
+      summary: kind === 'created'
+        ? `${path} is created in the real workspace diff.`
+        : `${path} changes by +${addedLines}/-${removedLines} line(s) in the real workspace diff.`,
+      preview: preview(`diff --git ${section}`),
+    };
+  });
+  const created = files.filter((file) => file.kind === 'created').length;
+  const modified = files.filter((file) => file.kind === 'modified').length;
+  const totalAddedLines = files.reduce((sum, file) => sum + file.addedLines, 0);
+  const totalRemovedLines = files.reduce((sum, file) => sum + file.removedLines, 0);
+  return {
+    files,
+    created,
+    modified,
+    unchanged: 0,
+    sourceMissing: 0,
+    totalAddedLines,
+    totalRemovedLines,
+    summary: `${files.length} real diff file(s): ${created} created, ${modified} modified.`,
+  };
+}
+
 export function assertDiffPreviewReady(report: GeneratedFileDiffReport): void {
   if (!report.files.length) throw new Error('No generated files available for diff preview.');
   if (report.sourceMissing === report.files.length) {

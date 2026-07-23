@@ -15,6 +15,14 @@ from typing import Any, Callable
 from flask import jsonify, request
 
 from .auto_code_review import AutoCodeReviewInput, auto_code_review, auto_code_review_signal
+from .productivity_insights import (
+    changelog_signal,
+    diff_narration_signal,
+    generate_changelog,
+    mission_validation_signal,
+    narrate_diff,
+    validate_mission,
+)
 from .contracts import SovereignAgentEvent, normalize_agent_job_result
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
@@ -195,7 +203,10 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     - POST /api/user/agent/jobs/<job_id>/tools/diff
     - POST /api/user/agent/jobs/<job_id>/tools/test
     - POST /api/user/agent/jobs/<job_id>/tools/janitor
+    - POST /api/user/agent/validate-mission
     - POST /api/user/agent/jobs/<job_id>/review
+    - POST /api/user/agent/jobs/<job_id>/diff-narration
+    - POST /api/user/agent/jobs/<job_id>/changelog
     - POST /api/user/agent/jobs/<job_id>/draft-pr/prepare
     - POST /api/user/agent/jobs/<job_id>/draft-pr/create
     - POST /api/user/agent/jobs/<job_id>/patterns/learn
@@ -218,14 +229,17 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     def _read_owned_job(conn, user_id: str, job_id: str):
         return read_agent_job(conn, user_id=user_id, job_id=job_id)
 
-    def _review_job_diff(job: Any, user_id: str):
+    def _real_job_diff(job: Any) -> str:
         diff_result = run_agent_job_tool(job, "diff", {}, _workspace_root())
-        diff_text = str(diff_result.output or diff_result.stdout or "")
         if diff_result.status != "done":
-            diff_text = ""
+            return ""
+        diff_text = str(diff_result.output or diff_result.stdout or "")
+        return "" if diff_text.strip() == "No changes" else diff_text
+
+    def _review_job_diff(job: Any, user_id: str):
         return auto_code_review(
             AutoCodeReviewInput(
-                diff_text=diff_text,
+                diff_text=_real_job_diff(job),
                 changed_files=tuple(job.changed_files),
                 job_id=job.job_id,
                 mission=job.mission,
@@ -394,6 +408,17 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             }), status_code
         finally:
             _close(conn)
+
+    @app.route("/api/user/agent/validate-mission", methods=["POST"])
+    @require_session
+    def user_validate_agent_mission():
+        user_id = _current_session_user_id()
+        body = request.get_json(force=True) or {}
+        mission = str(body.get("mission") or "").strip()
+        if not mission:
+            return jsonify({"error": "mission is required"}), 400
+        result = validate_mission(mission, get_connection=_connection, user_id=user_id)
+        return jsonify(mission_validation_signal(result)), 200
 
     @app.route("/api/user/agent/jobs", methods=["GET"])
     @require_session
@@ -596,6 +621,57 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             ))
             status_code = 503 if review.decision == "blocked_unavailable" else 200
             return jsonify(signal), status_code
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/diff-narration", methods=["POST"])
+    @require_session
+    def user_narrate_agent_job_diff(job_id: str):
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            result = narrate_diff(
+                _real_job_diff(job), tuple(job.changed_files),
+                get_connection=_connection, user_id=user_id, job_id=job_id,
+            )
+            append_agent_event(conn, job_id, SovereignAgentEvent(
+                stage="semantic_diff_narration_ready" if result.status == "ready" else "semantic_diff_narration_blocked",
+                level="success" if result.status == "ready" else "warning",
+                message=(f"Semantic narration: {len(result.narratives)} file(s)." if result.status == "ready" else f"Semantic narration unavailable: {result.error}")[:1200],
+            ))
+            return jsonify(diff_narration_signal(result)), 200 if result.status == "ready" else 503
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/changelog", methods=["POST"])
+    @require_session
+    def user_generate_agent_job_changelog(job_id: str):
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True) or {}
+        try:
+            max_count = max(1, min(int(body.get("maxCount", 30)), 100))
+        except (TypeError, ValueError):
+            max_count = 30
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            log_result = run_agent_job_tool(job, "git_log", {"max_count": max_count, "oneline": True}, _workspace_root())
+            log_text = str(log_result.output or log_result.stdout or "") if log_result.status == "done" else ""
+            result = generate_changelog(
+                log_text, _real_job_diff(job),
+                get_connection=_connection, user_id=user_id, job_id=job_id,
+            )
+            append_agent_event(conn, job_id, SovereignAgentEvent(
+                stage="changelog_generated" if result.markdown else "changelog_blocked",
+                level="success" if result.markdown else "warning",
+                message=(f"Changelog generated from {result.commit_count} real commit(s) via {result.source}." if result.markdown else f"Changelog unavailable: {result.error}")[:1200],
+            ))
+            return jsonify(changelog_signal(result)), 200 if result.markdown else 503
         finally:
             _close(conn)
 

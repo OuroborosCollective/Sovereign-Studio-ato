@@ -1,6 +1,6 @@
 export type SlashCommandAction =
   | 'analyze' | 'fix' | 'pr' | 'repo' | 'clear'
-  | 'test' | 'templates' | 'export'
+  | 'test' | 'templates' | 'export' | 'diff' | 'changelog'
   | 'skills' | 'scan-skills' | 'skill-run';
 
 export interface SlashCommandDefinition {
@@ -28,6 +28,8 @@ export const BUILTIN_SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
   { cmd: '/test',        label: 'Tests',          action: 'test',        description: 'Echte Tests im Agent-Workspace ausführen' },
   { cmd: '/templates',   label: 'Templates',      action: 'templates',   description: 'Prompt-Bibliothek öffnen' },
   { cmd: '/export',      label: 'Export',         action: 'export',      description: 'Aktuelle Sitzung als Markdown exportieren' },
+  { cmd: '/diff',        label: 'Diff erklären',  action: 'diff',        description: 'Echten Workspace-Diff narrativ anzeigen' },
+  { cmd: '/changelog',   label: 'Changelog',      action: 'changelog',   description: 'Keep-a-Changelog aus echter Git-Historie erzeugen' },
   { cmd: '/skills',      label: 'Skills',         action: 'skills',      description: 'Installierte Skills anzeigen' },
   { cmd: '/scan-skills', label: 'Skill-Scanner', action: 'scan-skills', description: 'Repo nach Skills scannen & installieren' },
 ];
