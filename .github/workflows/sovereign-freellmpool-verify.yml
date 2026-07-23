@@ -66,9 +66,23 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          mkdir -p .sovereign-evidence
+          failure_family="build_initialization"
+          on_exit() {
+            status=$?
+            if [[ ${status} -ne 0 ]]; then
+              printf '{"ok":false,"failureFamily":"%s","secretValuesReturned":false}\n' \
+                "${failure_family}" > .sovereign-evidence/freellmpool-build-failure.json
+              echo "failure_family=${failure_family}" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          trap on_exit EXIT
+
+          failure_family="upstream_revision_contract"
           test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_REVISION}"
           test "$(python -c 'import tomllib; print(tomllib.load(open("upstream/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
 
+          failure_family="normalized_source_context"
           source_epoch="$(git -C upstream show -s --format=%ct "${UPSTREAM_REVISION}")"
           test "${source_epoch}" -gt 0
           source_created="$(date -u -d "@${source_epoch}" '+%Y-%m-%dT%H:%M:%SZ')"
@@ -80,6 +94,7 @@ jobs:
           test "$(python -c 'import tomllib; print(tomllib.load(open("upstream-normalized/pyproject.toml", "rb"))["project"]["version"])')" = "${UPSTREAM_VERSION}"
           find upstream-normalized -exec touch -h -d "@${source_epoch}" {} +
 
+          failure_family="base_image_resolution"
           docker pull python:3.12-slim
           base_repo_digest="$(docker image inspect python:3.12-slim --format '{{index .RepoDigests 0}}')"
           case "${base_repo_digest}" in
@@ -87,6 +102,7 @@ jobs:
             *) echo "unexpected Python base digest: ${base_repo_digest}" >&2; exit 1 ;;
           esac
 
+          failure_family="dockerfile_normalization"
           BASE_REPO_DIGEST="${base_repo_digest}" python - <<'PY'
           import os
           from pathlib import Path
@@ -127,11 +143,14 @@ jobs:
             --sbom=false
             --load
           )
+          failure_family="first_no_cache_build"
           SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
             "${common_build_args[@]}" --tag "${local_ref_a}" upstream-normalized
+          failure_family="second_no_cache_build"
           SOURCE_DATE_EPOCH="${source_epoch}" docker buildx build \
             "${common_build_args[@]}" --tag "${local_ref_b}" upstream-normalized
 
+          failure_family="reproducible_image_identity_mismatch"
           image_id_a="$(docker image inspect "${local_ref_a}" --format '{{.Id}}')"
           image_id_b="$(docker image inspect "${local_ref_b}" --format '{{.Id}}')"
           test -n "${image_id_a}"
@@ -139,6 +158,7 @@ jobs:
           local_ref="${local_ref_a}"
           image_id="${image_id_a}"
 
+          failure_family="dependency_lock_capture"
           dependency_freeze="$(docker run --rm --entrypoint python "${local_ref}" -m pip freeze --all \
             | LC_ALL=C sort)"
           test -n "${dependency_freeze}"
@@ -149,6 +169,7 @@ jobs:
           digest=""
           digest_hex=""
           runtime_ref="${local_ref}"
+          failure_family="immutable_registry_publish"
           if [[ "${GITHUB_EVENT_NAME}" == "push" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
             publish_tag="${PUBLISH_IMAGE}:upstream-${UPSTREAM_REVISION}"
@@ -171,6 +192,18 @@ jobs:
           echo "source_epoch=${source_epoch}" >> "$GITHUB_OUTPUT"
           echo "dependency_lock_sha256=${dependency_lock_sha256}" >> "$GITHUB_OUTPUT"
           echo "reproducible_build_verified=true" >> "$GITHUB_OUTPUT"
+          echo "failure_family=" >> "$GITHUB_OUTPUT"
+          trap - EXIT
+
+      - name: Upload secret-free build failure evidence
+        if: failure() && steps.image.outputs.failure_family != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-freellmpool-build-failure-${{ steps.image.outputs.failure_family }}
+          path: .sovereign-evidence/freellmpool-build-failure.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
 
       - name: Verify package version and non-root execution
         shell: bash
