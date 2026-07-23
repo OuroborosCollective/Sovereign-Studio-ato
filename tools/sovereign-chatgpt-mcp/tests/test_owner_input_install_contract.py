@@ -143,9 +143,13 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert server.count("def freellm_provider_discover(") == 1
     assert server.count("def freellm_provider_recheck(") == 1
     assert "provider_runtime.freellm_status()" in server
-    assert server.count("provider_runtime.freellm_reconcile(") == 2
+    assert server.count("provider_runtime.freellm_discover(") == 1
+    assert server.count("provider_runtime.freellm_reconcile(") == 1
     assert "def freellm_status(" in client
+    assert "def freellm_discover(" in client
     assert "def freellm_reconcile(" in client
+    assert 'f"/api/internal/llm/freellm/providers/{selected}/discover"' in client
+    assert 'f"/api/internal/llm/freellm/providers/{selected}/reconcile"' in client
     assert "payload = owner_input.status(request_id)" in server
     assert "def owner_approval_widget_open(" in server
     assert "meta=OWNER_INPUT_TOOL_META" in server

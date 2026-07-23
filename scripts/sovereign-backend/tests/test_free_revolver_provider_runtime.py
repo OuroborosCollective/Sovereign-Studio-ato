@@ -343,7 +343,13 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "managed-freellm-zero-cost-quota-contract" in runtime
     assert "hmac.compare_digest(expected, presented)" in runtime
     assert '"/api/internal/llm/freellm/providers"' in runtime
+    assert '"/api/internal/llm/freellm/providers/<source_id>/discover"' in runtime
     assert '"/api/internal/llm/freellm/providers/<source_id>/reconcile"' in runtime
+    assert "def internal_discover_managed_freellm_provider" in runtime
+    assert '"managedCatalogBootstrap": True' in runtime
+    assert '"doubleCanaryRequired": True' in runtime
+    assert '"authenticatedCatalogHttpStatus": last_status' in runtime
+    assert '"rawProviderResponsesReturned": False' in runtime
     assert "protected, key = _read_managed_key(" in runtime
     assert "freellm_managed_key_unavailable" in runtime
     assert "free_verified=true, pricing_source=%s" in runtime

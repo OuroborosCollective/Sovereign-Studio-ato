@@ -1296,6 +1296,369 @@ def register_free_revolver_provider_runtime(
             if source.get("auth_mode") in {"bearer", "x-api-key"}:
                 _securely_remove(path)
 
+    @app.route(
+        "/api/internal/llm/freellm/providers/<source_id>/discover",
+        methods=["POST"],
+    )
+    def internal_discover_managed_freellm_provider(source_id: str):
+        """Bootstrap one managed source from a real authenticated catalog and canaries."""
+        if not _internal_owner_authorized():
+            return jsonify({"error": "forbidden", "protectedValuesReturned": False}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            source_id = normalize_provider_source_id(source_id)
+            max_models = normalize_max_auto_activate(body.get("maxModels", 20))
+        except ValueError as exc:
+            return jsonify({
+                "error": str(exc),
+                "protectedValuesReturned": False,
+            }), 409
+        source = query(
+            """SELECT id::text, label, api_base, auth_mode, key_fingerprint,
+                      models_url, status, enabled
+               FROM llm_revolver_provider_sources
+               WHERE id=%s::uuid
+               LIMIT 1""",
+            (source_id,),
+            one=True,
+        )
+        if (
+            not source
+            or not bool(source.get("enabled"))
+            or str(source.get("auth_mode") or "") != _MANAGED_AUTH_MODE
+            or not is_managed_internal_provider_url(str(source.get("api_base") or ""))
+        ):
+            return jsonify({
+                "error": "Nur eine aktivierte verwaltete direkte FreeLLM-Quelle kann initialisiert werden.",
+                "blocker": "free_direct_managed_source_required",
+                "protectedValuesReturned": False,
+            }), 409
+        claimed = query(
+            """UPDATE llm_revolver_provider_sources
+               SET status='probing', last_error_code=NULL, updated_at=NOW()
+               WHERE id=%s::uuid AND enabled=true
+                 AND (
+                   status IN ('degraded','blocked','healthy')
+                   OR (status='probing' AND updated_at < NOW() - INTERVAL '5 minutes')
+                 )
+               RETURNING id::text""",
+            (source_id,),
+            one=True,
+            write=True,
+        )
+        if not claimed:
+            return jsonify({
+                "error": "Provider ist deaktiviert oder eine Discovery läuft bereits.",
+                "blocker": "free_provider_not_discoverable",
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 409
+
+        protected = bytearray()
+        key = ""
+        selected_url = None
+        last_status = None
+        bootstrap_stage = "managed_key_read"
+        try:
+            api_base = str(source.get("api_base") or "")
+            protected, key = _read_managed_key(api_base)
+            key_fingerprint = hashlib.sha256(key.encode()).hexdigest()
+            source_payload = dict(source)
+            source_payload["key_fingerprint"] = key_fingerprint
+            source_payload["key_hint"] = "owner-managed"
+
+            bootstrap_stage = "authenticated_catalog_fetch"
+            payload = None
+            headers = _auth_headers(_MANAGED_AUTH_MODE, key)
+            with requests.Session() as provider_session:
+                provider_session.trust_env = False
+                for candidate in models_url_candidates(api_base):
+                    assert_provider_target_allowed(candidate)
+                    with provider_session.get(
+                        candidate,
+                        headers=headers,
+                        timeout=15,
+                        allow_redirects=False,
+                        stream=True,
+                    ) as response:
+                        last_status = int(response.status_code)
+                        if last_status in {401, 403}:
+                            raise PermissionError("free_provider_credentials_rejected")
+                        if last_status in {404, 405}:
+                            continue
+                        response.raise_for_status()
+                        content_length = int(response.headers.get("Content-Length") or 0)
+                        if content_length > _MAX_MODELS_RESPONSE_BYTES:
+                            raise ValueError("free_provider_models_response_too_large")
+                        raw_payload = response.raw.read(
+                            _MAX_MODELS_RESPONSE_BYTES + 1,
+                            decode_content=True,
+                        )
+                        if len(raw_payload) > _MAX_MODELS_RESPONSE_BYTES:
+                            raise ValueError("free_provider_models_response_too_large")
+                        try:
+                            payload = json.loads(raw_payload.decode("utf-8"))
+                        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                            raise ValueError("free_provider_models_invalid_json") from exc
+                        selected_url = candidate
+                        break
+            if selected_url is None or payload is None:
+                raise ValueError("free_provider_models_endpoint_missing")
+            models = normalize_models_payload(payload, managed_quota_contract=True)
+            model_ids = [str(model["modelId"]) for model in models]
+            eligible_models = [model for model in models if bool(model.get("freeVerified"))]
+
+            bootstrap_stage = "catalog_persistence"
+            connection = get_connection()
+            try:
+                with connection.cursor() as cursor:
+                    for model in models:
+                        cursor.execute(
+                            """INSERT INTO llm_revolver_provider_models
+                                   (source_id, upstream_model_id, display_name, capabilities,
+                                    free_verified, pricing_source, discovery_payload_sha256,
+                                    pricing_verified_at, status, enabled, last_seen_at, updated_at)
+                               VALUES (
+                                   %s::uuid,%s,%s,%s::jsonb,%s,%s,%s,
+                                   CASE WHEN %s THEN NOW() ELSE NULL END,
+                                   %s,false,NOW(),NOW()
+                               )
+                               ON CONFLICT (source_id, upstream_model_id) DO UPDATE SET
+                                   display_name=EXCLUDED.display_name,
+                                   capabilities=EXCLUDED.capabilities,
+                                   free_verified=EXCLUDED.free_verified,
+                                   pricing_source=EXCLUDED.pricing_source,
+                                   discovery_payload_sha256=EXCLUDED.discovery_payload_sha256,
+                                   pricing_verified_at=CASE WHEN EXCLUDED.free_verified THEN NOW() ELSE NULL END,
+                                   status=CASE WHEN llm_revolver_provider_models.status='ready'
+                                               AND EXCLUDED.free_verified THEN 'ready'
+                                               WHEN EXCLUDED.free_verified THEN 'discovered'
+                                               ELSE 'blocked' END,
+                                   enabled=CASE WHEN EXCLUDED.free_verified
+                                                THEN llm_revolver_provider_models.enabled
+                                                ELSE false END,
+                                   last_error_code=CASE WHEN EXCLUDED.free_verified THEN NULL
+                                                        ELSE 'provider_pricing_unverified' END,
+                                   last_seen_at=NOW(), updated_at=NOW()""",
+                            (
+                                source_id,
+                                model["modelId"],
+                                model["displayName"],
+                                json.dumps(model["capabilities"]),
+                                model["freeVerified"],
+                                model["pricingSource"],
+                                model["payloadSha256"],
+                                model["freeVerified"],
+                                "discovered" if model["freeVerified"] else "blocked",
+                            ),
+                        )
+                    if model_ids:
+                        cursor.execute(
+                            """UPDATE llm_revolver_provider_models
+                               SET status='blocked', enabled=false,
+                                   last_error_code='model_missing_from_provider_catalog',
+                                   updated_at=NOW()
+                               WHERE source_id=%s::uuid
+                                 AND NOT (upstream_model_id = ANY(%s))""",
+                            (source_id, model_ids),
+                        )
+                    else:
+                        cursor.execute(
+                            """UPDATE llm_revolver_provider_models
+                               SET status='blocked', enabled=false,
+                                   last_error_code='provider_catalog_empty',
+                                   updated_at=NOW()
+                               WHERE source_id=%s::uuid""",
+                            (source_id,),
+                        )
+                    cursor.execute(
+                        """UPDATE llm_routes AS route
+                           SET disabled=true, updated_at=NOW()
+                           FROM llm_revolver_provider_models AS model
+                           WHERE model.source_id=%s::uuid
+                             AND route.model_id=model.litellm_alias
+                             AND (model.free_verified=false OR model.status='blocked')""",
+                        (source_id,),
+                    )
+                    cursor.execute(
+                        """UPDATE llm_revolver_provider_sources
+                           SET models_url=%s, key_fingerprint=%s,
+                               key_hint='owner-managed', last_http_status=%s,
+                               last_discovered_at=NOW(), last_checked_at=NOW(),
+                               updated_at=NOW()
+                           WHERE id=%s::uuid""",
+                        (selected_url, key_fingerprint, last_status, source_id),
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                connection.close()
+
+            bootstrap_stage = "double_canary_activation"
+            ready = []
+            blocked = []
+            for model in eligible_models[:max_models]:
+                result = activate_model(source_payload, model, key)
+                if result.get("ok"):
+                    ready.append({
+                        "modelId": model["modelId"],
+                        "routeId": result.get("routeId"),
+                        "sourceType": result.get("sourceType"),
+                        "providerId": result.get("providerId"),
+                        "providerModel": result.get("providerModel"),
+                        "responseModel": result.get("responseModel"),
+                        "upstreamKeyless": result.get("upstreamKeyless"),
+                        "canaryConfirmationCount": result.get("canaryConfirmationCount"),
+                        "canaryCostState": result.get("canaryCostState"),
+                    })
+                    continue
+                blocker = str(
+                    result.get("blocker")
+                    or result.get("error")
+                    or "free_provider_canary_failed"
+                )[:120]
+                blocked.append({"modelId": model["modelId"], "blocker": blocker})
+                query(
+                    """UPDATE llm_revolver_provider_models
+                       SET status='blocked', enabled=false, last_error_code=%s,
+                           updated_at=NOW()
+                       WHERE source_id=%s::uuid AND upstream_model_id=%s""",
+                    (blocker, source_id, model["modelId"]),
+                    write=True,
+                )
+            status = (
+                "healthy"
+                if ready and not blocked
+                else "degraded"
+                if ready or models
+                else "blocked"
+            )
+            error_code = (
+                "some_freellm_routes_blocked"
+                if ready and blocked
+                else None
+                if ready
+                else "no_freellm_route_activated"
+            )
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status=%s, last_error_code=%s, last_checked_at=NOW(),
+                       updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (status, error_code, source_id),
+                write=True,
+            )
+            persist_check(
+                source_id,
+                check_kind="models_discovery",
+                models_url=selected_url,
+                http_status=last_status,
+                outcome=(
+                    "success"
+                    if ready and not blocked
+                    else "degraded"
+                    if ready or models
+                    else "blocked"
+                ),
+                model_count=len(models),
+                free_count=len(ready),
+                evidence={
+                    "readyModelIds": [item["modelId"] for item in ready],
+                    "blockedModelIds": [item["modelId"] for item in blocked],
+                    "transport": "freellm",
+                    "managedCatalogBootstrap": True,
+                    "authenticatedCatalogHttpStatus": last_status,
+                    "doubleCanaryRequired": True,
+                    "rawProviderResponsesPersisted": False,
+                },
+            )
+            return jsonify({
+                "ok": bool(ready),
+                "status": status,
+                "sourceId": source_id,
+                "modelsUrl": selected_url,
+                "authenticatedCatalogHttpStatus": last_status,
+                "keyFingerprintPresent": True,
+                "discovered": len(models),
+                "eligible": len(eligible_models),
+                "ready": ready,
+                "blocked": blocked,
+                "transport": "freellm",
+                "executionProfile": "free_single_agent",
+                "maxForegroundAgents": 1,
+                "maxBackgroundAgents": 0,
+                "protectedValuesReturned": False,
+                "rawProviderResponsesReturned": False,
+            }), 200 if ready else 409
+        except PermissionError as exc:
+            code = str(exc)[:120] or "free_provider_credentials_rejected"
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status='blocked', last_http_status=%s,
+                       last_error_code=%s, last_checked_at=NOW(), updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (last_status, code, source_id),
+                write=True,
+            )
+            persist_check(
+                source_id,
+                check_kind="models_discovery",
+                models_url=selected_url,
+                http_status=last_status,
+                outcome="blocked",
+                model_count=0,
+                free_count=0,
+                evidence={"blocker": code, "rawProviderResponsesPersisted": False},
+            )
+            return jsonify({
+                "error": "Provider-Zugang wurde abgelehnt.",
+                "blocker": code,
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 401
+        except ManagedKeyContractError as exc:
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status='degraded', last_error_code=%s,
+                       last_checked_at=NOW(), updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (exc.code, source_id),
+                write=True,
+            )
+            return jsonify({
+                "error": "Der verwaltete FreeLLM-Schlüssel konnte nicht sicher gelesen werden.",
+                "blocker": exc.code,
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 503
+        except (OSError, requests.RequestException, UnicodeDecodeError, ValueError):
+            blocker = {
+                "managed_key_read": "freellm_managed_key_unavailable",
+                "authenticated_catalog_fetch": "freellm_catalog_fetch_failed",
+                "catalog_persistence": "freellm_catalog_persistence_failed",
+                "double_canary_activation": "freellm_model_reconcile_failed",
+            }.get(bootstrap_stage, "freellm_bootstrap_runtime_failed")
+            query(
+                """UPDATE llm_revolver_provider_sources
+                   SET status='degraded', last_http_status=%s,
+                       last_error_code=%s, last_checked_at=NOW(), updated_at=NOW()
+                   WHERE id=%s::uuid""",
+                (last_status, blocker, source_id),
+                write=True,
+            )
+            return jsonify({
+                "error": "Die verwaltete FreeLLM-Quelle konnte nicht sicher initialisiert werden.",
+                "blocker": blocker,
+                "sourceId": source_id,
+                "protectedValuesReturned": False,
+            }), 502
+        finally:
+            key = ""
+            for index in range(len(protected)):
+                protected[index] = 0
+
     @app.route("/api/internal/llm/freellm/providers", methods=["GET"])
     def internal_freellm_provider_status():
         if not _internal_owner_authorized():

@@ -764,8 +764,8 @@ def freellm_provider_status() -> dict[str, Any]:
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def freellm_provider_discover(source_id: str, max_models: int = 20) -> dict[str, Any]:
-    """Reconcile a fresh managed catalog and directly canary eligible FreeLLM models."""
-    return provider_runtime.freellm_reconcile(source_id, max_models=max_models)
+    """Fetch a fresh authenticated managed catalog and double-canary eligible FreeLLM models."""
+    return provider_runtime.freellm_discover(source_id, max_models=max_models)
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
