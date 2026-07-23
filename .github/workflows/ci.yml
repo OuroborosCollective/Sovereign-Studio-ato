@@ -227,31 +227,20 @@ jobs:
       run: |
         cd backend
         python - <<'PY'
-        import os
-        import secrets
-        import tempfile
-        from pathlib import Path
-
         from agent_runtime.cognitive_swarm_agents import (
-            DEFAULT_MODEL,
             agents_sdk_status,
             build_cognitive_swarm,
-            ensure_openai_runtime_key,
         )
 
         status = agents_sdk_status()
         if not status["available"]:
             raise RuntimeError(f"OpenAI Agents SDK unavailable: {status['error']}")
-        with tempfile.TemporaryDirectory(prefix="sovereign-litellm-preflight-") as owner_root:
-            key_path = Path(owner_root) / "litellm_master_key.txt"
-            key_path.write_text(secrets.token_urlsafe(32), encoding="utf-8")
-            key_path.chmod(0o600)
-            os.environ["SOVEREIGN_OWNER_INPUT_ROOT"] = owner_root
-            os.environ["LITELLM_MASTER_KEY_FILE"] = str(key_path)
-            os.environ["LITELLM_BASE_URL"] = "http://litellm:4000"
-            if not ensure_openai_runtime_key():
-                raise RuntimeError("Internal LiteLLM Agents SDK configuration failed.")
-            swarm = build_cognitive_swarm(model=DEFAULT_MODEL)
+        swarm = build_cognitive_swarm(
+            main_model="openai/gpt-5.4-mini",
+            agent_model="openai/gpt-5.4-mini",
+            main_run_config=object(),
+            agent_run_config=object(),
+        )
         if swarm.agent_count != 12:
             raise RuntimeError(f"Unexpected cognitive swarm size: {swarm.agent_count}")
         print("Cognitive swarm build preflight passed: 12 agents")

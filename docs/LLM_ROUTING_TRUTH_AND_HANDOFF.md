@@ -10,7 +10,7 @@ Bei Widersprüchen zwischen älteren Texten, UI-Beschriftungen, historischen Mig
 
 1. Produktionsausführung und persistierte Runtime-Evidence haben Vorrang.
 2. Paid und Free sind getrennte Transporte.
-3. LiteLLM ist ein optionaler Legacy-/Rollback-Transport und kein globales Produktions-Gate.
+3. LiteLLM ist ausschließlich historische, deaktivierte Kompatibilitätsevidenz und kein auswählbarer Produkttransport.
 4. Kein Zustand wird allein aufgrund eines Namens, eines Katalogeintrags oder einer Konfiguration als grün dargestellt.
 5. Eine Route ist nur aktiv, wenn aktuelle, persistierte und transportgerechte Evidence vorliegt.
 
@@ -44,17 +44,15 @@ Free-Ausführung läuft direkt über die verwaltete FreeLLM-API beziehungsweise 
 - kein automatischer Wechsel von Free zu Paid
 - Nullkosten-Evidence und zwei echte Completion-Canaries sind Voraussetzung für Aktivierung
 
-### 2.3 Legacy LiteLLM
+### 2.3 Historische LiteLLM-Evidence
 
-LiteLLM bleibt für historische Providerkonfiguration, Rollback, ältere Evidenz und spezielle Operatorwerkzeuge erhalten. Es ist jedoch nicht mehr:
+LiteLLM bleibt ausschließlich als deaktivierte historische Providerkonfiguration und ältere Evidence lesbar. Es ist kein auswählbarer, aktivierbarer oder gecanaryter Produkttransport mehr.
 
-- alleiniger Provider-Router,
-- Pflichtbestandteil des globalen Backend-Healthchecks,
-- Eigentümer aller aktiven Online-Routen,
-- Standardausführung von `/api/llm/chat`,
-- korrekte Beschriftung für OpenRouter- oder FreeLLM-Routen.
-
-Jede Oberfläche, die LiteLLM erwähnt, muss ausdrücklich `Legacy`, `Rollback` oder einen tatsächlich LiteLLM-spezifischen Werkzeugkontext nennen.
+- Admin-Routen zeigen und editieren ausschließlich direkte OpenRouter-Paid-Routen.
+- Free-Routen werden ausschließlich im direkten FreeLLM-Bereich verwaltet.
+- Readiness akzeptiert nur `openrouter` und `freellm`; jede aktive LiteLLM-Route blockiert.
+- Der Enterprise-Completion-Canary für LiteLLM ist entfernt und liefert bei direktem Aufruf HTTP 410.
+- Historische Datensätze müssen `disabled=true`, `selectable=false` und einen Ersatztransport tragen.
 
 ### 2.4 Agents-SDK- und Swarm-Grenze
 
@@ -65,7 +63,7 @@ Der produktive REST-, A2A-, Start- und Resume-Pfad beginnt in `agent_runtime/cog
 - `execute_persisted_swarm(...)` übergibt die aufgelösten Routen ausdrücklich an `run_cognitive_swarm(...)`.
 - Ein produktiver Run darf `run_cognitive_swarm(...)` niemals ohne Route aufrufen.
 
-In `agent_runtime/cognitive_swarm_agents.py` verbleiben `_ensure_litellm_runtime_key`, `ensure_openai_runtime_key`, `DEFAULT_MODEL`, historische LiteLLM-Aliasnamen und der No-Route-Zweig ausschließlich als begrenzte Legacy-Test-/Operator-Kompatibilität. Diese Symbole sind kein Beweis für einen aktiven LiteLLM-Produktpfad. Das Flask-Routenmodul importiert oder verwendet den Legacy-Key-Helfer nicht mehr.
+In `agent_runtime/cognitive_swarm_agents.py` existiert kein LiteLLM-Key-Helfer und kein route-loser Ausführungspfad mehr. Jeder Intent-, Free-Single-Agent- und Paid-Swarm-Lauf benötigt einen expliziten, datenbankaufgelösten `RunConfig`. Paid akzeptiert nur direkte OpenRouter-Routen; Free akzeptiert nur direkte FreeLLM-Routen.
 
 Auch Dateinamen und Datenbankspalten wie `sovereignLiteLlmIntentRuntime.ts` oder `litellm_alias` können aus Kompatibilitätsgründen historisch bleiben. Transportwahrheit entsteht ausschließlich aus der aufgelösten Route und ihrer Runtime-Evidence, niemals aus einem alten Symbolnamen.
 
@@ -284,7 +282,7 @@ Evidence muss mindestens enthalten:
 - `legacyLiteLlmActiveRoutes`
 - Routing-Policy
 
-Ein optionaler LiteLLM-Completion-Canary muss sichtbar als Legacy-Canary bezeichnet werden und darf den direkten Produktionspfad nicht repräsentieren.
+Ein LiteLLM-Completion-Canary darf nicht mehr ausführbar angeboten werden. Historische Completion-Receipts bleiben ausschließlich lesbare Evidence.
 
 ## 10. PatchMon- und Operatorpflicht
 
@@ -319,7 +317,7 @@ Nach Merge:
 - Revision-Label und immutable Digest prüfen.
 - Genau diesen Digest deployen.
 - `/health/live` muss denselben Source-SHA und Digest melden.
-- `/health/ready` darf LiteLLM nur dann prüfen, wenn aktive Legacy-LiteLLM-Routen existieren.
+- `/health/ready` darf LiteLLM niemals als Ersatzroute prüfen; jede aktive LiteLLM-Route blockiert den Routingvertrag.
 - PostgreSQL muss Migration 038 und die neue Zustandsverteilung zeigen.
 
 ## 12. Erwarteter Zustand nach der Korrektur
@@ -402,7 +400,7 @@ Ein neuer Operator darf nicht bei null beginnen. Er muss zuerst:
 3. PatchMon-Inventar und Brain-Snapshot erfassen,
 4. Produktions-DB mit den Abfragen aus Abschnitt 13 lesen,
 5. Live-Containerstatus und begrenzte FreeLLMAPI-Logs prüfen,
-6. zwischen Unified Key, Provider-Key, Keyless-Marker, OpenRouter-Key und LiteLLM-Legacy-Key unterscheiden,
+6. zwischen Unified Key, FreeLLM-Upstream-Key, Keyless-Marker und OpenRouter-Key unterscheiden; ein LiteLLM-Legacy-Key ist kein erlaubtes Owner-Input-Ziel mehr,
 7. keinen Katalogzähler als aktive Routenzahl interpretieren,
 8. jede Änderung in isoliertem Workspace mit Tests, Draft PR, CI, Merge und immutable Deployment durchführen,
 9. nach erfolgreichem Runtime-Readback ein Proven-Learning-Pattern schreiben.

@@ -16,8 +16,6 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Any, Final
 
-AGENTS_LITELLM_ALIAS: Final[str] = "sovereign-fast"
-AGENTS_PROVIDER_MODEL: Final[str] = "gpt-5.4-mini"
 FREE_CATEGORY: Final[str] = "free"
 STANDARD_CATEGORY: Final[str] = "standard"
 PREMIUM_CATEGORY: Final[str] = "premium"

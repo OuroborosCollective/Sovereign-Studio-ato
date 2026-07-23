@@ -32,6 +32,29 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+const ACTIVE_OPENROUTER_MODEL = 'sovereign-openrouter:rekaai/reka-edge';
+
+function routeCatalogResponse(): Response {
+  return jsonResponse({
+    routes: [{
+      id: 'openrouter-reka-edge',
+      defaultModelId: ACTIVE_OPENROUTER_MODEL,
+      provider: 'openrouter',
+      billingCategory: 'premium',
+      priority: 10,
+      enabled: true,
+    }],
+  });
+}
+
+function stubRoutedFetch(next: () => Response | Promise<Response>) {
+  const fetchMock = vi.fn();
+  fetchMock.mockResolvedValueOnce(routeCatalogResponse());
+  fetchMock.mockImplementation(async () => next());
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
 describe('devChatWorkerBridge', () => {
   it('keeps only backend direct LLM routes and abstract aliases', () => {
     expect(SOVEREIGN_WORKER_CHAT).toContain('/api/llm/chat');
@@ -110,17 +133,20 @@ describe('devChatWorkerBridge', () => {
 
 
   it('calls the worker chat route and validates response content', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'Antwort aus Worker.' } }] }));
-    vi.stubGlobal('fetch', fetchMock);
+    const fetchMock = stubRoutedFetch(
+      () => jsonResponse({ choices: [{ message: { content: 'Antwort aus Worker.' } }] }),
+    );
 
     const result = await fetchDevChatWorkerReply({ model: 'llama-3-8b', messages: [{ role: 'user', content: 'Hallo' }] });
 
     expect(result).toMatchObject({ ok: true, content: 'Antwort aus Worker.', route: SOVEREIGN_WORKER_CHAT });
-    expect(fetchMock).toHaveBeenCalledWith(SOVEREIGN_WORKER_CHAT, expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, SOVEREIGN_WORKER_CHAT, expect.objectContaining({ method: 'POST' }));
+    const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({ model: ACTIVE_OPENROUTER_MODEL });
   });
 
   it('accepts structured online intent evidence without treating it as execution truth', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+    stubRoutedFetch(() => jsonResponse({
       choices: [{ message: { content: JSON.stringify({
         mode: 'action',
         intent: 'code_execution',
@@ -130,8 +156,8 @@ describe('devChatWorkerBridge', () => {
         confidence: 0.94,
         language: 'de',
       }) } }],
-      model: 'deepseek-r1',
-    })));
+      model: ACTIVE_OPENROUTER_MODEL,
+    }));
 
     const result = await fetchDevChatWorkerInterpretation({
       model: 'deepseek-r1',
@@ -146,14 +172,14 @@ describe('devChatWorkerBridge', () => {
       actionDisposition: 'review',
       actionTitle: 'Mobile Chat-UX verbessern',
       confidence: 0.94,
-      model: 'deepseek-r1',
+      model: ACTIVE_OPENROUTER_MODEL,
     });
   });
 
   it('never upgrades non-schema provider text into action evidence', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+    stubRoutedFetch(() => jsonResponse({
       choices: [{ message: { content: 'Normale Gesprächsantwort ohne Aktionsschema.' } }],
-    })));
+    }));
 
     const result = await fetchDevChatWorkerInterpretation({
       model: 'deepseek-r1',
@@ -172,10 +198,10 @@ describe('devChatWorkerBridge', () => {
       'data: {"choices":[{"delta":{"content":"Antwort"}}]}',
       'data: [DONE]',
     ].join('\n');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+    stubRoutedFetch(() => new Response(body, {
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },
-    })));
+    }));
 
     const result = await fetchDevChatWorkerInterpretation({
       model: 'deepseek-r1',
@@ -188,11 +214,11 @@ describe('devChatWorkerBridge', () => {
   });
 
   it('ignores malformed non-string worker metadata in JSON replies', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+    stubRoutedFetch(() => jsonResponse({
       choices: [{ message: { content: 'Antwort aus Worker.' } }],
       model: 123,
       fallback_reason: { message: 'not a string' },
-    })));
+    }));
 
     const result = await fetchDevChatWorkerReply({
       model: DEV_CHAT_WORKER_DEFAULT_MODEL,
@@ -200,13 +226,13 @@ describe('devChatWorkerBridge', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.actualModel).toBe(DEV_CHAT_WORKER_DEFAULT_MODEL);
+    expect(result.actualModel).toBe(ACTIVE_OPENROUTER_MODEL);
     expect(result.fallbackUsed).toBe(false);
     expect(result.fallbackReason).toBeUndefined();
   });
 
   it('returns a diagnostic blocker for HTTP 500 responses', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { message: 'Gateway exploded', type: 'server_error' } }, 500)));
+    stubRoutedFetch(() => jsonResponse({ error: { message: 'Gateway exploded', type: 'server_error' } }, 500));
 
     const result = await fetchDevChatWorkerReply({ model: 'llama-3-8b', messages: [{ role: 'user', content: 'Hallo' }] });
 
@@ -229,7 +255,7 @@ describe('devChatWorkerBridge', () => {
   });
 
   it('returns a real blocker when the worker response has no usable content', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ choices: [] })));
+    stubRoutedFetch(() => jsonResponse({ choices: [] }));
 
     const result = await fetchDevChatWorkerReply({ model: 'llama-3-8b', messages: [{ role: 'user', content: 'Hallo' }] });
 
@@ -268,9 +294,9 @@ describe('devChatWorkerBridge timeout gates', () => {
   });
 
   it('fetchDevChatWorkerReply returns timeout diagnostic when fetch aborts', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    stubRoutedFetch(() => {
       throw new DOMException('The user aborted a request.', 'AbortError');
-    }));
+    });
 
     const result = await fetchDevChatWorkerReply({
       model: DEV_CHAT_WORKER_DEFAULT_MODEL,
@@ -297,9 +323,9 @@ describe('devChatWorkerBridge timeout gates', () => {
   });
 
   it('streamDevChatWorkerReply throws timeout diagnostic when stream fetch aborts', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    stubRoutedFetch(() => {
       throw new DOMException('The user aborted a request.', 'AbortError');
-    }));
+    });
 
     let thrown: unknown;
     try {
@@ -327,7 +353,7 @@ describe('streamDevChatWorkerReply', () => {
   }
 
   it('yields SSE delta chunks as they arrive', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => sseResponse(['Hallo', ' Welt'])));
+    stubRoutedFetch(() => sseResponse(['Hallo', ' Welt']));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Sag Hallo' }] })) chunks.push(chunk);
     expect(chunks).toEqual(['Hallo Welt']);
@@ -343,10 +369,10 @@ describe('streamDevChatWorkerReply', () => {
       'data: [DONE]',
     ].join('\n');
     const onMetadata = vi.fn();
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+    stubRoutedFetch(() => new Response(body, {
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },
-    })));
+    }));
 
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({
@@ -357,14 +383,14 @@ describe('streamDevChatWorkerReply', () => {
     expect(chunks).toEqual(['Valid']);
     expect(onMetadata).toHaveBeenCalledWith({
       fallbackUsed: false,
-      preferredModel: DEV_CHAT_WORKER_DEFAULT_MODEL,
-      actualModel: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      preferredModel: ACTIVE_OPENROUTER_MODEL,
+      actualModel: ACTIVE_OPENROUTER_MODEL,
       fallbackReason: undefined,
     });
   });
 
   it('terminates cleanly on DONE', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => sseResponse(['Teil 1', 'Teil 2'])));
+    stubRoutedFetch(() => sseResponse(['Teil 1', 'Teil 2']));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Test' }] })) chunks.push(chunk);
     expect(chunks).toEqual(['Teil 1Teil 2']);
@@ -372,21 +398,21 @@ describe('streamDevChatWorkerReply', () => {
 
   it('skips invalid JSON lines without crashing', async () => {
     const body = ['data: {"choices":[{"delta":{"content":"Valid"}}]}', 'data: { broken json', 'data: {"choices":[{"delta":{"content":"Auch valid"}}]}', 'data: [DONE]'].join('\n');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })));
+    stubRoutedFetch(() => new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Test' }] })) chunks.push(chunk);
     expect(chunks).toEqual(['ValidAuch valid']);
   });
 
   it('reads JSON worker replies when streaming is unavailable', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'Fallback Antwort' } }] })));
+    stubRoutedFetch(() => jsonResponse({ choices: [{ message: { content: 'Fallback Antwort' } }] }));
     const chunks: string[] = [];
     for await (const chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Test' }] })) chunks.push(chunk);
     expect(chunks).toEqual(['Fallback Antwort']);
   });
 
   it('throws a bounded diagnostic on HTTP error', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: 'boom' }, 500)));
+    stubRoutedFetch(() => jsonResponse({ error: 'boom' }, 500));
     let thrown: unknown;
     try {
       for await (const _chunk of streamDevChatWorkerReply({ model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user', content: 'Test' }] })) {

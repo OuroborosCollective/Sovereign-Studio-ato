@@ -35,7 +35,7 @@ export interface DevChatWorkerModel {
   readonly thinking: boolean;
 }
 
-/** Abstract aliases only. The backend catalog remains the runtime truth. */
+/** UI tier labels only. They are resolved to concrete active OpenRouter routes before every request. */
 export const DEV_CHAT_WORKER_MODELS: readonly DevChatWorkerModel[] = [
   { id: 'sovereign-fast', label: 'Sovereign Fast', tier: 'fast', thinking: false },
   { id: 'sovereign-balanced', label: 'Sovereign Balanced', tier: 'smart', thinking: true },
@@ -51,13 +51,21 @@ export function normalizeDevChatWorkerModel(model: string | undefined): string {
 interface BackendLlmRoute {
   readonly id?: string;
   readonly defaultModelId?: string;
+  readonly provider?: string;
+  readonly billingCategory?: 'free' | 'standard' | 'premium';
+  readonly priority?: number;
   readonly enabled?: boolean;
 }
 
+function concreteRouteModel(route: BackendLlmRoute | undefined): string {
+  return route?.defaultModelId?.trim() || route?.id?.trim() || '';
+}
+
+function routePriority(route: BackendLlmRoute): number {
+  return Number.isFinite(route.priority) ? Number(route.priority) : 0;
+}
+
 async function resolveActiveBackendModel(requestedModel: string, signal?: AbortSignal): Promise<string> {
-  if (requestedModel === DEV_CHAT_WORKER_DEFAULT_MODEL || requestedModel === DEV_CHAT_WORKER_FALLBACK_MODEL) {
-    return requestedModel;
-  }
   const response = await fetch(BACKEND_CONFIG.routesUrl, {
     method: 'GET',
     credentials: 'include',
@@ -69,10 +77,29 @@ async function resolveActiveBackendModel(requestedModel: string, signal?: AbortS
     throw new Error(typeof payload.error === 'string' ? payload.error : `Route catalog HTTP ${response.status}`);
   }
   const active = (payload.routes ?? []).filter((route) => route.enabled !== false);
-  const requested = active.find((route) => route.defaultModelId === requestedModel || route.id === requestedModel);
-  const selected = requested ?? active.find((route) => route.defaultModelId) ?? active.find((route) => route.id);
-  const model = selected?.defaultModelId || selected?.id || '';
-  if (!model) throw new Error('Keine owner-bestätigte OpenRouter- oder FreeLLM-Route ist aktiv.');
+  const paidOpenRouter = active
+    .filter((route) => route.provider?.trim().toLowerCase() === 'openrouter' && route.billingCategory !== 'free')
+    .sort((left, right) => routePriority(left) - routePriority(right));
+
+  let selected: BackendLlmRoute | undefined;
+  if (requestedModel === DEV_CHAT_WORKER_DEFAULT_MODEL) {
+    selected = paidOpenRouter[0];
+  } else if (requestedModel === DEV_CHAT_WORKER_FALLBACK_MODEL) {
+    selected = paidOpenRouter[Math.floor((paidOpenRouter.length - 1) / 2)] ?? paidOpenRouter[0];
+  } else {
+    selected = active.find((route) => (
+      route.defaultModelId === requestedModel || route.id === requestedModel
+    )) ?? paidOpenRouter[0];
+  }
+
+  const model = concreteRouteModel(selected);
+  if (!model) {
+    throw new Error(
+      requestedModel === DEV_CHAT_WORKER_DEFAULT_MODEL || requestedModel === DEV_CHAT_WORKER_FALLBACK_MODEL
+        ? 'Keine aktive, owner-bestätigte OpenRouter-Paid-Route kann den Sovereign-Leistungstarif auflösen.'
+        : 'Die angeforderte OpenRouter- oder FreeLLM-Route ist nicht aktiv.',
+    );
+  }
   return model;
 }
 

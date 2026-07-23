@@ -45,11 +45,7 @@ def test_enterprise_postgres_probe_accepts_production_version_ledger_layout() ->
             "transaction_receipts": True,
         }
 
-    service = EnterprisePlatformService(
-        query=query,
-        litellm_readiness=lambda: {"ok": True},
-        litellm_completion_canary=lambda _model: {"ok": True},
-    )
+    service = EnterprisePlatformService(query=query)
     result = service._postgres_probe()
 
     assert result["status"] == "verified"
@@ -72,11 +68,7 @@ def test_enterprise_postgres_probe_blocks_when_release_schema_is_incomplete() ->
             "transaction_receipts": False,
         }
 
-    service = EnterprisePlatformService(
-        query=query,
-        litellm_readiness=lambda: {"ok": True},
-        litellm_completion_canary=lambda _model: {"ok": True},
-    )
+    service = EnterprisePlatformService(query=query)
     result = service._postgres_probe()
 
     assert result["status"] == "blocked"

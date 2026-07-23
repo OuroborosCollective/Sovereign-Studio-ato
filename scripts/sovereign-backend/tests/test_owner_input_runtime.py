@@ -21,62 +21,18 @@ import owner_input_runtime as runtime
 from agent_runtime import cognitive_swarm_agents as swarm_runtime
 
 
-def _install_agents_sdk_routing_stubs(monkeypatch) -> None:
-    agents_module = types.ModuleType("agents")
-    models_module = types.ModuleType("agents.models")
-    provider_module = types.ModuleType("agents.models.openai_provider")
-    model_settings_module = types.ModuleType("agents.model_settings")
-    run_config_module = types.ModuleType("agents.run_config")
-
-    class OpenAIProvider:
-        def __init__(self, *, api_key, base_url, use_responses):
-            self.api_key = api_key
-            self.base_url = base_url
-            self.use_responses = use_responses
-
-    class RunConfig:
-        def __init__(
-            self,
-            *,
-            model,
-            model_provider,
-            model_settings,
-            tracing_disabled,
-            trace_include_sensitive_data,
-        ):
-            self.model = model
-            self.model_provider = model_provider
-            self.model_settings = model_settings
-            self.tracing_disabled = tracing_disabled
-            self.trace_include_sensitive_data = trace_include_sensitive_data
-
-    class ModelSettings:
-        def __init__(self, *, max_tokens, include_usage):
-            self.max_tokens = max_tokens
-            self.include_usage = include_usage
-
-    provider_module.OpenAIProvider = OpenAIProvider
-    model_settings_module.ModelSettings = ModelSettings
-    run_config_module.RunConfig = RunConfig
-    monkeypatch.setitem(sys.modules, "agents", agents_module)
-    monkeypatch.setitem(sys.modules, "agents.models", models_module)
-    monkeypatch.setitem(sys.modules, "agents.models.openai_provider", provider_module)
-    monkeypatch.setitem(sys.modules, "agents.model_settings", model_settings_module)
-    monkeypatch.setitem(sys.modules, "agents.run_config", run_config_module)
-
-
 def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
 
     targets = runtime._target_map()
 
     assert {
-        "openai_api_key",
         "openrouter_api_key",
-        "litellm_provider_key",
         "revolver_provider_key",
         "proven_learning_confirmation",
     }.issubset(set(targets))
+    assert "openai_api_key" not in targets
+    assert "litellm_provider_key" not in targets
     groq_target = targets["freellm_provider_groq_key"]
     assert groq_target["path"] == (
         tmp_path / "freellm-provider-keys" / "groq.key"
@@ -84,22 +40,10 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert groq_target["fieldLabel"] == "Groq API-Key"
     assert groq_target["maxBytes"] == 8192
 
-    openai_target = targets["openai_api_key"]
-    assert openai_target["path"] == (tmp_path / "openai_api_key.txt").resolve()
-    assert openai_target["label"] == "OpenAI Provider für Legacy-LiteLLM"
-    assert openai_target["fieldLabel"] == "OpenAI API-Key"
-    assert openai_target["maxBytes"] == 8192
-
     openrouter_target = targets["openrouter_api_key"]
     assert openrouter_target["path"] == (tmp_path / "openrouter_api_key.txt").resolve()
     assert openrouter_target["fieldLabel"] == "OpenRouter API-Key"
     assert openrouter_target["maxBytes"] == 8192
-
-    provider_target = targets["litellm_provider_key"]
-    assert provider_target["path"] == (tmp_path / "litellm_provider_key.txt").resolve()
-    assert provider_target["label"] == "Einmaliger Fremdprovider-Zugang für Legacy-LiteLLM"
-    assert provider_target["fieldLabel"] == "Provider API-Key"
-    assert provider_target["maxBytes"] == 8192
 
     revolver_target = targets["revolver_provider_key"]
     assert revolver_target["path"] == (tmp_path / "revolver_provider_key.txt").resolve()
@@ -116,11 +60,11 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
 
 def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    target = runtime._target_map()["openai_api_key"]
+    target = runtime._target_map()["openrouter_api_key"]
 
     runtime._atomic_write(target, "one-time-provider-value")
 
-    path = tmp_path / "openai_api_key.txt"
+    path = tmp_path / "openrouter_api_key.txt"
     assert path.read_text("utf-8") == "one-time-provider-value"
     assert os.stat(path).st_mode & 0o777 == 0o600
     assert list(tmp_path.glob(".*.tmp")) == []
@@ -128,7 +72,7 @@ def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypa
 
 def test_atomic_write_rejects_empty_and_oversized_values(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    target = runtime._target_map()["openai_api_key"]
+    target = runtime._target_map()["openrouter_api_key"]
 
     with pytest.raises(ValueError, match="fehlt"):
         runtime._atomic_write(target, "")
@@ -136,45 +80,28 @@ def test_atomic_write_rejects_empty_and_oversized_values(monkeypatch, tmp_path: 
         runtime._atomic_write({**target, "maxBytes": 3}, "four")
 
 
-def test_agents_sdk_loads_only_internal_litellm_service_key(monkeypatch, tmp_path: Path) -> None:
-    _install_agents_sdk_routing_stubs(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "direct-provider-key-must-be-replaced")
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
-    path = tmp_path / "litellm_master_key.txt"
-    path.write_text("internal-litellm-service-key", "utf-8")
-    path.chmod(0o600)
+def test_agents_sdk_fails_closed_without_explicit_direct_route_run_config() -> None:
+    class NeverCalledRunner:
+        @staticmethod
+        async def run(agent, prompt, *, run_config, max_turns):
+            raise AssertionError("provider execution must not start")
 
-    assert swarm_runtime.ensure_openai_runtime_key() is True, (
-        swarm_runtime._AGENTS_SDK_VERSION,
-        swarm_runtime._RUN_CONFIG_ERROR,
-    )
-    assert "OPENAI_API_KEY" not in os.environ
-    assert "OPENAI_BASE_URL" not in os.environ
-    assert type(swarm_runtime._RUN_CONFIG).__name__ == "RunConfig"
-    assert swarm_runtime._RUN_CONFIG.model == "sovereign-fast"
-    assert type(swarm_runtime._RUN_CONFIG.model_provider).__name__ == "OpenAIProvider"
-    assert type(swarm_runtime._RUN_CONFIG.model_settings).__name__ == "ModelSettings"
-    assert swarm_runtime._RUN_CONFIG.model_settings.max_tokens == 2048
-    assert swarm_runtime._RUN_CONFIG.model_settings.include_usage is True
-    assert swarm_runtime._RUN_CONFIG.tracing_disabled is True
-    assert swarm_runtime._RUN_CONFIG.trace_include_sensitive_data is False
+    with pytest.raises(swarm_runtime.SwarmExecutionError) as captured:
+        asyncio.run(
+            swarm_runtime._run_stage(
+                NeverCalledRunner,
+                "agent",
+                "prompt",
+                stage="test",
+            )
+        )
+    assert captured.value.family == "AGENTS_DIRECT_ROUTE_REQUIRED"
+    assert captured.value.next_action == "RESOLVE_DATABASE_OPENROUTER_OR_FREELLM_ROUTE"
 
 
-def test_agents_sdk_runner_receives_explicit_litellm_run_config(monkeypatch, tmp_path: Path) -> None:
-    _install_agents_sdk_routing_stubs(monkeypatch)
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
-    path = tmp_path / "litellm_master_key.txt"
-    path.write_text("internal-litellm-service-key", "utf-8")
-    path.chmod(0o600)
-    assert swarm_runtime.ensure_openai_runtime_key() is True, (
-        swarm_runtime._AGENTS_SDK_VERSION,
-        swarm_runtime._RUN_CONFIG_ERROR,
-    )
-
+def test_agents_sdk_runner_receives_explicit_direct_route_run_config() -> None:
     captured: dict[str, object] = {}
+    direct_run_config = object()
 
     class CapturingRunner:
         @staticmethod
@@ -186,58 +113,23 @@ def test_agents_sdk_runner_receives_explicit_litellm_run_config(monkeypatch, tmp
             return "ok"
 
     result = asyncio.run(
-        swarm_runtime._run_stage(CapturingRunner, "agent", "prompt", stage="test")
+        swarm_runtime._run_stage(
+            CapturingRunner,
+            "agent",
+            "prompt",
+            stage="test",
+            run_config=direct_run_config,
+            transport="openrouter",
+        )
     )
 
     assert result == "ok"
     assert captured == {
         "agent": "agent",
         "prompt": "prompt",
-        "run_config": swarm_runtime._RUN_CONFIG,
+        "run_config": direct_run_config,
         "max_turns": 1,
     }
-
-
-def test_agents_sdk_litellm_key_rejects_symlink_escape(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "direct-provider-key-must-be-removed")
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
-    outside = tmp_path.parent / f"{tmp_path.name}-outside-litellm-value.txt"
-    outside.write_text("internal-litellm-service-key", "utf-8")
-    (tmp_path / "litellm_master_key.txt").symlink_to(outside)
-
-    assert swarm_runtime.ensure_openai_runtime_key() is False
-    assert "OPENAI_API_KEY" not in os.environ
-    assert "OPENAI_BASE_URL" not in os.environ
-
-
-def test_agents_sdk_litellm_key_rejects_group_or_world_readable_file(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm:4000")
-    path = tmp_path / "litellm_master_key.txt"
-    path.write_text("internal-litellm-service-key", "utf-8")
-    path.chmod(0o644)
-
-    assert swarm_runtime.ensure_openai_runtime_key() is False
-    assert "OPENAI_API_KEY" not in os.environ
-    assert "OPENAI_BASE_URL" not in os.environ
-
-
-def test_agents_sdk_rejects_public_or_direct_provider_base_url(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "direct-provider-key-must-be-removed")
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
-    monkeypatch.setenv("LITELLM_BASE_URL", "https://api.openai.com")
-    path = tmp_path / "litellm_master_key.txt"
-    path.write_text("internal-litellm-service-key", "utf-8")
-    path.chmod(0o600)
-
-    assert swarm_runtime.ensure_openai_runtime_key() is False
-    assert "OPENAI_API_KEY" not in os.environ
-    assert "OPENAI_BASE_URL" not in os.environ
 
 
 def test_agents_sdk_resolves_read_only_completion_without_draft_pr() -> None:

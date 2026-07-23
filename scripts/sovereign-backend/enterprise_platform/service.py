@@ -25,8 +25,6 @@ from .contracts import (
 )
 
 QueryFn = Callable[..., Any]
-ReadinessFn = Callable[[], dict[str, Any]]
-CompletionFn = Callable[[str], dict[str, Any]]
 
 _BOOTED_AT = utc_now()
 _RUNTIME_ID = str(uuid.uuid4())
@@ -36,29 +34,11 @@ class PlatformEvidenceWriteError(RuntimeError):
     pass
 
 
-class PlatformCanaryRateLimited(RuntimeError):
-    def __init__(self, retry_after_seconds: int):
-        super().__init__("platform_canary_rate_limited")
-        self.retry_after_seconds = retry_after_seconds
-
-
-class PlatformModelRejected(ValueError):
-    pass
-
-
 class EnterprisePlatformService:
     """Coordinates bounded probes without turning the admin API into a shell or SQL console."""
 
-    def __init__(
-        self,
-        *,
-        query: QueryFn,
-        litellm_readiness: ReadinessFn,
-        litellm_completion_canary: CompletionFn,
-    ):
+    def __init__(self, *, query: QueryFn):
         self._query = query
-        self._litellm_readiness = litellm_readiness
-        self._litellm_completion_canary = litellm_completion_canary
 
     def runtime_identity(self) -> dict[str, Any]:
         revision, revision_verified = normalize_source_revision(
@@ -197,7 +177,7 @@ class EnterprisePlatformService:
             )
 
     def _litellm_probe(self) -> dict[str, Any]:
-        """Report the split routing truth; LiteLLM remains legacy-only."""
+        """Report direct route truth; the method name remains API-compatible only."""
         started = time.monotonic()
         try:
             row = self._query(
@@ -225,42 +205,27 @@ class EnterprisePlatformService:
         freellm_ready = bounded_int(row.get("freellm_ready"))
         openrouter_ready = bounded_int(row.get("openrouter_ready"))
         litellm_active = bounded_int(row.get("litellm_active"))
-        legacy_result: dict[str, Any] = {}
+        direct_route_ready = freellm_ready > 0 or openrouter_ready > 0
+        routing_ready = direct_route_ready and litellm_active == 0
+        blocker = None
         if litellm_active > 0:
-            try:
-                legacy_result = self._litellm_readiness()
-            except Exception:
-                legacy_result = {
-                    "ok": False,
-                    "errorCode": "litellm_readiness_exception",
-                }
-        try:
-            legacy_canary_models = sorted(self._active_model_ids())
-        except Exception:
-            legacy_canary_models = []
-        routing_ready = (
-            freellm_ready > 0
-            or openrouter_ready > 0
-            or (litellm_active > 0 and bool(legacy_result.get("ok")))
-        )
+            blocker = "legacy_litellm_route_still_active"
+        elif not direct_route_ready:
+            blocker = "no_verified_direct_llm_route_available"
         return self._integration(
             integration_id="llm-routing",
             label="OpenRouter Paid + FreeLLM direkt",
             status=STATUS_VERIFIED if routing_ready else STATUS_BLOCKED,
             required=True,
-            boundary=(
-                "Paid läuft direkt über OpenRouter, Free direkt über FreeLLM; "
-                "LiteLLM ist nur noch ein optionaler Legacy-Transport"
-            ),
+            boundary="Paid ausschließlich direkt über OpenRouter; Free ausschließlich direkt über FreeLLM",
             evidence={
                 "freellmReadyRoutes": freellm_ready,
                 "openrouterReadyRoutes": openrouter_ready,
                 "legacyLiteLlmActiveRoutes": litellm_active,
-                "legacyLiteLlmHttpStatus": legacy_result.get("httpStatus"),
-                "legacyLiteLlmModelIds": legacy_canary_models,
-                "routingPolicy": "direct-freellm-free-and-direct-openrouter-paid",
+                "legacyProviderProbePerformed": False,
+                "routingPolicy": "direct-freellm-free-and-direct-openrouter-paid-only",
             },
-            blocker=None if routing_ready else "no_verified_llm_route_available",
+            blocker=blocker,
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),
         )
 
@@ -676,41 +641,6 @@ class EnterprisePlatformService:
         )
         return [dict(row) for row in (rows or [])]
 
-    def _active_model_ids(self) -> set[str]:
-        rows = self._query(
-            """/* platform:models:active */
-               SELECT model_id
-               FROM llm_routes
-               WHERE disabled = false AND provider = 'litellm'
-               ORDER BY priority ASC
-               LIMIT 100"""
-        )
-        return {
-            bounded_text(row.get("model_id"), maximum=200)
-            for row in (rows or [])
-            if bounded_text(row.get("model_id"), maximum=200)
-        }
-
-    def _enforce_completion_cooldown(self, actor_id: str) -> None:
-        row = self._query(
-            """/* platform:canary:cooldown */
-               SELECT GREATEST(
-                   0,
-                   CEIL(EXTRACT(EPOCH FROM (
-                       MAX(observed_at) + INTERVAL '30 seconds' - NOW()
-                   )))
-               )::int AS retry_after
-               FROM platform_runtime_evidence
-               WHERE actor_id = %s::uuid
-                 AND scope = 'completion'
-                 AND observed_at > NOW() - INTERVAL '30 seconds'""",
-            (actor_id,),
-            one=True,
-        )
-        retry_after = bounded_int((row or {}).get("retry_after"), maximum=30)
-        if retry_after > 0:
-            raise PlatformCanaryRateLimited(retry_after)
-
     def _persist_evidence(
         self,
         *,
@@ -769,62 +699,21 @@ class EnterprisePlatformService:
         confirmed: bool = False,
     ) -> dict[str, Any]:
         normalized_scope = bounded_text(scope, maximum=30)
-        if normalized_scope not in {"readiness", "completion"}:
+        if normalized_scope == "completion":
+            raise ValueError("platform_legacy_completion_canary_removed")
+        if normalized_scope != "readiness":
             raise ValueError("platform_canary_scope_invalid")
 
         runtime = self.runtime_identity()
-        if normalized_scope == "readiness":
-            integrations = self.integrations()
-            status = self._overall_status(integrations, runtime)
-            evidence_payload = {
-                "scope": normalized_scope,
-                "runtime": runtime,
-                "integrations": integrations,
-                "completedAt": utc_now(),
-                "secretValuesReturned": False,
-            }
-        else:
-            if confirmed is not True:
-                raise ValueError("platform_completion_confirmation_required")
-            normalized_model = bounded_text(model_id, maximum=200)
-            if not normalized_model or normalized_model not in self._active_model_ids():
-                raise PlatformModelRejected("platform_completion_model_not_active")
-            self._enforce_completion_cooldown(actor_id)
-            database = self._postgres_probe()
-            try:
-                completion = self._litellm_completion_canary(normalized_model)
-            except Exception:
-                completion = {
-                    "ok": False,
-                    "health": STATUS_BLOCKED,
-                    "blocker": "litellm_completion_exception",
-                    "completionVerified": False,
-                    "evidence": {},
-                }
-            completion_ok = bool(
-                completion.get("ok")
-                and completion.get("completionVerified")
-                and database.get("status") == STATUS_VERIFIED
-            )
-            status = STATUS_VERIFIED if completion_ok else STATUS_BLOCKED
-            evidence_payload = {
-                "scope": normalized_scope,
-                "runtime": runtime,
-                "database": database,
-                "modelId": normalized_model,
-                "completion": {
-                    "ok": bool(completion.get("ok")),
-                    "health": bounded_text(completion.get("health"), maximum=40),
-                    "blocker": bounded_text(completion.get("blocker"), maximum=120) or None,
-                    "httpStatus": completion.get("httpStatus"),
-                    "responseTimeMs": completion.get("responseTimeMs"),
-                    "readinessVerified": bool(completion.get("readinessVerified")),
-                    "completionVerified": bool(completion.get("completionVerified")),
-                    "evidence": completion.get("evidence") if isinstance(completion.get("evidence"), dict) else {},
-                },
-                "completedAt": utc_now(),
-                "secretValuesReturned": False,
-            }
+        integrations = self.integrations()
+        status = self._overall_status(integrations, runtime)
+        evidence_payload = {
+            "scope": normalized_scope,
+            "runtime": runtime,
+            "integrations": integrations,
+            "completedAt": utc_now(),
+            "secretValuesReturned": False,
+        }
 
         receipt = self._persist_evidence(
             request_id=request_id,

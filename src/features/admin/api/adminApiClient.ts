@@ -109,6 +109,14 @@ export interface LlmRoute {
   inputUsdPerMillion: number | null;
   cachedInputUsdPerMillion: number | null;
   outputUsdPerMillion: number | null;
+  providerInputUsdPerMillion: number | null;
+  providerCachedInputUsdPerMillion: number | null;
+  providerOutputUsdPerMillion: number | null;
+  customerInputUsdPerMillion: number | null;
+  customerCachedInputUsdPerMillion: number | null;
+  customerOutputUsdPerMillion: number | null;
+  grossMarginPercent: number;
+  priceDisplayContract: 'provider-cost-and-customer-sale';
   pricingVerified: boolean;
   pricingSource: string;
   revolverEligible: boolean;
@@ -131,7 +139,7 @@ export interface LlmRevolverStats {
 }
 
 export interface LlmRevolverV3Status {
-  runtime: 'postgresql-litellm-evidence';
+  runtime: 'postgresql-direct-freellm-evidence';
   profile: {
     profileKey?: string;
     mode?: 'sequential' | 'weighted' | 'race';

@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": "4f7ce3c15bf057e82919c2266236d542d078e607",
-  "generatedAt": "2026-07-23T06:07:30+02:00",
-  "generatedFromRepositoryRevision": "4f7ce3c15bf057e82919c2266236d542d078e607",
+  "expectedPrHeadSha": "b9c4007d91e0ccf2e3b577c8d52a7564d918a86f",
+  "generatedAt": "2026-07-23T15:54:08+02:00",
+  "generatedFromRepositoryRevision": "b9c4007d91e0ccf2e3b577c8d52a7564d918a86f",
   "importantManifestFiles": [
     {
       "bytes": 14520,
@@ -49,9 +49,9 @@
       "sha256": "34662bfd29a87ce841da9c245eb96c109f8a08097a65fa6527a1d3fb81de78c2"
     },
     {
-      "bytes": 9163,
+      "bytes": 8546,
       "path": ".github/workflows/ci.yml",
-      "sha256": "ebea9b1d4d5f323cc69a1465a8739f51be08ef19e4b3d21faf78aea1bf3a3924"
+      "sha256": "3b9f0aea7b64f8e69e31ef0c70481242766f60818e3ce813a53b53180aa1f175"
     },
     {
       "bytes": 4748,
@@ -69,9 +69,9 @@
       "sha256": "be7979a26d93f3b884d6492a530068012678e5caacb7e45eef67662f214f97d7"
     },
     {
-      "bytes": 820,
+      "bytes": 850,
       "path": ".github/workflows/deploy-primary-llm-bridge.yml",
-      "sha256": "d9dea3a4255d1b3434391069615690679bab5a17e708c837058031f36d57bb2f"
+      "sha256": "966c8c992f0ee81692ef82aa9ab99d6fa807eafa5e32488d82b0a3797b166f1d"
     },
     {
       "bytes": 4730,
@@ -149,9 +149,9 @@
       "sha256": "9ff29a47e4cd2bf6149599becfc27c2eb27ead9bb017d4dd14a5ac3dbe61a48a"
     },
     {
-      "bytes": 69842,
+      "bytes": 74412,
       "path": ".github/workflows/sovereign-chatgpt-mcp.yml",
-      "sha256": "03440a151cd627f4083ee54ddcf06dd670c72d0b7a2a1852641cc4cc2c9c6f4c"
+      "sha256": "9e2c423e7d21ba8e914be291077e0a8017876f3aa950560d6f6cd8b5d9703302"
     },
     {
       "bytes": 7094,
@@ -229,9 +229,9 @@
       "sha256": "bb279727b0663949f83184dee95ee7da55aea9134ccb3409b8071745a52b53a2"
     },
     {
-      "bytes": 17627,
+      "bytes": 22715,
       "path": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-      "sha256": "1d4d22971cfd27dfd54803ca399a704dbdfe93c56c56e0b35d34426cd306aab6"
+      "sha256": "59499b834bc9885a73acf84155ef5d6aca254ebc1a7dc3a5f3bd13bc106353b9"
     },
     {
       "bytes": 7336,
@@ -459,6 +459,21 @@
       "sha256": "33b5a82f203e53a3e059664f9fbc00eb83a7f1f3d79f096a4db5b11dd174b448"
     },
     {
+      "bytes": 2715,
+      "path": "scripts/sovereign-backend/migrations/037_reenable_verified_direct_freellm_routes.sql",
+      "sha256": "654954558a62068c6b7424492122b9e30af49a519a64f71e9fcdcdf7ca138de5"
+    },
+    {
+      "bytes": 2108,
+      "path": "scripts/sovereign-backend/migrations/038_reclassify_retryable_freellm_canary_failures.sql",
+      "sha256": "ff3aa5289425804994e0fb1c49b607fd25d1b90cdb4b1b751d4942ff69f9b2a0"
+    },
+    {
+      "bytes": 2058,
+      "path": "scripts/sovereign-backend/migrations/039_openrouter_credit_rate_precision.sql",
+      "sha256": "f58bc2b064f858d09747e88da099b381e6264fb6eb1b00abac319a9123567956"
+    },
+    {
       "bytes": 5099,
       "path": "scripts/sovereign-backend/migrations/AGENTS_MIGRATION_SKILL.md",
       "sha256": "0752a607c7d8b71446026767e7aed1cdad6db32e5c878b47fcbd47c6b6968ccb"
@@ -474,9 +489,9 @@
       "sha256": "a7f228882eb41b83fc13a0810d5f20cd09842deb3367a951d27fa9db138c671a"
     },
     {
-      "bytes": 1901,
+      "bytes": 1946,
       "path": "tools/sovereign-chatgpt-mcp/Dockerfile",
-      "sha256": "662cb4cd87736cf1f12ab62df65050b5b95ba3cbb9ab6fe91c1c682312b04413"
+      "sha256": "dee075e328d93d9d844647e6e875e54f16fb7896454e10f6fc8250fa46631a56"
     },
     {
       "bytes": 1333,
@@ -534,8 +549,9 @@
       "sha256": "82b80c0312430fcb68651dfa43e0f44ca65a2e732249b7c461145c7966bb4c65"
     }
   ],
-  "latestPatternSha256": "554ab837fad61bd97dd2aa1ebb54cd337fd863f9b2729b20911ead497d5d87a2",
+  "latestPatternSha256": "0d31aca077a3030a12a983c043e3601980980f7cd75982e00fce822536eb3d49",
   "learningPatternSha256": [
+    "0d31aca077a3030a12a983c043e3601980980f7cd75982e00fce822536eb3d49",
     "2e4e1b65d673f9c4f93865d40acfe09c57ac0c2cad59cd1a08b17c9a59f9361a",
     "4c01019fedf1e058c640e42c8150cb1c307b1defd3f8245ff89796ff79cd5e87",
     "554ab837fad61bd97dd2aa1ebb54cd337fd863f9b2729b20911ead497d5d87a2",
@@ -544,7 +560,7 @@
     "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1"
   ],
   "logbookPath": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-  "logbookSha256": "1d4d22971cfd27dfd54803ca399a704dbdfe93c56c56e0b35d34426cd306aab6",
+  "logbookSha256": "59499b834bc9885a73acf84155ef5d6aca254ebc1a7dc3a5f3bd13bc106353b9",
   "mergeTarget": "main",
   "schemaVersion": "sovereign.proven-learning-manifest.v1",
   "selfHashExcluded": true

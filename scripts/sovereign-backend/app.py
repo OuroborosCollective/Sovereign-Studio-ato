@@ -38,10 +38,6 @@ from flask_cors import CORS
 from werkzeug.exceptions import NotFound
 import requests
 
-from litellm_runtime import (
-    litellm_completion_canary,
-    litellm_readiness,
-)
 from direct_llm_runtime import (
     classify_direct_llm_failure,
     extract_direct_llm_evidence,
@@ -454,8 +450,6 @@ enterprise_platform_service = register_enterprise_platform_routes(
     query=query,
     get_current_admin=get_current_admin,
     audit=audit,
-    litellm_readiness=litellm_readiness,
-    litellm_completion_canary=litellm_completion_canary,
 )
 register_free_revolver_runtime(
     app,
@@ -959,9 +953,36 @@ def _admin_llm_route_payload(row) -> dict:
         "fundingMode": str(policy.get("fundingMode") or "provider_priced"),
         "markupMultiplier": int(policy.get("markupMultiplier") or 0),
         "minimumMultiplier": minimum,
+        # Keep the historical flat fields as provider acquisition costs.
         "inputUsdPerMillion": _decimal_json(policy.get("inputUsdPerMillion")),
         "cachedInputUsdPerMillion": _decimal_json(policy.get("cachedInputUsdPerMillion")),
         "outputUsdPerMillion": _decimal_json(policy.get("outputUsdPerMillion")),
+        "providerInputUsdPerMillion": _decimal_json(policy.get("inputUsdPerMillion")),
+        "providerCachedInputUsdPerMillion": _decimal_json(policy.get("cachedInputUsdPerMillion")),
+        "providerOutputUsdPerMillion": _decimal_json(policy.get("outputUsdPerMillion")),
+        "customerInputUsdPerMillion": round(
+            float(policy.get("inputUsdPerMillion") or 0)
+            * int(policy.get("markupMultiplier") or 0),
+            12,
+        ),
+        "customerCachedInputUsdPerMillion": round(
+            float(policy.get("cachedInputUsdPerMillion") or 0)
+            * int(policy.get("markupMultiplier") or 0),
+            12,
+        ),
+        "customerOutputUsdPerMillion": round(
+            float(policy.get("outputUsdPerMillion") or 0)
+            * int(policy.get("markupMultiplier") or 0),
+            12,
+        ),
+        "grossMarginPercent": round(
+            (
+                (int(policy.get("markupMultiplier") or 0) - 1)
+                / int(policy.get("markupMultiplier") or 1)
+            ) * 100,
+            4,
+        ) if int(policy.get("markupMultiplier") or 0) > 0 else 0.0,
+        "priceDisplayContract": "provider-cost-and-customer-sale",
         "pricingVerified": bool(policy.get("pricingVerified")),
         "pricingSource": str(policy.get("pricingSource") or "unverified"),
         "revolverEligible": category == FREE_CATEGORY and bool(policy.get("pricingVerified")),
@@ -1011,15 +1032,14 @@ def admin_llm_routes():
                   provider, credits_per_unit AS "creditsPerUnit",
                   disabled, priority, config
            FROM llm_routes
-           WHERE lower(COALESCE(runtime_kind, provider))
-                 IN ('openrouter', 'freellm', 'litellm')
+           WHERE lower(COALESCE(runtime_kind, provider))='openrouter'
            ORDER BY priority ASC, model_name ASC"""
     )
     legacy_direct_routes = query(
         """SELECT COUNT(*)::integer AS count
            FROM llm_routes
            WHERE lower(COALESCE(runtime_kind, provider))
-                 NOT IN ('openrouter', 'freellm', 'litellm')""",
+                 NOT IN ('openrouter', 'freellm')""",
         one=True,
     ) or {}
     revolver_stats = query(
@@ -1135,7 +1155,13 @@ def admin_update_llm_route(rid):
             "blocker": "free_revolver_managed_route",
             "requiredEndpoint": "/api/admin/llm/revolver-v3/providers",
         }), 409
-    if transport not in {"openrouter", "litellm"}:
+    if transport == "litellm":
+        return jsonify({
+            "error": "Legacy-LiteLLM wurde vollständig durch direkte OpenRouter-Paid-Routen ersetzt.",
+            "blocker": "legacy_litellm_replaced_by_openrouter",
+            "routeRemainsDisabled": True,
+        }), 410
+    if transport != "openrouter":
         return jsonify({
             "error": "Unbekannter oder historischer LLM-Transport ist nicht editierbar.",
             "blocker": "unsupported_llm_transport",
@@ -1198,7 +1224,11 @@ def admin_update_llm_route(rid):
         }), 400
 
     output_price = float(policy["outputUsdPerMillion"])
-    credits_per_unit = 0.0 if category == FREE_CATEGORY else output_price * multiplier
+    credits_per_unit = (
+        0.0
+        if category == FREE_CATEGORY
+        else (output_price * multiplier) / 1000
+    )
     activation_evidence = None
     requested_disabled = bool(body.get("disabled", route.get("disabled")))
     if body.get("disabled") is False:
@@ -1243,31 +1273,6 @@ def admin_update_llm_route(rid):
                 "pricingVerified": bool(config.get("pricingVerified")),
                 "completionVerified": bool(config.get("canaryVerified")),
             }
-        else:
-            canary = litellm_completion_canary(str(route.get("model_id") or ""))
-            if not canary.get("ok"):
-                blocker = str(canary.get("blocker") or "litellm_route_canary_failed")
-                status_code = (
-                    402 if blocker == "provider_quota_exhausted"
-                    else 409 if blocker in {
-                        "provider_credentials_rejected",
-                        "litellm_model_alias_missing",
-                        "litellm_model_alias_invalid",
-                    }
-                    else 503 if canary.get("health") == "degraded"
-                    else 502
-                )
-                return jsonify({
-                    "ok": False,
-                    "error": canary.get("error") or "Legacy-LiteLLM-Route bleibt deaktiviert, weil die Completion-Canary fehlgeschlagen ist",
-                    "blocker": blocker,
-                    "health": canary.get("health") or "blocked",
-                    "httpStatus": canary.get("httpStatus"),
-                    "readinessVerified": bool(canary.get("readinessVerified")),
-                    "completionVerified": False,
-                    "routeRemainsDisabled": True,
-                }), status_code
-            activation_evidence = canary.get("evidence") or {}
         requested_disabled = False
 
     query(
@@ -1285,12 +1290,24 @@ def admin_update_llm_route(rid):
         ),
         write=True,
     )
+    deployment_policy_updated = query(
+        """UPDATE llm_provider_deployments
+           SET billing_category=%s,
+               markup_multiplier=%s,
+               updated_at=NOW()
+           WHERE route_id=%s
+           RETURNING route_id""",
+        (category, multiplier, rid),
+        one=True,
+        write=True,
+    )
     audit("admin_update_llm_route", rid, {
         "disabled": requested_disabled,
         "priority": priority,
         "billingCategory": category,
         "fundingMode": funding_mode,
         "markupMultiplier": multiplier,
+        "deploymentPolicyUpdated": bool(deployment_policy_updated),
         "providerPrices": {
             "inputUsdPerMillion": float(policy["inputUsdPerMillion"]),
             "cachedInputUsdPerMillion": float(policy["cachedInputUsdPerMillion"]),
@@ -1998,7 +2015,22 @@ def admin_llm_route_healthcheck(rid):
     model_name = str(route.get("modelName") or model_id or "").strip()
     config = route.get("config") if isinstance(route.get("config"), dict) else {}
     if transport == "litellm":
-        result = litellm_completion_canary(model_id)
+        result = {
+            "ok": False,
+            "health": "blocked",
+            "blocker": "legacy_litellm_replaced_by_openrouter",
+            "error": "Legacy-LiteLLM ist kein produktiver Paid-Transport mehr.",
+            "httpStatus": None,
+            "responseTimeMs": None,
+            "readinessVerified": False,
+            "completionVerified": False,
+            "evidence": {
+                "transport": "litellm",
+                "legacy": True,
+                "replacement": "direct-openrouter",
+                "providerExecutionPerformed": False,
+            },
+        }
     elif transport == "openrouter":
         deployment = query(
             """SELECT status, last_canary_request_id, last_canary_at,
@@ -2272,7 +2304,7 @@ def health_ready():
             """SELECT model_id, provider FROM llm_routes
                WHERE disabled=false ORDER BY priority ASC"""
         )
-        allowed_route_providers = {"litellm", "openrouter", "freellm"}
+        allowed_route_providers = {"openrouter", "freellm"}
         invalid_routes = [
             str(row.get("model_id") or "")
             for row in (routes or [])
@@ -2312,6 +2344,7 @@ def health_ready():
                 "036_llm_route_scanner_candidates.sql",
                 "037_reenable_verified_direct_freellm_routes.sql",
                 "038_reclassify_retryable_freellm_canary_failures.sql",
+                "039_openrouter_credit_rate_precision.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -2336,18 +2369,15 @@ def health_ready():
                COUNT(*) FILTER (
                    WHERE disabled=false
                      AND lower(COALESCE(runtime_kind, provider))='litellm'
-               )::integer AS litellm_active
+               )::integer AS legacy_litellm_active
            FROM llm_routes""",
         one=True,
     ) or {}
     freellm_ready = int(route_transport_state.get("freellm_ready") or 0)
     openrouter_ready = int(route_transport_state.get("openrouter_ready") or 0)
-    litellm_active = int(route_transport_state.get("litellm_active") or 0)
-    lite = litellm_readiness() if litellm_active > 0 else {
-        "ok": False,
-        "httpStatus": None,
-        "errorCode": "legacy_litellm_not_in_active_route_set",
-    }
+    legacy_litellm_active = int(
+        route_transport_state.get("legacy_litellm_active") or 0
+    )
     components["freellm"] = {
         "ok": freellm_ready > 0,
         "activeVerifiedRoutes": freellm_ready,
@@ -2360,20 +2390,24 @@ def health_ready():
         "required": False,
     }
     components["litellm"] = {
-        "ok": bool(lite.get("ok")) if litellm_active > 0 else True,
-        "activeRoutes": litellm_active,
+        "ok": legacy_litellm_active == 0,
+        "activeRoutes": legacy_litellm_active,
         "legacy": True,
-        "httpStatus": lite.get("httpStatus"),
-        "errorCode": lite.get("errorCode") if litellm_active > 0 and not lite.get("ok") else None,
+        "replacement": "direct-openrouter",
+        "errorCode": (
+            "legacy_litellm_route_still_active"
+            if legacy_litellm_active > 0
+            else None
+        ),
+        "providerProbePerformed": False,
     }
     components["llmRouting"] = {
-        "ok": freellm_ready > 0 or openrouter_ready > 0 or (
-            litellm_active > 0 and bool(lite.get("ok"))
-        ),
+        "ok": (freellm_ready > 0 or openrouter_ready > 0)
+        and legacy_litellm_active == 0,
         "freeReadyRoutes": freellm_ready,
         "paidReadyRoutes": openrouter_ready,
-        "legacyLiteLlmActiveRoutes": litellm_active,
-        "policy": "direct-freellm-free-and-direct-openrouter-paid",
+        "legacyLiteLlmActiveRoutes": legacy_litellm_active,
+        "policy": "direct-freellm-free-and-direct-openrouter-paid-only",
     }
     components["adminUi"] = {
         "ok": os.path.isfile(ADMIN_INDEX_PATH),
@@ -3754,6 +3788,7 @@ def _public_llm_route_payload(row) -> dict:
         "label": admin_payload["modelName"],
         "description": admin_payload["modelName"],
         "provider": admin_payload["provider"],
+        "priority": admin_payload["priority"],
         "creditsPerKTokens": admin_payload["creditsPerUnit"],
         "enabled": not admin_payload["disabled"],
         "userKeyOverride": False,
@@ -3763,10 +3798,17 @@ def _public_llm_route_payload(row) -> dict:
         "markupMultiplier": admin_payload["markupMultiplier"],
         "minimumMultiplier": admin_payload["minimumMultiplier"],
         "providerPrices": {
-            "inputUsdPerMillion": admin_payload["inputUsdPerMillion"],
-            "cachedInputUsdPerMillion": admin_payload["cachedInputUsdPerMillion"],
-            "outputUsdPerMillion": admin_payload["outputUsdPerMillion"],
+            "inputUsdPerMillion": admin_payload["providerInputUsdPerMillion"],
+            "cachedInputUsdPerMillion": admin_payload["providerCachedInputUsdPerMillion"],
+            "outputUsdPerMillion": admin_payload["providerOutputUsdPerMillion"],
         },
+        "customerPrices": {
+            "inputUsdPerMillion": admin_payload["customerInputUsdPerMillion"],
+            "cachedInputUsdPerMillion": admin_payload["customerCachedInputUsdPerMillion"],
+            "outputUsdPerMillion": admin_payload["customerOutputUsdPerMillion"],
+        },
+        "grossMarginPercent": admin_payload["grossMarginPercent"],
+        "priceDisplayContract": admin_payload["priceDisplayContract"],
         "pricingVerified": admin_payload["pricingVerified"],
         "pricingSource": admin_payload["pricingSource"],
         "revolverEligible": admin_payload["revolverEligible"],
@@ -5934,23 +5976,14 @@ def test_provider_available(provider: str) -> tuple:
 @app.route("/api/admin/llm/gateway/providers", methods=["GET"])
 @require_admin
 def admin_llm_gateway_providers():
-    results = []
-    for provider_id, info in PROVIDER_MODELS.items():
-        available, message, models = test_provider_available(provider_id)
-        results.append({
-            "provider": provider_id,
-            "name": info["name"],
-            "configured": available,
-            "status": message,
-            "models": models if available else info["models"],
-            "defaultModel": info["default"] if available else None,
-        })
     return jsonify({
-        "ok": True,
-        "providers": results,
-        "gatewayUrl": None,
-        "routingOwner": "private-litellm",
-    })
+        "error": "Legacy-Gateway-Providerverwaltung wurde durch direkte OpenRouter- und FreeLLM-Bereiche ersetzt.",
+        "blocker": "legacy_direct_provider_disabled",
+        "replacement": {
+            "paid": "/api/admin/llm/openrouter/status",
+            "free": "/api/admin/llm/revolver-v3/providers",
+        },
+    }), 410
 
 def _sync_worker_routes_from_live_source() -> dict:
     """Synchronize the complete live Worker model set in one database transaction."""

@@ -122,11 +122,19 @@ function RouteCard({
         )}
       </div>
 
-      <div className="llm-route-card__prices" aria-label="Providerpreise pro Million Tokens">
-        <div><span>Input</span><strong>{money(route.inputUsdPerMillion)}</strong></div>
-        <div><span>Cached</span><strong>{money(route.cachedInputUsdPerMillion)}</strong></div>
-        <div><span>Output</span><strong>{money(route.outputUsdPerMillion)}</strong></div>
+      <div className="llm-route-card__prices" aria-label="Providerkosten pro Million Tokens">
+        <div><span>Einkauf Input</span><strong>{money(route.providerInputUsdPerMillion)}</strong></div>
+        <div><span>Einkauf Cached</span><strong>{money(route.providerCachedInputUsdPerMillion)}</strong></div>
+        <div><span>Einkauf Output</span><strong>{money(route.providerOutputUsdPerMillion)}</strong></div>
       </div>
+      <div className="llm-route-card__prices" aria-label="Kundenpreise pro Million Tokens">
+        <div><span>Verkauf Input</span><strong>{money(route.customerInputUsdPerMillion)}</strong></div>
+        <div><span>Verkauf Cached</span><strong>{money(route.customerCachedInputUsdPerMillion)}</strong></div>
+        <div><span>Verkauf Output</span><strong>{money(route.customerOutputUsdPerMillion)}</strong></div>
+      </div>
+      <p className="llm-route-card__evidence">
+        Faktor {route.markupMultiplier}× · theoretische Bruttomarge {route.grossMarginPercent.toLocaleString('de-DE', { maximumFractionDigits: 2 })}%
+      </p>
 
       <div className="llm-form-grid">
         <label>
