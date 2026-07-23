@@ -59,8 +59,9 @@ jobs:
           path: upstream
           persist-credentials: false
 
-      - name: Build exact source reproducibly and optionally publish immutable image
-        id: image
+      - name: Experimental upstream rebuild (manual maintenance only)
+        if: ${{ false }}
+        id: experimental_build
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -299,6 +300,81 @@ jobs:
           echo "failure_family=" >> "$GITHUB_OUTPUT"
           trap - EXIT
 
+      - name: Resolve and verify the approved immutable image lock
+        id: image
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          lock_path="tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-image.lock.json"
+          test -f "${lock_path}"
+          python - "${lock_path}" "${UPSTREAM_VERSION}" "${UPSTREAM_REVISION}" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          expected_version = sys.argv[2]
+          expected_revision = sys.argv[3]
+          payload = json.loads(path.read_text('utf-8'))
+          image = str(payload.get('image') or '')
+          if not re.fullmatch(
+              r'ghcr\.io/ouroboroscollective/sovereign-freellmpool@sha256:[0-9a-f]{64}',
+              image,
+          ):
+              raise SystemExit('invalid immutable FreeLLMPool image lock')
+          if payload.get('releaseVersion') != expected_version:
+              raise SystemExit('locked release version mismatch')
+          if payload.get('upstreamRevision') != expected_revision:
+              raise SystemExit('locked upstream revision mismatch')
+          contract = payload.get('verifiedContract') or {}
+          required = {
+              'nonRootUid': 10001,
+              'readOnlyRootFilesystem': True,
+              'hostPortsPublished': False,
+              'dockerSocketMounted': False,
+              'healthVerified': True,
+              'catalogVerified': True,
+              'catalogIsReadinessProof': False,
+              'rawProviderResponsesPersisted': False,
+              'secretValuesReturned': False,
+          }
+          if any(contract.get(key) != value for key, value in required.items()):
+              raise SystemExit('locked runtime contract mismatch')
+          if int(contract.get('minimumSuccessfulKeylessCanaries') or 0) < 1:
+              raise SystemExit('locked canary threshold is invalid')
+          print(image)
+          PY
+          repo_digest="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "${lock_path}")"
+          digest="${repo_digest##*@}"
+          digest_hex="${digest#sha256:}"
+          test "${#digest_hex}" = "64"
+          lock_sha256="$(sha256sum "${lock_path}" | cut -d' ' -f1)"
+          test "${#lock_sha256}" = "64"
+
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker pull "${repo_digest}"
+          docker image inspect "${repo_digest}" --format '{{json .RepoDigests}}' \
+            | REPO_DIGEST="${repo_digest}" python -c 'import json,os,sys; values=json.load(sys.stdin); assert os.environ["REPO_DIGEST"] in values, values'
+          image_id="$(docker image inspect "${repo_digest}" --format '{{.Id}}')"
+          test -n "${image_id}"
+          source_epoch="$(git -C upstream show -s --format=%ct "${UPSTREAM_REVISION}")"
+          test "${source_epoch}" -gt 0
+
+          echo "repo_digest=${repo_digest}" >> "$GITHUB_OUTPUT"
+          echo "digest_hex=${digest_hex}" >> "$GITHUB_OUTPUT"
+          echo "runtime_ref=${repo_digest}" >> "$GITHUB_OUTPUT"
+          echo "base_repo_digest=" >> "$GITHUB_OUTPUT"
+          echo "image_id=${image_id}" >> "$GITHUB_OUTPUT"
+          echo "source_epoch=${source_epoch}" >> "$GITHUB_OUTPUT"
+          echo "dependency_lock_sha256=${lock_sha256}" >> "$GITHUB_OUTPUT"
+          echo "runtime_content_sha256=${digest_hex}" >> "$GITHUB_OUTPUT"
+          echo "runtime_content_reproducible_verified=false" >> "$GITHUB_OUTPUT"
+          echo "immutable_digest_readback_verified=true" >> "$GITHUB_OUTPUT"
+          echo "failure_family=" >> "$GITHUB_OUTPUT"
+
       - name: Upload secret-free build failure evidence
         if: failure() && steps.image.outputs.failure_family != ''
         uses: actions/upload-artifact@v4
@@ -477,13 +553,14 @@ jobs:
               "releaseVersion": "0.11.4",
               "image": "${{ steps.image.outputs.repo_digest }}",
               "imageId": "${{ steps.image.outputs.image_id }}",
-              "baseImage": "${{ steps.image.outputs.base_repo_digest }}",
+              "baseImageClaimed": False,
               "sourceDateEpoch": int("${{ steps.image.outputs.source_epoch }}"),
               "dependencyLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
               "runtimeContentSha256": "${{ steps.image.outputs.runtime_content_sha256 }}",
-              "runtimeContentReproducibleVerified": "${{ steps.image.outputs.runtime_content_reproducible_verified }}" == "true",
-              "independentNoCacheBuilds": 2,
-              "localImageIdsEqual": False,
+              "runtimeContentReproducibleVerified": False,
+              "immutableDigestReadbackVerified": "${{ steps.image.outputs.immutable_digest_readback_verified }}" == "true",
+              "imageLockSha256": "${{ steps.image.outputs.dependency_lock_sha256 }}",
+              "rebuildPerformed": False,
               "nonRootUid": 10001,
               "readOnlyRootFilesystem": True,
               "hostPortsPublished": False,
@@ -504,9 +581,10 @@ jobs:
             echo '- Release: `v0.11.4`'
             echo '- Upstream revision: `${{ env.UPSTREAM_REVISION }}`'
             echo '- Immutable image: `${{ steps.image.outputs.repo_digest }}`'
-            echo '- Reproducible runtime content: `2/2 identical`'
-            echo '- Runtime content SHA-256: `${{ steps.image.outputs.runtime_content_sha256 }}`'
-            echo '- Dependency lock SHA-256: `${{ steps.image.outputs.dependency_lock_sha256 }}`'
+            echo '- Approved immutable digest readback: `verified`'
+            echo '- Runtime digest SHA-256: `${{ steps.image.outputs.runtime_content_sha256 }}`'
+            echo '- Image-lock SHA-256: `${{ steps.image.outputs.dependency_lock_sha256 }}`'
+            echo '- Rebuild performed by this verification run: `false`'
             echo '- Forced runtime UID: `10001`'
             echo '- Host ports: `none`'
             echo '- Root filesystem: `read-only`'

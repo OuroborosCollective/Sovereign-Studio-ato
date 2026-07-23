@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "sovereign.freellmpool-image-lock.v1",
+  "image": "ghcr.io/ouroboroscollective/sovereign-freellmpool@sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa",
+  "releaseVersion": "0.11.4",
+  "upstreamRepository": "0xzr/freellmpool",
+  "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+  "provenance": {
+    "workflow": "sovereign-freellmpool-verify.yml",
+    "reviewedPullRequest": 942,
+    "state": "locked-for-current-head-reverification",
+    "historicalArtifactClaimed": false
+  },
+  "verifiedContract": {
+    "nonRootUid": 10001,
+    "readOnlyRootFilesystem": true,
+    "hostPortsPublished": false,
+    "dockerSocketMounted": false,
+    "healthVerified": true,
+    "catalogVerified": true,
+    "catalogIsReadinessProof": false,
+    "minimumSuccessfulKeylessCanaries": 1,
+    "rawProviderResponsesPersisted": false,
+    "secretValuesReturned": false
+  }
+}
