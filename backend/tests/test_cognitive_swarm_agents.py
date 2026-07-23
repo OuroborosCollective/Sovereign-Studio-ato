@@ -17,14 +17,18 @@ from agent_runtime.cognitive_swarm_agents import (
     DEFAULT_MODEL,
     DispatchPlan,
     JudgeVerdict,
+    MissionIntent,
     RELEASE_HUNT_SKILL_PATH,
     SKILL_PATH,
     SwarmExecutionError,
     WorkerReport,
+    _parse_freellm_intent_text,
     agents_sdk_status,
     build_cognitive_swarm,
+    classify_mission_intent,
     classify_swarm_exception,
     run_cognitive_swarm,
+    run_free_single_agent,
 )
 
 
@@ -215,6 +219,214 @@ def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> N
     assert result["finalVerdict"]["verdict"] == "nullfund_confirmed"
     assert result["finalVerdict"]["hunt_outcome"] == "NULLFIND"
     assert result["finalVerdict"]["nullfind_confirmed"] is True
+
+
+def test_freellm_intent_parser_normalizes_plain_text_contract() -> None:
+    intent = _parse_freellm_intent_text(
+        "MODE=repository_execution\nGOAL=Patch the verified workspace and run tests.",
+        "Fallback goal.",
+    )
+
+    assert intent.mode == "repository_execution"
+    assert intent.normalized_goal == "Patch the verified workspace and run tests."
+    assert intent.requires_online_tools is True
+    assert intent.requires_repository_workspace is True
+    assert intent.learning_scope == []
+    assert intent.confidence == 0.0
+
+
+def test_freellm_intent_parser_accepts_fenced_json_without_semantic_guessing() -> None:
+    intent = _parse_freellm_intent_text(
+        '```json\n{"mode":"conversation","normalized_goal":"Explain the current route."}\n```',
+        "Fallback goal.",
+    )
+
+    assert intent.mode == "conversation"
+    assert intent.normalized_goal == "Explain the current route."
+    assert intent.requires_online_tools is False
+    assert intent.requires_repository_workspace is False
+
+
+def test_freellm_intent_parser_rejects_unbounded_natural_language() -> None:
+    with pytest.raises(SwarmExecutionError) as captured:
+        _parse_freellm_intent_text(
+            "I think the user probably wants a repository change.",
+            "Fallback goal.",
+        )
+
+    assert captured.value.family == "AGENTS_INTENT_TEXT_INVALID"
+    assert captured.value.next_action == "RETRY_WITH_PLAIN_TEXT_INTENT_CONTRACT"
+
+
+def test_freellm_intent_router_uses_plain_text_without_output_schema(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.model = kwargs["model"]
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt, *, run_config, max_turns):
+            return SimpleNamespace(
+                final_output="MODE=read_only_analysis\nGOAL=Inspect the persisted route evidence."
+            )
+
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (FakeAgent, FakeRunner))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="auto",
+            transport="freellm",
+            run_config=object(),
+        ),
+    )
+
+    intent = asyncio.run(classify_mission_intent(
+        "Inspect the persisted route evidence.",
+        model="auto",
+        route={"id": "free-auto"},
+    ))
+
+    assert intent.mode == "read_only_analysis"
+    assert intent.normalized_goal == "Inspect the persisted route evidence."
+    assert "output_type" not in captured
+    assert "MODE=<conversation|read_only_analysis|repository_execution>" in str(captured["instructions"])
+
+
+def test_paid_intent_router_keeps_structured_output_contract(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    expected = MissionIntent(
+        mode="read_only_analysis",
+        normalized_goal="Inspect the paid route.",
+        requires_online_tools=True,
+        requires_repository_workspace=False,
+        learning_scope=[],
+        confidence=1.0,
+    )
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.model = kwargs["model"]
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt, *, run_config, max_turns):
+            return SimpleNamespace(final_output=expected)
+
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (FakeAgent, FakeRunner))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="openai/gpt-5.4-mini",
+            transport="openrouter",
+            run_config=object(),
+        ),
+    )
+
+    intent = asyncio.run(classify_mission_intent(
+        "Inspect the paid route.",
+        model="openai/gpt-5.4-mini",
+        route={"id": "paid-main"},
+    ))
+
+    assert intent is expected
+    assert captured["output_type"] is MissionIntent
+
+
+def test_free_single_agent_normalizes_plain_text_without_structured_output(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.model = kwargs["model"]
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt, *, run_config, max_turns):
+            captured["prompt"] = prompt
+            return SimpleNamespace(final_output="  FreeLLM plain-text answer.  ")
+
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (FakeAgent, FakeRunner))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="auto",
+            transport="freellm",
+            run_config=object(),
+        ),
+    )
+    intent = MissionIntent(
+        mode="read_only_analysis",
+        normalized_goal="Inspect the current route state.",
+        requires_online_tools=True,
+        requires_repository_workspace=False,
+        learning_scope=[],
+        confidence=1.0,
+    )
+
+    result = asyncio.run(run_free_single_agent(
+        "Inspect the current route state.",
+        model="auto",
+        intent=intent,
+        route={"id": "free-auto"},
+    ))
+
+    assert result["ok"] is True
+    assert result["status"] == "COMPLETED"
+    assert result["result"]["mode"] == "read_only_analysis"
+    assert result["result"]["assistant_text"] == "FreeLLM plain-text answer."
+    assert result["result"]["response_truncated"] is False
+    assert "output_type" not in captured
+    assert "do not emit JSON or a schema wrapper" in str(captured["instructions"])
+    assert "Validated mission mode: read_only_analysis" in str(captured["prompt"])
+
+
+def test_free_single_agent_rejects_empty_plain_text(monkeypatch) -> None:
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            self.model = kwargs["model"]
+
+    class FakeRunner:
+        @staticmethod
+        async def run(agent, prompt, *, run_config, max_turns):
+            return SimpleNamespace(final_output="   ")
+
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (FakeAgent, FakeRunner))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="auto",
+            transport="freellm",
+            run_config=object(),
+        ),
+    )
+    intent = MissionIntent(
+        mode="conversation",
+        normalized_goal="Say hello.",
+        requires_online_tools=False,
+        requires_repository_workspace=False,
+        learning_scope=[],
+        confidence=1.0,
+    )
+
+    with pytest.raises(SwarmExecutionError) as captured:
+        asyncio.run(run_free_single_agent(
+            "Say hello.",
+            model="auto",
+            intent=intent,
+            route={"id": "free-auto"},
+        ))
+
+    assert captured.value.family == "AGENTS_TEXT_OUTPUT_INVALID"
+    assert captured.value.next_action == "RETRY_WITH_PLAIN_TEXT_OUTPUT"
 
 
 def test_provider_failures_are_classified_without_raw_error_text() -> None:

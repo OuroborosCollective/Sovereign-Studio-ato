@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.metadata
+import json
 import os
 import re
 from collections.abc import Callable
@@ -473,6 +474,91 @@ class MissionIntent(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+_FREELLM_INTENT_MODES: Final[frozenset[str]] = frozenset({
+    "conversation",
+    "read_only_analysis",
+    "repository_execution",
+})
+
+
+def _invalid_freellm_intent(error_type: str) -> SwarmExecutionError:
+    return SwarmExecutionError(
+        stage="intent-router-output",
+        family="AGENTS_INTENT_TEXT_INVALID",
+        error_type=error_type,
+        next_action="RETRY_WITH_PLAIN_TEXT_INTENT_CONTRACT",
+        retryable=True,
+    )
+
+
+def _parse_freellm_intent_text(raw_output: object, fallback_goal: str) -> MissionIntent:
+    """Normalize explicit FreeLLM intent fields without interpreting user language."""
+
+    if not isinstance(raw_output, str) or not raw_output.strip():
+        raise _invalid_freellm_intent(type(raw_output).__name__)
+    text = raw_output.strip()
+    fenced = re.fullmatch(r"```(?:text|json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
+    mode_value = ""
+    goal_value = ""
+    if text.startswith("{"):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise _invalid_freellm_intent("InvalidIntentJson") from exc
+        if not isinstance(payload, dict):
+            raise _invalid_freellm_intent("IntentJsonNotObject")
+        mode_value = str(payload.get("mode") or payload.get("intent") or "")
+        goal_value = str(
+            payload.get("normalized_goal")
+            or payload.get("normalizedGoal")
+            or payload.get("goal")
+            or ""
+        )
+    else:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        mode_index = -1
+        for index, line in enumerate(lines[:4]):
+            cleaned = line.strip("`*_#- ")
+            match = re.fullmatch(
+                r"(?:mode|intent)\s*[:=]\s*([A-Za-z _-]+)",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            candidate = match.group(1) if match else cleaned
+            normalized_candidate = candidate.strip().casefold().replace("-", "_").replace(" ", "_")
+            if normalized_candidate in _FREELLM_INTENT_MODES:
+                mode_value = normalized_candidate
+                mode_index = index
+                break
+        if mode_index < 0:
+            raise _invalid_freellm_intent("UnsupportedIntentMode")
+        goal_lines = lines[mode_index + 1 :]
+        if goal_lines:
+            goal_lines[0] = re.sub(
+                r"^(?:goal|normalized_goal|normalizedGoal)\s*[:=]\s*",
+                "",
+                goal_lines[0],
+                flags=re.IGNORECASE,
+            ).strip()
+        goal_value = " ".join(goal_lines).strip()
+    normalized_mode = mode_value.strip().casefold().replace("-", "_").replace(" ", "_")
+    if normalized_mode not in _FREELLM_INTENT_MODES:
+        raise _invalid_freellm_intent("UnsupportedIntentMode")
+    normalized_goal = (goal_value.strip() or fallback_goal.strip())[:2000]
+    if not normalized_goal:
+        raise _invalid_freellm_intent("EmptyNormalizedGoal")
+    return MissionIntent(
+        mode=normalized_mode,
+        normalized_goal=normalized_goal,
+        requires_online_tools=normalized_mode != "conversation",
+        requires_repository_workspace=normalized_mode == "repository_execution",
+        learning_scope=[],
+        confidence=0.0,
+    )
+
+
 async def classify_mission_intent(
     mission: str,
     *,
@@ -516,19 +602,28 @@ async def classify_mission_intent(
                 retryable=False,
             )
     agent_class, runner_class = _require_agents_sdk()
-    router = agent_class(
-        name="Sovereign Intent Router",
-        model=selected_model,
-        instructions=(
+    freellm_text_contract = bool(
+        route_runtime is not None and route_runtime.transport == "freellm"
+    )
+    router_kwargs: dict[str, Any] = {
+        "name": "Sovereign Intent Router",
+        "model": selected_model,
+        "instructions": (
             "Understand the user's natural language, including typos, slang, incomplete grammar and mixed technical language. "
             "Choose repository_execution when the user asks the system to change, fix, implement, rerun, test, build, deploy, "
             "or otherwise act on the configured repository/runtime. Choose read_only_analysis when tools may inspect evidence "
             "but no mutation is requested. Choose conversation for explanation or discussion without online tools. "
-            "Do not infer success, permissions, secrets or completed actions. Return only the structured intent. "
-            "learning_scope may name reusable observations that should be learned only after real tool evidence exists."
+            "Do not infer success, permissions, secrets or completed actions. "
+            + (
+                "Return plain text with MODE=<conversation|read_only_analysis|repository_execution> on one line and GOAL=<normalized user goal> on the next line. A JSON object with only mode and normalized_goal is also accepted. Do not add commentary."
+                if freellm_text_contract
+                else "Return only the structured intent. learning_scope may name reusable observations that should be learned only after real tool evidence exists."
+            )
         ),
-        output_type=MissionIntent,
-    )
+    }
+    if not freellm_text_contract:
+        router_kwargs["output_type"] = MissionIntent
+    router = agent_class(**router_kwargs)
     result = await _run_billed_stage(
         runner_class,
         router,
@@ -538,7 +633,11 @@ async def classify_mission_intent(
         run_config=route_runtime.run_config if route_runtime else None,
         transport=route_runtime.transport if route_runtime else LEGACY_LITELLM_TRANSPORT,
     )
-    intent = result.final_output
+    intent = (
+        _parse_freellm_intent_text(result.final_output, normalized_mission)
+        if freellm_text_contract
+        else result.final_output
+    )
     if not isinstance(intent, MissionIntent):
         raise SwarmExecutionError(
             stage="intent-router-output",
@@ -563,6 +662,7 @@ class FreeSingleAgentResult(BaseModel):
     blockers: list[str] = Field(default_factory=list, max_length=20)
     upgrade_required: bool = False
     repository_execution_performed: bool = False
+    response_truncated: bool = False
 
 
 async def run_free_single_agent(
@@ -570,6 +670,7 @@ async def run_free_single_agent(
     *,
     evidence: str = "",
     model: str,
+    intent: MissionIntent,
     route: dict[str, Any] | None = None,
     stage_observer: StageObserver | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
@@ -579,6 +680,8 @@ async def run_free_single_agent(
     selected_model = str(model or "").strip()
     if not normalized_mission:
         raise ValueError("mission is required")
+    if not isinstance(intent, MissionIntent):
+        raise ValueError("A validated mission intent is required for the free profile.")
     route_runtime: RouteRunConfig | None = None
     if route is not None:
         try:
@@ -621,11 +724,10 @@ async def run_free_single_agent(
             "You are the single-agent free execution profile. Understand the user's language and complete one bounded task without spawning or delegating to another agent. "
             "When repository tools are present, you may read, create, replace and exactly patch code only inside the isolated Code-Server Agent Job workspace. Read before writing; after every mutation inspect Git status and diff and run at least one relevant allowlisted test. "
             "You must never merge, auto-merge, deploy to production, mutate the host, read secrets, or claim success without tool evidence. "
-            "When repository execution is requested but no repository tools are present, set upgrade_required=true and include WORKSPACE_TOOLS_REQUIRED. "
-            "For conversation or read-only analysis, answer directly. Return only the structured result."
+            "When repository execution is requested but no repository tools are present, explain that the workspace tools are unavailable. "
+            "For conversation or read-only analysis, answer directly. Return one useful plain-text answer; do not emit JSON or a schema wrapper."
         ),
         tools=repository_tools,
-        output_type=FreeSingleAgentResult,
     )
     _emit_stage(
         stage_observer,
@@ -639,6 +741,8 @@ async def run_free_single_agent(
         runner_class,
         single_agent,
         (
+            f"Validated mission mode: {intent.mode}\n"
+            f"Normalized goal: {intent.normalized_goal}\n\n"
             f"User mission:\n{normalized_mission}\n\n"
             f"Supplied read-only evidence:\n{evidence or '[no evidence supplied]'}"
         ),
@@ -647,16 +751,23 @@ async def run_free_single_agent(
         run_config=route_runtime.run_config if route_runtime else None,
         transport=route_runtime.transport if route_runtime else LEGACY_LITELLM_TRANSPORT,
     )
-    output = result.final_output
-    if not isinstance(output, FreeSingleAgentResult):
+    raw_output = result.final_output
+    if not isinstance(raw_output, str) or not raw_output.strip():
         raise SwarmExecutionError(
             stage="free-single-agent-output",
-            family="AGENTS_STRUCTURED_OUTPUT_INVALID",
-            error_type=type(output).__name__,
-            next_action="RETRY_WITH_BOUNDED_SCHEMA_DIAGNOSTICS",
+            family="AGENTS_TEXT_OUTPUT_INVALID",
+            error_type=type(raw_output).__name__,
+            next_action="RETRY_WITH_PLAIN_TEXT_OUTPUT",
             retryable=True,
         )
-    repository_requested = output.mode == "repository_execution"
+    normalized_output = raw_output.strip()
+    assistant_text = normalized_output[:8000]
+    output = FreeSingleAgentResult(
+        mode=intent.mode,
+        assistant_text=assistant_text,
+        response_truncated=len(normalized_output) > len(assistant_text),
+    )
+    repository_requested = intent.mode == "repository_execution"
     workspace_tools_available = bool(repository_tools)
     if repository_requested and not workspace_tools_available:
         output.upgrade_required = True
