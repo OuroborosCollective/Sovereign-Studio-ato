@@ -7,8 +7,20 @@ export const SESSION_INDEX_KEY = 'sovereign-studio.session-index.v1';
 export const MAX_MESSAGES_PER_SESSION = 500;
 export const MAX_SESSIONS_IN_INDEX = 20;
 const SECRET_PATTERNS = [/gh[pousr]_[\w]{8,100}/gi, /github_pat_[\w]{20,200}/gi, /AIza[\w-]{26,60}/gi, /sk-(?:or-v1-|proj-|ant-)?[\w-]{20,}/gi, /Bearer\s+[\w._~+/=-]{20,}/gi] as const;
+let monotonicSessionSequence = 0;
 function stripSecrets(text: string): string { return SECRET_PATTERNS.reduce((value, pattern) => value.replace(pattern, '[REDACTED]'), text); }
-export function generateSessionId(): string { const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 12) : Math.random().toString(36).slice(2, 14); return `${Date.now().toString(36)}-${random}`; }
+function createSessionSuffix(): string {
+  const runtimeCrypto = globalThis.crypto;
+  if (typeof runtimeCrypto?.randomUUID === 'function') return runtimeCrypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  if (typeof runtimeCrypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(8);
+    runtimeCrypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+  }
+  monotonicSessionSequence += 1;
+  return `seq-${monotonicSessionSequence.toString(36)}`;
+}
+export function generateSessionId(): string { return `${Date.now().toString(36)}-${createSessionSuffix()}`; }
 function validSession(value: unknown): value is PersistedSession { if (!value || typeof value !== 'object') return false; const item = value as Record<string, unknown>; return item.version === 2 && typeof item.sessionId === 'string' && Array.isArray(item.messages) && typeof item.createdAt === 'number' && typeof item.updatedAt === 'number'; }
 function loadIndex(storage: Storage): SessionIndex { try { const raw = storage.getItem(SESSION_INDEX_KEY); const parsed = raw ? JSON.parse(raw) as unknown : null; if (parsed && typeof parsed === 'object' && (parsed as Record<string, unknown>).version === 1 && Array.isArray((parsed as Record<string, unknown>).sessions)) return parsed as SessionIndex; } catch { /* fail closed */ } return { version: 1, sessions: [], updatedAt: Date.now() }; }
 function saveIndex(storage: Storage, sessionId: string): void { const current = loadIndex(storage); const sessions = [sessionId, ...current.sessions.filter((id) => id !== sessionId)].slice(0, MAX_SESSIONS_IN_INDEX); storage.setItem(SESSION_INDEX_KEY, JSON.stringify({ version: 1, sessions, updatedAt: Date.now() })); }
