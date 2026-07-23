@@ -141,6 +141,8 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert 'requested_mode not in {"paid", "free"}' in controller
     assert 'if requested_mode == "free":' in controller
     assert 'mode="free"' in controller
+    assert "intent_mode=requested_intent_mode" in controller
+    assert 'body.get("intentMode")' in controller
     assert '"requestedMode": "free"' in controller
     assert "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE" in controller
     assert '"operatorBridge": True' in controller
@@ -245,10 +247,10 @@ def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> N
 
     assert 'def start_cognitive_swarm_run(' in routes
     assert '@app.route("/api/user/agent/swarm/run", methods=["POST"])' in routes
-    assert "mission_intent = asyncio.run(classify_mission_intent(" in free_profile
-    assert "normalized_mission," in free_profile
-    assert "model=resolved_model," in free_profile
-    assert "stage_billing=None," in free_profile
+    assert "mission_intent = _explicit_mission_intent(" in free_profile
+    assert "_normalize_intent_mode(normalized_intent_mode, free_profile=True)" in free_profile
+    assert "classify_mission_intent(" not in free_profile
+    assert "Free execution requires a deterministic intent mode." in free_profile
     assert "create_repository_single_agent_task(" in free_profile
     assert 'task_ids_by_agent={"free_single_agent": free_task_id}' in free_profile
     assert '"codeServerWorkspace"' in free_profile
@@ -390,6 +392,7 @@ def test_controller_exposes_paid_free_switch_and_priced_model_pair() -> None:
     controller = CONTROLLER.read_text("utf-8")
 
     assert 'id="executionMode"' in controller
+    assert 'id="intentMode"' in controller
     assert '<option value="auto">' in controller
     assert '<option value="paid">' in controller
     assert '<option value="free">' in controller
@@ -403,6 +406,8 @@ def test_controller_exposes_paid_free_switch_and_priced_model_pair() -> None:
     assert "providerOutput" not in controller
     assert "Sovereign-Faktor" not in controller
     assert "...executionSelectionPayload()" in controller
+    assert "payload={mode,intentMode}" in controller
+    assert "$('intentMode').value='conversation'" in controller
     assert "FreeLLM wählt automatisch" in controller
     assert "0 Zusatz-/Workspace-Agenten" in controller
 

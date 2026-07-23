@@ -266,6 +266,7 @@ def test_controller_start_sends_bounded_non_secret_mission(monkeypatch) -> None:
         "mission": "Prüfe die Agents-SDK-Runtime.",
         "evidence": "Canary ohne Secrets.",
         "mode": "paid",
+        "intentMode": "auto",
     }
     assert call["timeout"] == 1200
     assert result["runtime"] == "openai-agents-sdk"
@@ -295,8 +296,34 @@ def test_controller_start_can_explicitly_select_free_mode(monkeypatch) -> None:
         "mission": "Prüfe den direkten FreeLLM-Livepfad.",
         "evidence": "Zwei direkte Provider-Canaries sind bestätigt.",
         "mode": "free",
+        "intentMode": "conversation",
     }
     assert result["requestedMode"] == "free"
+
+
+def test_controller_start_forwards_explicit_repository_intent(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([FakeResponse(200, {"ok": True, "status": "COMPLETED"})])
+    client = ControllerRuntimeClient(session=session)
+
+    client.start_run(
+        "Patch the isolated repository workspace.",
+        mode="free",
+        intent_mode="repository_execution",
+    )
+
+    assert session.calls[0]["json"]["intentMode"] == "repository_execution"
+
+
+def test_controller_start_rejects_invalid_intent_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    session = FakeSession([])
+    client = ControllerRuntimeClient(session=session)
+
+    with pytest.raises(ValueError, match="intent_mode ist ungültig"):
+        client.start_run("Prüfe die Runtime.", mode="free", intent_mode="guess")
+    assert session.calls == []
 
 
 def test_controller_start_rejects_unsupported_mode_before_network(monkeypatch) -> None:

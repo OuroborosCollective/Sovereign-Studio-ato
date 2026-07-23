@@ -34,6 +34,8 @@ from agent_runtime.cognitive_run_store import (
 from agent_runtime.cognitive_swarm_agents import SwarmExecutionError, classify_mission_intent
 from agent_runtime.cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
 from agent_runtime.cognitive_swarm_routes import (
+    _explicit_mission_intent,
+    _normalize_intent_mode,
     _persist_billing_blocker,
     _persist_execution_resolution_blocker,
     execute_persisted_swarm,
@@ -312,6 +314,13 @@ def register_controller_board_routes(
         mission = str(body.get("mission") or "").strip()
         evidence = str(body.get("evidence") or "").strip()
         requested_mode = str(body.get("mode") or "paid").strip().lower()
+        try:
+            requested_intent_mode = _normalize_intent_mode(
+                str(body.get("intentMode") or "auto"),
+                free_profile=requested_mode == "free",
+            )
+        except ValueError as exc:
+            return _operator_json({"error": str(exc)}, 400)
         if not mission:
             return _operator_json({"error": "mission is required"}, 400)
         if len(mission) > 20_000:
@@ -345,6 +354,7 @@ def register_controller_board_routes(
                 mission=mission,
                 evidence=evidence,
                 mode="free",
+                intent_mode=requested_intent_mode,
             )
             return _operator_json({
                 **payload,
@@ -457,12 +467,17 @@ def register_controller_board_routes(
                 agent_route=execution_resolution.agent_route,
                 requested_mode=execution_resolution.requested_mode,
             )
-            mission_intent = asyncio.run(classify_mission_intent(
+            mission_intent = _explicit_mission_intent(
+                requested_intent_mode,
                 mission,
-                model=resolved_model,
-                route=execution_resolution.primary_route,
-                stage_billing=stage_billing,
-            ))
+            )
+            if mission_intent is None:
+                mission_intent = asyncio.run(classify_mission_intent(
+                    mission,
+                    model=resolved_model,
+                    route=execution_resolution.primary_route,
+                    stage_billing=stage_billing,
+                ))
         except AgentBillingError as exc:
             try:
                 intent_state = _persist_billing_blocker(
@@ -1522,7 +1537,7 @@ _CONTROLLER_HTML = r"""<!doctype html>
 <section id="login" class="auth card"><h1>Sovereign Controller</h1><p class="muted">Diese Anmeldung erzeugt die echte Sovereign-Benutzersitzung für Agents-SDK-Läufe.</p><input id="email" type="email" placeholder="E-Mail" autocomplete="username"><input id="password" type="password" placeholder="Passwort" autocomplete="current-password" style="margin-top:8px"><button class="primary" style="width:100%;margin-top:10px" onclick="login()">Anmelden</button><p id="loginMsg" class="bad"></p></section>
 <section id="app" class="hidden"><div class="top"><div class="head"><h1>Sovereign Controller Board</h1><span id="sessionState" class="state badge">Sitzung wird geprüft</span><button class="ghost" onclick="logout()">Abmelden</button></div><div class="tabs"><button class="active" data-view="overview">Monitor</button><button data-view="agents">Agenten</button><button data-view="code">Code</button><button data-view="playwright">Playwright</button><button data-view="approvals">Bestätigungen</button><button data-view="admin">Admin</button></div></div>
 <section id="overview" class="view active"><div id="metrics" class="grid"></div><div class="split"><div class="card"><div class="row between"><h2>Aktive Agenten</h2><button class="ghost" onclick="refreshAll()">Aktualisieren</button></div><div id="activeAgents" class="list"></div></div><div class="card"><h2>Letzte Runs</h2><div id="recentRuns" class="list"></div></div></div></section>
-<section id="agents" class="view"><div class="card"><h2>Neue Agents-SDK-Mission</h2><textarea id="mission" placeholder="Mission ohne Secrets"></textarea><textarea id="evidence" placeholder="Optionale Runtime-Evidence ohne Zugangsdaten" style="margin-top:8px"></textarea><div class="split" style="margin-top:10px"><label class="muted">Ausführungsmodus<select id="executionMode" onchange="syncExecutionMode()"><option value="auto">Automatisch (Paid, sonst Free)</option><option value="paid">Paid · OpenRouter + 6 Agenten</option><option value="free">Free · FreeLLM, 1 Agent</option></select></label><span></span></div><div id="paidModelSelection" class="split" style="margin-top:10px"><label class="muted">Paid-Hauptmodell<select id="mainModel" onchange="renderModelPrice()"></select></label><label class="muted">Gemeinsames Modell der 6 Agenten<select id="agentModel" onchange="renderModelPrice()"></select></label></div><p id="modelPrice" class="muted">OpenRouter-Katalog wird geladen…</p><div class="row" style="margin-top:10px"><button class="primary" onclick="startMission()">Mission starten</button><span id="missionMsg" class="muted"></span></div></div><div class="card"><h2>Run-Status</h2><div id="runs" class="list"></div></div><div id="runDetail" class="card hidden"></div></section>
+<section id="agents" class="view"><div class="card"><h2>Neue Agents-SDK-Mission</h2><textarea id="mission" placeholder="Mission ohne Secrets"></textarea><textarea id="evidence" placeholder="Optionale Runtime-Evidence ohne Zugangsdaten" style="margin-top:8px"></textarea><div class="split" style="margin-top:10px"><label class="muted">Ausführungsmodus<select id="executionMode" onchange="syncExecutionMode()"><option value="auto">Automatisch (Paid, sonst Free)</option><option value="paid">Paid · OpenRouter + 6 Agenten</option><option value="free">Free · FreeLLM, 1 Agent</option></select></label><label class="muted">Absichtsvertrag<select id="intentMode"><option value="auto">Automatisch · nur Paid-Classifier</option><option value="conversation">Gespräch · keine Repository-Werkzeuge</option><option value="read_only_analysis">Read-only Analyse</option><option value="repository_execution">Repository-Ausführung · isolierter Workspace</option></select></label></div><div id="paidModelSelection" class="split" style="margin-top:10px"><label class="muted">Paid-Hauptmodell<select id="mainModel" onchange="renderModelPrice()"></select></label><label class="muted">Gemeinsames Modell der 6 Agenten<select id="agentModel" onchange="renderModelPrice()"></select></label></div><p id="modelPrice" class="muted">OpenRouter-Katalog wird geladen…</p><div class="row" style="margin-top:10px"><button class="primary" onclick="startMission()">Mission starten</button><span id="missionMsg" class="muted"></span></div></div><div class="card"><h2>Run-Status</h2><div id="runs" class="list"></div></div><div id="runDetail" class="card hidden"></div></section>
 <section id="code" class="view"><div class="card"><div class="row between"><h2>Commits & Änderungen</h2><button class="ghost" onclick="loadGithub()">Neu laden</button></div><div id="latestCommit"></div><div id="commits" class="list"></div></div></section>
 <section id="playwright" class="view"><div id="playwrightMetrics" class="grid"></div><div class="card"><h2>Playwright / E2E Evidence</h2><p class="muted">Nur echte GitHub-Actions-Läufe; keine simulierten Browserzustände.</p><div id="playwrightRuns" class="list"></div></div><div class="card"><h2>Weitere Workflows</h2><div id="workflowRuns" class="list"></div></div></section>
 <section id="approvals" class="view"><div class="card notice"><h2>Bestätigungen des aktiven Nutzers</h2><p class="muted">Zustimmung speichert Evidence und startet anschließend den echten Resume-Pfad. Geschützte Eingaben bleiben im Owner-Panel.</p><div id="approvalList" class="list"></div></div></section>
@@ -1541,9 +1556,9 @@ function runCard(r){return `<div class="item"><div class="row between"><h3>${esc
 function modelOptionLabel(model){const p=model.prices||{};return (model.displayName||model.selectionId)+' · Preis Input $'+(p.input||'–')+'/M · Output $'+(p.output||'–')+'/M'}
 function selectedModel(id){return (state.modelCatalog?.models||[]).find(model=>model.selectionId===$(id)?.value)}
 function renderModelPrice(){const mode=$('executionMode')?.value||'auto';if(mode==='free'){$('modelPrice').textContent='FreeLLM wählt automatisch nach verfügbarem Modellkontingent · 1 Agent · 0 Zusatz-/Workspace-Agenten.';return}const main=selectedModel('mainModel'),agents=selectedModel('agentModel');if(!main||!agents){$('modelPrice').textContent='Paid-Katalog ist noch nicht aktiviert oder nicht verfügbar.';return}const mp=main.prices||{},ap=agents.prices||{};$('modelPrice').textContent='Euer Preis · Hauptmodell: $'+mp.input+'/M Input, $'+mp.output+'/M Output · 6-Agenten-Modell: $'+ap.input+'/M Input, $'+ap.output+'/M Output.'}
-function syncExecutionMode(){const free=($('executionMode')?.value||'auto')==='free';$('paidModelSelection').classList.toggle('hidden',free);$('mainModel').disabled=free||!state.modelCatalog;$('agentModel').disabled=free||!state.modelCatalog;renderModelPrice()}
+function syncExecutionMode(){const free=($('executionMode')?.value||'auto')==='free';$('paidModelSelection').classList.toggle('hidden',free);$('mainModel').disabled=free||!state.modelCatalog;$('agentModel').disabled=free||!state.modelCatalog;if(free&&$('intentMode').value==='auto')$('intentMode').value='conversation';renderModelPrice()}
 async function loadModelCatalog(){const main=$('mainModel'),agents=$('agentModel');if(!main||!agents)return;const previousMain=main.value,previousAgent=agents.value;try{const d=await api('/api/user/agent/swarm/models');state.modelCatalog=d;const options=(d.models||[]).map(model=>'<option value="'+esc(model.selectionId)+'">'+esc(modelOptionLabel(model))+'</option>').join('');main.innerHTML=options;agents.innerHTML=options;const defaults=d.defaults||{};main.value=(d.models||[]).some(x=>x.selectionId===previousMain)?previousMain:(defaults.mainModel||'');agents.value=(d.models||[]).some(x=>x.selectionId===previousAgent)?previousAgent:(defaults.agentModel||'')}catch(e){state.modelCatalog=null;main.innerHTML='<option value="">OpenRouter noch nicht aktiviert</option>';agents.innerHTML='<option value="">OpenRouter noch nicht aktiviert</option>'}syncExecutionMode()}
-function executionSelectionPayload(){const mode=$('executionMode')?.value||'auto',payload={mode};if(mode!=='free'&&state.modelCatalog){payload.mainModel=$('mainModel').value;payload.agentModel=$('agentModel').value}return payload}
+function executionSelectionPayload(){const mode=$('executionMode')?.value||'auto',intentMode=$('intentMode')?.value||'auto',payload={mode,intentMode};if(mode!=='free'&&state.modelCatalog){payload.mainModel=$('mainModel').value;payload.agentModel=$('agentModel').value}return payload}
 async function startMission(){const m=$('mission').value.trim();if(!m)return;$('missionMsg').textContent='Runtime läuft…';try{const d=await api('/api/user/agent/swarm/run',{method:'POST',body:JSON.stringify({mission:m,evidence:$('evidence').value.trim(),...executionSelectionPayload()})});$('missionMsg').textContent=(d.status||'')+' · '+(d.reason||'');await loadOverview();if(d.runId)runDetail(d.runId)}catch(e){$('missionMsg').textContent=(e.data?.status||'Fehler')+' · '+(e.data?.reason||e.message);await loadOverview()}}
 async function resumeRun(id,evidence){try{const d=await api('/api/user/agent/swarm/runs/'+encodeURIComponent(id)+'/resume',{method:'POST',body:JSON.stringify({evidence,...executionSelectionPayload()})});await loadOverview();await runDetail(id);return d}catch(e){await loadOverview();alert(e.data?.reason||e.message)}}
 async function runDetail(id){const d=await api('/api/controller/runs/'+encodeURIComponent(id));const r=d.run,h=d.releaseHunt||{};$('runDetail').classList.remove('hidden');$('runDetail').innerHTML=`<div class="row between"><h2>${esc(r.mission_summary)}</h2>${badge(r.status)}</div><p>${esc(r.reason)}</p>${h.outcome?`<div class="item"><div class="row between"><b>Release-Jagd · ${esc(h.errorFamily||'unbekannte Familie')}</b>${badge(h.outcome)}</div><p>Nullfund bestätigt: ${h.nullfindConfirmed?'ja':'nein'}</p>${h.nextErrorFamily?`<p>Nächste Familie: ${esc(h.nextErrorFamily)}</p>`:''}</div>`:''}<p class="code">Evidence: ${esc(r.evidence_id)}<br>Trace: ${esc(r.trace_id)}<br>Next: ${esc(r.next_action)}</p><h3>Tasks</h3><div class="list">${(d.tasks||[]).map(x=>`<div class="item"><div class="row between"><b>${esc(x.agent_id)}</b><span>${badge(x.status)} ${badge(x.taskLifecycle||'historical')}</span></div><p>${esc(x.work_package)}</p>${x.isActiveBlocker?'<p class="bad">Aktiver Blocker</p>':x.taskLifecycle==='historical'?'<p class="muted">Historische Evidence, kein aktiver Blocker.</p>':''}</div>`).join('')||'<p class="muted">Keine Tasks.</p>'}</div><h3>Failures</h3><div class="list">${(d.failures||[]).map(x=>{const q=x.diagnostics||{};return `<div class="item"><div class="row between"><b>${esc(x.family)}</b>${badge(x.recoverable?'FAILED_RECOVERABLE':'FAILED_FINAL')}</div><p>${esc(x.summary)}</p><p class="code">Stage: ${esc(q.failureStage||'unknown')}<br>Error: ${esc(q.errorType||'unknown')}<br>HTTP: ${esc(q.httpStatus??'–')}<br>Request: ${esc(q.requestId||'–')}<br>Next: ${esc(q.nextAction||'–')}</p></div>`}).join('')||'<p class="muted">Keine Failure-Evidence.</p>'}</div><h3>Events</h3><div class="timeline">${(d.events||[]).map(x=>`<div class="item"><b>${esc(x.agent_id)} · ${esc(x.type)}</b> ${badge(x.status)}<p>${esc(x.summary)}</p></div>`).join('')}</div>`;$('runDetail').scrollIntoView({behavior:'smooth'})}

@@ -427,10 +427,12 @@ class ControllerRuntimeClient(OwnerInputClient):
         mission: str,
         evidence: str = "",
         mode: str = "paid",
+        intent_mode: str = "auto",
     ) -> dict[str, Any]:
         bounded_mission = str(mission or "").strip()
         bounded_evidence = str(evidence or "").strip()
         selected_mode = str(mode or "paid").strip().lower()
+        selected_intent_mode = str(intent_mode or "auto").strip().casefold().replace("-", "_").replace(" ", "_")
         if not bounded_mission:
             raise ValueError("mission ist erforderlich")
         if len(bounded_mission) > MAX_OPERATOR_MISSION:
@@ -442,6 +444,10 @@ class ControllerRuntimeClient(OwnerInputClient):
             raise ValueError("Secret-förmiger Inhalt ist im Operator-Start verboten")
         if selected_mode not in {"paid", "free"}:
             raise ValueError("mode muss paid oder free sein")
+        if selected_intent_mode not in {"auto", "conversation", "read_only_analysis", "repository_execution"}:
+            raise ValueError("intent_mode ist ungültig")
+        if selected_mode == "free" and selected_intent_mode == "auto":
+            selected_intent_mode = "conversation"
         return self._request(
             "POST",
             "/api/internal/controller/runs",
@@ -449,6 +455,7 @@ class ControllerRuntimeClient(OwnerInputClient):
                 "mission": bounded_mission,
                 "evidence": bounded_evidence,
                 "mode": selected_mode,
+                "intentMode": selected_intent_mode,
             },
             expected=(200, 202, 502, 503),
             timeout=1200,

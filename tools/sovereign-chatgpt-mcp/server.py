@@ -652,12 +652,14 @@ def controller_run_start(
     mission: str,
     evidence: str = "",
     mode: str = "paid",
+    intent_mode: str = "auto",
 ) -> dict[str, Any]:
     """Start one owner-scoped persisted paid or FreeLLM run with bounded non-secret input."""
     return controller_runtime.start_run(
         mission=mission,
         evidence=evidence,
         mode=mode,
+        intent_mode=intent_mode,
     )
 
 
