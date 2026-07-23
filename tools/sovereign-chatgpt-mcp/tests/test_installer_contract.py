@@ -237,8 +237,9 @@ def test_github_vps_runtime_canaries_keep_socket_and_host_worker_contracts_separ
     )[0]
 
     assert 'failure_family") == "INBOUND_MUTATION_FORBIDDEN"' in installer
-    assert 'worker.get("status") == "HOST_WORKER_READY"' in installer
-    assert 'worker.get("execution_origin") == "host_worker"' in installer
+    assert 'result.get("status") != "HOST_WORKER_READY"' in installer
+    assert 'result.get("execution_origin") != "host_worker"' in installer
+    assert 'host worker canary did not become ready after bounded retries' in installer
     assert "canary.get('status') == 'HOST_WORKER_READY'" in install_step
     assert "canary.get('execution_origin') == 'host_worker'" in install_step
     assert "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'" not in install_step

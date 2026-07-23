@@ -277,6 +277,14 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer
     assert 'INSTALL_STAGE="verify_host_worker_canary"' in installer
+    assert "verify_host_worker_canary()" in installer
+    assert 'for attempt in $(seq 1 12)' in installer
+    assert 'server.broker.call("host_worker_canary", {}, timeout=5)' in installer
+    assert 'systemctl is-active --quiet sovereign-chatgpt-command-worker.service' in installer
+    assert 'host command worker left the active state before the canary succeeded' in installer
+    assert 'host_command_queue_counts=' in installer
+    assert 'host worker canary did not become ready after bounded retries' in installer
+    assert "verify_host_worker_canary\n" in installer
     assert 'INSTALL_STAGE="verify_mcp_protocol_handshake"' in installer
     assert 'INSTALL_STAGE="verify_android_native_boundary"' in installer
     assert 'INSTALL_STAGE="verify_workspace_write_boundary"' in installer
