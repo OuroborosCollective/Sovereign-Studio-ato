@@ -94,11 +94,13 @@ jobs:
           path = Path('upstream-normalized/Dockerfile')
           lines = path.read_text('utf-8').splitlines()
           expected = 'FROM python:3.12-slim'
-          if not lines or lines[0].strip() != expected:
+          matches = [index for index, line in enumerate(lines) if line.strip() == expected]
+          if len(matches) != 1:
               raise SystemExit('unexpected upstream Dockerfile base contract')
           base = os.environ['BASE_REPO_DIGEST']
-          lines[0] = f'FROM {base}'
-          lines[1:1] = [
+          from_index = matches[0]
+          lines[from_index] = f'FROM {base}'
+          lines[from_index + 1:from_index + 1] = [
               'ARG SOURCE_DATE_EPOCH',
               'ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}',
               'ENV PYTHONDONTWRITEBYTECODE=1',
