@@ -38,6 +38,8 @@ ANDROID_SURFACE_FILES = frozenset({
     "settings.gradle",
     "gradle.properties",
 })
+MAIN_RULESET_NAME = "Sovereign Main Revision Green Gate"
+MAIN_RULESET_REQUIRED_CHECKS = ("Release Gate", "Agent Runtime Tests")
 
 
 def _enabled(name: str) -> bool:
@@ -537,6 +539,120 @@ class GitHubAdminRuntime:
             "ready_transition": ready_transition,
             "ignored_pending_checks": ignored_pending_checks,
             "self_update": update_result,
+        }
+
+    def apply_main_ruleset(self, *, owner_approved: bool = False) -> dict[str, Any]:
+        """Create or reconcile the active main ruleset and verify exact GitHub readback."""
+        blocked = self._require_owner_pr_admin(owner_approved)
+        if blocked:
+            return blocked
+        default_branch = self._default_branch()
+        if default_branch != "main":
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Repository-Default-Branch ist nicht main",
+                "default_branch": default_branch,
+            }
+        payload = {
+            "name": MAIN_RULESET_NAME,
+            "target": "branch",
+            "enforcement": "active",
+            "bypass_actors": [],
+            "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+            "rules": [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {
+                    "type": "pull_request",
+                    "parameters": {
+                        "allowed_merge_methods": ["squash"],
+                        "dismiss_stale_reviews_on_push": True,
+                        "require_code_owner_review": False,
+                        "require_last_push_approval": False,
+                        "required_approving_review_count": 0,
+                        "required_review_thread_resolution": True,
+                    },
+                },
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "do_not_enforce_on_create": False,
+                        "strict_required_status_checks_policy": True,
+                        "required_status_checks": [
+                            {"context": context} for context in MAIN_RULESET_REQUIRED_CHECKS
+                        ],
+                    },
+                },
+            ],
+        }
+        listed = self._request(
+            "GET",
+            f"/repos/{self.repository}/rulesets",
+            params={"targets": "branch", "includes_parents": "false", "per_page": 100},
+        )
+        matches = [
+            item for item in listed
+            if isinstance(item, dict) and str(item.get("name") or "") == MAIN_RULESET_NAME
+        ] if isinstance(listed, list) else []
+        if len(matches) > 1:
+            raise RuntimeError("Mehrere gleichnamige Main-Rulesets gefunden")
+        if matches:
+            ruleset_id = int(matches[0].get("id") or 0)
+            if ruleset_id < 1:
+                raise RuntimeError("GitHub lieferte keine gültige Ruleset-ID")
+            self._request(
+                "PUT",
+                f"/repos/{self.repository}/rulesets/{ruleset_id}",
+                json_body=payload,
+                expected=(200,),
+                timeout=60,
+            )
+            mutation_status = "UPDATED"
+        else:
+            created = self._request(
+                "POST",
+                f"/repos/{self.repository}/rulesets",
+                json_body=payload,
+                expected=(201,),
+                timeout=60,
+            )
+            ruleset_id = int(created.get("id") or 0) if isinstance(created, dict) else 0
+            if ruleset_id < 1:
+                raise RuntimeError("GitHub bestätigte keine Ruleset-ID")
+            mutation_status = "CREATED"
+        readback = self._request("GET", f"/repos/{self.repository}/rulesets/{ruleset_id}")
+        if not isinstance(readback, dict):
+            raise RuntimeError("GitHub Ruleset-Readback ist ungültig")
+        if (
+            str(readback.get("name") or "") != MAIN_RULESET_NAME
+            or str(readback.get("target") or "") != "branch"
+            or str(readback.get("enforcement") or "") != "active"
+            or readback.get("bypass_actors") not in ([], None)
+            or readback.get("conditions") != payload["conditions"]
+        ):
+            raise RuntimeError("GitHub Ruleset-Readback weicht vom kanonischen Vertrag ab")
+        rules = readback.get("rules") if isinstance(readback.get("rules"), list) else []
+        required_rule = next((item for item in rules if isinstance(item, dict) and item.get("type") == "required_status_checks"), None)
+        contexts = {
+            str(item.get("context") or "")
+            for item in ((required_rule or {}).get("parameters") or {}).get("required_status_checks", [])
+            if isinstance(item, dict)
+        }
+        if contexts != set(MAIN_RULESET_REQUIRED_CHECKS):
+            raise RuntimeError("GitHub bestätigte die erforderlichen Statuschecks nicht vollständig")
+        return {
+            "ok": True,
+            "status": f"RULESET_{mutation_status}",
+            "ruleset_id": ruleset_id,
+            "name": MAIN_RULESET_NAME,
+            "target_ref": "refs/heads/main",
+            "enforcement": "active",
+            "required_status_checks": list(MAIN_RULESET_REQUIRED_CHECKS),
+            "bypass_actors": [],
+            "owner_approved": True,
+            "readback_verified": True,
+            "url": str(((readback.get("_links") or {}).get("html") or {}).get("href") or ""),
         }
 
     def update_pr(

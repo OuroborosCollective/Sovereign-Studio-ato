@@ -549,6 +549,65 @@ def test_workflow_dispatch_rejects_secret_shaped_inputs(monkeypatch) -> None:
         )
 
 
+def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_readback(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    repository_path = "/repos/OuroborosCollective/Sovereign-Studio-ato"
+    readback = {
+        "id": 42,
+        "name": "Sovereign Main Revision Green Gate",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "required_status_checks": [
+                        {"context": "Release Gate"},
+                        {"context": "Agent Runtime Tests"},
+                    ]
+                },
+            },
+        ],
+        "_links": {"html": {"href": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/rules/42"}},
+    }
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", repository_path): [FakeResponse(200, {"default_branch": "main"})],
+            ("GET", f"{repository_path}/rulesets"): [FakeResponse(200, [])],
+            ("POST", f"{repository_path}/rulesets"): [FakeResponse(201, {"id": 42})],
+            ("GET", f"{repository_path}/rulesets/42"): [FakeResponse(200, readback)],
+        },
+    )
+
+    result = runtime.apply_main_ruleset(owner_approved=True)
+
+    assert result["status"] == "RULESET_CREATED"
+    assert result["readback_verified"] is True
+    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests"]
+    post_call = next(call for call in session.calls if call["method"] == "POST")
+    assert post_call["json"]["bypass_actors"] == []
+    assert post_call["json"]["conditions"]["ref_name"]["include"] == ["refs/heads/main"]
+    required = next(rule for rule in post_call["json"]["rules"] if rule["type"] == "required_status_checks")
+    assert required["parameters"]["strict_required_status_checks_policy"] is True
+
+
+def test_apply_main_ruleset_blocks_without_owner_approval(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime, _update, session = _runtime(monkeypatch, {})
+
+    result = runtime.apply_main_ruleset(owner_approved=False)
+
+    assert result["status"] == "BLOCKED"
+    assert session.calls == []
+
+
 def test_workflow_run_status_returns_failed_step_evidence(monkeypatch) -> None:
     runtime, _update, _session = _runtime(
         monkeypatch,
