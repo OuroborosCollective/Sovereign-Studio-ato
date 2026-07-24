@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import subprocess
 
@@ -15,6 +16,26 @@ def test_installer_has_valid_bash_syntax() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_launcher_local_modules_are_packaged_and_installed() -> None:
+    launcher_path = ROOT / "launcher.py"
+    launcher_tree = ast.parse(launcher_path.read_text("utf-8"))
+    local_modules = {
+        alias.name
+        for node in launcher_tree.body
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if (ROOT / f"{alias.name}.py").is_file()
+    }
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+
+    assert local_modules
+    for module in sorted(local_modules):
+        filename = f"{module}.py"
+        assert filename in dockerfile, f"launcher import is missing from Docker image: {filename}"
+        assert filename in installer, f"launcher import is missing from VPS install copy set: {filename}"
 
 
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
@@ -136,6 +157,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'skill_supply_chain_tools.py' in installer
     assert 'deterministic_contract.py' in installer
     assert 'deterministic_architecture_tools.py' in installer
+    assert 'database_evidence_tools.py' in installer
     assert 'enterprise_backend_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
     assert 'operating_profile.py' in installer
@@ -168,6 +190,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'skill_supply_chain_tools.py' in dockerfile
     assert 'deterministic_contract.py' in dockerfile
     assert 'deterministic_architecture_tools.py' in dockerfile
+    assert 'database_evidence_tools.py' in dockerfile
     assert 'enterprise_backend_tools.py' in dockerfile
     assert 'operating_profile.py' in dockerfile
     assert 'operational_governance_tools.py' in dockerfile
@@ -191,6 +214,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'skill_supply_chain_tools.register(server.mcp, server.runtime)' in launcher
     assert 'import deterministic_architecture_tools' in launcher
     assert 'deterministic_architecture_tools.register(server.mcp, server.runtime)' in launcher
+    assert 'import database_evidence_tools' in launcher
+    assert 'database_evidence_tools.register(server.mcp, server.runtime, server.database, server.broker)' in launcher
     assert 'import enterprise_backend_tools' in launcher
     assert 'enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)' in launcher
     assert 'import openai_project_access_tools' in launcher
@@ -252,6 +277,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'callable(deterministic_architecture_tools.deterministic_tool_inventory)' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_replay_verify)' in installer
     assert 'callable(deterministic_architecture_tools.deterministic_transformation_plan)' in installer
+    assert 'callable(database_evidence_tools.database_evidence_skill_inventory)' in installer
+    assert 'callable(database_evidence_tools.postgres_evidence_read)' in installer
+    assert 'callable(database_evidence_tools.postgres_evidence_migration_preview)' in installer
+    assert 'callable(database_evidence_tools.database_evidence_receipt_verify)' in installer
     assert 'callable(enterprise_backend_tools.backend_engineering_tool_inventory)' in installer
     assert 'callable(enterprise_backend_tools.backend_architecture_assess)' in installer
     assert 'callable(enterprise_backend_tools.backend_stack_select)' in installer
@@ -284,6 +313,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'all(getattr(tool, "output_schema", None)' in installer
     assert 'assurance=operational_assurance_tools.operational_assurance_skill_inventory()' in installer
     assert 'registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False)' in installer
+    assert '"database_evidence_tools":true' in installer
     assert '"enterprise_backend_tools":true' in installer
     assert '"operational_governance_tools":true' in installer
     assert '"operational_assurance_tools":true' in installer
