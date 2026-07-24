@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import android_validation_router
+import database_evidence_tools
 import deterministic_architecture_tools
 import enterprise_backend_tools
 import freemium_product_architect_tools
@@ -18,6 +19,7 @@ import tool_extensions
 
 
 android_validation_router.install(server.android, server.runtime, server.broker)
+database_evidence_tools.register(server.mcp, server.runtime, server.database, server.broker)
 deterministic_architecture_tools.register(server.mcp, server.runtime)
 enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)
 freemium_product_architect_tools.register(server.mcp)
