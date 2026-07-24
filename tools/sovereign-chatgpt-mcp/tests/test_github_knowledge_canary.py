@@ -154,6 +154,60 @@ def test_terminal_success_without_complete_evidence_is_rejected(monkeypatch) -> 
     assert result["status"] == "GITHUB_KNOWLEDGE_LIVE_CANARY_FAILED"
 
 
+def test_terminal_success_with_mismatched_runtime_identity_is_rejected(monkeypatch) -> None:
+    mismatched = {
+        "ok": True,
+        "status": "GITHUB_KNOWLEDGE_LIVE_CANARY_VERIFIED",
+        "sourceRevision": "c" * 40,
+        "imageDigest": DIGEST,
+        "evidence": {
+            "source": {
+                "status": "ready",
+                "chunkCount": 1,
+                "embeddedCount": 1,
+                "candidateCount": 1,
+                "outboxCount": 1,
+                "publicReadWithoutCredential": True,
+            },
+            "transportFailure": {
+                "blocker": "github_api_timeout",
+                "httpStatus": 504,
+                "auditRecorded": True,
+                "rawUrlPersisted": False,
+                "rawExceptionPersisted": False,
+            },
+        },
+        "cleanupVerified": True,
+        "cleanup": {
+            "sourceRows": 0,
+            "linkRows": 0,
+            "candidateRows": 0,
+            "blockRows": 0,
+            "outboxRows": 0,
+            "auditRows": 0,
+        },
+        "secretValuesReturned": False,
+        "documentContentReturned": False,
+    }
+
+    monkeypatch.setattr(
+        github_knowledge_canary.subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(
+            argv, 0, stdout=json.dumps(mismatched) + "\n", stderr=""
+        ),
+    )
+
+    result = github_knowledge_canary.GitHubKnowledgeCanaryRuntime().live_canary(
+        expected_revision=REVISION,
+        expected_image_digest=DIGEST,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "GITHUB_KNOWLEDGE_LIVE_CANARY_FAILED"
+    assert result["sourceRevision"] == REVISION
+
+
 def test_canary_failure_never_returns_stderr_or_document_content(monkeypatch) -> None:
     def fake_run(argv, **kwargs):
         return subprocess.CompletedProcess(
