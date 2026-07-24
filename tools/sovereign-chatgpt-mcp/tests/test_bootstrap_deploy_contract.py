@@ -25,11 +25,25 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
     rollback = (MCP_ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
 
-    assert deploy.count('--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"') == 2
+    assert deploy.count('--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"') == 1
+    assert '--env "SOVEREIGN_IMAGE_DIGEST=$runtime_digest"' in deploy
+    assert 'start_production "$NEW_IMAGE" "$EXPECTED_REVISION" "$DIGEST"' in deploy
+    assert 'start_production "$PREVIOUS_IMAGE" "$PREVIOUS_REVISION" "$PREVIOUS_DIGEST"' in deploy
     assert '--env "SOVEREIGN_SOURCE_REVISION=$EXPECTED_REVISION"' in deploy
     assert '--env "SOVEREIGN_SOURCE_REVISION=$revision"' in deploy
     assert '--env "SOVEREIGN_IMAGE_DIGEST=$DIGEST"' in rollback
     assert '--env "SOVEREIGN_SOURCE_REVISION=$REVISION"' in rollback
+    assert 'ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED' in deploy
+    assert '/api/admin/platform/v1/identity' in deploy
+    assert '/api/admin/platform/v1/overview' in deploy
+    assert '/api/admin/platform/v1/integrations' in deploy
+    assert '/api/admin/platform/v1/evidence?limit=30' in deploy
+    assert 'X-Sovereign-Admin-Producer' in deploy
+    assert 'CANONICAL_REACT_ADMIN' in deploy
+    assert 'ADMIN_API_KEY' in deploy
+    assert 'backend-rollback-receipt.json' in deploy
+    assert 'rollbackPreviewVerified' in deploy
+    assert 'secretValuesReturned' in deploy
 
 
 def test_operator_deployment_path_has_no_curl_dependency() -> None:

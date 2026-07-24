@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -268,7 +269,76 @@ class OperationsRuntime:
         if not self.deploy_script.is_file() or not os.access(self.deploy_script, os.X_OK):
             return {"ok": False, "status": "BLOCKED", "blocker": f"Fixes Deploy-Skript fehlt: {self.deploy_script}"}
         result = self._run(self.deploy_script, [image_digest, expected_revision])
-        return {**result, "status": "DEPLOYED" if result["ok"] else "FAILED", "image_digest": image_digest, "expected_revision": expected_revision}
+        if not result["ok"]:
+            return {
+                "ok": False,
+                "status": "FAILED",
+                "failureFamily": "BACKEND_DEPLOY_SCRIPT_FAILED",
+                "blocker": "Das revisionsgebundene Backend-Deployskript ist fehlgeschlagen",
+                "image_digest": image_digest,
+                "expected_revision": expected_revision,
+                "mutationPerformed": False,
+                "readbackVerified": False,
+                "stderrSha256": hashlib.sha256(result["stderr"].encode("utf-8")).hexdigest(),
+                "secretValuesReturned": False,
+            }
+
+        try:
+            lines = [line.strip() for line in result["stdout"].splitlines() if line.strip()]
+            readback = json.loads(lines[-1])
+        except (IndexError, TypeError, ValueError, json.JSONDecodeError):
+            return {
+                "ok": False,
+                "status": "DEPLOYED_ADMIN_READBACK_INVALID",
+                "failureFamily": "BACKEND_DEPLOY_READBACK_INVALID",
+                "blocker": "Das Deployskript meldete Erfolg ohne gültigen strukturierten Readback",
+                "image_digest": image_digest,
+                "expected_revision": expected_revision,
+                "mutationPerformed": True,
+                "readbackVerified": False,
+                "stdoutSha256": hashlib.sha256(result["stdout"].encode("utf-8")).hexdigest(),
+                "secretValuesReturned": False,
+            }
+
+        health = readback.get("health") if isinstance(readback.get("health"), dict) else {}
+        admin_canary = readback.get("adminCanary") if isinstance(readback.get("adminCanary"), dict) else {}
+        rollback = readback.get("rollback") if isinstance(readback.get("rollback"), dict) else {}
+        verified = bool(
+            readback.get("ok") is True
+            and readback.get("status") == "DEPLOYED_ADMIN_VERIFIED"
+            and readback.get("imageDigest") == image_digest
+            and readback.get("revision") == expected_revision
+            and readback.get("readbackVerified") is True
+            and health.get("ok") is True
+            and health.get("sourceRevision") == expected_revision
+            and health.get("imageDigest") == image_digest
+            and admin_canary.get("ok") is True
+            and admin_canary.get("status") == "ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED"
+            and admin_canary.get("sourceRevision") == expected_revision
+            and admin_canary.get("imageDigest") == image_digest
+            and admin_canary.get("secretValuesReturned") is False
+            and rollback.get("previewVerified") is True
+            and IMAGE_DIGEST_RE.fullmatch(str(rollback.get("previousImageDigest") or ""))
+            and COMMIT_SHA_RE.fullmatch(str(rollback.get("previousRevision") or ""))
+            and re.fullmatch(r"[0-9a-f]{64}", str(rollback.get("receiptSha256") or ""))
+        )
+        return {
+            "ok": verified,
+            "status": "DEPLOYED_ADMIN_VERIFIED" if verified else "DEPLOYED_ADMIN_READBACK_INCOMPLETE",
+            "failureFamily": None if verified else "BACKEND_DEPLOY_READBACK_INCOMPLETE",
+            "blocker": None if verified else "Admin-, Revisions- oder Rollback-Readback ist unvollständig",
+            "image_digest": image_digest,
+            "expected_revision": expected_revision,
+            "actualRevision": str(readback.get("revision") or "") or None,
+            "readbackVerified": verified,
+            "mutationPerformed": True,
+            "ownerApproved": os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1",
+            "health": health,
+            "adminCanary": admin_canary,
+            "rollback": rollback,
+            "stdoutSha256": hashlib.sha256(result["stdout"].encode("utf-8")).hexdigest(),
+            "secretValuesReturned": False,
+        }
 
     def rollback_release(self, *, target_image_digest: str, confirmation_digest: str) -> dict[str, Any]:
         if os.getenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "0") != "1":

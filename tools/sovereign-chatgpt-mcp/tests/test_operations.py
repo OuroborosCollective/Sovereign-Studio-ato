@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,114 @@ def test_invalid_digest_never_reaches_script(monkeypatch) -> None:
             expected_revision=REVISION,
             confirmation_revision=REVISION,
         )
+
+
+def test_deploy_requires_structured_admin_and_rollback_readback(tmp_path, monkeypatch) -> None:
+    script = tmp_path / "deploy-sovereign-backend"
+    script.write_text("#!/usr/bin/env bash\n", "utf-8")
+    script.chmod(0o750)
+    previous_digest = "sha256:" + "c" * 64
+    previous_revision = "d" * 40
+    payload = {
+        "ok": True,
+        "status": "DEPLOYED_ADMIN_VERIFIED",
+        "imageDigest": DIGEST,
+        "revision": REVISION,
+        "health": {
+            "ok": True,
+            "sourceRevision": REVISION,
+            "imageDigest": DIGEST,
+        },
+        "adminCanary": {
+            "ok": True,
+            "status": "ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED",
+            "sourceRevision": REVISION,
+            "imageDigest": DIGEST,
+            "secretValuesReturned": False,
+        },
+        "rollback": {
+            "previousImageDigest": previous_digest,
+            "previousRevision": previous_revision,
+            "previewVerified": True,
+            "receiptSha256": "e" * 64,
+        },
+        "readbackVerified": True,
+    }
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime = OperationsRuntime()
+    runtime.deploy_script = script
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda _script, _args: {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": json.dumps(payload, sort_keys=True) + "\n",
+            "stderr": "",
+        },
+    )
+
+    result = runtime.deploy_verified_release(
+        image_digest=DIGEST,
+        expected_revision=REVISION,
+        confirmation_revision=REVISION,
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "DEPLOYED_ADMIN_VERIFIED"
+    assert result["readbackVerified"] is True
+    assert result["mutationPerformed"] is True
+    assert result["ownerApproved"] is True
+    assert result["actualRevision"] == REVISION
+    assert result["rollback"]["previousImageDigest"] == previous_digest
+    assert result["secretValuesReturned"] is False
+
+
+def test_deploy_blocks_green_status_when_rollback_readback_is_missing(tmp_path, monkeypatch) -> None:
+    script = tmp_path / "deploy-sovereign-backend"
+    script.write_text("#!/usr/bin/env bash\n", "utf-8")
+    script.chmod(0o750)
+    payload = {
+        "ok": True,
+        "status": "DEPLOYED_ADMIN_VERIFIED",
+        "imageDigest": DIGEST,
+        "revision": REVISION,
+        "health": {"ok": True, "sourceRevision": REVISION, "imageDigest": DIGEST},
+        "adminCanary": {
+            "ok": True,
+            "status": "ENTERPRISE_ADMIN_LIVE_CANARY_VERIFIED",
+            "sourceRevision": REVISION,
+            "imageDigest": DIGEST,
+            "secretValuesReturned": False,
+        },
+        "rollback": {"previewVerified": False},
+        "readbackVerified": True,
+    }
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "1")
+    runtime = OperationsRuntime()
+    runtime.deploy_script = script
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda _script, _args: {
+            "ok": True,
+            "exit_code": 0,
+            "stdout": json.dumps(payload) + "\n",
+            "stderr": "",
+        },
+    )
+
+    result = runtime.deploy_verified_release(
+        image_digest=DIGEST,
+        expected_revision=REVISION,
+        confirmation_revision=REVISION,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "DEPLOYED_ADMIN_READBACK_INCOMPLETE"
+    assert result["readbackVerified"] is False
+    assert result["mutationPerformed"] is True
 
 
 def test_rollback_is_disabled_by_default(monkeypatch) -> None:
