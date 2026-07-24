@@ -11,6 +11,7 @@ MUTATING_ACTIONS = frozenset(
         "github_workflow_dispatch",
         "github_merge_pr",
         "github_main_ruleset_apply",
+        "github_issue_close",
         "github_update_pr",
         "github_reopen_pr",
         "github_close_pr",

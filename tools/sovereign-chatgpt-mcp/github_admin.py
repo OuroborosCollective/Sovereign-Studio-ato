@@ -119,6 +119,212 @@ class GitHubAdminRuntime:
             raise ValueError("run_id muss positiv sein")
         return run_id
 
+    @staticmethod
+    def _issue_number(value: int) -> int:
+        number = int(value)
+        if number < 1:
+            raise ValueError("issue_number muss positiv sein")
+        return number
+
+    @staticmethod
+    def _issue_actor(payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        return {
+            "login": str(payload.get("login") or ""),
+            "type": str(payload.get("type") or ""),
+            "url": str(payload.get("html_url") or ""),
+        }
+
+    @classmethod
+    def _normalize_issue(cls, payload: dict[str, Any], *, include_body: bool) -> dict[str, Any]:
+        labels: list[dict[str, Any]] = []
+        for item in payload.get("labels", []) if isinstance(payload.get("labels"), list) else []:
+            if isinstance(item, str):
+                labels.append({"name": item, "color": "", "description": None})
+            elif isinstance(item, dict):
+                labels.append(
+                    {
+                        "name": str(item.get("name") or ""),
+                        "color": str(item.get("color") or ""),
+                        "description": (
+                            str(item.get("description")) if item.get("description") is not None else None
+                        ),
+                    }
+                )
+        assignees = [
+            actor
+            for actor in (
+                cls._issue_actor(item)
+                for item in payload.get("assignees", []) if isinstance(payload.get("assignees"), list)
+            )
+            if actor is not None
+        ]
+        normalized = {
+            "number": int(payload.get("number") or 0),
+            "title": str(payload.get("title") or ""),
+            "state": str(payload.get("state") or ""),
+            "stateReason": (
+                str(payload.get("state_reason")) if payload.get("state_reason") is not None else None
+            ),
+            "labels": labels,
+            "author": cls._issue_actor(payload.get("user")),
+            "assignees": assignees,
+            "comments": int(payload.get("comments") or 0),
+            "locked": bool(payload.get("locked")),
+            "createdAt": str(payload.get("created_at") or ""),
+            "updatedAt": str(payload.get("updated_at") or ""),
+            "closedAt": str(payload.get("closed_at")) if payload.get("closed_at") is not None else None,
+            "url": str(payload.get("html_url") or ""),
+        }
+        if include_body:
+            normalized["body"] = str(payload.get("body") or "")
+        return normalized
+
+    def _issue(self, issue_number: int) -> dict[str, Any]:
+        number = self._issue_number(issue_number)
+        payload = self._request("GET", f"/repos/{self.repository}/issues/{number}")
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub Issue-Antwort ist ungültig")
+        if isinstance(payload.get("pull_request"), dict):
+            raise ValueError("Die angeforderte Nummer gehört zu einem Pull Request, nicht zu einer Issue")
+        return payload
+
+    def list_issues(self, *, limit: int = 20) -> dict[str, Any]:
+        selected_limit = max(1, min(int(limit), 50))
+        issues: list[dict[str, Any]] = []
+        for page in range(1, 11):
+            payload = self._request(
+                "GET",
+                f"/repos/{self.repository}/issues",
+                params={
+                    "state": "open",
+                    "sort": "updated",
+                    "direction": "desc",
+                    "per_page": 100,
+                    "page": page,
+                },
+            )
+            if not isinstance(payload, list):
+                raise RuntimeError("GitHub Issue-Liste ist ungültig")
+            for item in payload:
+                if not isinstance(item, dict) or isinstance(item.get("pull_request"), dict):
+                    continue
+                issues.append(self._normalize_issue(item, include_body=False))
+                if len(issues) >= selected_limit:
+                    break
+            if len(issues) >= selected_limit or len(payload) < 100:
+                break
+        return {
+            "ok": True,
+            "status": "ISSUES_VERIFIED",
+            "repository": self.repository,
+            "queryState": "open",
+            "count": len(issues),
+            "issues": issues,
+            "readbackVerified": True,
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
+    def read_issue(self, *, issue_number: int) -> dict[str, Any]:
+        payload = self._issue(issue_number)
+        return {
+            "ok": True,
+            "status": "ISSUE_VERIFIED",
+            "repository": self.repository,
+            "issue": self._normalize_issue(payload, include_body=True),
+            "readbackVerified": True,
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
+    def close_issue(
+        self,
+        *,
+        issue_number: int,
+        expected_updated_at: str,
+        owner_approved: bool = False,
+    ) -> dict[str, Any]:
+        blocked = self._require_owner_issue_admin(owner_approved)
+        if blocked:
+            return blocked
+        number = self._issue_number(issue_number)
+        expected = str(expected_updated_at or "").strip()
+        if not expected or len(expected) > 64:
+            raise ValueError("expected_updated_at muss ein bestätigter GitHub-Zeitstempel sein")
+        current = self._issue(number)
+        current_updated_at = str(current.get("updated_at") or "")
+        if current_updated_at != expected:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "failure_family": "ISSUE_STALE_READBACK",
+                "blocker": "Issue wurde seit dem bestätigten Readback verändert",
+                "issueNumber": number,
+                "expectedUpdatedAt": expected,
+                "actualUpdatedAt": current_updated_at,
+                "readback_verified": True,
+            }
+        current_state = str(current.get("state") or "")
+        current_reason = str(current.get("state_reason") or "")
+        if current_state == "closed":
+            if current_reason != "completed":
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "failure_family": "ISSUE_ALREADY_CLOSED_DIFFERENT_REASON",
+                    "blocker": "Issue ist bereits mit einem anderen Abschlussgrund geschlossen",
+                    "issueNumber": number,
+                    "readback_verified": True,
+                }
+            normalized = self._normalize_issue(current, include_body=False)
+            return {
+                "ok": True,
+                "status": "ISSUE_ALREADY_CLOSED",
+                "repository": self.repository,
+                "issueNumber": number,
+                "title": normalized["title"],
+                "state": "closed",
+                "stateReason": "completed",
+                "expectedUpdatedAt": expected,
+                "actualUpdatedAt": normalized["updatedAt"],
+                "url": normalized["url"],
+                "owner_approved": True,
+                "mutationPerformed": False,
+                "readback_verified": True,
+                "secretValuesReturned": False,
+            }
+        if current_state != "open":
+            return {"ok": False, "status": "BLOCKED", "blocker": "Issue ist nicht offen"}
+        self._request(
+            "PATCH",
+            f"/repos/{self.repository}/issues/{number}",
+            json_body={"state": "closed", "state_reason": "completed"},
+            expected=(200,),
+            timeout=60,
+        )
+        readback = self._issue(number)
+        if str(readback.get("state") or "") != "closed" or str(readback.get("state_reason") or "") != "completed":
+            raise RuntimeError("GitHub Issue-Readback bestätigt den Abschluss nicht")
+        normalized = self._normalize_issue(readback, include_body=False)
+        return {
+            "ok": True,
+            "status": "ISSUE_CLOSED",
+            "repository": self.repository,
+            "issueNumber": number,
+            "title": normalized["title"],
+            "state": "closed",
+            "stateReason": "completed",
+            "expectedUpdatedAt": expected,
+            "actualUpdatedAt": normalized["updatedAt"],
+            "url": normalized["url"],
+            "owner_approved": True,
+            "mutationPerformed": True,
+            "readback_verified": True,
+            "secretValuesReturned": False,
+        }
+
     def _pull(self, pr_number: int) -> dict[str, Any]:
         payload = self._request("GET", f"/repos/{self.repository}/pulls/{self._pr_number(pr_number)}")
         if not isinstance(payload, dict):
@@ -133,6 +339,17 @@ class GitHubAdminRuntime:
                 "ok": False,
                 "status": "BLOCKED",
                 "blocker": "PR-Administration erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",
+            }
+        return None
+
+    def _require_owner_issue_admin(self, owner_approved: bool) -> dict[str, Any] | None:
+        if not _enabled("SOVEREIGN_MCP_ENABLE_PR_MERGE"):
+            return {"ok": False, "status": "BLOCKED", "blocker": "Issue-Administration ist nicht aktiviert"}
+        if not self.private_owner_mode or not owner_approved:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "Issue-Administration erfordert privaten Owner-Modus und ausdrückliche Owner-Freigabe",
             }
         return None
 

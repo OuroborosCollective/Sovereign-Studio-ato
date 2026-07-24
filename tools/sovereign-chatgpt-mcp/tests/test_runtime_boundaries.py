@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import launcher
 from server import mcp_runtime_boundaries
 
 
@@ -45,6 +46,7 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "repository_push_main",
         "repository_merge_pr",
         "repository_main_ruleset_apply",
+        "repository_issue_close",
         "repository_update_pr",
         "repository_reopen_pr",
         "repository_close_pr",
@@ -55,3 +57,29 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "managed_compose_write",
         "patchmon_patch_write",
     }
+
+
+def test_issue_tools_publish_strict_input_and_output_schemas() -> None:
+    registered = {tool.name: tool for tool in launcher.mcp._tool_manager.list_tools()}
+    expected = {
+        "repository_issue_list",
+        "repository_issue_read",
+        "repository_issue_close",
+    }
+
+    assert expected.issubset(registered)
+    for name in expected:
+        tool = registered[name]
+        assert tool.output_schema["type"] == "object"
+        assert tool.output_schema["required"]
+        assert "schemaVersion" in tool.output_schema["required"]
+        assert "readbackVerified" in tool.output_schema["required"]
+
+    list_schema = registered["repository_issue_list"].parameters
+    assert list_schema["properties"]["limit"]["minimum"] == 1
+    assert list_schema["properties"]["limit"]["maximum"] == 50
+
+    close_schema = registered["repository_issue_close"].parameters
+    assert close_schema["required"] == ["issue_number", "expected_updated_at"]
+    assert close_schema["properties"]["issue_number"]["minimum"] == 1
+    assert close_schema["properties"]["expected_updated_at"]["maxLength"] == 64

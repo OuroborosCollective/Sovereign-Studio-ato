@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Annotated, Any
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from a2a_runtime_client import A2ARuntimeClient
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
 from database import DatabaseRuntime
 from document_pipeline import DocumentPipelineRuntime
+from github_issue_contracts import (
+    RepositoryIssueCloseOutput,
+    RepositoryIssueListOutput,
+    RepositoryIssueReadOutput,
+)
+from output_contracts import normalize_tool_output
 from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
 from runtime import OperatorRuntime
@@ -44,6 +51,7 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.extend((
             "repository_merge_pr",
             "repository_main_ruleset_apply",
+            "repository_issue_close",
             "repository_update_pr",
             "repository_reopen_pr",
             "repository_close_pr",
@@ -364,6 +372,55 @@ def repository_create_draft_pr(
 def repository_push_main(workspace_id: str, commit_message: str) -> dict[str, Any]:
     """Commit the current workspace and push its HEAD directly to main when private main-push mode is enabled."""
     return broker.call("git_push_main", {"workspace_id": workspace_id, "commit_message": commit_message}, timeout=720)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def repository_issue_list(
+    limit: Annotated[int, Field(ge=1, le=50, description="Maximum number of open non-PR issues to return.")] = 20,
+) -> RepositoryIssueListOutput:
+    """List current open GitHub issues, excluding pull requests, with authenticated readback."""
+    payload = normalize_tool_output(
+        broker.call("github_issue_list", {"limit": limit}, timeout=60)
+    )
+    payload.setdefault("readbackVerified", False)
+    return RepositoryIssueListOutput.model_validate(payload)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def repository_issue_read(
+    issue_number: Annotated[int, Field(ge=1, description="Positive GitHub issue number.")],
+) -> RepositoryIssueReadOutput:
+    """Read one current GitHub issue body and metadata with authenticated readback."""
+    payload = normalize_tool_output(
+        broker.call("github_issue_read", {"issue_number": issue_number}, timeout=60)
+    )
+    payload.setdefault("readbackVerified", False)
+    return RepositoryIssueReadOutput.model_validate(payload)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_issue_close(
+    issue_number: Annotated[int, Field(ge=1, description="Positive GitHub issue number.")],
+    expected_updated_at: Annotated[
+        str,
+        Field(min_length=1, max_length=64, description="Exact updatedAt value from repository_issue_read."),
+    ],
+    owner_approved: bool = False,
+) -> RepositoryIssueCloseOutput:
+    """Close one unchanged issue as completed and verify exact GitHub readback."""
+    payload = normalize_tool_output(
+        broker.call(
+            "github_issue_close",
+            {
+                "issue_number": issue_number,
+                "expected_updated_at": expected_updated_at,
+                "owner_approved": owner_approved,
+            },
+            timeout=120,
+        ),
+        external_write=True,
+    )
+    return RepositoryIssueCloseOutput.model_validate(payload)
 
 
 @mcp.tool(annotations=NETWORK_READ)
