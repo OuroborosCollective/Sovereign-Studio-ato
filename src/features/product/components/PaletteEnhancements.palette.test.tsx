@@ -9,6 +9,7 @@ import { AgentQuestionCard } from './AgentQuestionCard';
 import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
 import { PatchDiffEvidenceSheet } from './PatchDiffEvidenceSheet';
 import { RuntimeEvidenceLogSheet } from './RuntimeEvidenceLogSheet';
+import { AutoCodeReviewCard } from './AutoCodeReviewCard';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -245,6 +246,46 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
       expect(sendButton).toHaveAttribute('title', 'Rückfrage bereits beantwortet');
+    });
+  });
+
+  describe('AutoCodeReviewCard Enhancements', () => {
+    it('Findings button has aria-expanded and stateful dynamic titles; back button has title', () => {
+      const mockResult = {
+        decision: 'blocked_high',
+        summary: 'Review failed due to critical finding.',
+        highCount: 1,
+        mediumCount: 0,
+        lowCount: 0,
+        findings: [
+          {
+            severity: 'HIGH',
+            category: 'security',
+            file: 'src/features/product/components/AutoCodeReviewCard.tsx',
+            lineHint: 'L10',
+            description: 'Mock finding',
+          },
+        ],
+        error: 'Critical issue',
+        resolvedTransport: 'mock-transport',
+        fallbackUsed: false,
+      };
+
+      const handleCancel = vi.fn();
+
+      render(<AutoCodeReviewCard result={mockResult as any} onCancel={handleCancel} />);
+
+      const findingsBtn = screen.getByRole('button', { name: /Findings/i });
+      expect(findingsBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(findingsBtn).toHaveAttribute('title', 'Gefundene Schwachstellen ausblenden');
+
+      // Click to toggle/close findings
+      fireEvent.click(findingsBtn);
+      expect(findingsBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(findingsBtn).toHaveAttribute('title', 'Gefundene Schwachstellen einblenden');
+
+      const backBtn = screen.getByRole('button', { name: /Zurück zum Fix/i });
+      expect(backBtn).toHaveAttribute('title', 'Zurück zum Fix-Workflow wechseln');
     });
   });
 

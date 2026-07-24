@@ -21,3 +21,7 @@
 ## 2025-07-21 - [Avoiding Label Ambiguity between Inputs and Trigger Buttons]
 **Learning:** Assigning identical aria-labels to adjacent components (e.g., "Datei suchen" on both a text input field and its executing submit button) creates ambiguity for screen readers and breaks testing frameworks' element queries (e.g., `getByLabelText`).
 **Action:** Ensure that input fields retain object-oriented labels (e.g., `aria-label="Datei suchen"`) while their corresponding trigger buttons utilize action-oriented names (e.g., `aria-label="Datei im Repository suchen"`).
+
+## 2025-07-22 - [Stateful Disclosure Button Accessibility]
+**Learning:** Disclosure widgets (like findings panels, accordions, and error drawers) need explicit ARIA state triggers like `aria-expanded` and clear native tooltips (via `title`) to inform users about toggle states before and after expansion.
+**Action:** Toggle/disclosure buttons should pair a reactive `aria-expanded` state with descriptive, stateful hover tooltips (`title`) describing the consequences of toggling the element.
