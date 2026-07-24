@@ -170,7 +170,12 @@ def _success_connections(marker: str = MARKER) -> _ConnectionFactory:
 
 def test_mcp_image_packages_document_pipeline_module() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
-    assert "a2a_runtime_client.py document_pipeline.py owner_input_widget.py" in dockerfile
+    for filename in (
+        "a2a_runtime_client.py",
+        "document_pipeline.py",
+        "owner_input_widget.py",
+    ):
+        assert filename in dockerfile
 
 
 def test_live_canary_discovers_current_compose_services_and_uses_private_endpoints() -> None:
