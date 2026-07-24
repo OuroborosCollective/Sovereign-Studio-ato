@@ -9,6 +9,10 @@ on:
         description: 'Force deep code optimization'
         required: false
         default: 'false'
+      create_existing_branch_pr:
+        description: 'Recovery: create a Draft PR for the dispatched branch only'
+        required: false
+        default: 'false'
   push:
     branches:
       - main
@@ -21,7 +25,35 @@ permissions:
   pull-requests: write
 
 jobs:
+  create-existing-branch-pr:
+    if: github.event_name == 'workflow_dispatch' && inputs.create_existing_branch_pr == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Create one idempotent Draft PR for the current branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "branch"
+          test "$GITHUB_REF_NAME" != "main"
+          if gh pr view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json number >/dev/null 2>&1; then
+            echo "Draft PR already exists for $GITHUB_REF_NAME"
+            exit 0
+          fi
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --base main \
+            --head "$GITHUB_REF_NAME" \
+            --title "feat(knowledge): add revision-bound GitHub live canary" \
+            --body "Implements #873. Recovery-created Draft PR after the direct PR API returned HTTP 500; exact branch CI remains authoritative."
+
   autonomous-cycle:
+    if: github.event_name != 'workflow_dispatch' || inputs.create_existing_branch_pr != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
