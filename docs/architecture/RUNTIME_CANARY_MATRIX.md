@@ -31,6 +31,8 @@ node scripts/runtime-canary-matrix-gate.mjs \
 pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 ```
 
+Der Regressionstest verwendet ausdrücklich die Vitest-Node-Umgebung. Dadurch läuft derselbe Test sowohl als gezieltes Matrix-Gate als auch innerhalb der kanonischen Repository-Test-Suite; ein zweiter, konkurrierender `node:test`-Runner ist ausgeschlossen.
+
 Der Contract-Modus schlägt unter anderem fehl bei:
 
 - doppelten oder unvollständigen Oberflächen,
