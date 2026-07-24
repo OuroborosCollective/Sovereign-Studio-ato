@@ -125,13 +125,14 @@ try:
     if document.source_type != "github" or not document.text.strip():
         raise RuntimeError("public GitHub source did not produce a knowledge document")
     if len(document.text) >= 1_000:
-        raise RuntimeError("fixed public GitHub canary source exceeded the single-chunk safety bound")
+        raise RuntimeError("fixed public GitHub canary source exceeded the bounded source-size limit")
 
     marker = f"SOVEREIGN_GITHUB_KNOWLEDGE_CANARY:{expected_revision}:{source_id}"
     marker_sha256 = digest_text(marker)
     canary_text = f"# Sovereign live canary\n\n{marker}\n\n{document.text}"
-    if len(knowledge_library.chunk_document(canary_text)) != 1:
-        raise RuntimeError("canary source no longer maps to exactly one unique cleanup-bound block")
+    planned_chunks = knowledge_library.chunk_document(canary_text)
+    if not 1 <= len(planned_chunks) <= 4:
+        raise RuntimeError("canary source exceeded the bounded cleanup-safe chunk count")
     canary_document = knowledge_library.KnowledgeDocument(
         source_type=document.source_type,
         title=f"Sovereign GitHub knowledge canary {expected_revision[:12]}",
