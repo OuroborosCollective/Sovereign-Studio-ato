@@ -79,6 +79,18 @@ jobs:
               family="git-context-missing"
             elif grep -Eqi 'HTTP 500|Internal Server Error|internal error' <<<"$output"; then
               family="github-internal-error"
+            elif grep -Eqi 'HTTP 401|Bad credentials|authentication failed|requires authentication' <<<"$output"; then
+              family="authentication-failed"
+            elif grep -Eqi 'HTTP 403|forbidden' <<<"$output"; then
+              family="forbidden"
+            elif grep -Eqi 'HTTP 404|not found|could not resolve to a Repository' <<<"$output"; then
+              family="not-found"
+            elif grep -Eqi 'HTTP 422|Validation Failed|unprocessable' <<<"$output"; then
+              family="validation-failed"
+            elif grep -Eqi 'rate limit|secondary rate' <<<"$output"; then
+              family="rate-limit"
+            elif grep -Eqi 'GraphQL' <<<"$output"; then
+              family="graphql-error"
             elif grep -Eqi 'already exists|A pull request already exists' <<<"$output"; then
               family="already-exists"
               exit_code=0
