@@ -40,6 +40,9 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert '/api/admin/platform/v1/evidence?limit=30' in deploy
     assert 'X-Sovereign-Admin-Producer' in deploy
     assert 'CANONICAL_REACT_ADMIN' in deploy
+    assert "b'<div id=\"root\"' not in admin_body" in deploy
+    assert 'b"CANONICAL_REACT_ADMIN" not in admin_body' not in deploy
+    assert 'reactRootPresent' in deploy
     assert 'ADMIN_API_KEY' in deploy
     assert 'backend-rollback-receipt.json' in deploy
     assert 'rollbackPreviewVerified' in deploy
