@@ -354,6 +354,24 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"running no-health"' not in installer
 
 
+def test_historical_pr_992_review_resolver_is_isolated_from_active_ci() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+
+    job_start = workflow.index("  resolve-pr-992-review-thread:")
+    next_job = workflow.index("\n  verify-github-knowledge:", job_start)
+    resolver = workflow[job_start:next_job]
+
+    assert "name: Resolve repaired PR 992 review thread" in resolver
+    assert "github.event_name == 'workflow_dispatch'" in resolver
+    assert "github.ref == 'refs/heads/sovereign/chatgpt/1784927172-issue-873-github-knowledge-workflow-cana-a97c4d'" in resolver
+    assert "github.event_name == 'pull_request'" not in resolver
+    assert "github.event_name == 'push'" not in resolver
+    assert "pull_request:" not in resolver
+    assert "push:" not in resolver
+
+
 def test_main_workflow_runs_real_memory_collection_post_install_canary() -> None:
     workflow = (
         ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"

@@ -128,6 +128,9 @@ _NON_MIRROR_PAIRS: Final[frozenset[tuple[str, str]]] = frozenset(
     for item in _CANONICAL_OWNERSHIP
     if item.get("byteEqualityRequired") is False
 )
+_HISTORICAL_SCHEMA_OWNERSHIP_PATH: Final[str] = (
+    "docs/architecture/POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json"
+)
 
 _DOMAIN_PATTERNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("chat_ui", ("src/app.tsx", "src/features/product/containers/", "src/features/product/components/")),
@@ -878,6 +881,30 @@ def _architecture_drift_report(repo: Path) -> dict[str, Any]:
     }
 
 
+def _historical_schema_tables(repo: Path) -> set[tuple[str, str]]:
+    path = repo / _HISTORICAL_SCHEMA_OWNERSHIP_PATH
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return set()
+    if payload.get("schemaVersion") != "sovereign.postgres-historical-schema-ownership.v1":
+        return set()
+    tables = payload.get("tables")
+    if not isinstance(tables, list):
+        return set()
+    result: set[tuple[str, str]] = set()
+    for item in tables:
+        if not isinstance(item, dict):
+            continue
+        qualified = str(item.get("table") or "").strip()
+        if not qualified or "." not in qualified:
+            continue
+        schema_name, table_name = qualified.split(".", 1)
+        if schema_name and table_name:
+            result.add((schema_name, table_name))
+    return result
+
+
 def _architecture_runtime_drift_evidence(repo: Path) -> dict[str, Any]:
     snapshot = _architecture_snapshot(repo)
     if _DATABASE is None:
@@ -906,11 +933,13 @@ def _architecture_runtime_drift_evidence(repo: Path) -> dict[str, Any]:
             "rowDataReturned": False,
             "secretValuesExposed": False,
         }
-    repository_tables = {
+    migration_tables = {
         (str(item.get("schema") or "public"), str(item.get("table") or ""))
         for item in snapshot["sqlTables"]
         if str(item.get("table") or "")
     }
+    historical_tables = _historical_schema_tables(repo)
+    repository_tables = migration_tables | historical_tables
     live_tables = {
         (str(item.get("table_schema") or ""), str(item.get("table_name") or ""))
         for item in (schema.get("tables") if isinstance(schema.get("tables"), list) else [])
@@ -948,7 +977,9 @@ def _architecture_runtime_drift_evidence(repo: Path) -> dict[str, Any]:
         "status": "ARCHITECTURE_RUNTIME_DRIFT_EVIDENCE_READY" if schema.get("ok") else "ARCHITECTURE_RUNTIME_DRIFT_EVIDENCE_BLOCKED",
         "snapshotSha256": snapshot["snapshotSha256"],
         "revision": snapshot["revision"],
-        "repositoryMigrationTableCount": len(repository_tables),
+        "repositoryMigrationTableCount": len(migration_tables),
+        "historicalOwnershipTableCount": len(historical_tables),
+        "repositoryOwnedTableCount": len(repository_tables),
         "liveTableCount": len(live_tables),
         "schemaInventory": schema,
         "vectorEvidence": vector,

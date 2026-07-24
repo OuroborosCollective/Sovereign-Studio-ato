@@ -27,6 +27,7 @@ class FakeDatabase:
             "ok": True,
             "status": "POSTGRES_SCHEMA_INVENTORY",
             "tables": [
+                {"table_schema": "public", "table_name": "historical_table"},
                 {"table_schema": "public", "table_name": "live_only_table"},
             ],
             "rowDataReturned": False,
@@ -79,6 +80,7 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     (repo / "scripts" / "sovereign-backend" / "migrations").mkdir(parents=True)
     (repo / "src" / "runtime").mkdir()
     (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / "docs" / "architecture").mkdir(parents=True)
     secret_like = "sk-" + "proj-" + "x" * 30
     (repo / "backend" / "knowledge.py").write_text(
         "from pgvector.sqlalchemy import Vector\n"
@@ -138,6 +140,13 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     )
     (repo / ".github" / "workflows" / "valid.yml").write_text(
         "name: valid\non: [push]\njobs:\n  validate:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+        "utf-8",
+    )
+    (repo / "docs" / "architecture" / "POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json").write_text(
+        json.dumps({
+            "schemaVersion": "sovereign.postgres-historical-schema-ownership.v1",
+            "tables": [{"table": "public.historical_table"}],
+        }),
         "utf-8",
     )
     (repo / "backend" / "broken.py").write_text("def unsupported(:\n    pass\n", "utf-8")
@@ -294,6 +303,10 @@ def test_architecture_runtime_drift_uses_only_schema_metadata(repository: Path, 
     assert result["status"] == "ARCHITECTURE_RUNTIME_DRIFT_EVIDENCE_READY"
     assert "DB_DRIFT_MISSING_LIVE_TABLE" in families
     assert "DB_DRIFT_UNMAPPED_LIVE_TABLE" in families
+    assert not any("historical_table" in item["what"] for item in result["findings"])
+    assert result["repositoryMigrationTableCount"] == 1
+    assert result["historicalOwnershipTableCount"] == 1
+    assert result["repositoryOwnedTableCount"] == 2
     assert result["schemaInventory"]["rowDataReturned"] is False
     assert result["mutationPerformed"] is False
     assert result["rowDataReturned"] is False
