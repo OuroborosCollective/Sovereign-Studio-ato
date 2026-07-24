@@ -76,7 +76,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -93,6 +93,7 @@ jobs:
           fi
           grep -q 'admin_mode.py' deploy/install-on-vps.sh
           grep -q 'github_admin.py' deploy/install-on-vps.sh
+          grep -q 'github_issue_contracts.py' deploy/install-on-vps.sh
           grep -q 'android_hardening.py' deploy/install-on-vps.sh
           grep -q 'android_validation_router.py' deploy/install-on-vps.sh
           grep -q 'mcp_protocol_health.py' deploy/install-on-vps.sh

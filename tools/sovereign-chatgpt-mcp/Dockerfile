@@ -25,7 +25,7 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py patchmon_operator.py launcher.py /app/
+COPY policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py patchmon_operator.py launcher.py /app/
 COPY config /app/config
 COPY skills /app/skills
 

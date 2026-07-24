@@ -18,24 +18,41 @@ def test_installer_has_valid_bash_syntax() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_launcher_local_modules_are_packaged_and_installed() -> None:
-    launcher_path = ROOT / "launcher.py"
-    launcher_tree = ast.parse(launcher_path.read_text("utf-8"))
-    local_modules = {
-        alias.name
-        for node in launcher_tree.body
-        if isinstance(node, ast.Import)
-        for alias in node.names
-        if (ROOT / f"{alias.name}.py").is_file()
-    }
+def _runtime_local_module_closure(entry_module: str) -> set[str]:
+    pending = [entry_module]
+    discovered: set[str] = set()
+    while pending:
+        module = pending.pop()
+        if module in discovered:
+            continue
+        module_path = ROOT / f"{module}.py"
+        assert module_path.is_file(), module_path
+        discovered.add(module)
+        tree = ast.parse(module_path.read_text("utf-8"))
+        candidates: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                candidates.update(alias.name.split(".", 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                candidates.add(node.module.split(".", 1)[0])
+        pending.extend(
+            candidate
+            for candidate in candidates
+            if candidate not in discovered and (ROOT / f"{candidate}.py").is_file()
+        )
+    return discovered
+
+
+def test_runtime_local_modules_are_packaged_and_installed() -> None:
+    local_modules = _runtime_local_module_closure("launcher")
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
 
-    assert local_modules
+    assert "github_issue_contracts" in local_modules
     for module in sorted(local_modules):
         filename = f"{module}.py"
-        assert filename in dockerfile, f"launcher import is missing from Docker image: {filename}"
-        assert filename in installer, f"launcher import is missing from VPS install copy set: {filename}"
+        assert filename in dockerfile, f"runtime import is missing from Docker image: {filename}"
+        assert filename in installer, f"runtime import is missing from VPS install copy set: {filename}"
 
 
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
