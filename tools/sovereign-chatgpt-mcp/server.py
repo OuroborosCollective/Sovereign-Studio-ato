@@ -1060,18 +1060,27 @@ def _deploy_backend_with_a2a_evidence(
                 "protectedValuesReturned": False,
             },
         }
-    canary_ok = bool(isinstance(canary, dict) and canary.get("ok"))
+    canary_ok = bool(
+        isinstance(canary, dict)
+        and canary.get("ok")
+        and deployment.get("readbackVerified") is True
+        and deployment.get("actualRevision") == expected_revision
+    )
     return {
         **deployment,
         "ok": canary_ok,
-        "status": "DEPLOYED_AND_A2A_VERIFIED" if canary_ok else "DEPLOYED_A2A_EVIDENCE_INCOMPLETE",
+        "status": (
+            "DEPLOYED_ADMIN_AND_A2A_VERIFIED"
+            if canary_ok
+            else "DEPLOYED_A2A_EVIDENCE_INCOMPLETE"
+        ),
         "a2aCanary": canary,
     }
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def deploy_verified_backend_release(image_digest: str, expected_revision: str, confirmation_revision: str) -> dict[str, Any]:
-    """Deploy one immutable backend digest and require owner-scoped A2A evidence."""
+    """Deploy one immutable backend digest and require admin, rollback and owner-scoped A2A evidence."""
     return _deploy_backend_with_a2a_evidence(
         image_digest,
         expected_revision,

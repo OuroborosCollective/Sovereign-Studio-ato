@@ -9,9 +9,12 @@ def test_deploy_backend_requires_successful_a2a_evidence(monkeypatch) -> None:
         "call",
         lambda action, arguments, timeout: {
             "ok": True,
-            "status": "DEPLOYED",
-            "revision": arguments["expected_revision"],
+            "status": "DEPLOYED_ADMIN_VERIFIED",
+            "actualRevision": arguments["expected_revision"],
             "image_digest": arguments["image_digest"],
+            "readbackVerified": True,
+            "adminCanary": {"ok": True},
+            "rollback": {"previewVerified": True},
         },
     )
     monkeypatch.setattr(
@@ -34,7 +37,7 @@ def test_deploy_backend_requires_successful_a2a_evidence(monkeypatch) -> None:
     )
 
     assert result["ok"] is True
-    assert result["status"] == "DEPLOYED_AND_A2A_VERIFIED"
+    assert result["status"] == "DEPLOYED_ADMIN_AND_A2A_VERIFIED"
     assert result["a2aCanary"]["samePersistedRunVerified"] is True
 
 
@@ -73,8 +76,10 @@ def test_a2a_failure_keeps_deployment_truth_but_blocks_success(monkeypatch) -> N
         "call",
         lambda action, arguments, timeout: {
             "ok": True,
-            "status": "DEPLOYED",
+            "status": "DEPLOYED_ADMIN_VERIFIED",
             "revision": arguments["expected_revision"],
+            "actualRevision": arguments["expected_revision"],
+            "readbackVerified": True,
         },
     )
 
