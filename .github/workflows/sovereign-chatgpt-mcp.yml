@@ -1153,6 +1153,7 @@ jobs:
         with:
           script: |
             const crypto = require('crypto');
+            const fs = require('fs');
             const expectedHead = context.sha;
             const query = `query($owner:String!,$repo:String!,$number:Int!){
               repository(owner:$owner,name:$repo){
@@ -1188,6 +1189,7 @@ jobs:
             const unresolved = pull.reviewThreads.nodes
               .filter((thread) => !thread.isResolved)
               .map((thread) => ({
+                id: String(thread.id || '').slice(0, 240),
                 idSha256: crypto.createHash('sha256').update(thread.id).digest('hex'),
                 path: String(thread.path || '').slice(0, 240),
                 line: Number(thread.line || 0),
@@ -1196,9 +1198,32 @@ jobs:
                   author: String(comment.author?.login || '').slice(0, 120),
                   createdAt: String(comment.createdAt || '').slice(0, 80),
                   body: redact(comment.body),
+                  bodySha256: crypto.createHash('sha256').update(String(comment.body || '')).digest('hex'),
                 })),
               }));
-            core.setFailed(`UNRESOLVED_REVIEW_THREADS=${JSON.stringify(unresolved)}`);
+            fs.mkdirSync('.sovereign-pr-review', { recursive: true });
+            fs.writeFileSync(
+              '.sovereign-pr-review/pr-992-review-threads.json',
+              JSON.stringify({
+                schemaVersion: 'sovereign.pr-review-threads.v1',
+                prNumber: 992,
+                headSha: expectedHead,
+                unresolvedCount: unresolved.length,
+                unresolved,
+                secretValuesReturned: false,
+              }, null, 2) + '\n',
+              { encoding: 'utf8', mode: 0o600 },
+            );
+            core.setFailed(`UNRESOLVED_REVIEW_THREAD_COUNT=${unresolved.length}`);
+
+      - name: Upload bounded review-thread evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-992-review-threads-${{ github.run_id }}
+          path: .sovereign-pr-review/pr-992-review-threads.json
+          if-no-files-found: error
+          retention-days: 1
 
   verify-github-knowledge:
     name: Verify GitHub Knowledge live canary
