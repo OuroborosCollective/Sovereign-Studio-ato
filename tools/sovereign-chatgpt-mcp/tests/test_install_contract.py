@@ -374,6 +374,38 @@ def test_main_workflow_runs_real_memory_collection_post_install_canary() -> None
     assert 'summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()' in workflow
 
 
+def test_main_workflow_runs_real_github_knowledge_post_install_canary_through_mcp() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    client = (ROOT / "github_knowledge_mcp_client.py").read_text("utf-8")
+
+    assert "Verify GitHub Knowledge live canary" in workflow
+    assert "Import public GitHub source and verify cleanup" in workflow
+    assert "github_knowledge_canary.py" in workflow
+    assert "github_knowledge_mcp_client.py" in workflow
+    assert "github_knowledge_mcp_client.py" in dockerfile
+    assert "EXPECTED_MCP_REVISION" in workflow
+    assert "BACKEND_IMAGE_REFERENCE" in workflow
+    assert "BACKEND_IMAGE_DIGEST" in workflow
+    assert "BACKEND_REVISION" in workflow
+    assert 'org.opencontainers.image.revision' in workflow
+    assert "python /app/github_knowledge_mcp_client.py" in workflow
+    assert "--timeout-seconds 600" in workflow
+    assert 'TOOL_NAME = "github_knowledge_live_canary"' in client
+    assert 'STATUS_TOOL_NAME = "mcp_host_command_status"' in client
+    assert "streamable_http_client" in client
+    assert "ClientSession" in client
+    assert "await session.initialize()" in client
+    assert "await session.call_tool(" in client
+    assert '"GITHUB_KNOWLEDGE_LIVE_CANARY_VERIFIED"' in client
+    assert '"cleanupZero"' in client
+    assert '"secretValuesAbsent"' in client
+    assert '"documentContentAbsent"' in client
+    assert 'summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()' in client
+
+
 def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None:
     workflow = (
         ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"

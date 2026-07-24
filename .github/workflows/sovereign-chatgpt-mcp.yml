@@ -76,7 +76,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py templates/sovereign-litellm/sovereign-entrypoint.py ../../deploy/sovereign-litellm/sovereign-entrypoint.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -391,6 +391,7 @@ jobs:
               'controller_run_resume',
               'a2a_live_canary',
               'document_pipeline_live_canary',
+              'github_knowledge_live_canary',
               'memory_gateway_collection_canary',
               'managed_compose_stack_plan',
               'deploy_managed_compose_stack',
@@ -853,7 +854,7 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$WORK_DIR"
 
             SOURCE_DIR="$WORK_DIR/tools/sovereign-chatgpt-mcp"
-            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py config/sovereign-mcp-operating-profile.json skills/sovereign-mcp-optimal-operation/SKILL.md skills/sovereign-operational-governance/SKILL.md skills/sovereign-operational-assurance/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
+            for required in Dockerfile docker-compose.yml command_contract.py command_queue.py command_worker.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_knowledge_mcp_client.py owner_input_widget.py enterprise_backend_tools.py freemium_product_architect_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py config/sovereign-mcp-operating-profile.json skills/sovereign-mcp-optimal-operation/SKILL.md skills/sovereign-operational-governance/SKILL.md skills/sovereign-operational-assurance/SKILL.md launcher.py server.py mcp_protocol_health.py sovereign_cognitive_widget.py litellm_stack.py managed_compose.py patchmon_operator.py templates/sovereign-litellm/docker-compose.yml templates/sovereign-litellm/config.yaml templates/sovereign-litellm/sovereign-entrypoint.py templates/pgbackweb-wq5r/docker-compose.yml templates/patchmon-sovereign/docker-compose.yml templates/code-server-46bq/docker-compose.yml deploy/install-on-vps.sh deploy/sovereign-chatgpt-command-worker.service; do
               test -f "$SOURCE_DIR/$required" || { echo "Required MCP release file is missing: $required" >&2; exit 1; }
             done
             bash -n "$SOURCE_DIR/deploy/install-on-vps.sh"
@@ -1138,6 +1139,71 @@ jobs:
             assert re.fullmatch(r'[0-9a-f]{64}', str(payload.get('evidence_sha256', ''))), payload
             print({'fresh_session_runtime_evidence': True, 'revision': payload['revision'], 'image': payload['image'], 'kappa_pos': payload['kappa_pos']})
             PY
+
+  verify-github-knowledge:
+    name: Verify GitHub Knowledge live canary
+    needs: deploy-vps
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      EXPECTED_MCP_REVISION: ${{ github.sha }}
+    steps:
+      - name: Import public GitHub source and verify cleanup
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 12m
+          envs: SUDO_PASSWORD,EXPECTED_MCP_REVISION
+          script: |
+            set -Eeuo pipefail
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable for GitHub Knowledge canary.' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+
+            [[ "${EXPECTED_MCP_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+            MCP_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            MCP_REVISION="$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            test "$MCP_REVISION" = "$EXPECTED_MCP_REVISION"
+
+            BACKEND_IMAGE_REFERENCE="$(run_root docker inspect sovereign-backend --format '{{.Config.Image}}')"
+            BACKEND_IMAGE_ID="$(run_root docker inspect sovereign-backend --format '{{.Image}}')"
+            case "$BACKEND_IMAGE_REFERENCE" in
+              *@sha256:[0-9a-f][0-9a-f]*) ;;
+              *) echo 'running backend is not bound to an immutable image digest' >&2; exit 1 ;;
+            esac
+            BACKEND_IMAGE_DIGEST="${BACKEND_IMAGE_REFERENCE##*@}"
+            BACKEND_REVISION="$(run_root docker image inspect "$BACKEND_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            [[ "$BACKEND_REVISION" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$BACKEND_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+            run_root docker exec sovereign-chatgpt-mcp \
+              python /app/github_knowledge_mcp_client.py \
+              "$BACKEND_REVISION" \
+              "$BACKEND_IMAGE_DIGEST" \
+              --timeout-seconds 600
 
   verify-memory-collection:
     name: Verify Memory Gateway to Milvus collection canary
