@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "sovereign.manifest-issue-closure.v1",
+  "generatedAt": "2026-07-24",
+  "issue": {
+    "number": 876,
+    "key": "historical-schema-ownership",
+    "title": "[Manifest] Historische Ownership für drei Live-Tabellen dokumentieren",
+    "disposition": "close_completed"
+  },
+  "implementation": {
+    "pullRequest": 973,
+    "pullRequestHead": "b82534dc519fceae592cd62f9727c8ba0125a3dc",
+    "mergeCommit": "366977a74fea326c3add2af7f727acfa1ae67ec8",
+    "changedFiles": [
+      "docs/architecture/POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json",
+      "tools/sovereign-chatgpt-mcp/database.py",
+      "tools/sovereign-chatgpt-mcp/operational_governance_tools.py",
+      "tools/sovereign-chatgpt-mcp/tests/test_database.py",
+      "tools/sovereign-chatgpt-mcp/tests/test_operational_governance_tools.py"
+    ]
+  },
+  "installedRuntime": {
+    "revision": "366977a74fea326c3add2af7f727acfa1ae67ec8",
+    "imageDigest": "sha256:0154c693683ec6e1a18aca9a5eabba1a8930b39644453acb76528e0690340845",
+    "containerHealthy": true,
+    "mcpProtocolReady": true,
+    "brokerRpcReady": true,
+    "revisionVerified": true,
+    "digestVerified": true
+  },
+  "reconciliation": {
+    "workspaceRevision": "366977a74fea326c3add2af7f727acfa1ae67ec8",
+    "manifestPath": "docs/architecture/POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json",
+    "manifestSha256": "108208007c15e9f7789b0827e11f27b9710e86fd80571261669ee558111b21d3",
+    "evidenceSha256": "ead23c442117dae38277113b3de30c94acae274f9ae6c5132540617f1625b157",
+    "historicallyOwnedTables": [
+      "public.admin_users",
+      "public.sovereign_agent_draft_pr_events",
+      "public.sovereign_agent_evidence_log"
+    ],
+    "missingLiveTables": [],
+    "historicalOwnershipMissingTables": [],
+    "unmappedLiveTables": [],
+    "historicalOwnershipMismatches": [],
+    "rowDataReturned": false,
+    "automaticDatabaseMutationPerformed": false
+  },
+  "acceptance": [
+    {
+      "criterion": "Alle drei Tabellen besitzen dokumentierte kanonische Ownership.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "Der installierte Scanner ordnet die drei Tabellen über ein versioniertes Manifest zu und meldet keine ungeklärte historische Ownership.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "Keine produktiven Daten wurden gelesen oder verändert.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "Recovery ist fail-closed und automatische Tabellenerzeugung ist verboten.",
+      "status": "satisfied"
+    }
+  ],
+  "separateRemainingFindings": {
+    "family": "MIGRATION_TABLE_MULTIPLE_OWNERS",
+    "tables": [
+      "public.admin_api_keys",
+      "public.credit_ledger",
+      "public.llm_routes",
+      "public.schema_migrations",
+      "public.sovereign_agent_pattern_candidates",
+      "public.transactions",
+      "public.user_skills"
+    ],
+    "coveredByIssue876": false
+  },
+  "closureMechanism": "Merge a closure PR whose body contains Closes #876 after exact-head CI is terminal without failures.",
+  "remainingAcceptance": [],
+  "secretValuesReturned": false
+}
