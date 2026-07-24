@@ -470,13 +470,41 @@ class GitHubKnowledgeCanaryRuntime:
             except json.JSONDecodeError:
                 payload = {}
 
+        evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else {}
+        source = evidence.get("source") if isinstance(evidence.get("source"), dict) else {}
+        transport = (
+            evidence.get("transportFailure")
+            if isinstance(evidence.get("transportFailure"), dict)
+            else {}
+        )
+        cleanup = payload.get("cleanup") if isinstance(payload.get("cleanup"), dict) else {}
+        chunk_count = source.get("chunkCount") if isinstance(source.get("chunkCount"), int) else 0
         verified = bool(
             completed.returncode == 0
             and payload.get("ok") is True
             and payload.get("status") == "GITHUB_KNOWLEDGE_LIVE_CANARY_VERIFIED"
             and payload.get("sourceRevision") == revision
             and payload.get("imageDigest") == digest
+            and source.get("status") == "ready"
+            and source.get("publicReadWithoutCredential") is True
+            and chunk_count > 0
+            and source.get("embeddedCount") == chunk_count
+            and source.get("candidateCount") == chunk_count
+            and source.get("outboxCount") == chunk_count
+            and transport.get("blocker") == "github_api_timeout"
+            and transport.get("httpStatus") == 504
+            and transport.get("auditRecorded") is True
+            and transport.get("rawUrlPersisted") is False
+            and transport.get("rawExceptionPersisted") is False
             and payload.get("cleanupVerified") is True
+            and all(cleanup.get(key) == 0 for key in (
+                "sourceRows",
+                "linkRows",
+                "candidateRows",
+                "blockRows",
+                "outboxRows",
+                "auditRows",
+            ))
             and payload.get("secretValuesReturned") is False
             and payload.get("documentContentReturned") is False
         )
