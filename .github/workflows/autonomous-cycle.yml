@@ -35,7 +35,7 @@ jobs:
     steps:
       - name: Create one idempotent Draft PR for the current branch
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF_TYPE" = "branch"
