@@ -13,6 +13,7 @@ from typing import Any, Final
 
 from mcp.types import ToolAnnotations
 
+from llm_boundary_contract import llm_boundary_candidates as _contract_llm_boundary_candidates
 from policy import safe_repo_path
 
 
@@ -126,27 +127,6 @@ _NON_MIRROR_PAIRS: Final[frozenset[tuple[str, str]]] = frozenset(
     tuple(sorted((item["canonicalPath"], item["nonCanonicalPath"])))
     for item in _CANONICAL_OWNERSHIP
     if item.get("byteEqualityRequired") is False
-)
-
-_INTENT_BOUNDARY_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
-    (
-        "javascript_keyword_intent",
-        re.compile(
-            r"(?:toLowerCase\(\)|casefold\(\)|lower\(\)).{0,160}"
-            r"(?:includes|test|search|match)\(.{0,160}"
-            r"(?:create|build|implement|fix|repair|deploy|merge|erstelle|baue|repariere)",
-            re.I | re.S,
-        ),
-    ),
-    (
-        "python_keyword_intent",
-        re.compile(
-            r"(?:re\.(?:search|match|fullmatch)|\bin\b).{0,180}"
-            r"(?:create|build|implement|fix|repair|deploy|merge|erstelle|baue|repariere)"
-            r".{0,180}(?:lower|casefold|\btext\b|\bmessage\b|\bprompt\b|\bmission\b)",
-            re.I | re.S,
-        ),
-    ),
 )
 
 _DOMAIN_PATTERNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
@@ -606,36 +586,7 @@ def _mcp_component_inventory(files: list[str]) -> dict[str, list[str]]:
 
 
 def _llm_boundary_candidates(repo: Path, files: list[str]) -> list[dict[str, Any]]:
-    prefixes = (
-        "src/runtime/",
-        "src/features/product/runtime/",
-        "backend/agent_runtime/",
-        "scripts/sovereign-backend/agent_runtime/",
-        "tools/sovereign-chatgpt-mcp/",
-    )
-    output: list[dict[str, Any]] = []
-    for relative in files:
-        if not relative.startswith(prefixes) or _path_class(relative) == "TEST_ONLY":
-            continue
-        if relative == "tools/sovereign-chatgpt-mcp/repository_skill_tools.py":
-            continue
-        if PurePosixPath(relative).suffix.casefold() not in {".py", ".ts", ".tsx", ".js", ".jsx"}:
-            continue
-        text = _safe_text(repo / relative)
-        if text is None:
-            continue
-        for family, pattern in _INTENT_BOUNDARY_PATTERNS:
-            for match in pattern.finditer(text):
-                output.append({
-                    "family": family,
-                    "file": relative,
-                    "line": text.count("\n", 0, match.start()) + 1,
-                    "status": "CANDIDATE_REQUIRES_REVIEW",
-                    "truthNotice": "Offline fallback and structured enum handling may be valid.",
-                })
-                if len(output) >= _MAX_RESULT_ITEMS:
-                    return output
-    return output
+    return _contract_llm_boundary_candidates(repo, files)
 
 
 def _mirror_inventory(repo: Path, files: list[str]) -> list[dict[str, Any]]:
