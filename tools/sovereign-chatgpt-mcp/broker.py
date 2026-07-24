@@ -402,6 +402,12 @@ class BrokerRuntime:
                 workspace_id=str(values.get("workspace_id") or ""),
                 commit_message=str(values.get("commit_message") or ""),
             ),
+            "github_issue_list": lambda values: self.github.list_issues(
+                limit=int(values.get("limit") or 20),
+            ),
+            "github_issue_read": lambda values: self.github.read_issue(
+                issue_number=int(values.get("issue_number") or 0),
+            ),
             "github_pr_status": lambda values: self.github.pr_status(
                 pr_number=int(values.get("pr_number") or 0),
             ),
@@ -426,6 +432,11 @@ class BrokerRuntime:
                 allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
             ),
             "github_main_ruleset_apply": lambda values: self.github.apply_main_ruleset(
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
+            "github_issue_close": lambda values: self.github.close_issue(
+                issue_number=int(values.get("issue_number") or 0),
+                expected_updated_at=str(values.get("expected_updated_at") or ""),
                 owner_approved=bool(values.get("owner_approved", False)),
             ),
             "github_update_pr": lambda values: self.github.update_pr(
