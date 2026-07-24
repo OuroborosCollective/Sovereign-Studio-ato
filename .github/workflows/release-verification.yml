@@ -15,16 +15,7 @@ on:
       - 'capacitor.config.*'
   pull_request:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'android/**'
-      - 'tests/**'
-      - 'playwright.config.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'vite.config.ts'
-      - 'capacitor.config.*'
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_dispatch:
 
 concurrency:
@@ -35,16 +26,60 @@ permissions:
   contents: read
   actions: read
 
+# pull_request uses a synthetic merge SHA by default. Every PR and Draft PR must
+# instead bind build, test and receipt evidence to the immutable source head.
+env:
+  SOVEREIGN_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   release-gate:
     name: Release Gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout Repository
+      - name: Checkout exact authoritative revision
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.SOVEREIGN_REVISION }}
           fetch-depth: 1
+
+      - name: Revision Integrity Gate
+        id: revision_integrity
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          EVENT_WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOVEREIGN_REVISION" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::SOVEREIGN_REVISION is not a full lowercase Git SHA"
+            exit 1
+          }
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          [[ "$ACTUAL_HEAD" == "$SOVEREIGN_REVISION" ]] || {
+            echo "::error::Checked-out HEAD $ACTUAL_HEAD does not match authoritative revision $SOVEREIGN_REVISION"
+            exit 1
+          }
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            [[ "$EVENT_PR_HEAD_SHA" == "$SOVEREIGN_REVISION" ]] || {
+              echo "::error::PR head revision was not bound correctly"
+              exit 1
+            }
+          else
+            [[ "$EVENT_WORKFLOW_SHA" == "$SOVEREIGN_REVISION" ]] || {
+              echo "::error::Workflow revision was not bound correctly"
+              exit 1
+            }
+          fi
+          {
+            echo "## Revision Integrity Gate"
+            echo ""
+            echo "- Event: \`$EVENT_NAME\`"
+            echo "- Authoritative revision: \`$SOVEREIGN_REVISION\`"
+            echo "- Checked-out HEAD: \`$ACTUAL_HEAD\`"
+            echo "- Binding: **PASS**"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -116,6 +151,7 @@ jobs:
             echo ""
             echo "| Gate | Result |"
             echo "| --- | --- |"
+            echo "| Revision Integrity | ${{ steps.revision_integrity.outcome }} |"
             echo "| Type Check | ${{ steps.type_check.outcome }} |"
             echo "| Runtime Unit Tests | ${{ steps.unit_tests.outcome }} |"
             echo "| Build Web + Android Sync | ${{ steps.build_sync.outcome }} |"
@@ -123,5 +159,5 @@ jobs:
             echo "| Playwright Smoke Gate | ${{ steps.playwright_smoke.outcome }} |"
             echo "| Integration Gate | ${{ steps.integration.outcome }} |"
             echo ""
-            echo "Integration tests are release-blocking. Closed issues #255 and #257 are no longer used as a non-blocking exception."
+            echo "The Release Gate is revision-bound and release-blocking for every PR and Draft PR. Integration tests remain release-blocking."
           } >> "$GITHUB_STEP_SUMMARY"
