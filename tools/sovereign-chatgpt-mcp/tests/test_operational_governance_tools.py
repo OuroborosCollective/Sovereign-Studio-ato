@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import subprocess
 
 import pytest
@@ -19,10 +20,17 @@ class FakeRuntime:
 
 
 class FakeDatabase:
-    def __init__(self, tables: list[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        tables: list[tuple[str, str]],
+        contracts: dict[str, dict] | None = None,
+    ) -> None:
         self.tables = tables
+        self.contracts = contracts or {}
+        self.calls: list[tuple[str, tuple[str, ...]]] = []
 
     def schema_inventory(self) -> dict:
+        self.calls.append(("schema_inventory", ()))
         return {
             "ok": True,
             "status": "POSTGRES_SCHEMA_INVENTORY",
@@ -32,6 +40,93 @@ class FakeDatabase:
             ],
             "rowDataReturned": False,
         }
+
+    def schema_contract_inventory(self, table_names: list[str]) -> dict:
+        requested = tuple(sorted(table_names))
+        self.calls.append(("schema_contract_inventory", requested))
+        tables = [self.contracts[name] for name in requested if name in self.contracts]
+        return {
+            "ok": True,
+            "status": "POSTGRES_SCHEMA_CONTRACT_INVENTORY",
+            "requestedTables": list(requested),
+            "tables": tables,
+            "missingTables": sorted(set(requested) - set(self.contracts)),
+            "rowDataReturned": False,
+            "secretValuesExposed": False,
+        }
+
+
+def _live_only_contract() -> dict:
+    return {
+        "table": "public.live_only",
+        "columns": [
+            {
+                "name": "id",
+                "ordinalPosition": 1,
+                "dataType": "uuid",
+                "notNull": True,
+                "defaultExpression": "gen_random_uuid()",
+            },
+            {
+                "name": "job_id",
+                "ordinalPosition": 2,
+                "dataType": "text",
+                "notNull": True,
+                "defaultExpression": None,
+            },
+        ],
+        "constraints": [
+            {"name": "live_only_pkey", "type": "PRIMARY KEY", "definition": "PRIMARY KEY (id)"},
+            {
+                "name": "live_only_job_fkey",
+                "type": "FOREIGN KEY",
+                "definition": "FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE",
+            },
+        ],
+        "indexes": [
+            {
+                "name": "live_only_pkey",
+                "isUnique": True,
+                "isPrimary": True,
+                "definition": "CREATE UNIQUE INDEX live_only_pkey ON public.live_only USING btree (id)",
+            }
+        ],
+    }
+
+
+def _write_historical_manifest(
+    repo: Path,
+    *,
+    schema_version: str = "sovereign.postgres-historical-schema-ownership.v1",
+    table_contract: dict | None = None,
+) -> Path:
+    actual = table_contract or _live_only_contract()
+    entry = {
+        "table": actual["table"],
+        "ownershipKind": "historical-bootstrap",
+        "canonicalRuntimeModule": "historical:test-runtime",
+        "creationSourceStatus": "historical-source-not-present-in-current-repository",
+        "requiredColumns": [
+            {
+                "name": item["name"],
+                "dataType": item["dataType"],
+                "notNull": item["notNull"],
+                "defaultExpression": item["defaultExpression"],
+            }
+            for item in _live_only_contract()["columns"]
+        ],
+        "requiredConstraints": [dict(item) for item in _live_only_contract()["constraints"]],
+        "requiredIndexes": [dict(item) for item in _live_only_contract()["indexes"]],
+        "recoveryMode": "fail-closed-manual-recovery",
+        "allowAutomaticCreate": False,
+    }
+    path = repo / "docs" / "architecture" / "POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"schemaVersion": schema_version, "tables": [entry]}, indent=2) + "\n",
+        "utf-8",
+    )
+    return path
 
 
 class FakeBroker:
@@ -281,6 +376,173 @@ def test_schema_reconciler_compares_migrations_with_live_names_without_rows(regi
     ]
     assert result.evidence["rowDataReturned"] is False
     assert result.runtimeVerified is True
+
+
+def test_manifested_historical_table_is_removed_from_unmapped_only_after_full_match(registered, monkeypatch) -> None:
+    _, repo, _ = registered
+    _write_historical_manifest(repo)
+    database = FakeDatabase(
+        [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+        {"public.live_only": _live_only_contract()},
+    )
+    monkeypatch.setattr(tools, "_DATABASE", database)
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert result.evidence["historicallyOwnedTables"] == ["public.live_only"]
+    assert result.evidence["unmappedLiveTables"] == []
+    assert result.evidence["historicalOwnershipMismatches"] == []
+    assert not any(
+        item["family"] == "DB_DRIFT_UNMAPPED_LIVE_TABLE" and item.get("table") == "public.live_only"
+        for item in result.findings
+    )
+
+
+def test_unmanifested_live_table_remains_drift(registered, monkeypatch) -> None:
+    _, _, _ = registered
+    database = FakeDatabase(
+        [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+        {"public.live_only": _live_only_contract()},
+    )
+    monkeypatch.setattr(tools, "_DATABASE", database)
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert result.evidence["historicallyOwnedTables"] == []
+    assert result.evidence["unmappedLiveTables"] == ["public.live_only"]
+    assert any(item["family"] == "DB_DRIFT_UNMAPPED_LIVE_TABLE" for item in result.findings)
+
+
+def test_manifested_but_missing_historical_table_fails_closed(registered, monkeypatch) -> None:
+    _, repo, _ = registered
+    _write_historical_manifest(repo)
+    monkeypatch.setattr(tools, "_DATABASE", FakeDatabase([("public", "users"), ("public", "jobs")]))
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert result.evidence["historicalOwnershipMissingTables"] == ["public.live_only"]
+    assert any(item["family"] == "DB_HISTORICAL_OWNERSHIP_TABLE_MISSING" for item in result.findings)
+    assert result.ok is False
+
+
+def test_missing_required_historical_column_is_a_schema_mismatch(registered, monkeypatch) -> None:
+    _, repo, _ = registered
+    _write_historical_manifest(repo)
+    actual = _live_only_contract()
+    actual["columns"] = [item for item in actual["columns"] if item["name"] != "job_id"]
+    monkeypatch.setattr(
+        tools,
+        "_DATABASE",
+        FakeDatabase(
+            [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+            {"public.live_only": actual},
+        ),
+    )
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert result.evidence["historicallyOwnedTables"] == []
+    assert result.evidence["unmappedLiveTables"] == ["public.live_only"]
+    mismatch = result.evidence["historicalOwnershipMismatches"][0]
+    assert {item.get("name") for item in mismatch["mismatches"]} >= {"job_id"}
+    assert any(item["family"] == "DB_HISTORICAL_OWNERSHIP_SCHEMA_MISMATCH" for item in result.findings)
+
+
+@pytest.mark.parametrize("missing_constraint", ["live_only_pkey", "live_only_job_fkey"])
+def test_missing_primary_or_foreign_key_is_a_schema_mismatch(registered, monkeypatch, missing_constraint: str) -> None:
+    _, repo, _ = registered
+    _write_historical_manifest(repo)
+    actual = _live_only_contract()
+    actual["constraints"] = [
+        item for item in actual["constraints"] if item["name"] != missing_constraint
+    ]
+    monkeypatch.setattr(
+        tools,
+        "_DATABASE",
+        FakeDatabase(
+            [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+            {"public.live_only": actual},
+        ),
+    )
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    mismatch_names = {
+        item.get("name")
+        for item in result.evidence["historicalOwnershipMismatches"][0]["mismatches"]
+    }
+    assert missing_constraint in mismatch_names
+    assert "public.live_only" in result.evidence["unmappedLiveTables"]
+
+
+def test_historical_manifest_is_read_only_from_the_fixed_allowlisted_path(registered, monkeypatch) -> None:
+    _, repo, _ = registered
+    allowlisted = _write_historical_manifest(repo)
+    ignored = repo / "docs" / "architecture" / "POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.override.json"
+    ignored.write_text(allowlisted.read_text("utf-8"), "utf-8")
+    allowlisted.unlink()
+    monkeypatch.setattr(
+        tools,
+        "_DATABASE",
+        FakeDatabase(
+            [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+            {"public.live_only": _live_only_contract()},
+        ),
+    )
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert result.evidence["historicalOwnershipManifestLoaded"] is False
+    assert result.evidence["unmappedLiveTables"] == ["public.live_only"]
+
+
+@pytest.mark.parametrize("manifest_mode", ["invalid-json", "unknown-version"])
+def test_invalid_or_unknown_historical_manifest_blocks_reconciliation(registered, monkeypatch, manifest_mode: str) -> None:
+    _, repo, _ = registered
+    if manifest_mode == "invalid-json":
+        path = repo / "docs" / "architecture" / "POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not-json\n", "utf-8")
+    else:
+        _write_historical_manifest(repo, schema_version="sovereign.postgres-historical-schema-ownership.v999")
+    monkeypatch.setattr(
+        tools,
+        "_DATABASE",
+        FakeDatabase(
+            [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+            {"public.live_only": _live_only_contract()},
+        ),
+    )
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+    families = {item["family"] for item in result.findings}
+
+    assert result.ok is False
+    assert "public.live_only" in result.evidence["unmappedLiveTables"]
+    assert families & {
+        "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+        "DB_HISTORICAL_OWNERSHIP_MANIFEST_SCHEMA_UNSUPPORTED",
+    }
+
+
+def test_historical_reconciliation_reads_only_catalog_contracts_and_never_mutates(registered, monkeypatch) -> None:
+    _, repo, _ = registered
+    _write_historical_manifest(repo)
+    database = FakeDatabase(
+        [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+        {"public.live_only": _live_only_contract()},
+    )
+    monkeypatch.setattr(tools, "_DATABASE", database)
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert database.calls == [
+        ("schema_inventory", ()),
+        ("schema_contract_inventory", ("public.live_only",)),
+    ]
+    assert result.evidence["rowDataReturned"] is False
+    assert result.evidence["automaticDatabaseMutationPerformed"] is False
+    assert result.mutationPerformed is False
 
 
 def test_llm_route_sre_requires_inventory_price_health_and_quota(registered) -> None:

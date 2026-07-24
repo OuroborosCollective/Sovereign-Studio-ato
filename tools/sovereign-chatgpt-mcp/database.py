@@ -100,6 +100,133 @@ class DatabaseRuntime:
         finally:
             conn.close()
 
+    def schema_contract_inventory(self, table_names: list[str]) -> dict[str, Any]:
+        """Read bounded column, constraint and index metadata for exact table identities without reading rows."""
+        normalized = sorted({str(name).strip().lower() for name in table_names if str(name).strip()})
+        if not normalized or len(normalized) > 100:
+            raise ValueError("table_names must contain between 1 and 100 exact table identities")
+        identity_pattern = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
+        if any(not identity_pattern.fullmatch(name) for name in normalized):
+            raise ValueError("table_names must use exact schema.table identities")
+
+        conn = self._connection("POSTGRES")
+        try:
+            conn.set_session(readonly=True, autocommit=False)
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT current_database() AS database, current_user AS user")
+                identity = dict(cur.fetchone() or {})
+                cur.execute(
+                    """SELECT n.nspname AS table_schema,
+                              c.relname AS table_name,
+                              a.attnum AS ordinal_position,
+                              a.attname AS column_name,
+                              pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+                              a.attnotnull AS not_null,
+                              pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) AS default_expression
+                       FROM pg_catalog.pg_class c
+                       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                       JOIN pg_catalog.pg_attribute a
+                         ON a.attrelid = c.oid
+                        AND a.attnum > 0
+                        AND NOT a.attisdropped
+                       LEFT JOIN pg_catalog.pg_attrdef ad
+                         ON ad.adrelid = c.oid
+                        AND ad.adnum = a.attnum
+                       WHERE c.relkind IN ('r', 'p')
+                         AND (n.nspname || '.' || c.relname) = ANY(%s)
+                       ORDER BY n.nspname, c.relname, a.attnum""",
+                    (normalized,),
+                )
+                column_rows = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """SELECT n.nspname AS table_schema,
+                              c.relname AS table_name,
+                              con.conname AS constraint_name,
+                              CASE con.contype
+                                WHEN 'p' THEN 'PRIMARY KEY'
+                                WHEN 'f' THEN 'FOREIGN KEY'
+                                WHEN 'u' THEN 'UNIQUE'
+                                WHEN 'c' THEN 'CHECK'
+                                ELSE con.contype::text
+                              END AS constraint_type,
+                              pg_catalog.pg_get_constraintdef(con.oid, true) AS definition
+                       FROM pg_catalog.pg_class c
+                       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                       JOIN pg_catalog.pg_constraint con ON con.conrelid = c.oid
+                       WHERE c.relkind IN ('r', 'p')
+                         AND con.contype IN ('p', 'f', 'u', 'c')
+                         AND (n.nspname || '.' || c.relname) = ANY(%s)
+                       ORDER BY n.nspname, c.relname, constraint_type, con.conname""",
+                    (normalized,),
+                )
+                constraint_rows = [dict(row) for row in cur.fetchall()]
+                cur.execute(
+                    """SELECT n.nspname AS table_schema,
+                              c.relname AS table_name,
+                              idx.relname AS index_name,
+                              i.indisunique AS is_unique,
+                              i.indisprimary AS is_primary,
+                              pg_catalog.pg_get_indexdef(i.indexrelid) AS definition
+                       FROM pg_catalog.pg_class c
+                       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                       JOIN pg_catalog.pg_index i ON i.indrelid = c.oid
+                       JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
+                       WHERE c.relkind IN ('r', 'p')
+                         AND (n.nspname || '.' || c.relname) = ANY(%s)
+                       ORDER BY n.nspname, c.relname, idx.relname""",
+                    (normalized,),
+                )
+                index_rows = [dict(row) for row in cur.fetchall()]
+            conn.rollback()
+
+            table_map: dict[str, dict[str, Any]] = {}
+            for row in column_rows:
+                table = f"{row['table_schema']}.{row['table_name']}".lower()
+                entry = table_map.setdefault(table, {"table": table, "columns": [], "constraints": [], "indexes": []})
+                entry["columns"].append(
+                    {
+                        "name": str(row.get("column_name") or ""),
+                        "ordinalPosition": int(row.get("ordinal_position") or 0),
+                        "dataType": str(row.get("data_type") or ""),
+                        "notNull": bool(row.get("not_null")),
+                        "defaultExpression": row.get("default_expression"),
+                    }
+                )
+            for row in constraint_rows:
+                table = f"{row['table_schema']}.{row['table_name']}".lower()
+                entry = table_map.setdefault(table, {"table": table, "columns": [], "constraints": [], "indexes": []})
+                entry["constraints"].append(
+                    {
+                        "name": str(row.get("constraint_name") or ""),
+                        "type": str(row.get("constraint_type") or ""),
+                        "definition": str(row.get("definition") or ""),
+                    }
+                )
+            for row in index_rows:
+                table = f"{row['table_schema']}.{row['table_name']}".lower()
+                entry = table_map.setdefault(table, {"table": table, "columns": [], "constraints": [], "indexes": []})
+                entry["indexes"].append(
+                    {
+                        "name": str(row.get("index_name") or ""),
+                        "isUnique": bool(row.get("is_unique")),
+                        "isPrimary": bool(row.get("is_primary")),
+                        "definition": str(row.get("definition") or ""),
+                    }
+                )
+            return {
+                "ok": True,
+                "status": "POSTGRES_SCHEMA_CONTRACT_INVENTORY",
+                "database": str(identity.get("database") or "")[:160],
+                "user": str(identity.get("user") or "")[:160],
+                "requestedTables": normalized,
+                "tables": [table_map[name] for name in sorted(table_map)],
+                "missingTables": sorted(set(normalized) - set(table_map)),
+                "rowDataReturned": False,
+                "secretValuesExposed": False,
+            }
+        finally:
+            conn.close()
+
     def vector_canary(self) -> dict[str, Any]:
         conn = self._connection("POSTGRES")
         try:

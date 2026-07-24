@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "sovereign.postgres-historical-schema-ownership.v1",
+  "inventorySource": {
+    "kind": "production-postgresql-read-only-catalog-inventory",
+    "inventoriedAt": "2026-07-24",
+    "sqlSha256": "c094df05020e57d92f6902f4014fae74526992875127529c6e65cc68a4cc5bd5",
+    "rowDataRead": false,
+    "secretValuesReturned": false
+  },
+  "policy": {
+    "manifestPathAllowlisted": true,
+    "automaticCreateForbidden": true,
+    "structureMismatchMode": "fail-closed",
+    "recoveryRequiresManualReview": true
+  },
+  "tables": [
+    {
+      "table": "public.admin_users",
+      "ownershipKind": "historical-bootstrap",
+      "canonicalRuntimeModule": "scripts/sovereign-backend/app.py",
+      "dependentRuntimeModules": [
+        "scripts/sovereign-backend/security_runtime.py",
+        "scripts/sovereign-backend/controller_board.py",
+        "scripts/sovereign-backend/llm_execution_resolver.py"
+      ],
+      "creationSourceStatus": "historical-source-not-present-in-current-repository",
+      "requiredColumns": [
+        {"name": "id", "dataType": "uuid", "notNull": true, "defaultExpression": "gen_random_uuid()"},
+        {"name": "email", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "display_name", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "role", "dataType": "text", "notNull": true, "defaultExpression": "'user'::text"},
+        {"name": "credits", "dataType": "integer", "notNull": true, "defaultExpression": "0"},
+        {"name": "subscription_status", "dataType": "text", "notNull": true, "defaultExpression": "'free'::text"},
+        {"name": "is_banned", "dataType": "boolean", "notNull": true, "defaultExpression": "false"},
+        {"name": "created_at", "dataType": "timestamp with time zone", "notNull": true, "defaultExpression": "now()"},
+        {"name": "last_active_at", "dataType": "timestamp with time zone", "notNull": false, "defaultExpression": null},
+        {"name": "password_hash", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "google_id", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "avatar_url", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "github_id", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "github_username", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "github_access_token", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "provider_funded_credits", "dataType": "integer", "notNull": true, "defaultExpression": "0"}
+      ],
+      "requiredConstraints": [
+        {"name": "admin_users_provider_funded_credits_check", "type": "CHECK", "definition": "CHECK (provider_funded_credits >= 0 AND provider_funded_credits <= credits)"},
+        {"name": "admin_users_role_check", "type": "CHECK", "definition": "CHECK (role = ANY (ARRAY['user'::text, 'admin'::text, 'superadmin'::text]))"},
+        {"name": "admin_users_subscription_status_check", "type": "CHECK", "definition": "CHECK (subscription_status = ANY (ARRAY['active'::text, 'canceled'::text, 'past_due'::text, 'trialing'::text, 'free'::text]))"},
+        {"name": "admin_users_pkey", "type": "PRIMARY KEY", "definition": "PRIMARY KEY (id)"},
+        {"name": "admin_users_email_key", "type": "UNIQUE", "definition": "UNIQUE (email)"}
+      ],
+      "requiredIndexes": [
+        {"name": "admin_users_email_key", "isUnique": true, "isPrimary": false, "definition": "CREATE UNIQUE INDEX admin_users_email_key ON public.admin_users USING btree (email)"},
+        {"name": "admin_users_pkey", "isUnique": true, "isPrimary": true, "definition": "CREATE UNIQUE INDEX admin_users_pkey ON public.admin_users USING btree (id)"}
+      ],
+      "recoveryMode": "fail-closed-manual-recovery",
+      "allowAutomaticCreate": false
+    },
+    {
+      "table": "public.sovereign_agent_draft_pr_events",
+      "ownershipKind": "external-historical-bootstrap",
+      "canonicalRuntimeModule": "external:sovereign-agent-runtime",
+      "runtimeModuleStatus": "historical-owner-not-present-in-current-repository",
+      "creationSourceStatus": "historical-source-not-present-in-current-repository",
+      "requiredColumns": [
+        {"name": "id", "dataType": "uuid", "notNull": true, "defaultExpression": "gen_random_uuid()"},
+        {"name": "job_id", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "event_type", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "event_data", "dataType": "jsonb", "notNull": false, "defaultExpression": "'{}'::jsonb"},
+        {"name": "success", "dataType": "boolean", "notNull": false, "defaultExpression": "true"},
+        {"name": "error_message", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "created_at", "dataType": "timestamp with time zone", "notNull": false, "defaultExpression": "now()"}
+      ],
+      "requiredConstraints": [
+        {"name": "sovereign_agent_draft_pr_events_event_type_check", "type": "CHECK", "definition": "CHECK (event_type = ANY (ARRAY['pr_prepared'::text, 'pr_created'::text, 'pr_updated'::text, 'pr_closed'::text, 'pr_merged'::text, 'pr_comment_added'::text, 'branch_created'::text, 'branch_deleted'::text, 'gate_passed'::text, 'gate_failed'::text, 'validation_failed'::text]))"},
+        {"name": "fk_job", "type": "FOREIGN KEY", "definition": "FOREIGN KEY (job_id) REFERENCES sovereign_agent_jobs(job_id) ON DELETE CASCADE"},
+        {"name": "sovereign_agent_draft_pr_events_pkey", "type": "PRIMARY KEY", "definition": "PRIMARY KEY (id)"}
+      ],
+      "requiredIndexes": [
+        {"name": "idx_draft_pr_events_created_at", "isUnique": false, "isPrimary": false, "definition": "CREATE INDEX idx_draft_pr_events_created_at ON public.sovereign_agent_draft_pr_events USING btree (created_at)"},
+        {"name": "idx_draft_pr_events_job_id", "isUnique": false, "isPrimary": false, "definition": "CREATE INDEX idx_draft_pr_events_job_id ON public.sovereign_agent_draft_pr_events USING btree (job_id)"},
+        {"name": "idx_draft_pr_events_type", "isUnique": false, "isPrimary": false, "definition": "CREATE INDEX idx_draft_pr_events_type ON public.sovereign_agent_draft_pr_events USING btree (event_type)"},
+        {"name": "sovereign_agent_draft_pr_events_pkey", "isUnique": true, "isPrimary": true, "definition": "CREATE UNIQUE INDEX sovereign_agent_draft_pr_events_pkey ON public.sovereign_agent_draft_pr_events USING btree (id)"}
+      ],
+      "recoveryMode": "fail-closed-manual-recovery",
+      "allowAutomaticCreate": false
+    },
+    {
+      "table": "public.sovereign_agent_evidence_log",
+      "ownershipKind": "external-historical-bootstrap",
+      "canonicalRuntimeModule": "external:sovereign-agent-runtime",
+      "runtimeModuleStatus": "historical-owner-not-present-in-current-repository",
+      "creationSourceStatus": "historical-source-not-present-in-current-repository",
+      "requiredColumns": [
+        {"name": "id", "dataType": "uuid", "notNull": true, "defaultExpression": "gen_random_uuid()"},
+        {"name": "job_id", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "workspace_id", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "file_path", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "action", "dataType": "text", "notNull": true, "defaultExpression": null},
+        {"name": "content_hash", "dataType": "text", "notNull": false, "defaultExpression": null},
+        {"name": "size_bytes", "dataType": "integer", "notNull": false, "defaultExpression": null},
+        {"name": "evidence_check_passed", "dataType": "boolean", "notNull": false, "defaultExpression": "false"},
+        {"name": "placeholder_detected", "dataType": "boolean", "notNull": false, "defaultExpression": "false"},
+        {"name": "created_at", "dataType": "timestamp with time zone", "notNull": false, "defaultExpression": "now()"}
+      ],
+      "requiredConstraints": [
+        {"name": "sovereign_agent_evidence_log_action_check", "type": "CHECK", "definition": "CHECK (action = ANY (ARRAY['created'::text, 'modified'::text, 'deleted'::text]))"},
+        {"name": "fk_job", "type": "FOREIGN KEY", "definition": "FOREIGN KEY (job_id) REFERENCES sovereign_agent_jobs(job_id) ON DELETE CASCADE"},
+        {"name": "sovereign_agent_evidence_log_pkey", "type": "PRIMARY KEY", "definition": "PRIMARY KEY (id)"}
+      ],
+      "requiredIndexes": [
+        {"name": "idx_evidence_log_created_at", "isUnique": false, "isPrimary": false, "definition": "CREATE INDEX idx_evidence_log_created_at ON public.sovereign_agent_evidence_log USING btree (created_at)"},
+        {"name": "idx_evidence_log_job_id", "isUnique": false, "isPrimary": false, "definition": "CREATE INDEX idx_evidence_log_job_id ON public.sovereign_agent_evidence_log USING btree (job_id)"},
+        {"name": "idx_evidence_log_placeholder", "isUnique": false, "isPrimary": false, "definition": "CREATE INDEX idx_evidence_log_placeholder ON public.sovereign_agent_evidence_log USING btree (placeholder_detected) WHERE (placeholder_detected = true)"},
+        {"name": "sovereign_agent_evidence_log_pkey", "isUnique": true, "isPrimary": true, "definition": "CREATE UNIQUE INDEX sovereign_agent_evidence_log_pkey ON public.sovereign_agent_evidence_log USING btree (id)"}
+      ],
+      "recoveryMode": "fail-closed-manual-recovery",
+      "allowAutomaticCreate": false
+    }
+  ]
+}
