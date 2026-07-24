@@ -43,6 +43,7 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "0").strip() == "1":
         capabilities.extend((
             "repository_merge_pr",
+            "repository_main_ruleset_apply",
             "repository_update_pr",
             "repository_reopen_pr",
             "repository_close_pr",
@@ -399,6 +400,16 @@ def repository_merge_pr(
             "mark_ready_if_draft": mark_ready_if_draft,
             "allow_unrelated_android_pending": allow_unrelated_android_pending,
         },
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_main_ruleset_apply(owner_approved: bool = False) -> dict[str, Any]:
+    """Create or reconcile the active main ruleset and verify exact GitHub readback."""
+    return broker.call(
+        "github_main_ruleset_apply",
+        {"owner_approved": owner_approved},
         timeout=180,
     )
 

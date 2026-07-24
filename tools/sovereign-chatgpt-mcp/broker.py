@@ -425,6 +425,9 @@ class BrokerRuntime:
                 mark_ready_if_draft=bool(values.get("mark_ready_if_draft", False)),
                 allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
             ),
+            "github_main_ruleset_apply": lambda values: self.github.apply_main_ruleset(
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
             "github_update_pr": lambda values: self.github.update_pr(
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),
