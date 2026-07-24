@@ -1,6 +1,7 @@
+// @vitest-environment node
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import {
   DEFAULT_MATRIX_PATH,

@@ -28,7 +28,7 @@ node scripts/runtime-canary-matrix-gate.mjs \
   --mode contract \
   --revision <EXAKTE_PR_HEAD_SHA>
 
-node --test scripts/runtime-canary-matrix-gate.test.mjs
+pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 ```
 
 Der Contract-Modus schlägt unter anderem fehl bei:

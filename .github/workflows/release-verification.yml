@@ -109,11 +109,6 @@ jobs:
             --mode contract \
             --revision "$SOVEREIGN_REVISION"
 
-      - name: Runtime Canary Matrix Gate Tests
-        id: runtime_canary_tests
-        shell: bash
-        run: node --test scripts/runtime-canary-matrix-gate.test.mjs
-
       - name: Runtime Canary Release Evidence Gate
         id: runtime_canary_release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_mode == true }}
@@ -151,6 +146,11 @@ jobs:
 
       - name: Install Dependencies
         run: pnpm install
+
+      - name: Runtime Canary Matrix Gate Tests
+        id: runtime_canary_tests
+        shell: bash
+        run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
       - name: Type Check
         id: type_check

@@ -87,14 +87,14 @@ jobs:
             --mode contract \
             --revision "$SOVEREIGN_REVISION"
 
-      - name: Runtime Canary Matrix Gate Tests
-        id: runtime_canary_tests
-        shell: bash
-        run: node --test scripts/runtime-canary-matrix-gate.test.mjs
-
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Runtime Canary Matrix Gate Tests
+        id: runtime_canary_tests
+        shell: bash
+        run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
       - name: Prepare report directory
         shell: bash
