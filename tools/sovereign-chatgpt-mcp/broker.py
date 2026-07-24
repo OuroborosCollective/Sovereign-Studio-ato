@@ -16,6 +16,7 @@ from browserless_reader import BrowserlessReplayReader
 from command_contract import is_mutating_action
 from document_pipeline import DocumentPipelineRuntime
 from github_admin import GitHubAdminRuntime
+from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
 from patchmon_operator import PatchmonOperatorRuntime
@@ -45,6 +46,7 @@ class BrokerRuntime:
         self.operations = OperationsRuntime()
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
+        self.github_knowledge = GitHubKnowledgeCanaryRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.admin = PrivateAdminRuntime(self.operations)
@@ -386,6 +388,10 @@ class BrokerRuntime:
             "manus_public_replay_read": self.read_manus_replay,
             "document_pipeline_live_canary": lambda values: self.document_pipeline.live_canary(
                 marker=str(values.get("marker") or "SOVEREIGN_DOCUMENT_PIPELINE_CANARY"),
+            ),
+            "github_knowledge_live_canary": lambda values: self.github_knowledge.live_canary(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
             ),
             "resolve_backend_image": self.resolve_backend_image,
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
