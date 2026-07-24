@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from command_contract import is_mutating_action
@@ -137,6 +138,14 @@ def test_issue_close_blocks_when_readback_is_stale_without_patch(monkeypatch) ->
     assert result["failure_family"] == "ISSUE_STALE_READBACK"
     assert result["readback_verified"] is True
     assert not any(call["method"] == "PATCH" for call in session.calls)
+
+
+def test_agent_runtime_required_check_runs_for_every_pull_request() -> None:
+    workflow = Path(".github/workflows/sovereign-agent-backend.yml").read_text("utf-8")
+    pull_request_trigger = workflow.split("  pull_request:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
+
+    assert "paths:" not in pull_request_trigger
+    assert "name: Agent Runtime Tests" in workflow
 
 
 def test_issue_close_requires_owner_and_verifies_completed_readback(monkeypatch) -> None:

@@ -13,14 +13,6 @@ on:
       - '.github/workflows/sovereign-agent-backend.yml'
   pull_request:
     branches: [main, master, develop]
-    paths:
-      - 'backend/requirements-test.txt'
-      - 'backend/litellm_runtime.py'
-      - 'scripts/check-backend-python-runtime.py'
-      - 'scripts/sovereign-backend/**'
-      - 'scripts/sovereign-agent-internal-live-path.contract.mjs'
-      - '.github/actions/setup-backend-python/**'
-      - '.github/workflows/sovereign-agent-backend.yml'
   workflow_dispatch:
 
 permissions:
