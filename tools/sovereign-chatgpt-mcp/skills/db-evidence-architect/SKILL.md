@@ -48,3 +48,7 @@ Der Receipt-Hash verwendet `utf8-nfc-json-sorted-no-floats-v1`. Zeitstempel sind
 - `postgres_evidence_read`
 - `postgres_evidence_migration_preview`
 - `database_evidence_receipt_verify`
+
+## Übernommene und verworfene Archivteile
+
+Übernommen wurden Architektur-Scanning, SHA-256-Identitäten, verkettete Receipts und Git-Revisionsbindung. Ersetzt wurden der SQLite-zentrierte Ausführungspfad, simulierte PostgreSQL-/MySQL-Erfolge und die flüchtige In-Memory-Kette. Der Mock-Tracer ist nicht installiert; OpenTelemetry bleibt ein optionaler Side-Channel außerhalb des PASS-Gates.
