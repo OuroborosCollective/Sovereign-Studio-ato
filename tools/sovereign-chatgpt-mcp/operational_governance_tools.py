@@ -98,6 +98,11 @@ _CREATE_TABLE_RE: Final[re.Pattern[str]] = re.compile(
     r"(?P<table>[A-Za-z_][A-Za-z0-9_]*)[\"`]?",
     re.I,
 )
+_HISTORICAL_SCHEMA_OWNERSHIP_PATH: Final[Path] = Path(
+    "docs/architecture/POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json"
+)
+_HISTORICAL_SCHEMA_OWNERSHIP_VERSION: Final[str] = "sovereign.postgres-historical-schema-ownership.v1"
+_TABLE_IDENTITY_RE: Final[re.Pattern[str]] = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
 
 
 def _strip_sql_comments(text: str) -> str:
@@ -1071,11 +1076,246 @@ def evidence_graph_build(
     )
 
 
+def _normalize_schema_expression(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+
+def _load_historical_schema_ownership(
+    repo: Path,
+) -> tuple[dict[str, Any] | None, dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """Load only the fixed repository-owned manifest path and reject malformed contracts."""
+    repo_root = repo.resolve()
+    manifest_path = (repo_root / _HISTORICAL_SCHEMA_OWNERSHIP_PATH).resolve()
+    findings: list[dict[str, Any]] = []
+    try:
+        manifest_path.relative_to(repo_root)
+    except ValueError:
+        return None, {}, [
+            {
+                "severity": "P0",
+                "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_PATH_BLOCKED",
+                "path": str(_HISTORICAL_SCHEMA_OWNERSHIP_PATH),
+            }
+        ]
+    if not manifest_path.is_file():
+        return None, {}, []
+    if manifest_path.stat().st_size > 1_000_000:
+        return None, {}, [
+            {
+                "severity": "P0",
+                "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                "reason": "manifest_too_large",
+            }
+        ]
+    try:
+        payload = json.loads(manifest_path.read_text("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, {}, [
+            {
+                "severity": "P0",
+                "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                "reason": type(exc).__name__,
+            }
+        ]
+    if not isinstance(payload, dict) or payload.get("schemaVersion") != _HISTORICAL_SCHEMA_OWNERSHIP_VERSION:
+        return payload if isinstance(payload, dict) else None, {}, [
+            {
+                "severity": "P0",
+                "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_SCHEMA_UNSUPPORTED",
+                "expected": _HISTORICAL_SCHEMA_OWNERSHIP_VERSION,
+                "actual": payload.get("schemaVersion") if isinstance(payload, dict) else None,
+            }
+        ]
+    raw_tables = payload.get("tables")
+    if not isinstance(raw_tables, list):
+        return payload, {}, [
+            {
+                "severity": "P0",
+                "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                "reason": "tables_must_be_an_array",
+            }
+        ]
+    entries: dict[str, dict[str, Any]] = {}
+    for index, raw in enumerate(raw_tables):
+        if not isinstance(raw, dict):
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                    "entry": index,
+                    "reason": "table_entry_must_be_an_object",
+                }
+            )
+            continue
+        table = str(raw.get("table") or "").strip().lower()
+        if not _TABLE_IDENTITY_RE.fullmatch(table):
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                    "entry": index,
+                    "reason": "invalid_table_identity",
+                }
+            )
+            continue
+        if table in entries:
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                    "table": table,
+                    "reason": "duplicate_table_identity",
+                }
+            )
+            continue
+        if raw.get("allowAutomaticCreate") is not False:
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_AUTOMATIC_CREATE_FORBIDDEN",
+                    "table": table,
+                }
+            )
+            continue
+        if not all(isinstance(raw.get(key), list) for key in ("requiredColumns", "requiredConstraints", "requiredIndexes")):
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_MANIFEST_INVALID",
+                    "table": table,
+                    "reason": "required_contract_arrays_missing",
+                }
+            )
+            continue
+        entries[table] = raw
+    return payload, entries, findings
+
+
+def _historical_contract_mismatches(expected: dict[str, Any], actual: dict[str, Any]) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    actual_columns = {
+        str(item.get("name") or "").lower(): item
+        for item in actual.get("columns", [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    for required in expected.get("requiredColumns", []):
+        if not isinstance(required, dict) or not required.get("name"):
+            mismatches.append({"kind": "column", "reason": "invalid_manifest_entry"})
+            continue
+        name = str(required["name"]).lower()
+        observed = actual_columns.get(name)
+        if observed is None:
+            mismatches.append({"kind": "column", "name": name, "reason": "missing"})
+            continue
+        if _normalize_schema_expression(observed.get("dataType")) != _normalize_schema_expression(required.get("dataType")):
+            mismatches.append(
+                {
+                    "kind": "column",
+                    "name": name,
+                    "reason": "data_type_mismatch",
+                    "expected": required.get("dataType"),
+                    "actual": observed.get("dataType"),
+                }
+            )
+        if bool(observed.get("notNull")) != bool(required.get("notNull")):
+            mismatches.append(
+                {
+                    "kind": "column",
+                    "name": name,
+                    "reason": "nullability_mismatch",
+                    "expected": bool(required.get("notNull")),
+                    "actual": bool(observed.get("notNull")),
+                }
+            )
+        if "defaultExpression" in required and _normalize_schema_expression(observed.get("defaultExpression")) != _normalize_schema_expression(required.get("defaultExpression")):
+            mismatches.append(
+                {
+                    "kind": "column",
+                    "name": name,
+                    "reason": "default_mismatch",
+                    "expected": required.get("defaultExpression"),
+                    "actual": observed.get("defaultExpression"),
+                }
+            )
+
+    actual_constraints = {
+        str(item.get("name") or "").lower(): item
+        for item in actual.get("constraints", [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    for required in expected.get("requiredConstraints", []):
+        if not isinstance(required, dict) or not required.get("name"):
+            mismatches.append({"kind": "constraint", "reason": "invalid_manifest_entry"})
+            continue
+        name = str(required["name"]).lower()
+        observed = actual_constraints.get(name)
+        if observed is None:
+            mismatches.append({"kind": "constraint", "name": name, "reason": "missing"})
+            continue
+        if _normalize_schema_expression(observed.get("type")) != _normalize_schema_expression(required.get("type")):
+            mismatches.append(
+                {
+                    "kind": "constraint",
+                    "name": name,
+                    "reason": "type_mismatch",
+                    "expected": required.get("type"),
+                    "actual": observed.get("type"),
+                }
+            )
+        if _normalize_schema_expression(observed.get("definition")) != _normalize_schema_expression(required.get("definition")):
+            mismatches.append(
+                {
+                    "kind": "constraint",
+                    "name": name,
+                    "reason": "definition_mismatch",
+                    "expected": required.get("definition"),
+                    "actual": observed.get("definition"),
+                }
+            )
+
+    actual_indexes = {
+        str(item.get("name") or "").lower(): item
+        for item in actual.get("indexes", [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    for required in expected.get("requiredIndexes", []):
+        if not isinstance(required, dict) or not required.get("name"):
+            mismatches.append({"kind": "index", "reason": "invalid_manifest_entry"})
+            continue
+        name = str(required["name"]).lower()
+        observed = actual_indexes.get(name)
+        if observed is None:
+            mismatches.append({"kind": "index", "name": name, "reason": "missing"})
+            continue
+        for key in ("isUnique", "isPrimary"):
+            if bool(observed.get(key)) != bool(required.get(key)):
+                mismatches.append(
+                    {
+                        "kind": "index",
+                        "name": name,
+                        "reason": f"{key}_mismatch",
+                        "expected": bool(required.get(key)),
+                        "actual": bool(observed.get(key)),
+                    }
+                )
+        if _normalize_schema_expression(observed.get("definition")) != _normalize_schema_expression(required.get("definition")):
+            mismatches.append(
+                {
+                    "kind": "index",
+                    "name": name,
+                    "reason": "definition_mismatch",
+                    "expected": required.get("definition"),
+                    "actual": observed.get("definition"),
+                }
+            )
+    return mismatches
+
+
 def schema_migration_reconcile(
     workspace_id: WorkspaceId,
     migration_paths: Annotated[list[str], Field(max_length=16)] = ["backend/migrations", "scripts/sovereign-backend/migrations"],
 ) -> GenericResult:
-    """Use this when migration-defined PostgreSQL table ownership must be reconciled with the live schema without reading rows."""
+    """Use this when migration and versioned historical PostgreSQL ownership must be reconciled without reading rows."""
     repo = _workspace_repo(workspace_id)
     static_tables: dict[str, list[str]] = {}
     migration_hashes: dict[str, str] = {}
@@ -1112,8 +1352,80 @@ def schema_migration_reconcile(
         if isinstance(item, dict) and item.get("table_name")
     }
     static_names = set(static_tables)
+    migration_owned = sorted(static_names & live_tables)
     missing_live = sorted(static_names - live_tables)
-    unmapped_live = sorted(live_tables - static_names)
+
+    manifest, historical_entries, manifest_findings = _load_historical_schema_ownership(repo)
+    findings: list[dict[str, Any]] = list(manifest_findings)
+    historical_owned: list[str] = []
+    historical_mismatches: list[dict[str, Any]] = []
+    historical_missing: list[str] = []
+    historical_inventory: dict[str, Any] = {}
+    if historical_entries and not manifest_findings:
+        overlap = sorted(set(historical_entries) & static_names)
+        for table in overlap:
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_CONFLICTS_WITH_MIGRATION_OWNER",
+                    "table": table,
+                }
+            )
+        try:
+            historical_inventory = _DATABASE.schema_contract_inventory(sorted(historical_entries))
+        except Exception as exc:
+            historical_inventory = {
+                "ok": False,
+                "status": "POSTGRES_SCHEMA_CONTRACT_INVENTORY_UNAVAILABLE",
+                "errorType": type(exc).__name__,
+                "rowDataReturned": False,
+            }
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_INVENTORY_UNAVAILABLE",
+                    "errorType": type(exc).__name__,
+                }
+            )
+        if historical_inventory.get("rowDataReturned") is not False:
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_HISTORICAL_OWNERSHIP_ROW_DATA_BOUNDARY_BROKEN",
+                }
+            )
+        actual_by_table = {
+            str(item.get("table") or "").lower(): item
+            for item in historical_inventory.get("tables", [])
+            if isinstance(item, dict) and item.get("table")
+        }
+        for table, expected in sorted(historical_entries.items()):
+            if table not in live_tables or table not in actual_by_table:
+                historical_missing.append(table)
+                findings.append(
+                    {
+                        "severity": "P0",
+                        "family": "DB_HISTORICAL_OWNERSHIP_TABLE_MISSING",
+                        "table": table,
+                    }
+                )
+                continue
+            mismatch_items = _historical_contract_mismatches(expected, actual_by_table[table])
+            if mismatch_items:
+                historical_mismatches.append({"table": table, "mismatches": mismatch_items})
+                findings.append(
+                    {
+                        "severity": "P0",
+                        "family": "DB_HISTORICAL_OWNERSHIP_SCHEMA_MISMATCH",
+                        "table": table,
+                        "mismatchCount": len(mismatch_items),
+                    }
+                )
+                continue
+            if table not in overlap:
+                historical_owned.append(table)
+
+    unmapped_live = sorted(live_tables - static_names - set(historical_owned))
     duplicate_owners = [
         {
             "table": name,
@@ -1129,7 +1441,6 @@ def schema_migration_reconcile(
         if len(set(paths)) > 1
         and len({migration_hashes[path] for path in set(paths)}) == 1
     ]
-    findings: list[dict[str, Any]] = []
     findings.extend(
         {"severity": "P0", "family": "DB_DRIFT_MISSING_LIVE_TABLE", "table": name}
         for name in missing_live
@@ -1143,6 +1454,7 @@ def schema_migration_reconcile(
         for item in duplicate_owners
     )
     ok = not findings
+    manifest_path = str(_HISTORICAL_SCHEMA_OWNERSHIP_PATH)
     return _generic_result(
         schema_version="sovereign.schema-migration-reconciliation.v1",
         ok=ok,
@@ -1152,21 +1464,30 @@ def schema_migration_reconcile(
             "migrationFilesScanned": scanned_files,
             "migrationDefinedTableCount": len(static_names),
             "liveTableCount": len(live_tables),
+            "migrationOwnedTables": migration_owned,
+            "historicallyOwnedTables": sorted(historical_owned),
             "missingLiveTables": missing_live,
+            "historicalOwnershipMissingTables": historical_missing,
             "unmappedLiveTables": unmapped_live,
+            "historicalOwnershipMismatches": historical_mismatches,
+            "historicalOwnershipManifestPath": manifest_path,
+            "historicalOwnershipManifestLoaded": manifest is not None,
+            "historicalOwnershipManifestSha256": _sha256(manifest) if manifest is not None else None,
+            "historicalOwnershipInventoryStatus": historical_inventory.get("status") if historical_inventory else None,
             "multipleOwners": duplicate_owners,
             "byteEqualMigrationMirrors": byte_equal_mirrors,
             "liveSchemaStatus": live.get("status") if isinstance(live, dict) else "UNKNOWN",
             "rowDataReturned": False,
+            "automaticDatabaseMutationPerformed": False,
         },
         findings=findings,
         next_actions=[
-            "identify the canonical migration owner before writing schema changes",
-            "preview one idempotent migration in the dedicated preview database",
-            "apply only after exact confirmation hash and verify the live schema again",
+            "manually recover a missing or structurally incompatible historical table; never auto-create it",
+            "normalize each remaining multiple migration owner in a separate canonical-owner change",
+            "repeat reconciliation against the exact installed MCP revision after merge",
         ],
         runtime_verified=True,
-        truth_notice="Live table names are runtime evidence. Ownership still requires repository review; this tool never reads table rows or applies migrations.",
+        truth_notice="Live names and catalog metadata are read in read-only mode. Historical ownership is accepted only from the fixed repository manifest when the full required structure matches; no rows or migrations are read or mutated.",
     )
 
 

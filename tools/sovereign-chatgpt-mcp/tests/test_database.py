@@ -68,6 +68,129 @@ def test_schema_inventory_returns_metadata_only(monkeypatch) -> None:
     assert connection.closed is True
 
 
+def test_schema_contract_inventory_reads_catalog_metadata_only(monkeypatch) -> None:
+    class Cursor:
+        def __init__(self) -> None:
+            self.rows = []
+            self.params = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.params.append(params)
+            if "current_database()" in query:
+                self.rows = [{"database": "sovereign", "user": "runtime_reader"}]
+            elif "pg_catalog.pg_attribute" in query:
+                self.rows = [
+                    {
+                        "table_schema": "public",
+                        "table_name": "historical_table",
+                        "ordinal_position": 1,
+                        "column_name": "id",
+                        "data_type": "uuid",
+                        "not_null": True,
+                        "default_expression": "gen_random_uuid()",
+                    }
+                ]
+            elif "pg_catalog.pg_constraint" in query:
+                self.rows = [
+                    {
+                        "table_schema": "public",
+                        "table_name": "historical_table",
+                        "constraint_name": "historical_table_pkey",
+                        "constraint_type": "PRIMARY KEY",
+                        "definition": "PRIMARY KEY (id)",
+                    }
+                ]
+            elif "pg_catalog.pg_index" in query:
+                self.rows = [
+                    {
+                        "table_schema": "public",
+                        "table_name": "historical_table",
+                        "index_name": "historical_table_pkey",
+                        "is_unique": True,
+                        "is_primary": True,
+                        "definition": "CREATE UNIQUE INDEX historical_table_pkey ON public.historical_table USING btree (id)",
+                    }
+                ]
+            else:
+                raise AssertionError(query)
+
+        def fetchone(self):
+            return self.rows[0]
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self) -> None:
+            self.cursor_instance = Cursor()
+            self.readonly = False
+            self.rolled_back = False
+            self.closed = False
+
+        def set_session(self, *, readonly, autocommit):
+            self.readonly = readonly is True and autocommit is False
+
+        def cursor(self, **_kwargs):
+            return self.cursor_instance
+
+        def rollback(self):
+            self.rolled_back = True
+
+        def close(self):
+            self.closed = True
+
+    connection = Connection()
+    monkeypatch.setattr(DatabaseRuntime, "_connection", staticmethod(lambda _prefix="POSTGRES": connection))
+    database = DatabaseRuntime(lambda _workspace_id: None)
+
+    result = database.schema_contract_inventory(["public.historical_table"])
+
+    assert result["status"] == "POSTGRES_SCHEMA_CONTRACT_INVENTORY"
+    assert result["requestedTables"] == ["public.historical_table"]
+    assert result["missingTables"] == []
+    assert result["tables"] == [
+        {
+            "table": "public.historical_table",
+            "columns": [
+                {
+                    "name": "id",
+                    "ordinalPosition": 1,
+                    "dataType": "uuid",
+                    "notNull": True,
+                    "defaultExpression": "gen_random_uuid()",
+                }
+            ],
+            "constraints": [
+                {"name": "historical_table_pkey", "type": "PRIMARY KEY", "definition": "PRIMARY KEY (id)"}
+            ],
+            "indexes": [
+                {
+                    "name": "historical_table_pkey",
+                    "isUnique": True,
+                    "isPrimary": True,
+                    "definition": "CREATE UNIQUE INDEX historical_table_pkey ON public.historical_table USING btree (id)",
+                }
+            ],
+        }
+    ]
+    assert connection.cursor_instance.params[1:] == [
+        (["public.historical_table"],),
+        (["public.historical_table"],),
+        (["public.historical_table"],),
+    ]
+    assert result["rowDataReturned"] is False
+    assert result["secretValuesExposed"] is False
+    assert connection.readonly is True
+    assert connection.rolled_back is True
+    assert connection.closed is True
+
+
 def test_migration_blocks_dangerous_sql(repo_runtime) -> None:
     runtime, workspace_id, repo = repo_runtime
     migration = repo / "migrations" / "001.sql"
