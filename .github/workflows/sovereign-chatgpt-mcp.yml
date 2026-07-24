@@ -1140,6 +1140,66 @@ jobs:
             print({'fresh_session_runtime_evidence': True, 'revision': payload['revision'], 'image': payload['image'], 'kappa_pos': payload['kappa_pos']})
             PY
 
+  inspect-pr-992-review-threads:
+    name: Inspect PR 992 review threads
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/sovereign/chatgpt/1784927172-issue-873-github-knowledge-workflow-cana-a97c4d'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read unresolved review threads
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const crypto = require('crypto');
+            const expectedHead = context.sha;
+            const query = `query($owner:String!,$repo:String!,$number:Int!){
+              repository(owner:$owner,name:$repo){
+                pullRequest(number:$number){
+                  headRefOid
+                  reviewThreads(first:50){
+                    nodes{
+                      id
+                      isResolved
+                      isOutdated
+                      path
+                      line
+                      comments(first:20){nodes{author{login} body createdAt}}
+                    }
+                  }
+                }
+              }
+            }`;
+            const data = await github.graphql(query, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: 992,
+            });
+            const pull = data.repository.pullRequest;
+            if (!pull || pull.headRefOid !== expectedHead) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+              return;
+            }
+            const redact = (value) => String(value || '')
+              .replace(/(?:ghp_|github_pat_|sk-proj-)[A-Za-z0-9_-]+/gi, '[REDACTED]')
+              .replace(/authorization:\s*bearer\s+\S+/gi, 'authorization: [REDACTED]')
+              .slice(0, 1200);
+            const unresolved = pull.reviewThreads.nodes
+              .filter((thread) => !thread.isResolved)
+              .map((thread) => ({
+                idSha256: crypto.createHash('sha256').update(thread.id).digest('hex'),
+                path: String(thread.path || '').slice(0, 240),
+                line: Number(thread.line || 0),
+                isOutdated: Boolean(thread.isOutdated),
+                comments: thread.comments.nodes.map((comment) => ({
+                  author: String(comment.author?.login || '').slice(0, 120),
+                  createdAt: String(comment.createdAt || '').slice(0, 80),
+                  body: redact(comment.body),
+                })),
+              }));
+            core.setFailed(`UNRESOLVED_REVIEW_THREADS=${JSON.stringify(unresolved)}`);
+
   verify-github-knowledge:
     name: Verify GitHub Knowledge live canary
     needs: deploy-vps
