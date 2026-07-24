@@ -25,3 +25,7 @@
 ## 2025-07-22 - [Stateful Disclosure Button Accessibility]
 **Learning:** Disclosure widgets (like findings panels, accordions, and error drawers) need explicit ARIA state triggers like `aria-expanded` and clear native tooltips (via `title`) to inform users about toggle states before and after expansion.
 **Action:** Toggle/disclosure buttons should pair a reactive `aria-expanded` state with descriptive, stateful hover tooltips (`title`) describing the consequences of toggling the element.
+
+## 2025-07-23 - [Interactive vs. Informative Inline Badges]
+**Learning:** Conversational event logs and stream cards often display inline file paths. When these are interactive (i.e. click-to-open), they benefit from both descriptive visual 'title' hover tooltips and clear 'aria-label' attributes that convey the action (e.g., 'Repo Datei öffnen: path'). If they are merely static/informative, hover 'title' should default to the full path and any interactive actions should be removed to prevent confusing screen reader announcement states.
+**Action:** Always condition 'aria-label' and 'title' attributes in inline custom badge components on the presence of click handler callbacks to cleanly distinguish between active elements and static information tags.

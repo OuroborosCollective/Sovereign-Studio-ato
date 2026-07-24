@@ -10,6 +10,9 @@ import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
 import { PatchDiffEvidenceSheet } from './PatchDiffEvidenceSheet';
 import { RuntimeEvidenceLogSheet } from './RuntimeEvidenceLogSheet';
 import { AutoCodeReviewCard } from './AutoCodeReviewCard';
+import { FileContentPreviewSheet } from './FileContentPreviewSheet';
+import { FileBadge } from './FileBadge';
+import { AgentEventStream } from './AgentEventStream';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -116,6 +119,21 @@ describe('Palette Accessibility Enhancements', () => {
       const closeButton = screen.getByRole('button', { name: 'Runtime Logs schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Runtime Logs schließen');
       expect(closeButton).toHaveAttribute('title', 'Runtime Logs schließen');
+    });
+
+    it('FileContentPreviewSheet close button has matching aria-label and title', () => {
+      render(
+        <FileContentPreviewSheet
+          filePath="src/main.tsx"
+          result={{ status: 'loaded', content: 'console.log("hello");', sizeBytes: 22, sha: '123', language: 'typescript' }}
+          loading={false}
+          onClose={vi.fn()}
+        />
+      );
+
+      const closeButton = screen.getByRole('button', { name: 'Vorschau schließen' });
+      expect(closeButton).toHaveAttribute('aria-label', 'Vorschau schließen');
+      expect(closeButton).toHaveAttribute('title', 'Vorschau schließen');
     });
   });
 
@@ -319,6 +337,65 @@ describe('Palette Accessibility Enhancements', () => {
         LLM_PROVIDERS.length = 0;
         LLM_PROVIDERS.push(...originalProviders);
       }
+    });
+  });
+
+  describe('FileBadge Accessibility and Discoverability Enhancements', () => {
+    it('Global FileBadge has aria-label and dynamic title matching state', () => {
+      const onOpenFile = vi.fn();
+      const { rerender } = render(
+        <FileBadge path="src/" file="App.tsx" onOpenFile={onOpenFile} />
+      );
+
+      const fileBadgeBtn = screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' });
+      expect(fileBadgeBtn).toHaveAttribute('aria-label', 'Repo Datei öffnen: src/App.tsx');
+      expect(fileBadgeBtn).toHaveAttribute('title', 'Repo Datei öffnen: src/App.tsx');
+
+      // Test non-interactive badge
+      rerender(<FileBadge path="src/" file="App.tsx" />);
+      const disabledBadge = screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' });
+      expect(disabledBadge).toBeDisabled();
+      expect(disabledBadge).not.toHaveAttribute('title');
+    });
+
+    it('Inline FileBadge inside AgentEventStream has stateful aria-label and title', () => {
+      const mockSnapshot = {
+        id: 'test-work',
+        state: 'draft_pr_ready' as const,
+        branchName: 'main',
+        repoFullName: 'test/repo',
+        events: [
+          {
+            id: 'ev-1',
+            ts: Date.now(),
+            state: 'intent_detected' as const,
+            label: 'Auftrag erkannt',
+          },
+        ],
+        created: 123,
+        updated: 124,
+      };
+      const mockJob = {
+        id: 'test-job',
+        status: 'completed' as const,
+        events: [],
+        changedFiles: ['src/App.tsx'],
+      };
+      const onOpenFile = vi.fn();
+
+      const { rerender } = render(
+        <AgentEventStream snapshot={mockSnapshot} job={mockJob} onOpenFile={onOpenFile} />
+      );
+
+      const inlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' });
+      expect(inlineBadgeBtn).toHaveAttribute('title', 'Repo Datei öffnen: src/App.tsx');
+
+      // Non-interactive (no onOpenFile)
+      rerender(
+        <AgentEventStream snapshot={mockSnapshot} job={mockJob} />
+      );
+      const disabledInlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei: src/App.tsx' });
+      expect(disabledInlineBadgeBtn).toHaveAttribute('title', 'src/App.tsx');
     });
   });
 });
