@@ -25,7 +25,7 @@ def test_backend_serves_only_revision_bound_react_admin() -> None:
     assert "COPY admin-dist/ ./admin-dist/" in dockerfile
     assert "Build revision-bound React admin" in workflow
     assert "Stage canonical admin artifact for backend image" in workflow
-    assert "VITE_SOVEREIGN_SOURCE_REVISION: ${{ github.sha }}" in workflow
+    assert "VITE_SOVEREIGN_SOURCE_REVISION: ${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "corepack prepare pnpm@9.12.2 --activate" in workflow
     assert "cache: pnpm" not in workflow
     assert "CANONICAL_REACT_ADMIN" in wrapper
