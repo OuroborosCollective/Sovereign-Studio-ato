@@ -45,6 +45,10 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert 'reactRootPresent' in deploy
     assert 'ADMIN_API_KEY' in deploy
     assert 'backend-rollback-receipt.json' in deploy
+    assert 'RUNTIME_EVIDENCE_ROOT="/opt/sovereign-chatgpt-tools/runtime-evidence"' in deploy
+    assert 'rollback receipt must remain inside the managed runtime evidence root' in deploy
+    assert '.backend-rollback-receipt-probe.XXXXXX' in deploy
+    assert 'runtime evidence root does not permit receipt writes' in deploy
     assert 'rollbackPreviewVerified' in deploy
     assert 'secretValuesReturned' in deploy
 
