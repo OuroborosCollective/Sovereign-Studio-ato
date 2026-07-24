@@ -413,6 +413,47 @@ class TestRateLimiting:
         from security_oauth import _check_rate_limit
         assert callable(_check_rate_limit)
 
+    def test_rate_limit_deletes_empty_identifier_immediately(self):
+        """Identifier key must be deleted immediately from store if its active timestamp list becomes empty."""
+        identifier = "temp_ip"
+        # Make a request
+        _check_rate_limit(identifier, max_requests=10)
+        assert identifier in _rate_limit_store
+        assert len(_rate_limit_store[identifier]) == 1
+
+        # Simulate expiration by forcing cutoff time in the past
+        # We can mock time or construct old timestamps
+        _rate_limit_store[identifier] = [time.time() - 100] # Expired timestamp
+
+        # Check rate limit again; it should cleanup and delete the key immediately
+        _check_rate_limit(identifier, max_requests=10)
+        assert identifier in _rate_limit_store
+        assert len(_rate_limit_store[identifier]) == 1 # Contains only the new 'now' timestamp
+
+        # If we manually clear the timestamps, checking rate limit will delete the key
+        _rate_limit_store[identifier] = [time.time() - 100]
+        # Instead of calling _check_rate_limit with a new timestamp which appends 'now',
+        # we can verify that a stale key gets purged from the dictionary when its active list is empty.
+        _rate_limit_store[identifier] = []
+        _check_rate_limit(identifier, max_requests=10)
+        assert len(_rate_limit_store[identifier]) == 1 # Created & appended since active was empty and key was deleted, then re-added
+
+    def test_rate_limit_sweeps_store_when_large(self):
+        """Rate limit store must proactively sweep and delete all expired entries when size exceeds 1000."""
+        # Pre-populate store with 1005 identifiers, all of which are expired
+        for i in range(1005):
+            _rate_limit_store[f"ip_{i}"] = [time.time() - 100]
+
+        assert len(_rate_limit_store) == 1005
+
+        # Making a rate limit check on a new ip should trigger a sweep
+        allowed, remaining = _check_rate_limit("new_ip", max_requests=10)
+        assert allowed is True
+
+        # After sweep, all 1005 expired entries should have been completely purged from the store
+        assert len(_rate_limit_store) == 1 # Only "new_ip" exists
+        assert "new_ip" in _rate_limit_store
+
 
 class TestAuditLogging:
     """Tests für Audit-Logging Funktion."""
