@@ -8,6 +8,9 @@ on:
       - 'scripts/**'
       - 'android/**'
       - 'tests/**'
+      - 'config/architecture/SOVEREIGN_RUNTIME_CANARY_MATRIX.v1.json'
+      - 'docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md'
+      - '.github/workflows/release-verification.yml'
       - 'playwright.config.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -17,6 +20,17 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_dispatch:
+    inputs:
+      release_mode:
+        description: 'Require complete revision-bound live-canary evidence'
+        required: false
+        default: false
+        type: boolean
+      runtime_canary_evidence_path:
+        description: 'Repository-relative JSON evidence path used only in release mode'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: release-verification-${{ github.ref }}
@@ -86,6 +100,33 @@ jobs:
         with:
           node-version: 22
 
+      - name: Runtime Canary Matrix Contract Gate
+        id: runtime_canary_contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          node scripts/runtime-canary-matrix-gate.mjs \
+            --mode contract \
+            --revision "$SOVEREIGN_REVISION"
+
+      - name: Runtime Canary Release Evidence Gate
+        id: runtime_canary_release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_mode == true }}
+        shell: bash
+        env:
+          RUNTIME_CANARY_EVIDENCE_PATH: ${{ inputs.runtime_canary_evidence_path }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$RUNTIME_CANARY_EVIDENCE_PATH" ]] || {
+            echo "::error::runtime_canary_evidence_path is required in release mode"
+            exit 1
+          }
+          node scripts/runtime-canary-matrix-gate.mjs \
+            --mode release \
+            --revision "$SOVEREIGN_REVISION" \
+            --evidence "$RUNTIME_CANARY_EVIDENCE_PATH" \
+            --report .security-reports/runtime-canary-release-evidence-gate.json
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -105,6 +146,11 @@ jobs:
 
       - name: Install Dependencies
         run: pnpm install
+
+      - name: Runtime Canary Matrix Gate Tests
+        id: runtime_canary_tests
+        shell: bash
+        run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
       - name: Type Check
         id: type_check
@@ -142,6 +188,16 @@ jobs:
         env:
           CI: true
 
+      - name: Upload Runtime Canary Matrix Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-canary-matrix-reports
+          path: .security-reports/runtime-canary-*.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Release Verification Summary
         if: always()
         shell: bash
@@ -152,6 +208,9 @@ jobs:
             echo "| Gate | Result |"
             echo "| --- | --- |"
             echo "| Revision Integrity | ${{ steps.revision_integrity.outcome }} |"
+            echo "| Canary Matrix Contract | ${{ steps.runtime_canary_contract.outcome }} |"
+            echo "| Canary Matrix Tests | ${{ steps.runtime_canary_tests.outcome }} |"
+            echo "| Canary Release Evidence | ${{ steps.runtime_canary_release.outcome }} |"
             echo "| Type Check | ${{ steps.type_check.outcome }} |"
             echo "| Runtime Unit Tests | ${{ steps.unit_tests.outcome }} |"
             echo "| Build Web + Android Sync | ${{ steps.build_sync.outcome }} |"
@@ -159,5 +218,5 @@ jobs:
             echo "| Playwright Smoke Gate | ${{ steps.playwright_smoke.outcome }} |"
             echo "| Integration Gate | ${{ steps.integration.outcome }} |"
             echo ""
-            echo "The Release Gate is revision-bound and release-blocking for every PR and Draft PR. Integration tests remain release-blocking."
+            echo "The Release Gate is revision-bound and release-blocking for every PR and Draft PR. Integration tests remain release-blocking. A workflow_dispatch with release_mode=true additionally fails closed unless every required live-canary receipt is passed, revision-bound and cleanup-complete."
           } >> "$GITHUB_STEP_SUMMARY"

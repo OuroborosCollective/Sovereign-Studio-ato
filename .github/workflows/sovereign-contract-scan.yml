@@ -17,6 +17,7 @@ env:
   NODE_VERSION: "22"
   PNPM_VERSION: "9.12.2"
   CI: "true"
+  SOVEREIGN_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   contract-scan:
@@ -29,8 +30,41 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout repository
+      - name: Checkout exact authoritative revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOVEREIGN_REVISION }}
+          fetch-depth: 1
+
+      - name: Revision Integrity Gate
+        id: revision_integrity
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          EVENT_WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOVEREIGN_REVISION" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::SOVEREIGN_REVISION is not a full lowercase Git SHA"
+            exit 1
+          }
+          ACTUAL_HEAD="$(git rev-parse HEAD)"
+          [[ "$ACTUAL_HEAD" == "$SOVEREIGN_REVISION" ]] || {
+            echo "::error::Checked-out HEAD $ACTUAL_HEAD does not match authoritative revision $SOVEREIGN_REVISION"
+            exit 1
+          }
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            [[ "$EVENT_PR_HEAD_SHA" == "$SOVEREIGN_REVISION" ]] || {
+              echo "::error::PR head revision was not bound correctly"
+              exit 1
+            }
+          else
+            [[ "$EVENT_WORKFLOW_SHA" == "$SOVEREIGN_REVISION" ]] || {
+              echo "::error::Workflow revision was not bound correctly"
+              exit 1
+            }
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -44,9 +78,23 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Runtime Canary Matrix Contract Gate
+        id: runtime_canary_contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          node scripts/runtime-canary-matrix-gate.mjs \
+            --mode contract \
+            --revision "$SOVEREIGN_REVISION"
+
       - name: Install dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Runtime Canary Matrix Gate Tests
+        id: runtime_canary_tests
+        shell: bash
+        run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
       - name: Prepare report directory
         shell: bash
@@ -228,6 +276,9 @@ jobs:
           {
             echo "## Sovereign Runtime Contract Scan"
             echo ""
+            echo "- Revision integrity: ${{ steps.revision_integrity.outcome }}"
+            echo "- Runtime canary matrix contract: ${{ steps.runtime_canary_contract.outcome }}"
+            echo "- Runtime canary matrix tests: ${{ steps.runtime_canary_tests.outcome }}"
             echo "- Type-check: completed before this summary if the job reached this step"
             echo "- Tests: completed before this summary if the job reached this step"
             echo "- Build: completed before this summary if the job reached this step"
@@ -243,5 +294,6 @@ jobs:
         with:
           name: sovereign-contract-scan-reports
           path: .security-reports/**
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14

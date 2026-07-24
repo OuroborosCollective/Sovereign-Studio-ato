@@ -1,0 +1,729 @@
+{
+  "schemaVersion": "sovereign.runtime-canary-matrix.v1",
+  "matrixId": "runtime-canary-coverage-matrix",
+  "description": "Releasekritische Backend-, Tool-, Storage-, Client- und Integrationsfamilien mit getrennten statischen, CI- und Live-Beweisen.",
+  "revisionBinding": {
+    "environment": "SOVEREIGN_REVISION",
+    "format": "git-sha-40-lowercase",
+    "mustMatchCheckout": true
+  },
+  "releasePolicy": {
+    "mode": "fail-closed",
+    "receiptSchemaVersion": "sovereign.runtime-canary-evidence.v1",
+    "requiredEvidenceFields": [
+      "revision",
+      "workflowRunId",
+      "status",
+      "evidenceSha256"
+    ],
+    "allowedStatuses": [
+      "passed",
+      "failed",
+      "blocked"
+    ]
+  },
+  "surfaces": [
+    {
+      "surface": "release-revision-integrity",
+      "family": "release",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        ".github/workflows/release-verification.yml",
+        ".github/workflows/sovereign-contract-scan.yml"
+      ],
+      "staticGate": [
+        "checkout-exact-authoritative-revision",
+        "full-lowercase-git-sha"
+      ],
+      "ciCanary": [
+        "revision-integrity-gate"
+      ],
+      "liveCanary": {
+        "policy": "excluded",
+        "producer": "none",
+        "kind": "not-applicable",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none",
+        "exclusion": {
+          "reason": "Revisionsintegrität ist ein CI- und Artefaktbindungsvertrag und keine produktive Fachfunktion.",
+          "trackingIssue": "none",
+          "reviewRequired": true
+        }
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "checkedOutHead"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "web-artifact-runtime",
+      "family": "client",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "src/",
+        "scripts/sovereign-artifact-smoke.mjs",
+        "playwright.config.ts"
+      ],
+      "staticGate": [
+        "typescript-type-check",
+        "sovereign-runtime-contract-scan"
+      ],
+      "ciCanary": [
+        "web-build",
+        "artifact-smoke",
+        "playwright-smoke"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "deployed-web-main-path-smoke",
+        "kind": "read-only-main-path",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "artifactSha256",
+        "mainPathStatus"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "android-release-artifact",
+      "family": "client",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "android/",
+        "capacitor.config.ts",
+        ".github/workflows/android-release.yml"
+      ],
+      "staticGate": [
+        "android-project-inventory",
+        "android-ui-contract-audit"
+      ],
+      "ciCanary": [
+        "android-build-sync",
+        "apk-aab-signing-alignment-inspection"
+      ],
+      "liveCanary": {
+        "policy": "excluded",
+        "producer": "none",
+        "kind": "physical-device-required",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none",
+        "exclusion": {
+          "reason": "Eine echte Installation und Hauptpfadprüfung benötigt ein physisches Android-Gerät und darf nicht durch Emulator- oder Repository-Evidence ersetzt werden.",
+          "trackingIssue": "#871",
+          "reviewRequired": true
+        }
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "artifactSha256",
+        "signerFingerprint"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "authentication-security",
+      "family": "backend",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/security_runtime.py",
+        "scripts/sovereign-backend/security_runtime.py",
+        "backend/tests/test_oauth_security.py"
+      ],
+      "staticGate": [
+        "endpoint-auth-projection-contract",
+        "secret-literal-triage"
+      ],
+      "ciCanary": [
+        "oauth-pkce-passkey-session-negative-tests",
+        "security-audit"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "authentication-chaos-negative-test",
+        "kind": "ephemeral-negative-test",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "delete_ephemeral_identity_sessions_and_challenges"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "negativeCases",
+        "stateUnchanged",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "billing-credit-settlement",
+      "family": "backend",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/llm_cost_policy.py",
+        "scripts/sovereign-backend/migrations/022_llm_cost_floor_and_funded_credits.sql"
+      ],
+      "staticGate": [
+        "billing-policy-contract",
+        "database-constraint-inventory"
+      ],
+      "ciCanary": [
+        "credit-reservation-settlement-refund-contract",
+        "payment-webhook-signature-contract"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "isolated-credit-settlement-canary",
+        "kind": "ephemeral-ledger-transaction",
+        "mutates": true,
+        "externalCost": true,
+        "cleanup": "reverse_ephemeral_ledger_and_verify_zero_delta"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "usageId",
+        "providerCostMicros",
+        "chargedCostMicros",
+        "creditDeltaMicros",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "zero_value_or_owner_approved_maximum_micros"
+    },
+    {
+      "surface": "llm-direct-routing",
+      "family": "integration",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/llm_route_scanner.py",
+        "docs/LLM_ROUTING_TRUTH_AND_HANDOFF.md"
+      ],
+      "staticGate": [
+        "llm-runtime-boundary-gate",
+        "route-reliability-contract"
+      ],
+      "ciCanary": [
+        "route-reconciliation-tests",
+        "billing-truth-contract-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "direct-provider-completion-canary",
+        "kind": "bounded-completion",
+        "mutates": false,
+        "externalCost": true,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "routeAlias",
+        "providerModel",
+        "quotaStatus",
+        "priceVerified"
+      ],
+      "ownerGate": true,
+      "budgetGate": "owner_approved_route_budget_and_quota"
+    },
+    {
+      "surface": "agent-a2a-controller",
+      "family": "backend",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/agent_runtime/",
+        "scripts/sovereign-backend/agent_runtime/"
+      ],
+      "staticGate": [
+        "agent-runtime-contract-scan",
+        "a2a-protocol-contract"
+      ],
+      "ciCanary": [
+        "agent-runtime-e2e",
+        "a2a-route-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "a2a_live_canary",
+        "kind": "ephemeral-persisted-run",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "terminalize_and_remove_ephemeral_run_artifacts"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "runId",
+        "taskId",
+        "controllerCorrelation",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "provider_route_must_be_zero_cost_or_owner_approved"
+    },
+    {
+      "surface": "repository-draft-pr-toolchain",
+      "family": "tool",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/agent_runtime/cognitive_repository_tools.py",
+        "tools/sovereign-chatgpt-mcp/server.py",
+        "tools/sovereign-chatgpt-mcp/github_admin.py",
+        "scripts/sovereign-backend/app.py"
+      ],
+      "staticGate": [
+        "repository-tool-contract-inventory",
+        "ownership-codeowners-guard"
+      ],
+      "ciCanary": [
+        "workspace-patch-diff-draft-pr-contract-tests",
+        "tool-idempotency-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "isolated-draft-pr-canary",
+        "kind": "ephemeral-repository-write",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "close_pr_and_delete_ephemeral_branch"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "workspaceId",
+        "prNumber",
+        "prHeadSha",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "github-app-integration",
+      "family": "integration",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/github_app.py",
+        "scripts/sovereign-backend/app.py"
+      ],
+      "staticGate": [
+        "github-app-route-registration-contract",
+        "webhook-signature-contract"
+      ],
+      "ciCanary": [
+        "github-app-route-tests",
+        "oauth-callback-contract"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "github-app-read-only-installation-canary",
+        "kind": "read-only-installation-readback",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "routeRegistrationStatus",
+        "installationReadbackStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "github-knowledge-import",
+      "family": "storage",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/knowledge_library.py",
+        "scripts/sovereign-backend/knowledge_library.py",
+        "backend/vector_embedding.py"
+      ],
+      "staticGate": [
+        "public-read-without-credential-contract",
+        "safe-transport-error-contract"
+      ],
+      "ciCanary": [
+        "knowledge-security-contract-tests",
+        "knowledge-import-runtime-truth-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "github-knowledge-live-canary",
+        "kind": "ephemeral-public-import-and-controlled-failure",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "delete_ephemeral_source_blocks_vectors_and_links"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "sourceFingerprint",
+        "chunkCount",
+        "embeddingCount",
+        "transportBlocker",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "embedding_route_must_be_zero_cost_or_owner_approved",
+      "trackingIssue": "#873"
+    },
+    {
+      "surface": "postgres-persistence",
+      "family": "storage",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/migrations/",
+        "scripts/sovereign-backend/migrations/"
+      ],
+      "staticGate": [
+        "schema-migration-reconcile",
+        "deterministic-sql-contract-audit"
+      ],
+      "ciCanary": [
+        "migration-source-contract-tests",
+        "database-evidence-receipt-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "postgres_evidence_read",
+        "kind": "read-only-select-and-schema-readback",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "sequence",
+        "previousReceiptSha256",
+        "receiptSha256"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "database-migration-preview",
+      "family": "storage",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/migrations/",
+        "scripts/sovereign-backend/migrations/"
+      ],
+      "staticGate": [
+        "migration-order-and-ownership-contract",
+        "schema-drift-audit"
+      ],
+      "ciCanary": [
+        "migration-parser-tests",
+        "rollback-contract-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "postgres_evidence_migration_preview",
+        "kind": "rollback-only-preview-database",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "transaction_rollback_and_preview_database_reset"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "migrationPath",
+        "sourceSha256",
+        "rollbackStatus",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "vector-memory-index",
+      "family": "storage",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/agent_runtime/pattern_vector_memory.py",
+        "backend/agent_runtime/reusable_memory.py",
+        "tools/sovereign-chatgpt-mcp/managed_compose.py"
+      ],
+      "staticGate": [
+        "vector-memory-consistency-contract",
+        "managed-compose-network-isolation-contract"
+      ],
+      "ciCanary": [
+        "vector-schema-contract-tests",
+        "memory-gateway-contract-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "memory_gateway_collection_canary",
+        "kind": "ephemeral-collection-lifecycle",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "drop_ephemeral_collection_in_finally"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "collectionIdentityHash",
+        "queryStatus",
+        "searchStatus",
+        "cleanupStatus"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "document-pipeline",
+      "family": "integration",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/document_ingestion.py",
+        "tools/sovereign-chatgpt-mcp/document_pipeline.py",
+        "tools/sovereign-chatgpt-mcp/server.py"
+      ],
+      "staticGate": [
+        "document-size-mime-contract",
+        "secret-safe-service-auth-contract"
+      ],
+      "ciCanary": [
+        "document-tool-contract-tests",
+        "pdf-artifact-smoke"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "document_pipeline_live_canary",
+        "kind": "ephemeral-docx-pdf-tika-roundtrip",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "discard_ephemeral_source_and_pdf"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "pdfSha256",
+        "pdfBytes",
+        "tikaMarkerVerified",
+        "cleanupStatus"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "enterprise-admin-api",
+      "family": "backend",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "scripts/sovereign-backend/enterprise_admin_ui.py",
+        "backend/enterprise_platform/",
+        "scripts/sovereign-backend/enterprise_platform/"
+      ],
+      "staticGate": [
+        "canonical-react-admin-producer-contract",
+        "enterprise-platform-endpoint-contract"
+      ],
+      "ciCanary": [
+        "enterprise-platform-service-tests",
+        "admin-runtime-truth-contract-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "enterprise-admin-revision-digest-readback",
+        "kind": "read-only-admin-and-api-smoke",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "imageDigest",
+        "adminProducer",
+        "overviewStatus",
+        "integrationsStatus",
+        "evidenceStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none",
+      "trackingIssue": "#875"
+    },
+    {
+      "surface": "mcp-control-plane",
+      "family": "tool",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "tools/sovereign-chatgpt-mcp/",
+        ".github/workflows/sovereign-chatgpt-mcp.yml"
+      ],
+      "staticGate": [
+        "mcp-tool-contract-registry",
+        "mcp-schema-compatibility-audit"
+      ],
+      "ciCanary": [
+        "mcp-protocol-and-installer-contract-tests",
+        "immutable-image-revision-label-check"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "mcp_control_plane_status",
+        "kind": "read-only-broker-protocol-health",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "containerHealthy",
+        "mcpProtocolReady",
+        "brokerRpcReady",
+        "imageDigest"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "outbox-worker-queue",
+      "family": "storage",
+      "riskClass": "high",
+      "releaseCritical": true,
+      "coverageSource": [
+        "backend/agent_runtime/",
+        "scripts/sovereign-backend/proven_learning_runtime.py",
+        "scripts/sovereign-backend/migrations/023_ouroboros_memory_cycle.sql"
+      ],
+      "staticGate": [
+        "outbox-schema-contract",
+        "idempotency-key-contract"
+      ],
+      "ciCanary": [
+        "outbox-retry-dead-letter-tests",
+        "agent-run-liveness-tests"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "outbox_queue_liveness_assess",
+        "kind": "read-only-queue-window-assessment",
+        "mutates": false,
+        "externalCost": false,
+        "cleanup": "none"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "pending",
+        "oldestAgeSeconds",
+        "deadLetters",
+        "duplicateIdentities",
+        "processedDelta"
+      ],
+      "ownerGate": false,
+      "budgetGate": "none"
+    },
+    {
+      "surface": "backup-restore-recovery",
+      "family": "storage",
+      "riskClass": "critical",
+      "releaseCritical": true,
+      "coverageSource": [
+        "docs/",
+        "tools/sovereign-chatgpt-mcp/operational_assurance_tools.py"
+      ],
+      "staticGate": [
+        "backup-asset-inventory-contract",
+        "rollback-reference-contract"
+      ],
+      "ciCanary": [
+        "backup-receipt-schema-tests",
+        "restore-runbook-contract"
+      ],
+      "liveCanary": {
+        "policy": "required",
+        "producer": "backup_restore_evidence_verify",
+        "kind": "isolated-restore-and-integrity-check",
+        "mutates": true,
+        "externalCost": false,
+        "cleanup": "destroy_isolated_restore_target"
+      },
+      "evidenceFields": [
+        "revision",
+        "workflowRunId",
+        "status",
+        "evidenceSha256",
+        "backupDigest",
+        "restoredDigest",
+        "integrityChecks",
+        "isolatedTarget",
+        "cleanupStatus"
+      ],
+      "ownerGate": true,
+      "budgetGate": "none"
+    }
+  ]
+}
