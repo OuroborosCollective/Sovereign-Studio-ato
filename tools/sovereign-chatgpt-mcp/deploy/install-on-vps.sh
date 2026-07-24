@@ -23,6 +23,7 @@ FREELLMPOOL_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-freellmpool"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
+RUNTIME_EVIDENCE_DIR="$INSTALL_ROOT/runtime-evidence"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
@@ -388,6 +389,11 @@ done
 unset MANAGED_COMPOSE_ROOT
 install -d -m 0755 "$ANDROID_SDK_DIR"
 install -d -m 0770 -o root -g sovereign-mcp "$COMMAND_QUEUE_DIR" "$COMMAND_QUEUE_DIR/inbox" "$COMMAND_QUEUE_DIR/processing" "$COMMAND_QUEUE_DIR/outbox"
+install -d -m 0700 -o root -g root "$RUNTIME_EVIDENCE_DIR"
+[[ -d "$RUNTIME_EVIDENCE_DIR" && ! -L "$RUNTIME_EVIDENCE_DIR" ]] \
+  || fail "runtime evidence root is not a regular directory"
+[[ -w "$RUNTIME_EVIDENCE_DIR" && -x "$RUNTIME_EVIDENCE_DIR" ]] \
+  || fail "runtime evidence root is not writable and searchable"
 install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR"
 chmod 0770 "$WORKSPACE_DIR"

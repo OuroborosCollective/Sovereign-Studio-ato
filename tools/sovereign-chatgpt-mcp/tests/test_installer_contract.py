@@ -49,6 +49,9 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'SOVEREIGN_MCP_COMMAND_QUEUE=' in script
     assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
     assert 'ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue' in worker_service
+    assert '/opt/sovereign-chatgpt-tools/runtime-evidence' in worker_service
+    assert 'RUNTIME_EVIDENCE_DIR="$INSTALL_ROOT/runtime-evidence"' in script
+    assert 'install -d -m 0700 -o root -g root "$RUNTIME_EVIDENCE_DIR"' in script
     assert '/opt/sovereign-owner-managed' in worker_service
     assert '/opt/sovereign-agent-workspaces' in worker_service
     assert '/opt/sovereign-litellm' in worker_service
