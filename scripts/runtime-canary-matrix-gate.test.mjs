@@ -15,21 +15,80 @@ import {
 const matrix = JSON.parse(fs.readFileSync(DEFAULT_MATRIX_PATH, 'utf8'));
 const revision = 'b'.repeat(40);
 
+const COMPLETE_EVIDENCE_FIXTURE = Object.freeze({
+  revision,
+  workflowRunId: 'run-fixture',
+  status: 'passed',
+  evidenceSha256: 'a'.repeat(64),
+  checkedOutHead: revision,
+  artifactSha256: 'c'.repeat(64),
+  mainPathStatus: 'passed',
+  signerFingerprint: 'fixture-signer-fingerprint',
+  negativeCases: 3,
+  stateUnchanged: true,
+  cleanupStatus: 'passed',
+  usageId: 'usage-fixture',
+  providerCostMicros: 0,
+  chargedCostMicros: 0,
+  creditDeltaMicros: 0,
+  routeAlias: 'fixture-route',
+  providerModel: 'fixture-model',
+  quotaStatus: 'available',
+  priceVerified: true,
+  runId: 'run-fixture',
+  taskId: 'task-fixture',
+  controllerCorrelation: 'matched',
+  workspaceId: 'workspace-fixture',
+  prNumber: 1,
+  prHeadSha: revision,
+  routeRegistrationStatus: 'passed',
+  installationReadbackStatus: 'passed',
+  sourceFingerprint: 'fixture-source-fingerprint',
+  chunkCount: 1,
+  embeddingCount: 1,
+  transportBlocker: 'none',
+  sequence: 1,
+  previousReceiptSha256: 'd'.repeat(64),
+  receiptSha256: 'e'.repeat(64),
+  migrationPath: 'migrations/fixture.sql',
+  sourceSha256: 'f'.repeat(64),
+  rollbackStatus: 'passed',
+  collectionIdentityHash: '1'.repeat(64),
+  queryStatus: 'passed',
+  searchStatus: 'passed',
+  pdfSha256: '2'.repeat(64),
+  pdfBytes: 1024,
+  tikaMarkerVerified: true,
+  imageDigest: `sha256:${'3'.repeat(64)}`,
+  adminProducer: 'enterprise-admin',
+  overviewStatus: 'passed',
+  integrationsStatus: 'passed',
+  evidenceStatus: 'passed',
+  containerHealthy: true,
+  mcpProtocolReady: true,
+  brokerRpcReady: true,
+  pending: 0,
+  oldestAgeSeconds: 0,
+  deadLetters: 0,
+  duplicateIdentities: 0,
+  processedDelta: 1,
+  backupDigest: '4'.repeat(64),
+  restoredDigest: '4'.repeat(64),
+  integrityChecks: 'passed',
+  isolatedTarget: 'fixture-restore-target',
+  ownerGateStatus: 'approved',
+  budgetGateStatus: 'passed',
+});
+
 function completeReceipt(surface) {
-  const receipt = {
+  return {
+    ...COMPLETE_EVIDENCE_FIXTURE,
     surface: surface.surface,
-    revision,
     workflowRunId: `run-${surface.surface}`,
-    status: 'passed',
-    evidenceSha256: 'a'.repeat(64),
+    cleanupStatus: surface.liveCanary.mutates ? 'passed' : 'not-required',
+    ownerGateStatus: surface.ownerGate ? 'approved' : 'not-required',
+    budgetGateStatus: surface.liveCanary.externalCost ? 'passed' : 'not-required',
   };
-  for (const field of surface.evidenceFields) {
-    if (!(field in receipt)) receipt[field] = `verified-${field}`;
-  }
-  if (surface.liveCanary.mutates) receipt.cleanupStatus = 'passed';
-  if (surface.ownerGate) receipt.ownerGateStatus = 'approved';
-  if (surface.liveCanary.externalCost) receipt.budgetGateStatus = 'passed';
-  return receipt;
 }
 
 test('canonical matrix passes the contract gate', () => {
