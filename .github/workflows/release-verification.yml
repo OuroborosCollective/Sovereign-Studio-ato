@@ -194,6 +194,7 @@ jobs:
         with:
           name: runtime-canary-matrix-reports
           path: .security-reports/runtime-canary-*.json
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 

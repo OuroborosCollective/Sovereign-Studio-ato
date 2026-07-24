@@ -294,5 +294,6 @@ jobs:
         with:
           name: sovereign-contract-scan-reports
           path: .security-reports/**
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
