@@ -450,7 +450,9 @@ export function createMockWorkspaceAdapter(id: string, label: string): Workspace
 }
 
 /**
- * Determine workspace purpose from mission text
+ * Offline fallback only: deterministically map coarse mission keywords to a
+ * workspace purpose when no structured online-LLM intent is available.
+ * This helper must never be treated as semantic language understanding.
  */
 export function determineWorkspacePurpose(mission: string): WorkspacePurpose {
   const lower = mission.toLowerCase();
