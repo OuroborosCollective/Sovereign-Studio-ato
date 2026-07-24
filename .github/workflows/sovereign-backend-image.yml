@@ -28,6 +28,7 @@ concurrency:
 
 env:
   IMAGE_NAME: ghcr.io/ouroboroscollective/sovereign-backend
+  SOVEREIGN_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   build:
@@ -35,8 +36,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout repository
+      - name: Checkout exact authoritative revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOVEREIGN_REVISION }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -59,7 +62,7 @@ jobs:
       - name: Build revision-bound React admin
         env:
           VITE_ADMIN_API_BASE: ''
-          VITE_SOVEREIGN_SOURCE_REVISION: ${{ github.sha }}
+          VITE_SOVEREIGN_SOURCE_REVISION: ${{ env.SOVEREIGN_REVISION }}
         run: pnpm run build:web
 
       - name: Stage canonical admin artifact for backend image
@@ -69,7 +72,7 @@ jobs:
           rm -rf scripts/sovereign-backend/admin-dist
           cp -a dist scripts/sovereign-backend/admin-dist
           grep -Rqs 'CANONICAL_REACT_ADMIN' scripts/sovereign-backend/admin-dist
-          grep -Rqs '${{ github.sha }}' scripts/sovereign-backend/admin-dist
+          grep -Rqs '${{ env.SOVEREIGN_REVISION }}' scripts/sovereign-backend/admin-dist
           grep -Rqs 'Free Revolver' scripts/sovereign-backend/admin-dist
 
       - name: Compile backend before image build
@@ -107,12 +110,12 @@ jobs:
           context: scripts/sovereign-backend
           file: scripts/sovereign-backend/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ env.IMAGE_NAME }}:${{ env.SOVEREIGN_REVISION }}
           build-args: |
-            SOVEREIGN_SOURCE_REVISION=${{ github.sha }}
+            SOVEREIGN_SOURCE_REVISION=${{ env.SOVEREIGN_REVISION }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.SOVEREIGN_REVISION }}
             org.opencontainers.image.title=sovereign-backend
           load: ${{ github.event_name == 'pull_request' }}
           provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=max' }}
@@ -124,7 +127,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
-          docker run --rm --entrypoint python "${IMAGE_NAME}:${GITHUB_SHA}" -c '
+          docker run --rm --entrypoint python "${IMAGE_NAME}:${SOVEREIGN_REVISION}" -c '
           from pathlib import Path
           root = Path("/app/admin-dist")
           assert (root / "index.html").is_file()
@@ -137,12 +140,12 @@ jobs:
         run: |
           {
             echo '### Sovereign backend image'
-            echo '- Revision: `${{ github.sha }}`'
+            echo '- Revision: `${{ env.SOVEREIGN_REVISION }}`'
             if [ '${{ github.event_name }}' = 'pull_request' ]; then
               echo '- Published: `false` (PR validation only)'
             else
               echo '- Published: `true`'
-              echo '- Tag: `${{ env.IMAGE_NAME }}:${{ github.sha }}`'
+              echo '- Tag: `${{ env.IMAGE_NAME }}:${{ env.SOVEREIGN_REVISION }}`'
               echo '- Digest: `${{ steps.image.outputs.digest }}`'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
