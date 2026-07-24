@@ -23,12 +23,15 @@ declare global {
   }
 }
 
-export const SafeLogText: React.FC<SafeLogTextProps> = ({
+// Wrap SafeLogText in React.memo to completely bypass component re-rendering
+// when the parent's independent state transitions (e.g. timers, inputs) update,
+// eliminating redundant secret masking runs.
+export const SafeLogText: React.FC<SafeLogTextProps> = React.memo(function SafeLogText({
   text,
   isSensitive = false,
   className = '',
   enableHardening = true,
-}) => {
+}) {
   const maskSensitiveData = useCallback(
     (val: string): string => {
       if (isSensitive) {
@@ -77,4 +80,6 @@ export const SafeLogText: React.FC<SafeLogTextProps> = ({
       {maskSensitiveData(text)}
     </span>
   );
-};
+});
+
+export default SafeLogText;
