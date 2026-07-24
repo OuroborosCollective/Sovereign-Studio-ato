@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "sovereign.manifest-issue-closure.v1",
+  "generatedAt": "2026-07-24",
+  "issue": {
+    "number": 875,
+    "key": "deploy-enterprise-admin-backend",
+    "title": "[Manifest] Kanonisches React-Admin-Backend revisionsgebunden live belegen",
+    "disposition": "close_completed"
+  },
+  "implementation": {
+    "pullRequests": [
+      {
+        "number": 985,
+        "head": "f0e614ac8cef1eb107c481dbe1aeafe53d65301a",
+        "mergeCommit": "aa9adc9d64a551f615026335bf4a42970154e25a",
+        "purpose": "bind backend deployment to admin, rollback and A2A evidence"
+      },
+      {
+        "number": 986,
+        "head": "d3c78343cae3a356d6cee4c537e348f94d9227df",
+        "mergeCommit": "e4abfaebed8a2cd6ae4f56341e62b0076d5fcbf6",
+        "purpose": "verify the canonical producer header and actual React root artifact"
+      },
+      {
+        "number": 987,
+        "head": "79519149b9b9c22541202f2504cec97376e894d4",
+        "mergeCommit": "355080ff662e292a3ac8cdc0f0c9b35ff36413e2",
+        "purpose": "permit and preflight root-only rollback receipt writes through the systemd sandbox"
+      }
+    ],
+    "finalRevision": "355080ff662e292a3ac8cdc0f0c9b35ff36413e2"
+  },
+  "installedMcpRuntime": {
+    "revision": "355080ff662e292a3ac8cdc0f0c9b35ff36413e2",
+    "imageDigest": "sha256:a62be3c7a9eadac0a6a6428274bf8270ad9d70d8a529a1072af7278e240c2be5",
+    "runtimeEvidenceSha256": "4b6fbf64eb768bcda87ff9be35268213e238f9499ede071e4e704b0a52478988",
+    "kappaPos": 1000000,
+    "containerHealthy": true,
+    "mcpProtocolReady": true,
+    "brokerRpcReady": true,
+    "crossRuntimeParityProven": true
+  },
+  "backendRuntime": {
+    "revision": "355080ff662e292a3ac8cdc0f0c9b35ff36413e2",
+    "imageDigest": "sha256:1a98e0ccd27a0c8d77d30361c00cf075b8094573bc813be3b073ce4ac68ed88d",
+    "healthOk": true,
+    "readinessHttpStatus": 200,
+    "admin": {
+      "httpStatus": 200,
+      "finalPath": "/admin/",
+      "producer": "CANONICAL_REACT_ADMIN",
+      "reactRootPresent": true,
+      "responseSha256": "1a320b7daa90fa957019eed46e5ca98f30656c81eb72b03284aaf17c971048ef"
+    },
+    "enterpriseApi": {
+      "identityHttpStatus": 200,
+      "overviewHttpStatus": 200,
+      "overviewStatus": "degraded",
+      "integrationsHttpStatus": 200,
+      "integrationCount": 9,
+      "requiredIntegrationCount": 3,
+      "requiredIntegrationVerifiedCount": 3,
+      "evidenceHttpStatus": 200,
+      "evidenceCount": 6
+    }
+  },
+  "rollback": {
+    "previousImageDigest": "sha256:20c6951a9f7ca9ca95e4ededa6835bc0053aaa3c85982878fc4acaa234f349ad",
+    "previousRevision": "490b53e3863229c65a34bf7835e3e2ebdc7382ef",
+    "previewVerified": true,
+    "receiptSha256": "459c411f882420d113c6f82d7f2c86026fa1011aa3f6a6b8c354d0189394456d"
+  },
+  "a2a": {
+    "status": "A2A_LIVE_CANARY_VERIFIED",
+    "agentCardVerified": true,
+    "ownerScopeVerified": true,
+    "samePersistedRunVerified": true,
+    "statusProjectionVerified": true,
+    "finalControllerStatus": "COMPLETED",
+    "finalTaskState": "TASK_STATE_COMPLETED"
+  },
+  "patchmon": {
+    "backendDigestVerified": true,
+    "candidateContainerPresent": false,
+    "loopbackBinding": "127.0.0.1:8788->8787/tcp",
+    "networks": [
+      "areloria_arelorian-network",
+      "sovereign-private",
+      "supabase_default"
+    ],
+    "boundaryViolations": [],
+    "secretValuesExposed": false
+  },
+  "acceptance": [
+    {
+      "criterion": "The running backend carries the exact expected immutable digest and source revision.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "/admin serves the canonical React admin artifact from the same revision.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "Identity, overview, integrations and evidence endpoints return real backend data.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "Health and readiness are green without hiding the degraded global product status.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "The previous immutable digest and revision are persisted as a verified rollback reference.",
+      "status": "satisfied"
+    },
+    {
+      "criterion": "The final runtime has no leftover candidate container and exposes no secret values.",
+      "status": "satisfied"
+    }
+  ],
+  "closureMechanism": "Merge the manifest closure PR after exact-head CI is terminal without failures, then close issue #875 with verified readback.",
+  "remainingAcceptance": [],
+  "globalProductGreenClaimed": false,
+  "secretValuesReturned": false
+}
