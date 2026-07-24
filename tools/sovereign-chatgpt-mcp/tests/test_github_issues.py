@@ -141,7 +141,8 @@ def test_issue_close_blocks_when_readback_is_stale_without_patch(monkeypatch) ->
 
 
 def test_agent_runtime_required_check_runs_for_every_pull_request() -> None:
-    workflow = Path(".github/workflows/sovereign-agent-backend.yml").read_text("utf-8")
+    repository_root = Path(__file__).resolve().parents[3]
+    workflow = (repository_root / ".github/workflows/sovereign-agent-backend.yml").read_text("utf-8")
     pull_request_trigger = workflow.split("  pull_request:\n", 1)[1].split("  workflow_dispatch:\n", 1)[0]
 
     assert "paths:" not in pull_request_trigger
