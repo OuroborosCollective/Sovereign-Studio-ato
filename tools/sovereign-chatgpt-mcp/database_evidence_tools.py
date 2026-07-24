@@ -598,19 +598,21 @@ def postgres_evidence_read(
     names = list(table_names or [])
     if operation != "postgres_schema_contract_inventory" and names:
         raise ValueError("table_names are only valid for postgres_schema_contract_inventory")
+    identity = {
+        "postgres_canary": "postgres:canary",
+        "postgres_schema_inventory": "postgres:schema-inventory",
+        "postgres_schema_contract_inventory": "postgres:schema-contract:" + ",".join(sorted(names)),
+        "vector_database_canary": "postgres:vector-canary",
+    }[operation]
     try:
         if operation == "postgres_canary":
             result = _DATABASE.canary()
-            identity = "postgres:canary"
         elif operation == "postgres_schema_inventory":
             result = _DATABASE.schema_inventory()
-            identity = "postgres:schema-inventory"
         elif operation == "postgres_schema_contract_inventory":
             result = _DATABASE.schema_contract_inventory(names)
-            identity = "postgres:schema-contract:" + ",".join(sorted(names))
         else:
             result = _DATABASE.vector_canary()
-            identity = "postgres:vector-canary"
     except Exception as exc:
         result = {
             "ok": False,

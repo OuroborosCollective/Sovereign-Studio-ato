@@ -14,6 +14,7 @@ import re
 from typing import Any, Final, Mapping, Sequence
 import uuid
 
+from .agent_run_receipts import build_agent_run_receipt, canonical_sha256
 from .contracts import sanitize_agent_text
 
 
@@ -1395,7 +1396,7 @@ def start_agent_tool_call(
     if not normalized_agent or not normalized_tool:
         raise ValueError("agent tool call requires agent and tool names")
     tool_call_id = _new_id("tool-call")
-    arguments_digest = _digest_text(_json(dict(arguments)))
+    arguments_digest = canonical_sha256(dict(arguments))
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -1449,17 +1450,109 @@ def finish_agent_tool_call(
     tool_call_id: str,
     status: str,
     result_summary: Mapping[str, object],
+    repository: str,
+    base_commit_sha: str,
+    mcp_revision: str,
+    mcp_image_digest: str,
+    mcp_revision_verified: bool,
+    operation_identity: str,
+    diff_sha256: str,
+    test_evidence_sha256: str,
+    evidence_gate_result: str,
+    mutation_performed: bool,
+    observed_effect: str,
+    authoritative_readback_sha256: str,
     failure_family: str | None = None,
-) -> None:
-    """Finish one tool call with a result digest; raw tool output is never stored here."""
+) -> dict[str, object]:
+    """Atomically finish one tool call and append its canonical receipt."""
 
     normalized_id = _validated_id(tool_call_id, "tool_call_id")
     normalized_status = str(status or "").strip().upper()
     if normalized_status not in {"COMPLETED", "BLOCKED", "FAILED_RECOVERABLE", "FAILED_FINAL"}:
         raise ValueError("unsupported agent tool-call result status")
-    result_digest = _digest_text(_json(dict(result_summary)))
+    result_digest = canonical_sha256(dict(result_summary))
     try:
         with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT tool_call_id, run_id, task_id, tool_name, arguments_digest, mutating
+                FROM agent_tool_calls
+                WHERE tool_call_id = %s AND status = 'RUNNING'
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (normalized_id,),
+            )
+            tool_call = cur.fetchone()
+            if not tool_call:
+                raise LookupError("running agent tool call was not found")
+            run_id = _validated_id(str(tool_call["run_id"]), "run_id")
+            cur.execute(
+                """
+                SELECT sequence, receipt_sha256
+                FROM agent_run_receipts
+                WHERE agent_run_id = %s
+                ORDER BY sequence DESC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (run_id,),
+            )
+            previous_row = cur.fetchone()
+            sequence = int(previous_row["sequence"]) + 1 if previous_row else 0
+            previous_hash = str(previous_row["receipt_sha256"]) if previous_row else "0" * 64
+            receipt = build_agent_run_receipt(
+                sequence=sequence,
+                repository=repository,
+                base_commit_sha=base_commit_sha,
+                mcp_revision=mcp_revision,
+                mcp_image_digest=mcp_image_digest,
+                mcp_revision_verified=mcp_revision_verified,
+                agent_run_id=run_id,
+                tool_name=str(tool_call["tool_name"]),
+                call_id=normalized_id,
+                operation_identity=operation_identity,
+                input_sha256=str(tool_call["arguments_digest"]),
+                output_sha256=result_digest,
+                diff_sha256=diff_sha256,
+                test_evidence_sha256=test_evidence_sha256,
+                evidence_gate_result=evidence_gate_result,
+                mutation_performed=mutation_performed,
+                observed_effect=observed_effect,
+                authoritative_readback_sha256=authoritative_readback_sha256,
+                previous_receipt_sha256=previous_hash,
+            )
+            body = dict(receipt["body"])
+            cur.execute(
+                """
+                INSERT INTO agent_run_receipts (
+                    receipt_sha256, schema_version, sequence, repository,
+                    base_commit_sha, mcp_revision, mcp_image_digest,
+                    mcp_revision_verified, agent_run_id, tool_name, call_id,
+                    operation_identity, input_sha256, output_sha256, diff_sha256,
+                    test_evidence_sha256, evidence_gate_result, mutation_performed,
+                    observed_effect, authoritative_readback_sha256,
+                    previous_receipt_sha256, canonical_body
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s::jsonb
+                )
+                """,
+                (
+                    body["receipt_sha256"], body["schema_version"], body["sequence"], body["repository"],
+                    body["base_commit_sha"], body["mcp_revision"], body["mcp_image_digest"],
+                    body["mcp_revision_verified"], body["agent_run_id"], body["tool_name"], body["call_id"],
+                    body["operation_identity"], body["input_sha256"], body["output_sha256"], body["diff_sha256"],
+                    body["test_evidence_sha256"], body["evidence_gate_result"], body["mutation_performed"],
+                    body["observed_effect"], body["authoritative_readback_sha256"],
+                    body["previous_receipt_sha256"], _json(body),
+                ),
+            )
             cur.execute(
                 """
                 UPDATE agent_tool_calls
@@ -1479,7 +1572,7 @@ def finish_agent_tool_call(
             )
             row = cur.fetchone()
             if not row:
-                raise LookupError("running agent tool call was not found")
+                raise LookupError("running agent tool call changed before receipt persistence")
             if normalized_status in {"BLOCKED", "FAILED_RECOVERABLE", "FAILED_FINAL"}:
                 cur.execute(
                     """
@@ -1501,6 +1594,7 @@ def finish_agent_tool_call(
         if callable(rollback):
             rollback()
         raise
+    return receipt
 
 
 def record_agent_failure(

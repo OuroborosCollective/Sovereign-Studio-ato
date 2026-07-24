@@ -16,6 +16,9 @@ WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
 WORKSPACE_CONTAINER_ROOT="/var/lib/sovereign-agent/workspaces"
 WORKSPACE_UID="10001"
 WORKSPACE_GID="10001"
+BROKER_SOCKET="${SOVEREIGN_MCP_BROKER_SOCKET:-/run/sovereign-chatgpt-broker/operator.sock}"
+BROKER_RUNTIME_DIR="$(dirname "$BROKER_SOCKET")"
+BROKER_GID=""
 
 fail() {
   printf 'deploy blocked: %s\n' "$*" >&2
@@ -49,6 +52,9 @@ chown "$WORKSPACE_UID:$WORKSPACE_GID" "$WORKSPACE_HOST_ROOT"
 chmod 0770 "$WORKSPACE_HOST_ROOT"
 [[ -w "$WORKSPACE_HOST_ROOT" && -x "$WORKSPACE_HOST_ROOT" ]] \
   || fail "workspace host root is not writable and searchable"
+[[ -S "$BROKER_SOCKET" ]] || fail "authoritative MCP broker socket is missing"
+BROKER_GID="$(stat -c '%g' "$BROKER_SOCKET")"
+[[ "$BROKER_GID" =~ ^[0-9]+$ ]] || fail "authoritative MCP broker group could not be resolved"
 
 NEW_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
 docker pull "$NEW_IMAGE" >/dev/null
@@ -70,6 +76,7 @@ docker run -d \
   --env-file "$MANAGED_ENV_FILE" \
   --env "SOVEREIGN_IMAGE_DIGEST=$DIGEST" \
   --env "SOVEREIGN_SOURCE_REVISION=$EXPECTED_REVISION" \
+  --env "SOVEREIGN_MCP_BROKER_SOCKET=$BROKER_SOCKET" \
   --env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=0" \
   --env "SOVEREIGN_AGENT_WORKSPACE_ROOT=$WORKSPACE_CONTAINER_ROOT" \
   --env "SOVEREIGN_AGENT_WORKSPACE_UID=$WORKSPACE_UID" \
@@ -78,6 +85,8 @@ docker run -d \
   --volume /opt/secure:/opt/secure:ro \
   --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
   --volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw" \
+  --volume "$BROKER_RUNTIME_DIR:$BROKER_RUNTIME_DIR:ro" \
+  --group-add "$BROKER_GID" \
   --label "org.opencontainers.image.revision=$EXPECTED_REVISION" \
   "$NEW_IMAGE" >/dev/null
 
@@ -115,6 +124,7 @@ start_production() {
     --env-file "$MANAGED_ENV_FILE" \
     --env "SOVEREIGN_IMAGE_DIGEST=$DIGEST" \
     --env "SOVEREIGN_SOURCE_REVISION=$revision" \
+    --env "SOVEREIGN_MCP_BROKER_SOCKET=$BROKER_SOCKET" \
     --env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=1" \
     --env "SOVEREIGN_LLM_ROUTE_SCANNER_INTERVAL_SECONDS=3600" \
     --env "SOVEREIGN_LLM_ROUTE_SCANNER_INITIAL_DELAY_SECONDS=30" \
@@ -127,6 +137,8 @@ start_production() {
     --volume /opt/secure:/opt/secure:ro \
     --volume "$OWNER_INPUT_HOST_ROOT:$OWNER_INPUT_CONTAINER_ROOT:rw" \
     --volume "$WORKSPACE_HOST_ROOT:$WORKSPACE_CONTAINER_ROOT:rw" \
+    --volume "$BROKER_RUNTIME_DIR:$BROKER_RUNTIME_DIR:ro" \
+    --group-add "$BROKER_GID" \
     --label "org.opencontainers.image.revision=$revision" \
     -p 127.0.0.1:8788:8787 \
     "$image" >/dev/null

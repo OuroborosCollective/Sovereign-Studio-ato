@@ -17,6 +17,11 @@ from threading import Lock
 import uuid
 from typing import Any, Final
 
+from .agent_run_receipts import (
+    canonical_sha256,
+    read_git_workspace_identity,
+    read_mcp_runtime_identity,
+)
 from .cognitive_run_store import (
     create_agent_task,
     finish_agent_tool_call,
@@ -372,9 +377,24 @@ class BoundRepositoryToolset:
         task_id = self.task_ids_by_agent.get(role)
         if not task_id:
             raise LookupError("repository worker task is missing")
+        if self.workspace_root is None:
+            raise RuntimeError("repository tool receipt requires a real isolated workspace")
         conn = self.get_connection()
         tool_call_id = ""
+        job: Any = None
+        before_git: Any = None
+        mcp_identity: Any = None
         try:
+            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+            if not job:
+                raise LookupError("linked Sovereign Agent Job was not found")
+            before_git = read_git_workspace_identity(
+                self.workspace_root,
+                repository=job.repo_url,
+            )
+            mcp_identity = read_mcp_runtime_identity(
+                expected_revision=before_git.base_commit_sha,
+            )
             tool_call_id = start_agent_tool_call(
                 conn,
                 run_id=self.run_id,
@@ -384,12 +404,25 @@ class BoundRepositoryToolset:
                 arguments=parameters,
                 mutating=mutation,
             )
-            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
-            if not job:
-                raise LookupError("linked Sovereign Agent Job was not found")
             result = run_agent_job_tool(job, action, parameters, self.workspace_root)
             merged = _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, self.job_id, merged)
+            after_git = read_git_workspace_identity(
+                self.workspace_root,
+                repository=job.repo_url,
+            )
+            mutation_performed = bool(
+                mutation
+                and result.status == "done"
+                and before_git.diff_sha256 != after_git.diff_sha256
+            )
+            gate_result = (
+                "PASS"
+                if gate.passed
+                else "BLOCKED"
+                if result.status == "blocked"
+                else "FAIL"
+            )
             finish_agent_tool_call(
                 conn,
                 tool_call_id=tool_call_id,
@@ -402,12 +435,34 @@ class BoundRepositoryToolset:
                 ),
                 result_summary={
                     "status": result.status,
+                    "exitCode": int(result.exit_code or 0),
                     "predictiveSignal": result.predictive_signal,
                     "changedFiles": list(merged.changed_files),
                     "hasDiff": bool(merged.diff_summary),
                     "hasTests": bool(merged.test_summary),
                     "evidencePassed": gate.passed,
                 },
+                repository=job.repo_url,
+                base_commit_sha=before_git.base_commit_sha,
+                mcp_revision=mcp_identity.revision,
+                mcp_image_digest=mcp_identity.image_digest,
+                mcp_revision_verified=mcp_identity.revision_verified,
+                operation_identity=f"agent-repository-tool:{role}:{action}",
+                diff_sha256=after_git.diff_sha256,
+                test_evidence_sha256=canonical_sha256({
+                    "exit_code": int(result.exit_code or 0),
+                    "test_summary": merged.test_summary or "",
+                }),
+                evidence_gate_result=gate_result,
+                mutation_performed=mutation_performed,
+                observed_effect=(
+                    "workspace-write"
+                    if mutation_performed
+                    else "read"
+                    if not mutation
+                    else "none"
+                ),
+                authoritative_readback_sha256=after_git.authoritative_readback_sha256,
                 failure_family=(
                     None if result.status == "done" else "AGENT_REPOSITORY_TOOL_BLOCKED"
                     if result.status == "blocked" else "AGENT_REPOSITORY_TOOL_FAILED"
@@ -415,13 +470,29 @@ class BoundRepositoryToolset:
             )
         except Exception as exc:
             self._record_call(role, mutation=False, failed=True)
-            if tool_call_id:
+            if tool_call_id and job is not None and before_git is not None and mcp_identity is not None:
                 try:
+                    failed_git = read_git_workspace_identity(
+                        self.workspace_root,
+                        repository=job.repo_url,
+                    )
                     finish_agent_tool_call(
                         conn,
                         tool_call_id=tool_call_id,
                         status="FAILED_RECOVERABLE",
                         result_summary={"errorType": type(exc).__name__},
+                        repository=job.repo_url,
+                        base_commit_sha=before_git.base_commit_sha,
+                        mcp_revision=mcp_identity.revision,
+                        mcp_image_digest=mcp_identity.image_digest,
+                        mcp_revision_verified=mcp_identity.revision_verified,
+                        operation_identity=f"agent-repository-tool:{role}:{action}",
+                        diff_sha256=failed_git.diff_sha256,
+                        test_evidence_sha256=canonical_sha256({"exit_code": 1, "test_summary": ""}),
+                        evidence_gate_result="FAIL",
+                        mutation_performed=False,
+                        observed_effect="none" if mutation else "read",
+                        authoritative_readback_sha256=failed_git.authoritative_readback_sha256,
                         failure_family="AGENT_REPOSITORY_TOOL_EXECUTION_FAILED",
                     )
                 except Exception:
@@ -431,7 +502,7 @@ class BoundRepositoryToolset:
             _close(conn)
         self._record_call(
             role,
-            mutation=mutation and result.status == "done",
+            mutation=mutation_performed,
             failed=result.status != "done",
         )
         safe_metadata = {
