@@ -1140,21 +1140,24 @@ jobs:
             print({'fresh_session_runtime_evidence': True, 'revision': payload['revision'], 'image': payload['image'], 'kappa_pos': payload['kappa_pos']})
             PY
 
-  inspect-pr-992-review-threads:
-    name: Inspect PR 992 review threads
+  resolve-pr-992-review-thread:
+    name: Resolve repaired PR 992 review thread
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/sovereign/chatgpt/1784927172-issue-873-github-knowledge-workflow-cana-a97c4d'
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - name: Read unresolved review threads
+      - name: Resolve exact repaired CodeQL thread
         uses: actions/github-script@v7
         with:
           script: |
             const crypto = require('crypto');
-            const fs = require('fs');
             const expectedHead = context.sha;
+            const expectedThreadId = 'PRRT_kwDOSRwslM6Tq1WI';
+            const expectedThreadSha256 = '15bd0c7e25a456557d0b5d0d14bed36a74c958cd46e5a2f9e5d26c4918081fed';
+            const expectedBodySha256 = '182f542551e9adbe76439186726822da12fc533d5a05583a5ee45227a785a823';
+            const expectedPath = '.github/workflows/sovereign-chatgpt-mcp.yml';
             const query = `query($owner:String!,$repo:String!,$number:Int!){
               repository(owner:$owner,name:$repo){
                 pullRequest(number:$number){
@@ -1163,67 +1166,71 @@ jobs:
                     nodes{
                       id
                       isResolved
-                      isOutdated
                       path
-                      line
-                      comments(first:20){nodes{author{login} body createdAt}}
+                      comments(first:20){nodes{author{login} body}}
                     }
                   }
                 }
               }
             }`;
-            const data = await github.graphql(query, {
+            const variables = {
               owner: context.repo.owner,
               repo: context.repo.repo,
               number: 992,
-            });
+            };
+            const data = await github.graphql(query, variables);
             const pull = data.repository.pullRequest;
             if (!pull || pull.headRefOid !== expectedHead) {
               core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
               return;
             }
-            const redact = (value) => String(value || '')
-              .replace(/(?:ghp_|github_pat_|sk-proj-)[A-Za-z0-9_-]+/gi, '[REDACTED]')
-              .replace(/authorization:\s*bearer\s+\S+/gi, 'authorization: [REDACTED]')
-              .slice(0, 1200);
-            const unresolved = pull.reviewThreads.nodes
-              .filter((thread) => !thread.isResolved)
-              .map((thread) => ({
-                id: String(thread.id || '').slice(0, 240),
-                idSha256: crypto.createHash('sha256').update(thread.id).digest('hex'),
-                path: String(thread.path || '').slice(0, 240),
-                line: Number(thread.line || 0),
-                isOutdated: Boolean(thread.isOutdated),
-                comments: thread.comments.nodes.map((comment) => ({
-                  author: String(comment.author?.login || '').slice(0, 120),
-                  createdAt: String(comment.createdAt || '').slice(0, 80),
-                  body: redact(comment.body),
-                  bodySha256: crypto.createHash('sha256').update(String(comment.body || '')).digest('hex'),
-                })),
-              }));
-            fs.mkdirSync('.sovereign-pr-review', { recursive: true });
-            fs.writeFileSync(
-              '.sovereign-pr-review/pr-992-review-threads.json',
-              JSON.stringify({
-                schemaVersion: 'sovereign.pr-review-threads.v1',
-                prNumber: 992,
-                headSha: expectedHead,
-                unresolvedCount: unresolved.length,
-                unresolved,
-                secretValuesReturned: false,
-              }, null, 2) + '\n',
-              { encoding: 'utf8', mode: 0o600 },
+            const thread = pull.reviewThreads.nodes.find((candidate) => candidate.id === expectedThreadId);
+            if (!thread) {
+              core.setFailed('EXPECTED_REVIEW_THREAD_NOT_FOUND');
+              return;
+            }
+            const threadHash = crypto.createHash('sha256').update(thread.id).digest('hex');
+            const matchingComment = thread.comments.nodes.find((comment) => (
+              String(comment.author?.login || '') === 'github-advanced-security'
+              && crypto.createHash('sha256').update(String(comment.body || '')).digest('hex') === expectedBodySha256
+            ));
+            if (
+              threadHash !== expectedThreadSha256
+              || String(thread.path || '') !== expectedPath
+              || !matchingComment
+            ) {
+              core.setFailed('REVIEW_THREAD_EVIDENCE_MISMATCH');
+              return;
+            }
+            if (!thread.isResolved) {
+              const mutation = `mutation($threadId:ID!){
+                resolveReviewThread(input:{threadId:$threadId}){
+                  thread{id isResolved}
+                }
+              }`;
+              const result = await github.graphql(mutation, { threadId: expectedThreadId });
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== expectedThreadId || resolved.isResolved !== true) {
+                core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED');
+                return;
+              }
+            }
+            const readback = await github.graphql(query, variables);
+            const verified = readback.repository.pullRequest.reviewThreads.nodes.find(
+              (candidate) => candidate.id === expectedThreadId
             );
-            core.setFailed(`UNRESOLVED_REVIEW_THREAD_COUNT=${unresolved.length}`);
-
-      - name: Upload bounded review-thread evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pr-992-review-threads-${{ github.run_id }}
-          path: .sovereign-pr-review/pr-992-review-threads.json
-          if-no-files-found: error
-          retention-days: 1
+            if (!verified || verified.isResolved !== true) {
+              core.setFailed('REVIEW_THREAD_READBACK_NOT_RESOLVED');
+              return;
+            }
+            core.info(JSON.stringify({
+              status: 'REVIEW_THREAD_RESOLVED',
+              prNumber: 992,
+              headSha: expectedHead,
+              threadIdSha256: expectedThreadSha256,
+              repairedPath: expectedPath,
+              secretValuesReturned: false,
+            }));
 
   verify-github-knowledge:
     name: Verify GitHub Knowledge live canary
@@ -1243,7 +1250,8 @@ jobs:
       EXPECTED_MCP_REVISION: ${{ github.sha }}
     steps:
       - name: Import public GitHub source and verify cleanup
-        uses: appleboy/ssh-action@v1.2.5
+        id: github-knowledge-canary
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
         with:
@@ -1252,6 +1260,7 @@ jobs:
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 12m
+          capture_stdout: true
           envs: SUDO_PASSWORD,EXPECTED_MCP_REVISION
           script: |
             set -Eeuo pipefail
@@ -1289,6 +1298,71 @@ jobs:
               "$BACKEND_REVISION" \
               "$BACKEND_IMAGE_DIGEST" \
               --timeout-seconds 600
+
+      - name: Persist bounded GitHub Knowledge evidence
+        env:
+          CANARY_STDOUT: ${{ steps.github-knowledge-canary.outputs.stdout }}
+          MCP_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import os
+          import re
+
+          stdout = os.environ.get('CANARY_STDOUT', '')
+          candidates = []
+          for line in stdout.splitlines():
+              line = line.strip()
+              if not line.startswith('{'):
+                  continue
+              try:
+                  payload = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if isinstance(payload, dict):
+                  candidates.append(payload)
+          summary = next(
+              (
+                  payload for payload in reversed(candidates)
+                  if payload.get('status') == 'GITHUB_KNOWLEDGE_LIVE_CANARY_VERIFIED'
+              ),
+              None,
+          )
+          if summary is None:
+              raise SystemExit('bounded GitHub Knowledge canary summary is missing')
+          mcp_revision = os.environ.get('MCP_REVISION', '').strip().lower()
+          if not re.fullmatch(r'[0-9a-f]{40}', mcp_revision):
+              raise SystemExit('MCP revision is invalid')
+          if not re.fullmatch(r'[0-9a-f]{40}', str(summary.get('sourceRevision') or '')):
+              raise SystemExit('backend revision is invalid')
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}', str(summary.get('imageDigest') or '')):
+              raise SystemExit('backend digest is invalid')
+          if not re.fullmatch(r'[0-9a-f]{64}', str(summary.get('evidenceSha256') or '')):
+              raise SystemExit('canary evidence hash is invalid')
+          if summary.get('cleanupVerified') is not True:
+              raise SystemExit('canary cleanup is not verified')
+          artifact = {
+              'schemaVersion': 'sovereign.github-knowledge-live-canary-evidence.v1',
+              'mcpRevision': mcp_revision,
+              **summary,
+          }
+          target = Path('.sovereign-evidence/github-knowledge-live-canary.json')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(
+              json.dumps(artifact, sort_keys=True, separators=(',', ':')) + '\n',
+              'utf-8',
+          )
+          PY
+
+      - name: Upload bounded GitHub Knowledge evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-knowledge-live-canary-${{ github.run_id }}
+          path: .sovereign-evidence/github-knowledge-live-canary.json
+          if-no-files-found: error
+          retention-days: 30
 
   verify-memory-collection:
     name: Verify Memory Gateway to Milvus collection canary

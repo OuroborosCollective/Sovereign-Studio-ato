@@ -383,6 +383,13 @@ def test_main_workflow_runs_real_github_knowledge_post_install_canary_through_mc
 
     assert "Verify GitHub Knowledge live canary" in workflow
     assert "Import public GitHub source and verify cleanup" in workflow
+    assert "appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2" in workflow
+    assert "capture_stdout: true" in workflow
+    assert "steps.github-knowledge-canary.outputs.stdout" in workflow
+    assert "Persist bounded GitHub Knowledge evidence" in workflow
+    assert "Upload bounded GitHub Knowledge evidence" in workflow
+    assert "github-knowledge-live-canary-${{ github.run_id }}" in workflow
+    assert "sovereign.github-knowledge-live-canary-evidence.v1" in workflow
     assert "github_knowledge_canary.py" in workflow
     assert "github_knowledge_mcp_client.py" in workflow
     assert "github_knowledge_mcp_client.py" in dockerfile
