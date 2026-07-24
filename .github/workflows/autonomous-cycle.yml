@@ -33,24 +33,73 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      - name: Checkout exact dispatched branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Create one idempotent Draft PR for the current branch
+        id: create_pr
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_TYPE" = "branch"
-          test "$GITHUB_REF_NAME" != "main"
-          if gh pr view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json number >/dev/null 2>&1; then
-            echo "Draft PR already exists for $GITHUB_REF_NAME"
-            exit 0
+          family="unknown"
+          exit_code=1
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            family="protected-token-missing"
+          elif [[ "$GITHUB_REF_TYPE" != "branch" || "$GITHUB_REF_NAME" == "main" ]]; then
+            family="unsafe-ref"
+          elif gh pr view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json number >/dev/null 2>&1; then
+            family="already-exists"
+            exit_code=0
+          else
+            set +e
+            output="$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --base main \
+              --head "$GITHUB_REF_NAME" \
+              --title "feat(knowledge): add revision-bound GitHub live canary" \
+              --body "Implements #873. Recovery-created Draft PR after the direct PR API returned HTTP 500; exact branch CI remains authoritative." 2>&1)"
+            exit_code=$?
+            set -e
+            if [[ $exit_code -eq 0 ]]; then
+              family="created"
+            elif grep -Eqi 'not permitted to create|Resource not accessible by integration|permission' <<<"$output"; then
+              family="permission-disabled"
+            elif grep -Eqi 'No commits between|no commits' <<<"$output"; then
+              family="no-diff"
+            elif grep -Eqi 'Head sha.*blank|head.*missing|head.*invalid' <<<"$output"; then
+              family="head-missing"
+            elif grep -Eqi 'not a git repository' <<<"$output"; then
+              family="git-context-missing"
+            elif grep -Eqi 'HTTP 500|Internal Server Error|internal error' <<<"$output"; then
+              family="github-internal-error"
+            elif grep -Eqi 'already exists|A pull request already exists' <<<"$output"; then
+              family="already-exists"
+              exit_code=0
+            fi
           fi
-          gh pr create \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft \
-            --base main \
-            --head "$GITHUB_REF_NAME" \
-            --title "feat(knowledge): add revision-bound GitHub live canary" \
-            --body "Implements #873. Recovery-created Draft PR after the direct PR API returned HTTP 500; exact branch CI remains authoritative."
+          printf 'family=%s\n' "$family" >> "$GITHUB_OUTPUT"
+          printf 'exit_code=%s\n' "$exit_code" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$family" > pr-create-family.txt
+          exit "$exit_code"
+
+      - name: Persist bounded PR-create failure family
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-create-${{ steps.create_pr.outputs.family || 'unknown' }}
+          path: pr-create-family.txt
+          retention-days: 1
+
+      - name: Fail when Draft PR was not created
+        if: steps.create_pr.outcome == 'failure'
+        run: exit 1
 
   autonomous-cycle:
     if: github.event_name != 'workflow_dispatch' || inputs.create_existing_branch_pr != 'true'
