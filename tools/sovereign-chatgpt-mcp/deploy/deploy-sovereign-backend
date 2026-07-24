@@ -238,8 +238,10 @@ admin_status, admin_url, admin_headers, admin_body = fetch("/admin")
 admin_producer = admin_headers.get("X-Sovereign-Admin-Producer", "")
 if admin_status != 200 or not admin_url.endswith("/admin/"):
     raise RuntimeError("canonical admin route is not served")
-if admin_producer != "CANONICAL_REACT_ADMIN" or b"CANONICAL_REACT_ADMIN" not in admin_body:
-    raise RuntimeError("canonical React admin producer is missing")
+if admin_producer != "CANONICAL_REACT_ADMIN":
+    raise RuntimeError("canonical React admin producer header is missing")
+if b'<div id="root"' not in admin_body:
+    raise RuntimeError("canonical React admin root artifact is missing")
 
 identity, identity_evidence = json_payload("/api/admin/platform/v1/identity", authenticated=True)
 runtime = identity.get("runtime") if isinstance(identity.get("runtime"), dict) else {}
@@ -271,6 +273,7 @@ result = {
         "httpStatus": admin_status,
         "finalPath": admin_url.removeprefix(base_url),
         "producer": admin_producer,
+        "reactRootPresent": True,
         "responseSha256": hashlib.sha256(admin_body).hexdigest(),
     },
     "identity": identity_evidence,
