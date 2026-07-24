@@ -24,6 +24,14 @@ def test_embedded_backend_canary_script_is_valid_python() -> None:
     compile(github_knowledge_canary._BACKEND_CANARY_SCRIPT, "github-knowledge-canary", "exec")
 
 
+def test_canary_source_is_fixed_public_github_file_without_query() -> None:
+    assert github_knowledge_canary.PUBLIC_SOURCE_URL == (
+        "https://github.com/octocat/Hello-World/blob/master/README"
+    )
+    assert "?" not in github_knowledge_canary.PUBLIC_SOURCE_URL
+    assert "#" not in github_knowledge_canary.PUBLIC_SOURCE_URL
+
+
 def test_canary_requires_exact_runtime_identity() -> None:
     runtime = github_knowledge_canary.GitHubKnowledgeCanaryRuntime()
 
