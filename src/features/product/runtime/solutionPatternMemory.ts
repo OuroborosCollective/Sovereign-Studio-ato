@@ -507,21 +507,41 @@ export function learnSolutionPattern(store: SolutionPatternStore, input: Solutio
   };
 }
 
-function overlapScore(a: string[], b: string[]): number {
-  if (!a.length || !b.length) return 0;
-  const right = new Set(b.map(normalizeToken));
-  return a.reduce((score, item) => score + (right.has(normalizeToken(item)) ? 1 : 0), 0);
+// Bolt ⚡ Optimization: Pre-allocated Set lookup cache
+// Accepts pre-allocated Set of normalized tokens to perform highly efficient O(1) lookups.
+// This completely avoids allocating a new Set on every pattern iteration.
+function overlapScore(a: string[], rightSet: Set<string>): number {
+  if (!a.length || !rightSet.size) return 0;
+  let score = 0;
+  for (let i = 0; i < a.length; i++) {
+    // Normalizing a[i] ensures 100% correctness even if elements in pattern.conditions
+    // are not pre-normalized. Since rightSet is pre-normalized, direct lookup is perfectly correct.
+    if (rightSet.has(normalizeToken(a[i]))) {
+      score++;
+    }
+  }
+  return score;
 }
 
 function descriptionTokens(description = ''): string[] {
   return normalizeList(description.split(/\s+/).filter((token) => token.length >= 4));
 }
 
+// Bolt ⚡ Optimization: WeakMap-based Pattern description tokens cache
+// WeakMap keyed by the pattern object reference itself. This prevents memory leaks
+// (stale patterns are automatically GC'd) and avoids cache invalidation issues when
+// immutable pattern updates happen, while bypassing expensive string splitting/filtering/normalization.
+const patternTokensCache = new WeakMap<SolutionPattern, string[]>();
+
 export function matchSolutionPatterns(store: SolutionPatternStore, query: SolutionPatternQuery): SolutionPatternMatch[] {
   const matches: SolutionPatternMatch[] = [];
   const querySignals = normalizeList(query.contextSignals ?? []);
   const queryDescriptionTokens = descriptionTokens(query.description ?? '');
   const queryExtension = query.filePath ? fileExtension(query.filePath) : '';
+
+  // Pre-allocate Set lookups once per match run to turn O(M * N) mapping and allocations into fast O(1) lookups
+  const querySignalsSet = new Set(querySignals);
+  const queryDescriptionTokensSet = new Set(queryDescriptionTokens);
 
   for (const pattern of store.patterns.filter((item) => item.status === 'active')) {
     if (query.category && pattern.category !== query.category) continue;
@@ -541,14 +561,20 @@ export function matchSolutionPatterns(store: SolutionPatternStore, query: Soluti
       reasons.push('same file extension');
     }
 
-    const signalOverlap = overlapScore(pattern.conditions, querySignals);
+    const signalOverlap = overlapScore(pattern.conditions, querySignalsSet);
     if (signalOverlap > 0) {
       score += signalOverlap;
       reasons.push(`${signalOverlap} shared context signal(s)`);
     }
 
-    const patternTokens = descriptionTokens(pattern.problemSummary);
-    const descriptionOverlap = overlapScore(patternTokens, queryDescriptionTokens);
+    // Retrieve or compute and cache pattern tokens in O(1) time
+    let patternTokens = patternTokensCache.get(pattern);
+    if (!patternTokens) {
+      patternTokens = descriptionTokens(pattern.problemSummary);
+      patternTokensCache.set(pattern, patternTokens);
+    }
+
+    const descriptionOverlap = overlapScore(patternTokens, queryDescriptionTokensSet);
     if (descriptionOverlap > 0) {
       score += Math.min(3, descriptionOverlap);
       reasons.push('similar problem wording');
