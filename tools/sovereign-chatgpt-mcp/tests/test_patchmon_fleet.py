@@ -127,6 +127,56 @@ def test_agent_state_parses_named_systemd_properties(monkeypatch, tmp_path: Path
     }
 
 
+def test_installer_failure_is_classified_without_returning_output() -> None:
+    runtime = PatchmonFleetRuntime(PatchmonOperatorRuntime())
+
+    readonly = runtime._installer_failure_family(
+        {
+            "stdout": "mkdir: cannot create directory /etc/patchmon: Read-only file system",
+            "stderr": "api_key=must-not-return",
+        }
+    )
+    connectivity = runtime._installer_failure_family(
+        {"stdout": "", "stderr": "Failed to validate API credentials or reach server"}
+    )
+
+    assert readonly == "PATCHMON_AGENT_SANDBOX_READ_ONLY"
+    assert connectivity == "PATCHMON_AGENT_CONNECTIVITY_VALIDATION_FAILED"
+    assert "must-not-return" not in readonly
+
+
+def test_existing_agent_is_reactivated_without_reexecuting_installer(monkeypatch) -> None:
+    operator = PatchmonOperatorRuntime()
+    runtime = PatchmonFleetRuntime(operator)
+    states = iter(
+        [
+            {"activeState": "inactive", "configPresent": True, "binaryPresent": True},
+            {"activeState": "active", "configPresent": True, "binaryPresent": True},
+        ]
+    )
+    commands: list[list[str]] = []
+    monkeypatch.setattr(runtime, "_agent_state", lambda: next(states))
+    monkeypatch.setattr(
+        operator,
+        "_run",
+        lambda argv, **kwargs: commands.append(argv) or {"ok": True, "stdout": "", "stderr": ""},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("installer must not be fetched")),
+    )
+
+    result = runtime._install_agent(HOST_ID)
+
+    assert result["reason"] == "existing_agent_reactivated"
+    assert commands == [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "enable", "patchmon-agent.service"],
+        ["systemctl", "restart", "patchmon-agent.service"],
+    ]
+
+
 def test_official_agent_installer_is_loopback_bound_and_secret_free(monkeypatch, tmp_path: Path) -> None:
     operator = PatchmonOperatorRuntime()
     runtime = PatchmonFleetRuntime(operator)

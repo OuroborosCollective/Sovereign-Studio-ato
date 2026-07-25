@@ -76,6 +76,27 @@ def test_installer_assigns_workspace_to_container_user_and_probes_write_access()
     assert '.permission-probe' in script
 
 
+def test_patchmon_agent_paths_are_prepared_under_managed_root_before_worker_start() -> None:
+    script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    worker_service = (ROOT / "deploy" / "sovereign-chatgpt-command-worker.service").read_text("utf-8")
+
+    assert 'PATCHMON_AGENT_ROOT="/opt/patchmon-sovereign/agent"' in script
+    assert 'PATCHMON_AGENT_BIN_TARGET="$PATCHMON_AGENT_ROOT/bin/patchmon-agent"' in script
+    assert 'PATCHMON_AGENT_CONFIG_TARGET="$PATCHMON_AGENT_ROOT/etc"' in script
+    assert 'PATCHMON_AGENT_UNIT_TARGET="$PATCHMON_AGENT_ROOT/systemd/patchmon-agent.service"' in script
+    assert 'prepare_patchmon_agent_sandbox_paths()' in script
+    assert 'ln -s "$PATCHMON_AGENT_BIN_TARGET" "$PATCHMON_AGENT_BIN_LINK"' in script
+    assert 'ln -s "$PATCHMON_AGENT_CONFIG_TARGET" "$PATCHMON_AGENT_CONFIG_LINK"' in script
+    assert 'ln -s "$PATCHMON_AGENT_UNIT_TARGET" "$PATCHMON_AGENT_UNIT_LINK"' in script
+    assert 'INSTALL_STAGE="prepare_patchmon_agent_sandbox_paths"' in script
+    assert script.index('prepare_patchmon_agent_sandbox_paths\n') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
+    assert '/opt/patchmon-sovereign' in worker_service
+    assert '/etc/systemd/system/multi-user.target.wants' in worker_service
+    assert '-/usr/local/bin/patchmon-agent' not in worker_service
+    assert '-/etc/patchmon' not in worker_service
+    assert '-/etc/systemd/system/patchmon-agent.service' not in worker_service
+
+
 def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> None:
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
