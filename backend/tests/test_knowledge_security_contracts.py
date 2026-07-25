@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
+import json
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -26,6 +28,7 @@ sys.modules.setdefault("psycopg2", psycopg2_stub)
 sys.modules.setdefault("psycopg2.extras", psycopg2_extras_stub)
 
 import knowledge_library
+import programming_language_catalog
 import security_runtime
 import vector_embedding
 
@@ -46,6 +49,7 @@ def test_backend_live_modules_are_exact_mirrors() -> None:
     for relative in (
         "vector_embedding.py",
         "knowledge_library.py",
+        "programming_language_catalog.py",
         "are_inference.py",
         "security_runtime.py",
         "agent_runtime/pattern_vector_memory.py",
@@ -147,6 +151,106 @@ def test_knowledge_url_allowlist_blocks_ssrf_and_plain_http() -> None:
         knowledge_library.fetch_url_document("http://127.0.0.1:8088/secret")
     with pytest.raises(ValueError, match="Allowed knowledge URL hosts"):
         knowledge_library.fetch_url_document("https://example.com/private")
+
+
+def test_programming_language_catalog_is_revision_pinned_and_bugfixes_stay_unverified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revision = programming_language_catalog.PROGRAMMING_LANGUAGE_CATALOG_REVISION
+    tree_sha = "b" * 40
+    index = [
+        {
+            "slug": "typescript",
+            "name": "TypeScript",
+            "year": 2012,
+            "paradigms": ["multi-paradigm", "object-oriented"],
+            "description": "Typed JavaScript superset",
+            "tags": ["web", "node"],
+        },
+        {
+            "slug": "rust",
+            "name": "Rust",
+            "year": 2010,
+            "paradigms": ["systems"],
+            "description": "Memory-safe systems language",
+            "tags": ["native"],
+        },
+    ]
+    files = {
+        "knowledge/index.json": json.dumps(index),
+        "knowledge/languages/typescript.md": "## Type system\n\nStructural typing.",
+        "knowledge/bugfixes/typescript.md": "Run npm install and apply this diff.",
+        "knowledge/languages/rust.md": "## Ownership\n\nBorrow checker basics.",
+    }
+
+    def encoded_file(content: str) -> dict[str, object]:
+        return {
+            "type": "file",
+            "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+        }
+
+    def github_json(path: str, *, auth_state=None):
+        del auth_state
+        if f"/commits/{revision}" in path:
+            return {"sha": revision, "commit": {"tree": {"sha": tree_sha}}}
+        if f"/git/trees/{tree_sha}" in path:
+            return {
+                "sha": tree_sha,
+                "truncated": False,
+                "tree": [
+                    {"path": file_path, "type": "blob", "size": len(content)}
+                    for file_path, content in files.items()
+                ],
+            }
+        if "/contents/" in path:
+            file_path = path.split("/contents/", 1)[1].split("?ref=", 1)[0]
+            return encoded_file(files[file_path])
+        raise AssertionError(f"Unexpected GitHub path: {path}")
+
+    monkeypatch.setattr(knowledge_library, "_github_json", github_json)
+    document = knowledge_library.programming_language_catalog_document()
+
+    assert document.source_type == "github"
+    assert document.source_url == programming_language_catalog.programming_language_catalog_source_url()
+    assert document.metadata["originRevision"] == revision
+    assert document.metadata["treeSha"] == tree_sha
+    assert document.metadata["sourcePinned"] is True
+    assert document.metadata["languageCount"] == 2
+    assert document.metadata["bugfixObservationCount"] == 1
+    assert document.metadata["bugfixObservationAuthority"] == "unverified-reference-candidate"
+    assert "# Programmiersprache: TypeScript" in document.text
+    assert "# Programmiersprache: Rust" in document.text
+    assert "Historische Bugfix-Beobachtungen · unbestätigt" in document.text
+    assert "dürfen niemals ohne aktuelle Tests" in document.text
+
+
+def test_programming_language_catalog_rejects_duplicate_or_unsafe_slugs() -> None:
+    with pytest.raises(ValueError, match="Duplicate"):
+        programming_language_catalog.normalize_programming_language_profiles([
+            {"slug": "rust", "name": "Rust"},
+            {"slug": "rust", "name": "Rust again"},
+        ])
+    with pytest.raises(ValueError, match="Unsafe"):
+        programming_language_catalog.normalize_programming_language_profiles([
+            {"slug": "../secrets", "name": "Nope"},
+        ])
+
+
+def test_programming_language_catalog_stops_on_truncated_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    revision = programming_language_catalog.PROGRAMMING_LANGUAGE_CATALOG_REVISION
+    tree_sha = "c" * 40
+
+    def github_json(path: str, *, auth_state=None):
+        del auth_state
+        if f"/commits/{revision}" in path:
+            return {"sha": revision, "commit": {"tree": {"sha": tree_sha}}}
+        return {"sha": tree_sha, "truncated": True, "tree": []}
+
+    monkeypatch.setattr(knowledge_library, "_github_json", github_json)
+    with pytest.raises(ValueError, match="truncated"):
+        knowledge_library.programming_language_catalog_document()
 
 
 def test_github_import_failure_returns_auditable_non_secret_correlation() -> None:

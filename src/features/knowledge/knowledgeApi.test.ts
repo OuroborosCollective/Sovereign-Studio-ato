@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { importKnowledgeUrl, KnowledgeApiError } from './knowledgeApi';
+import {
+  importKnowledgeUrl,
+  importProgrammingLanguageCatalog,
+  KnowledgeApiError,
+  PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+} from './knowledgeApi';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -7,6 +12,38 @@ afterEach(() => {
 });
 
 describe('knowledgeApi failure evidence', () => {
+  it('imports the pinned programming-language catalog through its dedicated endpoint', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      duplicate: false,
+      catalogRevision: PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+      source: {
+        id: 'catalog-source',
+        title: 'ProgrammiersprachenMD · kuratierter Sprachkatalog',
+        sourceType: 'github',
+        status: 'ready',
+        chunkCount: 22,
+      },
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await importProgrammingLanguageCatalog();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://sovereign-backend.arelorian.de/api/knowledge/catalogs/programming-languages/import',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: '{}',
+      }),
+    );
+    expect(result.catalogRevision).toBe(PROGRAMMING_LANGUAGE_CATALOG_REVISION);
+    expect(result.source.title).toContain('ProgrammiersprachenMD');
+  });
+
   it('preserves a structured GitHub credential blocker and upstream status', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       ok: false,
