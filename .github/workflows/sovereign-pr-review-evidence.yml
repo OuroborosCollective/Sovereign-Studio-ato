@@ -1,0 +1,223 @@
+name: Sovereign PR Review Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Exact pull request number to inspect
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact current pull request head SHA
+        required: true
+        type: string
+      confirm_resolve:
+        description: Resolve one exact already-reviewed thread after hash confirmation
+        required: false
+        default: false
+        type: boolean
+      expected_thread_id_sha256:
+        description: SHA-256 of the exact review thread node ID
+        required: false
+        default: ''
+        type: string
+      expected_comment_body_sha256:
+        description: SHA-256 of the exact review comment body
+        required: false
+        default: ''
+        type: string
+      expected_path:
+        description: Exact reviewed repository path
+        required: false
+        default: ''
+        type: string
+      expected_author:
+        description: Exact GitHub login of the review author
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: sovereign-pr-review-evidence-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  review-evidence:
+    name: Read exact PR review conversations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read bounded review evidence and optionally resolve one exact thread
+        id: evidence
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          CONFIRM_RESOLVE: ${{ inputs.confirm_resolve }}
+          EXPECTED_THREAD_ID_SHA256: ${{ inputs.expected_thread_id_sha256 }}
+          EXPECTED_COMMENT_BODY_SHA256: ${{ inputs.expected_comment_body_sha256 }}
+          EXPECTED_PATH: ${{ inputs.expected_path }}
+          EXPECTED_AUTHOR: ${{ inputs.expected_author }}
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const number = Number.parseInt(process.env.PR_NUMBER || '', 10);
+            const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+            const confirmResolve = String(process.env.CONFIRM_RESOLVE || '').toLowerCase() === 'true';
+            const expectedThreadHash = String(process.env.EXPECTED_THREAD_ID_SHA256 || '').trim().toLowerCase();
+            const expectedBodyHash = String(process.env.EXPECTED_COMMENT_BODY_SHA256 || '').trim().toLowerCase();
+            const expectedPath = String(process.env.EXPECTED_PATH || '').trim();
+            const expectedAuthor = String(process.env.EXPECTED_AUTHOR || '').trim();
+            if (!Number.isInteger(number) || number < 1) {
+              core.setFailed('PR_NUMBER_INVALID');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedHead)) {
+              core.setFailed('EXPECTED_HEAD_SHA_INVALID');
+              return;
+            }
+            if (confirmResolve && (
+              !/^[0-9a-f]{64}$/.test(expectedThreadHash)
+              || !/^[0-9a-f]{64}$/.test(expectedBodyHash)
+              || !expectedPath
+              || !expectedAuthor
+            )) {
+              core.setFailed('RESOLUTION_CONFIRMATION_INCOMPLETE');
+              return;
+            }
+            const query = `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
+              repository(owner:$owner,name:$repo){
+                pullRequest(number:$number){
+                  headRefOid
+                  state
+                  isDraft
+                  reviewThreads(first:100,after:$cursor){
+                    pageInfo{hasNextPage endCursor}
+                    nodes{
+                      id
+                      isResolved
+                      isOutdated
+                      path
+                      line
+                      startLine
+                      comments(first:20){
+                        nodes{id author{login} body createdAt url}
+                      }
+                    }
+                  }
+                }
+              }
+            }`;
+            const variables = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number,
+              cursor: null,
+            };
+            const threads = [];
+            let pullMeta = null;
+            do {
+              const data = await github.graphql(query, variables);
+              const pull = data.repository?.pullRequest;
+              if (!pull) {
+                core.setFailed('PULL_REQUEST_NOT_FOUND');
+                return;
+              }
+              if (!pullMeta) {
+                pullMeta = {headRefOid: pull.headRefOid, state: pull.state, isDraft: pull.isDraft};
+              }
+              threads.push(...(pull.reviewThreads?.nodes || []));
+              const pageInfo = pull.reviewThreads?.pageInfo || {};
+              variables.cursor = pageInfo.hasNextPage ? pageInfo.endCursor : null;
+            } while (variables.cursor);
+            if (String(pullMeta.headRefOid || '').toLowerCase() !== expectedHead) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+              return;
+            }
+            const sha = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex');
+            const bounded = threads.map((thread) => {
+              const comments = (thread.comments?.nodes || []).map((comment) => ({
+                idSha256: sha(comment.id),
+                author: String(comment.author?.login || ''),
+                body: String(comment.body || '').slice(0, 3000),
+                bodySha256: sha(comment.body),
+                createdAt: String(comment.createdAt || ''),
+                url: String(comment.url || ''),
+              }));
+              return {
+                threadIdSha256: sha(thread.id),
+                isResolved: Boolean(thread.isResolved),
+                isOutdated: Boolean(thread.isOutdated),
+                path: String(thread.path || ''),
+                line: thread.line ?? null,
+                startLine: thread.startLine ?? null,
+                comments,
+              };
+            });
+            let resolved = false;
+            if (confirmResolve) {
+              const match = threads.find((thread) => {
+                const comments = thread.comments?.nodes || [];
+                return sha(thread.id) === expectedThreadHash
+                  && String(thread.path || '') === expectedPath
+                  && comments.some((comment) => (
+                    sha(comment.body) === expectedBodyHash
+                    && String(comment.author?.login || '') === expectedAuthor
+                  ));
+              });
+              if (!match || match.isResolved) {
+                core.setFailed(match ? 'THREAD_ALREADY_RESOLVED' : 'REVIEW_THREAD_EVIDENCE_MISMATCH');
+                return;
+              }
+              const mutation = `mutation($threadId:ID!){
+                resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}
+              }`;
+              const mutationResult = await github.graphql(mutation, {threadId: match.id});
+              const updated = mutationResult.resolveReviewThread?.thread;
+              if (!updated || updated.id !== match.id || updated.isResolved !== true) {
+                core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED');
+                return;
+              }
+              resolved = true;
+            }
+            const artifact = {
+              schemaVersion: 'sovereign.pr-review-evidence.v1',
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              prNumber: number,
+              headSha: expectedHead,
+              state: pullMeta.state,
+              isDraft: Boolean(pullMeta.isDraft),
+              threadCount: bounded.length,
+              unresolvedCount: bounded.filter((thread) => !thread.isResolved).length - (resolved ? 1 : 0),
+              resolutionPerformed: resolved,
+              threads: bounded,
+              secretValuesReturned: false,
+            };
+            fs.mkdirSync('.sovereign-evidence', {recursive: true});
+            fs.writeFileSync(
+              '.sovereign-evidence/pr-review-evidence.json',
+              `${JSON.stringify(artifact)}\n`,
+              {encoding: 'utf8', mode: 0o600},
+            );
+            core.info(JSON.stringify({
+              status: resolved ? 'EXACT_REVIEW_THREAD_RESOLVED' : 'PR_REVIEW_EVIDENCE_READY',
+              prNumber: number,
+              headSha: expectedHead,
+              threadCount: artifact.threadCount,
+              unresolvedCount: artifact.unresolvedCount,
+              secretValuesReturned: false,
+            }));
+
+      - name: Upload bounded review evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review-evidence-${{ inputs.pr_number }}-${{ github.run_id }}
+          path: .sovereign-evidence/pr-review-evidence.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
