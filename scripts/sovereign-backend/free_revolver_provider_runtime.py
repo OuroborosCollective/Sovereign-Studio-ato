@@ -53,7 +53,7 @@ _KNOWN_KEYLESS_POOL_PROVIDERS = {"ovh", "ovhcloud", "kilo", "llm7"}
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v1"
-_DEFAULT_MIN_READY_ROUTES = 6
+_DEFAULT_MIN_READY_ROUTES = 5
 _DEFAULT_RECONCILE_PACE_SECONDS = 0.25
 
 
@@ -169,11 +169,8 @@ def _cleanup_orphaned_secret_files(query: Callable[..., Any]) -> int:
 
 
 def _minimum_ready_routes() -> int:
-    try:
-        value = int(os.getenv("SOVEREIGN_FREELLM_MIN_READY_ROUTES", str(_DEFAULT_MIN_READY_ROUTES)))
-    except ValueError:
-        value = _DEFAULT_MIN_READY_ROUTES
-    return max(6, min(value, 32))
+    """Return the fixed success threshold, never a ceiling for ready routes."""
+    return _DEFAULT_MIN_READY_ROUTES
 
 
 def _reconcile_pace_seconds() -> float:
@@ -2248,8 +2245,6 @@ def register_free_revolver_provider_runtime(
                         "routeAlias": str(stored.get("litellm_alias") or ""),
                         "receiptCurrent": True,
                     })
-                    if len(current_ready) + len(ready) >= target_ready_count:
-                        break
                     continue
                 pricing_source = str(
                     stored.get("pricing_source")
@@ -2296,8 +2291,6 @@ def register_free_revolver_provider_runtime(
                         "receiptId": result.get("receiptId"),
                         "receiptSha256": result.get("receiptSha256"),
                     })
-                    if len(current_ready) + len(ready) >= target_ready_count:
-                        break
                     if _reconcile_pace_seconds() > 0:
                         time.sleep(_reconcile_pace_seconds())
                     continue
@@ -2452,6 +2445,8 @@ def register_free_revolver_provider_runtime(
                     "currentReceiptModelIds": [item["modelId"] for item in current_ready],
                     "minimumReadyRoutes": target_ready_count,
                     "minimumReadySatisfied": minimum_ready_satisfied,
+                    "readyRouteCeiling": None,
+                    "additionalReadyRoutesAllowed": True,
                     "readyReceipts": [
                         {
                             "modelId": item["modelId"],
@@ -2480,6 +2475,8 @@ def register_free_revolver_provider_runtime(
                 "readyCount": overall_ready_count,
                 "minimumReadyRoutes": target_ready_count,
                 "minimumReadySatisfied": minimum_ready_satisfied,
+                "readyRouteCeiling": None,
+                "additionalReadyRoutesAllowed": True,
                 "deferredCount": overall_deferred_count,
                 "currentReady": current_ready,
                 "ready": ready,
