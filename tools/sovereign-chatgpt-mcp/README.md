@@ -85,6 +85,7 @@ Der PatchMon-Operator bildet einen geschlossenen Wahrnehmungs- und Steuerungspfa
 - `patchmon_fleet_bootstrap_plan` bindet den lokalen Host-/Agent-Bootstrap an den aktuellen Runtime-, Datenbank-, systemd- und Flottenzustand.
 - `patchmon_fleet_bootstrap_apply` erstellt nur bei einer leeren Installation eine zufällige root-only Operator-Identität, konfiguriert die feste Loopback-Adresse, legt den lokalen Host über PatchMons offizielle API an, installiert dessen offiziellen Linux-Agenten und wartet auf reales Docker-Inventar.
 - `patchmon_fleet_orchestrator_status` trennt zwei Wahrheitspfade: PatchMon belegt Host-, Paket- und Docker-Evidence; GitHub- und Immutable-Image-Werkzeuge belegen Workflowstatus und exakte Containerrevision.
+- Für bereits verbundene Clients mit noch eingefrorenem Tool-Schemacache existiert der feste Alias `action=bootstrap_local_fleet` über `patchmon_patch_action_plan` und `patchmon_patch_action_apply`. Er verwendet exakt denselben Bootstrap-Plan, dieselbe Zustandsbindung, denselben Bestätigungs-Hash und dieselbe Host-Command-Queue; freie Bootstrap-Parameter oder ein zweiter Wahrheitspfad entstehen dadurch nicht.
 
 PatchMon erhält damit ausdrücklich **keinen** erfundenen Container-Deploy-Endpunkt. Gestaffelte Rollouts dürfen erst freigegeben werden, wenn der PatchMon-Host-Lane aktiv ist, Docker-Assets beobachtet werden, die relevanten GitHub-Checks grün sind und die erwartete vollständige Revision mit der gelesenen PR-Revision übereinstimmt. Die eigentliche Container-Gleichschaltung bleibt beim bestehenden revisionsgebundenen Immutable-Image-/Deploy-Pfad.
 
@@ -137,7 +138,7 @@ Der Broker akzeptiert nur:
 - Auflösen eines revisionsgebundenen Backend-Images
 - verifizierte Migration mit erneuter Pfad-, Hash-, SQL- und Rollback-Preview-Prüfung
 - verifizierter Deploy beziehungsweise Rollback
-- feste PatchMon-Runtime-/Datenbankabfragen und zustandsgebundene PatchMon-Aktionen
+- feste PatchMon-Runtime-/Datenbankabfragen und zustandsgebundene PatchMon-Aktionen einschließlich des festen `bootstrap_local_fleet`-Kompatibilitäts-Alias
 
 Ein Action-Name wie `shell` oder ein frei formulierter SQL-Auftrag wird geblockt.
 
