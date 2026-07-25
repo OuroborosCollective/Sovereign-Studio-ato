@@ -154,6 +154,7 @@ def _quota_rank(
     state: dict[str, Any] | None,
     *,
     primary_id: str,
+    now: datetime,
 ) -> tuple[Any, ...]:
     config = route.get("config") if isinstance(route.get("config"), dict) else {}
     current = state or {}
@@ -167,6 +168,12 @@ def _quota_rank(
         current.get("quotaLimit"),
         config.get("quotaLimit"),
     )
+    quota_reset = _as_datetime(
+        current.get("quota_reset_at") or current.get("quotaResetAt")
+    )
+    if remaining == 0 and quota_reset is not None and quota_reset <= now:
+        remaining = None
+        limit = None
     ratio = remaining / limit if remaining is not None and limit and limit > 0 else remaining
     availability = 0 if remaining is not None and remaining > 0 else 2 if remaining == 0 else 1
     last_attempt = _as_datetime(
@@ -239,6 +246,7 @@ def build_revolver_candidates(
             route,
             state_by_scope.get(route_quota_scope(route)),
             primary_id=primary_id,
+            now=current_time,
         ),
     )
     candidates: list[dict[str, Any]] = []
