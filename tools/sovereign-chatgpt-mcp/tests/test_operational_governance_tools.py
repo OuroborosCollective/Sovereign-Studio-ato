@@ -137,7 +137,7 @@ class FakeBroker:
         return {"ok": True, "status": "BROKER_READY"}
 
     def call(self, action: str, arguments: dict, timeout: int = 30) -> dict:
-        if action == "litellm_provider_model_inventory":
+        if action == "openrouter_provider_status":
             return {
                 "ok": True,
                 "status": "PROVIDER_MODEL_INVENTORY",
@@ -582,7 +582,7 @@ def test_agent_settlement_backup_and_slo_invariants_are_deterministic(registered
             status="BLOCKED",
             iteration_count=2,
             max_iterations=12,
-            next_action="ACTIVATE_PRICE_VERIFIED_LITELLM_ROUTE",
+            next_action="ACTIVATE_PRICE_VERIFIED_OPENROUTER_ROUTE",
             active_blocker="provider route inactive",
             provider_route_ready=False,
         )

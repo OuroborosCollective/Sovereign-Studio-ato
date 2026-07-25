@@ -188,7 +188,7 @@ _PREFIX_CAPABILITIES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("android_", ("android", "release")),
     ("postgres_", ("database", "migration")),
     ("vector_", ("database", "learning")),
-    ("litellm_", ("llm", "billing")),
+    ("openrouter_", ("llm", "billing")),
     ("controller_", ("agent", "runtime")),
     ("a2a_", ("agent", "runtime")),
     ("patchmon_", ("container", "runtime")),
@@ -654,7 +654,7 @@ def _capabilities_for(name: str, description: str) -> list[str]:
         "container": ("docker", "container", "compose", "vps"),
         "database": ("postgres", "database", "sql", "vector"),
         "migration": ("migration", "schema", "table"),
-        "llm": ("llm", "model", "provider", "litellm"),
+        "llm": ("llm", "model", "provider", "openrouter"),
         "agent": ("agent", "controller", "a2a", "swarm"),
         "billing": ("billing", "credit", "cost", "settlement", "payment"),
         "backup": ("backup", "restore", "recovery"),
@@ -1495,12 +1495,12 @@ def llm_route_reliability_assess(
     routes: Annotated[list[RouteEvidence], Field(min_length=1, max_length=64)],
     required_aliases: Annotated[list[str], Field(min_length=1, max_length=16)],
 ) -> GenericResult:
-    """Use this when LiteLLM aliases need a fail-closed readiness decision from provider inventory, price, health and quota evidence."""
+    """Use this when OpenRouter routes need a fail-closed readiness decision from provider inventory, price, health and quota evidence."""
     provider_inventory: dict[str, Any] = {}
     broker_status: dict[str, Any] = {}
     if _BROKER is not None:
         try:
-            provider_inventory = _BROKER.call("litellm_provider_model_inventory", {}, timeout=90)
+            provider_inventory = _BROKER.call("openrouter_provider_status", {}, timeout=90)
         except Exception as exc:
             provider_inventory = {"ok": False, "status": "PROVIDER_INVENTORY_UNAVAILABLE", "errorType": type(exc).__name__}
         try:
