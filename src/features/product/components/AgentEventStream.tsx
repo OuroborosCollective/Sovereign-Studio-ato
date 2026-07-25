@@ -176,7 +176,8 @@ function FileBadge({ path, onClick }: { path: string; onClick?: () => void }) {
   return (
     <button
       type="button"
-      title={path}
+      aria-label={onClick ? `Repo Datei öffnen: ${path}` : `Repo Datei: ${path}`}
+      title={onClick ? `Repo Datei öffnen: ${path}` : path}
       onClick={onClick}
       style={{
         padding: '3px 8px',

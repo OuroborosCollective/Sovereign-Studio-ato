@@ -18,6 +18,7 @@ export function FileBadge({
       onClick={() => onOpenFile?.(fullPath)}
       disabled={!onOpenFile}
       aria-label={`Repo Datei öffnen: ${fullPath}`}
+      title={onOpenFile ? `Repo Datei öffnen: ${fullPath}` : undefined}
       style={{
         display: "inline-flex",
         alignItems: "center",
