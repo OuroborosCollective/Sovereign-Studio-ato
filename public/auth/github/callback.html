@@ -15,10 +15,6 @@
       const state = params.get('state');
       const oauthError = params.get('error_description') || params.get('error');
 
-      if (!window.opener) {
-        status.textContent = 'Die öffnende Sovereign-Oberfläche ist nicht mehr verfügbar. Bitte Anmeldung neu starten.';
-        return;
-      }
       if (!state) {
         status.textContent = 'Fehler: OAuth-Callback enthält keinen State.';
         return;
@@ -44,11 +40,25 @@
             ? { type: 'GITHUB_OAUTH_SUCCESS', code, state }
             : { type: 'GITHUB_OAUTH_ERROR', error: 'OAuth-Callback enthält keinen vollständigen Code.' };
 
-        window.opener.postMessage(message, context.openerOrigin);
-        status.textContent = oauthError
-          ? 'GitHub hat die Anmeldung abgelehnt. Fehler wurde an Sovereign übermittelt.'
-          : 'GitHub bestätigt. Sovereign erstellt jetzt die Backend-Session …';
-        window.setTimeout(() => window.close(), 600);
+        if (window.opener) {
+          window.opener.postMessage(message, context.openerOrigin);
+          status.textContent = oauthError
+            ? 'GitHub hat die Anmeldung abgelehnt. Fehler wurde an Sovereign übermittelt.'
+            : 'GitHub bestätigt. Sovereign erstellt jetzt die Backend-Session …';
+          window.setTimeout(() => window.close(), 600);
+          return;
+        }
+
+        const nativeOrigins = new Set(['https://localhost', 'capacitor://localhost']);
+        if (!nativeOrigins.has(context.openerOrigin)) {
+          throw new Error('Die bestätigte Sovereign-Oberfläche besitzt keinen erlaubten Rückkanal.');
+        }
+        const deepLink = new URL('com.arestudio.nocode.aab://auth/github/callback');
+        if (code) deepLink.searchParams.set('code', code);
+        deepLink.searchParams.set('state', state);
+        if (oauthError) deepLink.searchParams.set('error', oauthError);
+        status.textContent = 'GitHub bestätigt. Rückkehr zur Sovereign-App …';
+        window.location.replace(deepLink.toString());
       } catch (reason) {
         status.textContent = 'Rückkanal fehlgeschlagen: ' + (reason instanceof Error ? reason.message : String(reason));
       }

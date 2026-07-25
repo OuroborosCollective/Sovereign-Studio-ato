@@ -5,12 +5,10 @@
  *  - Alle verfügbaren Tools zu sehen (Manifest)
  *  - Tools manuell über ein JSON-Form aufzurufen
  *  - Ergebnisse als formatierten JSON zu lesen
- *  - MCP/REST-Endpunkte für externe LLM-Clients zu kopieren
+ *  - registrierte Status-, Manifest- und Invoke-Verträge zu kopieren
  *
- * Integrations-Endpunkte die angezeigt werden:
- *   MCP:     https://sovereign-backend.arelorian.de/toolchain/mcp
- *   REST:    https://sovereign-backend.arelorian.de/toolchain/api/v1/tools/{name}
- *   OpenAPI: https://sovereign-backend.arelorian.de/toolchain/api/openapi.json
+ * Angezeigt werden ausschließlich die im produktiven Backend registrierten
+ * Status-, Manifest- und Invoke-Verträge der eingebetteten Toolchain.
  */
 
 import React, { useState } from 'react';
@@ -20,7 +18,11 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { useToolchain } from './useToolchain';
-import type { ToolDefinition } from './toolchainClient';
+import {
+  SOVEREIGN_TOOLCHAIN_ENDPOINTS,
+  type ToolchainFailureKind,
+  type ToolDefinition,
+} from './toolchainClient';
 import type { LauncherToolProps } from '../launcher/launcherRegistry';
 
 const C = {
@@ -29,11 +31,21 @@ const C = {
   amber: '#f59e0b', danger: '#f87171', green: '#34d399',
 } as const;
 
-const TC_BASE = 'https://sovereign-backend.arelorian.de/toolchain';
+function toolchainErrorTitle(kind: ToolchainFailureKind): string {
+  switch (kind) {
+    case 'authentication': return 'Anmeldung erforderlich';
+    case 'permission': return 'Zugriff nicht erlaubt';
+    case 'not_found': return 'Toolchain-Endpunkt nicht gefunden';
+    case 'invalid_response': return 'Ungültige Serverantwort';
+    case 'client_request': return 'Toolchain-Anfrage abgelehnt';
+    case 'server': return 'Toolchain-Backendfehler';
+    case 'network': return 'Server nicht erreichbar';
+  }
+}
 
 // ── Endpoint Info Row ─────────────────────────────────────────────────────────
 
-function EndpointRow({ label, url }: { label: string; url: string }) {
+function EndpointRow({ label, url, openable = true }: { label: string; url: string; openable?: boolean }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(url).catch(() => undefined);
@@ -42,16 +54,18 @@ function EndpointRow({ label, url }: { label: string; url: string }) {
   };
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid ${C.border}` }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: C.textSub, minWidth: 64 }}>{label}</span>
-      <span style={{ flex: 1, fontSize: 10, fontFamily: 'monospace', color: C.accent, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
-      <button type="button" onClick={handleCopy}
-        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: copied ? C.green : C.textSub, padding: 0, flexShrink: 0 }}>
-        {copied ? <CheckCircle size={12} /> : <Copy size={12} />}
+      <span style={{ fontSize: 11, fontWeight: 700, color: C.textSub, minWidth: 64 }}>{label}</span>
+      <span style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', color: C.accent, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
+      <button type="button" onClick={handleCopy} aria-label={`${label}-URL kopieren`}
+        style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: copied ? C.green : C.textSub, padding: 0, flexShrink: 0 }}>
+        {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
       </button>
-      <a href={url} target="_blank" rel="noreferrer"
-        style={{ color: C.textSub, display: 'flex', flexShrink: 0 }}>
-        <ExternalLink size={12} />
-      </a>
+      {openable && (
+        <a href={url} target="_blank" rel="noreferrer" aria-label={`${label}-URL öffnen`}
+          style={{ width: 44, height: 44, color: C.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <ExternalLink size={16} />
+        </a>
+      )}
     </div>
   );
 }
@@ -84,9 +98,11 @@ function ToolCard({
 
   return (
     <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 6 }}>
-      <div
+      <button
+        type="button"
+        aria-expanded={expanded}
         onClick={() => setExpanded(v => !v)}
-        style={{ padding: '8px 12px', display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', background: expanded ? `${C.accent}08` : 'transparent' }}
+        style={{ width: '100%', minHeight: 44, padding: '8px 12px', display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', background: expanded ? `${C.accent}08` : 'transparent', border: 'none', textAlign: 'left' }}
       >
         <span style={{ marginTop: 1, color: expanded ? C.accent : C.textSub, flexShrink: 0 }}>
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -103,7 +119,7 @@ function ToolCard({
           </div>
           <div style={{ fontSize: 10, color: C.textSub, marginTop: 2, lineHeight: 1.4 }}>{tool.description}</div>
         </div>
-      </div>
+      </button>
 
       {expanded && (
         <div style={{ padding: '0 12px 12px', background: C.surface, borderTop: `1px solid ${C.border}` }}>
@@ -129,7 +145,7 @@ function ToolCard({
               disabled={invoking || !!argsError}
               style={{
                 background: C.accent, border: 'none', borderRadius: 6,
-                padding: '5px 14px', fontSize: 10, fontWeight: 700, color: '#000',
+                minHeight: 44, padding: '8px 14px', fontSize: 12, fontWeight: 700, color: '#000',
                 cursor: (invoking || !!argsError) ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: 4,
                 opacity: (invoking || !!argsError) ? 0.6 : 1,
@@ -160,8 +176,8 @@ function ResultView({ result }: { result: { ok: boolean; tool: string; result?: 
         <span style={{ fontSize: 10, fontWeight: 700, color: result.ok ? C.green : C.danger }}>
           {result.ok ? 'Erfolgreich' : 'Fehler'} — {result.tool}
         </span>
-        <button type="button" onClick={() => { navigator.clipboard.writeText(json).catch(() => undefined); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-          style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', color: copied ? C.green : C.textSub, padding: 0 }}>
+        <button type="button" aria-label="Toolchain-Ergebnis kopieren" onClick={() => { navigator.clipboard.writeText(json).catch(() => undefined); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+          style={{ width: 44, height: 44, marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: copied ? C.green : C.textSub, padding: 0 }}>
           {copied ? <CheckCircle size={11} /> : <Copy size={11} />}
         </button>
       </div>
@@ -198,17 +214,17 @@ export function ToolchainPanel(_props: LauncherToolProps) {
             <Globe size={9} />
             {loading ? 'VERBINDE…' : serverOnline ? 'ONLINE' : 'OFFLINE'}
           </span>
-          <button type="button" onClick={reload}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.textSub, padding: 0 }}>
-            <RefreshCw size={13} />
+          <button type="button" onClick={reload} aria-label="Toolchain neu laden"
+            style={{ width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', color: C.textSub, padding: 0 }}>
+            <RefreshCw size={16} />
           </button>
         </div>
 
         {/* Endpoints */}
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px' }}>
-          <EndpointRow label="MCP"     url={`${TC_BASE}/mcp`} />
-          <EndpointRow label="REST"    url={`${TC_BASE}/api/v1/tools/{name}`} />
-          <EndpointRow label="OpenAPI" url={`${TC_BASE}/api/openapi.json`} />
+          <EndpointRow label="Status" url={SOVEREIGN_TOOLCHAIN_ENDPOINTS.status} />
+          <EndpointRow label="Manifest" url={SOVEREIGN_TOOLCHAIN_ENDPOINTS.manifest} />
+          <EndpointRow label="Invoke" url={SOVEREIGN_TOOLCHAIN_ENDPOINTS.invoke} openable={false} />
         </div>
       </div>
 
@@ -224,8 +240,10 @@ export function ToolchainPanel(_props: LauncherToolProps) {
           <div style={{ background: `${C.danger}15`, border: `1px solid ${C.danger}30`, borderRadius: 8, padding: '10px 12px', display: 'flex', gap: 8 }}>
             <AlertTriangle size={13} color={C.danger} style={{ flexShrink: 0, marginTop: 1 }} />
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.danger }}>Server nicht erreichbar</div>
-              <div style={{ fontSize: 10, color: C.textSub, marginTop: 2 }}>{error}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.danger }}>{toolchainErrorTitle(error.kind)}</div>
+              <div style={{ fontSize: 11, color: C.textSub, marginTop: 3 }}>
+                {error.message}{error.status ? ` · HTTP ${error.status}` : ''}
+              </div>
             </div>
           </div>
         )}

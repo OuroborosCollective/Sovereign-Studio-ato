@@ -51,9 +51,9 @@ import {
   type DevChatWorkerMessage,
 } from "../runtime/devChatWorkerBridge";
 import {
-  fetchSovereignLiteLlmInterpretation,
-  SOVEREIGN_LITELLM_CHAT,
-} from "../runtime/sovereignLiteLlmIntentRuntime";
+  fetchSovereignDirectLlmInterpretation,
+  SOVEREIGN_DIRECT_LLM_CHAT,
+} from "../runtime/sovereignDirectLlmIntentRuntime";
 import {
   buildToolchainAutoContext,
   formatToolchainAutoContext,
@@ -3109,7 +3109,7 @@ export function BuilderContainer({
         metadata: {
           repository: currentRepositoryTargetKey,
           intent: input.intent,
-          source: 'litellm_online_language_observation',
+          source: 'direct_openrouter_freellm_language_observation',
           knowledgeIds: inference.selectedKnowledgeIds,
           patternIds: inference.selectedPatternIds,
         },
@@ -3349,7 +3349,7 @@ export function BuilderContainer({
       ? workerBlocker.message
       : workerSourceTier === "unknown"
         ? "Noch keine Health- oder Response-Evidence für diese Sitzung."
-        : `${SOVEREIGN_LITELLM_CHAT} · Legacy-Chat ${SOVEREIGN_WORKER_CHAT}`,
+        : `${SOVEREIGN_DIRECT_LLM_CHAT} · direkter OpenRouter-/FreeLLM-Transport`,
     available: !workerBlocker && (workerHealthReady || workerResponseReady),
   };
   const runtimeSources = [
@@ -4290,6 +4290,21 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // the application remains the sole authority for capabilities, execution and success.
     // Local token classifiers are used only when the online interpreter is unavailable.
     if (shouldUseOnlineLanguageUnderstanding) {
+      if (!authUser) {
+        appendActionEvent(buildBlockedActionEvent({
+          route: 'worker',
+          label: 'Anmeldung für Online-Sprachdeutung erforderlich',
+          detail: 'Der geschützte OpenRouter-/FreeLLM-Backendpfad wurde ohne bestätigte Session nicht aufgerufen.',
+          kind: 'blocked',
+        }));
+        appendChatLine({
+          role: 'assistant',
+          text: 'Für die Online-Sprachdeutung ist eine bestätigte Anmeldung erforderlich. Es wurde kein LLM-Aufruf gesendet und kein Credit abgezogen.',
+        });
+        setShowLogin(true);
+        return;
+      }
+
       let onlineAreInference: AreInferenceResult | null = null;
       let onlineHealth: DevChatWorkerHealthResult | null = null;
 
@@ -4300,7 +4315,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         palDecisions,
       );
       const interpreterOnline = true;
-      let interpretationResult: Awaited<ReturnType<typeof fetchSovereignLiteLlmInterpretation>>;
+      let interpretationResult: Awaited<ReturnType<typeof fetchSovereignDirectLlmInterpretation>>;
 
       if (interpreterOnline) {
         const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
@@ -4316,7 +4331,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         setChatResponseBusy(true);
         appendActionEvent(buildWorkerRequestEvent(`${routeDecision.modelLabel} · Intent`));
 
-        interpretationResult = await fetchSovereignLiteLlmInterpretation({
+        interpretationResult = await fetchSovereignDirectLlmInterpretation({
           preferredModel: routeDecision.modelId,
           text: submittedText,
           repoContext: chatRepoSnapshot
@@ -4540,14 +4555,17 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       // messages such as "Warum?" must not overwrite this correlation.
       setLastWorkerRequestMessage(submittedText);
       const offlineIntent = classifyOfflineSovereignExecutorIntent(submittedText);
+      const offlineFallbackEvidence = offlineIntent === 'unknown'
+        ? 'free_language_not_safely_classifiable'
+        : offlineIntent;
       appendActionEvent({
         kind: 'blocked',
         route: 'worker',
         label: 'Online-Sprachdeutung nicht verfügbar',
-        detail: `${interpretationResult.error ?? 'Unbekannter Fehler'} · Offline-Fallback=${offlineIntent}`,
+        detail: `${interpretationResult.error ?? 'Unbekannter Fehler'} · Offline-Fallback=${offlineFallbackEvidence}`,
         state: 'blocked',
       });
-      addLog('warn', `Online intent unavailable; offline fallback=${offlineIntent}`, 'router');
+      addLog('warn', `Online intent unavailable; offline fallback=${offlineFallbackEvidence}`, 'router');
 
       // Offline language handling is fail-closed and may only read current
       // runtime state or prepare a gated action. It never falls through to a
@@ -4698,6 +4716,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
 
       const diagnostic = interpretationResult.diagnostic;
       if (diagnostic) {
+        if (diagnostic.scope === 'authentication') {
+          await refreshUser();
+          setShowLogin(true);
+        }
         const health: DevChatWorkerHealthResult = onlineHealth ?? {
           ok: false,
           route: SOVEREIGN_WORKER_HEALTH,

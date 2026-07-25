@@ -70,38 +70,18 @@ def test_create_request_sends_openai_target_and_no_protected_value(monkeypatch) 
     )
 
 
-def test_create_request_allows_litellm_provider_target(monkeypatch) -> None:
+def test_create_request_rejects_retired_litellm_provider_target(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
-    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
-    monkeypatch.setenv("SOVEREIGN_BACKEND_PUBLIC_URL", "https://sovereign-backend.arelorian.de")
-    request_id = "44444444-4444-4444-8444-444444444444"
-    session = FakeSession([
-        FakeResponse(201, {
-            "ok": True,
-            "request": {
-                "id": request_id,
-                "targetId": "litellm_provider_key",
-                "status": "pending",
-            },
-        })
-    ])
+    session = FakeSession([])
     client = OwnerInputClient(session=session)
 
-    result = client.create_request(
-        target_id="litellm_provider_key",
-        title="Free-Route Providerzugang",
-        reason="Eine LiteLLM-Free-Route benötigt eine geschützte Owner-Eingabe.",
-    )
-
-    call = session.calls[0]
-    assert call["json"]["targetId"] == "litellm_provider_key"
-    assert call["json"]["fieldLabel"] == "LiteLLM Provider API-Key"
-    assert "protectedValue" not in call["json"]
-    assert result["owner_url"] == (
-        "https://sovereign-backend.arelorian.de/owner-approvals"
-        f"?request_id={request_id}"
-    )
-    assert result["llm_can_receive_protected_value"] is False
+    with pytest.raises(ValueError, match="nicht allowlistet"):
+        client.create_request(
+            target_id="litellm_provider_key",
+            title="Legacy Providerzugang",
+            reason="Der ersetzte LiteLLM-Pfad darf nicht reaktiviert werden.",
+        )
+    assert session.calls == []
 
 
 def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatch) -> None:
@@ -133,37 +113,21 @@ def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatc
     assert result["llm_can_receive_protected_value"] is False
 
 
-def test_activate_provider_route_uses_private_owner_bridge(monkeypatch) -> None:
+def test_generic_provider_activation_is_retired_without_network(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
-    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
-    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
-    request_id = "44444444-4444-4444-8444-444444444444"
-    session = FakeSession([
-        FakeResponse(200, {
-            "ok": True,
-            "status": "ready",
-            "routeId": route_id,
-            "modelId": "sovereign-free-route",
-        })
-    ])
+    session = FakeSession([])
     client = OwnerInputClient(session=session)
 
     result = client.activate_provider_route(
-        route_id=route_id,
-        owner_request_id=request_id,
+        route_id="legacy-route",
+        owner_request_id="44444444-4444-4444-8444-444444444444",
     )
 
-    call = session.calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == (
-        "http://backend:8787/api/internal/llm/provider-deployments/"
-        f"{route_id}/activate"
-    )
-    assert call["headers"]["X-Sovereign-Owner-Request-Key"] == "bridge-key"
-    assert call["json"] == {"ownerRequestId": request_id}
-    assert call["timeout"] == 180
-    assert result["status"] == "ready"
+    assert result["status"] == "RETIRED"
+    assert result["blocker"] == "legacy_litellm_runtime_retired"
+    assert result["replacement"] == "ProviderRuntimeClient.openrouter_activate"
     assert result["protected_values_returned"] is False
+    assert session.calls == []
 
 
 def test_status_returns_metadata_only(monkeypatch) -> None:
@@ -401,30 +365,28 @@ def test_controller_external_event_rejects_secret_before_network(monkeypatch) ->
     assert session.calls == []
 
 
-def test_provider_deployments_are_read_without_protected_values(monkeypatch) -> None:
+def test_openrouter_status_is_read_without_protected_values(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
     session = FakeSession([
         FakeResponse(200, {
-            "ok": True,
-            "status": "PROVIDER_DEPLOYMENTS_READ",
-            "deployments": [{
-                "routeId": "litellm-admin-route-1",
-                "status": "awaiting_owner_input",
-                "keyFingerprintPresent": False,
-            }],
-            "protectedValuesReturned": False,
+            "status": "ready",
+            "routeId": "openrouter-paid-gpt-5-4-mini",
+            "transport": "openrouter",
+            "selectableModels": 7,
+            "secretValuesReturned": False,
         })
     ])
     client = ProviderRuntimeClient(session=session)
 
-    result = client.list_deployments()
+    result = client.openrouter_status()
 
     call = session.calls[0]
     assert call["method"] == "GET"
-    assert call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
+    assert call["url"] == "http://backend:8787/api/internal/llm/openrouter/status"
+    assert result["transport"] == "openrouter"
+    assert result["routeId"] == "openrouter-paid-gpt-5-4-mini"
     assert result["protected_values_returned"] is False
-    assert result["deployments"][0]["routeId"] == "litellm-admin-route-1"
 
 
 def test_freellm_status_discover_and_reconcile_are_secret_free(monkeypatch) -> None:
@@ -496,81 +458,42 @@ def test_freellm_discover_and_reconcile_reject_invalid_source_before_network(mon
     assert session.calls == []
 
 
-def test_provider_activation_accepts_only_route_identity(monkeypatch) -> None:
+def test_openrouter_activation_accepts_only_route_identity(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
-    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
-    request_id = "44444444-4444-4444-8444-444444444444"
+    route_id = "openrouter-paid-gpt-5-4-mini"
     session = FakeSession([
-        FakeResponse(200, {
-            "ok": True,
-            "status": "PROVIDER_DEPLOYMENTS_READ",
-            "deployments": [{
-                "routeId": route_id,
-                "ownerRequestId": request_id,
-                "keyFingerprintPresent": False,
-            }],
-            "protectedValuesReturned": False,
-        }),
         FakeResponse(200, {
             "ok": True,
             "status": "ready",
             "routeId": route_id,
-            "modelId": "sovereign-groq-model",
+            "transport": "openrouter",
         }),
     ])
     client = ProviderRuntimeClient(session=session)
 
     result = client.activate(route_id)
 
-    metadata_call, activation_call = session.calls
-    assert metadata_call["method"] == "GET"
-    assert metadata_call["url"] == "http://backend:8787/api/internal/llm/provider-deployments"
+    activation_call = session.calls[0]
     assert activation_call["method"] == "POST"
-    assert activation_call["url"] == (
-        "http://backend:8787/api/internal/llm/provider-deployments/"
-        f"{route_id}/activate"
-    )
-    assert activation_call["json"] == {"ownerRequestId": request_id}
+    assert activation_call["url"] == "http://backend:8787/api/internal/llm/openrouter/activate"
+    assert activation_call["json"] == {"routeId": route_id}
+    assert activation_call["timeout"] == 1200
+    assert result["transport"] == "openrouter"
     assert result["protected_values_returned"] is False
 
 
-def test_litellm_provider_route_activation_compatibility_alias_is_secret_free(monkeypatch) -> None:
-    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
-    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
-    route_id = "litellm-admin-301e7b07f7a4bbcb95b4731b"
-    session = FakeSession([
-        FakeResponse(200, {
-            "ok": True,
-            "status": "ready",
-            "routeId": route_id,
-            "canaryRequestId": "req_123",
-        })
-    ])
-    client = OwnerInputClient(session=session)
-
-    result = client.activate_litellm_provider_route(route_id)
-
-    call = session.calls[0]
-    assert call["method"] == "POST"
-    assert call["url"] == (
-        "http://backend:8787/api/internal/llm/provider-deployments/"
-        f"{route_id}/activate"
-    )
-    assert call["json"] is None
-    assert call["timeout"] == 1200
-    assert result["status"] == "ready"
-    assert result["protected_values_returned"] is False
-    assert result["secret_argument_accepted"] is False
-
-
-def test_litellm_provider_route_activation_compatibility_alias_rejects_invalid_route(monkeypatch) -> None:
+def test_litellm_provider_route_activation_alias_is_retired_without_network(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     session = FakeSession([])
     client = OwnerInputClient(session=session)
 
-    with pytest.raises(ValueError, match="route_id ist ungültig"):
-        client.activate_litellm_provider_route("../../etc/passwd")
+    result = client.activate_litellm_provider_route("../../etc/passwd")
+
+    assert result["status"] == "RETIRED"
+    assert result["blocker"] == "legacy_litellm_runtime_retired"
+    assert result["replacement"] == "openrouter_provider_activate"
+    assert result["secret_argument_accepted"] is False
     assert session.calls == []
 
 

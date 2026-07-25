@@ -5,12 +5,17 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { toolchainClient, type ToolDefinition, type ToolResult } from './toolchainClient';
+import {
+  ToolchainRequestError,
+  toolchainClient,
+  type ToolDefinition,
+  type ToolResult,
+} from './toolchainClient';
 
 export interface UseToolchainResult {
   tools: ToolDefinition[];
   loading: boolean;
-  error: string | null;
+  error: ToolchainRequestError | null;
   serverOnline: boolean;
   invoke: (name: string, args: Record<string, unknown>) => Promise<ToolResult>;
   lastResult: ToolResult | null;
@@ -21,7 +26,7 @@ export interface UseToolchainResult {
 export function useToolchain(): UseToolchainResult {
   const [tools,        setTools]       = useState<ToolDefinition[]>([]);
   const [loading,      setLoading]     = useState(true);
-  const [error,        setError]       = useState<string | null>(null);
+  const [error,        setError]       = useState<ToolchainRequestError | null>(null);
   const [serverOnline, setOnline]      = useState(false);
   const [lastResult,   setLastResult]  = useState<ToolResult | null>(null);
   const [invoking,     setInvoking]    = useState(false);
@@ -41,7 +46,12 @@ export function useToolchain(): UseToolchainResult {
       })
       .catch(err => {
         if (cancelled) return;
-        setError(String(err));
+        setError(err instanceof ToolchainRequestError
+          ? err
+          : new ToolchainRequestError(
+              err instanceof Error ? err.message : String(err),
+              'network',
+            ));
         setOnline(false);
         setLoading(false);
       });

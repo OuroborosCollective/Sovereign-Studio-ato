@@ -45,7 +45,11 @@ def _bounded(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
 
 
 class LiteLLMStackRuntime:
-    """Deploy exactly one fixed Sovereign LiteLLM stack without generic shell access."""
+    """Retired compatibility shell. Productive transport is direct OpenRouter/FreeLLM."""
+
+    RETIRED = True
+    RETIREMENT_BLOCKER = "legacy_litellm_runtime_retired"
+    REPLACEMENT = "direct-openrouter-paid-and-direct-freellm-free"
 
     def __init__(
         self,
@@ -54,17 +58,9 @@ class LiteLLMStackRuntime:
         template_root: str | None = None,
         deploy_root: str | None = None,
     ) -> None:
-        self._runner = runner or subprocess.run
-        self.template_root = Path(
-            template_root
-            or os.getenv(
-                "SOVEREIGN_LITELLM_TEMPLATE_ROOT",
-                "/opt/sovereign-chatgpt-tools/templates/sovereign-litellm",
-            )
-        )
-        self.deploy_root = Path(
-            deploy_root
-            or os.getenv("SOVEREIGN_LITELLM_DEPLOY_ROOT", "/opt/sovereign-litellm")
+        del runner, template_root, deploy_root
+        raise RuntimeError(
+            f"{self.RETIREMENT_BLOCKER}: use {self.REPLACEMENT}"
         )
 
     def _run(self, argv: list[str], timeout: int = 120) -> dict[str, Any]:

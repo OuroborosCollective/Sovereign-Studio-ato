@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from litellm_stack import LiteLLMStackRuntime
+LEGACY_LITELLM_REPLACEMENT = "direct-openrouter-paid-and-direct-freellm-free"
 
 
 PATCHMON_REDIS_UID = 999
@@ -97,17 +97,6 @@ class ManagedStack:
 
 
 STACKS: dict[str, ManagedStack] = {
-    "sovereign-litellm": ManagedStack(
-        stack_id="sovereign-litellm",
-        project_name="sovereign-litellm",
-        anchor_container="sovereign-litellm-litellm-1",
-        expected_containers=("sovereign-litellm-litellm-1", "sovereign-litellm-db-1"),
-        allowed_services=("litellm", "db"),
-        deploy_root="/opt/sovereign-litellm",
-        template_name="sovereign-litellm",
-        allowed_networks=("sovereign-private",),
-        allowed_bind_roots=("/opt/sovereign-litellm",),
-    ),
     "sovereign-backend": ManagedStack(
         stack_id="sovereign-backend",
         project_name="sovereign-backend",
@@ -259,11 +248,6 @@ class ManagedComposeRuntime:
         self.template_root = Path(
             template_root
             or os.getenv("SOVEREIGN_COMPOSE_TEMPLATE_ROOT", "/opt/sovereign-chatgpt-tools/templates")
-        )
-        self.litellm = LiteLLMStackRuntime(
-            runner=self._runner,
-            template_root=str(self.template_root / "sovereign-litellm"),
-            deploy_root=STACKS["sovereign-litellm"].deploy_root,
         )
 
     def _run(self, argv: list[str], timeout: int = 120) -> dict[str, Any]:
@@ -472,24 +456,6 @@ class ManagedComposeRuntime:
 
     def plan(self, stack_id: str) -> dict[str, Any]:
         stack = self._stack(stack_id)
-        if stack.stack_id == "sovereign-litellm":
-            special = self.litellm.plan()
-            compose_sha = str(special.get("templates", {}).get("docker-compose.yml", {}).get("sha256") or "")
-            config_sha = str(special.get("templates", {}).get("config.yaml", {}).get("sha256") or "")
-            entrypoint_sha = str(special.get("templates", {}).get("sovereign-entrypoint.py", {}).get("sha256") or "")
-            bundle_sha = (
-                _sha256(f"{compose_sha}:{config_sha}:{entrypoint_sha}".encode("ascii"))
-                if compose_sha and config_sha and entrypoint_sha
-                else ""
-            )
-            return {
-                **special,
-                "stackId": stack.stack_id,
-                "anchor": self._inspect(stack.anchor_container),
-                "templateBundleSha256": bundle_sha,
-                "acceptedInputs": ["stack_id", "confirmation_sha256"],
-                "allowedStacks": sorted(STACKS),
-            }
         files, bundle_sha = self._template_files(stack)
         return {
             "ok": True,
@@ -1944,11 +1910,23 @@ const call = async (names, payload) => {
             "secretValuesReturned": False,
         }
 
+    @staticmethod
+    def _legacy_litellm_retired(operation: str) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "status": "RETIRED",
+            "blocker": "legacy_litellm_runtime_retired",
+            "operation": operation,
+            "replacement": LEGACY_LITELLM_REPLACEMENT,
+            "runtimeMutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
     def litellm_provider_model_inventory(self) -> dict[str, Any]:
-        return self.litellm.provider_model_inventory()
+        return self._legacy_litellm_retired("provider_model_inventory")
 
     def openai_project_runtime_evidence(self) -> dict[str, Any]:
-        return self.litellm.runtime_access_evidence()
+        return self._legacy_litellm_retired("openai_project_runtime_evidence")
 
     def activate_litellm_model_aliases(
         self,
@@ -1957,11 +1935,8 @@ const call = async (names, payload) => {
         balanced_provider_model: str,
         confirmation_inventory_sha256: str,
     ) -> dict[str, Any]:
-        return self.litellm.activate_model_aliases(
-            fast_provider_model=fast_provider_model,
-            balanced_provider_model=balanced_provider_model,
-            confirmation_inventory_sha256=confirmation_inventory_sha256,
-        )
+        del fast_provider_model, balanced_provider_model, confirmation_inventory_sha256
+        return self._legacy_litellm_retired("activate_model_aliases")
 
     def deploy(self, stack_id: str, confirmation_sha256: str) -> dict[str, Any]:
         stack = self._stack(stack_id)
@@ -1969,24 +1944,6 @@ const call = async (names, payload) => {
             return {"ok": False, "status": "BLOCKED", "blocker": "Private Owner Mode ist nicht aktiv"}
         if os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() != "1":
             return {"ok": False, "status": "BLOCKED", "blocker": "Allowlistete Compose-Writes sind nicht aktiviert"}
-        if stack.stack_id == "sovereign-litellm":
-            special = self.litellm.plan()
-            compose_sha = str(special.get("templates", {}).get("docker-compose.yml", {}).get("sha256") or "")
-            config_sha = str(special.get("templates", {}).get("config.yaml", {}).get("sha256") or "")
-            entrypoint_sha = str(special.get("templates", {}).get("sovereign-entrypoint.py", {}).get("sha256") or "")
-            bundle_sha = (
-                _sha256(f"{compose_sha}:{config_sha}:{entrypoint_sha}".encode("ascii"))
-                if compose_sha and config_sha and entrypoint_sha
-                else ""
-            )
-            if confirmation_sha256 != bundle_sha:
-                return {"ok": False, "status": "BLOCKED", "blocker": "Template-Bundle-Hash stimmt nicht", "expected": bundle_sha}
-            return self.litellm.deploy(
-                confirmation_compose_sha256=compose_sha,
-                confirmation_config_sha256=config_sha,
-                confirmation_entrypoint_sha256=entrypoint_sha,
-            )
-
         files, bundle_sha = self._template_files(stack)
         if not files:
             return {

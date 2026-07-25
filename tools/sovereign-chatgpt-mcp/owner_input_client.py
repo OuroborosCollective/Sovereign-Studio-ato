@@ -35,7 +35,6 @@ OPERATOR_SECRET_MARKERS = (
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
     "openrouter_api_key": "OpenRouter API-Key",
-    "litellm_provider_key": "LiteLLM Provider API-Key",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 
@@ -190,48 +189,23 @@ class OwnerInputClient:
         route_id: str,
         owner_request_id: str,
     ) -> dict[str, Any]:
-        selected_route = str(route_id or "").strip()
-        selected_request = str(owner_request_id or "").strip()
-        if not ROUTE_ID_RE.fullmatch(selected_route):
-            raise ValueError("route_id ist ungültig")
-        if not REQUEST_ID_RE.fullmatch(selected_request):
-            raise ValueError("owner_request_id ist ungültig")
-        try:
-            normalized_request = str(uuid.UUID(selected_request))
-        except ValueError as exc:
-            raise ValueError("owner_request_id ist ungültig") from exc
-        payload = self._request(
-            "POST",
-            (
-                "/api/internal/llm/provider-deployments/"
-                f"{urllib.parse.quote(selected_route, safe='')}/activate"
-            ),
-            json_body={"ownerRequestId": normalized_request},
-            expected=(200, 409, 500, 502),
-            timeout=180,
-        )
+        del route_id, owner_request_id
         return {
-            **payload,
-            "status": str(payload.get("status") or "PROVIDER_ACTIVATION_RESULT"),
-            "routeId": str(payload.get("routeId") or selected_route),
-            "ownerRequestId": normalized_request,
+            "ok": False,
+            "status": "RETIRED",
+            "blocker": "legacy_litellm_runtime_retired",
+            "replacement": "ProviderRuntimeClient.openrouter_activate",
             "protected_values_returned": False,
-            "activation_transport": "private_owner_service_bridge",
+            "activation_transport": "none",
         }
 
     def activate_litellm_provider_route(self, route_id: str) -> dict[str, Any]:
-        selected = str(route_id or "").strip()
-        if not ROUTE_ID_RE.fullmatch(selected):
-            raise ValueError("route_id ist ungültig")
-        payload = self._request(
-            "POST",
-            f"/api/internal/llm/provider-deployments/{selected}/activate",
-            expected=(200, 400, 409, 500, 502, 503),
-            timeout=1200,
-        )
+        del route_id
         return {
-            **payload,
-            "routeId": str(payload.get("routeId") or selected),
+            "ok": False,
+            "status": "RETIRED",
+            "blocker": "legacy_litellm_runtime_retired",
+            "replacement": "openrouter_provider_activate",
             "protected_values_returned": False,
             "secret_argument_accepted": False,
         }
@@ -296,16 +270,43 @@ class ProviderRuntimeClient(OwnerInputClient):
             raise ValueError("route_id ist ungültig")
         return selected
 
-    def list_deployments(self) -> dict[str, Any]:
+    def openrouter_status(self) -> dict[str, Any]:
         payload = self._request(
             "GET",
-            "/api/internal/llm/provider-deployments",
+            "/api/internal/llm/openrouter/status",
             timeout=30,
         )
-        deployments = payload.get("deployments")
         return {
             **payload,
-            "deployments": deployments if isinstance(deployments, list) else [],
+            "routeId": str(payload.get("routeId") or "openrouter-paid-gpt-5-4-mini"),
+            "transport": "openrouter",
+            "protected_values_returned": False,
+        }
+
+    def openrouter_activate(self, route_id: str = "openrouter-paid-gpt-5-4-mini") -> dict[str, Any]:
+        selected = self._route_id(route_id)
+        payload = self._request(
+            "POST",
+            "/api/internal/llm/openrouter/activate",
+            json_body={"routeId": selected},
+            expected=(200, 404, 409, 429, 500, 502, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "routeId": str(payload.get("routeId") or selected),
+            "transport": "openrouter",
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def list_deployments(self) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "status": "RETIRED",
+            "blocker": "legacy_litellm_runtime_retired",
+            "replacement": "openrouter_status",
+            "deployments": [],
             "protected_values_returned": False,
         }
 
@@ -390,29 +391,7 @@ class ProviderRuntimeClient(OwnerInputClient):
         }
 
     def activate(self, route_id: str) -> dict[str, Any]:
-        selected = self._route_id(route_id)
-        deployments = self.list_deployments().get("deployments", [])
-        matching = next(
-            (
-                item for item in deployments
-                if isinstance(item, dict)
-                and str(item.get("routeId") or item.get("route_id") or "").strip() == selected
-            ),
-            None,
-        )
-        if not isinstance(matching, dict):
-            raise RuntimeError("Provider-Route wurde in den Deployment-Metadaten nicht gefunden")
-        owner_request_id = str(
-            matching.get("ownerRequestId")
-            or matching.get("owner_request_id")
-            or ""
-        ).strip()
-        if not owner_request_id:
-            raise RuntimeError("Provider-Route besitzt keine gebundene Owner-Request-ID")
-        return self.activate_provider_route(
-            route_id=selected,
-            owner_request_id=owner_request_id,
-        )
+        return self.openrouter_activate(route_id)
 
 
 class ControllerRuntimeClient(OwnerInputClient):

@@ -1,0 +1,154 @@
+name: Sovereign OpenRouter Activation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_bounded_provider_canary:
+        description: Confirm one bounded direct OpenRouter catalog and completion canary
+        required: true
+        default: false
+        type: boolean
+      expected_backend_revision:
+        description: Exact running backend source revision
+        required: true
+        type: string
+      expected_backend_image_digest:
+        description: Exact running immutable backend image digest
+        required: true
+        type: string
+      expected_mcp_revision:
+        description: Exact running MCP source revision
+        required: true
+        type: string
+      expected_mcp_image_digest:
+        description: Exact running immutable MCP image digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-openrouter-activation
+  cancel-in-progress: false
+
+jobs:
+  activate-openrouter:
+    name: Activate direct OpenRouter with bounded canary
+    if: inputs.confirm_bounded_provider_canary == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      EXPECTED_BACKEND_REVISION: ${{ inputs.expected_backend_revision }}
+      EXPECTED_BACKEND_IMAGE_DIGEST: ${{ inputs.expected_backend_image_digest }}
+      EXPECTED_MCP_REVISION: ${{ inputs.expected_mcp_revision }}
+      EXPECTED_MCP_IMAGE_DIGEST: ${{ inputs.expected_mcp_image_digest }}
+    steps:
+      - name: Validate exact runtime identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = 'refs/heads/main'
+          test -n "${VPS_HOST:-}"
+          test -n "${VPS_USER:-}"
+          test -n "${VPS_PASSWORD:-}"
+          [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]
+          [[ "${EXPECTED_BACKEND_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_BACKEND_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${EXPECTED_MCP_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_MCP_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+      - name: Activate direct provider and verify catalog readback
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 15m
+          envs: SUDO_PASSWORD,EXPECTED_BACKEND_REVISION,EXPECTED_BACKEND_IMAGE_DIGEST,EXPECTED_MCP_REVISION,EXPECTED_MCP_IMAGE_DIGEST
+          script: |
+            set -Eeuo pipefail
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable.' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+
+            BACKEND_IMAGE_ID="$(run_root docker inspect sovereign-backend --format '{{.Image}}')"
+            BACKEND_IMAGE_REFERENCE="$(run_root docker inspect sovereign-backend --format '{{.Config.Image}}')"
+            BACKEND_REVISION="$(run_root docker image inspect "$BACKEND_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            test "$BACKEND_REVISION" = "$EXPECTED_BACKEND_REVISION"
+            test "$BACKEND_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-backend@${EXPECTED_BACKEND_IMAGE_DIGEST}"
+
+            MCP_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            MCP_IMAGE_REFERENCE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}')"
+            MCP_REVISION="$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            test "$MCP_REVISION" = "$EXPECTED_MCP_REVISION"
+            test "$MCP_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp@${EXPECTED_MCP_IMAGE_DIGEST}"
+
+            run_root docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+            import json
+            import server
+
+            route_id = 'openrouter-paid-gpt-5-4-mini'
+            before = server.provider_runtime.openrouter_status()
+            if before.get('secretValuesReturned') is not False:
+                raise SystemExit('OpenRouter status secret boundary failed before activation')
+
+            activation = server.provider_runtime.openrouter_activate(route_id)
+            if activation.get('ok') is not True:
+                raise SystemExit(f"OpenRouter activation failed closed: {activation.get('blocker') or activation.get('status')}")
+            if activation.get('status') != 'ready' or activation.get('transport') != 'openrouter':
+                raise SystemExit('OpenRouter activation response is not ready')
+            if activation.get('secretValuesReturned') is not False:
+                raise SystemExit('OpenRouter activation secret boundary failed')
+            if activation.get('secret_argument_accepted') is not False:
+                raise SystemExit('OpenRouter activation accepted a secret argument')
+
+            after = server.provider_runtime.openrouter_status()
+            selectable = int(after.get('selectableModels') or 0)
+            if after.get('status') != 'ready' or after.get('deploymentStatus') != 'ready':
+                raise SystemExit(f"OpenRouter status readback is not ready: {after.get('status')}")
+            if selectable <= 0:
+                raise SystemExit('OpenRouter catalog readback has no selectable model')
+            if after.get('lastErrorCode') not in (None, ''):
+                raise SystemExit(f"OpenRouter status retained an error: {after.get('lastErrorCode')}")
+            if after.get('secretValuesReturned') is not False:
+                raise SystemExit('OpenRouter status secret boundary failed after activation')
+
+            catalog = activation.get('catalog') if isinstance(activation.get('catalog'), dict) else {}
+            canary = activation.get('canary') if isinstance(activation.get('canary'), dict) else {}
+            summary = {
+                'status': 'OPENROUTER_DIRECT_ACTIVATION_VERIFIED',
+                'routeId': route_id,
+                'transport': 'openrouter',
+                'selectableModels': selectable,
+                'catalogModelCount': int(catalog.get('modelCount') or 0),
+                'defaultModel': str(catalog.get('defaultModel') or ''),
+                'canaryHttpStatus': int(canary.get('httpStatus') or 0),
+                'canaryModelId': str(canary.get('modelId') or ''),
+                'secretValuesReturned': False,
+                'rawResponsePersisted': bool(canary.get('rawResponsePersisted')),
+            }
+            if summary['catalogModelCount'] <= 0 or summary['canaryHttpStatus'] != 200:
+                raise SystemExit(f'OpenRouter activation evidence is incomplete: {summary}')
+            if summary['rawResponsePersisted'] is not False:
+                raise SystemExit('OpenRouter canary persisted a raw response')
+            print(json.dumps(summary, sort_keys=True, separators=(',', ':')))
+            PY

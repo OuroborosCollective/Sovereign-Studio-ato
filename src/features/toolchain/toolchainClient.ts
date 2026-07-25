@@ -4,10 +4,8 @@
  * Alle Aufrufe gehen über den Flask-Backend-Proxy (POST /api/toolchain/universal/invoke),
  * damit der TOOLCHAIN_API_KEY nie im Frontend exponiert wird.
  *
- * Der Toolchain-Server läuft auf dem VPS unter:
- *   https://sovereign-backend.arelorian.de/toolchain/
- *   MCP:  /toolchain/mcp
- *   REST: /toolchain/api/v1/tools/{name}
+ * Die eingebettete Toolchain wird ausschließlich über die registrierten
+ * Backend-Verträge /api/toolchain/universal/{status,manifest,invoke} angesprochen.
  */
 
 export interface ToolDefinition {
@@ -33,20 +31,108 @@ export interface ToolchainManifest {
 export interface ToolchainStatus {
   ok: boolean;
   name: string;
-  rest: string;
-  openapi: string;
-  mcp: string;
+  version?: string;
+  runtime?: string;
+  toolCount?: number;
 }
 
-const BASE = '/api/toolchain/universal';
+export type ToolchainFailureKind =
+  | 'authentication'
+  | 'permission'
+  | 'not_found'
+  | 'invalid_response'
+  | 'client_request'
+  | 'server'
+  | 'network';
+
+export class ToolchainRequestError extends Error {
+  readonly kind: ToolchainFailureKind;
+  readonly status?: number;
+
+  constructor(message: string, kind: ToolchainFailureKind, status?: number) {
+    super(message);
+    this.name = 'ToolchainRequestError';
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+const configuredApiBase = (import.meta.env['VITE_ADMIN_API_BASE'] as string | undefined)?.trim();
+const API_BASE = (configuredApiBase || 'https://sovereign-backend.arelorian.de').replace(/\/$/, '');
+const BASE = `${API_BASE}/api/toolchain/universal`;
+
+export const SOVEREIGN_TOOLCHAIN_ENDPOINTS = {
+  status: `${BASE}/status`,
+  manifest: `${BASE}/manifest`,
+  invoke: `${BASE}/invoke`,
+} as const;
+
+function failureKind(status: number): ToolchainFailureKind {
+  if (status === 401) return 'authentication';
+  if (status === 403) return 'permission';
+  if (status === 404) return 'not_found';
+  if (status >= 500) return 'server';
+  return 'client_request';
+}
+
+function boundedSnippet(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, 240);
+}
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  const data = await res.json() as T & { error?: string };
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+  const url = `${BASE}${path}`;
+  let res: Response;
+  try {
+    const headers = new Headers(options?.headers);
+    headers.set('Accept', 'application/json');
+    if (options?.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers,
+    });
+  } catch (error) {
+    throw new ToolchainRequestError(
+      error instanceof Error ? error.message : 'Toolchain-Netzwerkanfrage fehlgeschlagen.',
+      'network',
+    );
+  }
+
+  const text = await res.text();
+  let data: (T & { error?: string }) | null = null;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text) as T & { error?: string };
+    } catch {
+      const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
+      const htmlResponse = contentType.includes('text/html') || /^\s*</.test(text);
+      const detail = boundedSnippet(text);
+      throw new ToolchainRequestError(
+        htmlResponse
+          ? `Toolchain-Endpunkt lieferte HTML statt JSON${detail ? `: ${detail}` : ''}`
+          : `Toolchain-Endpunkt lieferte ungültiges JSON${detail ? `: ${detail}` : ''}`,
+        'invalid_response',
+        res.status,
+      );
+    }
+  }
+
+  if (!res.ok) {
+    throw new ToolchainRequestError(
+      data?.error || `Toolchain HTTP ${res.status}`,
+      failureKind(res.status),
+      res.status,
+    );
+  }
+  if (!data) {
+    throw new ToolchainRequestError(
+      'Toolchain-Endpunkt lieferte keine JSON-Antwort.',
+      'invalid_response',
+      res.status,
+    );
+  }
   return data;
 }
 

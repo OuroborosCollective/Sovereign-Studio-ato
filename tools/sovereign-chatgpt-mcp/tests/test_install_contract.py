@@ -76,6 +76,27 @@ def test_installer_assigns_workspace_to_container_user_and_probes_write_access()
     assert '.permission-probe' in script
 
 
+def test_patchmon_agent_paths_are_prepared_under_managed_root_before_worker_start() -> None:
+    script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    worker_service = (ROOT / "deploy" / "sovereign-chatgpt-command-worker.service").read_text("utf-8")
+
+    assert 'PATCHMON_AGENT_ROOT="/opt/patchmon-sovereign/agent"' in script
+    assert 'PATCHMON_AGENT_BIN_TARGET="$PATCHMON_AGENT_ROOT/bin/patchmon-agent"' in script
+    assert 'PATCHMON_AGENT_CONFIG_TARGET="$PATCHMON_AGENT_ROOT/etc"' in script
+    assert 'PATCHMON_AGENT_UNIT_TARGET="$PATCHMON_AGENT_ROOT/systemd/patchmon-agent.service"' in script
+    assert 'prepare_patchmon_agent_sandbox_paths()' in script
+    assert 'ln -s "$PATCHMON_AGENT_BIN_TARGET" "$PATCHMON_AGENT_BIN_LINK"' in script
+    assert 'ln -s "$PATCHMON_AGENT_CONFIG_TARGET" "$PATCHMON_AGENT_CONFIG_LINK"' in script
+    assert 'ln -s "$PATCHMON_AGENT_UNIT_TARGET" "$PATCHMON_AGENT_UNIT_LINK"' in script
+    assert 'INSTALL_STAGE="prepare_patchmon_agent_sandbox_paths"' in script
+    assert script.index('prepare_patchmon_agent_sandbox_paths\n') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
+    assert '/opt/patchmon-sovereign' in worker_service
+    assert '/etc/systemd/system/multi-user.target.wants' in worker_service
+    assert '-/usr/local/bin/patchmon-agent' not in worker_service
+    assert '-/etc/patchmon' not in worker_service
+    assert '-/etc/systemd/system/patchmon-agent.service' not in worker_service
+
+
 def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> None:
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
@@ -103,8 +124,12 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "sovereign-backend-image.yml" in script
     assert "SOVEREIGN_MCP_ALLOWED_CONTAINERS" in script
     assert "gpt-browserless" in script
-    assert "sovereign-litellm-litellm-1" in script
-    assert "sovereign-litellm-db-1" in script
+    assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1"' in script
+    required_container_line = next(
+        line for line in script.splitlines() if line.startswith("for REQUIRED_CONTAINER in ")
+    )
+    assert "sovereign-litellm-litellm-1" not in required_container_line
+    assert "sovereign-litellm-db-1" not in required_container_line
     assert "code-server-46bq-code-server-1" in script
     assert "pgbackweb-wq5r-pgbackweb-1" in script
     assert "pgbackweb-wq5r-db-1" in script
@@ -129,7 +154,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'runtime evidence root is not writable and searchable' in script
     assert '/opt/sovereign-owner-managed' in worker_service
     assert '/opt/sovereign-agent-workspaces' in worker_service
-    assert '/opt/sovereign-litellm' in worker_service
+    assert '/opt/sovereign-litellm' not in worker_service
     assert '/opt/sovereign-backend' in worker_service
     assert '/opt/gpt-tools' in worker_service
     assert '/opt/code-server-46bq' in worker_service
@@ -138,10 +163,14 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/milvus-sovereign' in worker_service
     assert '/opt/sovereign-freellmapi' in worker_service
     assert '/opt/sovereign-freellmpool' in worker_service
-    assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' not in script
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
-    assert 'templates/sovereign-litellm' in script
+    assert 'install -m 0640 "$LITELLM_TEMPLATE_SOURCE/' not in script
+    assert 'rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"' in script
+    assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL' in script
+    assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE' in script
     assert 'templates/pgbackweb-wq5r' in script
     assert 'templates/patchmon-sovereign' in script
     assert 'templates/milvus-sovereign' in script
