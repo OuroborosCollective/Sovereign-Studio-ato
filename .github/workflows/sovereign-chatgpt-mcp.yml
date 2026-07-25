@@ -1,13 +1,6 @@
 name: Sovereign ChatGPT MCP
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'tools/sovereign-chatgpt-mcp/**'
-      - 'scripts/sovereign-backend/openrouter_provider_runtime.py'
-      - 'scripts/sovereign-backend/app.py'
-      - '.github/workflows/sovereign-chatgpt-mcp.yml'
   push:
     branches: [main]
     paths:

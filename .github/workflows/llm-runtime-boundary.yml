@@ -1,34 +1,6 @@
 name: LLM Runtime Boundary
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'src/runtime/**'
-      - 'src/features/product/runtime/**'
-      - 'backend/agent_runtime/**'
-      - 'scripts/sovereign-backend/agent_runtime/**'
-      - 'tools/sovereign-chatgpt-mcp/**'
-      - 'config/architecture/llm-tool-boundary-review-ledger.json'
-      - 'scripts/verify_llm_boundary_ledger.py'
-      - 'src/features/product/containers/BuilderContainer.tsx'
-      - 'src/features/product/runtime/devChatWorkerBridge.ts'
-      - 'src/features/product/runtime/sovereignCapabilityTypes.ts'
-      - 'src/features/product/runtime/sovereignCapabilityRouter.ts'
-      - 'src/features/product/runtime/sovereignExecutorRuntime.ts'
-      - 'src/runtime/sovereignExecutorBridgeRuntime.ts'
-      - 'src/runtime/sovereignInternalOperatorRuntime.ts'
-      - 'src/runtime/RuntimeIntelligence.ts'
-      - 'backend/are_inference.py'
-      - 'backend/agent_runtime/pattern_gateway.py'
-      - 'scripts/sovereign-backend/are_inference.py'
-      - 'scripts/sovereign-backend/agent_runtime/pattern_gateway.py'
-      - 'backend/tests/test_agent_pattern_gateway.py'
-      - 'backend/tests/test_are_inference_truth_contract.py'
-      - 'docs/LLM_LANGUAGE_RUNTIME_BOUNDARY.md'
-      - 'scripts/llm-runtime-boundary-gate.mjs'
-      - 'package.json'
-      - '.github/workflows/llm-runtime-boundary.yml'
   push:
     branches: [main]
     paths:
