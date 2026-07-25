@@ -5,19 +5,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "sovereign-pr-review-evidence.yml"
+COORDINATOR = ROOT / ".github" / "workflows" / "supplemental-check-coordinator.yml"
 
 
-def test_review_evidence_workflow_is_head_bound_and_read_first() -> None:
+def test_review_evidence_workflow_is_coordinated_head_bound_and_read_first() -> None:
     workflow = WORKFLOW.read_text("utf-8")
+    coordinator = COORDINATOR.read_text("utf-8")
 
-    assert "pull_request:" in workflow
-    assert "types: [opened, synchronize, reopened, ready_for_review]" in workflow
+    assert "  pull_request:" not in workflow
     assert "workflow_dispatch:" in workflow
     assert "pr_number:" in workflow
     assert "expected_head_sha:" in workflow
     assert "confirm_resolve:" in workflow
     assert "github.event.pull_request.head.sha || inputs.expected_head_sha" in workflow
     assert "github.event_name == 'workflow_dispatch' && inputs.confirm_resolve || false" in workflow
+    assert "workflow_id: 'sovereign-pr-review-evidence.yml'" in coordinator
+    assert "pr_number: String(pull.number)" in coordinator
+    assert "expected_head_sha: headSha" in coordinator
     assert "pull-requests: write" in workflow
     assert "reviewThreads(first:100,after:$cursor)" in workflow
     assert "PR_HEAD_IDENTITY_MISMATCH" in workflow
