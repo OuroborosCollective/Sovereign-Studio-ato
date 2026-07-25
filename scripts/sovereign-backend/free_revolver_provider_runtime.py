@@ -49,6 +49,9 @@ _MANAGED_AUTH_MODE = "managed-bearer"
 _AUTH_MODES = {"bearer", "x-api-key", "none", _MANAGED_AUTH_MODE}
 _MAX_MODELS_RESPONSE_BYTES = 2_000_000
 _KNOWN_KEYLESS_POOL_PROVIDERS = {"ovh", "ovhcloud", "kilo", "llm7"}
+_SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+_IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v1"
 
 
 def _internal_owner_authorized() -> bool:
@@ -381,6 +384,28 @@ def _normalized_provider_cost(value: Any) -> float | None:
     return parsed
 
 
+def _runtime_identity() -> dict[str, Any]:
+    source_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
+    image_digest = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().lower()
+    return {
+        "sourceRevision": source_revision if _SOURCE_REVISION_RE.fullmatch(source_revision) else "unverified",
+        "sourceRevisionVerified": bool(_SOURCE_REVISION_RE.fullmatch(source_revision)),
+        "imageDigest": image_digest if _IMAGE_DIGEST_RE.fullmatch(image_digest) else "unverified",
+        "imageDigestVerified": bool(_IMAGE_DIGEST_RE.fullmatch(image_digest)),
+    }
+
+
+def _canonical_sha256(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 _canary_failure_state = classify_freellm_canary_state
 
 
@@ -473,7 +498,13 @@ def _source_payload(source: dict[str, Any], models: list[dict[str, Any]]) -> dic
             "id": str(model.get("id") or ""),
             "modelId": str(model.get("upstream_model_id") or ""),
             "displayName": str(model.get("display_name") or ""),
-            "litellmAlias": model.get("litellm_alias"),
+            "routeAlias": model.get("litellm_alias"),
+            "routeId": str(model.get("route_id") or "") or None,
+            "runtimeIdentity": model.get("runtime_identity") or {},
+            "canaryReceipt": model.get("canary_receipt") or {},
+            "quotaEvidence": model.get("quota_evidence") or {},
+            "retryEvidence": model.get("retry_evidence") or {},
+            "cooldownEvidence": model.get("cooldown_evidence") or {},
             "capabilities": model.get("capabilities") or [],
             "freeVerified": bool(model.get("free_verified")),
             "pricingSource": str(model.get("pricing_source") or "unverified"),
@@ -776,7 +807,25 @@ def register_free_revolver_provider_runtime(
                 """SELECT id::text, upstream_model_id, display_name, litellm_alias,
                           capabilities, free_verified, pricing_source, pricing_verified_at, status,
                           last_canary_request_id, last_canary_at, canary_cost_state,
-                          last_provider_cost_usd_micros, last_error_code, enabled
+                          last_provider_cost_usd_micros, last_error_code, enabled,
+                          (SELECT route.id::text FROM llm_routes AS route
+                           WHERE route.model_id=llm_revolver_provider_models.litellm_alias
+                           LIMIT 1) AS route_id,
+                          (SELECT route.config->'runtimeIdentity' FROM llm_routes AS route
+                           WHERE route.model_id=llm_revolver_provider_models.litellm_alias
+                           LIMIT 1) AS runtime_identity,
+                          (SELECT route.config->'canaryReceipt' FROM llm_routes AS route
+                           WHERE route.model_id=llm_revolver_provider_models.litellm_alias
+                           LIMIT 1) AS canary_receipt,
+                          (SELECT route.config->'quotaEvidence' FROM llm_routes AS route
+                           WHERE route.model_id=llm_revolver_provider_models.litellm_alias
+                           LIMIT 1) AS quota_evidence,
+                          (SELECT route.config->'retryEvidence' FROM llm_routes AS route
+                           WHERE route.model_id=llm_revolver_provider_models.litellm_alias
+                           LIMIT 1) AS retry_evidence,
+                          (SELECT route.config->'cooldownEvidence' FROM llm_routes AS route
+                           WHERE route.model_id=llm_revolver_provider_models.litellm_alias
+                           LIMIT 1) AS cooldown_evidence
                    FROM llm_revolver_provider_models
                    WHERE source_id=%s::uuid
                    ORDER BY free_verified DESC, display_name ASC""",
@@ -993,6 +1042,81 @@ def register_free_revolver_provider_runtime(
             f"{str(source.get('key_fingerprint') or '')[:12]}:"
             f"{hashlib.sha256(model_id.encode()).hexdigest()[:12]}"
         )
+        runtime_identity = _runtime_identity()
+        if not (
+            runtime_identity["sourceRevisionVerified"]
+            and runtime_identity["imageDigestVerified"]
+        ):
+            return {
+                "ok": False,
+                "alias": alias,
+                "error": "freellm_runtime_identity_unverified",
+                "blocker": "freellm_revision_bound_receipt_required",
+            }
+        confirmation_request_ids = [
+            str(item.get("upstreamRequestId") or "")
+            for item in evidence.get("confirmations") or []
+            if isinstance(item, dict) and str(item.get("upstreamRequestId") or "")
+        ]
+        quota_contract = {
+            "scope": quota_scope,
+            "evidence": "per-model-runtime-cooldown-and-provider-catalog",
+            "executionProfile": "free_single_agent",
+            "maxForegroundAgents": 1,
+            "maxBackgroundAgents": 0,
+        }
+        retry_contract = {
+            "candidateFailuresAreIsolated": True,
+            "globalProviderFailureOnCandidateFailure": False,
+            "retryableFailureFamilies": [
+                "upstream_rate_limited",
+                "upstream_http_timeout",
+                "transport_timeout",
+                "upstream_http_5xx",
+                "transport_request_exception",
+            ],
+        }
+        cooldown_contract = {
+            "scope": quota_scope,
+            "stateOwner": "postgresql-revolver-state",
+            "reactivationRequiresFreshDoubleCanary": True,
+            "failClosedOnDrift": True,
+        }
+        receipt_payload = {
+            "schemaVersion": _FREELLM_RECEIPT_SCHEMA,
+            "routeId": route_id,
+            "sourceId": source_id,
+            "providerEvidence": {
+                "sourceType": evidence.get("sourceType"),
+                "providerId": evidence.get("providerId"),
+                "upstreamKeyless": evidence.get("upstreamKeyless"),
+            },
+            "modelEvidence": {
+                "requestedModel": model_id,
+                "providerModel": evidence.get("providerModel"),
+                "responseModel": evidence.get("responseModel"),
+            },
+            "pricingEvidence": {
+                "pricingSource": model["pricingSource"],
+                "discoveryPayloadSha256": model["payloadSha256"],
+                "canaryCostState": canary_cost_state,
+                "zeroCostContract": (
+                    "explicit-or-managed-zero-cost-contract-plus-"
+                    "noncontradictory-double-canary"
+                ),
+            },
+            "canaryEvidence": {
+                "confirmationCount": int(evidence.get("confirmationCount") or 0),
+                "requestIds": confirmation_request_ids,
+                "rawResponsesPersisted": False,
+            },
+            "quotaEvidence": quota_contract,
+            "retryEvidence": retry_contract,
+            "cooldownEvidence": cooldown_contract,
+            "runtimeIdentity": runtime_identity,
+        }
+        receipt_sha256 = _canonical_sha256(receipt_payload)
+        receipt_id = f"freellm-route:{route_id}:{receipt_sha256[:16]}"
         api_base = str(source["api_base"]).rstrip("/")
         config = {
             "routingOwner": "free-revolver-v3",
@@ -1034,7 +1158,15 @@ def register_free_revolver_provider_runtime(
             "maxBackgroundAgents": 0,
             "repositoryExecutionAllowed": True,
             "quotaScope": quota_scope,
-            "quotaEvidence": "per-model-runtime-cooldown-and-provider-catalog",
+            "quotaEvidence": quota_contract,
+            "retryEvidence": retry_contract,
+            "cooldownEvidence": cooldown_contract,
+            "runtimeIdentity": runtime_identity,
+            "canaryReceipt": {
+                "schemaVersion": _FREELLM_RECEIPT_SCHEMA,
+                "receiptId": receipt_id,
+                "receiptSha256": receipt_sha256,
+            },
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
         }
         connection = get_connection()
@@ -1097,6 +1229,9 @@ def register_free_revolver_provider_runtime(
             "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
             "canaryCostState": canary_cost_state,
+            "runtimeIdentity": runtime_identity,
+            "receiptId": receipt_id,
+            "receiptSha256": receipt_sha256,
         }
 
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>/discover", methods=["POST"])
@@ -1653,6 +1788,9 @@ def register_free_revolver_provider_runtime(
                         "upstreamKeyless": result.get("upstreamKeyless"),
                         "canaryConfirmationCount": result.get("canaryConfirmationCount"),
                         "canaryCostState": result.get("canaryCostState"),
+                        "runtimeIdentity": result.get("runtimeIdentity"),
+                        "receiptId": result.get("receiptId"),
+                        "receiptSha256": result.get("receiptSha256"),
                     })
                     continue
                 model_status, blocker = _canary_failure_state(result)
@@ -1715,6 +1853,16 @@ def register_free_revolver_provider_runtime(
                 free_count=len(ready),
                 evidence={
                     "readyModelIds": [item["modelId"] for item in ready],
+                    "readyReceipts": [
+                        {
+                            "modelId": item["modelId"],
+                            "routeId": item.get("routeId"),
+                            "receiptId": item.get("receiptId"),
+                            "receiptSha256": item.get("receiptSha256"),
+                            "runtimeIdentity": item.get("runtimeIdentity"),
+                        }
+                        for item in ready
+                    ],
                     "deferredModelIds": [item["modelId"] for item in deferred],
                     "blockedModelIds": [item["modelId"] for item in blocked],
                     "transport": "freellm",
@@ -1843,6 +1991,37 @@ def register_free_revolver_provider_runtime(
                 str(source.get("key_fingerprint") or ""),
             )
             managed_source = managed_internal_source_spec(source.get("api_base")) or {}
+            ready_rows = query(
+                """SELECT model.upstream_model_id,
+                          route.id::text AS route_id,
+                          route.config->'runtimeIdentity' AS runtime_identity,
+                          route.config->'canaryReceipt' AS canary_receipt,
+                          route.config->'quotaEvidence' AS quota_evidence,
+                          route.config->'retryEvidence' AS retry_evidence,
+                          route.config->'cooldownEvidence' AS cooldown_evidence,
+                          route.config->'pricingEvidence' AS pricing_evidence
+                   FROM llm_revolver_provider_models AS model
+                   JOIN llm_routes AS route
+                     ON route.model_id=model.litellm_alias
+                    AND route.config->>'revolverProviderSourceId'=%s
+                   WHERE model.source_id=%s::uuid
+                     AND model.status='ready'
+                     AND model.enabled=true
+                     AND route.disabled=false
+                   ORDER BY model.display_name ASC
+                   LIMIT 20""",
+                (str(source.get("id") or ""), str(source.get("id") or "")),
+            ) or []
+            ready_evidence = [{
+                "modelId": str(item.get("upstream_model_id") or ""),
+                "routeId": str(item.get("route_id") or ""),
+                "runtimeIdentity": item.get("runtime_identity") or {},
+                "canaryReceipt": item.get("canary_receipt") or {},
+                "quotaEvidence": item.get("quota_evidence") or {},
+                "retryEvidence": item.get("retry_evidence") or {},
+                "cooldownEvidence": item.get("cooldown_evidence") or {},
+                "pricingEvidence": item.get("pricing_evidence") or {},
+            } for item in ready_rows]
             providers.append({
                 "sourceId": str(source.get("id") or ""),
                 "sourceType": str(managed_source.get("sourceId") or "external-free-provider"),
@@ -1868,11 +2047,13 @@ def register_free_revolver_provider_runtime(
                 "modelCount": int(source.get("model_count") or 0),
                 "freeVerifiedCount": int(source.get("free_verified_count") or 0),
                 "readyCount": int(source.get("ready_count") or 0),
+                "readyEvidence": ready_evidence,
             })
         return jsonify({
             "ok": True,
             "status": "FREELLM_PROVIDER_STATUS",
             "providers": providers,
+            "runtimeIdentity": _runtime_identity(),
             "protectedValuesReturned": False,
         })
 
@@ -2012,6 +2193,9 @@ def register_free_revolver_provider_runtime(
                         "upstreamKeyless": result.get("upstreamKeyless"),
                         "canaryConfirmationCount": result.get("canaryConfirmationCount"),
                         "canaryCostState": result.get("canaryCostState"),
+                        "runtimeIdentity": result.get("runtimeIdentity"),
+                        "receiptId": result.get("receiptId"),
+                        "receiptSha256": result.get("receiptSha256"),
                     })
                     continue
                 model_status, blocker = _canary_failure_state(result)
@@ -2131,6 +2315,16 @@ def register_free_revolver_provider_runtime(
                 free_count=overall_ready_count,
                 evidence={
                     "checkedReadyModelIds": [item["modelId"] for item in ready],
+                    "readyReceipts": [
+                        {
+                            "modelId": item["modelId"],
+                            "routeId": item.get("routeId"),
+                            "receiptId": item.get("receiptId"),
+                            "receiptSha256": item.get("receiptSha256"),
+                            "runtimeIdentity": item.get("runtimeIdentity"),
+                        }
+                        for item in ready
+                    ],
                     "checkedDeferredModelIds": [item["modelId"] for item in deferred],
                     "checkedBlockedModelIds": [item["modelId"] for item in blocked],
                     "overallReadyCount": overall_ready_count,

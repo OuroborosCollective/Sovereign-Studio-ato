@@ -166,7 +166,22 @@ export interface FreeRevolverProviderModel {
   id: string;
   modelId: string;
   displayName: string;
-  litellmAlias: string | null;
+  routeAlias: string | null;
+  routeId: string | null;
+  runtimeIdentity: {
+    sourceRevision?: string;
+    sourceRevisionVerified?: boolean;
+    imageDigest?: string;
+    imageDigestVerified?: boolean;
+  };
+  canaryReceipt: {
+    schemaVersion?: string;
+    receiptId?: string;
+    receiptSha256?: string;
+  };
+  quotaEvidence: Record<string, unknown>;
+  retryEvidence: Record<string, unknown>;
+  cooldownEvidence: Record<string, unknown>;
   capabilities: string[];
   freeVerified: boolean;
   pricingSource: string;

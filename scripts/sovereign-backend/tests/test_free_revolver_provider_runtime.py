@@ -390,6 +390,37 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "free_verified=true, pricing_source=%s" in runtime
     assert '"maxForegroundAgents": 1' in runtime
     assert '"maxBackgroundAgents": 0' in runtime
+    assert "def _runtime_identity()" in runtime
+    assert 'os.getenv("SOVEREIGN_SOURCE_REVISION"' in runtime
+    assert 'os.getenv("SOVEREIGN_IMAGE_DIGEST"' in runtime
+    assert "def _canonical_sha256" in runtime
+    assert '"freellm_revision_bound_receipt_required"' in runtime
+    assert '"schemaVersion": _FREELLM_RECEIPT_SCHEMA' in runtime
+    assert '"receiptSha256": receipt_sha256' in runtime
+    assert '"readyReceipts": [' in runtime
+    assert '"quotaEvidence": quota_contract' in runtime
+    assert '"retryEvidence": retry_contract' in runtime
+    assert '"cooldownEvidence": cooldown_contract' in runtime
+    assert '"candidateFailuresAreIsolated": True' in runtime
+    assert '"reactivationRequiresFreshDoubleCanary": True' in runtime
+
+
+def test_admin_projection_uses_direct_route_terms_and_revision_receipts() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    api_client = (REPO / "src/features/admin/api/adminApiClient.ts").read_text("utf-8")
+    control_center = (
+        REPO / "src/features/admin/components/FreeRevolverControlCenter.tsx"
+    ).read_text("utf-8")
+
+    assert '"routeAlias": model.get("litellm_alias")' in runtime
+    assert '"litellmAlias": model.get("litellm_alias")' not in runtime
+    assert "routeAlias: string | null" in api_client
+    assert "litellmAlias: string | null" not in api_client
+    assert "hasRevisionBoundReceipt" in control_center
+    assert "model.runtimeIdentity.sourceRevisionVerified === true" in control_center
+    assert "model.runtimeIdentity.imageDigestVerified === true" in control_center
+    assert "model.canaryReceipt.receiptSha256" in control_center
+    assert "model.litellmAlias" not in control_center
 
 
 def test_managed_reconcile_prioritizes_ready_routes_and_reports_total_ready_state() -> None:
