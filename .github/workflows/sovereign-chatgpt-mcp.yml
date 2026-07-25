@@ -18,10 +18,15 @@ on:
   workflow_dispatch:
     inputs:
       update_pr_branch:
-        description: Merge the exact current main revision into one sovereign/chatgpt PR branch
+        description: Merge the exact current main revision into one confirmed same-repository PR branch
         required: false
         default: false
         type: boolean
+      target_pr_number:
+        description: Exact open pull request number whose same-repository branch will be updated
+        required: false
+        default: ''
+        type: string
       expected_head_sha:
         description: Exact current PR head SHA before the branch update
         required: false
@@ -53,27 +58,100 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      pull-requests: read
     steps:
+      - name: Resolve exact same-repository PR branch
+        id: resolve
+        uses: actions/github-script@v7
+        env:
+          TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        with:
+          script: |
+            const numberText = String(process.env.TARGET_PR_NUMBER || '').trim();
+            const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+            const expectedBase = String(process.env.EXPECTED_BASE_SHA || '').trim().toLowerCase();
+            if (!/^[1-9][0-9]*$/.test(numberText)) {
+              core.setFailed('TARGET_PR_NUMBER_INVALID');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedHead) || !/^[0-9a-f]{40}$/.test(expectedBase)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            const number = Number(numberText);
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: number,
+            });
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const headRepository = String(pull.head?.repo?.full_name || '');
+            const headRef = String(pull.head?.ref || '');
+            const headSha = String(pull.head?.sha || '').toLowerCase();
+            const baseRef = String(pull.base?.ref || '');
+            const baseSha = String(pull.base?.sha || '').toLowerCase();
+            if (pull.state !== 'open') {
+              core.setFailed('PR_NOT_OPEN');
+              return;
+            }
+            if (baseRef !== 'main') {
+              core.setFailed('PR_BASE_IS_NOT_MAIN');
+              return;
+            }
+            if (headRepository !== repository) {
+              core.setFailed('FORK_PR_UPDATE_FORBIDDEN');
+              return;
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(headRef) || headRef.includes('..')) {
+              core.setFailed('PR_HEAD_REF_INVALID');
+              return;
+            }
+            if (['main', 'master'].includes(headRef.toLowerCase())) {
+              core.setFailed('PROTECTED_PR_HEAD_REF');
+              return;
+            }
+            if (headSha !== expectedHead) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+              return;
+            }
+            if (baseSha !== expectedBase) {
+              core.setFailed('MAIN_REVISION_CHANGED');
+              return;
+            }
+            core.setOutput('target_ref', headRef);
+            core.info(JSON.stringify({
+              status: 'PR_BRANCH_IDENTITY_VERIFIED',
+              prNumber: number,
+              headRef,
+              headSha,
+              baseSha,
+              sameRepository: true,
+              secretValuesReturned: false,
+            }));
+
       - name: Checkout exact PR branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ steps.resolve.outputs.target_ref }}
           fetch-depth: 0
           persist-credentials: true
 
       - name: Merge exact main revision without force-push
         env:
+          TARGET_REF: ${{ steps.resolve.outputs.target_ref }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
           EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          case "${GITHUB_REF_NAME}" in
-            sovereign/chatgpt/*) ;;
-            *) echo "Only sovereign/chatgpt PR branches may be updated: ${GITHUB_REF_NAME}" >&2; exit 1 ;;
-          esac
           [[ "${EXPECTED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${EXPECTED_BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${TARGET_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]
+          [[ "${TARGET_REF}" != *".."* ]]
+          test "${TARGET_REF}" != main
+          test "${TARGET_REF}" != master
           ACTUAL_HEAD_SHA="$(git rev-parse HEAD)"
           test "${ACTUAL_HEAD_SHA}" = "${EXPECTED_HEAD_SHA}"
           git fetch --no-tags origin main
@@ -86,12 +164,14 @@ jobs:
           git config user.name github-actions
           git config user.email github-actions@github.com
           git merge --no-ff --no-edit "${ACTUAL_BASE_SHA}" \
-            -m "Merge confirmed main ${ACTUAL_BASE_SHA} into ${GITHUB_REF_NAME}"
+            -m "Merge confirmed main ${ACTUAL_BASE_SHA} into ${TARGET_REF}"
           git diff --check "${ACTUAL_HEAD_SHA}..HEAD"
           UPDATED_HEAD_SHA="$(git rev-parse HEAD)"
           test "${UPDATED_HEAD_SHA}" != "${ACTUAL_HEAD_SHA}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-          printf 'Updated PR branch: %s -> %s\n' "${ACTUAL_HEAD_SHA}" "${UPDATED_HEAD_SHA}"
+          git push origin "HEAD:${TARGET_REF}"
+          REMOTE_HEAD_SHA="$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')"
+          test "${REMOTE_HEAD_SHA}" = "${UPDATED_HEAD_SHA}"
+          printf 'Updated PR branch: %s -> %s at %s\n' "${ACTUAL_HEAD_SHA}" "${UPDATED_HEAD_SHA}" "${TARGET_REF}"
 
   validate:
     name: Validate MCP operator
