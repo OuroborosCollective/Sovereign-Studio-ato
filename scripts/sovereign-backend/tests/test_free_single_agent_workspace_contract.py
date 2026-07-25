@@ -36,6 +36,9 @@ def test_free_agent_uses_one_isolated_workspace_task_with_write_and_test_tools()
     assert "free_fallback_resolution(" in routes
     assert "paid_provider_429_resolved_to_free_revolver" in routes
     assert "_reuse_received_state=received_state" in routes
+    assert "def _record_route_success(" in routes
+    assert "last_attempt_at=NOW()" in routes
+    assert '"freeRouteRotationRecorded": rotation_recorded' in routes
 
 
 def test_code_server_and_agent_jobs_share_the_same_workspace_root() -> None:

@@ -13,6 +13,7 @@ import math
 import os
 import re
 import stat
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -52,6 +53,8 @@ _KNOWN_KEYLESS_POOL_PROVIDERS = {"ovh", "ovhcloud", "kilo", "llm7"}
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v1"
+_DEFAULT_MIN_READY_ROUTES = 6
+_DEFAULT_RECONCILE_PACE_SECONDS = 0.25
 
 
 def _internal_owner_authorized() -> bool:
@@ -165,6 +168,33 @@ def _cleanup_orphaned_secret_files(query: Callable[..., Any]) -> int:
     return removed
 
 
+def _minimum_ready_routes() -> int:
+    try:
+        value = int(os.getenv("SOVEREIGN_FREELLM_MIN_READY_ROUTES", str(_DEFAULT_MIN_READY_ROUTES)))
+    except ValueError:
+        value = _DEFAULT_MIN_READY_ROUTES
+    return max(6, min(value, 32))
+
+
+def _reconcile_pace_seconds() -> float:
+    try:
+        value = float(os.getenv(
+            "SOVEREIGN_FREELLM_RECONCILE_PACE_SECONDS",
+            str(_DEFAULT_RECONCILE_PACE_SECONDS),
+        ))
+    except ValueError:
+        value = _DEFAULT_RECONCILE_PACE_SECONDS
+    return max(0.0, min(value, 3.0))
+
+
+def _retry_after_seconds(response: Any) -> float:
+    raw = str(response.headers.get("Retry-After") or "").strip()
+    try:
+        return max(0.0, min(float(raw), 300.0))
+    except ValueError:
+        return 0.0
+
+
 def _auth_headers(auth_mode: str, key: str) -> dict[str, str]:
     headers = {"Accept": "application/json", "User-Agent": "sovereign-free-revolver/3"}
     if auth_mode in {"bearer", _MANAGED_AUTH_MODE}:
@@ -190,6 +220,7 @@ def _direct_completion_canary(
         "Content-Type": "application/json",
     }
     status: int | None = None
+    started = time.monotonic()
     try:
         with requests.Session() as provider_session:
             provider_session.trust_env = False
@@ -224,6 +255,8 @@ def _direct_completion_canary(
                         "blocker": "freellm_rate_limited",
                         "httpStatus": status,
                         "failureFamily": "upstream_rate_limited",
+                        "retryAfterSeconds": _retry_after_seconds(response),
+                        "latencyMs": int((time.monotonic() - started) * 1000),
                     }
                 if status in {408, 504}:
                     return {
@@ -287,6 +320,7 @@ def _direct_completion_canary(
                 "upstreamRequestId": generation_id,
                 "providerCostUsd": provider_cost,
                 "httpStatus": status,
+                "latencyMs": int((time.monotonic() - started) * 1000),
                 "transport": "freellm",
                 "sourceType": str(source.get("sourceId") or "external-free-provider"),
                 "providerId": provider_id or None,
@@ -352,6 +386,8 @@ def _confirmed_completion_canary(
                 "httpStatus": result.get("httpStatus"),
                 "failureFamily": result.get("failureFamily"),
                 "requestExceptionType": result.get("requestExceptionType"),
+                "retryAfterSeconds": result.get("retryAfterSeconds"),
+                "latencyMs": result.get("latencyMs"),
             }
         confirmations.append(dict(result.get("evidence") or {}))
     return {
@@ -362,6 +398,10 @@ def _confirmed_completion_canary(
             "upstreamRequestId": confirmations[-1].get("upstreamRequestId"),
             "providerCostUsd": confirmations[-1].get("providerCostUsd"),
             "providerCostsUsd": [item.get("providerCostUsd") for item in confirmations],
+            "latencyMs": max(
+                int(item.get("latencyMs") or 0) for item in confirmations
+            ),
+            "latenciesMs": [int(item.get("latencyMs") or 0) for item in confirmations],
             "sourceType": confirmations[-1].get("sourceType"),
             "providerId": confirmations[-1].get("providerId"),
             "providerModel": confirmations[-1].get("providerModel"),
@@ -1004,6 +1044,8 @@ def register_free_revolver_provider_runtime(
                 "httpStatus": canary.get("httpStatus"),
                 "failureFamily": canary.get("failureFamily"),
                 "requestExceptionType": canary.get("requestExceptionType"),
+                "retryAfterSeconds": canary.get("retryAfterSeconds"),
+                "latencyMs": canary.get("latencyMs"),
             }
         evidence = dict(canary.get("evidence") or {})
         raw_costs = evidence.get("providerCostsUsd")
@@ -1108,6 +1150,8 @@ def register_free_revolver_provider_runtime(
             "canaryEvidence": {
                 "confirmationCount": int(evidence.get("confirmationCount") or 0),
                 "requestIds": confirmation_request_ids,
+                "latencyMs": int(evidence.get("latencyMs") or 0),
+                "latenciesMs": [int(value or 0) for value in evidence.get("latenciesMs") or []],
                 "rawResponsesPersisted": False,
             },
             "quotaEvidence": quota_contract,
@@ -1151,6 +1195,8 @@ def register_free_revolver_provider_runtime(
             },
             "canaryVerified": True,
             "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
+            "canaryLatencyMs": int(evidence.get("latencyMs") or 0),
+            "certificationState": "certified",
             "revolverEligible": True,
             "executionProfile": "free_single_agent",
             "resolverMode": "revolver",
@@ -1227,6 +1273,7 @@ def register_free_revolver_provider_runtime(
             "responseModel": evidence.get("responseModel"),
             "upstreamKeyless": evidence.get("upstreamKeyless"),
             "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
+            "canaryLatencyMs": int(evidence.get("latencyMs") or 0),
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
             "canaryCostState": canary_cost_state,
             "runtimeIdentity": runtime_identity,
@@ -2109,24 +2156,61 @@ def register_free_revolver_provider_runtime(
                 "keyFingerprintPresent": bool(source.get("key_fingerprint")),
                 "protectedValuesReturned": False,
             }), 409
+        runtime_identity = _runtime_identity()
+        target_ready_count = _minimum_ready_routes()
         models = query(
-            """SELECT id::text, upstream_model_id, display_name, litellm_alias,
-                      discovery_payload_sha256, free_verified, pricing_source,
-                      status, enabled
-               FROM llm_revolver_provider_models
-               WHERE source_id=%s::uuid
-                 AND last_seen_at >= NOW() - INTERVAL '24 hours'
-                 AND (
-                     free_verified=true
-                     OR (
-                         free_verified=false
-                         AND pricing_source='provider-pricing-unreported-or-incomplete'
+            """SELECT *
+               FROM (
+                   SELECT model.id::text, model.upstream_model_id,
+                          model.display_name, model.litellm_alias,
+                          model.discovery_payload_sha256, model.free_verified,
+                          model.pricing_source, model.status, model.enabled,
+                          model.last_error_code, model.last_canary_at,
+                          COALESCE(
+                              route.config->'runtimeIdentity'->>'sourceRevision'=%s
+                              AND route.config->'runtimeIdentity'->>'imageDigest'=%s
+                              AND route.config->'runtimeIdentity'->>'sourceRevisionVerified'='true'
+                              AND route.config->'runtimeIdentity'->>'imageDigestVerified'='true'
+                              AND route.config->'canaryReceipt'->>'schemaVersion'=%s
+                              AND route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'
+                              AND route.disabled=false,
+                              false
+                          ) AS receipt_current
+                   FROM llm_revolver_provider_models AS model
+                   LEFT JOIN llm_routes AS route
+                     ON route.model_id=model.litellm_alias
+                    AND route.config->>'revolverProviderSourceId'=%s
+                   WHERE model.source_id=%s::uuid
+                     AND model.last_seen_at >= NOW() - INTERVAL '24 hours'
+                     AND (
+                         model.free_verified=true
+                         OR (
+                             model.free_verified=false
+                             AND model.pricing_source='provider-pricing-unreported-or-incomplete'
+                         )
                      )
-                 )
-               ORDER BY (status='ready' AND enabled=true) DESC,
-                        free_verified DESC, display_name ASC
+               ) AS candidate
+               ORDER BY
+                   CASE
+                       WHEN status='ready' AND enabled=true AND receipt_current=false THEN 0
+                       WHEN status<>'ready' AND last_error_code IS NULL THEN 1
+                       WHEN status<>'ready' AND last_error_code IN (
+                           'freellm_rate_limited','freellm_timeout','freellm_upstream_unavailable'
+                       ) THEN 2
+                       WHEN receipt_current=true THEN 4
+                       ELSE 3
+                   END,
+                   last_canary_at ASC NULLS FIRST,
+                   display_name ASC
                LIMIT %s""",
-            (source_id, max_models),
+            (
+                runtime_identity["sourceRevision"],
+                runtime_identity["imageDigest"],
+                _FREELLM_RECEIPT_SCHEMA,
+                source_id,
+                source_id,
+                max_models,
+            ),
         ) or []
         if not models:
             return jsonify({
@@ -2148,11 +2232,25 @@ def register_free_revolver_provider_runtime(
             reconcile_stage = "model_activation"
             source_payload = dict(source)
             ready = []
+            current_ready = []
             deferred = []
             blocked = []
             for row in models:
                 stored = dict(row)
                 model_id = str(stored.get("upstream_model_id") or "")
+                if (
+                    bool(stored.get("receipt_current"))
+                    and str(stored.get("status") or "") == "ready"
+                    and bool(stored.get("enabled"))
+                ):
+                    current_ready.append({
+                        "modelId": model_id,
+                        "routeAlias": str(stored.get("litellm_alias") or ""),
+                        "receiptCurrent": True,
+                    })
+                    if len(current_ready) + len(ready) >= target_ready_count:
+                        break
+                    continue
                 pricing_source = str(
                     stored.get("pricing_source")
                     or "provider-pricing-unreported-or-incomplete"
@@ -2193,10 +2291,15 @@ def register_free_revolver_provider_runtime(
                         "upstreamKeyless": result.get("upstreamKeyless"),
                         "canaryConfirmationCount": result.get("canaryConfirmationCount"),
                         "canaryCostState": result.get("canaryCostState"),
+                        "canaryLatencyMs": result.get("canaryLatencyMs"),
                         "runtimeIdentity": result.get("runtimeIdentity"),
                         "receiptId": result.get("receiptId"),
                         "receiptSha256": result.get("receiptSha256"),
                     })
+                    if len(current_ready) + len(ready) >= target_ready_count:
+                        break
+                    if _reconcile_pace_seconds() > 0:
+                        time.sleep(_reconcile_pace_seconds())
                     continue
                 model_status, blocker = _canary_failure_state(result)
                 finding = {
@@ -2208,6 +2311,8 @@ def register_free_revolver_provider_runtime(
                     "httpStatus": result.get("httpStatus"),
                     "failureFamily": result.get("failureFamily"),
                     "requestExceptionType": result.get("requestExceptionType"),
+                    "retryAfterSeconds": result.get("retryAfterSeconds"),
+                    "latencyMs": result.get("latencyMs"),
                 }
                 (deferred if model_status == "discovered" else blocked).append(finding)
                 reconcile_stage = "model_state_persistence"
@@ -2229,6 +2334,12 @@ def register_free_revolver_provider_runtime(
                         (alias,),
                         write=True,
                     )
+                delay_seconds = max(
+                    _reconcile_pace_seconds(),
+                    min(float(result.get("retryAfterSeconds") or 0), 3.0),
+                )
+                if delay_seconds > 0:
+                    time.sleep(delay_seconds)
             reconcile_stage = "route_activation_parity"
             query(
                 """UPDATE llm_routes AS route
@@ -2236,6 +2347,12 @@ def register_free_revolver_provider_runtime(
                            model.status='ready'
                            AND model.enabled=true
                            AND model.free_verified=true
+                           AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
+                           AND route.config->'runtimeIdentity'->>'imageDigest'=%s
+                           AND route.config->'runtimeIdentity'->>'sourceRevisionVerified'='true'
+                           AND route.config->'runtimeIdentity'->>'imageDigestVerified'='true'
+                           AND route.config->'canaryReceipt'->>'schemaVersion'=%s
+                           AND route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'
                        ),
                        provider='freellm', runtime_kind='freellm',
                        updated_at=NOW()
@@ -2244,7 +2361,13 @@ def register_free_revolver_provider_runtime(
                      AND model.litellm_alias IS NOT NULL
                      AND route.model_id=model.litellm_alias
                      AND route.config->>'revolverProviderSourceId'=%s""",
-                (source_id, source_id),
+                (
+                    runtime_identity["sourceRevision"],
+                    runtime_identity["imageDigest"],
+                    _FREELLM_RECEIPT_SCHEMA,
+                    source_id,
+                    source_id,
+                ),
                 write=True,
             )
             ready_state = query(
@@ -2254,6 +2377,10 @@ def register_free_revolver_provider_runtime(
                              AND model.enabled=true
                              AND model.free_verified=true
                              AND route.disabled=false
+                             AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
+                             AND route.config->'runtimeIdentity'->>'imageDigest'=%s
+                             AND route.config->'canaryReceipt'->>'schemaVersion'=%s
+                             AND route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'
                        )::int AS ready_count,
                        COUNT(*) FILTER (
                            WHERE model.status='discovered'
@@ -2267,15 +2394,22 @@ def register_free_revolver_provider_runtime(
                      ON route.model_id=model.litellm_alias
                     AND route.config->>'revolverProviderSourceId'=%s
                    WHERE model.source_id=%s::uuid""",
-                (source_id, source_id),
+                (
+                    runtime_identity["sourceRevision"],
+                    runtime_identity["imageDigest"],
+                    _FREELLM_RECEIPT_SCHEMA,
+                    source_id,
+                    source_id,
+                ),
                 one=True,
             ) or {}
             overall_ready_count = int(ready_state.get("ready_count") or 0)
             overall_deferred_count = int(ready_state.get("deferred_count") or 0)
             overall_blocked_count = int(ready_state.get("blocked_count") or 0)
+            minimum_ready_satisfied = overall_ready_count >= target_ready_count
             status = (
                 "healthy"
-                if overall_ready_count > 0 and overall_blocked_count == 0 and overall_deferred_count == 0
+                if minimum_ready_satisfied and overall_blocked_count == 0 and overall_deferred_count == 0
                 else "degraded"
                 if overall_ready_count > 0 or overall_deferred_count > 0
                 else "blocked"
@@ -2315,6 +2449,9 @@ def register_free_revolver_provider_runtime(
                 free_count=overall_ready_count,
                 evidence={
                     "checkedReadyModelIds": [item["modelId"] for item in ready],
+                    "currentReceiptModelIds": [item["modelId"] for item in current_ready],
+                    "minimumReadyRoutes": target_ready_count,
+                    "minimumReadySatisfied": minimum_ready_satisfied,
                     "readyReceipts": [
                         {
                             "modelId": item["modelId"],
@@ -2336,12 +2473,15 @@ def register_free_revolver_provider_runtime(
                 },
             )
             return jsonify({
-                "ok": overall_ready_count > 0,
+                "ok": minimum_ready_satisfied,
                 "status": status,
                 "sourceId": source_id,
                 "keyFingerprintPresent": True,
                 "readyCount": overall_ready_count,
+                "minimumReadyRoutes": target_ready_count,
+                "minimumReadySatisfied": minimum_ready_satisfied,
                 "deferredCount": overall_deferred_count,
+                "currentReady": current_ready,
                 "ready": ready,
                 "deferred": deferred,
                 "blocked": blocked,
@@ -2350,7 +2490,7 @@ def register_free_revolver_provider_runtime(
                 "maxForegroundAgents": 1,
                 "maxBackgroundAgents": 0,
                 "protectedValuesReturned": False,
-            }), 200 if overall_ready_count > 0 else 409
+            }), 200 if minimum_ready_satisfied else 409
         except ManagedKeyContractError as exc:
             query(
                 """UPDATE llm_revolver_provider_sources

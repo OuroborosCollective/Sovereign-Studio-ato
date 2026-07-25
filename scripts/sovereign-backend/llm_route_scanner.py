@@ -25,12 +25,22 @@ from typing import Any, Callable, Iterable
 
 import requests
 
+from free_route_source_contracts import (
+    STRUCTURED_SOURCE_SPECS,
+    TEXT_SOURCE_SPECS,
+    canonical_sha256,
+    explicit_completion_endpoints,
+    independent_source_consensus,
+    parse_mnfst_free_quota_catalog,
+    source_spec_by_fetch_url,
+)
 
-SOURCE_URLS: tuple[str, ...] = (
-    "https://raw.githubusercontent.com/open-free-llm-api/awesome-freellm-apis/main/README.md",
-    "https://raw.githubusercontent.com/cheahjs/free-llm-api-resources/main/README.md",
-    "https://raw.githubusercontent.com/amardeeplakshkar/awesome-free-llm-apis/main/README.md",
-    "https://raw.githubusercontent.com/zukixa/cool-ai-stuff/main/README.md",
+
+SOURCE_URLS: tuple[str, ...] = tuple(
+    str(spec["fetchUrl"]) for spec in TEXT_SOURCE_SPECS
+)
+STRUCTURED_SOURCE_URLS: tuple[str, ...] = tuple(
+    str(spec["fetchUrl"]) for spec in STRUCTURED_SOURCE_SPECS
 )
 
 SEED_ROUTES: tuple[str, ...] = (
@@ -40,12 +50,6 @@ SEED_ROUTES: tuple[str, ...] = (
     "https://qwen.aikit.club/v1/chat/completions",
 )
 
-_FULL_ENDPOINT_RE = re.compile(
-    r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[\w.-]+)*/v1/chat/completions"
-)
-_BASE_ENDPOINT_RE = re.compile(
-    r"https?://[a-zA-Z0-9.-]+(?::\d+)?(?:/[\w.-]+)*/v1(?!/chat/completions)"
-)
 _DENIED_HOST_SUFFIXES = (
     ".local",
     ".localhost",
@@ -57,6 +61,8 @@ _DENIED_PROVIDER_HOSTS = {
     "openai.com",
     "api.anthropic.com",
     "anthropic.com",
+    "openrouter.ai",
+    "api.openrouter.ai",
 }
 _MAX_SOURCE_BYTES = 1_000_000
 _MAX_CANARY_BYTES = 262_144
@@ -65,6 +71,20 @@ _DEFAULT_INITIAL_DELAY_SECONDS = 30
 _DEFAULT_MAX_CANDIDATES = 24
 _DEFAULT_MAX_WORKERS = 4
 _DEFAULT_LEASE_SECONDS = 900
+_SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+_IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_EXTRACTION_POLICY = "explicit-completion-endpoint-only"
+
+
+def _runtime_identity() -> dict[str, Any]:
+    source_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
+    image_digest = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().lower()
+    return {
+        "sourceRevision": source_revision if _SOURCE_REVISION_RE.fullmatch(source_revision) else "unverified",
+        "sourceRevisionVerified": bool(_SOURCE_REVISION_RE.fullmatch(source_revision)),
+        "imageDigest": image_digest if _IMAGE_DIGEST_RE.fullmatch(image_digest) else "unverified",
+        "imageDigestVerified": bool(_IMAGE_DIGEST_RE.fullmatch(image_digest)),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +97,7 @@ class CandidateEvidence:
     failure_family: str
     latency_ms: int
     response_sha256: str
+    free_quota_evidence: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +117,7 @@ class ScanSnapshot:
     failure_family: str = ""
 
     def safe_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "runId": self.run_id,
             "status": self.status,
             "startedEpoch": self.started_epoch,
@@ -109,10 +130,19 @@ class ScanSnapshot:
             "rejectedCount": self.rejected_count,
             "sourceErrors": list(self.source_errors),
             "failureFamily": self.failure_family or None,
+            "extractionPolicy": _EXTRACTION_POLICY,
+            "sentenceDerivedEndpointsAccepted": False,
+            "independentSourceConsensusRequiredForOnboarding": True,
+            "runtimeIdentity": _runtime_identity(),
+            "sourceFetchTransport": "direct-https-bounded",
+            "scrapestackDependency": False,
+            "structuredFetchErrors": True,
             "rawProviderResponsesPersisted": False,
             "userPromptsForwarded": False,
             "automaticRouteActivation": False,
         }
+        payload["evidenceSha256"] = canonical_sha256(payload)
+        return payload
 
 
 def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -224,10 +254,13 @@ class RouteManager:
         persist_snapshot: Callable[[ScanSnapshot], None],
         session_factory: Callable[[], requests.Session] = requests.Session,
         source_urls: Iterable[str] = SOURCE_URLS,
+        structured_source_urls: Iterable[str] = STRUCTURED_SOURCE_URLS,
         seed_routes: Iterable[str] = SEED_ROUTES,
     ) -> None:
         self.source_urls = tuple(source_urls)
+        self.structured_source_urls = tuple(structured_source_urls)
         self.seed_routes = tuple(seed_routes)
+        self._free_quota_evidence_by_route: dict[str, tuple[dict[str, Any], ...]] = {}
         self._acquire_lease = acquire_lease
         self._release_lease = release_lease
         self._persist_snapshot = persist_snapshot
@@ -240,11 +273,8 @@ class RouteManager:
 
     @staticmethod
     def extract_endpoints_from_text(text: str) -> list[str]:
-        found = set(_FULL_ENDPOINT_RE.findall(str(text or "")))
-        for base in _BASE_ENDPOINT_RE.findall(str(text or "")):
-            if "openai.com" not in base.casefold() and "anthropic.com" not in base.casefold():
-                found.add(f"{base.rstrip('/')}/chat/completions")
-        return sorted(found)
+        """Accept only completion endpoints literally present in source text."""
+        return explicit_completion_endpoints(text)
 
     def _source_session(self) -> requests.Session:
         session = self._session_factory()
@@ -254,6 +284,7 @@ class RouteManager:
 
     def fetch_routes_from_sources(self) -> tuple[dict[str, set[str]], list[str], int]:
         routes: dict[str, set[str]] = {}
+        quota_evidence: dict[str, list[dict[str, Any]]] = {}
         rejected = 0
         for route in self.seed_routes:
             try:
@@ -272,26 +303,33 @@ class RouteManager:
                     source_url,
                     headers={
                         "Accept": "text/plain,text/markdown;q=0.9",
-                        "User-Agent": "sovereign-free-route-scanner/1",
+                        "User-Agent": "sovereign-free-route-scanner/2",
                     },
                     timeout=15,
                     allow_redirects=False,
                     stream=True,
                 )
-                if int(response.status_code) != 200:
-                    source_errors.append(f"source_http_{int(response.status_code)}")
+                status = int(response.status_code)
+                if status != 200:
+                    source_errors.append(f"source_http_{status}")
                     continue
                 raw = _read_limited_response(response, _MAX_SOURCE_BYTES)
                 text = raw.decode("utf-8", errors="replace")
+                spec = source_spec_by_fetch_url(source_url) or {}
+                source_identity = str(spec.get("canonicalUrl") or source_url)
                 for endpoint in self.extract_endpoints_from_text(text):
                     try:
                         normalized = _normalize_candidate_endpoint(endpoint)
                     except ValueError:
                         rejected += 1
                         continue
-                    routes.setdefault(normalized, set()).add(source_url)
-            except (OSError, requests.RequestException, ValueError) as exc:
-                source_errors.append(type(exc).__name__[:80])
+                    routes.setdefault(normalized, set()).add(source_identity)
+            except requests.Timeout:
+                source_errors.append("source_transport_timeout")
+            except requests.RequestException:
+                source_errors.append("source_transport_request_failed")
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                source_errors.append(f"source_{type(exc).__name__.lower()}"[:80])
             finally:
                 close_response = getattr(response, "close", None)
                 if callable(close_response):
@@ -299,6 +337,59 @@ class RouteManager:
                 close_session = getattr(session, "close", None)
                 if callable(close_session):
                     close_session()
+
+        for source_url in self.structured_source_urls:
+            session = self._source_session()
+            response = None
+            try:
+                response = session.get(
+                    source_url,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "sovereign-free-route-scanner/2",
+                    },
+                    timeout=15,
+                    allow_redirects=False,
+                    stream=True,
+                )
+                status = int(response.status_code)
+                if status != 200:
+                    source_errors.append(f"structured_source_http_{status}")
+                    continue
+                raw = _read_limited_response(response, _MAX_SOURCE_BYTES)
+                payload = json.loads(raw.decode("utf-8"))
+                spec = source_spec_by_fetch_url(source_url) or {}
+                source_identity = str(spec.get("canonicalUrl") or source_url)
+                parsed, source_rejected = parse_mnfst_free_quota_catalog(
+                    payload,
+                    source_url=source_identity,
+                )
+                rejected += source_rejected
+                for item in parsed:
+                    try:
+                        normalized = _normalize_candidate_endpoint(str(item["endpoint"]))
+                    except ValueError:
+                        rejected += 1
+                        continue
+                    routes.setdefault(normalized, set()).add(source_identity)
+                    quota_evidence.setdefault(normalized, []).append(dict(item["evidence"]))
+            except requests.Timeout:
+                source_errors.append("structured_source_transport_timeout")
+            except requests.RequestException:
+                source_errors.append("structured_source_transport_request_failed")
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                source_errors.append(f"structured_source_{type(exc).__name__.lower()}"[:80])
+            finally:
+                close_response = getattr(response, "close", None)
+                if callable(close_response):
+                    close_response()
+                close_session = getattr(session, "close", None)
+                if callable(close_session):
+                    close_session()
+
+        self._free_quota_evidence_by_route = {
+            route: tuple(items[:16]) for route, items in quota_evidence.items()
+        }
         return routes, source_errors[:32], rejected
 
     def validate_route(self, route_url: str, source_urls: Iterable[str]) -> CandidateEvidence:
@@ -307,6 +398,7 @@ class RouteManager:
         last_status: int | None = None
         try:
             normalized = _normalize_candidate_endpoint(route_url)
+            free_quota_evidence = self._free_quota_evidence_by_route.get(normalized, ())
             host = urllib.parse.urlsplit(normalized).hostname or ""
             _resolve_public_addresses(host)
             confirmations = 0
@@ -355,6 +447,7 @@ class RouteManager:
                             family,
                             int((time.monotonic() - started) * 1000),
                             response_hash,
+                            free_quota_evidence,
                         )
                     raw = _read_limited_response(response, _MAX_CANARY_BYTES)
                     response_hash = hashlib.sha256(raw).hexdigest()
@@ -370,6 +463,7 @@ class RouteManager:
                             "candidate_response_invalid_json",
                             int((time.monotonic() - started) * 1000),
                             response_hash,
+                            free_quota_evidence,
                         )
                     if not _canary_content_valid(payload):
                         return CandidateEvidence(
@@ -381,6 +475,7 @@ class RouteManager:
                             "candidate_response_contract_failed",
                             int((time.monotonic() - started) * 1000),
                             response_hash,
+                            free_quota_evidence,
                         )
                     confirmations += 1
                 finally:
@@ -399,6 +494,7 @@ class RouteManager:
                 "",
                 int((time.monotonic() - started) * 1000),
                 response_hash,
+                free_quota_evidence,
             )
         except requests.Timeout:
             family = "candidate_timeout"
@@ -417,6 +513,7 @@ class RouteManager:
             family,
             int((time.monotonic() - started) * 1000),
             response_hash,
+            self._free_quota_evidence_by_route.get(str(route_url or ""), ()),
         )
 
     def scan_once(self) -> ScanSnapshot:
@@ -434,7 +531,7 @@ class RouteManager:
                 "lease_held",
                 started,
                 int(time.time()),
-                len(self.source_urls),
+                len(self.source_urls) + len(self.structured_source_urls),
                 0,
                 0,
                 0,
@@ -497,7 +594,7 @@ class RouteManager:
                 "completed",
                 started,
                 int(time.time()),
-                len(self.source_urls),
+                len(self.source_urls) + len(self.structured_source_urls),
                 len(source_errors),
                 len(results),
                 sum(item.status == "canary_passed" for item in results),
@@ -514,7 +611,7 @@ class RouteManager:
                 "failed",
                 started,
                 int(time.time()),
-                len(self.source_urls),
+                len(self.source_urls) + len(self.structured_source_urls),
                 0,
                 0,
                 0,
@@ -652,10 +749,11 @@ def register_llm_route_scanner(
                        (route_url, route_sha256, host, source_urls, status,
                         canary_confirmation_count, last_http_status,
                         last_failure_family, last_latency_ms,
-                        last_response_sha256, routing_eligible,
+                        last_response_sha256, free_quota_evidence,
+                        source_consensus, routing_eligible,
                         first_seen_at, last_seen_at, last_checked_at, updated_at)
                    VALUES (
-                       %s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,false,
+                       %s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,false,
                        NOW(),NOW(),NOW(),NOW()
                    )
                    ON CONFLICT (route_url) DO UPDATE SET
@@ -668,6 +766,8 @@ def register_llm_route_scanner(
                        last_failure_family=EXCLUDED.last_failure_family,
                        last_latency_ms=EXCLUDED.last_latency_ms,
                        last_response_sha256=EXCLUDED.last_response_sha256,
+                       free_quota_evidence=EXCLUDED.free_quota_evidence,
+                       source_consensus=EXCLUDED.source_consensus,
                        routing_eligible=false,
                        last_seen_at=NOW(), last_checked_at=NOW(), updated_at=NOW()""",
                 (
@@ -681,9 +781,51 @@ def register_llm_route_scanner(
                     candidate.failure_family or None,
                     candidate.latency_ms,
                     candidate.response_sha256 or None,
+                    json.dumps(list(candidate.free_quota_evidence), ensure_ascii=False),
+                    independent_source_consensus(candidate.source_urls),
                 ),
                 write=True,
             )
+            if (
+                candidate.status == "canary_passed"
+                and candidate.confirmation_count == 2
+                and independent_source_consensus(candidate.source_urls)
+            ):
+                api_base = candidate.route_url.removesuffix("/chat/completions")
+                existing = query(
+                    """SELECT id::text
+                       FROM llm_revolver_provider_sources
+                       WHERE lower(api_base)=lower(%s)
+                       LIMIT 1""",
+                    (api_base,),
+                    one=True,
+                )
+                source_id = str(existing.get("id") or "") if existing else ""
+                if not source_id:
+                    created = query(
+                        """INSERT INTO llm_revolver_provider_sources
+                               (label, api_base, auth_mode, status, enabled)
+                           VALUES (%s,%s,'none','degraded',false)
+                           RETURNING id::text""",
+                        (
+                            f"Scanner-Kandidat · {urllib.parse.urlsplit(api_base).hostname or 'unknown'}"[:120],
+                            api_base,
+                        ),
+                        one=True,
+                        write=True,
+                    ) or {}
+                    source_id = str(created.get("id") or "")
+                if source_id:
+                    query(
+                        """UPDATE llm_route_scanner_candidates
+                           SET promoted_source_id=%s::uuid, updated_at=NOW()
+                           WHERE route_url=%s
+                             AND status='canary_passed'
+                             AND canary_confirmation_count=2
+                             AND source_consensus=true""",
+                        (source_id, candidate.route_url),
+                        write=True,
+                    )
 
     manager = RouteManager(
         acquire_lease=acquire_lease,
@@ -702,7 +844,7 @@ def register_llm_route_scanner(
                       canary_passed_count AS "canaryPassedCount",
                       blocked_count AS "blockedCount",
                       rejected_count AS "rejectedCount",
-                      failure_family AS "failureFamily",
+                      failure_family AS "failureFamily", evidence,
                       started_at AS "startedAt", completed_at AS "completedAt"
                FROM llm_route_scanner_runs
                ORDER BY started_at DESC LIMIT 1""",
@@ -713,7 +855,9 @@ def register_llm_route_scanner(
                    COUNT(*)::int AS total,
                    COUNT(*) FILTER (WHERE status='canary_passed')::int AS canary_passed,
                    COUNT(*) FILTER (WHERE status='blocked')::int AS blocked,
-                   COUNT(*) FILTER (WHERE routing_eligible=true)::int AS routing_eligible
+                   COUNT(*) FILTER (WHERE routing_eligible=true)::int AS routing_eligible,
+                   COUNT(*) FILTER (WHERE source_consensus=true)::int AS source_consensus,
+                   COUNT(*) FILTER (WHERE promoted_source_id IS NOT NULL)::int AS promoted
                FROM llm_route_scanner_candidates""",
             one=True,
         ) or {}
@@ -723,7 +867,10 @@ def register_llm_route_scanner(
                       last_http_status AS "lastHttpStatus",
                       last_failure_family AS "lastFailureFamily",
                       last_latency_ms AS "lastLatencyMs",
+                      free_quota_evidence AS "freeQuotaEvidence",
+                      source_consensus AS "sourceConsensus",
                       routing_eligible AS "routingEligible",
+                      promoted_source_id::text AS "promotedSourceId",
                       last_checked_at AS "lastCheckedAt"
                FROM llm_route_scanner_candidates
                ORDER BY (status='canary_passed') DESC, last_checked_at DESC
@@ -746,9 +893,18 @@ def register_llm_route_scanner(
                 "canaryPassed": int(counts.get("canary_passed") or 0),
                 "blocked": int(counts.get("blocked") or 0),
                 "routingEligible": int(counts.get("routing_eligible") or 0),
+                "sourceConsensus": int(counts.get("source_consensus") or 0),
+                "promotedToDisabledOnboarding": int(counts.get("promoted") or 0),
             },
             "candidates": [dict(row) for row in candidates],
-            "truthBoundary": "candidate-only; FreeLLM/Revolver activation remains separate",
+            "extractionPolicy": _EXTRACTION_POLICY,
+            "sentenceDerivedEndpointsAccepted": False,
+            "openRouterExcluded": True,
+            "pricingFieldsParsed": False,
+            "scrapestackDependency": False,
+            "sourceFetchContract": "direct bounded HTTPS with structured failures",
+            "onboardingRule": "double-canary plus independent-source-consensus creates disabled provider only",
+            "truthBoundary": "candidate evidence may enter disabled FreeLLM onboarding; managed credentials, quota contract, fresh double-canary and revision receipt remain mandatory before routing",
             "userPromptsForwarded": False,
             "rawProviderResponsesReturned": False,
         })

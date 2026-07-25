@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import os
 import sys
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -16,6 +17,12 @@ from llm_execution_resolver import (
     resolve_execution_profile,
 )
 from llm_transport import FREELLM_BASE_URL, OPENROUTER_BASE_URL
+
+
+SOURCE_REVISION = "1" * 40
+IMAGE_DIGEST = "sha256:" + ("2" * 64)
+os.environ["SOVEREIGN_SOURCE_REVISION"] = SOURCE_REVISION
+os.environ["SOVEREIGN_IMAGE_DIGEST"] = IMAGE_DIGEST
 
 
 def route(
@@ -62,6 +69,16 @@ def route(
                 "allow_fallbacks": False,
                 "data_collection": "deny",
             } if not free else {},
+            "runtimeIdentity": {
+                "sourceRevision": SOURCE_REVISION,
+                "sourceRevisionVerified": True,
+                "imageDigest": IMAGE_DIGEST,
+                "imageDigestVerified": True,
+            } if free else {},
+            "canaryReceipt": {
+                "schemaVersion": "sovereign.freellm-route-receipt.v1",
+                "receiptSha256": "3" * 64,
+            } if free else {},
         },
     }
 

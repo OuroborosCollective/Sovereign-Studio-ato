@@ -741,6 +741,47 @@ def _persist_execution_resolution_blocker(
         _close_connection(conn)
 
 
+def _record_route_success(
+    get_connection: ConnectionFactory,
+    *,
+    execution_resolution: Any,
+) -> bool:
+    """Record one successful free scope so later runs rotate least-recently-used."""
+    try:
+        route = dict(execution_resolution.primary_route)
+        scope = route_quota_scope(route)
+        route_id = str(route.get("id") or "")[:240]
+    except (AttributeError, TypeError, ValueError):
+        return False
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO llm_route_revolver_state
+                       (quota_scope, status, consecutive_failures, cooldown_until,
+                        quota_remaining, quota_reset_at, last_route_id,
+                        last_http_status, last_blocker, last_attempt_at, updated_at)
+                   VALUES (%s, 'ready', 0, NULL, NULL, NULL, %s,
+                           200, NULL, NOW(), NOW())
+                   ON CONFLICT (quota_scope) DO UPDATE SET
+                       status='ready', consecutive_failures=0,
+                       cooldown_until=NULL, quota_remaining=NULL,
+                       quota_reset_at=NULL, last_route_id=EXCLUDED.last_route_id,
+                       last_http_status=200, last_blocker=NULL,
+                       last_attempt_at=NOW(), updated_at=NOW()""",
+                (scope, route_id),
+            )
+        conn.commit()
+        return True
+    except Exception:
+        rollback = getattr(conn, "rollback", None)
+        if callable(rollback):
+            rollback()
+        return False
+    finally:
+        _close_connection(conn)
+
+
 def _record_route_cooldown(
     get_connection: ConnectionFactory,
     *,
@@ -1238,6 +1279,14 @@ def start_cognitive_swarm_run(
                 if not single_blocked
                 else "COMPLETE_SINGLE_AGENT_WORKSPACE_EVIDENCE"
             )
+            rotation_recorded = (
+                _record_route_success(
+                    get_connection,
+                    execution_resolution=execution_resolution,
+                )
+                if not single_blocked
+                else False
+            )
             conn = get_connection()
             try:
                 final_state = transition_agent_run(
@@ -1259,6 +1308,7 @@ def start_cognitive_swarm_run(
                             repository_requested and workspace_evidence_ready
                         ),
                         "backgroundAgentsStarted": 0,
+                        "freeRouteRotationRecorded": rotation_recorded,
                         "repositoryTools": repository_summary,
                         "jobEvidence": job_evidence,
                         "rawModelOutputPersisted": False,
@@ -1294,6 +1344,7 @@ def start_cognitive_swarm_run(
                 ),
                 "maxBackgroundAgents": 0,
                 "freeRouteFailoverCount": _free_retry_count,
+                "freeRouteRotationRecorded": rotation_recorded,
                 "autoMerge": False,
             }, 200 if not single_blocked else 503
         except Exception as raw_exc:

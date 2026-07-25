@@ -18,6 +18,8 @@ ROOT = BACKEND.parents[1]
 MODULE = BACKEND / "llm_route_scanner.py"
 APP = BACKEND / "app.py"
 MIGRATION = BACKEND / "migrations" / "036_llm_route_scanner_candidates.sql"
+MIGRATION_40 = BACKEND / "migrations" / "040_llm_route_scanner_free_quota_evidence.sql"
+SOURCE_CONTRACTS = BACKEND / "free_route_source_contracts.py"
 COMPOSE = BACKEND / "docker-compose.yml"
 DEPLOY = ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend"
 ROLLBACK = ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "rollback-sovereign-backend"
@@ -76,18 +78,86 @@ def _manager(session: FakeSession | None = None) -> scanner.RouteManager:
     )
 
 
-def test_extracts_explicit_and_base_completion_endpoints() -> None:
+def test_extracts_only_explicit_completion_endpoints() -> None:
     text = """
     https://free.example.org/v1/chat/completions
-    https://another.example.net/api/v1
+    This sentence mentions https://another.example.net/api/v1 but no completion endpoint.
     https://api.openai.com/v1
     """
 
     found = _manager().extract_endpoints_from_text(text)
 
-    assert "https://free.example.org/v1/chat/completions" in found
-    assert "https://another.example.net/api/v1/chat/completions" in found
-    assert all("openai.com" not in item for item in found)
+    assert found == ["https://free.example.org/v1/chat/completions"]
+    assert "https://another.example.net/api/v1/chat/completions" not in found
+
+
+def test_structured_catalog_keeps_only_permanent_free_quota() -> None:
+    source_url = scanner.STRUCTURED_SOURCE_URLS[0]
+    payload = {
+        "providers": [
+            {
+                "name": "Example Free",
+                "category": "inference_provider",
+                "baseUrl": "https://free.example.org/openai/v1",
+                "description": "Permanent free tier, no credit card required.",
+                "models": [{"id": "model-a", "rateLimit": "30 RPM", "price": 99}],
+                "pricing": {"input": 99},
+            },
+            {
+                "name": "OpenRouter",
+                "category": "inference_provider",
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "description": "Free and paid models.",
+                "models": [{"id": "openrouter/free", "rateLimit": "20 RPM"}],
+            },
+            {
+                "name": "Trial Provider",
+                "category": "provider_api",
+                "baseUrl": "https://trial.example.org/v1",
+                "description": "Free signup credit expires after 30 days.",
+                "models": [{"id": "trial", "rateLimit": "10 RPM"}],
+            },
+        ]
+    }
+    session = FakeSession([FakeResponse(200, payload)])
+    manager = scanner.RouteManager(
+        acquire_lease=lambda _run_id, _lease: True,
+        release_lease=lambda _run_id: None,
+        persist_snapshot=lambda _snapshot: None,
+        session_factory=lambda: session,
+        source_urls=(),
+        structured_source_urls=(source_url,),
+        seed_routes=(),
+    )
+
+    routes, errors, rejected = manager.fetch_routes_from_sources()
+
+    endpoint = "https://free.example.org/openai/v1/chat/completions"
+    assert routes == {
+        endpoint: {
+            "https://github.com/mnfst/awesome-free-llm-apis/blob/main/data.json"
+        }
+    }
+    assert errors == []
+    assert rejected == 2
+    evidence = manager._free_quota_evidence_by_route[endpoint][0]
+    assert evidence["models"] == [{"modelId": "model-a", "rateLimit": "30 RPM"}]
+    assert evidence["freeQuotaOnly"] is True
+    assert evidence["pricingFieldsParsed"] is False
+    assert evidence["costFieldsParsed"] is False
+    assert evidence["openRouterExcluded"] is True
+    assert "pricing" not in evidence
+    assert "cost" not in evidence
+
+
+def test_consensus_deduplicates_readme_and_json_from_same_repository() -> None:
+    readme = "https://github.com/mnfst/awesome-free-llm-apis/blob/main/README.md"
+    data = "https://github.com/mnfst/awesome-free-llm-apis/blob/main/data.json"
+    other = "https://github.com/AnonymoDGH/ultimate-free-llm-resources/blob/main/README.md"
+
+    assert scanner.independent_source_consensus([readme, data]) is False
+    assert scanner.independent_source_consensus([readme, other]) is True
+    assert scanner.independent_source_consensus(["seed", readme]) is True
 
 
 def test_candidate_normalization_blocks_http_private_hosts_and_nonstandard_ports() -> None:
@@ -226,6 +296,8 @@ def test_uploaded_fastapi_surface_is_not_reintroduced_into_production() -> None:
 
 def test_scanner_schema_and_deployment_are_candidate_only() -> None:
     migration = MIGRATION.read_text("utf-8")
+    migration_40 = MIGRATION_40.read_text("utf-8")
+    source_contracts = SOURCE_CONTRACTS.read_text("utf-8")
     compose = COMPOSE.read_text("utf-8")
     deploy = DEPLOY.read_text("utf-8")
     rollback = ROLLBACK.read_text("utf-8")
@@ -236,6 +308,14 @@ def test_scanner_schema_and_deployment_are_candidate_only() -> None:
     assert "CREATE TABLE IF NOT EXISTS llm_route_scanner_candidates" in migration
     assert "CHECK (routing_eligible = false)" in migration
     assert "036_llm_route_scanner_candidates.sql" in app
+    assert "040_llm_route_scanner_free_quota_evidence.sql" in app
+    assert "free_quota_evidence" in migration_40
+    assert "source_consensus" in migration_40
+    assert "routing_eligible" not in migration_40 or "No candidate becomes routing eligible" in migration_40
+    assert "https://raw.githubusercontent.com/mnfst/awesome-free-llm-apis/refs/heads/main/README.md" in source_contracts
+    assert "https://raw.githubusercontent.com/AnonymoDGH/ultimate-free-llm-resources/refs/heads/main/README.md" in source_contracts
+    assert '"openrouter.ai"' in source_contracts
+    assert '"pricingFieldsParsed": False' in source_contracts
     assert 'SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED: "1"' in compose
     assert '--env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=0"' in deploy
     assert '--env "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED=1"' in deploy
