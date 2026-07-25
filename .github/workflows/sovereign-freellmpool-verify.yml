@@ -1,18 +1,6 @@
 name: Sovereign FreeLLMPool Upstream Verification
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/sovereign-freellmpool-verify.yml'
-      - 'tools/sovereign-chatgpt-mcp/managed_compose.py'
-      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**'
-      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py'
-      - 'scripts/sovereign-backend/free_revolver_provider_contracts.py'
-      - 'scripts/sovereign-backend/free_revolver_provider_runtime.py'
-      - 'scripts/sovereign-backend/llm_transport.py'
-      - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
-      - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
   push:
     branches: [main]
     paths:

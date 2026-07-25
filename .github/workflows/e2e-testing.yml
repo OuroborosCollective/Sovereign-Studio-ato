@@ -15,20 +15,6 @@ on:
       - 'vite.config.ts'
       - 'capacitor.config.*'
       - '.github/workflows/e2e-testing.yml'
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'android/**'
-      - 'tests/**'
-      - 'e2e/**'
-      - 'playwright.config.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'vite.config.ts'
-      - 'capacitor.config.*'
-      - '.github/workflows/e2e-testing.yml'
   workflow_dispatch:
     inputs:
       live_five_path:

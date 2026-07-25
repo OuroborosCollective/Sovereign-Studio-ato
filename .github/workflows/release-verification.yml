@@ -11,6 +11,8 @@ on:
       - 'config/architecture/SOVEREIGN_RUNTIME_CANARY_MATRIX.v1.json'
       - 'docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md'
       - '.github/workflows/release-verification.yml'
+      - '.github/workflows/supplemental-check-coordinator.yml'
+      - 'scripts/required-gate-priority.contract.test.cjs'
       - 'playwright.config.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -152,6 +154,11 @@ jobs:
         shell: bash
         run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
+      - name: Required Gate Priority Contract Tests
+        id: required_gate_priority
+        shell: bash
+        run: node --test scripts/required-gate-priority.contract.test.cjs
+
       - name: Type Check
         id: type_check
         run: pnpm run type-check
@@ -210,6 +217,7 @@ jobs:
             echo "| Revision Integrity | ${{ steps.revision_integrity.outcome }} |"
             echo "| Canary Matrix Contract | ${{ steps.runtime_canary_contract.outcome }} |"
             echo "| Canary Matrix Tests | ${{ steps.runtime_canary_tests.outcome }} |"
+            echo "| Required Gate Priority Contract | ${{ steps.required_gate_priority.outcome }} |"
             echo "| Canary Release Evidence | ${{ steps.runtime_canary_release.outcome }} |"
             echo "| Type Check | ${{ steps.type_check.outcome }} |"
             echo "| Runtime Unit Tests | ${{ steps.unit_tests.outcome }} |"

@@ -25,6 +25,7 @@ concurrency:
 jobs:
   compile-check:
     name: Compile Check
+    needs: agent-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository

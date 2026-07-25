@@ -1,0 +1,320 @@
+name: Sovereign Supplemental Check Coordinator
+
+on:
+  workflow_run:
+    workflows:
+      - Release Verification
+      - Sovereign Agent Backend
+    types: [completed]
+
+permissions:
+  actions: write
+  checks: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: supplemental-checks-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch-after-required:
+    name: Dispatch supplemental checks after required gates
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify both required gates and dispatch supplemental workflows
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const requiredWorkflowNames = [
+              'Release Verification',
+              'Sovereign Agent Backend',
+            ];
+            const dispatchCheckName = 'Supplemental Checks Dispatch';
+            const triggeringRun = context.payload.workflow_run;
+            const headSha = String(triggeringRun.head_sha || '').toLowerCase();
+            if (!/^[0-9a-f]{40}$/.test(headSha)) {
+              core.setFailed('REQUIRED_GATE_HEAD_SHA_INVALID');
+              return;
+            }
+
+            const allRuns = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head_sha: headSha,
+                event: 'pull_request',
+                per_page: 100,
+              },
+            );
+            const latestRequired = new Map();
+            for (const run of allRuns) {
+              if (!requiredWorkflowNames.includes(run.name)) continue;
+              const current = latestRequired.get(run.name);
+              if (!current || Number(run.id) > Number(current.id)) {
+                latestRequired.set(run.name, run);
+              }
+            }
+
+            const missing = requiredWorkflowNames.filter((name) => !latestRequired.has(name));
+            if (missing.length > 0) {
+              core.info(`Waiting for required workflow evidence: ${missing.join(', ')}`);
+              return;
+            }
+            const pending = requiredWorkflowNames.filter((name) => {
+              const run = latestRequired.get(name);
+              return run.status !== 'completed';
+            });
+            if (pending.length > 0) {
+              core.info(`Required workflows still running: ${pending.join(', ')}`);
+              return;
+            }
+
+            const failed = requiredWorkflowNames.filter((name) => {
+              const run = latestRequired.get(name);
+              return run.conclusion !== 'success';
+            });
+
+            const existingChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: headSha,
+                check_name: dispatchCheckName,
+                per_page: 100,
+              },
+              (response) => response.data.check_runs,
+            );
+            if (existingChecks.some((check) => check.status === 'completed' && check.conclusion === 'success')) {
+              core.info('Supplemental workflows were already dispatched for this exact head SHA.');
+              return;
+            }
+
+            if (failed.length > 0) {
+              await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: dispatchCheckName,
+                head_sha: headSha,
+                status: 'completed',
+                conclusion: 'failure',
+                output: {
+                  title: 'Supplemental checks blocked by required gates',
+                  summary: `Failed required workflows: ${failed.join(', ')}`,
+                },
+              });
+              core.setFailed(`REQUIRED_GATES_FAILED: ${failed.join(', ')}`);
+              return;
+            }
+
+            const associatedPulls = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: headSha,
+              per_page: 100,
+            });
+            const pull = associatedPulls.data.find((candidate) => (
+              candidate.state === 'open'
+              && candidate.base?.ref === 'main'
+              && String(candidate.head?.sha || '').toLowerCase() === headSha
+            ));
+            if (!pull) {
+              core.setFailed('OPEN_MAIN_PULL_REQUEST_FOR_HEAD_NOT_FOUND');
+              return;
+            }
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            if (pull.head?.repo?.full_name !== repositoryFullName) {
+              core.setFailed('SUPPLEMENTAL_DISPATCH_REQUIRES_SAME_REPOSITORY_HEAD');
+              return;
+            }
+            const headRef = String(pull.head.ref || '');
+            if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(headRef) || headRef.includes('..')) {
+              core.setFailed('PR_HEAD_REF_INVALID');
+              return;
+            }
+
+            const changedFiles = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pull.number,
+                per_page: 100,
+              },
+              (response) => response.data.map((file) => file.filename),
+            );
+
+            const globToRegExp = (pattern) => {
+              const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+              const withDoubleStar = escaped.replace(/\*\*/g, '__DOUBLE_STAR__');
+              const withSingleStar = withDoubleStar.replace(/\*/g, '[^/]*');
+              return new RegExp(`^${withSingleStar.replace(/__DOUBLE_STAR__/g, '.*')}$`);
+            };
+            const touches = (patterns) => changedFiles.some((file) => (
+              patterns.some((pattern) => globToRegExp(pattern).test(file))
+            ));
+
+            const specs = [
+              {
+                workflow_id: 'sovereign-pr-review-evidence.yml',
+                always: true,
+                inputs: {
+                  pr_number: String(pull.number),
+                  expected_head_sha: headSha,
+                  confirm_resolve: 'false',
+                },
+              },
+              { workflow_id: 'sovereign-validation.yml', always: true },
+              { workflow_id: 'pyrewrinterwurst.yml', always: true },
+              { workflow_id: 'codeql.yml', always: true },
+              { workflow_id: 'hardcode-scan.yml', always: true },
+              { workflow_id: 'sovereign-contract-scan.yml', always: true },
+              {
+                workflow_id: 'android.yml',
+                always: true,
+                inputs: { validation_profile: 'standard' },
+              },
+              {
+                workflow_id: 'e2e-testing.yml',
+                patterns: [
+                  'src/**', 'scripts/**', 'android/**', 'tests/**', 'e2e/**',
+                  'playwright.config.ts', 'package.json', 'pnpm-lock.yaml',
+                  'vite.config.ts', 'capacitor.config.*',
+                  '.github/workflows/e2e-testing.yml',
+                ],
+                inputs: { live_five_path: 'false' },
+              },
+              {
+                workflow_id: 'ci.yml',
+                patterns: [
+                  'src/**', 'backend/**', 'e2e/**', 'tests/**',
+                  'scripts/check-backend-python-runtime.py',
+                  'scripts/sovereign-backend/requirements.txt',
+                  '.github/actions/setup-backend-python/**',
+                  '.github/workflows/ci.yml',
+                ],
+              },
+              {
+                workflow_id: 'sovereign-chatgpt-mcp.yml',
+                patterns: [
+                  'tools/sovereign-chatgpt-mcp/**',
+                  'scripts/sovereign-backend/openrouter_provider_runtime.py',
+                  'scripts/sovereign-backend/app.py',
+                  '.github/workflows/sovereign-chatgpt-mcp.yml',
+                ],
+              },
+              {
+                workflow_id: 'sovereign-freellmpool-verify.yml',
+                patterns: [
+                  '.github/workflows/sovereign-freellmpool-verify.yml',
+                  'tools/sovereign-chatgpt-mcp/managed_compose.py',
+                  'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**',
+                  'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py',
+                  'scripts/sovereign-backend/free_revolver_provider_contracts.py',
+                  'scripts/sovereign-backend/free_revolver_provider_runtime.py',
+                  'scripts/sovereign-backend/llm_transport.py',
+                  'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql',
+                  'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py',
+                ],
+              },
+              {
+                workflow_id: 'sovereign-backend-image.yml',
+                patterns: [
+                  'scripts/sovereign-backend/**', 'tools/sovereign-chatgpt-mcp/**',
+                  'src/features/admin/**', 'src/SovereignAppWrapper.tsx',
+                  'src/main.tsx', 'index.html', 'package.json', 'pnpm-lock.yaml',
+                  'vite.config.ts', '.github/workflows/sovereign-backend-image.yml',
+                ],
+                inputs: { pr_validation: 'true' },
+              },
+              {
+                workflow_id: 'llm-runtime-boundary.yml',
+                patterns: [
+                  'src/runtime/**', 'src/features/product/runtime/**',
+                  'backend/agent_runtime/**', 'scripts/sovereign-backend/agent_runtime/**',
+                  'tools/sovereign-chatgpt-mcp/**',
+                  'config/architecture/llm-tool-boundary-review-ledger.json',
+                  'scripts/verify_llm_boundary_ledger.py',
+                  'src/features/product/containers/BuilderContainer.tsx',
+                  'src/features/product/runtime/devChatWorkerBridge.ts',
+                  'src/features/product/runtime/sovereignCapabilityTypes.ts',
+                  'src/features/product/runtime/sovereignCapabilityRouter.ts',
+                  'src/features/product/runtime/sovereignExecutorRuntime.ts',
+                  'src/runtime/sovereignExecutorBridgeRuntime.ts',
+                  'src/runtime/sovereignInternalOperatorRuntime.ts',
+                  'src/runtime/RuntimeIntelligence.ts',
+                  'backend/are_inference.py', 'backend/agent_runtime/pattern_gateway.py',
+                  'scripts/sovereign-backend/are_inference.py',
+                  'scripts/sovereign-backend/agent_runtime/pattern_gateway.py',
+                  'backend/tests/test_agent_pattern_gateway.py',
+                  'backend/tests/test_are_inference_truth_contract.py',
+                  'docs/LLM_LANGUAGE_RUNTIME_BOUNDARY.md',
+                  'scripts/llm-runtime-boundary-gate.mjs', 'package.json',
+                  '.github/workflows/llm-runtime-boundary.yml',
+                ],
+              },
+            ];
+
+            const marker = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: dispatchCheckName,
+              head_sha: headSha,
+              status: 'in_progress',
+              output: {
+                title: 'Required gates passed',
+                summary: 'Dispatching supplemental checks on the exact PR head revision.',
+              },
+            });
+
+            const dispatched = [];
+            const skipped = [];
+            try {
+              for (const spec of specs) {
+                if (!spec.always && !touches(spec.patterns || [])) {
+                  skipped.push(spec.workflow_id);
+                  continue;
+                }
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: spec.workflow_id,
+                  ref: headRef,
+                  inputs: spec.inputs || {},
+                });
+                dispatched.push(spec.workflow_id);
+              }
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: marker.data.id,
+                status: 'completed',
+                conclusion: 'success',
+                output: {
+                  title: 'Supplemental checks dispatched',
+                  summary: [
+                    `PR: #${pull.number}`,
+                    `Head SHA: ${headSha}`,
+                    `Dispatched: ${dispatched.join(', ') || 'none'}`,
+                    `Skipped by path impact: ${skipped.join(', ') || 'none'}`,
+                  ].join('\n\n'),
+                },
+              });
+            } catch (error) {
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: marker.data.id,
+                status: 'completed',
+                conclusion: 'failure',
+                output: {
+                  title: 'Supplemental dispatch failed',
+                  summary: String(error?.message || error).slice(0, 60000),
+                },
+              });
+              throw error;
+            }

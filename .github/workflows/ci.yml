@@ -14,20 +14,6 @@ on:
     - scripts/sovereign-backend/requirements.txt
     - .github/actions/setup-backend-python/**
     - .github/workflows/ci.yml
-  pull_request:
-    branches:
-    - main
-    - master
-    - develop
-    paths:
-    - src/**
-    - backend/**
-    - e2e/**
-    - tests/**
-    - scripts/check-backend-python-runtime.py
-    - scripts/sovereign-backend/requirements.txt
-    - .github/actions/setup-backend-python/**
-    - .github/workflows/ci.yml
   workflow_dispatch: null
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
