@@ -487,6 +487,12 @@ class BrokerRuntime:
                 body=str(values.get("body") or ""),
                 owner_approved=bool(values.get("owner_approved", False)),
             ),
+            "github_update_pr_branch": lambda values: self.github.update_pr_branch(
+                pr_number=int(values.get("pr_number") or 0),
+                expected_head_sha=str(values.get("expected_head_sha") or ""),
+                expected_base_sha=str(values.get("expected_base_sha") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
             "github_reopen_pr": lambda values: self.github.reopen_pr(
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),

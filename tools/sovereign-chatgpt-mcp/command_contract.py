@@ -13,6 +13,7 @@ MUTATING_ACTIONS = frozenset(
         "github_main_ruleset_apply",
         "github_issue_close",
         "github_update_pr",
+        "github_update_pr_branch",
         "github_reopen_pr",
         "github_close_pr",
         "github_delete_pr_branch",

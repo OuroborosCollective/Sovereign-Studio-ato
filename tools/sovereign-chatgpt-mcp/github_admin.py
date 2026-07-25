@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -940,6 +941,123 @@ class GitHubAdminRuntime:
             "body_updated": bool(clean_body),
             "owner_approved": True,
             "url": str(readback.get("html_url") or payload.get("html_url") or ""),
+        }
+
+    def update_pr_branch(
+        self,
+        *,
+        pr_number: int,
+        expected_head_sha: str,
+        expected_base_sha: str,
+        owner_approved: bool = False,
+    ) -> dict[str, Any]:
+        """Merge the exact current main revision into one exact same-repository PR branch."""
+        blocked = self._require_owner_pr_admin(owner_approved)
+        if blocked:
+            return blocked
+        number = self._pr_number(pr_number)
+        expected_head = str(expected_head_sha or "").strip().lower()
+        expected_base = str(expected_base_sha or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(expected_head):
+            raise ValueError("expected_head_sha muss ein vollständiger Commit-SHA sein")
+        if not COMMIT_SHA_RE.fullmatch(expected_base):
+            raise ValueError("expected_base_sha muss ein vollständiger Commit-SHA sein")
+
+        pull = self._pull(number)
+        head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
+        base = pull.get("base") if isinstance(pull.get("base"), dict) else {}
+        actual_head = str(head.get("sha") or "").strip().lower()
+        actual_base = str(base.get("sha") or "").strip().lower()
+        head_ref = str(head.get("ref") or "").strip()
+        base_ref = str(base.get("ref") or "").strip()
+        head_repository = str((head.get("repo") or {}).get("full_name") or "").strip()
+        if str(pull.get("state") or "") != "open":
+            return {"ok": False, "status": "BLOCKED", "blocker": "Nur ein offener PR darf aktualisiert werden"}
+        if base_ref != "main":
+            return {"ok": False, "status": "BLOCKED", "blocker": "PR zielt nicht auf main"}
+        if head_repository != self.repository:
+            return {"ok": False, "status": "BLOCKED", "blocker": "Fork-PR-Branches werden nicht aktualisiert"}
+        if actual_head != expected_head:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "PR-Head stimmt nicht mit der Bestätigung überein",
+                "actual_head_sha": actual_head,
+                "expected_head_sha": expected_head,
+            }
+        if actual_base != expected_base:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "blocker": "main änderte sich seit der Bestätigung",
+                "actual_base_sha": actual_base,
+                "expected_base_sha": expected_base,
+            }
+        if not head_ref or not REF_RE.fullmatch(head_ref) or ".." in head_ref:
+            raise RuntimeError("GitHub lieferte keinen sicheren PR-Head-Branch")
+
+        comparison = self._request(
+            "GET",
+            f"/repos/{self.repository}/compare/{expected_base}...{expected_head}",
+        )
+        behind_by = int(comparison.get("behind_by") or 0) if isinstance(comparison, dict) else 0
+        if behind_by == 0:
+            return {
+                "ok": True,
+                "status": "ALREADY_CURRENT",
+                "pr_number": number,
+                "head_sha": expected_head,
+                "base_sha": expected_base,
+                "branch": head_ref,
+                "owner_approved": True,
+                "mutationPerformed": False,
+                "readback_verified": True,
+            }
+
+        self._request(
+            "PUT",
+            f"/repos/{self.repository}/pulls/{number}/update-branch",
+            json_body={"expected_head_sha": expected_head},
+            expected=(202,),
+            timeout=60,
+        )
+        readback: dict[str, Any] | None = None
+        for _attempt in range(12):
+            candidate = self._pull(number)
+            candidate_head = str(((candidate.get("head") or {}) if isinstance(candidate, dict) else {}).get("sha") or "").strip().lower()
+            if candidate_head and candidate_head != expected_head:
+                readback = candidate
+                break
+            time.sleep(1)
+        if readback is None:
+            raise RuntimeError("GitHub bestätigte innerhalb des bounded Readbacks keinen neuen PR-Head")
+        new_head = str((readback.get("head") or {}).get("sha") or "").strip().lower()
+        readback_base = str((readback.get("base") or {}).get("sha") or "").strip().lower()
+        readback_ref = str((readback.get("head") or {}).get("ref") or "").strip()
+        readback_repository = str(((readback.get("head") or {}).get("repo") or {}).get("full_name") or "").strip()
+        if (
+            not COMMIT_SHA_RE.fullmatch(new_head)
+            or new_head == expected_head
+            or readback_base != expected_base
+            or readback_ref != head_ref
+            or readback_repository != self.repository
+            or str(readback.get("state") or "") != "open"
+        ):
+            raise RuntimeError("GitHub PR-Readback stimmt nicht mit dem revisionsgebundenen Branch-Update überein")
+        return {
+            "ok": True,
+            "status": "BRANCH_UPDATED",
+            "pr_number": number,
+            "previous_head_sha": expected_head,
+            "head_sha": new_head,
+            "base_sha": expected_base,
+            "branch": head_ref,
+            "behind_by_before": behind_by,
+            "owner_approved": True,
+            "mutationPerformed": True,
+            "readback_verified": True,
+            "force_push_used": False,
+            "url": str(readback.get("html_url") or ""),
         }
 
     def reopen_pr(

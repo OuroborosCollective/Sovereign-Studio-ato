@@ -48,6 +48,7 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
         "repository_main_ruleset_apply",
         "repository_issue_close",
         "repository_update_pr",
+        "repository_update_pr_branch",
         "repository_reopen_pr",
         "repository_close_pr",
         "repository_delete_pr_branch",

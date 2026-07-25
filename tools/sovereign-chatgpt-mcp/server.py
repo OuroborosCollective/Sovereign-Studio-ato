@@ -54,6 +54,7 @@ def _private_admin_capabilities() -> list[str]:
             "repository_main_ruleset_apply",
             "repository_issue_close",
             "repository_update_pr",
+            "repository_update_pr_branch",
             "repository_reopen_pr",
             "repository_close_pr",
             "repository_delete_pr_branch",
@@ -492,6 +493,26 @@ def repository_update_pr(
             "owner_approved": owner_approved,
         },
         timeout=120,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_update_pr_branch(
+    pr_number: int,
+    expected_head_sha: str,
+    expected_base_sha: str,
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Merge one exact current main revision into one exact same-repository PR branch without force-push."""
+    return broker.call(
+        "github_update_pr_branch",
+        {
+            "pr_number": pr_number,
+            "expected_head_sha": expected_head_sha,
+            "expected_base_sha": expected_base_sha,
+            "owner_approved": owner_approved,
+        },
+        timeout=180,
     )
 
 

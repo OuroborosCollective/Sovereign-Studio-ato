@@ -59,6 +59,7 @@ def _pull(
     title: str = "Test PR",
     body: str = "Test body",
     merged_at: str | None = None,
+    base_sha: str = "0" * 40,
 ) -> dict[str, Any]:
     return {
         "number": 7,
@@ -71,7 +72,7 @@ def _pull(
         "mergeable_state": "clean",
         "merged_at": merged_at,
         "head": {"sha": head, "ref": head_ref, "repo": {"full_name": head_repo}},
-        "base": {"ref": base},
+        "base": {"ref": base, "sha": base_sha},
         "html_url": "https://github.com/example/repo/pull/7",
     }
 
@@ -231,6 +232,73 @@ def test_update_pr_requires_exact_head_and_verifies_readback(monkeypatch) -> Non
     assert result["status"] == "UPDATED"
     patch_call = next(call for call in session.calls if call["method"] == "PATCH")
     assert patch_call["json"] == {"title": "Updated title", "body": "Updated body"}
+
+
+def test_update_pr_branch_binds_exact_head_and_base_and_verifies_new_head(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setattr("github_admin.time.sleep", lambda _seconds: None)
+    head = "7" * 40
+    base = "8" * 40
+    updated_head = "9" * 40
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, base_sha=base)),
+                FakeResponse(200, _pull(head, base_sha=base)),
+                FakeResponse(200, _pull(updated_head, base_sha=base)),
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/compare/{base}...{head}"): [
+                FakeResponse(200, {"behind_by": 3, "ahead_by": 1})
+            ],
+            ("PUT", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/update-branch"): [
+                FakeResponse(202, {"message": "Updating pull request branch."})
+            ],
+        },
+    )
+
+    result = runtime.update_pr_branch(
+        pr_number=7,
+        expected_head_sha=head,
+        expected_base_sha=base,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "BRANCH_UPDATED"
+    assert result["previous_head_sha"] == head
+    assert result["head_sha"] == updated_head
+    assert result["base_sha"] == base
+    assert result["behind_by_before"] == 3
+    assert result["force_push_used"] is False
+    update_call = next(call for call in session.calls if call["path"].endswith("/update-branch"))
+    assert update_call["json"] == {"expected_head_sha": head}
+
+
+def test_update_pr_branch_blocks_when_main_revision_changed(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    head = "6" * 40
+    actual_base = "5" * 40
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head, base_sha=actual_base))
+            ],
+        },
+    )
+
+    result = runtime.update_pr_branch(
+        pr_number=7,
+        expected_head_sha=head,
+        expected_base_sha="4" * 40,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["actual_base_sha"] == actual_base
+    assert not any(call["path"].endswith("/update-branch") for call in session.calls)
 
 
 def test_reopen_pr_blocks_merged_and_reopens_closed_unmerged(monkeypatch) -> None:
