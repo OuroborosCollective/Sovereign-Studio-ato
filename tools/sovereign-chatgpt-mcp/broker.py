@@ -19,6 +19,7 @@ from github_admin import GitHubAdminRuntime
 from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
+from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
 from policy import validate_container
 from self_update import SelfUpdateRuntime
@@ -49,6 +50,7 @@ class BrokerRuntime:
         self.github_knowledge = GitHubKnowledgeCanaryRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
+        self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
@@ -497,7 +499,7 @@ class BrokerRuntime:
                 stack_id=str(values.get("stack_id") or ""),
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
             ),
-            "patchmon_tool_inventory": lambda _values: self.patchmon.tool_inventory(),
+            "patchmon_tool_inventory": lambda _values: self.patchmon_fleet.tool_inventory(),
             "patchmon_runtime_inventory": lambda values: self.patchmon.runtime_inventory(
                 include_fleet=bool(values.get("include_fleet", True)),
                 max_fleet_containers=int(values.get("max_fleet_containers") or 100),
@@ -531,6 +533,14 @@ class BrokerRuntime:
                 patch_type=str(values.get("patch_type") or "patch_all"),
                 package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
                 schedule_override=str(values.get("schedule_override") or ""),
+            ),
+            "patchmon_fleet_bootstrap_plan": lambda values: self.patchmon_fleet.bootstrap_plan(
+                friendly_name=str(values.get("friendly_name") or "sovereign-vps"),
+            ),
+            "patchmon_fleet_bootstrap_apply": lambda values: self.patchmon_fleet.bootstrap_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                friendly_name=str(values.get("friendly_name") or "sovereign-vps"),
+                owner_approved=bool(values.get("owner_approved", False)),
             ),
         }
         handler = handlers.get(action)

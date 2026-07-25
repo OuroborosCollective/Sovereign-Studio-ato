@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Annotated, Any
 
 from mcp import types
@@ -269,7 +270,7 @@ mcp = FastMCP(
         "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_architecture_snapshot, repository_architecture_drift_report, repository_architecture_runtime_drift_evidence, repository_mirror_diff_report, repository_endpoint_reference, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Architektur-Snapshot und statischer Drift liefern Kandidaten; repository_architecture_runtime_drift_evidence verbindet Repo-Migrationen ausschließlich mit read-only PostgreSQL-Schema- und Vector-Evidence. Keines dieser Werkzeuge behauptet LLM-Erfolg, mutiert die Datenbank oder erzeugt persisted Hunt-Ergebnisse. Für deterministische Architekturarbeit beginne mit deterministic_tool_inventory und deterministic_architecture_inventory, prüfe danach deterministic_nondeterminism_scan, deterministic_kappa_contract_audit und deterministic_sql_contract_audit. Nutze deterministic_transition_validate und deterministic_replay_verify nur als pure Vorschau ohne Persistenz- oder Laufzeiterfolgsbehauptung; TypeScript/Python-Bitparität erfordert weiterhin unabhängige Ausführung derselben kanonischen Vektoren. Parserfehler können Python-Grammatik-/Versionsdrift oder tatsächlich ungültigen Source bedeuten und müssen gegen die Repository-Zielversion geprüft werden. "
         "Für professionelle Backend- und Systemarchitektur beginne mit backend_engineering_tool_inventory. Nutze backend_architecture_assess für begrenzte statische Evidence, backend_stack_select für eine constraints-basierte Stack-Entscheidung, backend_delivery_plan für einen testgegateden Greenfield- oder Modernisierungsfahrplan und backend_api_security_plan für ein Threat-/Control-/Verifikationsmodell. Nutze repository_revision_resolve vor der Arbeit und erneut nach Merge, Rebase, Update-Branch, Force-Push, Branchwechsel oder Base-Advance; bei Revisionskonflikten muss die Arbeit stoppen. Diese read-only Tools mutieren weder Repository noch Datenbank, führen keinen beliebigen Code aus und behaupten ohne echte Gates weder Runtime-Erfolg noch Compliance. Für autorisierte Implementierung bleiben die vorhandenen Repository-Werkzeuge zuständig. "
         "Für sichere OpenAI-Projektzugänge nutze openai_project_access_plan ausschließlich mit nicht-geheimen Metadaten. Nutze openai_project_access_runtime_evidence für Provider-Identität, Projektzuordnung, direktes OpenRouter-Modellinventar und echte Completion-Canaries. Diese Tools erstellen, lesen, rotieren oder widerrufen keinen OpenAI-Schlüssel und führen keine OpenAI-Admin-Mutation aus. "
-        "Für PatchMon beginne mit patchmon_tool_inventory und patchmon_brain_snapshot. Vertiefe ausschließlich mit patchmon_runtime_inventory, patchmon_database_inventory oder den festen patchmon_query-Views; freies Shell, freies SQL, beliebige HTTP-Ziele und ein Docker-Socket im MCP sind nicht erlaubt. Patch-Aktionen erfordern immer patchmon_patch_action_plan gegen den aktuellen Datenbankzustand und anschließend dessen exakten confirmation_sha256. submit_for_approval führt noch keinen Host-Patch aus; approve_run kann einen echten Patch-Lauf auslösen. PATCHMON_ACTION_ACCEPTED belegt nur die Annahme durch PatchMon, niemals den Abschluss der Patches; prüfe den Lauf danach erneut. Das Root-only PatchMon-Admin-JWT darf weder in Chat noch in Tool-Argumenten erscheinen. "
+        "Für PatchMon beginne mit patchmon_tool_inventory und patchmon_brain_snapshot. Vertiefe ausschließlich mit patchmon_runtime_inventory, patchmon_database_inventory oder den festen patchmon_query-Views; freies Shell, freies SQL, beliebige HTTP-Ziele und ein Docker-Socket im MCP sind nicht erlaubt. Wenn Hosts oder Docker-Inventar fehlen, verwende patchmon_fleet_bootstrap_plan und nach exakter Hash-Bestätigung patchmon_fleet_bootstrap_apply mit ausdrücklicher Owner-Freigabe. Dieser Pfad erstellt bei leerer Installation eine root-only Operator-Identität, konfiguriert ausschließlich den festen Loopback-Server, installiert den offiziellen Agenten und fordert echtes Docker-Inventar an; Secrets werden nie ausgegeben. patchmon_fleet_orchestrator_status verbindet anschließend PatchMon-Evidence mit PR-/Workflow- und Revisionsstatus. Container-Images bleiben ausschließlich im vorhandenen immutablem Deploy-Pfad; PatchMon erhält keine erfundene Container-Revision-Mutation. Patch-Aktionen erfordern immer patchmon_patch_action_plan gegen den aktuellen Datenbankzustand und anschließend dessen exakten confirmation_sha256. submit_for_approval führt noch keinen Host-Patch aus; approve_run kann einen echten Patch-Lauf auslösen. PATCHMON_ACTION_ACCEPTED belegt nur die Annahme durch PatchMon, niemals den Abschluss der Patches; prüfe den Lauf danach erneut. Das Root-only PatchMon-Admin-JWT darf weder in Chat noch in Tool-Argumenten erscheinen. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
         "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
         "Socket-Namespace, Pfadtyp, Rechte, Verbindungsverweigerung, Timeout und Protokollantwort. Wiederhole nicht denselben generischen Fix, solange die vorherige Fehlerfamilie nicht durch ihre "
@@ -1024,6 +1025,117 @@ def patchmon_patch_action_apply(
         },
         timeout=300,
     )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_fleet_bootstrap_plan(friendly_name: str = "sovereign-vps") -> dict[str, Any]:
+    """Plan exact local PatchMon host enrollment, agent installation and Docker inventory collection."""
+    return broker.call(
+        "patchmon_fleet_bootstrap_plan",
+        {"friendly_name": friendly_name},
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def patchmon_fleet_bootstrap_apply(
+    confirmation_sha256: str,
+    friendly_name: str = "sovereign-vps",
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Apply one confirmed local PatchMon fleet bootstrap through the host command queue."""
+    return broker.call(
+        "patchmon_fleet_bootstrap_apply",
+        {
+            "confirmation_sha256": confirmation_sha256,
+            "friendly_name": friendly_name,
+            "owner_approved": owner_approved,
+        },
+        timeout=360,
+    )
+
+
+def _patchmon_workflow_green(payload: Any) -> bool:
+    evidence = payload if isinstance(payload, dict) else {}
+    for key in ("checksGreen", "checks_green", "allChecksGreen", "all_checks_green", "relevantChecksGreenClaimed"):
+        if evidence.get(key) is True:
+            return True
+    checks = evidence.get("checks") if isinstance(evidence.get("checks"), list) else []
+    if not checks:
+        return False
+    allowed = {"success", "successful", "neutral", "skipped"}
+    conclusions = []
+    for item in checks:
+        check = item if isinstance(item, dict) else {}
+        conclusion = str(check.get("conclusion") or check.get("status") or "").strip().lower()
+        conclusions.append(conclusion)
+    return bool(conclusions) and all(item in allowed for item in conclusions)
+
+
+def _patchmon_revision_from_payload(payload: Any) -> str:
+    evidence = payload if isinstance(payload, dict) else {}
+    for key in ("headSha", "head_sha", "prHeadSha", "mergeCommitSha", "merge_commit_sha", "mergedChangeSha"):
+        value = str(evidence.get(key) or "").strip().lower()
+        if re.fullmatch(r"[0-9a-f]{40}", value):
+            return value
+    nested = evidence.get("pullRequest") if isinstance(evidence.get("pullRequest"), dict) else {}
+    return _patchmon_revision_from_payload(nested) if nested else ""
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def patchmon_fleet_orchestrator_status(
+    expected_revision: str = "",
+    pr_number: int = 0,
+    workflow_run_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Bind real PatchMon fleet evidence to current repository workflow and immutable revision status."""
+    revision = str(expected_revision or "").strip().lower()
+    if revision and not re.fullmatch(r"[0-9a-f]{40}", revision):
+        return {"ok": False, "status": "BLOCKED", "blocker": "expected_revision must be a full commit SHA"}
+    patchmon = broker.call("patchmon_brain_snapshot", {"include_fleet": True}, timeout=180)
+    summary_rows = patchmon.get("databaseSummary", {}).get("rows", []) if isinstance(patchmon, dict) else []
+    summary = dict(summary_rows[0]) if summary_rows else {}
+    hosts_active = int(summary.get("hosts_active") or 0)
+    docker_observed = int(summary.get("docker_containers_observed") or 0)
+    host_lane_ready = bool(patchmon.get("ok")) and hosts_active > 0 and docker_observed > 0
+
+    pr_evidence: dict[str, Any] | None = None
+    if int(pr_number or 0) > 0:
+        pr_evidence = broker.call("github_pr_status", {"pr_number": int(pr_number)}, timeout=60)
+    runs = []
+    for run_id in (workflow_run_ids or [])[:20]:
+        if int(run_id) <= 0:
+            continue
+        runs.append(broker.call("github_workflow_run_status", {"run_id": int(run_id)}, timeout=60))
+    workflow_evidence = [item for item in ([pr_evidence] if pr_evidence else []) + runs if isinstance(item, dict)]
+    workflow_green = bool(workflow_evidence) and all(_patchmon_workflow_green(item) for item in workflow_evidence)
+    observed_revision = _patchmon_revision_from_payload(pr_evidence or {})
+    revision_bound = bool(revision and observed_revision and revision == observed_revision)
+    rollout_ready = host_lane_ready and workflow_green and revision_bound
+    return {
+        "ok": rollout_ready,
+        "status": "PATCHMON_FLEET_ORCHESTRATOR_READY" if rollout_ready else "PATCHMON_FLEET_ORCHESTRATOR_GATED",
+        "patchmonLane": {
+            "ready": host_lane_ready,
+            "hostsActive": hosts_active,
+            "dockerContainersObserved": docker_observed,
+            "evidence": patchmon,
+        },
+        "immutableContainerLane": {
+            "owner": "existing_revision_bound_image_deploy_path",
+            "patchMonMutatesContainerRevision": False,
+            "expectedRevision": revision or None,
+            "observedRepositoryRevision": observed_revision or None,
+            "revisionBound": revision_bound,
+            "workflowGreen": workflow_green,
+            "prEvidence": pr_evidence,
+            "workflowRuns": runs,
+        },
+        "rolloutReady": rollout_ready,
+        "mutationPerformed": False,
+        "secretValuesExposed": False,
+        "nextAction": None if rollout_ready else "Resolve the false PatchMon, workflow or revision gate before any staged rollout",
+    }
 
 
 @mcp.tool(annotations=NETWORK_READ)
