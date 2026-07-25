@@ -75,6 +75,10 @@ function isToolchainBootstrapRequest(input: RequestInfo | URL): boolean {
     || url.includes('/api/toolchain/skills/list');
 }
 
+function isGitHubApiRequest(input: RequestInfo | URL): boolean {
+  return requestUrl(input).startsWith('https://api.github.com/');
+}
+
 const TEST_AUTH_USER = {
   id: 'runtime-health-user',
   email: 'runtime-health@example.com',
@@ -175,9 +179,12 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
         : jsonResponse({ choices: [{ message: { content: 'Worker Antwort aus Cloudflare Route.' } }] });
       return normalizeLiteLlmMockResponse(response, userText);
     }
-    const next = queue.shift();
-    if (!next) return jsonResponse({ choices: [{ message: { content: "Worker Antwort aus Cloudflare Route." } }] });
-    return typeof next === "function" ? next() : next;
+    if (isGitHubApiRequest(input)) {
+      const next = queue.shift();
+      if (!next) return jsonResponse({ message: 'Unexpected GitHub API request in test.' }, 500);
+      return typeof next === 'function' ? next() : next;
+    }
+    return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
