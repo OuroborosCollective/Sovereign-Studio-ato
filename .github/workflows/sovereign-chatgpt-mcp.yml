@@ -47,7 +47,7 @@ env:
   CROSS_RUNTIME_PARITY: 'true'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.update_pr_branch == true && format('pr-update-{0}', inputs.target_pr_number) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
