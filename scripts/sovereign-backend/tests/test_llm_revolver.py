@@ -162,6 +162,33 @@ def test_revolver_rotates_least_recently_used_then_uses_latency_tie_break() -> N
     )] == ["fast", "slow", "used"]
 
 
+def test_expired_zero_quota_reenters_lru_order() -> None:
+    now = datetime.now(timezone.utc)
+    expired = route("expired", scope="provider:key-expired", latency_ms=800)
+    recently_used = route("recent", scope="provider:key-recent", latency_ms=20)
+    states = {
+        "provider:key-expired": {
+            "status": "cooldown",
+            "quota_remaining": 0,
+            "quota_limit": 100,
+            "quota_reset_at": now - timedelta(minutes=5),
+            "cooldown_until": now - timedelta(minutes=5),
+            "last_attempt_at": now - timedelta(days=2),
+        },
+        "provider:key-recent": {
+            "status": "ready",
+            "last_attempt_at": now - timedelta(minutes=1),
+        },
+    }
+
+    assert [item["id"] for item in build_revolver_candidates(
+        recently_used,
+        [expired, recently_used],
+        state_by_scope=states,
+        now=now,
+    )] == ["expired", "recent"]
+
+
 def test_revision_or_digest_drift_removes_free_route() -> None:
     current = route("current", scope="provider:key-current")
     stale = route("stale", scope="provider:key-stale")
