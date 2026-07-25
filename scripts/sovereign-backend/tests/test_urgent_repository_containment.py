@@ -56,7 +56,7 @@ def test_backend_is_bound_to_localhost_and_ci_cannot_deploy() -> None:
     compose = (REPO_ROOT / "scripts/sovereign-backend/docker-compose.yml").read_text(
         encoding="utf-8"
     )
-    workflow = (REPO_ROOT / ".github/workflows/sovereign-agent-backend.yml").read_text(
+    workflow = (REPO_ROOT / ".github/workflows/sovereign-agent-supplemental.yml").read_text(
         encoding="utf-8"
     )
     assert '127.0.0.1:8788:8787' in compose

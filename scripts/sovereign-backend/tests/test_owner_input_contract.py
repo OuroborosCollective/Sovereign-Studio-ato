@@ -83,7 +83,7 @@ def test_backend_registers_owner_routes_and_supports_separate_owner_managed_keys
 def test_broker_deploy_keeps_secure_mounts_bounded_and_ci_stays_queue_only() -> None:
     repository_root = ROOT.parent.parent
     deploy = (repository_root / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
-    workflow = (repository_root / ".github" / "workflows" / "sovereign-agent-backend.yml").read_text("utf-8")
+    workflow = (repository_root / ".github" / "workflows" / "sovereign-agent-supplemental.yml").read_text("utf-8")
 
     assert 'OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"' in deploy
     assert 'OWNER_INPUT_CONTAINER_ROOT="/opt/sovereign-owner-managed"' in deploy
