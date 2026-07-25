@@ -425,10 +425,54 @@ LIMIT 1
             self._update_host_credentials(host_id, api_id, api_key)
         return existing
 
+    @staticmethod
+    def _installer_failure_family(result: dict[str, Any]) -> str:
+        combined = "\n".join(
+            (
+                str(result.get("stdout") or ""),
+                str(result.get("stderr") or ""),
+            )
+        ).lower()
+        patterns = (
+            ("read-only file system", "PATCHMON_AGENT_SANDBOX_READ_ONLY"),
+            ("permission denied", "PATCHMON_AGENT_SANDBOX_PERMISSION_DENIED"),
+            ("no space left on device", "PATCHMON_AGENT_STORAGE_EXHAUSTED"),
+            ("failed to validate api credentials or reach server", "PATCHMON_AGENT_CONNECTIVITY_VALIDATION_FAILED"),
+            ("could not resolve host", "PATCHMON_AGENT_DNS_RESOLUTION_FAILED"),
+            ("connection refused", "PATCHMON_AGENT_CONNECTION_REFUSED"),
+            ("systemctl", "PATCHMON_AGENT_SYSTEMD_SETUP_FAILED"),
+        )
+        return next((family for marker, family in patterns if marker in combined), "PATCHMON_AGENT_INSTALL_COMMAND_FAILED")
+
+    def _recover_existing_agent(self, before: dict[str, Any]) -> dict[str, Any] | None:
+        if not before.get("configPresent") or not before.get("binaryPresent"):
+            return None
+        commands = (
+            ["systemctl", "daemon-reload"],
+            ["systemctl", "enable", PATCHMON_AGENT_SERVICE],
+            ["systemctl", "restart", PATCHMON_AGENT_SERVICE],
+        )
+        for argv in commands:
+            result = self.operator._run(argv, timeout=30, output_limit=4_000)
+            if not result.get("ok"):
+                family = self._installer_failure_family(result)
+                raise RuntimeError(f"PATCHMON_AGENT_SERVICE_RECOVERY_FAILED:{family}")
+        deadline = time.monotonic() + 45
+        after = self._agent_state()
+        while after.get("activeState") != "active" and time.monotonic() < deadline:
+            time.sleep(2)
+            after = self._agent_state()
+        if after.get("activeState") != "active":
+            raise RuntimeError("PATCHMON_AGENT_SERVICE_RECOVERY_NOT_ACTIVE")
+        return {"installed": False, "reason": "existing_agent_reactivated", "state": after}
+
     def _install_agent(self, host_id: str) -> dict[str, Any]:
         before = self._agent_state()
         if before.get("activeState") == "active" and before.get("configPresent") and before.get("binaryPresent"):
             return {"installed": False, "reason": "already_active", "state": before}
+        recovered = self._recover_existing_agent(before)
+        if recovered is not None:
+            return recovered
         api_id, api_key = self._host_credentials(host_id)
         if not api_id or not api_key:
             raise RuntimeError("PATCHMON_HOST_INSTALL_CREDENTIALS_MISSING")
@@ -461,7 +505,8 @@ LIMIT 1
             except FileNotFoundError:
                 pass
         if not result.get("ok"):
-            raise RuntimeError("PATCHMON_AGENT_INSTALL_EXECUTION_FAILED")
+            family = self._installer_failure_family(result)
+            raise RuntimeError(f"PATCHMON_AGENT_INSTALL_EXECUTION_FAILED:{family}")
         deadline = time.monotonic() + 45
         after = self._agent_state()
         while after.get("activeState") != "active" and time.monotonic() < deadline:

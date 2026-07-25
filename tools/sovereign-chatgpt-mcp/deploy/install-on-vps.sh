@@ -10,6 +10,13 @@ PGBACKWEB_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/pgbackweb-wq5r"
 PGBACKWEB_TEMPLATE_SOURCE="$SOURCE_DIR/templates/pgbackweb-wq5r"
 PATCHMON_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/patchmon-sovereign"
 PATCHMON_TEMPLATE_SOURCE="$SOURCE_DIR/templates/patchmon-sovereign"
+PATCHMON_AGENT_ROOT="/opt/patchmon-sovereign/agent"
+PATCHMON_AGENT_BIN_TARGET="$PATCHMON_AGENT_ROOT/bin/patchmon-agent"
+PATCHMON_AGENT_CONFIG_TARGET="$PATCHMON_AGENT_ROOT/etc"
+PATCHMON_AGENT_UNIT_TARGET="$PATCHMON_AGENT_ROOT/systemd/patchmon-agent.service"
+PATCHMON_AGENT_BIN_LINK="/usr/local/bin/patchmon-agent"
+PATCHMON_AGENT_CONFIG_LINK="/etc/patchmon"
+PATCHMON_AGENT_UNIT_LINK="/etc/systemd/system/patchmon-agent.service"
 CODE_SERVER_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/code-server-46bq"
 CODE_SERVER_TEMPLATE_SOURCE="$SOURCE_DIR/templates/code-server-46bq"
 MILVUS_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/milvus-sovereign"
@@ -59,6 +66,45 @@ PREVIOUS_MCP_IMAGE_DIGEST=""
 fail() {
   INSTALL_FAILURE_REASON="$*"
   exit 1
+}
+
+prepare_patchmon_agent_sandbox_paths() {
+  install -d -m 0750 "$PATCHMON_AGENT_ROOT" "$PATCHMON_AGENT_ROOT/bin" "$PATCHMON_AGENT_ROOT/systemd"
+  install -d -m 0700 "$PATCHMON_AGENT_CONFIG_TARGET"
+
+  if [[ -L "$PATCHMON_AGENT_BIN_LINK" ]]; then
+    [[ "$(readlink "$PATCHMON_AGENT_BIN_LINK")" == "$PATCHMON_AGENT_BIN_TARGET" ]] \
+      || fail "PatchMon agent binary symlink points outside the managed root"
+  elif [[ -e "$PATCHMON_AGENT_BIN_LINK" ]]; then
+    [[ -f "$PATCHMON_AGENT_BIN_LINK" ]] \
+      || fail "PatchMon agent binary path is neither a regular file nor the managed symlink"
+  else
+    ln -s "$PATCHMON_AGENT_BIN_TARGET" "$PATCHMON_AGENT_BIN_LINK"
+  fi
+
+  if [[ -L "$PATCHMON_AGENT_CONFIG_LINK" ]]; then
+    [[ "$(readlink "$PATCHMON_AGENT_CONFIG_LINK")" == "$PATCHMON_AGENT_CONFIG_TARGET" ]] \
+      || fail "PatchMon agent config symlink points outside the managed root"
+  elif [[ -e "$PATCHMON_AGENT_CONFIG_LINK" ]]; then
+    [[ -d "$PATCHMON_AGENT_CONFIG_LINK" ]] \
+      || fail "PatchMon agent config path is neither a directory nor the managed symlink"
+  else
+    ln -s "$PATCHMON_AGENT_CONFIG_TARGET" "$PATCHMON_AGENT_CONFIG_LINK"
+  fi
+
+  if [[ -L "$PATCHMON_AGENT_UNIT_LINK" ]]; then
+    [[ "$(readlink "$PATCHMON_AGENT_UNIT_LINK")" == "$PATCHMON_AGENT_UNIT_TARGET" ]] \
+      || fail "PatchMon agent unit symlink points outside the managed root"
+  elif [[ -e "$PATCHMON_AGENT_UNIT_LINK" ]]; then
+    [[ -f "$PATCHMON_AGENT_UNIT_LINK" ]] \
+      || fail "PatchMon agent unit path is neither a regular file nor the managed symlink"
+  else
+    ln -s "$PATCHMON_AGENT_UNIT_TARGET" "$PATCHMON_AGENT_UNIT_LINK"
+  fi
+
+  chown -R root:root "$PATCHMON_AGENT_ROOT"
+  chmod 0750 "$PATCHMON_AGENT_ROOT" "$PATCHMON_AGENT_ROOT/bin" "$PATCHMON_AGENT_ROOT/systemd"
+  chmod 0700 "$PATCHMON_AGENT_CONFIG_TARGET"
 }
 
 read_value() {
@@ -474,6 +520,15 @@ backup_control_plane_file "$BROKER_SERVICE"
 backup_control_plane_file "$COMMAND_WORKER_SERVICE"
 backup_control_plane_file "$SELF_UPDATE_SERVICE"
 backup_control_plane_file "$TUNNEL_SERVICE"
+if [[ ! -e "$PATCHMON_AGENT_BIN_LINK" && ! -L "$PATCHMON_AGENT_BIN_LINK" ]]; then
+  backup_control_plane_file "$PATCHMON_AGENT_BIN_LINK"
+fi
+if [[ ! -e "$PATCHMON_AGENT_CONFIG_LINK" && ! -L "$PATCHMON_AGENT_CONFIG_LINK" ]]; then
+  backup_control_plane_file "$PATCHMON_AGENT_CONFIG_LINK"
+fi
+if [[ ! -e "$PATCHMON_AGENT_UNIT_LINK" && ! -L "$PATCHMON_AGENT_UNIT_LINK" ]]; then
+  backup_control_plane_file "$PATCHMON_AGENT_UNIT_LINK"
+fi
 PREVIOUS_MCP_IMAGE_DIGEST="$(read_mcp_value SOVEREIGN_MCP_IMAGE 2>/dev/null || true)"
 if ! valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
   PREVIOUS_MCP_IMAGE_DIGEST="$(resolve_running_mcp_image_digest || true)"
@@ -752,6 +807,15 @@ BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
 export BROKER_GID
 cd "$INSTALL_ROOT"
 docker compose config >/dev/null
+
+INSTALL_STAGE="prepare_patchmon_agent_sandbox_paths"
+prepare_patchmon_agent_sandbox_paths
+[[ -e "$PATCHMON_AGENT_BIN_LINK" || -L "$PATCHMON_AGENT_BIN_LINK" ]] \
+  || fail "PatchMon agent binary path was not prepared"
+[[ -d "$PATCHMON_AGENT_CONFIG_LINK" ]] \
+  || fail "PatchMon agent config path was not prepared"
+[[ -e "$PATCHMON_AGENT_UNIT_LINK" || -L "$PATCHMON_AGENT_UNIT_LINK" ]] \
+  || fail "PatchMon agent unit path was not prepared"
 
 INSTALL_STAGE="start_host_control_plane"
 systemctl daemon-reload
