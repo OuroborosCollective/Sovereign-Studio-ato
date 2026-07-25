@@ -8,7 +8,10 @@ import {
   Server,
   ShieldCheck,
 } from 'lucide-react';
-import type { FreeRevolverProviderAuthMode } from '../api/adminApiClient';
+import type {
+  FreeRevolverProviderAuthMode,
+  FreeRevolverProviderModel,
+} from '../api/adminApiClient';
 import type { UseAdminFreeRevolverProvidersResult } from '../hooks/useAdminApi';
 
 const FREELLMAPI_DOCKER_API_BASE = 'http://freellmapi:3001/v1';
@@ -52,6 +55,13 @@ function pricingEvidenceExpiry(verifiedAt: string | null, ttlHours: number): str
     : `Preis-Evidence abgelaufen seit ${formatted}`;
 }
 
+function hasRevisionBoundReceipt(model: FreeRevolverProviderModel): boolean {
+  return model.runtimeIdentity.sourceRevisionVerified === true
+    && model.runtimeIdentity.imageDigestVerified === true
+    && typeof model.canaryReceipt.receiptSha256 === 'string'
+    && /^[0-9a-f]{64}$/.test(model.canaryReceipt.receiptSha256);
+}
+
 export function FreeRevolverControlCenter({
   api,
   pricingEvidenceTtlHours,
@@ -75,6 +85,7 @@ export function FreeRevolverControlCenter({
       ready: models.filter(model => (
         model.status === 'ready'
         && model.enabled
+        && hasRevisionBoundReceipt(model)
         && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
       )).length,
       deferred: models.filter(model => model.status === 'discovered').length,
@@ -243,12 +254,13 @@ export function FreeRevolverControlCenter({
             const readyModels = provider.models.filter(model => (
               model.status === 'ready'
               && model.enabled
+              && hasRevisionBoundReceipt(model)
               && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
             ));
             const deferredModels = provider.models.filter(model => model.status === 'discovered');
             const blockedModels = provider.models.filter(model => model.status === 'blocked');
             const recheckableModels = provider.models.filter(model => (
-              model.freeVerified && Boolean(model.litellmAlias)
+              model.freeVerified && Boolean(model.routeAlias)
             ));
             const renewalKey = renewalKeys[provider.id] ?? '';
             return (
@@ -299,17 +311,28 @@ export function FreeRevolverControlCenter({
                       model.pricingVerifiedAt,
                       pricingEvidenceTtlHours,
                     );
-                    const effectiveReady = model.status === 'ready' && model.enabled && pricingFresh;
+                    const receiptVerified = hasRevisionBoundReceipt(model);
+                    const effectiveReady = model.status === 'ready'
+                      && model.enabled
+                      && pricingFresh
+                      && receiptVerified;
                     return (
                     <div key={model.id} className="free-revolver-model">
                       <div>
                         <strong>{model.displayName || model.modelId}</strong>
                         <span>{model.modelId}</span>
                         <span>{pricingEvidenceExpiry(model.pricingVerifiedAt, pricingEvidenceTtlHours)}</span>
+                        <span>
+                          {model.canaryReceipt.receiptSha256
+                            ? `Receipt ${model.canaryReceipt.receiptSha256.slice(0, 16)}…`
+                            : 'Revision-Receipt fehlt'}
+                        </span>
                       </div>
                       <span className={`llm-badge llm-badge--${effectiveReady ? 'ok' : model.status === 'discovered' ? 'warn' : 'danger'}`}>
                         {!pricingFresh
                           ? 'Preis-Evidence abgelaufen'
+                          : !receiptVerified
+                            ? 'Revision, Image-Digest oder Canary-Receipt fehlt'
                           : model.status === 'discovered'
                             ? `wartet auf verfügbaren Upstream · ${model.lastErrorCode ?? 'noch nicht erfolgreich geprüft'}`
                             : model.status !== 'ready'
