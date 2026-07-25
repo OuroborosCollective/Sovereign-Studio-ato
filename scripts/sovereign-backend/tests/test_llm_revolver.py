@@ -173,6 +173,7 @@ def test_expired_zero_quota_reenters_lru_order() -> None:
             "quota_limit": 100,
             "quota_reset_at": now - timedelta(minutes=5),
             "cooldown_until": now - timedelta(minutes=5),
+            "consecutive_failures": 4,
             "last_attempt_at": now - timedelta(days=2),
         },
         "provider:key-recent": {
