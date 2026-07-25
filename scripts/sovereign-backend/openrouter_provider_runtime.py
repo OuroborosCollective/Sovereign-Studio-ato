@@ -720,12 +720,14 @@ def _sync_catalog(
             )
             cursor.execute(
                 """UPDATE llm_provider_deployments
-                   SET status='ready', key_fingerprint=%s, key_hint=%s,
+                   SET status='ready', upstream_model_id=%s,
+                       key_fingerprint=%s, key_hint=%s,
                        last_canary_request_id=%s, last_canary_at=NOW(),
                        last_error_code=NULL, litellm_deployment_id=NULL,
                        updated_at=NOW()
                    WHERE route_id=%s""",
                 (
+                    default_model,
                     key_fingerprint,
                     key_hint,
                     canary.get("requestId"),
@@ -1003,16 +1005,24 @@ def _openrouter_status_payload(query: Callable[..., Any]) -> dict[str, Any]:
         (OPENROUTER_ROOT_ROUTE_ID,),
         one=True,
     ) or {}
+    deployment_status = str(row.get("status") or "not_configured")
+    selectable_models = int(row.get("selectable_models") or 0)
+    effective_status = deployment_status
+    blocker = row.get("last_error_code")
+    if deployment_status == "ready" and selectable_models <= 0:
+        effective_status = "catalog_refresh_required"
+        blocker = blocker or "openrouter_catalog_refresh_required"
     return {
-        "status": str(row.get("status") or "not_configured"),
+        "status": effective_status,
+        "deploymentStatus": deployment_status,
         "routeId": OPENROUTER_ROOT_ROUTE_ID,
         "transport": "openrouter",
         "keyStored": _key_path().exists(),
         "keyHint": row.get("key_hint"),
-        "selectableModels": int(row.get("selectable_models") or 0),
+        "selectableModels": selectable_models,
         "lastCanaryRequestId": row.get("last_canary_request_id"),
         "lastCanaryAt": row.get("last_canary_at"),
-        "lastErrorCode": row.get("last_error_code"),
+        "lastErrorCode": blocker,
         "secretValuesReturned": False,
     }
 

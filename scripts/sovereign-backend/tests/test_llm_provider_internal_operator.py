@@ -32,7 +32,13 @@ def _identity_decorator(function):
     return function
 
 
-def _build_app(monkeypatch, query_calls: list[str]) -> Flask:
+def _build_app(
+    monkeypatch,
+    query_calls: list[str],
+    *,
+    deployment_status: str = "ready",
+    selectable_models: int = 7,
+) -> Flask:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "owner-bridge-key")
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", "/tmp/sovereign-openrouter-test")
     app = Flask(__name__)
@@ -42,12 +48,12 @@ def _build_app(monkeypatch, query_calls: list[str]) -> Flask:
         query_calls.append(sql)
         if "selectable_models" in sql and "llm_provider_deployments" in sql:
             return {
-                "status": "ready",
+                "status": deployment_status,
                 "key_hint": "…1234",
                 "last_canary_request_id": "req_openrouter",
                 "last_canary_at": "2026-07-25T12:00:00Z",
                 "last_error_code": None,
-                "selectable_models": 7,
+                "selectable_models": selectable_models,
             }
         raise AssertionError(f"Unexpected query: {sql[:120]}")
 
@@ -85,9 +91,31 @@ def test_internal_openrouter_status_is_secret_free(monkeypatch) -> None:
     assert response.status_code == 200
     assert payload["transport"] == "openrouter"
     assert payload["routeId"] == "openrouter-paid-gpt-5-4-mini"
+    assert payload["status"] == "ready"
+    assert payload["deploymentStatus"] == "ready"
     assert payload["selectableModels"] == 7
+    assert payload["lastErrorCode"] is None
     assert payload["secretValuesReturned"] is False
     assert "apiKey" not in str(payload)
+    assert len(query_calls) == 1
+
+
+@pytest.mark.skipif(Flask is None, reason="Flask is validated in the full backend CI image")
+def test_internal_openrouter_status_requires_catalog_refresh_when_no_model_is_selectable(monkeypatch) -> None:
+    query_calls: list[str] = []
+    app = _build_app(monkeypatch, query_calls, selectable_models=0)
+    response = app.test_client().get(
+        "/api/internal/llm/openrouter/status",
+        headers={"X-Sovereign-Owner-Request-Key": "owner-bridge-key"},
+    )
+    payload: dict[str, Any] = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "catalog_refresh_required"
+    assert payload["deploymentStatus"] == "ready"
+    assert payload["selectableModels"] == 0
+    assert payload["lastErrorCode"] == "openrouter_catalog_refresh_required"
+    assert payload["secretValuesReturned"] is False
     assert len(query_calls) == 1
 
 
