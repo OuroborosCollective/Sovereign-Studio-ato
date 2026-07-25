@@ -258,6 +258,7 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "036_llm_route_scanner_candidates.sql" in app
     assert "037_reenable_verified_direct_freellm_routes.sql" in app
     assert "038_reclassify_retryable_freellm_canary_failures.sql" in app
+    assert "040_llm_route_scanner_free_quota_evidence.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     ast.parse(provider_runtime)
@@ -423,28 +424,28 @@ def test_admin_projection_uses_direct_route_terms_and_revision_receipts() -> Non
     assert "model.litellmAlias" not in control_center
 
 
-def test_managed_reconcile_prioritizes_ready_routes_and_reports_total_ready_state() -> None:
+def test_managed_reconcile_requires_six_current_receipts_and_paces_retryable_routes() -> None:
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
 
-    assert "ORDER BY (status='ready' AND enabled=true) DESC" in runtime
+    assert "_DEFAULT_MIN_READY_ROUTES = 6" in runtime
+    assert "return max(6, min(value, 32))" in runtime
+    assert "receipt_current" in runtime
+    assert "current_ready = []" in runtime
+    assert "len(current_ready) + len(ready) >= target_ready_count" in runtime
+    assert "retryAfterSeconds" in runtime
+    assert "_reconcile_pace_seconds()" in runtime
     assert "overall_ready_count = int(ready_state.get(\"ready_count\") or 0)" in runtime
-    assert "overall_blocked_count = int(ready_state.get(\"blocked_count\") or 0)" in runtime
-    assert '"overallReadyCount": overall_ready_count' in runtime
-    assert '"overallDeferredCount": overall_deferred_count' in runtime
-    assert '"overallBlockedCount": overall_blocked_count' in runtime
+    assert "minimum_ready_satisfied = overall_ready_count >= target_ready_count" in runtime
+    assert '"minimumReadyRoutes": target_ready_count' in runtime
+    assert '"minimumReadySatisfied": minimum_ready_satisfied' in runtime
+    assert '"currentReady": current_ready' in runtime
     assert '"readyCount": overall_ready_count' in runtime
-    assert '"deferredCount": overall_deferred_count' in runtime
-    assert '"ok": overall_ready_count > 0' in runtime
-    assert "_canary_failure_state(result)" in runtime
-    assert '"deferred": deferred' in runtime
-    assert '"availabilityFailuresAreRetryable": True' in runtime
-    assert "200 if overall_ready_count > 0 else 409" in runtime
+    assert '"ok": minimum_ready_satisfied' in runtime
+    assert "200 if minimum_ready_satisfied else 409" in runtime
     assert 'reconcile_stage = "route_activation_parity"' in runtime
     assert "SET disabled=NOT (" in runtime
-    assert "model.status='ready'" in runtime
-    assert "AND model.enabled=true" in runtime
-    assert "AND model.free_verified=true" in runtime
-    assert "AND route.disabled=false" in runtime
-    assert "OR route.id IS NULL" in runtime
-    assert '"route_activation_parity": "freellm_route_activation_parity_failed"' in runtime
-    assert "ORDER BY (status='ready' AND enabled=true) ASC" not in runtime
+    assert "route.config->'runtimeIdentity'->>'sourceRevision'=%s" in runtime
+    assert "route.config->'runtimeIdentity'->>'imageDigest'=%s" in runtime
+    assert "route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'" in runtime
+    assert '"canaryLatencyMs"' in runtime
+    assert '"certificationState": "certified"' in runtime

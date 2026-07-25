@@ -19,7 +19,24 @@ from llm_revolver import (
 from llm_transport import FREELLM_BASE_URL, OPENROUTER_BASE_URL
 
 
-def route(route_id: str, *, scope: str, priority: int = 10, category: str = "free"):
+SOURCE_REVISION = "1" * 40
+IMAGE_DIGEST = "sha256:" + ("2" * 64)
+
+
+@pytest.fixture(autouse=True)
+def _runtime_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", SOURCE_REVISION)
+    monkeypatch.setenv("SOVEREIGN_IMAGE_DIGEST", IMAGE_DIGEST)
+
+
+def route(
+    route_id: str,
+    *,
+    scope: str,
+    priority: int = 10,
+    category: str = "free",
+    latency_ms: int = 100,
+):
     price = 0 if category == "free" else 1
     free = category == "free"
     transport = "freellm" if free else "openrouter"
@@ -46,6 +63,17 @@ def route(route_id: str, *, scope: str, priority: int = 10, category: str = "fre
             "pricingVerified": True,
             "pricingSource": "test",
             "quotaScope": scope,
+            "canaryLatencyMs": latency_ms,
+            "runtimeIdentity": {
+                "sourceRevision": SOURCE_REVISION,
+                "sourceRevisionVerified": True,
+                "imageDigest": IMAGE_DIGEST,
+                "imageDigestVerified": True,
+            },
+            "canaryReceipt": {
+                "schemaVersion": "sovereign.freellm-route-receipt.v1",
+                "receiptSha256": "3" * 64,
+            },
         },
     }
 
@@ -112,6 +140,37 @@ def test_quota_scope_is_validated_and_default_is_opaque():
     with pytest.raises(ValueError):
         normalize_quota_scope("bad scope", route_id="a")
     assert route_quota_scope(route("a", scope="provider:key-a")) == "provider:key-a"
+
+
+def test_revolver_rotates_least_recently_used_then_uses_latency_tie_break() -> None:
+    now = datetime.now(timezone.utc)
+    slow_unused = route("slow", scope="provider:key-slow", latency_ms=900)
+    fast_unused = route("fast", scope="provider:key-fast", latency_ms=25)
+    used = route("used", scope="provider:key-used", latency_ms=1)
+    states = {
+        "provider:key-used": {
+            "status": "ready",
+            "last_attempt_at": now - timedelta(hours=2),
+        },
+    }
+
+    assert [item["id"] for item in build_revolver_candidates(
+        used,
+        [slow_unused, fast_unused],
+        state_by_scope=states,
+        now=now,
+    )] == ["fast", "slow", "used"]
+
+
+def test_revision_or_digest_drift_removes_free_route() -> None:
+    current = route("current", scope="provider:key-current")
+    stale = route("stale", scope="provider:key-stale")
+    stale["config"]["runtimeIdentity"]["imageDigest"] = "sha256:" + ("9" * 64)
+
+    assert [item["id"] for item in build_revolver_candidates(
+        current,
+        [current, stale],
+    )] == ["current"]
 
 
 def test_revolver_prefers_remaining_quota_and_skips_exhausted_until_reset():

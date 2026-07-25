@@ -7,6 +7,7 @@ can be unit-tested without credentials or a running provider.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -20,6 +21,10 @@ from llm_transport import (
 )
 
 _SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
+_SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+_IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_RECEIPT_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v1"
 _RETRY_WINDOWS_SECONDS = {
     "provider_quota_exhausted": 3600,
     "provider_rate_limited": 60,
@@ -77,10 +82,32 @@ def route_quota_scope(route: dict[str, Any]) -> str:
     )
 
 
+def _route_receipt_matches_runtime(route: dict[str, Any]) -> bool:
+    config = route.get("config") if isinstance(route.get("config"), dict) else {}
+    identity = config.get("runtimeIdentity") if isinstance(config.get("runtimeIdentity"), dict) else {}
+    receipt = config.get("canaryReceipt") if isinstance(config.get("canaryReceipt"), dict) else {}
+    source_revision = str(identity.get("sourceRevision") or "").strip().lower()
+    image_digest = str(identity.get("imageDigest") or "").strip().lower()
+    current_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
+    current_digest = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().lower()
+    return (
+        identity.get("sourceRevisionVerified") is True
+        and identity.get("imageDigestVerified") is True
+        and _SOURCE_REVISION_RE.fullmatch(source_revision) is not None
+        and _IMAGE_DIGEST_RE.fullmatch(image_digest) is not None
+        and source_revision == current_revision
+        and image_digest == current_digest
+        and str(receipt.get("schemaVersion") or "") == _RECEIPT_SCHEMA
+        and _RECEIPT_SHA_RE.fullmatch(str(receipt.get("receiptSha256") or "")) is not None
+    )
+
+
 def route_is_verified_free(route: dict[str, Any]) -> bool:
     if not route_is_direct_freellm(route):
         return False
     if route_transport(route) != FREELLM_TRANSPORT:
+        return False
+    if not _route_receipt_matches_runtime(route):
         return False
     try:
         policy = route_billing_policy(route)
@@ -142,10 +169,22 @@ def _quota_rank(
     )
     ratio = remaining / limit if remaining is not None and limit and limit > 0 else remaining
     availability = 0 if remaining is not None and remaining > 0 else 2 if remaining == 0 else 1
+    last_attempt = _as_datetime(
+        current.get("last_attempt_at") or current.get("lastAttemptAt")
+    )
+    attempt_rank = last_attempt.timestamp() if last_attempt is not None else -1.0
+    latency_ms = _first_number(
+        current.get("last_latency_ms"),
+        current.get("lastLatencyMs"),
+        config.get("canaryLatencyMs"),
+    )
     return (
         availability,
         -(ratio if ratio is not None else 0),
         int(current.get("consecutive_failures") or current.get("consecutiveFailures") or 0),
+        0 if last_attempt is None else 1,
+        attempt_rank,
+        latency_ms if latency_ms is not None else float("inf"),
         int(route.get("priority") or 0),
         0 if str(route.get("id") or "") == primary_id else 1,
         str(route.get("model_id") or route.get("modelId") or "").casefold(),

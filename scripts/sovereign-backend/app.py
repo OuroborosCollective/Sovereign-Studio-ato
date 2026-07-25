@@ -2344,6 +2344,7 @@ def health_ready():
                 "037_reenable_verified_direct_freellm_routes.sql",
                 "038_reclassify_retryable_freellm_canary_failures.sql",
                 "039_openrouter_credit_rate_precision.sql",
+                "040_llm_route_scanner_free_quota_evidence.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
