@@ -16,6 +16,7 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - Postgres- und pgvector-Canaries ausführen
 - PatchMon-Container, Docker-Netze, Datenbankschema, Flottenzustand, Updates, Patch-Läufe, Warnungen und Compliance secret-sicher korrelieren
 - PatchMon-Dry-Runs, Freigabevorlagen, Approval, Validierungs-Retries und Stop-Anfragen über zustandsgebundene Plan-Hashes steuern
+- den lokalen VPS über PatchMons offiziellen Host-/Agent-Pfad enrollen, Docker-Inventar real einlesen und diesen Host-Lane mit revisionsgebundener GitHub-/CI-Evidence verknüpfen
 - Migrationen gegen eine separate Preview-Datenbank ausführen und garantiert zurückrollen
 - bestätigte Migrationen nach erneuter Host-Broker-Prüfung produktiv anwenden
 - ein Backend-Image anhand des vollständigen Commit-SHA auflösen und dessen unveränderlichen Digest prüfen
@@ -81,10 +82,16 @@ Der PatchMon-Operator bildet einen geschlossenen Wahrnehmungs- und Steuerungspfa
 - `patchmon_brain_snapshot` korreliert Runtime-, Netzwerk-, Datenbank- und Flottenevidence mit expliziten Risiken.
 - `patchmon_patch_action_plan` bindet eine erlaubte Aktion an den aktuellen PatchMon-Datenbankzustand und erzeugt den exakten Bestätigungs-Hash.
 - `patchmon_patch_action_apply` wird ausschließlich über die Host-Command-Queue ausgeführt und ruft nur PatchMons fest verdrahtete Loopback-API auf.
+- `patchmon_fleet_bootstrap_plan` bindet den lokalen Host-/Agent-Bootstrap an den aktuellen Runtime-, Datenbank-, systemd- und Flottenzustand.
+- `patchmon_fleet_bootstrap_apply` erstellt nur bei einer leeren Installation eine zufällige root-only Operator-Identität, konfiguriert die feste Loopback-Adresse, legt den lokalen Host über PatchMons offizielle API an, installiert dessen offiziellen Linux-Agenten und wartet auf reales Docker-Inventar.
+- `patchmon_fleet_orchestrator_status` trennt zwei Wahrheitspfade: PatchMon belegt Host-, Paket- und Docker-Evidence; GitHub- und Immutable-Image-Werkzeuge belegen Workflowstatus und exakte Containerrevision.
+- Für bereits verbundene Clients mit noch eingefrorenem Tool-Schemacache existiert der feste Alias `action=bootstrap_local_fleet` über `patchmon_patch_action_plan` und `patchmon_patch_action_apply`. Er verwendet exakt denselben Bootstrap-Plan, dieselbe Zustandsbindung, denselben Bestätigungs-Hash und dieselbe Host-Command-Queue; freie Bootstrap-Parameter oder ein zweiter Wahrheitspfad entstehen dadurch nicht.
+
+PatchMon erhält damit ausdrücklich **keinen** erfundenen Container-Deploy-Endpunkt. Gestaffelte Rollouts dürfen erst freigegeben werden, wenn der PatchMon-Host-Lane aktiv ist, Docker-Assets beobachtet werden, die relevanten GitHub-Checks grün sind und die erwartete vollständige Revision mit der gelesenen PR-Revision übereinstimmt. Die eigentliche Container-Gleichschaltung bleibt beim bestehenden revisionsgebundenen Immutable-Image-/Deploy-Pfad.
 
 `submit_for_approval` legt nur einen `pending_approval`-Lauf an und führt auf dem Zielhost nichts aus. Erst `approve_run` kann einen echten Patch-Lauf anstoßen. Eine erfolgreiche HTTP-Annahme ist ausdrücklich kein Beleg für abgeschlossene Patches; der neue Lauf muss bis zu einem terminalen Datenbankstatus erneut gelesen werden.
 
-Der PatchMon-Admin-JWT liegt ausschließlich als reguläre, root-eigene Datei ohne Gruppen-/Weltrechte unter `/opt/patchmon-sovereign/mcp-admin.jwt`. Er wird weder in den MCP-Container gemountet noch in Tool-Argumenten, Antworten oder Logs ausgegeben. Der MCP-Container erhält weiterhin keinen Docker-Socket; Docker- und PatchMon-Zugriffe erfolgen nur über feste Broker-Aktionen.
+Der PatchMon-Admin-JWT liegt ausschließlich als reguläre, root-eigene Datei ohne Gruppen-/Weltrechte unter `/opt/patchmon-sovereign/mcp-admin.jwt`. Die dazugehörige automatisch erzeugte Operator-Identität und einmalige Host-Bootstrap-Credentials liegen ausschließlich unter `/opt/patchmon-sovereign/mcp-admin-credentials.json`, ebenfalls root-only. Beide werden weder in den MCP-Container gemountet noch in Tool-Argumenten, Antworten oder Logs ausgegeben. Der Host-Worker darf ausschließlich die festen PatchMon-Agent-Pfade schreiben; der MCP-Container erhält weiterhin keinen Docker-Socket. Docker- und PatchMon-Zugriffe erfolgen nur über feste Broker-Aktionen.
 
 ## Belegte Lernmuster und Projektlogbuch
 
@@ -131,7 +138,7 @@ Der Broker akzeptiert nur:
 - Auflösen eines revisionsgebundenen Backend-Images
 - verifizierte Migration mit erneuter Pfad-, Hash-, SQL- und Rollback-Preview-Prüfung
 - verifizierter Deploy beziehungsweise Rollback
-- feste PatchMon-Runtime-/Datenbankabfragen und zustandsgebundene PatchMon-Aktionen
+- feste PatchMon-Runtime-/Datenbankabfragen und zustandsgebundene PatchMon-Aktionen einschließlich des festen `bootstrap_local_fleet`-Kompatibilitäts-Alias
 
 Ein Action-Name wie `shell` oder ein frei formulierter SQL-Auftrag wird geblockt.
 
