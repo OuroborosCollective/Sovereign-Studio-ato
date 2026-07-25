@@ -132,7 +132,7 @@ export const useSkillsStore = create<SkillsState>()(
         set({ skills: [], loaded: false, loading: false, error: null, scanResult: null }),
 
       getActiveSkillContext: () => {
-        const active = get().skills.filter((s) => s.is_active);
+        const active = (get().skills ?? []).filter((s) => s.is_active);
         if (active.length === 0) return '';
         return [
           `── Explizit auswählbare Skills (${active.length}) ──`,
@@ -142,8 +142,8 @@ export const useSkillsStore = create<SkillsState>()(
       },
 
       getSkillSlashCommands: () =>
-        get()
-          .skills.filter((s) => s.is_active)
+        (get().skills ?? [])
+          .filter((s) => s.is_active)
           .map((s) => ({
             cmd: `/${s.slug}`,
             label: s.name,

@@ -6,8 +6,6 @@ INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 BIN_DIR="$INSTALL_ROOT/bin"
 BROKER_DIR="$INSTALL_ROOT/broker"
 COMPOSE_TEMPLATE_ROOT="$INSTALL_ROOT/templates"
-LITELLM_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-litellm"
-LITELLM_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-litellm"
 PGBACKWEB_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/pgbackweb-wq5r"
 PGBACKWEB_TEMPLATE_SOURCE="$SOURCE_DIR/templates/pgbackweb-wq5r"
 PATCHMON_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/patchmon-sovereign"
@@ -29,8 +27,6 @@ OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
 BACKEND_WORKSPACE_UID="10001"
 BACKEND_WORKSPACE_GID="10001"
-LITELLM_BASE_URL=http://litellm:4000
-LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt
 ENV_FILE="$INSTALL_ROOT/.env"
 MANAGED_ENV="$INSTALL_ROOT/runtime.env"
 BACKEND_MANAGED_ENV="$INSTALL_ROOT/backend-runtime.env"
@@ -168,6 +164,57 @@ except OSError as exc:
                 raise PermissionError(f"protected file has unsafe mode: {mode:o}") from chmod_exc
     finally:
         temporary.unlink(missing_ok=True)
+PY
+}
+
+remove_value() {
+  local file="$1"
+  local key="$2"
+  python3 - "$file" "$key" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+if not path.exists():
+    raise SystemExit(0)
+lines = path.read_text("utf-8").splitlines()
+out = [line for line in lines if not line.startswith(key + "=")]
+temporary = path.with_suffix(path.suffix + ".tmp")
+temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
+os.chmod(temporary, 0o600)
+temporary.replace(path)
+PY
+}
+
+remove_csv_values() {
+  local file="$1"
+  local key="$2"
+  local blocked_csv="$3"
+  python3 - "$file" "$key" "$blocked_csv" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+blocked = {item.strip() for item in sys.argv[3].split(",") if item.strip()}
+if not path.exists():
+    raise SystemExit(0)
+out = []
+for line in path.read_text("utf-8").splitlines():
+    if not line.startswith(key + "="):
+        out.append(line)
+        continue
+    values = [item.strip() for item in line.split("=", 1)[1].split(",") if item.strip()]
+    retained = [item for item in values if item not in blocked]
+    if retained:
+        out.append(key + "=" + ",".join(dict.fromkeys(retained)))
+temporary = path.with_suffix(path.suffix + ".tmp")
+temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
+os.chmod(temporary, 0o600)
+temporary.replace(path)
 PY
 }
 
@@ -358,9 +405,6 @@ for command in docker systemctl python3 git ss openssl sha256sum; do
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
 [[ -S /var/run/docker.sock ]] || fail "docker socket is missing"
-[[ -f "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "sovereign-litellm compose template is missing"
-[[ -f "$LITELLM_TEMPLATE_SOURCE/config.yaml" ]] || fail "sovereign-litellm config template is missing"
-[[ -f "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" ]] || fail "sovereign-litellm entrypoint template is missing"
 [[ -f "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "pgbackweb compose template is missing"
 [[ -f "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "patchmon compose template is missing"
 [[ -f "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "code-server compose template is missing"
@@ -377,8 +421,8 @@ bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
   || fail "source self-update wrapper has invalid bash syntax"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$LITELLM_TEMPLATE_DIR" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$FREELLMPOOL_TEMPLATE_DIR"
-for MANAGED_COMPOSE_ROOT in /opt/sovereign-litellm /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-freellmpool; do
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$FREELLMPOOL_TEMPLATE_DIR"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-freellmpool; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
       || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
@@ -442,12 +486,13 @@ for file in Dockerfile requirements.txt policy.py runtime.py database.py databas
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
-for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py; do
+for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py; do
   backup_control_plane_file "$BROKER_DIR/$file"
 done
-backup_control_plane_file "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$LITELLM_TEMPLATE_DIR/config.yaml"
-backup_control_plane_file "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
+backup_control_plane_file "$BROKER_DIR/litellm_stack.py"
+backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
+backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
+backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py"
 backup_control_plane_file "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
@@ -482,12 +527,13 @@ install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"
 install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"
 install -m 0640 "$SOURCE_DIR/policy.py" "$BROKER_DIR/policy.py"
 install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
-install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"
 install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"
 install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"
-install -m 0640 "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$LITELLM_TEMPLATE_SOURCE/config.yaml" "$LITELLM_TEMPLATE_DIR/config.yaml"
-install -m 0640 "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
+rm -f "$BROKER_DIR/litellm_stack.py"
+rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
+rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
+rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py"
+rmdir "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" 2>/dev/null || true
 install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
@@ -592,8 +638,8 @@ set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_ENV_FILE "$BACKEND_ENV_PATH"
 set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_MANAGED_ENV_FILE "$BACKEND_MANAGED_ENV"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"
-set_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL "$LITELLM_BASE_URL"
-set_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE "$LITELLM_MASTER_KEY_FILE"
+remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL
+remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
 OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
@@ -627,7 +673,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle sovereign-litellm-litellm-1 sovereign-litellm-db-1 code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-freellmpool; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-freellmpool; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -635,6 +681,7 @@ for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserles
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER,$CURRENT_ALLOWED_CONTAINERS"
   fi
 done
+remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1"
 unset REQUIRED_CONTAINER CURRENT_ALLOWED_CONTAINERS
 
 if [[ "$(read_mcp_value SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
@@ -692,8 +739,6 @@ INSTALL_STAGE="write_broker_environment"
   printf 'SOVEREIGN_MCP_COMMAND_QUEUE=%s\n' "$COMMAND_QUEUE_DIR"
   printf 'SOVEREIGN_COMPOSE_TEMPLATE_ROOT=%s\n' "$COMPOSE_TEMPLATE_ROOT"
   printf 'PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt\n'
-  printf 'SOVEREIGN_LITELLM_TEMPLATE_ROOT=%s\n' "$LITELLM_TEMPLATE_DIR"
-  printf 'SOVEREIGN_LITELLM_DEPLOY_ROOT=/opt/sovereign-litellm\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
 } > "$BROKER_ENV"
@@ -898,4 +943,4 @@ unset TUNNEL_CONFIGURED
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-litellm","sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

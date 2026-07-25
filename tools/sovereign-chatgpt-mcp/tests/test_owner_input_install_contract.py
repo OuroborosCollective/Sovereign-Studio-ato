@@ -27,6 +27,8 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
     assert "owner_approval_widget_open" in workflow
+    assert "openrouter_provider_status" in workflow
+    assert "openrouter_provider_activate" in workflow
     assert "freellm_provider_status" in workflow
     assert "freellm_provider_keyless_activate" in workflow
     assert "freellm_provider_discover" in workflow
@@ -127,7 +129,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
     assert '"openrouter_api_key": "OpenRouter API-Key"' in client
-    assert '"litellm_provider_key": "LiteLLM Provider API-Key"' in client
+    assert '"litellm_provider_key": "LiteLLM Provider API-Key"' not in client
     assert '"proven_learning_confirmation": "Exakter Learning-Plan-Hash"' in client
     assert "def activate_provider_route(" in client
     assert "def activate_litellm_provider_route(" in client
@@ -138,8 +140,12 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"targetId": selected_target' in client
     assert "if selected_target not in ALLOWED_TARGETS" in client
     assert "owner_input.create_request(" in server
+    assert server.count("def openrouter_provider_status(") == 1
+    assert server.count("def openrouter_provider_activate(") == 1
+    assert "provider_runtime.openrouter_status()" in server
+    assert "provider_runtime.openrouter_activate(route_id)" in server
     assert server.count("def litellm_provider_route_activate(") == 1
-    assert "provider_runtime.activate(route_id)" in server
+    assert "legacy_litellm_runtime_retired" in server
     assert server.count("def freellm_provider_status(") == 1
     assert server.count("def freellm_provider_keyless_activate(") == 1
     assert server.count("def freellm_provider_discover(") == 1
