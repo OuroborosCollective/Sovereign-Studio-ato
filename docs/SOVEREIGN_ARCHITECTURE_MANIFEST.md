@@ -2,19 +2,19 @@
 
 **Status:** Lebendes Architekturhandbuch  
 
-**Evidence-Stand:** 24. Juli 2026
+**Evidence-Stand:** 25. Juli 2026
 
-**Issue-Nachtrag vom 24. Juli 2026:** Der Vertrag `historical-schema-ownership` aus GitHub-Issue #876 ist durch PR #973, den installierten MCP-Readback und den versionierten Closure-Record `docs/architecture/SOVEREIGN_MANIFEST_ISSUE_CLOSURE_876_2026-07-24.json` abgeschlossen. Die übrigen Manifestpunkte bleiben von diesem gezielten Nachtrag unberührt.
+**Reconciliation-Nachtrag zu GitHub-Issue #1011:** Dieses Manifest wurde gegen den aktuellen Repository-Head `5962c80e92cd96ef96eac72476b38cc0455f24fa`, den produktiven Backend-, MCP-, PostgreSQL-, OpenRouter-, FreeLLM- und PatchMon-Readback sowie die tatsächlich offenen GitHub-Issues reconciliiert. Das aktive Open-Point-Bundle ist `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES_2026-07-25.json`; das frühere Bundle bleibt ausschließlich historische Eröffnungs-Provenance.
 
-**Canary-Matrix-Nachtrag vom 24. Juli 2026:** GitHub-Issue #870 wird auf der geprüften `main`-Baseline `b0c29a61df98c28eabac5a9311519a5fe7b56a9c` durch den kanonischen Vertrag `config/architecture/SOVEREIGN_RUNTIME_CANARY_MATRIX.v1.json`, den fail-closed Validator `scripts/runtime-canary-matrix-gate.mjs` und revisionsgebundene GitHub-Actions-Gates umgesetzt. Die Matrix erfasst 18 releasekritische Oberflächen, verlangt für 16 davon getrennte Live-Receipts und dokumentiert zwei weiterhin reviewpflichtige Ausschlüsse. Dieser Coverage-Vertrag behauptet ausdrücklich keinen pauschalen Live-Grünstatus.
+**Verbindliche LLM-Routing-Wahrheit:** Paid läuft ausschließlich direkt über OpenRouter, Free ausschließlich direkt über FreeLLM. LiteLLM ist deaktivierte historische Evidence und weder aktivierbarer Produkttransport noch Rollbackpfad. Der direkte OpenRouter-Transport ist installiert und deployment-ready, verlangt aktuell jedoch einen Katalog-Refresh und liefert `0` auswählbare Modelle. FreeLLM API besitzt fünf doppelt gecanaryte Ready-Routen; die Gesamtquelle bleibt wegen weiterer blockierter Kandidaten ehrlich `degraded`. Daraus folgt ausdrücklich kein pauschaler LLM- oder Produkt-Grünstatus.
 
-**Verbindliche LLM-Routing-Aktualisierung:** Die aktuelle Transport-, Schlüssel-, Zustands- und Operatorwahrheit steht in [`LLM_ROUTING_TRUTH_AND_HANDOFF.md`](./LLM_ROUTING_TRUTH_AND_HANDOFF.md). Paid läuft ausschließlich direkt über OpenRouter, Free ausschließlich direkt über FreeLLM. LiteLLM ist nur noch deaktivierte historische Evidence und kein aktivierbarer Produkt- oder Rollbacktransport. Ältere LiteLLM-Belege in diesem Manifest sind historische Provenance.
-
-- **Audit-Baseline dieses Manifest-Updates:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
-- **Produktive MCP-Revision:** `246e701f5b2d8ce94c21c001b26bf4aee216239c`
-- **Produktives MCP-Image:** `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`
-- **Manifest-/Issue-Reconciliation:** PR #868 wurde als reiner Dokumentations-/Workflow-Merge `27e96907c4c95b94a5722b2530804dbf88d9ea51` übernommen. Der owner-gated Issue-Workflow `29767947369` lief auf exakt dieser Revision erfolgreich und erzeugte beziehungsweise bestätigte für alle zwölf stabilen Marker je ein eigenes Issue.
-- **Backend-Releasezustand:** Code und immutable Image für `246e701f5b2d8ce94c21c001b26bf4aee216239c` sind vorhanden; der produktive Backend-Container läuft noch auf dem Stand vor PR #867. Deployment, Migration `028` und Live-Readback bleiben offen.
+- **Audit-Baseline dieses Manifest-Updates:** `5962c80e92cd96ef96eac72476b38cc0455f24fa`
+- **Produktive Backend-Revision:** `5962c80e92cd96ef96eac72476b38cc0455f24fa`
+- **Produktives Backend-Image:** `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`
+- **Produktive MCP-Revision:** `09307359732ec0bbdb579747f494a7add2edee19`
+- **Produktives MCP-Image:** `sha256:4bb1cdae9bc22fd649ada676dc71101956d23ae286831fee15c738eee4471987`
+- **MCP-Runtime-Evidence:** `ff1e832551dd9f977c4255f12931afb5468f04539c42c2015d8202c297b4b946`
+- **Aktive Open-Point-Liste:** exakt vier eigenständige Issues: #1013, #1014, #1016 und #1017. Gelöste Punkte werden durch den Workflow weder neu angelegt noch automatisch wieder geöffnet.
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
 **Produkt:** Android-first NoCode-/AI-Service- und Agentenplattform  
@@ -289,9 +289,9 @@ ist der vorgesehene kanonische Backend-/Admin-Livepfad.
 
 **BELEGT:** Die tatsächlich gespiegelten Agent-Runtime-, A2A-, ARE-, Knowledge-, Security-, LiteLLM-, `knowledge_library.py`- und `r2_storage.py`-Dateien sind im Architektur-Snapshot bytegleich. Der produktive R2-Adapter verwendet die vollständige fail-closed Implementierung einschließlich Pfad-, MIME-, Hash-, Evidence- und 33-MiB-PDF-Grenzen.
 
-**BELEGT — Code auf `main`:** PR #867 ersetzte die ausgelieferte `/admin`-Wahrheit durch `scripts/sovereign-backend/enterprise_admin_ui.py` und ergänzte die persistierbare Standing-Owner-Policy in Migration `028_owner_learning_policy.sql`. Das immutable Backend-Image für Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` wurde erfolgreich als Digest `sha256:629a694d67c4789053da81656cbc7523a084b8ac52877ff2083aa0325453ae18` gebaut.
+**BELEGT — produktive Aktivierung:** Das immutable Backend läuft auf Revision `5962c80e92cd96ef96eac72476b38cc0455f24fa` und Digest `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`. Health, Readiness, kanonisches React-Admin, Enterprise-API und A2A wurden aus derselben Runtime rückgelesen. Der Startreadback enthält zweimal `✓ GitHub App routes registered`; der frühere `get_connection`-Registrierungsfehler ist in dieser Runtime nicht vorhanden.
 
-**TEILWEISE — produktive Aktivierung:** Der laufende Backend-Container wurde vor diesem Merge gestartet. `owner_learning_policies` fehlt im Live-Schema und Migration `028` ist nicht registriert. Die neue Adminoberfläche und die Standing-Learning-Policy sind daher code- und image-belegt, aber noch nicht produktiv readback-verifiziert.
+**BELEGT — Owner-Learning-Policy:** `owner_learning_policies` enthält genau eine Zeile, genau eine aktivierte kanonische Policy, und `schema_migrations` enthält jeweils genau einen Eintrag für `028` und die fail-closed Reconciliation `041`. Ein echter Proven-Learning-Lauf verwendete die Standing-Owner-Policy ohne Einzelbestätigung; der identische zweite Lauf wurde als Duplikat erkannt. `_ADMIN_PANEL_HTML` ist in der kanonischen Backend-App nicht mehr vorhanden.
 
 ---
 
@@ -477,9 +477,9 @@ Die folgenden Absätze dokumentieren historische LiteLLM-/OpenAI-Provenance. Sie
 
 **BELEGT — Kostenarchitektur:** Das Repository enthält jetzt einen dreistufigen Kostenvertrag: `free` für Revolver-/Nullkostenrouten, `standard` mit mindestens `×4`, `premium` mit mindestens `×8`. Die Live-Datenbank besitzt die neuen Spalten und Constraints für provider-finanzierte Credits, Usage-Settlement, Billing-Kategorie, Multiplikator, Trace-/Stage-Evidence und Provider-Pricing-Metadaten. Die exakte Migration `022` wurde mit dem Repository-Hash `7c08cf8f92dafe264171d62a19cd6bbc5accf1264574a00ad7f468c7323bdfa4` angewendet und als Version `022` rückgelesen; alle sieben Constraints sind vorhanden, ungültige provider-finanzierte Balances und aktive ungeprüfte Routen stehen jeweils auf `0`.
 
-**BLOCKIERT — aktueller Modellpfad:** Die Aktivierung von `sovereign-fast` und `sovereign-balanced` auf `gpt-5.4-mini` wurde am 19. Juli 2026 erneut gegen das geschützte Inventar `2fcb9285b7ee898910238d9b83cdf570c98bc870ab25853a0770fbc3e6633ef5` versucht. LiteLLM-Readiness, Datenbankverbindung und beide Aliase waren erreichbar, aber beide echten Completion-Canaries erhielten vom OpenAI-Upstream HTTP `429` mit `code=insufficient_quota`. Die Aktivierung wurde deshalb nicht als grün übernommen und der Rollbackpfad ausgelöst. Agents-SDK läuft code-seitig nur über `sovereign-fast` und bleibt fail-closed blockiert, bis Provider-Billing beziehungsweise verfügbares Kontingent hergestellt und ein neuer echter Completion-Canary bestanden ist.
+**HISTORISCHE PROVENANCE:** Der frühere LiteLLM-/OpenAI-Aliasversuch erhielt HTTP `429` mit `insufficient_quota`. Dieser Befund erklärt eine historische Blockierung, besitzt aber keine aktuelle Transportautorität und darf keine LiteLLM-Reaktivierung auslösen.
 
-**TEILWEISE:** Der Admin-Pfad für LiteLLM-Modellkatalog, Modellauswahl, Kostenkategorie, Multiplikator und owner-gated Provider-Key-Onboarding ist im Codevertrag vorhanden. Ein vollständiger grüner Produktionsbeweis mit aktivierter `gpt-5.4-mini`-Route fehlt noch.
+**AKTUELL — direkte Transporte:** OpenRouter Paid meldet `deploymentStatus=ready`, aber aktuell `catalog_refresh_required` und `selectableModels=0`; ein grüner bezahlter Completion-Pfad wird deshalb nicht behauptet. FreeLLM API meldet fünf revisions- und receiptgebundene Ready-Routen, bleibt wegen weiterer blockierter Kandidaten insgesamt `degraded`; der private FreeLLM-Pool besitzt aktuell keine Ready-Route. LiteLLM ist in allen drei Fällen kein aktiver Transport.
 
 ---
 
@@ -491,7 +491,7 @@ Der private Sovereign ChatGPT MCP verbindet ChatGPT mit kontrollierten Repositor
 
 ## 9.2 Belegter Control-Plane-Stand
 
-**BELEGT:** Die Control Plane meldet `BROKER_READY`. Die produktive MCP-Revision und die dabei geprüfte Produktcode-Baseline stehen auf `246e701f5b2d8ce94c21c001b26bf4aee216239c`; der revisionsgebundene Self-Update-Readback bestätigt Container-Health, Host-Command-Worker, Broker-RPC, MCP-Protokoll-Handshake, Cross-Runtime-Parität und KappaPos `1_000_000`. Repository-`main` enthält danach zusätzlich ausschließlich den Dokumentations-/Workflow-Merge `27e96907c4c95b94a5722b2530804dbf88d9ea51`, der keinen MCP-Self-Update erforderte. Immutable Image-Referenz und Image-ID sind `sha256:25f00872bf26c6702cf0a04f0a7dcccc6bfd3e025a2081ee40bbae4bba137c1b`; der Runtime-Evidence-Hash ist `1d0fe00f2b344d584bbf7c46320cc2b171191c9533efae192272db7cec431af2`. Direkte eingehende Mutationen, generische Shell und ein Docker-Socket im MCP bleiben verboten.
+**BELEGT:** Die Control Plane meldet einen gesunden privaten MCP auf Revision `09307359732ec0bbdb579747f494a7add2edee19` und immutable Digest `sha256:4bb1cdae9bc22fd649ada676dc71101956d23ae286831fee15c738eee4471987`. Der Self-Update-Readback bestätigt Container-Health, Host-Command-Worker, Broker-RPC, MCP-Protokoll-Handshake, Cross-Runtime-Parität, das erzwungene Operating Profile und KappaPos `1_000_000`; der Runtime-Evidence-Hash lautet `ff1e832551dd9f977c4255f12931afb5468f04539c42c2015d8202c297b4b946`. Repository-, Backend- und MCP-Revision werden bewusst getrennt ausgewiesen. Direkte eingehende Mutationen, generische Shell und ein Docker-Socket im MCP bleiben verboten.
 
 Die Runtime-Grenzen schreiben unter anderem vor:
 
@@ -603,7 +603,7 @@ Dozzle ist keine Runtime-Wahrheitsquelle und kein Orchestrator.
 
 ## 10.5 Aktueller Betriebsstand
 
-**BELEGT:** Browserless, Tika, Gotenberg, Dozzle, Code Server, LiteLLM, LiteLLM-PostgreSQL, PatchMon und Milvus besitzen aktuelle Prozess-, Health- oder Fachcanary-Evidence. Der private Gotenberg→Tika-End-to-End-Canary ist unter 12.1 belegt.
+**TEILWEISE — aktueller Betriebsstand:** Browserless, Tika, Gotenberg, Dozzle, Code Server, PatchMon, Milvus, Sovereign Backend, MCP und die direkten FreeLLM-Container sind inventarisiert; Prozess- oder Containerzustand ersetzt keinen Fachcanary. Die vier PatchMon-Kerncontainer sind gesund. `file-browser-cunr-filebrowser-1` läuft dagegen `unhealthy` und veröffentlicht Port `32832` auf allen Interfaces; die kanonische Entscheidung ist in Issue #1016 offen. Der Host benötigt außerdem Updates und einen Reboot; dieser Wartungspfad ist Issue #1017. LiteLLM ist kein aktiver Betriebsdienst der Produkt-Routingwahrheit.
 
 **BELEGT — Remote Memory:** Das hash-bestätigte Managed-Compose-Bundle `780c5844cc9f8949fba63f2fed1e63a8ae1f53d5930ebdd71366ce8163fef6fa` bestätigte Milvus-, Etcd- und MinIO-Health, das isolierte Gateway-Netz mit ausschließlich `milvus-standalone` und `sovereign-memory-gateway`, keine veröffentlichten Milvus-Ports und einen erfolgreichen Gateway-TCP-Pfad. Der fachliche Canary erzeugte anschließend eine zufällige flüchtige Collection, schrieb einen Marker, bestätigte Query-Readback und Vektorsuche und löschte die Collection im `finally`-Pfad. Der Markerinhalt wurde nicht ausgegeben; als Receipt wurde ausschließlich SHA-256 `f918ac924f0bf5a4bd2ca4f99463d8b5ded8f5e1b3bb65eb6dd1fb3200234d04` zurückgegeben. PostgreSQL/pgvector bleibt die kanonische Learning-Wahrheit; Milvus bleibt optionale Indexprojektion.
 
@@ -673,7 +673,7 @@ Die Migrationen belegen unter anderem folgende Familien:
 
 - `admin_api_keys`
 - `owner_input_requests`
-- `owner_learning_policies` — in Migration `028` definiert, live noch nicht angewendet
+- `owner_learning_policies` — live genau einmal vorhanden; genau eine aktivierte kanonische Policy; Ledger `028` und Reconciliation `041` jeweils genau einmal registriert
 - `user_passkeys`
 - `user_account_keys`
 - `user_security_policies`
@@ -796,7 +796,7 @@ Contributor-Submissions und shared-derived-pattern bleiben getrennt. User-Erasur
 
 **BELEGT — aktueller Codevertrag:** PR #867 ergänzt eine persistierte Owner-Policy. Ohne frische Einzelanfrage darf `apply_proven_learning` nur dann automatisch speichern, wenn exakt eine aktive `owner_learning_policies`-Zeile für einen Admin oder Superadmin existiert. Null oder mehrere aktive Policies blockieren fail-closed. Plan-Hash, Secretblocker, Content-Idempotenz, pgvector-Readback und Milvus-Outbox bleiben unverändert verpflichtend.
 
-**TEILWEISE — Livebetrieb:** Migration `028` ist noch nicht produktiv angewendet; die Standing-Owner-Policy ist daher im aktuellen Backendbetrieb noch nicht aktiv belegt.
+**BELEGT — Livebetrieb:** Migration `028` ist funktional und ledger-seitig durch `041` reconciliiert. Genau eine aktive kanonische Standing-Owner-Policy ist live belegt. Ein eindeutiges Pattern wurde ohne frische Einzelbestätigung gespeichert und beim identischen zweiten Apply ohne zweite Candidate-Zeile als Duplikat erkannt; pgvector-Readback und Outbox-Projektion wurden bestätigt.
 
 ---
 
@@ -1082,7 +1082,7 @@ Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar. Pro
 - `/a2a/v1/tasks`
 - A2A-Task-, Subscribe- und Cancel-Unterpfade
 
-**BELEGT:** Die deterministische Architekturreferenz wird aus dem aktuellen Repositorycode erzeugt. Die produktive Endpoint-Wahrheit stammt ausschließlich aus `scripts/sovereign-backend/app.py` sowie den registrierten Runtime-/Protokollmodulen. Der aktuelle Snapshot auf Revision `246e701f5b2d8ce94c21c001b26bf4aee216239c` enthält 167 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls und den Referenzhash `4338121167f1eaa8ad14a4df620da166a2545c3f1ddd8092e27f66b3dee11d9f`.
+**BELEGT:** Die deterministische Architekturreferenz wird aus dem aktuellen Repositorycode erzeugt. Die produktive Endpoint-Wahrheit stammt ausschließlich aus `scripts/sovereign-backend/app.py` sowie den registrierten Runtime-/Protokollmodulen. Der aktuelle Snapshot auf Revision `5962c80e92cd96ef96eac72476b38cc0455f24fa` enthält 173 kanonische Backendverträge, `0` aktive unmatched Frontend-Calls, vier separat klassifizierte nichtaktive Altflächen und den Referenzhash `f1762289cc81fda64717071772d4ed20319801de122ac3deda68a3384a25893d`.
 
 Vier weiterhin sichtbare Altflächen werden nicht verborgen, sondern getrennt ausgewiesen: `/api/ai/gemini` als `legacy-unreferenced` sowie `/api/vps/connect`, `/api/vps/disconnect` und `/api/vps/exec` als `disabled-launcher`. Statische Routenerkennung bleibt Orientierung; produktive Funktionsaussagen benötigen zusätzlich Live-Evidence.
 
@@ -1234,20 +1234,22 @@ GitHub Intent
 24. **BELEGT — historische PostgreSQL-Schema-Ownership / Issue #876:** PR #973 führte das fest allowlistete Manifest `POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json` und eine fail-closed Katalogstrukturprüfung ein. Der installierte Reconciler auf Revision `366977a74fea326c3add2af7f727acfa1ae67ec8` ordnet `public.admin_users`, `public.sovereign_agent_draft_pr_events` und `public.sovereign_agent_evidence_log` historisch zu; `unmappedLiveTables`, fehlende historische Tabellen und Schema-Mismatches stehen jeweils auf `0`. Es wurden keine Tabellenzeilen gelesen und keine Datenbankmutation ausgeführt.
 25. **BELEGT — revisionsgebundene Fachcanary-Matrix / Issue #870:** Der kanonische JSON-Vertrag erfasst 18 releasekritische Backend-, Tool-, Storage-, Integrations-, Release- und Clientoberflächen. 16 Oberflächen benötigen je ein zur exakten Revision, Workflow-Run-ID und zum Matrix-Hash passendes Live-Receipt; Mutation erfordert belegtes Cleanup, externe Kosten erfordern Owner- und Budget-Gates. Zwei Ausschlüsse bleiben explizit reviewpflichtig: CI-Revisionsintegrität ist kein produktiver Fachpfad, und der physische Android-Geräte-Smoke aus Issue #871 darf nicht durch Repository- oder Emulator-Evidence ersetzt werden. Contract-Modus und Regressionstests laufen auf jedem PR-Head; der explizite Release-Modus bleibt ohne vollständige `passed`-Receipts fail-closed.
 26. **BELEGT — SHA-gebundenes LLM-/Tool-Boundary-Reviewledger / Issue #872:** Der gemeinsame Detektor meldet auf der exakten Voränderungs-Baseline `e4abfaebed8a2cd6ae4f56341e62b0076d5fcbf6` 75 statische Rohkandidaten. Zwölf Treffer aus bytegleichen Agent-Runtime-Spiegeln werden nicht als unabhängige Wahrheiten gezählt; das Ledger enthält deshalb 63 kanonische Einträge. Jeder Eintrag bindet Candidate-ID, kanonischen Pfad, Spiegelpfade, Symbol, Zeile, Datei-SHA-256, Anker-SHA-256, Klassifikation, Begründung und `reopenOnChange=true`. Die Klassifikation umfasst 23 strukturierte Policies, sieben explizite Offline-Fallbacks und 33 Test-/Analysepfade; kein `UNREVIEWED` oder verbleibender `FORBIDDEN_FREE_LANGUAGE`-Eintrag ist zulässig. Der Ledger-Hash lautet `0f15ea80922b75f5ce0f7f0e43e9bfd966a66e956c8744bca3d6c95bcf98970d`. Derselbe Detektor speist Architektur-Snapshot, Ledger und CI-Gate; Datei-, Anker-, Mengen-, Klassifikations- oder Begründungsdrift öffnet den Review fail-closed erneut. Diese statische Klassifikation behauptet keinen Runtime- oder Sprachverständniserfolg.
-27. **BELEGT — kanonisches React-Admin-Backend / Issue #875:** Die Reparaturkette PR #985, #986 und #987 band das immutable Backend-Deployment fail-closed an exakte Revision, Digest, kanonischen React-Producer, Live-API-Readbacks, A2A und einen atomaren Rollback-Receipt. Das produktive Backend läuft revisionsgebunden auf `355080ff662e292a3ac8cdc0f0c9b35ff36413e2` mit Digest `sha256:1a98e0ccd27a0c8d77d30361c00cf075b8094573bc813be3b073ce4ac68ed88d`; `/admin/`, Health, Readiness, Identity, Overview, Integrations und Evidence wurden aus derselben Runtime gelesen. Der vorherige Digest `sha256:20c6951a9f7ca9ca95e4ededa6835bc0053aaa3c85982878fc4acaa234f349ad` und dessen Revision `490b53e3863229c65a34bf7835e3e2ebdc7382ef` sind als verifizierter Rollbackbezug persistiert.
+27. **BELEGT — kanonisches React-Admin-Backend / Issue #875:** Die Reparaturkette PR #985, #986 und #987 band das immutable Backend-Deployment fail-closed an exakte Revision, Digest, kanonischen React-Producer, Live-API-Readbacks, A2A und einen atomaren Rollback-Receipt. Das produktive Backend läuft inzwischen auf Revision `5962c80e92cd96ef96eac72476b38cc0455f24fa` mit Digest `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`; `/admin/`, Health, Readiness, Identity, Integrationen, Evidence und A2A wurden aus derselben Runtime gelesen.
+28. **BELEGT — Migration `028` und Standing-Owner-Policy / Issues #1015 und #1011:** Reconciliation `041` registriert `028` fail-closed im gemischten Produktionsledger. Live stehen `028=1`, `041=1`, eine Policy und eine aktive kanonische Policy. Proven Learning verwendete diese Policy ohne Einzelbestätigung und deduplizierte den zweiten identischen Apply.
+29. **BELEGT — Mirror-Parität:** `llm_cost_policy.py` und `proven_learning_runtime.py` sind in Analyse- und Deploymentpfad bytegleich. Der bounded Mirror-Report auf Revision `5962c80e92cd96ef96eac72476b38cc0455f24fa` meldet `mismatchCount=0` und Hash `8c09a39d63bbb0adcd7c3981faa7795601aa0d092b7bed2675ed2cef7ad33fa0`.
+30. **BELEGT — GitHub-App-Routenregistrierung:** Der aktuelle Backend-Startreadback enthält zweimal `✓ GitHub App routes registered`; der Endpoint-Snapshot enthält Callback-, Installation-, Credit-, Deduct- und Webhook-Verträge. Der frühere `get_connection`-Fehler ist kein aktueller Blocker.
+31. **BELEGT — einzige Admin-UI-Wahrheit:** `_ADMIN_PANEL_HTML` ist in `scripts/sovereign-backend/app.py` nicht mehr vorhanden. `/admin` wird ausschließlich aus dem kanonischen React-Admin-Pfad ausgeliefert.
+32. **BELEGT — direkte LLM-Transportarchitektur:** OpenRouter Paid und FreeLLM Free sind die einzigen aktiven Transportklassen; LiteLLM bleibt historische Evidence. OpenRouter ist deployment-ready, benötigt aktuell aber Katalog-Refresh. FreeLLM besitzt fünf Ready-Routen, bleibt als Gesamtquelle wegen weiterer Kandidaten `degraded`.
+33. **BELEGT — Manifest-/Open-Point-Reconciliation / Issue #1011:** Das aktuelle Bundle bindet ausschließlich die vier tatsächlich offenen GitHub-Issues #1013, #1014, #1016 und #1017. Der Workflow validiert vorhandene Issue-Nummern, verweigert Titelabweichungen und öffnet geschlossene Punkte nicht automatisch erneut.
 
 ## 24.2 Offen, teilweise oder blockiert
 
-Die folgenden acht Punkte sind nach Abschluss der Issues #876, #870, #872 und #875 die verbleibende operative Open-Point-Liste. Jeder Punkt besitzt einen stabilen Schlüssel im versionierten Ursprungsbundle `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES.json`. Der owner-gated Workflow `.github/workflows/create-manifest-open-issues.yml` eröffnet daraus marker-idempotent genau ein GitHub-Issue je Schlüssel und öffnet geschlossene Issues nicht automatisch erneut. Die Canary-Matrix bildet diese verbleibenden Fachbeweise ab, schließt sie aber nicht stellvertretend.
+Die aktive operative Open-Point-Liste wird ausschließlich aus `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES_2026-07-25.json` abgeleitet. Sie enthält genau vier bereits existierende, offene GitHub-Issues. Der Workflow bindet diese Nummern explizit, erzeugt keine Duplikate und verweigert das automatische Wiederöffnen geschlossener Punkte. Das frühere Bundle `SOVEREIGN_MANIFEST_OPEN_ISSUES.json` bleibt historische Eröffnungs-Provenance und ist keine aktuelle Statusquelle.
 
-1. **BLOCKIERT/TEILWEISE — Provider-Onboarding und `gpt-5.4-mini`-Route** (`provider-onboarding-gpt54-route`): Providerinventar, Projektidentität, LiteLLM-Readiness und Aliasinventar sind belegt; echte Completion-Canaries bleiben fehlgeschlagen. Offen sind verfügbares Kontingent und der vollständige automatische Lifecycle mit Preisvertrag, atomarer Aktivierung und Rollback.
-2. **TEILWEISE — physischer Android-Geräte-Smoke** (`physical-android-device-smoke`): Repository- und Release-Scan sind ohne statische Blocker; signierte Artefakte und Alignment sind belegt. Installation und Hauptpfad-Smoke auf einem physischen Android-Gerät fehlen.
-3. **TEILWEISE — GitHub-Knowledge-Livecanary** (`github-knowledge-live-canary`): Der sichere Transport- und Auditvertrag ist im Code belegt. Ein realer öffentlicher Import sowie ein kontrollierter Fehlerpfad müssen nach einem revisionsgebundenen Backend-Deployment live bestätigt werden.
-4. **BLOCKIERT — Migration `028` und Standing-Owner-Policy** (`apply-owner-learning-policy-migration`): `owner_learning_policies` ist im Repository definiert, fehlt aber live; `schema_migrations` enthält keinen Eintrag `028`. Automatische, idempotente Pattern-Persistenz ohne wiederholte Einzelbestätigung ist daher noch nicht produktiv belegt.
-5. **OFFEN — Mirror-Drift der LLM-Kostenpolicy** (`mirror-drift-llm-cost-policy`): `backend/llm_cost_policy.py` und `scripts/sovereign-backend/llm_cost_policy.py` besitzen unterschiedliche Hashes. Die kanonische Deploymentquelle ist bekannt, aber die Analyse-/Testquelle darf keine abweichende Kostenwahrheit behalten.
-6. **OFFEN — Mirror-Drift der Proven-Learning-Runtime** (`mirror-drift-proven-learning-runtime`): Der Deploymentpfad enthält die Standing-Owner-Policy, während `backend/proven_learning_runtime.py` noch den früheren Einzelbestätigungspfad abbildet. Semantische und Scanner-Parität fehlen.
-7. **BLOCKIERT — GitHub-App-Routenregistrierung** (`github-app-route-registration`): Der produktive Backendstart protokolliert `GitHub App routes registration failed: name 'get_connection' is not defined`. Diese Routenfamilie ist deshalb nicht als produktiv registriert belegt.
-8. **OFFEN — toten Legacy-Admin-HTML-Block entfernen** (`remove-dead-legacy-admin-html`): Die Route wird zwar auf `ENTERPRISE_ADMIN_HTML` überschrieben, aber der historische `_ADMIN_PANEL_HTML`-Literalblock verbleibt als reaktivierbare zweite UI-Wahrheit in `scripts/sovereign-backend/app.py`.
+1. **TEILWEISE — physischer Android-Geräte-Smoke, Issue #1013** (`physical-android-device-smoke`): Signierte Artefakte, Hash, Signer und Alignment sind belegt. Installation, Session, Chat-Hauptpfad, Backend-Roundtrip und Fehlerverhalten auf einem physischen Android-Gerät fehlen weiterhin.
+2. **TEILWEISE — GitHub-Knowledge-Livecanary, Issue #1014** (`github-knowledge-live-canary`): Der sichere credential-freie Transport- und Auditvertrag ist im Code belegt. Ein revisions- und digestgebundener öffentlicher Import sowie ein kontrollierter sicherer Transportfehler mit Cleanup müssen live bestätigt werden.
+3. **BLOCKIERT — Filebrowser-Runtimeentscheidung, Issue #1016** (`filebrowser-runtime-decision`): `file-browser-cunr-filebrowser-1` läuft, ist aber `unhealthy` und bindet Port `32832` auf allen Interfaces. Funktionsfähigkeit, kanonischer Bedarf, Netzwerkgrenze sowie Daten-/Restore-Ownership sind ungeklärt.
+4. **BLOCKIERT — Host-Patchstand und Reboot, Issue #1017** (`host-patch-reboot`): PatchMon meldet einen aktiven Host mit Update- und Rebootbedarf, 28 ausstehenden Paketen, keinen ausstehenden Security-Paketen und keinem aktiven Patchlauf. Kontrollierte Vorschau, Backupgrenzen, Reboot und Post-Reboot-Fachcanaries fehlen.
 
 ## 24.3 Langfristig
 
@@ -1278,13 +1280,26 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 25.1 Aktuelle Gatebewertung
 
-**BLOCKIERT/TEILWEISE:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. Die historische Schema-Ownership aus Issue #876, der revisionsgebundene Canary-Coverage-Vertrag aus Issue #870, das SHA-gebundene LLM-/Tool-Boundary-Reviewledger aus Issue #872 und das kanonische React-Admin-Backend aus Issue #875 sind abgeschlossen. Der normale PR-Contract-Modus belegt Struktur und Vollständigkeit der Matrix; ein expliziter Release-Lauf bleibt ohne alle 16 erforderlichen `passed`-Live-Receipts fail-closed. Releasekritisch offen bleiben die acht Punkte aus Abschnitt 24.2: fehlgeschlagene Completion-Canaries, physischer Android-Smoke, GitHub-Knowledge-Livecanary, nicht angewendete Migration `028`, zwei Mirror-Drifts, fehlgeschlagene GitHub-App-Routenregistrierung und der tote Legacy-Admin-HTML-Block. Ein grüner Gesamtzustand darf erst nach getrenntem Abschluss und revisionsgebundener Manifestaktualisierung dieser verbleibenden Issues behauptet werden.
+**BLOCKIERT/TEILWEISE:** Ein vollständiger Produkt- und Release-Grünstatus wird nicht behauptet. Migration `028/041`, Standing-Owner-Policy, beide Mirrorfamilien, GitHub-App-Routenregistrierung, die einzige Admin-UI-Wahrheit und die direkte OpenRouter-/FreeLLM-Transportarchitektur sind reconciliiert. OpenRouter benötigt aktuell einen Katalog-Refresh und besitzt `0` auswählbare Modelle; FreeLLM besitzt fünf Ready-Routen, bleibt als Gesamtquelle aber `degraded`. Releasekritisch offen bleiben ausschließlich die vier Punkte aus Abschnitt 24.2: physischer Android-Smoke (#1013), GitHub-Knowledge-Livecanary (#1014), Filebrowser-Entscheidung (#1016) sowie Host-Patch/Reboot (#1017). Ein globaler Grünstatus bleibt bis zu deren getrenntem, revisionsgebundenem Abschluss unzulässig.
 
 ---
 
-# 26. Aktueller Evidence-Snapshot
+# 26. Evidence-Snapshot
 
-Evidence-Stand: 24. Juli 2026. Repository-`main`, produktiver MCP und produktives Backend sind für den Abschluss von Issue #875 revisionsgebunden auf `355080ff662e292a3ac8cdc0f0c9b35ff36413e2` korreliert. Der MCP-Readback bestätigt den immutable Digest `sha256:a62be3c7a9eadac0a6a6428274bf8270ad9d70d8a529a1072af7278e240c2be5`, Runtime-Evidence-Hash `4b6fbf64eb768bcda87ff9be35268213e238f9499ede071e4e704b0a52478988`, KappaPos `1_000_000`, Container-Health, Broker-RPC und MCP-Handshake. Das produktive Backend läuft auf Digest `sha256:1a98e0ccd27a0c8d77d30361c00cf075b8094573bc813be3b073ce4ac68ed88d`; Admin-, API-, Health-, Rollback- und A2A-Evidence wurden aus dieser exakten Runtime erhoben. Frühere PR- und Releasebelege bleiben historische Provenance und werden nicht als Ersatz für diesen aktuellen Readback verwendet.
+## 26.1 Aktueller Readback vom 25. Juli 2026
+
+- **Repository und Backend:** `main` und produktives Backend stehen auf `5962c80e92cd96ef96eac72476b38cc0455f24fa`; Backend-Digest `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`.
+- **MCP:** Revision `09307359732ec0bbdb579747f494a7add2edee19`, Digest `sha256:4bb1cdae9bc22fd649ada676dc71101956d23ae286831fee15c738eee4471987`, Evidence-Hash `ff1e832551dd9f977c4255f12931afb5468f04539c42c2015d8202c297b4b946`; Health, Broker-RPC, MCP-Protokoll, Operating Profile, Cross-Runtime-Parität und KappaPos `1_000_000` sind belegt.
+- **Architektur:** Snapshot `efb046fed439a8d9b9b3132567ea5c168851633a7b15c522eda59d15c9e0c06f`; Mirror-Report `8c09a39d63bbb0adcd7c3981faa7795601aa0d092b7bed2675ed2cef7ad33fa0` mit `mismatchCount=0`; Endpoint-Referenz `f1762289cc81fda64717071772d4ed20319801de122ac3deda68a3384a25893d` mit 173 Endpoints, 0 aktiven unmatched Frontend-Calls und vier nichtaktiven Altflächen.
+- **Datenbank:** Ledger `028=1`, Ledger `041=1`, Owner-Policy-Zeilen `1`, aktive kanonische Owner-Policies `1`; Readback-SQL-Hash `b90c5815561484ad390dd988185c1e8443769d13603c35814c9d4e54583127cd`.
+- **Backendstart:** Migrationen liefen idempotent; `Database migrations completed successfully`; zweimal `✓ GitHub App routes registered`; `_ADMIN_PANEL_HTML` ist im Repository nicht auffindbar.
+- **LLM-Routing:** OpenRouter Paid ist direkter Transport und deployment-ready, aktuell aber `catalog_refresh_required` mit `0` auswählbaren Modellen. FreeLLM Free ist direkter Transport; FreeLLM API besitzt fünf Ready-Routen, beide FreeLLM-Quellen bleiben insgesamt `degraded`. LiteLLM ist nicht aktiv.
+- **PatchMon/Fleet:** vier von vier PatchMon-Kerncontainern sind gesund. Der Host benötigt Updates/Reboot; Filebrowser ist `unhealthy`. Diese Zustände sind in #1017 beziehungsweise #1016 getrennt offen.
+- **Aktive Open Points:** exakt #1013, #1014, #1016 und #1017. Kein Gesamtgrün wird behauptet.
+
+## 26.2 Historische Provenance bis 24. Juli 2026
+
+Die folgenden datierten Belege dokumentieren frühere Revisionen und Reparaturketten. Begriffe wie „aktuell“ innerhalb dieser historischen Aufzeichnungen beziehen sich ausschließlich auf den damaligen Evidence-Zeitpunkt und dürfen den Readback aus Abschnitt 26.1 nicht überschreiben.
 
 - **BELEGT:** Repository-`main`, produktive MCP-Runtime und produktive Backend-Runtime stehen für diesen Snapshot auf `355080ff662e292a3ac8cdc0f0c9b35ff36413e2`.
 - **BELEGT:** Für MCP-Release-Revision `355080ff662e292a3ac8cdc0f0c9b35ff36413e2` bestanden immutable Image-Publish, revisionsgebundener Self-Update, Host Worker, Broker-RPC, MCP-Handshake und Cross-Runtime-Parität. Der Live-Readback bestätigte Digest und Image-ID `sha256:a62be3c7a9eadac0a6a6428274bf8270ad9d70d8a529a1072af7278e240c2be5`, Evidence-Hash `4b6fbf64eb768bcda87ff9be35268213e238f9499ede071e4e704b0a52478988` und KappaPos `1_000_000`; direkte eingehende Mutationen bleiben verboten.
@@ -1321,7 +1336,7 @@ Evidence-Stand: 24. Juli 2026. Repository-`main`, produktiver MCP und produktive
 - **OFFEN — Admin-Legacycode:** `scripts/sovereign-backend/app.py` enthält weiterhin den historischen `_ADMIN_PANEL_HTML`-Literalblock, obwohl die Variable vor der Route auf `ENTERPRISE_ADMIN_HTML` überschrieben wird. Ausgeliefert wird code-seitig die neue Oberfläche; die tote zweite Quelle bleibt zu entfernen.
 - **BELEGT — Issue-Verträge und Eröffnung:** Das Ursprungsbundle versionierte zwölf operative Punkte und der owner-gated Workflow erzeugte marker-idempotent genau ein GitHub-Issue je Schlüssel. Issue #876 (`historical-schema-ownership`) ist durch PR #973 und den Closure-Record vom 24. Juli 2026 abgeschlossen; das Ursprungsbundle bleibt als historische Eröffnungs-Provenance unverändert.
 - **BELEGT — Canary-Coverage-Vertrag / Issue #870:** Auf der exakten Voränderungs-Baseline `b0c29a61df98c28eabac5a9311519a5fe7b56a9c` wurden 173 statische Backend-Endpunkte und `0` aktive unmatched Frontend-Calls ermittelt. Daraus und aus den produktiven Backend-, Tool-, Storage-, Integrations-, Release- und Clientpfaden wurde eine 18 Oberflächen umfassende Matrix abgeleitet. Der Contract-Modus validiert Vollständigkeit, Cleanup-, Owner-, Budget- und Evidence-Verträge; der Release-Modus fordert 16 echte Live-Receipts und akzeptiert nur zwei dokumentierte, weiterhin reviewpflichtige Ausschlüsse. Matrix- oder Container-Liveness allein erzeugt keinen Fachbeweis.
-- **TEILWEISE/BLOCKIERT:** Die aktive operative Open-Point-Liste besteht aus den acht Schlüsseln in Abschnitt 24.2. Kein einzelner Sammelstatus darf einen dieser verbleibenden Punkte verdecken.
+- **HISTORISCH:** Die damalige operative Open-Point-Liste bestand aus acht Schlüsseln. Sie wurde am 25. Juli 2026 durch den aktuellen Vier-Issue-Readback aus Abschnitt 26.1 ersetzt.
 - Ein vollständig grüner Produkt- und Releasezustand wird daher nicht behauptet.
 
 ---
