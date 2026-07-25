@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { AsyncFunction } = Object.getPrototypeOf(async function () {}).constructor;
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 const ROOT = path.resolve(__dirname, '..');
 const WORKFLOWS = path.join(ROOT, '.github', 'workflows');

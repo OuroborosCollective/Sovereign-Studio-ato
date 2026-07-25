@@ -55,7 +55,10 @@ def test_android_admin_recovery_never_overwrites_a_mounted_shell_and_remains_scr
 def test_pr_image_is_loaded_without_release_attestations_for_runtime_inspection() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-backend-image.yml").read_text("utf-8")
 
-    assert "load: ${{ github.event_name == 'pull_request' }}" in workflow
-    assert "provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=max' }}" in workflow
-    assert "sbom: ${{ github.event_name != 'pull_request' }}" in workflow
+    assert "pr_validation:" in workflow
+    assert "PR_VALIDATION: ${{ github.event_name == 'workflow_dispatch' && inputs.pr_validation == true }}" in workflow
+    assert "push: ${{ env.PR_VALIDATION != 'true' }}" in workflow
+    assert "load: ${{ env.PR_VALIDATION == 'true' }}" in workflow
+    assert "provenance: ${{ env.PR_VALIDATION == 'true' && 'false' || 'mode=max' }}" in workflow
+    assert "sbom: ${{ env.PR_VALIDATION != 'true' }}" in workflow
     assert "Verify canonical admin inside PR image" in workflow
