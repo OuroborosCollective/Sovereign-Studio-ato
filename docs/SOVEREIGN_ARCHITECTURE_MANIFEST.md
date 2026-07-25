@@ -16,6 +16,7 @@
 - **Produktive MCP-Revision:** `7ef2ad6cefe0659b240be155a64c044df088ac08`
 - **Produktives MCP-Image:** `sha256:64b4290dce3450b007bade472b1d9998875645d1873fe514833f7778ef9cf91a`
 - **MCP-Konfigurations-/Runtime-Evidence:** `d3da0b886d5cc53f84ec2316e3d14073ae70b9022775e8c0602b8369cf50ffc0`
+- **Geprüfte MCP-Voränderungsbaseline:** `09307359732ec0bbdb579747f494a7add2edee19`; ausschließlich historische Reconciliation-Provenance, kein aktueller Produktivstand
 - **Aktive Open-Point-Liste:** exakt vier eigenständige Issues: #1013, #1014, #1016 und #1017. Gelöste Punkte werden durch den Workflow weder neu angelegt noch automatisch wieder geöffnet.
 
 **Repository:** `OuroborosCollective/Sovereign-Studio-ato`  
