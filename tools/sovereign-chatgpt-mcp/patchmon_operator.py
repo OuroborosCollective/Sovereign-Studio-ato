@@ -110,6 +110,11 @@ class PatchmonOperatorRuntime:
             str(PATCHMON_DEFAULT_TOKEN_FILE),
         )
         self.token_file = Path(configured_token_file)
+        self._admin_token_provider: Callable[[], str] | None = None
+
+    def set_admin_token_provider(self, provider: Callable[[], str]) -> None:
+        """Register one fixed root-only token renewal provider for PatchMon writes."""
+        self._admin_token_provider = provider
 
     def _run(self, argv: list[str], *, timeout: int = 60, output_limit: int = MAX_RESPONSE_BYTES) -> dict[str, Any]:
         try:
@@ -1120,6 +1125,11 @@ LIMIT {row_limit}
         }
 
     def _read_admin_token(self) -> str:
+        if self._admin_token_provider is not None:
+            token = self._admin_token_provider()
+            if not _JWT_RE.fullmatch(token):
+                raise RuntimeError("TOKEN_PROVIDER_CONTENT_INVALID")
+            return token
         metadata = self._token_metadata()
         if not metadata.get("ready"):
             raise RuntimeError(str(metadata.get("status") or "TOKEN_FILE_NOT_READY"))
