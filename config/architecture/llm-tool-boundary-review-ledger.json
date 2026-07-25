@@ -750,7 +750,7 @@
       "symbol": "_patchmon_revision_from_payload",
       "line": 1077,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "d2849b68cd361a59cd9513ae9b380cb02e3c05c9e80dd8dc8d0299e5a0bcb352",
+      "fileSha256": "41cb910a720fba0de62583cd67bd67d0d6a7254f3962333799bff35dd13cc8db",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:91cbf9374c45e1ba7faed649",
@@ -862,5 +862,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "c0c5cdf6febcef78ce3f692caba8dc0cba26cb6bf29626219892fca5175efedc"
+  "ledgerSha256": "4d7199e299ea55e63d126ea66fe9a3231924ba19eee3c95d672aaeb312a524c1"
 }

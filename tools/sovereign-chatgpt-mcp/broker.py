@@ -362,6 +362,39 @@ class BrokerRuntime:
             "immutable_reference": resolved,
         }
 
+    def patchmon_action_plan(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Route the fixed bootstrap compatibility action through the existing plan tool."""
+        action = str(values.get("action") or "").strip()
+        if action == "bootstrap_local_fleet":
+            return self.patchmon_fleet.bootstrap_plan(friendly_name="sovereign-vps")
+        return self.patchmon.patch_action_plan(
+            action=action,
+            host_id=str(values.get("host_id") or ""),
+            run_id=str(values.get("run_id") or ""),
+            patch_type=str(values.get("patch_type") or "patch_all"),
+            package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
+            schedule_override=str(values.get("schedule_override") or ""),
+        )
+
+    def patchmon_action_apply(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Route the confirmed bootstrap compatibility action through the host worker."""
+        action = str(values.get("action") or "").strip()
+        if action == "bootstrap_local_fleet":
+            return self.patchmon_fleet.bootstrap_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                friendly_name="sovereign-vps",
+                owner_approved=True,
+            )
+        return self.patchmon.patch_action_apply(
+            action=action,
+            confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+            host_id=str(values.get("host_id") or ""),
+            run_id=str(values.get("run_id") or ""),
+            patch_type=str(values.get("patch_type") or "patch_all"),
+            package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
+            schedule_override=str(values.get("schedule_override") or ""),
+        )
+
     def dispatch(
         self,
         action: str,
@@ -517,23 +550,8 @@ class BrokerRuntime:
             "patchmon_brain_snapshot": lambda values: self.patchmon.brain_snapshot(
                 include_fleet=bool(values.get("include_fleet", True)),
             ),
-            "patchmon_patch_action_plan": lambda values: self.patchmon.patch_action_plan(
-                action=str(values.get("action") or ""),
-                host_id=str(values.get("host_id") or ""),
-                run_id=str(values.get("run_id") or ""),
-                patch_type=str(values.get("patch_type") or "patch_all"),
-                package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
-                schedule_override=str(values.get("schedule_override") or ""),
-            ),
-            "patchmon_patch_action_apply": lambda values: self.patchmon.patch_action_apply(
-                action=str(values.get("action") or ""),
-                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
-                host_id=str(values.get("host_id") or ""),
-                run_id=str(values.get("run_id") or ""),
-                patch_type=str(values.get("patch_type") or "patch_all"),
-                package_names=values.get("package_names") if isinstance(values.get("package_names"), list) else [],
-                schedule_override=str(values.get("schedule_override") or ""),
-            ),
+            "patchmon_patch_action_plan": self.patchmon_action_plan,
+            "patchmon_patch_action_apply": self.patchmon_action_apply,
             "patchmon_fleet_bootstrap_plan": lambda values: self.patchmon_fleet.bootstrap_plan(
                 friendly_name=str(values.get("friendly_name") or "sovereign-vps"),
             ),

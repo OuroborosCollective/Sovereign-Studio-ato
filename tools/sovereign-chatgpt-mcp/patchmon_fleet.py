@@ -618,6 +618,8 @@ LIMIT 1
                 {"name": "patchmon_fleet_bootstrap_plan", "mutation": False, "source": "runtime plus PatchMon DB plus systemd evidence"},
                 {"name": "patchmon_fleet_bootstrap_apply", "mutation": True, "source": "official PatchMon API plus fixed local agent installer"},
                 {"name": "patchmon_fleet_orchestrator_status", "mutation": False, "source": "PatchMon plus repository workflow evidence"},
+                {"name": "patchmon_patch_action_plan/bootstrap_local_fleet", "mutation": False, "source": "compatibility alias for the state-bound fleet bootstrap plan"},
+                {"name": "patchmon_patch_action_apply/bootstrap_local_fleet", "mutation": True, "source": "compatibility alias through the same host queue and exact confirmation hash"},
             ]
         )
         boundaries = dict(inventory.get("boundaries") or {})
@@ -627,6 +629,7 @@ LIMIT 1
                 "agentInstallSource": "fixed_patchmon_loopback_api_only",
                 "generatedAdminCredentialLocation": "root_only_host_file",
                 "containerRevisionMutationDelegatedToPatchMon": False,
+                "bootstrapCompatibilityAction": "bootstrap_local_fleet",
             }
         )
         return {**inventory, "tools": tools, "boundaries": boundaries}
