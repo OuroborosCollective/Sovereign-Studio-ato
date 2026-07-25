@@ -116,6 +116,7 @@ export interface DevChatWorkerReplyRequest {
 
 export type DevChatWorkerFailureScope =
   | 'client_request'
+  | 'authentication'
   | 'worker_config'
   | 'worker_runtime'
   | 'upstream_provider'
@@ -480,32 +481,46 @@ function classifyWorkerFailure(args: {
   if (args.status === 400) {
     return { scope: 'client_request', canClientFix: true, nextAction: 'Request-Payload, Modellname und Nachrichtenformat im App-Code prüfen.' };
   }
-  if (args.status === 401 || args.status === 403) {
-    return { scope: 'worker_config', canClientFix: false, nextAction: 'Worker/API-Key-Konfiguration oder Cloudflare Secret prüfen.' };
+  if (args.status === 401) {
+    return {
+      scope: 'authentication',
+      canClientFix: true,
+      nextAction: 'Backend-Session erneut bestätigen oder anmelden; keine Provider-Secrets im Client verwenden.',
+    };
+  }
+  if (args.status === 403) {
+    return {
+      scope: 'authentication',
+      canClientFix: false,
+      nextAction: 'Berechtigung der bestätigten Backend-Session prüfen; den Request nicht als Serverausfall melden.',
+    };
   }
   if (args.status === 404 || args.status === 405) {
     return { scope: 'client_request', canClientFix: true, nextAction: 'Worker-Route und HTTP-Methode im App-Code prüfen.' };
   }
   if (args.status === 429) {
-    return { scope: 'upstream_provider', canClientFix: false, nextAction: 'Rate Limit abwarten oder Cloudflare Gateway-Limits prüfen.' };
+    return { scope: 'upstream_provider', canClientFix: false, nextAction: 'Rate-Limit und die aktive OpenRouter-/FreeLLM-Route prüfen.' };
   }
   if (args.status === 502 || args.status === 503 || args.status === 504) {
-    return { scope: 'upstream_provider', canClientFix: false, nextAction: 'Cloudflare AI Gateway/Upstream-Provider prüfen.' };
+    return { scope: 'upstream_provider', canClientFix: false, nextAction: 'Direkten OpenRouter-/FreeLLM-Transport und dessen Upstream-Evidence prüfen.' };
   }
   if (args.status >= 500) {
     const looksLikeConfig = text.includes('secret') || text.includes('token') || text.includes('not configured') || text.includes('unauthorized');
     return looksLikeConfig
-      ? { scope: 'worker_config', canClientFix: false, nextAction: 'Cloudflare Worker Secrets und AI-Gateway-Konfiguration prüfen.' }
-      : { scope: 'worker_runtime', canClientFix: false, nextAction: 'Cloudflare Worker Logs und Deploy-Bridge prüfen; App darf nicht blind erneut senden.' };
+      ? { scope: 'worker_config', canClientFix: false, nextAction: 'Backend-eigene Providerkonfiguration prüfen; keine Zugangsdaten in die APK verlagern.' }
+      : { scope: 'worker_runtime', canClientFix: false, nextAction: 'Sovereign Backend und direkten OpenRouter-/FreeLLM-Transport prüfen; App darf nicht blind erneut senden.' };
   }
   return { scope: 'unknown', canClientFix: false, nextAction: 'Worker-Antwort im Runtime-Diagnosepfad prüfen.' };
 }
 
 export function explainDevChatWorkerDiagnostic(diagnostic: DevChatWorkerDiagnostic): string {
   const status = diagnostic.status ? `HTTP ${diagnostic.status}` : 'Netzwerkfehler';
-  const origin = diagnostic.canClientFix ? 'wahrscheinlich im App-Request korrigierbar' : 'nicht sicher im App-Code behebbar';
+  const origin = diagnostic.canClientFix ? 'durch eine Nutzer- oder App-Aktion behebbar' : 'nicht sicher im App-Code behebbar';
+  const title = diagnostic.scope === 'authentication'
+    ? 'Backend-Session nicht bestätigt'
+    : 'Sovereign LLM-Runtime blockiert';
   return [
-    `Cloudflare Worker blockiert: ${status}.`,
+    `${title}: ${status}.`,
     `Route: ${diagnostic.route}.`,
     `Modell: ${diagnostic.model} · Nachrichten: ${diagnostic.messageCount}.`,
     `Einschätzung: ${diagnostic.scope} · ${origin}.`,

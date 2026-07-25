@@ -19,45 +19,31 @@ def test_only_canonical_backend_is_built_for_production() -> None:
     assert "context: backend" not in workflow
 
 
-def test_legacy_provider_registry_has_no_owner_credential_target() -> None:
+def test_legacy_provider_runtime_is_not_registered_or_owner_addressable() -> None:
+    app = (BACKEND / "app.py").read_text("utf-8")
     runtime = (BACKEND / "llm_provider_runtime.py").read_text("utf-8")
     owner_input = (BACKEND / "owner_input_runtime.py").read_text("utf-8")
     migration = (BACKEND / "migrations" / "021_litellm_provider_registry.sql").read_text("utf-8")
 
+    assert "register_llm_provider_routes" not in app
+    assert "from llm_provider_runtime import" not in app
+    assert "def register_llm_provider_routes(" in runtime
     assert '"litellm_provider_key"' not in owner_input
     assert '"openai_api_key"' not in owner_input
     assert '"openrouter_api_key"' in owner_input
-    assert "owner_input_requests" in runtime
-    assert '"/model/new"' in runtime
-    assert '"/v1/chat/completions"' in runtime
-    assert '"/api/admin/llm/provider-deployments/<route_id>/owner-input"' in runtime
-    assert '"/api/internal/llm/provider-deployments/<route_id>/activate"' in runtime
-    assert "X-Sovereign-Owner-Request-Key" in runtime
-    assert "owner_request_route_mismatch" in runtime
-    assert "hmac.compare_digest" in runtime
-    assert "provider_canary_failed" in runtime
-    assert "_catalog_model_with_retry" in runtime
-    assert "requires_secret = secret_available or not model_present or not key_fingerprint" in runtime
-    assert "_normalize_provider_recovery_policy" in runtime
-    assert "provider_recovery_policy_invalid" in runtime
-    assert "policyUpdated" in runtime
-    assert "if secret_loaded:" in runtime
-    assert "key_fingerprint=%s, key_hint=%s" in runtime
-    assert "SET status='ready'" in runtime
-    assert "SET provider='litellm'" in runtime
-    assert "_securely_remove(path)" in runtime
     assert "CREATE TABLE IF NOT EXISTS llm_provider_deployments" in migration
-    assert "UPDATE llm_routes" in migration
     assert "lower(COALESCE(provider, '')) <> 'litellm'" in migration
     assert "SET api_key = NULL" in migration
 
 
-def test_provider_route_path_ids_are_validated_before_database_access() -> None:
-    runtime = (BACKEND / "llm_provider_runtime.py").read_text("utf-8")
-    assert "def _normalize_route_id(value: Any) -> str:" in runtime
-    assert "_ROUTE_ID_RE.fullmatch(candidate)" in runtime
-    assert runtime.count("route_id = _normalize_route_id(route_id)") == 3
-    assert runtime.count('"blocker": "provider_route_id_invalid"') == 3
+def test_historical_provider_source_cannot_be_reached_from_canonical_app() -> None:
+    app = (BACKEND / "app.py").read_text("utf-8")
+    openrouter = (BACKEND / "openrouter_provider_runtime.py").read_text("utf-8")
+
+    assert "register_openrouter_provider_runtime(" in app
+    assert '"/api/internal/llm/openrouter/status"' in openrouter
+    assert '"/api/internal/llm/openrouter/activate"' in openrouter
+    assert "register_llm_provider_routes" not in app
 
 
 def test_mcp_provider_operator_never_accepts_a_secret_argument() -> None:
@@ -65,9 +51,12 @@ def test_mcp_provider_operator_never_accepts_a_secret_argument() -> None:
     client = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "owner_input_client.py").read_text("utf-8")
 
     assert "ProviderRuntimeClient" in server
+    assert "def openrouter_provider_status()" in server
+    assert "def openrouter_provider_activate(" in server
+    assert "provider_runtime.openrouter_activate(route_id)" in server
     assert "def litellm_provider_deployments()" in server
     assert "def litellm_provider_route_activate(route_id: str)" in server
-    assert "provider_runtime.activate(route_id)" in server
+    assert "legacy_litellm_runtime_retired" in server
     assert "def activate(self, route_id: str)" in client
     assert 'json_body={"apiKey"' not in client
     assert "secret_argument_accepted" in client
@@ -91,19 +80,12 @@ def test_live_chat_and_catalog_use_verified_direct_transports() -> None:
     assert '"status": "Always available (free)"' not in app
 
 
-def test_readiness_and_litellm_dynamic_model_persistence_are_required() -> None:
+def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     app = (BACKEND / "app.py").read_text("utf-8")
     backend_compose = (BACKEND / "docker-compose.yml").read_text("utf-8")
-    deploy_compose = (ROOT / "deploy" / "sovereign-litellm" / "docker-compose.yml").read_text("utf-8")
-    template_compose = (
-        ROOT
-        / "tools"
-        / "sovereign-chatgpt-mcp"
-        / "templates"
-        / "sovereign-litellm"
-        / "docker-compose.yml"
-    ).read_text("utf-8")
     stack = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "litellm_stack.py").read_text("utf-8")
+    installer = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
 
     assert '@app.route("/health/ready")' in app
     assert "026_llm_free_route_revolver.sql" in app
@@ -111,10 +93,11 @@ def test_readiness_and_litellm_dynamic_model_persistence_are_required() -> None:
     assert "uq_credit_packages_name" in app
     assert "invalidDirectRoutes" in app
     assert "/health/ready" in backend_compose
-    assert 'STORE_MODEL_IN_DB: "True"' in deploy_compose
-    assert deploy_compose == template_compose
-    assert '"STORE_MODEL_IN_DB"' in stack
-    assert "dynamic model persistence is disabled" in stack
+    assert 'RETIREMENT_BLOCKER = "legacy_litellm_runtime_retired"' in stack
+    assert "raise RuntimeError(" in stack
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in installer
+    assert "templates/sovereign-litellm" not in workflow
+    assert "deploy/sovereign-litellm" not in workflow
 
 
 def test_frontend_online_adapter_never_constructs_direct_provider_routes() -> None:

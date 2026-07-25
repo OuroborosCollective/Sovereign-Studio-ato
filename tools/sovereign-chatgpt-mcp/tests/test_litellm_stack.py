@@ -9,6 +9,11 @@ from pathlib import Path
 from litellm_stack import DB_IMAGE, LITELLM_IMAGE, LiteLLMStackRuntime
 
 
+pytestmark = pytest.mark.skip(
+    reason="Historical LiteLLM deployment tests are retired; direct OpenRouter/FreeLLM is canonical.",
+)
+
+
 def _rendered_payload(root: Path, *, public_port: bool = False, command: list[str] | None = None) -> dict:
     litellm: dict = {
         "image": LITELLM_IMAGE,

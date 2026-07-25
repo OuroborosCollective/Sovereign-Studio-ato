@@ -68,8 +68,19 @@ function isAuthBootstrapRequest(input: RequestInfo | URL): boolean {
   return requestUrl(input).includes("/api/auth/me");
 }
 
+const TEST_AUTH_USER = {
+  id: 'runtime-health-user',
+  email: 'runtime-health@example.com',
+  displayName: 'Runtime Health',
+  role: 'user' as const,
+  credits: 100,
+  subscriptionStatus: 'free' as const,
+  isBanned: false,
+  createdAt: 1,
+};
+
 function authBootstrapResponse(): Response {
-  return jsonResponse({ error: "not authenticated" }, 401);
+  return jsonResponse(TEST_AUTH_USER);
 }
 
 const TEST_LITELLM_MODEL = 'deepseek-r1';
@@ -261,16 +272,7 @@ function localAreInferenceResult(onlineAvailable = true): AreInferenceResult {
 function setRuntimeTestUser(): () => void {
   const originalRefreshUser = useUserStore.getState().refreshUser;
   useUserStore.setState({
-    user: {
-      id: 'runtime-health-user',
-      email: 'runtime-health@example.com',
-      displayName: 'Runtime Health',
-      role: 'user',
-      credits: 100,
-      subscriptionStatus: 'free',
-      isBanned: false,
-      createdAt: 1,
-    },
+    user: TEST_AUTH_USER,
     refreshUser: vi.fn(async () => undefined),
   });
   return () => useUserStore.setState({ refreshUser: originalRefreshUser });
@@ -318,6 +320,7 @@ async function validateGitHubAccessFromLauncher(): Promise<void> {
 beforeEach(() => {
   window.localStorage.clear();
   useUserStore.getState().clearUser();
+  useUserStore.setState({ user: TEST_AUTH_USER });
   useToolchainStore.getState().reset();
   useSovereignToolInspectionStore.getState().resetEvidence();
   mockWorkerReply();
@@ -981,6 +984,38 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getAllByText(originalText)).toHaveLength(1);
   });
 
+  it("does not call the protected direct LLM route for a guest session", async () => {
+    const originalRefreshUser = useUserStore.getState().refreshUser;
+    useUserStore.setState({
+      user: null,
+      refreshUser: vi.fn(async () => undefined),
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (isAuthBootstrapRequest(input)) return jsonResponse({ error: 'not authenticated' }, 401);
+      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      renderWithProviders(<BuilderContainer {...baseProps()} mission="" agentReady />);
+      fireEvent.change(chatField(), { target: { value: "Erkläre mir den Runtime-State." } });
+      fireEvent.click(sendButton());
+
+      await waitFor(() =>
+        expect(screen.getByText(/bestätigte Anmeldung erforderlich/i)).toBeDefined(),
+      );
+      expect(fetchMock.mock.calls.some(([input]) =>
+        requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'),
+      )).toBe(false);
+      expect(fetchMock.mock.calls.some(([input]) =>
+        requestUrl(input as RequestInfo | URL).includes('/api/llm/routes'),
+      )).toBe(false);
+    } finally {
+      useUserStore.setState({ refreshUser: originalRefreshUser });
+    }
+  });
+
   it("shows repo status when not ready but does not block normal chat", async () => {
     const props = baseProps();
     renderWithProviders(<BuilderContainer {...props} repoReady={false} agentReady />);
@@ -1256,7 +1291,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     renderWithProviders(<BuilderContainer {...baseProps()} />);
 
     expect(screen.getByLabelText("Menü")).toHaveStyle({ width: "44px", height: "44px" });
-    expect(screen.getByLabelText("Anmelden")).toHaveStyle({ width: "44px", height: "44px" });
+    expect(screen.getByLabelText("Profil")).toHaveStyle({ width: "44px", height: "44px" });
     expect(screen.getByRole("button", { name: /RT.*Runtime Quelle/i })).toHaveStyle({ minHeight: "44px" });
     expect(screen.getByLabelText("Panel öffnen")).toHaveStyle({ minWidth: "44px", minHeight: "44px" });
     expect(screen.getByRole("button", { name: /^Actions:/ })).toHaveStyle({ minHeight: "44px" });
