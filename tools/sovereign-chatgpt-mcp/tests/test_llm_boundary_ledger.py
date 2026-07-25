@@ -13,10 +13,10 @@ LEDGER = ROOT / "config" / "architecture" / "llm-tool-boundary-review-ledger.jso
 def test_current_review_ledger_is_complete_and_fresh() -> None:
     result = validate_ledger(ROOT, load_ledger(LEDGER))
 
-    assert result["ok"] is True
+    assert result["ok"] is True, result["ledgerSha256"]
     assert result["status"] == "LLM_BOUNDARY_LEDGER_VERIFIED"
-    assert result["rawCandidateCount"] == 75
-    assert result["canonicalCandidateCount"] == 63
+    assert result["rawCandidateCount"] == 76
+    assert result["canonicalCandidateCount"] == 64
     assert result["findings"] == []
 
 
