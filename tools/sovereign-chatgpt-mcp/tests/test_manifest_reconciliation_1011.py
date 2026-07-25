@@ -16,7 +16,9 @@ CURRENT_REVISION = "5962c80e92cd96ef96eac72476b38cc0455f24fa"
 CURRENT_BACKEND_DIGEST = (
     "sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59"
 )
-CURRENT_MCP_REVISION = "09307359732ec0bbdb579747f494a7add2edee19"
+CURRENT_MCP_REVISION = "7ef2ad6cefe0659b240be155a64c044df088ac08"
+CURRENT_MCP_DIGEST = "sha256:64b4290dce3450b007bade472b1d9998875645d1873fe514833f7778ef9cf91a"
+CURRENT_MCP_EVIDENCE = "d3da0b886d5cc53f84ec2316e3d14073ae70b9022775e8c0602b8369cf50ffc0"
 OPEN_ISSUE_NUMBERS = {1013, 1014, 1016, 1017}
 RESOLVED_KEYS = {
     "provider-onboarding-gpt54-route",
@@ -56,6 +58,9 @@ def test_bundle_binds_current_runtime_without_global_green_claim() -> None:
     assert runtime["backendRevision"] == CURRENT_REVISION
     assert runtime["backendImageDigest"] == CURRENT_BACKEND_DIGEST
     assert runtime["mcpRevision"] == CURRENT_MCP_REVISION
+    assert runtime["mcpImageDigest"] == CURRENT_MCP_DIGEST
+    assert runtime["mcpEvidenceSha256"] == CURRENT_MCP_EVIDENCE
+    assert runtime["mcpTestSummary"] == "465 passed, 12 skipped"
     assert routing == {
         "paidTransport": "openrouter-direct",
         "paidDeploymentStatus": "ready",
@@ -76,6 +81,9 @@ def test_manifest_current_sections_match_repository_and_runtime_readback() -> No
     assert CURRENT_REVISION in text
     assert CURRENT_BACKEND_DIGEST in text
     assert CURRENT_MCP_REVISION in text
+    assert CURRENT_MCP_DIGEST in text
+    assert CURRENT_MCP_EVIDENCE in text
+    assert "465 passed, 12 skipped" in text
     assert "SOVEREIGN_MANIFEST_OPEN_ISSUES_2026-07-25.json" in text
 
     for issue_number in OPEN_ISSUE_NUMBERS:
