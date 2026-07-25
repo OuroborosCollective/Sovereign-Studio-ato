@@ -176,6 +176,17 @@ def _quota_rank(
         limit = None
     ratio = remaining / limit if remaining is not None and limit and limit > 0 else remaining
     availability = 0 if remaining is not None and remaining > 0 else 2 if remaining == 0 else 1
+    cooldown_until = _as_datetime(
+        current.get("cooldown_until") or current.get("cooldownUntil")
+    )
+    status = str(current.get("status") or "ready").strip().lower()
+    failure_count = int(
+        current.get("consecutive_failures")
+        or current.get("consecutiveFailures")
+        or 0
+    )
+    if status == "cooldown" and cooldown_until is not None and cooldown_until <= now:
+        failure_count = 0
     last_attempt = _as_datetime(
         current.get("last_attempt_at") or current.get("lastAttemptAt")
     )
@@ -188,7 +199,7 @@ def _quota_rank(
     return (
         availability,
         -(ratio if ratio is not None else 0),
-        int(current.get("consecutive_failures") or current.get("consecutiveFailures") or 0),
+        failure_count,
         0 if last_attempt is None else 1,
         attempt_rank,
         latency_ms if latency_ms is not None else float("inf"),
