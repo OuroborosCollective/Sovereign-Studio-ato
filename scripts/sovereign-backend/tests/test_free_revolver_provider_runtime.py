@@ -424,20 +424,23 @@ def test_admin_projection_uses_direct_route_terms_and_revision_receipts() -> Non
     assert "model.litellmAlias" not in control_center
 
 
-def test_managed_reconcile_requires_six_current_receipts_and_paces_retryable_routes() -> None:
+def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> None:
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
 
-    assert "_DEFAULT_MIN_READY_ROUTES = 6" in runtime
-    assert "return max(6, min(value, 32))" in runtime
+    assert "_DEFAULT_MIN_READY_ROUTES = 5" in runtime
+    assert "return _DEFAULT_MIN_READY_ROUTES" in runtime
+    assert "SOVEREIGN_FREELLM_MIN_READY_ROUTES" not in runtime
     assert "receipt_current" in runtime
     assert "current_ready = []" in runtime
-    assert "len(current_ready) + len(ready) >= target_ready_count" in runtime
+    assert "len(current_ready) + len(ready) >= target_ready_count" not in runtime
     assert "retryAfterSeconds" in runtime
     assert "_reconcile_pace_seconds()" in runtime
     assert "overall_ready_count = int(ready_state.get(\"ready_count\") or 0)" in runtime
     assert "minimum_ready_satisfied = overall_ready_count >= target_ready_count" in runtime
     assert '"minimumReadyRoutes": target_ready_count' in runtime
     assert '"minimumReadySatisfied": minimum_ready_satisfied' in runtime
+    assert '"readyRouteCeiling": None' in runtime
+    assert '"additionalReadyRoutesAllowed": True' in runtime
     assert '"currentReady": current_ready' in runtime
     assert '"readyCount": overall_ready_count' in runtime
     assert '"ok": minimum_ready_satisfied' in runtime
