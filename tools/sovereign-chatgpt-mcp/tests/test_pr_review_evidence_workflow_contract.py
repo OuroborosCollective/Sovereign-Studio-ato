@@ -10,10 +10,14 @@ WORKFLOW = ROOT / ".github" / "workflows" / "sovereign-pr-review-evidence.yml"
 def test_review_evidence_workflow_is_head_bound_and_read_first() -> None:
     workflow = WORKFLOW.read_text("utf-8")
 
+    assert "pull_request:" in workflow
+    assert "types: [opened, synchronize, reopened, ready_for_review]" in workflow
     assert "workflow_dispatch:" in workflow
     assert "pr_number:" in workflow
     assert "expected_head_sha:" in workflow
     assert "confirm_resolve:" in workflow
+    assert "github.event.pull_request.head.sha || inputs.expected_head_sha" in workflow
+    assert "github.event_name == 'workflow_dispatch' && inputs.confirm_resolve || false" in workflow
     assert "pull-requests: write" in workflow
     assert "reviewThreads(first:100,after:$cursor)" in workflow
     assert "PR_HEAD_IDENTITY_MISMATCH" in workflow

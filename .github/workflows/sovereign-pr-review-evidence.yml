@@ -1,6 +1,9 @@
 name: Sovereign PR Review Evidence
 
 on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -42,7 +45,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: sovereign-pr-review-evidence-${{ inputs.pr_number }}
+  group: sovereign-pr-review-evidence-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: false
 
 jobs:
@@ -55,9 +58,9 @@ jobs:
         id: evidence
         uses: actions/github-script@v7
         env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
-          CONFIRM_RESOLVE: ${{ inputs.confirm_resolve }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.expected_head_sha }}
+          CONFIRM_RESOLVE: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_resolve || false }}
           EXPECTED_THREAD_ID_SHA256: ${{ inputs.expected_thread_id_sha256 }}
           EXPECTED_COMMENT_BODY_SHA256: ${{ inputs.expected_comment_body_sha256 }}
           EXPECTED_PATH: ${{ inputs.expected_path }}
@@ -216,7 +219,7 @@ jobs:
       - name: Upload bounded review evidence
         uses: actions/upload-artifact@v4
         with:
-          name: pr-review-evidence-${{ inputs.pr_number }}-${{ github.run_id }}
+          name: pr-review-evidence-${{ github.event.pull_request.number || inputs.pr_number }}-${{ github.run_id }}
           path: .sovereign-evidence/pr-review-evidence.json
           include-hidden-files: true
           if-no-files-found: error
