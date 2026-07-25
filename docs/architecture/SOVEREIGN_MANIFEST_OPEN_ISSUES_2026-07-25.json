@@ -1,0 +1,203 @@
+{
+  "schemaVersion": "sovereign.manifest-open-issues.v1",
+  "auditBaseline": "5962c80e92cd96ef96eac72476b38cc0455f24fa",
+  "generatedAt": "2026-07-25",
+  "manifestPath": "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md",
+  "reconciledByIssue": 1011,
+  "openIssueCount": 4,
+  "runtimeEvidence": {
+    "repositoryRevision": "5962c80e92cd96ef96eac72476b38cc0455f24fa",
+    "architectureSnapshotSha256": "efb046fed439a8d9b9b3132567ea5c168851633a7b15c522eda59d15c9e0c06f",
+    "mirrorReportSha256": "8c09a39d63bbb0adcd7c3981faa7795601aa0d092b7bed2675ed2cef7ad33fa0",
+    "endpointReferenceSha256": "f1762289cc81fda64717071772d4ed20319801de122ac3deda68a3384a25893d",
+    "backendRevision": "5962c80e92cd96ef96eac72476b38cc0455f24fa",
+    "backendImageDigest": "sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59",
+    "mcpRevision": "09307359732ec0bbdb579747f494a7add2edee19",
+    "mcpImageDigest": "sha256:4bb1cdae9bc22fd649ada676dc71101956d23ae286831fee15c738eee4471987",
+    "mcpEvidenceSha256": "ff1e832551dd9f977c4255f12931afb5468f04539c42c2015d8202c297b4b946",
+    "databaseReadbackSha256": "b90c5815561484ad390dd988185c1e8443769d13603c35814c9d4e54583127cd",
+    "patchmonFleetQuerySha256": "60564dd156e5bb4dc21d7df0f221b335e41e387db072312c517c203008f1d792",
+    "routing": {
+      "paidTransport": "openrouter-direct",
+      "paidDeploymentStatus": "ready",
+      "paidCurrentStatus": "catalog_refresh_required",
+      "paidSelectableModels": 0,
+      "freeTransport": "freellm-direct",
+      "freeReadyRoutes": 5,
+      "freeCurrentStatus": "degraded",
+      "liteLlmActiveTransport": false
+    }
+  },
+  "resolvedKeys": [
+    "provider-onboarding-gpt54-route",
+    "runtime-canary-coverage-matrix",
+    "llm-tool-boundary-review-ledger",
+    "historical-schema-ownership",
+    "deploy-enterprise-admin-backend",
+    "apply-owner-learning-policy-migration",
+    "mirror-drift-llm-cost-policy",
+    "mirror-drift-proven-learning-runtime",
+    "github-app-route-registration",
+    "remove-dead-legacy-admin-html"
+  ],
+  "issues": [
+    {
+      "key": "physical-android-device-smoke",
+      "githubIssueNumber": 1013,
+      "title": "[Release] Physischen Android-Hauptpfad revisionsgebunden belegen",
+      "evidence": "Repository-, Build-, Signatur- und Alignment-Gates sind vorhanden. Ein Emulator-, CI- oder Artefaktbeweis ersetzt jedoch keinen realen Installations- und Nutzungstest auf einem physischen Android-Gerät.",
+      "goal": "Einen reproduzierbaren physischen Device-Smoke für den kanonischen Android-first Hauptpfad etablieren und an exakt dieselbe Repository-Revision und dasselbe APK/AAB-Artefakt binden.",
+      "paths": [
+        "android/",
+        "android/app/src/main/AndroidManifest.xml",
+        "android/app/build.gradle",
+        "capacitor.config.ts",
+        ".github/workflows/android-release.yml",
+        "src/App.androidWebView.smoke.test.tsx",
+        "docs/architecture/"
+      ],
+      "rules": [
+        "Ein Emulatorbeweis ersetzt den physischen Smoke nicht.",
+        "Testgerät, Android-Version, Build-SHA und Artefakthash werden gebunden.",
+        "Keine Zugangsdaten in Logcat, Screenshots oder Testreports.",
+        "Fehlgeschlagene Schritte erzeugen einen Blocker statt Gesamtgrün."
+      ],
+      "workflow": [
+        "Signiertes Artefakt vom exakten PR- oder Main-SHA beziehen.",
+        "Signatur und SHA-256 vor Installation prüfen.",
+        "Installation, Start, Session, Chat und Backend-Roundtrip auf realem Gerät prüfen.",
+        "Touch-, Tastatur-, Offline- und Fehlerpfade prüfen.",
+        "Secret-sicheres Device-Receipt persistieren."
+      ],
+      "integrationPlan": [
+        "Manuelle Device-Checkliste und maschinenlesbares Receipt gemeinsam versionieren.",
+        "Backend-Trace mit dem UI-Roundtrip korrelieren.",
+        "Release Gate nur aus echtem Device-Receipt ableiten."
+      ],
+      "example": "assert installed_artifact.sha256 == release_artifact.sha256\nassert physical_device.chat_roundtrip.backend_trace_verified\nassert no_secret_in_logcat",
+      "acceptance": [
+        "Mindestens ein physisches Android-Gerät besteht den vollständigen Hauptpfad.",
+        "Evidence ist revisions- und artefaktgebunden.",
+        "Kein Crash, ANR, Secret-Leak oder simulierter Device-Erfolg."
+      ]
+    },
+    {
+      "key": "github-knowledge-live-canary",
+      "githubIssueNumber": 1014,
+      "title": "[Knowledge] GitHub-Import und sicheren Transportfehler live belegen",
+      "evidence": "Der Codevertrag bevorzugt öffentliche credential-freie GitHub-Reads und klassifiziert Transportfehler getrennt. Ein aktueller revisions- und digestgebundener Produktionsbeweis für Erfolgs- und sicheren Fehlerpfad fehlt.",
+      "goal": "Einen nicht destruktiven Livecanary ausführen, der einen öffentlichen GitHub-Import bis zum persistierten Knowledge-Status belegt und einen kontrollierten Transportfehler mit sicherem Audit-Fingerprint prüft.",
+      "paths": [
+        "scripts/sovereign-backend/knowledge_library.py",
+        "backend/knowledge_library.py",
+        "tools/sovereign-chatgpt-mcp/github_knowledge_canary.py",
+        ".github/workflows/sovereign-chatgpt-mcp.yml",
+        "audit_log",
+        "sovereign_toolchain_incidents"
+      ],
+      "rules": [
+        "Öffentliche Repositories zuerst ohne Credential lesen.",
+        "Keine rohe URL, Query, Exception oder Credential persistieren.",
+        "Canarydaten werden eindeutig markiert und sicher bereinigt.",
+        "Livecanary nur gegen exakte Backend-Revision und Image-Digest."
+      ],
+      "workflow": [
+        "Laufende Backend-Revision und Digest rücklesen.",
+        "Öffentliche stabile GitHub-Datei credential-frei importieren.",
+        "Source-, Block-, Embedding- und Link-Evidence prüfen.",
+        "Kontrollierten Transportfehler auslösen und sicheren Fingerprint prüfen.",
+        "Canarydaten im finally-Pfad bereinigen."
+      ],
+      "integrationPlan": [
+        "Erfolgs- und Fehlerpfad als getrennte Canaryphasen behandeln.",
+        "Nur Identitäten, Status und Hashes ausgeben.",
+        "Cleanup und Revision als Pflichtfelder des Receipts erzwingen."
+      ],
+      "example": "assert import_result.public_read_without_credential\nassert import_result.embeddings_complete\nassert error_result.safe_url_fingerprint_only\nassert cleanup.verified",
+      "acceptance": [
+        "Erfolgs- und Fehlerpfad sind an dieselbe Backend-Revision und denselben Digest gebunden.",
+        "Öffentlicher Erfolgsfall verwendet kein Server-Credential.",
+        "Fehlerfall liefert sicheren reproduzierbaren Blocker.",
+        "Kein Mock, Stub oder rein statischer Test gilt als Livebeweis."
+      ]
+    },
+    {
+      "key": "filebrowser-runtime-decision",
+      "githubIssueNumber": 1016,
+      "title": "[Fleet] Unhealthy Filebrowser-Container prüfen und kanonisch entscheiden",
+      "evidence": "PatchMon inventarisiert file-browser-cunr-filebrowser-1 als running, aber unhealthy, mit Port 32832 auf allen Interfaces. Prozesslauf allein ist weder Funktions- noch Sicherheitsbeweis.",
+      "goal": "Klären, ob Filebrowser zum kanonischen Sovereign-Betrieb gehört; den Dienst entweder mit echtem Canary und minimaler Netzwerkgrenze reparieren oder kontrolliert einschließlich Daten- und Restore-Ownership stilllegen.",
+      "paths": [
+        "Filebrowser-Compose- und Containerkonfiguration auf dem VPS",
+        "PatchMon-Dockerinventar",
+        "Code-Server- und Operatorabhängigkeiten",
+        "persistente Filebrowser-Volumes",
+        "Netzwerk- und Portbindungen"
+      ],
+      "rules": [
+        "Running gilt nicht als healthy.",
+        "Daten- und Volume-Ownership vor Stilllegung dokumentieren.",
+        "Öffentliche Portbindung nur mit belegtem Zweck und Authgrenze.",
+        "Reparatur oder Entfernung benötigt Rollback-Readback."
+      ],
+      "workflow": [
+        "Healthcheck, Logs, HTTP-Verhalten, Mounts und Datenpfad lesen.",
+        "Kanonische Abhängigkeiten bestimmen.",
+        "Netzwerkgrenze und Zugriffspfad bewerten.",
+        "Reparatur oder Stilllegung mit Rollback durchführen.",
+        "PatchMon- und Funktionsreadback wiederholen."
+      ],
+      "integrationPlan": [
+        "Dienstentscheidung versioniert dokumentieren.",
+        "Bei Erhalt Loopback oder privaten Zugriff bevorzugen.",
+        "Bei Entfernung Restore-Pfad und Volumebehandlung belegen."
+      ],
+      "example": "assert decision in {'keep-and-repair', 'retire'}\nassert functional_canary.ok if decision == 'keep-and-repair' else dependencies.remaining == 0",
+      "acceptance": [
+        "Entweder healthy mit echtem HTTP-/Funktionscanary und minimaler Freigabe oder vollständig entfernt ohne verwaiste Abhängigkeit.",
+        "Datenvolumes und Restore-Pfad sind dokumentiert.",
+        "Keine Secret-Ausgabe und kein ungeprüftes Grün."
+      ]
+    },
+    {
+      "key": "host-patch-reboot",
+      "githubIssueNumber": 1017,
+      "title": "[Fleet] Host-Patchstand und erforderlichen Reboot kontrolliert abschließen",
+      "evidence": "PatchMon meldet einen aktiven Host mit hosts_needing_reboot=1, hosts_needing_updates=1, 28 ausstehenden Paketen, 0 ausstehenden Security-Paketen und keinen aktiven oder fehlgeschlagenen Patch-Runs.",
+      "goal": "Paket- und Rebootbedarf mit echter Vorschau, Wartungsreihenfolge, Backupgrenzen und Post-Reboot-Fachcanaries abschließen, ohne zustandsbehaftete Sovereign-Dienste unkontrolliert zu unterbrechen.",
+      "paths": [
+        "PatchMon-Host- und Paketinventar",
+        "PostgreSQL/Supabase",
+        "Sovereign Backend und MCP",
+        "OpenRouter- und FreeLLM-Statuspfade",
+        "Milvus/Memory und PatchMon",
+        "Backup- und Restore-Evidence"
+      ],
+      "rules": [
+        "Patchlauf zuerst als validierte Vorschau oder pending approval erzeugen.",
+        "Zustandsbehaftete Dienste benötigen Backup-/Restore-Evidence.",
+        "Post-Reboot running ersetzt keinen Fachcanary.",
+        "Abweichende Pakete müssen einzeln begründet werden."
+      ],
+      "workflow": [
+        "Paketliste und Rebootursache secret-sicher inventarisieren.",
+        "Abhängigkeiten, Backupgrenzen und Neustartreihenfolge bestimmen.",
+        "PatchMon-Run validieren und owner-gated ausführen.",
+        "Host kontrolliert rebooten.",
+        "Container, Broker, MCP, Backend, PostgreSQL, pgvector, OpenRouter, FreeLLM und Memory neu prüfen."
+      ],
+      "integrationPlan": [
+        "Wartungsablauf revisions- und zustandsgebunden planen.",
+        "Vorher-/Nachher-Fleet-Snapshots korrelieren.",
+        "Fachcanary-Ausfälle als getrennte Blocker erhalten."
+      ],
+      "example": "assert patch_preview.validated\nassert backups.restore_evidence_ready\nassert post_reboot.hosts_needing_reboot == 0\nassert all(required_canaries.verified)",
+      "acceptance": [
+        "Keine ausstehenden Pakete oder dokumentierte begründete Ausnahmen.",
+        "hosts_needing_reboot steht nach erfolgreichem Reboot auf 0.",
+        "Alle kanonischen Runtime-Abhängigkeiten besitzen Post-Reboot-Evidence.",
+        "Kein Container wird allein wegen running als fachlich gesund erklärt."
+      ]
+    }
+  ]
+}

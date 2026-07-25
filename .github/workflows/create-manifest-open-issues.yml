@@ -8,7 +8,7 @@ on:
       bundle_path:
         description: Versioned JSON bundle under docs/architecture
         required: true
-        default: docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES.json
+        default: docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES_2026-07-25.json
         type: string
       expected_bundle_sha256:
         description: Exact SHA-256 of the issue bundle
@@ -125,6 +125,33 @@ jobs:
                   core.setFailed(`missing ${field} list for ${key}`);
                   return;
                 }
+              }
+
+              const boundIssueNumber = Number(item.githubIssueNumber || 0);
+              if (boundIssueNumber !== 0) {
+                if (!Number.isInteger(boundIssueNumber) || boundIssueNumber < 1) {
+                  core.setFailed(`invalid githubIssueNumber for ${key}`);
+                  return;
+                }
+                const boundIssue = allIssues.find(
+                  (candidate) => !candidate.pull_request && candidate.number === boundIssueNumber,
+                );
+                if (!boundIssue) {
+                  core.setFailed(`bound issue #${boundIssueNumber} for ${key} does not exist`);
+                  return;
+                }
+                if (boundIssue.state !== 'open') {
+                  core.setFailed(
+                    `bound issue #${boundIssueNumber} for ${key} is not open; automatic reopen is forbidden`,
+                  );
+                  return;
+                }
+                if (String(boundIssue.title || '').trim() !== title) {
+                  core.setFailed(`bound issue #${boundIssueNumber} title mismatch for ${key}`);
+                  return;
+                }
+                reused.push({ key, number: boundIssue.number, url: boundIssue.html_url });
+                continue;
               }
 
               const marker = `<!-- sovereign-manifest-issue:${key} -->`;
