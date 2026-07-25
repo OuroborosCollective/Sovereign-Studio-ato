@@ -388,6 +388,7 @@ describe('Palette Accessibility Enhancements', () => {
       expect(fileBadgeBtn).toHaveAttribute('aria-label', 'Repo Datei öffnen: src/App.tsx');
       expect(fileBadgeBtn).toHaveAttribute('title', 'Repo Datei öffnen: src/App.tsx');
 
+      // Test non-interactive badge
       rerender(<FileBadge path="src/" file="App.tsx" />);
       const disabledBadge = screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' });
       expect(disabledBadge).toBeDisabled();
@@ -426,6 +427,7 @@ describe('Palette Accessibility Enhancements', () => {
       const inlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei öffnen: src/App.tsx' });
       expect(inlineBadgeBtn).toHaveAttribute('title', 'Repo Datei öffnen: src/App.tsx');
 
+      // Non-interactive (no onOpenFile)
       rerender(
         <AgentEventStream snapshot={mockSnapshot} job={mockJob} />
       );
