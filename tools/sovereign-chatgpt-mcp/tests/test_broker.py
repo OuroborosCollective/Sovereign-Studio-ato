@@ -218,6 +218,95 @@ def test_patchmon_read_dispatch_is_allowlisted(monkeypatch) -> None:
     assert result["mutationPerformed"] is False
 
 
+def test_patchmon_bootstrap_compatibility_plan_uses_fixed_fleet_path(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    observed = {}
+
+    def bootstrap_plan(*, friendly_name):
+        observed["friendly_name"] = friendly_name
+        return {
+            "ok": True,
+            "status": "PATCHMON_FLEET_BOOTSTRAP_PLAN_READY",
+            "confirmationSha256": "b" * 64,
+        }
+
+    monkeypatch.setattr(runtime.patchmon_fleet, "bootstrap_plan", bootstrap_plan)
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_plan",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("legacy patch plan must not execute")),
+    )
+
+    result = runtime.patchmon_action_plan({"action": "bootstrap_local_fleet"})
+
+    assert result["status"] == "PATCHMON_FLEET_BOOTSTRAP_PLAN_READY"
+    assert observed == {"friendly_name": "sovereign-vps"}
+
+
+def test_patchmon_bootstrap_compatibility_apply_preserves_confirmation_and_owner_gate(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    observed = {}
+
+    def bootstrap_apply(*, confirmation_sha256, friendly_name, owner_approved):
+        observed.update(
+            confirmation_sha256=confirmation_sha256,
+            friendly_name=friendly_name,
+            owner_approved=owner_approved,
+        )
+        return {"ok": True, "status": "PATCHMON_FLEET_BOOTSTRAPPED"}
+
+    monkeypatch.setattr(runtime.patchmon_fleet, "bootstrap_apply", bootstrap_apply)
+    monkeypatch.setattr(
+        runtime.patchmon,
+        "patch_action_apply",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("legacy patch apply must not execute")),
+    )
+
+    result = runtime.patchmon_action_apply(
+        {
+            "action": "bootstrap_local_fleet",
+            "confirmation_sha256": "c" * 64,
+        }
+    )
+
+    assert result["status"] == "PATCHMON_FLEET_BOOTSTRAPPED"
+    assert observed == {
+        "confirmation_sha256": "c" * 64,
+        "friendly_name": "sovereign-vps",
+        "owner_approved": True,
+    }
+
+
+def test_patchmon_non_bootstrap_action_still_delegates_to_operator(monkeypatch) -> None:
+    runtime = BrokerRuntime()
+    observed = {}
+
+    def patch_action_plan(**kwargs):
+        observed.update(kwargs)
+        return {"ok": True, "status": "PATCHMON_ACTION_PLAN_READY"}
+
+    monkeypatch.setattr(runtime.patchmon, "patch_action_plan", patch_action_plan)
+    monkeypatch.setattr(
+        runtime.patchmon_fleet,
+        "bootstrap_plan",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("fleet bootstrap must not execute")),
+    )
+
+    result = runtime.patchmon_action_plan(
+        {
+            "action": "submit_for_approval",
+            "host_id": "11111111-1111-4111-8111-111111111111",
+            "patch_type": "patch_all",
+            "package_names": [],
+        }
+    )
+
+    assert result["status"] == "PATCHMON_ACTION_PLAN_READY"
+    assert observed["action"] == "submit_for_approval"
+    assert observed["host_id"] == "11111111-1111-4111-8111-111111111111"
+    assert observed["patch_type"] == "patch_all"
+
+
 def test_patchmon_mutation_is_forbidden_on_inbound_broker_socket(monkeypatch) -> None:
     runtime = BrokerRuntime()
     monkeypatch.setattr(
