@@ -296,7 +296,21 @@ jobs:
           fi
 
       - name: Run policy and runtime tests
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q 2>&1 | tee mcp-pytest.log
+          test_status=${PIPESTATUS[0]}
+          exit "${test_status}"
+
+      - name: Upload bounded MCP test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-pytest-${{ github.run_id }}
+          path: tools/sovereign-chatgpt-mcp/mcp-pytest.log
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Prove Python and TypeScript deterministic parity
         run: |

@@ -22,13 +22,11 @@ describe('toolchainClient Android/backend boundary', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(toolchainClient.manifest()).resolves.toMatchObject({ tools: [] });
-    expect(fetchMock).toHaveBeenCalledWith(
-      SOVEREIGN_TOOLCHAIN_ENDPOINTS.manifest,
-      expect.objectContaining({
-        credentials: 'include',
-        headers: expect.objectContaining({ Accept: 'application/json' }),
-      }),
-    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestUrl).toBe(SOVEREIGN_TOOLCHAIN_ENDPOINTS.manifest);
+    expect(requestInit).toEqual(expect.objectContaining({ credentials: 'include' }));
+    expect(new Headers(requestInit?.headers).get('Accept')).toBe('application/json');
     expect(SOVEREIGN_TOOLCHAIN_ENDPOINTS.manifest).not.toContain('https://localhost');
   });
 
