@@ -223,3 +223,78 @@ class TestToolchainSsrfProtection:
 
         assert response.status_code == 400
         assert "Unauthorized worker host" in response.get_json()["error"]
+
+
+class TestToolchainPathTraversalProtection:
+    """Verifies that path traversal and absolute paths are rejected in the toolchain."""
+
+    @pytest.mark.parametrize("bad_path", [
+        "../../secrets.json",
+        "src/../../etc/passwd",
+        "/etc/passwd",
+        "nested/path/../../etc",
+        "somefile.txt\0",
+        "\0file",
+        "/absolute/path",
+    ])
+    def test_validate_path_rejects_unsafe_paths(self, bad_path):
+        """Directly verify _tc_validate_path blocks unsafe inputs."""
+        with pytest.raises(Exception) as exc:
+            app._tc_validate_path(bad_path)
+        assert "Pfad-Traversal oder absoluter Pfad nicht erlaubt" in str(exc.value)
+
+    @pytest.mark.parametrize("good_path", [
+        "README.md",
+        "src/features/product/components/Sidebar.tsx",
+        "docs/api.md",
+        "nested/path/to/file.py",
+    ])
+    def test_validate_path_allows_safe_paths(self, good_path):
+        """Directly verify _tc_validate_path allows safe relative inputs."""
+        # Should not raise any exception
+        app._tc_validate_path(good_path)
+
+    def test_endpoint_read_file_rejects_traversal(self, mock_app_deps):
+        """Flask endpoint /api/toolchain/github/read-file should reject traversal paths."""
+        client = app.app.test_client()
+        response = client.post(
+            "/api/toolchain/github/read-file",
+            json={
+                "owner": "OuroborosCollective",
+                "repo": "Sovereign-Studio-ato",
+                "path": "../../secrets.json",
+            },
+        )
+        assert response.status_code == 403
+        assert "Pfad-Traversal oder absoluter Pfad nicht erlaubt" in response.get_json()["error"]
+
+    def test_endpoint_list_directory_rejects_traversal(self, mock_app_deps):
+        """Flask endpoint /api/toolchain/github/list-directory should reject traversal paths."""
+        client = app.app.test_client()
+        response = client.post(
+            "/api/toolchain/github/list-directory",
+            json={
+                "owner": "OuroborosCollective",
+                "repo": "Sovereign-Studio-ato",
+                "path": "../nested",
+            },
+        )
+        assert response.status_code == 403
+        assert "Pfad-Traversal oder absoluter Pfad nicht erlaubt" in response.get_json()["error"]
+
+    def test_endpoint_apply_patch_worker_rejects_traversal(self, mock_app_deps):
+        """Flask endpoint /api/toolchain/apply-patch-worker should reject traversal paths."""
+        client = app.app.test_client()
+        response = client.post(
+            "/api/toolchain/apply-patch-worker",
+            json={
+                "owner": "OuroborosCollective",
+                "repo": "Sovereign-Studio-ato",
+                "path": "src/../../dangerous",
+                "message": "Update doc",
+                "blocks": [{"search": "a", "replace": "b"}],
+                "confirm": True,
+            },
+        )
+        assert response.status_code == 403
+        assert "Pfad-Traversal oder absoluter Pfad nicht erlaubt" in response.get_json()["error"]

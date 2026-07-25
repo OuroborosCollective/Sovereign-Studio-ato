@@ -4631,6 +4631,15 @@ def _tc_allowed(owner: str, repo: str) -> None:
         raise PermissionError(f"Repo {owner}/{repo} ist nicht in der Allowlist")
 
 
+def _tc_validate_path(path: str) -> None:
+    """Validate that the given path is safe (no path traversal, no leading slashes, no null bytes)."""
+    if not path or not isinstance(path, str):
+        raise ValueError("Pfad ist ungültig oder leer")
+    normalized = path.replace("\\", "/").strip().lower()
+    if ".." in normalized or normalized.startswith("/") or "\0" in normalized:
+        raise PermissionError("Pfad-Traversal oder absoluter Pfad nicht erlaubt (Sicherheitsverletzung)")
+
+
 def _tc_gh_headers() -> dict:
     h = {
         "Accept": "application/vnd.github+json",
@@ -4718,6 +4727,7 @@ def _tc_audit(user_id: str | None, action: str, details: dict) -> None:
 
 def _tc_read_github_file(owner: str, repo: str, path: str, ref: str | None = None) -> dict:
     _tc_allowed(owner, repo)
+    _tc_validate_path(path)
     qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
     data = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
     if isinstance(data, list):
@@ -4737,6 +4747,7 @@ def _tc_create_draft_pr(
     title: str | None, body: str | None, base_branch: str | None,
 ) -> dict:
     _tc_allowed(owner, repo)
+    _tc_validate_path(path)
     # Get base SHA
     base_data = _tc_gh_get(f"/repos/{owner}/{repo}")
     default_branch = base_branch or base_data.get("default_branch", "main")
@@ -4865,6 +4876,8 @@ def tc_github_list_directory():
         if not owner or not repo:
             return jsonify({"error": "owner und repo erforderlich"}), 400
         _tc_allowed(owner, repo)
+        if path:
+            _tc_validate_path(path)
         qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
         items = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
         if not isinstance(items, list):
@@ -5056,6 +5069,8 @@ def tc_apply_patch_worker():
 
         if not all([owner, repo, path, message, blocks]):
             return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
+
+        _tc_validate_path(path)
 
         payload = {"owner": owner, "repo": repo, "path": path, "message": message, "blocks": blocks}
 
