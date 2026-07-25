@@ -23,41 +23,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  compile-check:
-    name: Compile Check
-    needs: agent-tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Compile Agent Runtime
-        run: |
-          python -m py_compile \
-            scripts/sovereign-backend/app.py \
-            scripts/sovereign-backend/litellm_runtime.py \
-            backend/litellm_runtime.py \
-            scripts/sovereign-backend/runner.py \
-            scripts/sovereign-backend/agent_runtime/*.py \
-            scripts/sovereign-backend/agent_runtime/tools/*.py
-
-      - name: Validate migrations and internal live-path contract
-        run: |
-          bash -n scripts/sovereign-backend/auto-migrate.sh
-          node --test scripts/sovereign-agent-internal-live-path.contract.mjs
-
   agent-tests:
     name: Agent Runtime Tests
     runs-on: ubuntu-latest
@@ -88,33 +53,3 @@ jobs:
           path: agent-runtime-pytest.log
           if-no-files-found: error
           retention-days: 3
-
-  release-policy-gate:
-    name: Queue-only Release Policy
-    needs: [compile-check, agent-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Verify validation-only workflow boundary
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          workflow = Path(".github/workflows/sovereign-agent-backend.yml").read_text("utf-8")
-          forbidden = (
-              "apple" + "boy/",
-              "VPS_" + "PASSWORD",
-              "docker " + "build",
-              "docker " + "run",
-              "scp-" + "action",
-              "ssh-" + "action",
-          )
-          found = [marker for marker in forbidden if marker in workflow]
-          if found:
-              raise SystemExit(f"Direct host mutation markers remain: {found}")
-          print("Validation-only boundary verified; production release requires the Sovereign host-command queue.")
-          PY

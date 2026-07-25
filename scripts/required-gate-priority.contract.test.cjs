@@ -46,10 +46,17 @@ test('only required workflows receive direct pull_request runners', () => {
   assert.doesNotMatch(releaseWorkflow, /ready_for_review|converted_to_draft/);
 });
 
-test('Agent Runtime Tests receives a runner before compile-check', () => {
-  const workflow = read('.github/workflows/sovereign-agent-backend.yml');
-  assert.match(workflow, /compile-check:\n\s+name: Compile Check\n\s+needs: agent-tests\n/);
-  assert.match(workflow, /agent-tests:\n\s+name: Agent Runtime Tests\n/);
+test('Agent Runtime Tests is the only direct backend PR job', () => {
+  const requiredWorkflow = read('.github/workflows/sovereign-agent-backend.yml');
+  const supplementalWorkflow = read('.github/workflows/sovereign-agent-supplemental.yml');
+  assert.match(requiredWorkflow, /agent-tests:\n\s+name: Agent Runtime Tests\n/);
+  assert.equal(requiredWorkflow.includes('name: Compile Check'), false);
+  assert.equal(requiredWorkflow.includes('name: Queue-only Release Policy'), false);
+  assert.equal(supplementalWorkflow.includes('  pull_request:'), false);
+  assert.equal(supplementalWorkflow.includes('workflow_dispatch:'), true);
+  assert.equal(supplementalWorkflow.includes('name: Compile Check'), true);
+  assert.equal(supplementalWorkflow.includes('name: Queue-only Release Policy'), true);
+  assert.equal(supplementalWorkflow.includes('needs: compile-check'), true);
 });
 
 test('supplemental coordinator script is syntactically valid and revision-bound', () => {
@@ -60,6 +67,7 @@ test('supplemental coordinator script is syntactically valid and revision-bound'
   assert.match(script, /event: 'pull_request'/);
   assert.match(script, /Supplemental Checks Dispatch/);
   assert.match(script, /workflow_id: 'sovereign-pr-review-evidence\.yml'/);
+  assert.match(script, /workflow_id: 'sovereign-agent-supplemental\.yml'/);
   assert.match(script, /workflow_id: 'android\.yml'/);
   assert.match(script, /workflow_id: 'sovereign-backend-image\.yml'/);
   assert.match(script, /pr_validation: 'true'/);

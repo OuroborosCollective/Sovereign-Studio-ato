@@ -12,6 +12,7 @@ on:
       - 'docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md'
       - '.github/workflows/release-verification.yml'
       - '.github/workflows/supplemental-check-coordinator.yml'
+      - '.github/workflows/sovereign-agent-supplemental.yml'
       - 'scripts/required-gate-priority.contract.test.cjs'
       - 'playwright.config.ts'
       - 'package.json'
