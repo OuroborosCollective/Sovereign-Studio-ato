@@ -4,11 +4,13 @@
 
 **Evidence-Stand:** 25. Juli 2026
 
-**Reconciliation-Nachtrag zu GitHub-Issue #1011:** Dieses Manifest wurde gegen den aktuellen Repository-Head `5962c80e92cd96ef96eac72476b38cc0455f24fa`, den produktiven Backend-, MCP-, PostgreSQL-, OpenRouter-, FreeLLM- und PatchMon-Readback sowie die tatsächlich offenen GitHub-Issues reconciliiert. Das aktive Open-Point-Bundle ist `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES_2026-07-25.json`; das frühere Bundle bleibt ausschließlich historische Eröffnungs-Provenance.
+**Reconciliation-Nachtrag zu GitHub-Issue #1011:** Dieses Manifest wurde gegen die geprüfte Voränderungs-Baseline `5962c80e92cd96ef96eac72476b38cc0455f24fa`, den produktiven Backend-, MCP-, PostgreSQL-, OpenRouter-, FreeLLM- und PatchMon-Readback sowie die tatsächlich offenen GitHub-Issues reconciliiert. PR #1025 übernahm diese Reconciliation als Squash-Commit `24f4fe84ed7e0ae3eee54ed9fcb34b0dc192031e`. Der SHA des Commits, der dieses Dokument enthält, bleibt die aktuelle Repository-Autorität; er wird nicht selbstreferenziell als Literal in demselben Commit erzeugt. Das aktive Open-Point-Bundle ist `docs/architecture/SOVEREIGN_MANIFEST_OPEN_ISSUES_2026-07-25.json`; das frühere Bundle bleibt ausschließlich historische Eröffnungs-Provenance.
 
 **Verbindliche LLM-Routing-Wahrheit:** Paid läuft ausschließlich direkt über OpenRouter, Free ausschließlich direkt über FreeLLM. LiteLLM ist deaktivierte historische Evidence und weder aktivierbarer Produkttransport noch Rollbackpfad. Der direkte OpenRouter-Transport ist installiert und deployment-ready, verlangt aktuell jedoch einen Katalog-Refresh und liefert `0` auswählbare Modelle. FreeLLM API besitzt fünf doppelt gecanaryte Ready-Routen; die Gesamtquelle bleibt wegen weiterer blockierter Kandidaten ehrlich `degraded`. Daraus folgt ausdrücklich kein pauschaler LLM- oder Produkt-Grünstatus.
 
-- **Audit-Baseline dieses Manifest-Updates:** `5962c80e92cd96ef96eac72476b38cc0455f24fa`
+- **Geprüfte Repository-/Runtime-Baseline:** `5962c80e92cd96ef96eac72476b38cc0455f24fa`
+- **Reconciliation-Merge PR #1025:** `24f4fe84ed7e0ae3eee54ed9fcb34b0dc192031e`
+- **Repository-Revisionsautorität:** der Commit, der dieses Manifest enthält; aktueller `main` wird durch Git-Readback aufgelöst, nicht durch ein rekursiv veraltendes Literal
 - **Produktive Backend-Revision:** `5962c80e92cd96ef96eac72476b38cc0455f24fa`
 - **Produktives Backend-Image:** `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`
 - **Produktive MCP-Revision:** `09307359732ec0bbdb579747f494a7add2edee19`
@@ -1240,7 +1242,7 @@ GitHub Intent
 30. **BELEGT — GitHub-App-Routenregistrierung:** Der aktuelle Backend-Startreadback enthält zweimal `✓ GitHub App routes registered`; der Endpoint-Snapshot enthält Callback-, Installation-, Credit-, Deduct- und Webhook-Verträge. Der frühere `get_connection`-Fehler ist kein aktueller Blocker.
 31. **BELEGT — einzige Admin-UI-Wahrheit:** `_ADMIN_PANEL_HTML` ist in `scripts/sovereign-backend/app.py` nicht mehr vorhanden. `/admin` wird ausschließlich aus dem kanonischen React-Admin-Pfad ausgeliefert.
 32. **BELEGT — direkte LLM-Transportarchitektur:** OpenRouter Paid und FreeLLM Free sind die einzigen aktiven Transportklassen; LiteLLM bleibt historische Evidence. OpenRouter ist deployment-ready, benötigt aktuell aber Katalog-Refresh. FreeLLM besitzt fünf Ready-Routen, bleibt als Gesamtquelle wegen weiterer Kandidaten `degraded`.
-33. **BELEGT — Manifest-/Open-Point-Reconciliation / Issue #1011:** Das aktuelle Bundle bindet ausschließlich die vier tatsächlich offenen GitHub-Issues #1013, #1014, #1016 und #1017. Der Workflow validiert vorhandene Issue-Nummern, verweigert Titelabweichungen und öffnet geschlossene Punkte nicht automatisch erneut.
+33. **BELEGT — Manifest-/Open-Point-Reconciliation / Issue #1011:** PR #1025 wurde nach grünen Agent-Runtime- und Release-Gates als Squash-Commit `24f4fe84ed7e0ae3eee54ed9fcb34b0dc192031e` übernommen. Das aktuelle Bundle bindet ausschließlich die vier tatsächlich offenen GitHub-Issues #1013, #1014, #1016 und #1017. Der Workflow validiert vorhandene Issue-Nummern, verweigert Titelabweichungen und öffnet geschlossene Punkte nicht automatisch erneut.
 
 ## 24.2 Offen, teilweise oder blockiert
 
@@ -1288,7 +1290,7 @@ Ein erster Release erfolgt nur, wenn:
 
 ## 26.1 Aktueller Readback vom 25. Juli 2026
 
-- **Repository und Backend:** `main` und produktives Backend stehen auf `5962c80e92cd96ef96eac72476b38cc0455f24fa`; Backend-Digest `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`.
+- **Repository und Backend:** Die geprüfte Architektur-/Runtime-Baseline und das produktive Backend stehen auf `5962c80e92cd96ef96eac72476b38cc0455f24fa`; Backend-Digest `sha256:de769dcd732b619f3ed4c76683513cb5060abcfe5fc75681b148da034c753f59`. Die Reconciliation wurde durch PR #1025 als `24f4fe84ed7e0ae3eee54ed9fcb34b0dc192031e` nach `main` übernommen. Der genaue aktuelle `main`-SHA wird aus Git gelesen und nicht mit der Backend-Revision gleichgesetzt.
 - **MCP:** Revision `09307359732ec0bbdb579747f494a7add2edee19`, Digest `sha256:4bb1cdae9bc22fd649ada676dc71101956d23ae286831fee15c738eee4471987`, Evidence-Hash `ff1e832551dd9f977c4255f12931afb5468f04539c42c2015d8202c297b4b946`; Health, Broker-RPC, MCP-Protokoll, Operating Profile, Cross-Runtime-Parität und KappaPos `1_000_000` sind belegt.
 - **Architektur:** Snapshot `efb046fed439a8d9b9b3132567ea5c168851633a7b15c522eda59d15c9e0c06f`; Mirror-Report `8c09a39d63bbb0adcd7c3981faa7795601aa0d092b7bed2675ed2cef7ad33fa0` mit `mismatchCount=0`; Endpoint-Referenz `f1762289cc81fda64717071772d4ed20319801de122ac3deda68a3384a25893d` mit 173 Endpoints, 0 aktiven unmatched Frontend-Calls und vier nichtaktiven Altflächen.
 - **Datenbank:** Ledger `028=1`, Ledger `041=1`, Owner-Policy-Zeilen `1`, aktive kanonische Owner-Policies `1`; Readback-SQL-Hash `b90c5815561484ad390dd988185c1e8443769d13603c35814c9d4e54583127cd`.

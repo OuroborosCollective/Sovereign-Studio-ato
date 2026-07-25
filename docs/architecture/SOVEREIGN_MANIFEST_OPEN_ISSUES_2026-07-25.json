@@ -4,9 +4,13 @@
   "generatedAt": "2026-07-25",
   "manifestPath": "docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md",
   "reconciledByIssue": 1011,
+  "reconciliationPullRequest": 1025,
+  "reconciliationMergeRevision": "24f4fe84ed7e0ae3eee54ed9fcb34b0dc192031e",
+  "repositoryRevisionAuthority": "git-readback-of-containing-commit",
   "openIssueCount": 4,
   "runtimeEvidence": {
     "repositoryRevision": "5962c80e92cd96ef96eac72476b38cc0455f24fa",
+    "repositoryRevisionRole": "inspected-pre-change-runtime-baseline",
     "architectureSnapshotSha256": "efb046fed439a8d9b9b3132567ea5c168851633a7b15c522eda59d15c9e0c06f",
     "mirrorReportSha256": "8c09a39d63bbb0adcd7c3981faa7795601aa0d092b7bed2675ed2cef7ad33fa0",
     "endpointReferenceSha256": "f1762289cc81fda64717071772d4ed20319801de122ac3deda68a3384a25893d",
