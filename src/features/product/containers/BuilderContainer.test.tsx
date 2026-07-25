@@ -68,6 +68,13 @@ function isAuthBootstrapRequest(input: RequestInfo | URL): boolean {
   return requestUrl(input).includes("/api/auth/me");
 }
 
+function isToolchainBootstrapRequest(input: RequestInfo | URL): boolean {
+  const url = requestUrl(input);
+  return url.includes('/api/toolchain/user-tools')
+    || url.includes('/api/toolchain/universal/manifest')
+    || url.includes('/api/toolchain/skills/list');
+}
+
 const TEST_AUTH_USER = {
   id: 'runtime-health-user',
   email: 'runtime-health@example.com',
@@ -156,6 +163,9 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
     const url = requestUrl(input);
+    if (isToolchainBootstrapRequest(input)) {
+      return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
+    }
     if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
     if (url.includes('/api/llm/chat')) {
       const next = queue.shift();
@@ -174,7 +184,10 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
 }
 
 function nonAuthFetchCalls(fetchMock: ReturnType<typeof vi.fn>) {
-  return fetchMock.mock.calls.filter(([input]) => !isAuthBootstrapRequest(input as RequestInfo | URL));
+  return fetchMock.mock.calls.filter(([input]) => {
+    const request = input as RequestInfo | URL;
+    return !isAuthBootstrapRequest(request) && !isToolchainBootstrapRequest(request);
+  });
 }
 
 function mockWorkerReply(text = "Worker Antwort aus Cloudflare Route.") {
