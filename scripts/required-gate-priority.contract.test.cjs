@@ -41,6 +41,9 @@ test('only required workflows receive direct pull_request runners', () => {
     'release-verification.yml',
     'sovereign-agent-backend.yml',
   ]);
+  const releaseWorkflow = read('.github/workflows/release-verification.yml');
+  assert.match(releaseWorkflow, /types: \[opened, synchronize, reopened\]/);
+  assert.doesNotMatch(releaseWorkflow, /ready_for_review|converted_to_draft/);
 });
 
 test('Agent Runtime Tests receives a runner before compile-check', () => {
