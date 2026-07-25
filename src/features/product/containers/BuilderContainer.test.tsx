@@ -193,7 +193,10 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
 function nonAuthFetchCalls(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock.mock.calls.filter(([input]) => {
     const request = input as RequestInfo | URL;
-    return !isAuthBootstrapRequest(request) && !isToolchainBootstrapRequest(request);
+    const url = requestUrl(request);
+    return isGitHubApiRequest(request)
+      || url.includes('/api/llm/routes')
+      || url.includes('/api/llm/chat');
   });
 }
 
