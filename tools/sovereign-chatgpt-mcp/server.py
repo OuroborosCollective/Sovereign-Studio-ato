@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Annotated, Any
 
 from mcp import types
@@ -257,7 +258,7 @@ mcp = FastMCP(
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
         "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
-        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für Paid-Fremdprovider-Routen verwende litellm_provider_deployments und litellm_provider_route_activate als kompatible Operatorwerkzeuge; OpenRouter-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, direkte Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_keyless_activate, freellm_provider_discover und freellm_provider_recheck. freellm_provider_keyless_activate darf ausschließlich die aktuell allowlisteten Kilo-/OVH-Marker konfigurieren und behauptet noch keine Route als bereit; erst Discovery oder Recheck dürfen nach frischem Katalog und direkter Nullkosten-Doppel-Canary ein Modell aktivieren. Diese Werkzeuge akzeptieren keinen Key. "
+        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bezahlte Provider-Routen verwende ausschließlich openrouter_provider_status und openrouter_provider_activate; OpenRouter-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, direkte Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_keyless_activate, freellm_provider_discover und freellm_provider_recheck. freellm_provider_keyless_activate darf ausschließlich die aktuell allowlisteten Kilo-/OVH-Marker konfigurieren und behauptet noch keine Route als bereit; erst Discovery oder Recheck dürfen nach frischem Katalog und direkter Nullkosten-Doppel-Canary ein Modell aktivieren. Diese Werkzeuge akzeptieren keinen Key. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Nutze controller_run_external_event nur für exakt identifizierte externe GitHub-, Broker-, MCP-, Dokument- oder Datenbank-Evidence; das Tool darf weder Run-/Task-Status noch aktive Blocker verändern. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
         "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt ein echtes flüchtiges DOCX, konvertiert es über Gotenbergs LibreOffice-Pfad zu PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
@@ -268,8 +269,8 @@ mcp = FastMCP(
         "Für die abschließende Betriebs-, Daten-, Memory-, MCP-, Security- und Supply-Chain-Assurance beginne mit operational_assurance_skill_inventory. Prüfe Ressourcenursachen mit vps_capacity_resource_pressure_assess, Abhängigkeiten mit runtime_dependency_health_matrix, Queue-Fortschritt mit outbox_queue_liveness_assess und Wartungsfenster mit scheduled_maintenance_coordinate. Nutze runtime_topology_change_audit, postgres_query_index_performance_assess, data_integrity_invariant_audit, data_repair_plan_build, vector_memory_consistency_assess, memory_poisoning_provenance_guard, learning_pattern_lifecycle_preview, data_retention_privacy_audit und multi_tenant_isolation_verify für zustands- und revisionsgebundene Datenwahrheit. Nummer 29 verwendet die vorhandene mcp_tool_contract_registry; dupliziere sie nicht. Für MCP-Governance und Sicherheit nutze mcp_schema_compatibility_audit, mcp_protocol_conformance_fuzz_plan, tool_permission_minimize, dynamic_execution_containment_audit, skill_capability_coverage_map, skill_lifecycle_deprecation_preview, skill_regression_benchmark, tool_idempotency_verify, owner_approval_policy_evaluate, secret_lifecycle_rotation_assess, secret_literal_triage, sbom_provenance_image_signing_verify, dependency_vulnerability_remediation_plan und authentication_chaos_negative_test_assess. Diese Tools führen keine Reparatur, Freigabe, Löschung, Rotation oder Deprecation automatisch aus; nur ausdrücklich angeforderte, selbstaufräumende Dokument- und Milvus-Canaries dürfen temporäre Runtime-Artefakte erzeugen. "
         "Für tiefe Repository-Architektur nutze zuerst repository_skill_tool_inventory und danach je nach Auftrag repository_knowledge_surface_scan, repository_product_logic_map, repository_change_impact_manifest, repository_architecture_snapshot, repository_architecture_drift_report, repository_architecture_runtime_drift_evidence, repository_mirror_diff_report, repository_endpoint_reference, repository_learning_records_normalize_preview oder repository_release_hunt_manifest. Architektur-Snapshot und statischer Drift liefern Kandidaten; repository_architecture_runtime_drift_evidence verbindet Repo-Migrationen ausschließlich mit read-only PostgreSQL-Schema- und Vector-Evidence. Keines dieser Werkzeuge behauptet LLM-Erfolg, mutiert die Datenbank oder erzeugt persisted Hunt-Ergebnisse. Für deterministische Architekturarbeit beginne mit deterministic_tool_inventory und deterministic_architecture_inventory, prüfe danach deterministic_nondeterminism_scan, deterministic_kappa_contract_audit und deterministic_sql_contract_audit. Nutze deterministic_transition_validate und deterministic_replay_verify nur als pure Vorschau ohne Persistenz- oder Laufzeiterfolgsbehauptung; TypeScript/Python-Bitparität erfordert weiterhin unabhängige Ausführung derselben kanonischen Vektoren. Parserfehler können Python-Grammatik-/Versionsdrift oder tatsächlich ungültigen Source bedeuten und müssen gegen die Repository-Zielversion geprüft werden. "
         "Für professionelle Backend- und Systemarchitektur beginne mit backend_engineering_tool_inventory. Nutze backend_architecture_assess für begrenzte statische Evidence, backend_stack_select für eine constraints-basierte Stack-Entscheidung, backend_delivery_plan für einen testgegateden Greenfield- oder Modernisierungsfahrplan und backend_api_security_plan für ein Threat-/Control-/Verifikationsmodell. Nutze repository_revision_resolve vor der Arbeit und erneut nach Merge, Rebase, Update-Branch, Force-Push, Branchwechsel oder Base-Advance; bei Revisionskonflikten muss die Arbeit stoppen. Diese read-only Tools mutieren weder Repository noch Datenbank, führen keinen beliebigen Code aus und behaupten ohne echte Gates weder Runtime-Erfolg noch Compliance. Für autorisierte Implementierung bleiben die vorhandenen Repository-Werkzeuge zuständig. "
-        "Für sichere OpenAI-Projektzugänge nutze openai_project_access_plan ausschließlich mit nicht-geheimen Metadaten. Nutze openai_project_access_runtime_evidence für Provider-Identität, Projektzuordnung, Modellinventar, private LiteLLM-Zustände und echte Completion-Canaries. Diese Tools erstellen, lesen, rotieren oder widerrufen keinen OpenAI-Schlüssel und führen keine OpenAI-Admin-Mutation aus. "
-        "Für PatchMon beginne mit patchmon_tool_inventory und patchmon_brain_snapshot. Vertiefe ausschließlich mit patchmon_runtime_inventory, patchmon_database_inventory oder den festen patchmon_query-Views; freies Shell, freies SQL, beliebige HTTP-Ziele und ein Docker-Socket im MCP sind nicht erlaubt. Patch-Aktionen erfordern immer patchmon_patch_action_plan gegen den aktuellen Datenbankzustand und anschließend dessen exakten confirmation_sha256. submit_for_approval führt noch keinen Host-Patch aus; approve_run kann einen echten Patch-Lauf auslösen. PATCHMON_ACTION_ACCEPTED belegt nur die Annahme durch PatchMon, niemals den Abschluss der Patches; prüfe den Lauf danach erneut. Das Root-only PatchMon-Admin-JWT darf weder in Chat noch in Tool-Argumenten erscheinen. "
+        "Für sichere OpenAI-Projektzugänge nutze openai_project_access_plan ausschließlich mit nicht-geheimen Metadaten. Nutze openai_project_access_runtime_evidence für Provider-Identität, Projektzuordnung, direktes OpenRouter-Modellinventar und echte Completion-Canaries. Diese Tools erstellen, lesen, rotieren oder widerrufen keinen OpenAI-Schlüssel und führen keine OpenAI-Admin-Mutation aus. "
+        "Für PatchMon beginne mit patchmon_tool_inventory und patchmon_brain_snapshot. Vertiefe ausschließlich mit patchmon_runtime_inventory, patchmon_database_inventory oder den festen patchmon_query-Views; freies Shell, freies SQL, beliebige HTTP-Ziele und ein Docker-Socket im MCP sind nicht erlaubt. Wenn Hosts oder Docker-Inventar fehlen, verwende patchmon_fleet_bootstrap_plan und nach exakter Hash-Bestätigung patchmon_fleet_bootstrap_apply mit ausdrücklicher Owner-Freigabe. Solange ein verbundener Client seinen Tool-Schemacache noch nicht um diese beiden Namen aktualisiert hat, ist ausschließlich der feste Kompatibilitäts-Alias action=bootstrap_local_fleet über patchmon_patch_action_plan und patchmon_patch_action_apply zulässig; er bindet denselben aktuellen Zustand und denselben confirmation_sha256 und läuft ebenfalls nur über die Host-Command-Queue. Dieser Pfad erstellt bei leerer Installation eine root-only Operator-Identität, konfiguriert ausschließlich den festen Loopback-Server, installiert den offiziellen Agenten und fordert echtes Docker-Inventar an; Secrets werden nie ausgegeben. patchmon_fleet_orchestrator_status verbindet anschließend PatchMon-Evidence mit PR-/Workflow- und Revisionsstatus. Container-Images bleiben ausschließlich im vorhandenen immutablem Deploy-Pfad; PatchMon erhält keine erfundene Container-Revision-Mutation. Patch-Aktionen erfordern immer patchmon_patch_action_plan gegen den aktuellen Datenbankzustand und anschließend dessen exakten confirmation_sha256. submit_for_approval führt noch keinen Host-Patch aus; approve_run kann einen echten Patch-Lauf auslösen. PATCHMON_ACTION_ACCEPTED belegt nur die Annahme durch PatchMon, niemals den Abschluss der Patches; prüfe den Lauf danach erneut. Das Root-only PatchMon-Admin-JWT darf weder in Chat noch in Tool-Argumenten erscheinen. "
         "Mutierende Host-, GitHub-, Datenbank-, Deploy- und Self-Update-Aktionen dürfen niemals direkt über den eingehenden Broker-Socket ausgeführt werden. Der MCP stellt nur einen validierten Job ein; ein unabhängiger Host-Worker holt ihn von innen ab. Bei IN_PROGRESS lies mcp_host_command_status und reiche den Auftrag nicht erneut ein. "
         "Vor jeder brokerabhängigen Status-, Workflow-, Merge-, Deploy- oder Self-Update-Operation prüfe mcp_control_plane_status. Verwende dessen failure_family unverändert und unterscheide "
         "Socket-Namespace, Pfadtyp, Rechte, Verbindungsverweigerung, Timeout und Protokollantwort. Wiederhole nicht denselben generischen Fix, solange die vorherige Fehlerfamilie nicht durch ihre "
@@ -841,21 +842,47 @@ def memory_gateway_collection_canary() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=NETWORK_READ)
-def litellm_provider_model_inventory() -> dict[str, Any]:
-    """Return bounded model-id metadata from the protected OpenAI project without returning its key."""
-    return broker.call("litellm_provider_model_inventory", {}, timeout=90)
-
-
-@mcp.tool(annotations=NETWORK_READ)
-def litellm_provider_deployments() -> dict[str, Any]:
-    """Read secret-free metadata for owner-managed LiteLLM provider deployments."""
-    return provider_runtime.list_deployments()
+def openrouter_provider_status() -> dict[str, Any]:
+    """Read secret-free status and canary metadata for the direct OpenRouter transport."""
+    return provider_runtime.openrouter_status()
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
+def openrouter_provider_activate(
+    route_id: str = "openrouter-paid-gpt-5-4-mini",
+) -> dict[str, Any]:
+    """Activate the direct OpenRouter route through the protected owner bridge; no secret argument is accepted."""
+    return provider_runtime.openrouter_activate(route_id)
+
+
+def _retired_litellm_tool(replacement: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "status": "RETIRED",
+        "blocker": "legacy_litellm_runtime_retired",
+        "replacement": replacement,
+        "mutationPerformed": False,
+        "secretValuesReturned": False,
+    }
+
+
+@mcp.tool(annotations=READ_ONLY)
+def litellm_provider_model_inventory() -> dict[str, Any]:
+    """Retired compatibility tombstone; use openrouter_provider_status."""
+    return _retired_litellm_tool("openrouter_provider_status")
+
+
+@mcp.tool(annotations=READ_ONLY)
+def litellm_provider_deployments() -> dict[str, Any]:
+    """Retired compatibility tombstone; use openrouter_provider_status."""
+    return _retired_litellm_tool("openrouter_provider_status")
+
+
+@mcp.tool(annotations=READ_ONLY)
 def litellm_provider_route_activate(route_id: str) -> dict[str, Any]:
-    """Activate one existing owner-confirmed provider route; no secret argument is accepted."""
-    return provider_runtime.activate(route_id)
+    """Retired compatibility tombstone; use openrouter_provider_activate."""
+    del route_id
+    return _retired_litellm_tool("openrouter_provider_activate")
 
 
 @mcp.tool(annotations=NETWORK_READ)
@@ -882,22 +909,15 @@ def freellm_provider_recheck(source_id: str, max_models: int = 20) -> dict[str, 
     return provider_runtime.freellm_reconcile(source_id, max_models=max_models)
 
 
-@mcp.tool(annotations=EXTERNAL_WRITE)
+@mcp.tool(annotations=READ_ONLY)
 def litellm_model_aliases_activate(
     fast_provider_model: str,
     balanced_provider_model: str,
     confirmation_inventory_sha256: str,
 ) -> dict[str, Any]:
-    """Activate two fixed Sovereign aliases only against one confirmed current provider inventory."""
-    return broker.call(
-        "litellm_model_aliases_activate",
-        {
-            "fast_provider_model": fast_provider_model,
-            "balanced_provider_model": balanced_provider_model,
-            "confirmation_inventory_sha256": confirmation_inventory_sha256,
-        },
-        timeout=900,
-    )
+    """Retired compatibility tombstone; direct OpenRouter routes use their persisted model IDs."""
+    del fast_provider_model, balanced_provider_model, confirmation_inventory_sha256
+    return _retired_litellm_tool("openrouter_provider_activate")
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
@@ -966,7 +986,7 @@ def patchmon_patch_action_plan(
     package_names: list[str] | None = None,
     schedule_override: str = "",
 ) -> dict[str, Any]:
-    """Plan one allowlisted PatchMon action against current database state and return an exact confirmation hash."""
+    """Plan one allowlisted PatchMon action, including fixed bootstrap_local_fleet compatibility, against current state."""
     return broker.call(
         "patchmon_patch_action_plan",
         {
@@ -991,7 +1011,7 @@ def patchmon_patch_action_apply(
     package_names: list[str] | None = None,
     schedule_override: str = "",
 ) -> dict[str, Any]:
-    """Submit one exact, state-bound PatchMon action through the host queue and the fixed loopback API."""
+    """Submit one exact state-bound PatchMon action, including fixed bootstrap_local_fleet compatibility, through the host queue."""
     return broker.call(
         "patchmon_patch_action_apply",
         {
@@ -1005,6 +1025,117 @@ def patchmon_patch_action_apply(
         },
         timeout=300,
     )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def patchmon_fleet_bootstrap_plan(friendly_name: str = "sovereign-vps") -> dict[str, Any]:
+    """Plan exact local PatchMon host enrollment, agent installation and Docker inventory collection."""
+    return broker.call(
+        "patchmon_fleet_bootstrap_plan",
+        {"friendly_name": friendly_name},
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def patchmon_fleet_bootstrap_apply(
+    confirmation_sha256: str,
+    friendly_name: str = "sovereign-vps",
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Apply one confirmed local PatchMon fleet bootstrap through the host command queue."""
+    return broker.call(
+        "patchmon_fleet_bootstrap_apply",
+        {
+            "confirmation_sha256": confirmation_sha256,
+            "friendly_name": friendly_name,
+            "owner_approved": owner_approved,
+        },
+        timeout=360,
+    )
+
+
+def _patchmon_workflow_green(payload: Any) -> bool:
+    evidence = payload if isinstance(payload, dict) else {}
+    for key in ("checksGreen", "checks_green", "allChecksGreen", "all_checks_green", "relevantChecksGreenClaimed"):
+        if evidence.get(key) is True:
+            return True
+    checks = evidence.get("checks") if isinstance(evidence.get("checks"), list) else []
+    if not checks:
+        return False
+    allowed = {"success", "successful", "neutral", "skipped"}
+    conclusions = []
+    for item in checks:
+        check = item if isinstance(item, dict) else {}
+        conclusion = str(check.get("conclusion") or check.get("status") or "").strip().lower()
+        conclusions.append(conclusion)
+    return bool(conclusions) and all(item in allowed for item in conclusions)
+
+
+def _patchmon_revision_from_payload(payload: Any) -> str:
+    evidence = payload if isinstance(payload, dict) else {}
+    for key in ("headSha", "head_sha", "prHeadSha", "mergeCommitSha", "merge_commit_sha", "mergedChangeSha"):
+        value = str(evidence.get(key) or "").strip().lower()
+        if re.fullmatch(r"[0-9a-f]{40}", value):
+            return value
+    nested = evidence.get("pullRequest") if isinstance(evidence.get("pullRequest"), dict) else {}
+    return _patchmon_revision_from_payload(nested) if nested else ""
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def patchmon_fleet_orchestrator_status(
+    expected_revision: str = "",
+    pr_number: int = 0,
+    workflow_run_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Bind real PatchMon fleet evidence to current repository workflow and immutable revision status."""
+    revision = str(expected_revision or "").strip().lower()
+    if revision and not re.fullmatch(r"[0-9a-f]{40}", revision):
+        return {"ok": False, "status": "BLOCKED", "blocker": "expected_revision must be a full commit SHA"}
+    patchmon = broker.call("patchmon_brain_snapshot", {"include_fleet": True}, timeout=180)
+    summary_rows = patchmon.get("databaseSummary", {}).get("rows", []) if isinstance(patchmon, dict) else []
+    summary = dict(summary_rows[0]) if summary_rows else {}
+    hosts_active = int(summary.get("hosts_active") or 0)
+    docker_observed = int(summary.get("docker_containers_observed") or 0)
+    host_lane_ready = bool(patchmon.get("ok")) and hosts_active > 0 and docker_observed > 0
+
+    pr_evidence: dict[str, Any] | None = None
+    if int(pr_number or 0) > 0:
+        pr_evidence = broker.call("github_pr_status", {"pr_number": int(pr_number)}, timeout=60)
+    runs = []
+    for run_id in (workflow_run_ids or [])[:20]:
+        if int(run_id) <= 0:
+            continue
+        runs.append(broker.call("github_workflow_run_status", {"run_id": int(run_id)}, timeout=60))
+    workflow_evidence = [item for item in ([pr_evidence] if pr_evidence else []) + runs if isinstance(item, dict)]
+    workflow_green = bool(workflow_evidence) and all(_patchmon_workflow_green(item) for item in workflow_evidence)
+    observed_revision = _patchmon_revision_from_payload(pr_evidence or {})
+    revision_bound = bool(revision and observed_revision and revision == observed_revision)
+    rollout_ready = host_lane_ready and workflow_green and revision_bound
+    return {
+        "ok": rollout_ready,
+        "status": "PATCHMON_FLEET_ORCHESTRATOR_READY" if rollout_ready else "PATCHMON_FLEET_ORCHESTRATOR_GATED",
+        "patchmonLane": {
+            "ready": host_lane_ready,
+            "hostsActive": hosts_active,
+            "dockerContainersObserved": docker_observed,
+            "evidence": patchmon,
+        },
+        "immutableContainerLane": {
+            "owner": "existing_revision_bound_image_deploy_path",
+            "patchMonMutatesContainerRevision": False,
+            "expectedRevision": revision or None,
+            "observedRepositoryRevision": observed_revision or None,
+            "revisionBound": revision_bound,
+            "workflowGreen": workflow_green,
+            "prEvidence": pr_evidence,
+            "workflowRuns": runs,
+        },
+        "rolloutReady": rollout_ready,
+        "mutationPerformed": False,
+        "secretValuesExposed": False,
+        "nextAction": None if rollout_ready else "Resolve the false PatchMon, workflow or revision gate before any staged rollout",
+    }
 
 
 @mcp.tool(annotations=NETWORK_READ)

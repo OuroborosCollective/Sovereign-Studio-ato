@@ -11,17 +11,21 @@ const BACKEND_BASE = (
   || 'https://sovereign-backend.arelorian.de'
 ).replace(/\/$/, '');
 
-export const SOVEREIGN_LITELLM_ROUTES = `${BACKEND_BASE}/api/llm/routes` as const;
-export const SOVEREIGN_LITELLM_CHAT = `${BACKEND_BASE}/api/llm/chat` as const;
+export const SOVEREIGN_DIRECT_LLM_ROUTES = `${BACKEND_BASE}/api/llm/routes` as const;
+export const SOVEREIGN_DIRECT_LLM_CHAT = `${BACKEND_BASE}/api/llm/chat` as const;
+/** @deprecated Compatibility alias. Productive transport: direct OpenRouter/FreeLLM. */
+export const SOVEREIGN_LITELLM_ROUTES = SOVEREIGN_DIRECT_LLM_ROUTES;
+/** @deprecated Compatibility alias. Productive transport: direct OpenRouter/FreeLLM. */
+export const SOVEREIGN_LITELLM_CHAT = SOVEREIGN_DIRECT_LLM_CHAT;
 export const SOVEREIGN_INTENT_TIMEOUT_MS = 30_000;
 
-interface LiteLlmRouteDescriptor {
+interface DirectLlmRouteDescriptor {
   readonly id?: unknown;
   readonly defaultModelId?: unknown;
   readonly enabled?: unknown;
 }
 
-interface LiteLlmRouteCatalog {
+interface DirectLlmRouteCatalog {
   readonly routes?: unknown;
 }
 
@@ -36,7 +40,7 @@ interface SovereignIntentEnvelope {
   readonly language?: unknown;
 }
 
-export interface SovereignLiteLlmIntentRequest {
+export interface SovereignDirectLlmIntentRequest {
   readonly preferredModel?: string;
   readonly text: string;
   readonly repoContext?: string;
@@ -46,6 +50,9 @@ export interface SovereignLiteLlmIntentRequest {
   readonly fetchImpl?: typeof fetch;
   readonly requestId?: string;
 }
+
+/** @deprecated Compatibility type for callers not migrated yet. */
+export type SovereignLiteLlmIntentRequest = SovereignDirectLlmIntentRequest;
 
 const ALLOWED_INTENTS: readonly DevChatWorkerIntentKind[] = [
   'free_chat',
@@ -253,13 +260,13 @@ function createRequestId(): string | null {
 }
 
 function chooseRoute(
-  payload: LiteLlmRouteCatalog,
+  payload: DirectLlmRouteCatalog,
   preferredModel: string | undefined,
 ): { readonly routeId: string; readonly modelId: string } | null {
   if (!Array.isArray(payload.routes)) return null;
   const enabled = payload.routes.flatMap((candidate): Array<{ routeId: string; modelId: string }> => {
     if (!candidate || typeof candidate !== 'object') return [];
-    const route = candidate as LiteLlmRouteDescriptor;
+    const route = candidate as DirectLlmRouteDescriptor;
     if (route.enabled !== true) return [];
     const routeId = typeof route.id === 'string' ? route.id.trim() : '';
     const modelId = typeof route.defaultModelId === 'string' ? route.defaultModelId.trim() : '';
@@ -272,7 +279,7 @@ function chooseRoute(
   ) ?? enabled[0];
 }
 
-function buildMessages(args: SovereignLiteLlmIntentRequest): readonly DevChatWorkerMessage[] {
+function buildMessages(args: SovereignDirectLlmIntentRequest): readonly DevChatWorkerMessage[] {
   const systemPrompt = [
     'Du bist ausschließlich der Natural-Language-Interpreter von Sovereign Studio.',
     'Verstehe Sprache, Absicht, Kontext und implizite Verweise des Users.',
@@ -300,8 +307,8 @@ function buildMessages(args: SovereignLiteLlmIntentRequest): readonly DevChatWor
   ];
 }
 
-export async function fetchSovereignLiteLlmInterpretation(
-  args: SovereignLiteLlmIntentRequest,
+export async function fetchSovereignDirectLlmInterpretation(
+  args: SovereignDirectLlmIntentRequest,
 ): Promise<DevChatWorkerInterpretationResult> {
   const fetchImpl = args.fetchImpl ?? globalThis.fetch;
   const messages = buildMessages(args);
@@ -335,7 +342,7 @@ export async function fetchSovereignLiteLlmInterpretation(
       };
     }
 
-    const routePayload = readJsonObject(routeText) as LiteLlmRouteCatalog | null;
+    const routePayload = readJsonObject(routeText) as DirectLlmRouteCatalog | null;
     const selected = routePayload ? chooseRoute(routePayload, args.preferredModel) : null;
     if (!selected) {
       return {
@@ -462,3 +469,6 @@ export async function fetchSovereignLiteLlmInterpretation(
     clearTimeout(timeoutId);
   }
 }
+
+/** @deprecated Compatibility export for callers not migrated yet. */
+export const fetchSovereignLiteLlmInterpretation = fetchSovereignDirectLlmInterpretation;

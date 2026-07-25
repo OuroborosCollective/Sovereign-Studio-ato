@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -17,7 +16,6 @@ def _missing_runner(argv, **kwargs):
 
 def test_managed_compose_stack_allowlist_is_exact() -> None:
     assert set(STACKS) == {
-        "sovereign-litellm",
         "sovereign-backend",
         "gpt-tools",
         "code-server-46bq",
@@ -216,26 +214,26 @@ def test_registered_but_missing_template_never_deploys(tmp_path: Path, monkeypat
     assert "kein geprüftes Compose-Template" in result["blocker"]
 
 
-def test_litellm_plan_requires_exact_installed_template_bundle(tmp_path: Path) -> None:
-    template = tmp_path / "sovereign-litellm"
-    template.mkdir()
-    compose = b"services:\n  litellm:\n    image: example.invalid/litellm:v1\n"
-    config = b"model_list: []\n"
-    entrypoint = b"from __future__ import annotations\n"
-    (template / "docker-compose.yml").write_bytes(compose)
-    (template / "config.yaml").write_bytes(config)
-    (template / "sovereign-entrypoint.py").write_bytes(entrypoint)
+def test_litellm_stack_is_retired_from_managed_compose_and_cannot_be_reactivated(tmp_path: Path) -> None:
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
-    result = runtime.plan("sovereign-litellm")
-    expected = hashlib.sha256(
-        (
-            f"{hashlib.sha256(compose).hexdigest()}:"
-            f"{hashlib.sha256(config).hexdigest()}:"
-            f"{hashlib.sha256(entrypoint).hexdigest()}"
-        ).encode("ascii")
-    ).hexdigest()
-    assert result["templateBundleSha256"] == expected
-    assert result["allowedStacks"] == sorted(STACKS)
+
+    with pytest.raises(ValueError, match="nicht freigegeben"):
+        runtime.plan("sovereign-litellm")
+    with pytest.raises(ValueError, match="nicht freigegeben"):
+        runtime.deploy("sovereign-litellm", "0" * 64)
+
+    inventory = runtime.litellm_provider_model_inventory()
+    aliases = runtime.activate_litellm_model_aliases(
+        fast_provider_model="legacy-fast",
+        balanced_provider_model="legacy-balanced",
+        confirmation_inventory_sha256="0" * 64,
+    )
+    for result in (inventory, aliases, runtime.openai_project_runtime_evidence()):
+        assert result["ok"] is False
+        assert result["status"] == "RETIRED"
+        assert result["blocker"] == "legacy_litellm_runtime_retired"
+        assert result["replacement"] == "direct-openrouter-paid-and-direct-freellm-free"
+        assert result["runtimeMutationPerformed"] is False
 
 
 def test_security_policy_blocks_privilege_latest_and_docker_socket(tmp_path: Path) -> None:
@@ -831,7 +829,7 @@ def test_repository_close_pr_is_broker_bounded() -> None:
     assert '"github_close_pr": lambda values:' in broker
 
 
-def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
+def test_openrouter_tools_are_canonical_and_litellm_tools_are_local_tombstones() -> None:
     root = Path(__file__).resolve().parents[1]
     server = (root / "server.py").read_text("utf-8")
     broker = (root / "broker.py").read_text("utf-8")
@@ -839,12 +837,15 @@ def test_litellm_inventory_and_alias_tools_are_broker_bounded() -> None:
     assert "def memory_gateway_collection_canary()" in server
     assert 'broker.call("memory_gateway_collection_canary", {}, timeout=240)' in server
     assert '"memory_gateway_collection_canary": lambda _values:' in broker
+    assert "def openrouter_provider_status()" in server
+    assert "return provider_runtime.openrouter_status()" in server
+    assert "def openrouter_provider_activate(" in server
+    assert "return provider_runtime.openrouter_activate(route_id)" in server
     assert "def litellm_provider_model_inventory()" in server
     assert "def litellm_model_aliases_activate(" in server
-    assert 'broker.call("litellm_provider_model_inventory", {}, timeout=90)' in server
-    assert '"litellm_model_aliases_activate"' in server
-    assert '"litellm_provider_model_inventory": lambda _values:' in broker
+    assert 'broker.call("litellm_provider_model_inventory", {}, timeout=90)' not in server
+    assert 'broker.call(\n        "litellm_model_aliases_activate"' not in server
     assert '"openai_project_runtime_evidence": lambda _values:' in broker
-    assert '"litellm_model_aliases_activate": lambda values:' in broker
+    assert "legacy_litellm_runtime_retired" in server
     assert "def code_server_workspace_open(" not in server
     assert "code_server_workspace_descriptor" not in server

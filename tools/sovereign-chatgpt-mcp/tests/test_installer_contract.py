@@ -54,11 +54,14 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'install -d -m 0700 -o root -g root "$RUNTIME_EVIDENCE_DIR"' in script
     assert '/opt/sovereign-owner-managed' in worker_service
     assert '/opt/sovereign-agent-workspaces' in worker_service
-    assert '/opt/sovereign-litellm' in worker_service
+    assert '/opt/sovereign-litellm' not in worker_service
     assert '/opt/sovereign-backend' in worker_service
     assert '/opt/gpt-tools' in worker_service
     assert '/opt/code-server-46bq' in worker_service
-    assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' not in script
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in script
+    assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL' in script
+    assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]

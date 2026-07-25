@@ -213,6 +213,43 @@ describe('Palette Accessibility Enhancements', () => {
       const chipButton = screen.getByRole('button', { name: 'Idee übernehmen: CI Fehleranalyse' });
       expect(chipButton).toHaveAttribute('title', 'Idee übernehmen: CI Fehleranalyse');
     });
+
+    it('Filters files correctly based on search input and shows empty state', () => {
+      const sidebarProps = {
+        settings: { repoMode: 'single', packageManager: 'npm', linter: 'eslint', maxFixLoops: 3, specialization: '' },
+        buildProduct: vi.fn(),
+        blueprint: '',
+        setBlueprint: vi.fn(),
+        addCard: vi.fn(),
+        log: vi.fn(),
+        selectedFile: { path: 'README.md', icon: '📄' },
+        setSelectedFile: vi.fn(),
+        setWorkView: vi.fn(),
+        repoUrl: '',
+        setRepoUrl: vi.fn(),
+        setShowSettings: vi.fn(),
+      };
+      render(<Sidebar {...sidebarProps as any} />);
+
+      // At start, package.json button exists
+      expect(screen.getByTitle('package.json')).toBeInTheDocument();
+
+      const searchInput = screen.getByLabelText('Datei suchen');
+      fireEvent.change(searchInput, { target: { value: 'App' } });
+
+      // After filtering 'App', src/App.tsx is present but package.json is not
+      expect(screen.getByTitle('src/App.tsx')).toBeInTheDocument();
+      expect(screen.queryByTitle('package.json')).not.toBeInTheDocument();
+
+      // Clear search should restore
+      fireEvent.change(searchInput, { target: { value: '' } });
+      expect(screen.getByTitle('package.json')).toBeInTheDocument();
+
+      // Impossible search should show empty state
+      fireEvent.change(searchInput, { target: { value: 'nonexistent-file-xyz' } });
+      expect(screen.queryByTitle('package.json')).not.toBeInTheDocument();
+      expect(screen.getByText('Keine passenden Dateien gefunden')).toBeInTheDocument();
+    });
   });
 
   describe('AgentQuestionCard Enhancements', () => {

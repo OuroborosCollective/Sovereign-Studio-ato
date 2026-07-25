@@ -6,51 +6,41 @@ from owner_input_client import ProviderRuntimeClient
 
 
 class FakeProviderRuntimeClient(ProviderRuntimeClient):
-    def __init__(self, deployments: list[dict[str, Any]]) -> None:
-        self._deployments = deployments
-        self.activation: tuple[str, str] | None = None
+    def __init__(self) -> None:
+        self.activation: str | None = None
 
-    def list_deployments(self) -> dict[str, Any]:
-        return {
-            "deployments": self._deployments,
-            "protected_values_returned": False,
-        }
-
-    def activate_provider_route(self, *, route_id: str, owner_request_id: str) -> dict[str, Any]:
-        self.activation = (route_id, owner_request_id)
+    def openrouter_activate(self, route_id: str = "openrouter-paid-gpt-5-4-mini") -> dict[str, Any]:
+        selected = self._route_id(route_id)
+        self.activation = selected
         return {
             "ok": True,
-            "routeId": route_id,
-            "ownerRequestId": owner_request_id,
+            "routeId": selected,
+            "transport": "openrouter",
             "protected_values_returned": False,
+            "secret_argument_accepted": False,
         }
 
 
-def test_activation_resolves_owner_request_from_secret_free_metadata() -> None:
-    request_id = "baf81781-6c12-4913-99b1-20fe38db6f56"
-    client = FakeProviderRuntimeClient([
-        {
-            "routeId": "sovereign-groq-openai-gpt-oss-20b-test",
-            "ownerRequestId": request_id,
-            "keyHint": "groq-…",
-        }
-    ])
+def test_activation_delegates_to_direct_openrouter_without_legacy_owner_binding() -> None:
+    client = FakeProviderRuntimeClient()
 
-    result = client.activate("sovereign-groq-openai-gpt-oss-20b-test")
+    result = client.activate("openrouter-paid-gpt-5-4-mini")
 
     assert result["ok"] is True
-    assert client.activation == ("sovereign-groq-openai-gpt-oss-20b-test", request_id)
+    assert client.activation == "openrouter-paid-gpt-5-4-mini"
+    assert result["transport"] == "openrouter"
     assert result["protected_values_returned"] is False
+    assert "ownerRequestId" not in result
 
 
-def test_activation_fails_closed_without_bound_owner_request() -> None:
-    client = FakeProviderRuntimeClient([
-        {"routeId": "sovereign-groq-openai-gpt-oss-20b-test", "ownerRequestId": None}
-    ])
+def test_activation_rejects_invalid_route_before_direct_provider_call() -> None:
+    client = FakeProviderRuntimeClient()
 
     try:
-        client.activate("sovereign-groq-openai-gpt-oss-20b-test")
-    except RuntimeError as exc:
-        assert "Owner-Request-ID" in str(exc)
+        client.activate("../../owner-secret")
+    except ValueError as exc:
+        assert "route_id ist ungültig" in str(exc)
     else:
-        raise AssertionError("Activation must fail closed without owner request metadata")
+        raise AssertionError("Activation must fail closed for an invalid route identity")
+
+    assert client.activation is None

@@ -121,12 +121,13 @@ def test_litellm_templates_stage_models_only_after_verified_provider_inventory()
         assert "mcp-proxy" not in source
 
 
-def test_backend_deploy_contract_connects_only_internal_litellm_network() -> None:
+def test_backend_deploy_contract_keeps_private_network_without_legacy_litellm_wiring() -> None:
     deploy = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
     rollback = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
     installer = (ROOT / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "install-on-vps.sh").read_text("utf-8")
     assert "docker network connect sovereign-private" in deploy
     assert "docker network connect sovereign-private" in rollback
-    assert "LITELLM_BASE_URL=http://litellm:4000" in installer
-    assert "LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt" in installer
+    assert "LITELLM_BASE_URL=" not in installer
+    assert "LITELLM_MASTER_KEY_FILE=" not in installer
+    assert "litellm_master_key.txt" not in installer
     assert "OPENAI_API_KEY=" not in installer

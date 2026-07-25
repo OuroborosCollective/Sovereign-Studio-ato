@@ -6,12 +6,17 @@ INSTALL_ROOT="/opt/sovereign-chatgpt-tools"
 BIN_DIR="$INSTALL_ROOT/bin"
 BROKER_DIR="$INSTALL_ROOT/broker"
 COMPOSE_TEMPLATE_ROOT="$INSTALL_ROOT/templates"
-LITELLM_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-litellm"
-LITELLM_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-litellm"
 PGBACKWEB_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/pgbackweb-wq5r"
 PGBACKWEB_TEMPLATE_SOURCE="$SOURCE_DIR/templates/pgbackweb-wq5r"
 PATCHMON_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/patchmon-sovereign"
 PATCHMON_TEMPLATE_SOURCE="$SOURCE_DIR/templates/patchmon-sovereign"
+PATCHMON_AGENT_ROOT="/opt/patchmon-sovereign/agent"
+PATCHMON_AGENT_BIN_TARGET="$PATCHMON_AGENT_ROOT/bin/patchmon-agent"
+PATCHMON_AGENT_CONFIG_TARGET="$PATCHMON_AGENT_ROOT/etc"
+PATCHMON_AGENT_UNIT_TARGET="$PATCHMON_AGENT_ROOT/systemd/patchmon-agent.service"
+PATCHMON_AGENT_BIN_LINK="/usr/local/bin/patchmon-agent"
+PATCHMON_AGENT_CONFIG_LINK="/etc/patchmon"
+PATCHMON_AGENT_UNIT_LINK="/etc/systemd/system/patchmon-agent.service"
 CODE_SERVER_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/code-server-46bq"
 CODE_SERVER_TEMPLATE_SOURCE="$SOURCE_DIR/templates/code-server-46bq"
 MILVUS_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/milvus-sovereign"
@@ -29,8 +34,6 @@ OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
 BACKEND_WORKSPACE_UID="10001"
 BACKEND_WORKSPACE_GID="10001"
-LITELLM_BASE_URL=http://litellm:4000
-LITELLM_MASTER_KEY_FILE=/opt/sovereign-owner-managed/litellm_master_key.txt
 ENV_FILE="$INSTALL_ROOT/.env"
 MANAGED_ENV="$INSTALL_ROOT/runtime.env"
 BACKEND_MANAGED_ENV="$INSTALL_ROOT/backend-runtime.env"
@@ -63,6 +66,45 @@ PREVIOUS_MCP_IMAGE_DIGEST=""
 fail() {
   INSTALL_FAILURE_REASON="$*"
   exit 1
+}
+
+prepare_patchmon_agent_sandbox_paths() {
+  install -d -m 0750 "$PATCHMON_AGENT_ROOT" "$PATCHMON_AGENT_ROOT/bin" "$PATCHMON_AGENT_ROOT/systemd"
+  install -d -m 0700 "$PATCHMON_AGENT_CONFIG_TARGET"
+
+  if [[ -L "$PATCHMON_AGENT_BIN_LINK" ]]; then
+    [[ "$(readlink "$PATCHMON_AGENT_BIN_LINK")" == "$PATCHMON_AGENT_BIN_TARGET" ]] \
+      || fail "PatchMon agent binary symlink points outside the managed root"
+  elif [[ -e "$PATCHMON_AGENT_BIN_LINK" ]]; then
+    [[ -f "$PATCHMON_AGENT_BIN_LINK" ]] \
+      || fail "PatchMon agent binary path is neither a regular file nor the managed symlink"
+  else
+    ln -s "$PATCHMON_AGENT_BIN_TARGET" "$PATCHMON_AGENT_BIN_LINK"
+  fi
+
+  if [[ -L "$PATCHMON_AGENT_CONFIG_LINK" ]]; then
+    [[ "$(readlink "$PATCHMON_AGENT_CONFIG_LINK")" == "$PATCHMON_AGENT_CONFIG_TARGET" ]] \
+      || fail "PatchMon agent config symlink points outside the managed root"
+  elif [[ -e "$PATCHMON_AGENT_CONFIG_LINK" ]]; then
+    [[ -d "$PATCHMON_AGENT_CONFIG_LINK" ]] \
+      || fail "PatchMon agent config path is neither a directory nor the managed symlink"
+  else
+    ln -s "$PATCHMON_AGENT_CONFIG_TARGET" "$PATCHMON_AGENT_CONFIG_LINK"
+  fi
+
+  if [[ -L "$PATCHMON_AGENT_UNIT_LINK" ]]; then
+    [[ "$(readlink "$PATCHMON_AGENT_UNIT_LINK")" == "$PATCHMON_AGENT_UNIT_TARGET" ]] \
+      || fail "PatchMon agent unit symlink points outside the managed root"
+  elif [[ -e "$PATCHMON_AGENT_UNIT_LINK" ]]; then
+    [[ -f "$PATCHMON_AGENT_UNIT_LINK" ]] \
+      || fail "PatchMon agent unit path is neither a regular file nor the managed symlink"
+  else
+    ln -s "$PATCHMON_AGENT_UNIT_TARGET" "$PATCHMON_AGENT_UNIT_LINK"
+  fi
+
+  chown -R root:root "$PATCHMON_AGENT_ROOT"
+  chmod 0750 "$PATCHMON_AGENT_ROOT" "$PATCHMON_AGENT_ROOT/bin" "$PATCHMON_AGENT_ROOT/systemd"
+  chmod 0700 "$PATCHMON_AGENT_CONFIG_TARGET"
 }
 
 read_value() {
@@ -168,6 +210,57 @@ except OSError as exc:
                 raise PermissionError(f"protected file has unsafe mode: {mode:o}") from chmod_exc
     finally:
         temporary.unlink(missing_ok=True)
+PY
+}
+
+remove_value() {
+  local file="$1"
+  local key="$2"
+  python3 - "$file" "$key" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+if not path.exists():
+    raise SystemExit(0)
+lines = path.read_text("utf-8").splitlines()
+out = [line for line in lines if not line.startswith(key + "=")]
+temporary = path.with_suffix(path.suffix + ".tmp")
+temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
+os.chmod(temporary, 0o600)
+temporary.replace(path)
+PY
+}
+
+remove_csv_values() {
+  local file="$1"
+  local key="$2"
+  local blocked_csv="$3"
+  python3 - "$file" "$key" "$blocked_csv" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+blocked = {item.strip() for item in sys.argv[3].split(",") if item.strip()}
+if not path.exists():
+    raise SystemExit(0)
+out = []
+for line in path.read_text("utf-8").splitlines():
+    if not line.startswith(key + "="):
+        out.append(line)
+        continue
+    values = [item.strip() for item in line.split("=", 1)[1].split(",") if item.strip()]
+    retained = [item for item in values if item not in blocked]
+    if retained:
+        out.append(key + "=" + ",".join(dict.fromkeys(retained)))
+temporary = path.with_suffix(path.suffix + ".tmp")
+temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
+os.chmod(temporary, 0o600)
+temporary.replace(path)
 PY
 }
 
@@ -358,9 +451,6 @@ for command in docker systemctl python3 git ss openssl sha256sum; do
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
 [[ -S /var/run/docker.sock ]] || fail "docker socket is missing"
-[[ -f "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "sovereign-litellm compose template is missing"
-[[ -f "$LITELLM_TEMPLATE_SOURCE/config.yaml" ]] || fail "sovereign-litellm config template is missing"
-[[ -f "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" ]] || fail "sovereign-litellm entrypoint template is missing"
 [[ -f "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "pgbackweb compose template is missing"
 [[ -f "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "patchmon compose template is missing"
 [[ -f "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "code-server compose template is missing"
@@ -377,8 +467,8 @@ bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
   || fail "source self-update wrapper has invalid bash syntax"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$LITELLM_TEMPLATE_DIR" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$FREELLMPOOL_TEMPLATE_DIR"
-for MANAGED_COMPOSE_ROOT in /opt/sovereign-litellm /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-freellmpool; do
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$FREELLMPOOL_TEMPLATE_DIR"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-freellmpool; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
       || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
@@ -430,6 +520,15 @@ backup_control_plane_file "$BROKER_SERVICE"
 backup_control_plane_file "$COMMAND_WORKER_SERVICE"
 backup_control_plane_file "$SELF_UPDATE_SERVICE"
 backup_control_plane_file "$TUNNEL_SERVICE"
+if [[ ! -e "$PATCHMON_AGENT_BIN_LINK" && ! -L "$PATCHMON_AGENT_BIN_LINK" ]]; then
+  backup_control_plane_file "$PATCHMON_AGENT_BIN_LINK"
+fi
+if [[ ! -e "$PATCHMON_AGENT_CONFIG_LINK" && ! -L "$PATCHMON_AGENT_CONFIG_LINK" ]]; then
+  backup_control_plane_file "$PATCHMON_AGENT_CONFIG_LINK"
+fi
+if [[ ! -e "$PATCHMON_AGENT_UNIT_LINK" && ! -L "$PATCHMON_AGENT_UNIT_LINK" ]]; then
+  backup_control_plane_file "$PATCHMON_AGENT_UNIT_LINK"
+fi
 PREVIOUS_MCP_IMAGE_DIGEST="$(read_mcp_value SOVEREIGN_MCP_IMAGE 2>/dev/null || true)"
 if ! valid_mcp_image_digest "$PREVIOUS_MCP_IMAGE_DIGEST"; then
   PREVIOUS_MCP_IMAGE_DIGEST="$(resolve_running_mcp_image_digest || true)"
@@ -437,17 +536,18 @@ fi
 ROLLBACK_ARMED=1
 
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py llm_boundary_contract.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py patchmon_operator.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py server.py tool_extensions.py llm_boundary_contract.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py patchmon_operator.py patchmon_fleet.py launcher.py docker-compose.yml; do
   backup_control_plane_file "$INSTALL_ROOT/$file"
   install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
 done
 
-for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py litellm_stack.py managed_compose.py patchmon_operator.py; do
+for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py; do
   backup_control_plane_file "$BROKER_DIR/$file"
 done
-backup_control_plane_file "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$LITELLM_TEMPLATE_DIR/config.yaml"
-backup_control_plane_file "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
+backup_control_plane_file "$BROKER_DIR/litellm_stack.py"
+backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
+backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
+backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py"
 backup_control_plane_file "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
 backup_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
@@ -482,12 +582,14 @@ install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"
 install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"
 install -m 0640 "$SOURCE_DIR/policy.py" "$BROKER_DIR/policy.py"
 install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
-install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"
 install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"
 install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"
-install -m 0640 "$LITELLM_TEMPLATE_SOURCE/docker-compose.yml" "$LITELLM_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$LITELLM_TEMPLATE_SOURCE/config.yaml" "$LITELLM_TEMPLATE_DIR/config.yaml"
-install -m 0640 "$LITELLM_TEMPLATE_SOURCE/sovereign-entrypoint.py" "$LITELLM_TEMPLATE_DIR/sovereign-entrypoint.py"
+install -m 0640 "$SOURCE_DIR/patchmon_fleet.py" "$BROKER_DIR/patchmon_fleet.py"
+rm -f "$BROKER_DIR/litellm_stack.py"
+rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
+rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
+rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py"
+rmdir "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" 2>/dev/null || true
 install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
@@ -592,8 +694,8 @@ set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_ENV_FILE "$BACKEND_ENV_PATH"
 set_value "$MANAGED_ENV" SOVEREIGN_BACKEND_MANAGED_ENV_FILE "$BACKEND_MANAGED_ENV"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REQUEST_KEY "$OWNER_REQUEST_KEY"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"
-set_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL "$LITELLM_BASE_URL"
-set_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE "$LITELLM_MASTER_KEY_FILE"
+remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL
+remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
 OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
@@ -627,7 +729,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle sovereign-litellm-litellm-1 sovereign-litellm-db-1 code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-freellmpool; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-freellmpool; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -635,6 +737,7 @@ for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserles
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER,$CURRENT_ALLOWED_CONTAINERS"
   fi
 done
+remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1"
 unset REQUIRED_CONTAINER CURRENT_ALLOWED_CONTAINERS
 
 if [[ "$(read_mcp_value SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
@@ -692,8 +795,6 @@ INSTALL_STAGE="write_broker_environment"
   printf 'SOVEREIGN_MCP_COMMAND_QUEUE=%s\n' "$COMMAND_QUEUE_DIR"
   printf 'SOVEREIGN_COMPOSE_TEMPLATE_ROOT=%s\n' "$COMPOSE_TEMPLATE_ROOT"
   printf 'PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt\n'
-  printf 'SOVEREIGN_LITELLM_TEMPLATE_ROOT=%s\n' "$LITELLM_TEMPLATE_DIR"
-  printf 'SOVEREIGN_LITELLM_DEPLOY_ROOT=/opt/sovereign-litellm\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
 } > "$BROKER_ENV"
@@ -706,6 +807,15 @@ BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
 export BROKER_GID
 cd "$INSTALL_ROOT"
 docker compose config >/dev/null
+
+INSTALL_STAGE="prepare_patchmon_agent_sandbox_paths"
+prepare_patchmon_agent_sandbox_paths
+[[ -e "$PATCHMON_AGENT_BIN_LINK" || -L "$PATCHMON_AGENT_BIN_LINK" ]] \
+  || fail "PatchMon agent binary path was not prepared"
+[[ -d "$PATCHMON_AGENT_CONFIG_LINK" ]] \
+  || fail "PatchMon agent config path was not prepared"
+[[ -e "$PATCHMON_AGENT_UNIT_LINK" || -L "$PATCHMON_AGENT_UNIT_LINK" ]] \
+  || fail "PatchMon agent unit path was not prepared"
 
 INSTALL_STAGE="start_host_control_plane"
 systemctl daemon-reload
@@ -788,7 +898,7 @@ docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-gove
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-assurance/SKILL.md || fail "operational assurance skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-mcp-optimal-operation/SKILL.md || fail "optimal operation skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-mcp-operating-profile.json || fail "versioned MCP operating profile is missing from the MCP image"
-docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import a2a_runtime_client; import document_pipeline; import github_knowledge_canary; import owner_input_widget; import tool_extensions; import repository_skill_tools; import proven_learning_tools; import skill_supply_chain_tools; import deterministic_contract; import deterministic_architecture_tools; import database_evidence_tools; import enterprise_backend_tools; import freemium_product_architect_tools; import openai_project_access_tools; import operating_profile; import operational_governance_tools; import operational_assurance_tools; import output_contracts; import toolchain_composition; import patchmon_operator; assert launcher.mcp is server.mcp; output_contract_report=launcher.OUTPUT_CONTRACT_INSTALLATION; assert output_contract_report.get("ok") is True, output_contract_report; assert output_contract_report.get("missingOutputSchemaCount") == 0, output_contract_report; operating_profile_report=launcher.OPERATING_PROFILE_ENFORCEMENT; assert operating_profile_report.ok is True, operating_profile_report; assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(repository_skill_tools.repository_knowledge_surface_scan); assert callable(repository_skill_tools.repository_product_logic_map); assert callable(repository_skill_tools.repository_change_impact_manifest); assert callable(repository_skill_tools.repository_architecture_snapshot); assert callable(repository_skill_tools.repository_architecture_drift_report); assert callable(repository_skill_tools.repository_architecture_runtime_drift_evidence); assert callable(repository_skill_tools.repository_mirror_diff_report); assert callable(repository_skill_tools.repository_endpoint_reference); assert callable(repository_skill_tools.repository_learning_records_normalize_preview); assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(proven_learning_tools.proven_learning_pattern_plan); assert callable(proven_learning_tools.proven_learning_owner_approval_request); assert callable(proven_learning_tools.proven_learning_pattern_apply); assert callable(proven_learning_tools.repository_learning_logbook_update); assert callable(skill_supply_chain_tools.skill_supply_chain_inventory); assert callable(skill_supply_chain_tools.skill_archive_inspect); assert callable(skill_supply_chain_tools.goal_transition_preview); assert callable(skill_supply_chain_tools.template_generation_plan); assert deterministic_contract.KAPPA_SCALE == 1000000; inventory=deterministic_architecture_tools.deterministic_tool_inventory(); assert inventory.get("crossRuntimeParityProven") is True, inventory; assert callable(deterministic_architecture_tools.deterministic_tool_inventory); assert callable(deterministic_architecture_tools.deterministic_architecture_inventory); assert callable(deterministic_architecture_tools.deterministic_nondeterminism_scan); assert callable(deterministic_architecture_tools.deterministic_kappa_contract_audit); assert callable(deterministic_architecture_tools.deterministic_sql_contract_audit); assert callable(deterministic_architecture_tools.deterministic_transition_validate); assert callable(deterministic_architecture_tools.deterministic_replay_verify); assert callable(deterministic_architecture_tools.deterministic_transformation_plan); assert callable(database_evidence_tools.database_evidence_skill_inventory); assert callable(database_evidence_tools.database_evidence_architecture_inventory); assert callable(database_evidence_tools.postgres_evidence_read); assert callable(database_evidence_tools.postgres_evidence_migration_preview); assert callable(database_evidence_tools.database_evidence_receipt_verify); db_evidence_names={"database_evidence_skill_inventory","database_evidence_architecture_inventory","postgres_evidence_read","postgres_evidence_migration_preview","database_evidence_receipt_verify"}; registered_names={tool.name for tool in launcher.mcp._tool_manager.list_tools()}; assert db_evidence_names <= registered_names, db_evidence_names - registered_names; assert callable(enterprise_backend_tools.backend_engineering_tool_inventory); assert callable(enterprise_backend_tools.backend_architecture_assess); assert callable(enterprise_backend_tools.backend_stack_select); assert callable(enterprise_backend_tools.backend_delivery_plan); assert callable(enterprise_backend_tools.backend_api_security_plan); assert callable(enterprise_backend_tools.repository_revision_resolve); assert callable(freemium_product_architect_tools.freemium_product_tool_inventory); assert callable(freemium_product_architect_tools.freemium_market_opportunity_score); assert callable(freemium_product_architect_tools.freemium_offer_contract_build); assert callable(freemium_product_architect_tools.freemium_product_contract_validate); assert callable(freemium_product_architect_tools.freemium_product_bundle_manifest); assert callable(openai_project_access_tools.openai_project_access_plan); assert callable(openai_project_access_tools.openai_project_access_runtime_evidence); assert callable(operating_profile.sovereign_operating_profile_status); assert callable(operating_profile.sovereign_mission_preflight); profile_status=operating_profile.sovereign_operating_profile_status(); assert profile_status.status == "OPERATING_PROFILE_ENFORCED", profile_status; assert callable(operational_governance_tools.operational_skill_inventory); assert callable(operational_governance_tools.mcp_tool_contract_registry); assert callable(operational_governance_tools.tool_recommend_for_mission); assert callable(operational_governance_tools.mcp_registry_snapshot_verify); assert callable(operational_governance_tools.evidence_graph_build); assert callable(operational_governance_tools.schema_migration_reconcile); assert callable(operational_governance_tools.llm_route_reliability_assess); assert callable(operational_governance_tools.agent_run_liveness_assess); assert callable(operational_governance_tools.semantic_intent_boundary_audit); assert callable(operational_governance_tools.cost_credit_settlement_reconcile); assert callable(operational_governance_tools.backup_restore_evidence_verify); assert callable(operational_governance_tools.slo_error_budget_assess); assert callable(operational_governance_tools.configuration_drift_assess); assert callable(operational_governance_tools.runtime_runbook_generate); assert callable(operational_governance_tools.ownership_codeowners_guard); assert callable(operational_governance_tools.compliance_evidence_export); assert callable(operational_assurance_tools.operational_assurance_skill_inventory); assert callable(operational_assurance_tools.vps_capacity_resource_pressure_assess); assert callable(operational_assurance_tools.runtime_dependency_health_matrix); assert callable(operational_assurance_tools.outbox_queue_liveness_assess); assert callable(operational_assurance_tools.scheduled_maintenance_coordinate); assert callable(operational_assurance_tools.runtime_topology_change_audit); assert callable(operational_assurance_tools.postgres_query_index_performance_assess); assert callable(operational_assurance_tools.data_integrity_invariant_audit); assert callable(operational_assurance_tools.data_repair_plan_build); assert callable(operational_assurance_tools.vector_memory_consistency_assess); assert callable(operational_assurance_tools.memory_poisoning_provenance_guard); assert callable(operational_assurance_tools.learning_pattern_lifecycle_preview); assert callable(operational_assurance_tools.data_retention_privacy_audit); assert callable(operational_assurance_tools.multi_tenant_isolation_verify); assert callable(operational_assurance_tools.mcp_schema_compatibility_audit); assert callable(operational_assurance_tools.mcp_protocol_conformance_fuzz_plan); assert callable(operational_assurance_tools.tool_permission_minimize); assert callable(operational_assurance_tools.dynamic_execution_containment_audit); assert callable(operational_assurance_tools.skill_capability_coverage_map); assert callable(operational_assurance_tools.skill_lifecycle_deprecation_preview); assert callable(operational_assurance_tools.skill_regression_benchmark); assert callable(operational_assurance_tools.tool_idempotency_verify); assert callable(operational_assurance_tools.owner_approval_policy_evaluate); assert callable(operational_assurance_tools.secret_lifecycle_rotation_assess); assert callable(operational_assurance_tools.secret_literal_triage); assert callable(operational_assurance_tools.sbom_provenance_image_signing_verify); assert callable(operational_assurance_tools.dependency_vulnerability_remediation_plan); assert callable(operational_assurance_tools.authentication_chaos_negative_test_assess); assert output_contracts.ToolOutputEnvelope is not None; assert callable(toolchain_composition.mcp_toolchain_contract_inventory); assert callable(toolchain_composition.mcp_toolchain_compile); assert callable(toolchain_composition.mcp_toolchain_validate); assert callable(toolchain_composition.mcp_toolchain_next_step); assert callable(toolchain_composition.mcp_diagnostic_chain_plan); assert all(getattr(tool, "output_schema", None) for tool in launcher.mcp._tool_manager.list_tools()); assurance=operational_assurance_tools.operational_assurance_skill_inventory(); assert assurance.status == "OPERATIONAL_ASSURANCE_SKILLS_READY", assurance; registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == "MCP_TOOL_REGISTRY_READY", registry; assert registry.toolCount >= 43, registry; assert callable(server.repository_sync_workspace_to_pr_head); assert callable(server.postgres_schema_inventory); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); assert callable(server.memory_gateway_collection_canary); assert callable(server.patchmon_tool_inventory); assert callable(server.patchmon_runtime_inventory); assert callable(server.patchmon_database_inventory); assert callable(server.patchmon_query); assert callable(server.patchmon_brain_snapshot); assert callable(server.patchmon_patch_action_plan); assert callable(server.patchmon_patch_action_apply); assert patchmon_operator.PatchmonOperatorRuntime is not None; assert callable(server.a2a_live_canary); assert callable(server.controller_run_external_event); assert callable(server.document_pipeline_live_canary); assert callable(server.github_knowledge_live_canary); assert a2a_runtime_client.A2A_VERSION == "1.0"; assert document_pipeline.DocumentPipelineRuntime is not None; assert github_knowledge_canary.GitHubKnowledgeCanaryRuntime is not None; assert owner_input_widget.WIDGET_URI in {str(item.uri) for item in server.mcp._resource_manager.list_resources()}; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+docker exec sovereign-chatgpt-mcp python -c 'import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import a2a_runtime_client; import document_pipeline; import github_knowledge_canary; import owner_input_widget; import tool_extensions; import repository_skill_tools; import proven_learning_tools; import skill_supply_chain_tools; import deterministic_contract; import deterministic_architecture_tools; import database_evidence_tools; import enterprise_backend_tools; import freemium_product_architect_tools; import openai_project_access_tools; import operating_profile; import operational_governance_tools; import operational_assurance_tools; import output_contracts; import toolchain_composition; import patchmon_operator; import patchmon_fleet; assert launcher.mcp is server.mcp; output_contract_report=launcher.OUTPUT_CONTRACT_INSTALLATION; assert output_contract_report.get("ok") is True, output_contract_report; assert output_contract_report.get("missingOutputSchemaCount") == 0, output_contract_report; operating_profile_report=launcher.OPERATING_PROFILE_ENFORCEMENT; assert operating_profile_report.ok is True, operating_profile_report; assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(repository_skill_tools.repository_knowledge_surface_scan); assert callable(repository_skill_tools.repository_product_logic_map); assert callable(repository_skill_tools.repository_change_impact_manifest); assert callable(repository_skill_tools.repository_architecture_snapshot); assert callable(repository_skill_tools.repository_architecture_drift_report); assert callable(repository_skill_tools.repository_architecture_runtime_drift_evidence); assert callable(repository_skill_tools.repository_mirror_diff_report); assert callable(repository_skill_tools.repository_endpoint_reference); assert callable(repository_skill_tools.repository_learning_records_normalize_preview); assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(proven_learning_tools.proven_learning_pattern_plan); assert callable(proven_learning_tools.proven_learning_owner_approval_request); assert callable(proven_learning_tools.proven_learning_pattern_apply); assert callable(proven_learning_tools.repository_learning_logbook_update); assert callable(skill_supply_chain_tools.skill_supply_chain_inventory); assert callable(skill_supply_chain_tools.skill_archive_inspect); assert callable(skill_supply_chain_tools.goal_transition_preview); assert callable(skill_supply_chain_tools.template_generation_plan); assert deterministic_contract.KAPPA_SCALE == 1000000; inventory=deterministic_architecture_tools.deterministic_tool_inventory(); assert inventory.get("crossRuntimeParityProven") is True, inventory; assert callable(deterministic_architecture_tools.deterministic_tool_inventory); assert callable(deterministic_architecture_tools.deterministic_architecture_inventory); assert callable(deterministic_architecture_tools.deterministic_nondeterminism_scan); assert callable(deterministic_architecture_tools.deterministic_kappa_contract_audit); assert callable(deterministic_architecture_tools.deterministic_sql_contract_audit); assert callable(deterministic_architecture_tools.deterministic_transition_validate); assert callable(deterministic_architecture_tools.deterministic_replay_verify); assert callable(deterministic_architecture_tools.deterministic_transformation_plan); assert callable(database_evidence_tools.database_evidence_skill_inventory); assert callable(database_evidence_tools.database_evidence_architecture_inventory); assert callable(database_evidence_tools.postgres_evidence_read); assert callable(database_evidence_tools.postgres_evidence_migration_preview); assert callable(database_evidence_tools.database_evidence_receipt_verify); db_evidence_names={"database_evidence_skill_inventory","database_evidence_architecture_inventory","postgres_evidence_read","postgres_evidence_migration_preview","database_evidence_receipt_verify"}; registered_names={tool.name for tool in launcher.mcp._tool_manager.list_tools()}; assert db_evidence_names <= registered_names, db_evidence_names - registered_names; assert callable(enterprise_backend_tools.backend_engineering_tool_inventory); assert callable(enterprise_backend_tools.backend_architecture_assess); assert callable(enterprise_backend_tools.backend_stack_select); assert callable(enterprise_backend_tools.backend_delivery_plan); assert callable(enterprise_backend_tools.backend_api_security_plan); assert callable(enterprise_backend_tools.repository_revision_resolve); assert callable(freemium_product_architect_tools.freemium_product_tool_inventory); assert callable(freemium_product_architect_tools.freemium_market_opportunity_score); assert callable(freemium_product_architect_tools.freemium_offer_contract_build); assert callable(freemium_product_architect_tools.freemium_product_contract_validate); assert callable(freemium_product_architect_tools.freemium_product_bundle_manifest); assert callable(openai_project_access_tools.openai_project_access_plan); assert callable(openai_project_access_tools.openai_project_access_runtime_evidence); assert callable(operating_profile.sovereign_operating_profile_status); assert callable(operating_profile.sovereign_mission_preflight); profile_status=operating_profile.sovereign_operating_profile_status(); assert profile_status.status == "OPERATING_PROFILE_ENFORCED", profile_status; assert callable(operational_governance_tools.operational_skill_inventory); assert callable(operational_governance_tools.mcp_tool_contract_registry); assert callable(operational_governance_tools.tool_recommend_for_mission); assert callable(operational_governance_tools.mcp_registry_snapshot_verify); assert callable(operational_governance_tools.evidence_graph_build); assert callable(operational_governance_tools.schema_migration_reconcile); assert callable(operational_governance_tools.llm_route_reliability_assess); assert callable(operational_governance_tools.agent_run_liveness_assess); assert callable(operational_governance_tools.semantic_intent_boundary_audit); assert callable(operational_governance_tools.cost_credit_settlement_reconcile); assert callable(operational_governance_tools.backup_restore_evidence_verify); assert callable(operational_governance_tools.slo_error_budget_assess); assert callable(operational_governance_tools.configuration_drift_assess); assert callable(operational_governance_tools.runtime_runbook_generate); assert callable(operational_governance_tools.ownership_codeowners_guard); assert callable(operational_governance_tools.compliance_evidence_export); assert callable(operational_assurance_tools.operational_assurance_skill_inventory); assert callable(operational_assurance_tools.vps_capacity_resource_pressure_assess); assert callable(operational_assurance_tools.runtime_dependency_health_matrix); assert callable(operational_assurance_tools.outbox_queue_liveness_assess); assert callable(operational_assurance_tools.scheduled_maintenance_coordinate); assert callable(operational_assurance_tools.runtime_topology_change_audit); assert callable(operational_assurance_tools.postgres_query_index_performance_assess); assert callable(operational_assurance_tools.data_integrity_invariant_audit); assert callable(operational_assurance_tools.data_repair_plan_build); assert callable(operational_assurance_tools.vector_memory_consistency_assess); assert callable(operational_assurance_tools.memory_poisoning_provenance_guard); assert callable(operational_assurance_tools.learning_pattern_lifecycle_preview); assert callable(operational_assurance_tools.data_retention_privacy_audit); assert callable(operational_assurance_tools.multi_tenant_isolation_verify); assert callable(operational_assurance_tools.mcp_schema_compatibility_audit); assert callable(operational_assurance_tools.mcp_protocol_conformance_fuzz_plan); assert callable(operational_assurance_tools.tool_permission_minimize); assert callable(operational_assurance_tools.dynamic_execution_containment_audit); assert callable(operational_assurance_tools.skill_capability_coverage_map); assert callable(operational_assurance_tools.skill_lifecycle_deprecation_preview); assert callable(operational_assurance_tools.skill_regression_benchmark); assert callable(operational_assurance_tools.tool_idempotency_verify); assert callable(operational_assurance_tools.owner_approval_policy_evaluate); assert callable(operational_assurance_tools.secret_lifecycle_rotation_assess); assert callable(operational_assurance_tools.secret_literal_triage); assert callable(operational_assurance_tools.sbom_provenance_image_signing_verify); assert callable(operational_assurance_tools.dependency_vulnerability_remediation_plan); assert callable(operational_assurance_tools.authentication_chaos_negative_test_assess); assert output_contracts.ToolOutputEnvelope is not None; assert callable(toolchain_composition.mcp_toolchain_contract_inventory); assert callable(toolchain_composition.mcp_toolchain_compile); assert callable(toolchain_composition.mcp_toolchain_validate); assert callable(toolchain_composition.mcp_toolchain_next_step); assert callable(toolchain_composition.mcp_diagnostic_chain_plan); assert all(getattr(tool, "output_schema", None) for tool in launcher.mcp._tool_manager.list_tools()); assurance=operational_assurance_tools.operational_assurance_skill_inventory(); assert assurance.status == "OPERATIONAL_ASSURANCE_SKILLS_READY", assurance; registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == "MCP_TOOL_REGISTRY_READY", registry; assert registry.toolCount >= 43, registry; assert callable(server.repository_sync_workspace_to_pr_head); assert callable(server.postgres_schema_inventory); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); assert callable(server.memory_gateway_collection_canary); assert callable(server.patchmon_tool_inventory); assert callable(server.patchmon_runtime_inventory); assert callable(server.patchmon_database_inventory); assert callable(server.patchmon_query); assert callable(server.patchmon_brain_snapshot); assert callable(server.patchmon_patch_action_plan); assert callable(server.patchmon_patch_action_apply); assert callable(server.patchmon_fleet_bootstrap_plan); assert callable(server.patchmon_fleet_bootstrap_apply); assert callable(server.patchmon_fleet_orchestrator_status); assert patchmon_operator.PatchmonOperatorRuntime is not None; assert patchmon_fleet.PatchmonFleetRuntime is not None; assert callable(server.a2a_live_canary); assert callable(server.controller_run_external_event); assert callable(server.document_pipeline_live_canary); assert callable(server.github_knowledge_live_canary); assert a2a_runtime_client.A2A_VERSION == "1.0"; assert document_pipeline.DocumentPipelineRuntime is not None; assert github_knowledge_canary.GitHubKnowledgeCanaryRuntime is not None; assert owner_input_widget.WIDGET_URI in {str(item.uri) for item in server.mcp._resource_manager.list_resources()}; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
 
 INSTALL_STAGE="verify_operating_profile_canaries"
 docker exec -i sovereign-chatgpt-mcp python - <<'PY'
@@ -898,4 +1008,4 @@ unset TUNNEL_CONFIGURED
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-litellm","sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

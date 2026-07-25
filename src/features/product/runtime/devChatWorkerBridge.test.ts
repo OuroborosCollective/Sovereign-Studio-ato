@@ -243,6 +243,24 @@ describe('devChatWorkerBridge', () => {
     expect(result.diagnostic?.canClientFix).toBe(false);
   });
 
+  it('classifies HTTP 401 as a missing backend session rather than a provider outage', async () => {
+    stubRoutedFetch(() => jsonResponse({ error: 'Nicht eingeloggt' }, 401));
+
+    const result = await fetchDevChatWorkerReply({
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      messages: [{ role: 'user', content: 'Hallo' }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic).toMatchObject({
+      status: 401,
+      scope: 'authentication',
+      canClientFix: true,
+    });
+    expect(result.diagnostic?.nextAction).toContain('Backend-Session');
+    expect(result.diagnostic?.nextAction).not.toContain('Cloudflare');
+  });
+
   it('reads the hosted worker health endpoint without secrets', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ok: true, provider: 'bridge', gateway: 'gatter', model: DEV_CHAT_WORKER_DEFAULT_MODEL, upstreamConfigured: true, secretConfigured: true })));
 
