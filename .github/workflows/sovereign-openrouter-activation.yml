@@ -65,7 +65,7 @@ jobs:
           [[ "${EXPECTED_MCP_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
 
       - name: Activate direct provider and verify catalog readback
-        uses: appleboy/ssh-action@v1.2.5
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
         with:
