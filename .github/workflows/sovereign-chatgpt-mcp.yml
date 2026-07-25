@@ -86,12 +86,17 @@ jobs:
               repo: context.repo.repo,
               pull_number: number,
             });
+            const { data: mainRef } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
             const repository = `${context.repo.owner}/${context.repo.repo}`;
             const headRepository = String(pull.head?.repo?.full_name || '');
             const headRef = String(pull.head?.ref || '');
             const headSha = String(pull.head?.sha || '').toLowerCase();
             const baseRef = String(pull.base?.ref || '');
-            const baseSha = String(pull.base?.sha || '').toLowerCase();
+            const baseSha = String(mainRef.object?.sha || '').toLowerCase();
             if (pull.state !== 'open') {
               core.setFailed('PR_NOT_OPEN');
               return;
