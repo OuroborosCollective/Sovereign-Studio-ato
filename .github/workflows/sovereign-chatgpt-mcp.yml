@@ -16,6 +16,22 @@ on:
       - 'scripts/sovereign-backend/app.py'
       - '.github/workflows/sovereign-chatgpt-mcp.yml'
   workflow_dispatch:
+    inputs:
+      update_pr_branch:
+        description: Merge the exact current main revision into one sovereign/chatgpt PR branch
+        required: false
+        default: false
+        type: boolean
+      expected_head_sha:
+        description: Exact current PR head SHA before the branch update
+        required: false
+        default: ''
+        type: string
+      expected_base_sha:
+        description: Exact current main SHA to merge into the PR branch
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -30,8 +46,56 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  update-pr-branch:
+    name: Owner update PR branch
+    if: github.event_name == 'workflow_dispatch' && inputs.update_pr_branch == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Merge exact main revision without force-push
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            sovereign/chatgpt/*) ;;
+            *) echo "Only sovereign/chatgpt PR branches may be updated: ${GITHUB_REF_NAME}" >&2; exit 1 ;;
+          esac
+          [[ "${EXPECTED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          ACTUAL_HEAD_SHA="$(git rev-parse HEAD)"
+          test "${ACTUAL_HEAD_SHA}" = "${EXPECTED_HEAD_SHA}"
+          git fetch --no-tags origin main
+          ACTUAL_BASE_SHA="$(git rev-parse origin/main)"
+          test "${ACTUAL_BASE_SHA}" = "${EXPECTED_BASE_SHA}"
+          if git merge-base --is-ancestor "${ACTUAL_BASE_SHA}" "${ACTUAL_HEAD_SHA}"; then
+            echo "Branch already contains the confirmed main revision."
+            exit 0
+          fi
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git merge --no-ff --no-edit "${ACTUAL_BASE_SHA}" \
+            -m "Merge confirmed main ${ACTUAL_BASE_SHA} into ${GITHUB_REF_NAME}"
+          git diff --check "${ACTUAL_HEAD_SHA}..HEAD"
+          UPDATED_HEAD_SHA="$(git rev-parse HEAD)"
+          test "${UPDATED_HEAD_SHA}" != "${ACTUAL_HEAD_SHA}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          printf 'Updated PR branch: %s -> %s\n' "${ACTUAL_HEAD_SHA}" "${UPDATED_HEAD_SHA}"
+
   validate:
     name: Validate MCP operator
+    if: github.event_name != 'workflow_dispatch' || inputs.update_pr_branch != true
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
