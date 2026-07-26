@@ -178,11 +178,12 @@ def redact_text(text: str) -> tuple[str, int]:
 
 
 def decode_blob(blob: bytes) -> tuple[str, str]:
+    if b"\0" in blob:
+        return base64.b64encode(blob).decode("ascii"), "base64"
     try:
         return blob.decode("utf-8"), "utf-8"
     except UnicodeDecodeError:
-        encoded = base64.b64encode(blob).decode("ascii")
-        return encoded, "base64"
+        return base64.b64encode(blob).decode("ascii"), "base64"
 
 
 def build_records(revision: str, paths: Iterable[str]) -> list[FileRecord]:

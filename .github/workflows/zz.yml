@@ -29,12 +29,22 @@ jobs:
             --output docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md \
             | tee /tmp/sovereign-corpus-result.json
 
-      - name: Verify exact record count and terminator
+      - name: Verify architecture coverage and terminator
         run: |
-          test "$(grep -c '<!-- SOVEREIGN_FILE_BEGIN ' docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md)" -ge "1560"
-          test "$(grep -c '<!-- SOVEREIGN_FILE_END -->' docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md)" -ge "1560"
-          grep -Fq '"file_records_written": 1643' docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
-          grep -Fq '"complete": true' docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md')
+          content = path.read_text(encoding='utf-8')
+          begin_count = content.count('<!-- SOVEREIGN_FILE_BEGIN ')
+          end_count = content.count('<!-- SOVEREIGN_FILE_END -->')
+          assert begin_count >= 1560, begin_count
+          assert end_count == begin_count, (begin_count, end_count)
+          assert '"file_records_written": 1643' in content
+          assert '"complete": true' in content
+          assert '\x00' not in content
+          print({'begin_count': begin_count, 'end_count': end_count, 'bytes': path.stat().st_size})
+          PY
           sha256sum docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
           wc -c docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
 
