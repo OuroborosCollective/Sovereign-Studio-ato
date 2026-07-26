@@ -33,3 +33,7 @@
 ## 2025-07-24 - [Accessible Hover and State-Dependent Discovery for Inline Sub-Cards]
 **Learning:** Complex sub-cards (such as changelog previews, repair sheets, and workbench status cards) often render context-sensitive action items (such as copying content, applying a mission, or opening deep-links). Sighted and keyboard-navigated users require clear visual cues on action boundaries, and screen readers benefit from descriptive action-oriented `aria-label` and `title` attributes that update based on active/blocked/pressed states.
 **Action:** For interactive buttons within secondary workspace sheets and cards, always pair clear, detailed `title` tooltips with stateful, dynamic descriptive accessible names (e.g., using ternary expressions matching active/disabled states) to prevent confusion.
+
+## 2025-07-26 - [Form Field Accessibility inside Overlay Modals]
+**Learning:** Nested overlay sheets and popup panels (like the Prompt Library) frequently render form controls (inputs, textareas, dropdown selects) inside dense CSS grid or flexbox wrappers without companion visual label tags. Without explicit labelling, screen readers fail to associate purposes with active controls, leading to empty input announcements.
+**Action:** Always provide descriptive `aria-label` attributes (e.g., `aria-label="Bezeichnung des eigenen Templates"`) on all utility form controls rendered without standalone native `<label>` tags.

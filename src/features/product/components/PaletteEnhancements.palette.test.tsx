@@ -7,6 +7,7 @@ import { SovereignToolLauncher } from './SovereignToolLauncher';
 import { Sidebar } from './Sidebar';
 import { AgentQuestionCard } from './AgentQuestionCard';
 import { UserKeyManager, LLM_PROVIDERS } from './UserKeyManager';
+import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { PatchDiffEvidenceSheet } from './PatchDiffEvidenceSheet';
 import { RuntimeEvidenceLogSheet } from './RuntimeEvidenceLogSheet';
 import { AutoCodeReviewCard } from './AutoCodeReviewCard';
@@ -536,6 +537,72 @@ describe('Palette Accessibility Enhancements', () => {
       );
       const disabledInlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei: src/App.tsx' });
       expect(disabledInlineBadgeBtn).toHaveAttribute('title', 'src/App.tsx');
+    });
+  });
+
+  describe('PromptLibraryPanel Accessibility and UX Enhancements', () => {
+    it('has correct aria-label and title on close button', () => {
+      const onSelectTemplate = vi.fn();
+      const onClose = vi.fn();
+      render(<PromptLibraryPanel onSelectTemplate={onSelectTemplate} onClose={onClose} />);
+
+      const closeButton = screen.getByRole('button', { name: 'Bibliothek schließen' });
+      expect(closeButton).toBeInTheDocument();
+      expect(closeButton).toHaveAttribute('title', 'Bibliothek schließen');
+    });
+
+    it('has title on filter buttons', () => {
+      const onSelectTemplate = vi.fn();
+      const onClose = vi.fn();
+      render(<PromptLibraryPanel onSelectTemplate={onSelectTemplate} onClose={onClose} />);
+
+      const allButton = screen.getByRole('button', { name: 'Alle' });
+      expect(allButton).toHaveAttribute('title', 'Alle Templates anzeigen');
+
+      // Since default built-in templates exist, category buttons should be rendered
+      const patchButton = screen.getByRole('button', { name: 'Patch / PR' });
+      expect(patchButton).toHaveAttribute('title', 'Kategorie filtern: Patch / PR');
+    });
+
+    it('has helpful title on Nutzen button', () => {
+      const onSelectTemplate = vi.fn();
+      const onClose = vi.fn();
+      render(<PromptLibraryPanel onSelectTemplate={onSelectTemplate} onClose={onClose} />);
+
+      // Find first Nutzen button and verify its title
+      const nutzenButtons = screen.getAllByRole('button', { name: 'Nutzen' });
+      expect(nutzenButtons.length).toBeGreaterThan(0);
+      expect(nutzenButtons[0]).toHaveAttribute('title');
+      expect(nutzenButtons[0].getAttribute('title')).toContain('für den Builder verwenden');
+    });
+
+    it('has correct fields, labels, titles, and disabled states in add-custom-template flow', () => {
+      const onSelectTemplate = vi.fn();
+      const onClose = vi.fn();
+      render(<PromptLibraryPanel onSelectTemplate={onSelectTemplate} onClose={onClose} />);
+
+      const showFormBtn = screen.getByRole('button', { name: '+ Eigenes Template' });
+      expect(showFormBtn).toHaveAttribute('title', 'Eigenes Template erstellen');
+
+      fireEvent.click(showFormBtn);
+
+      const labelInput = screen.getByLabelText('Bezeichnung des eigenen Templates');
+      expect(labelInput).toBeInTheDocument();
+      expect(labelInput).toHaveAttribute('placeholder', 'Bezeichnung');
+
+      const promptInput = screen.getByLabelText('Inhalt des eigenen Templates');
+      expect(promptInput).toBeInTheDocument();
+      expect(promptInput).toHaveAttribute('placeholder', 'Prompt');
+
+      const categorySelect = screen.getByLabelText('Kategorie des eigenen Templates');
+      expect(categorySelect).toBeInTheDocument();
+
+      const saveBtn = screen.getByRole('button', { name: 'Speichern' });
+      expect(saveBtn).toBeDisabled();
+      expect(saveBtn).toHaveAttribute('title', 'Bezeichnung und Prompt sind erforderlich');
+
+      const cancelBtn = screen.getByRole('button', { name: 'Abbrechen' });
+      expect(cancelBtn).toHaveAttribute('title', 'Erstellung abbrechen');
     });
   });
 });
