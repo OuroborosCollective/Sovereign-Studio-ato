@@ -397,14 +397,14 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
                 <div><BadgeDollarSign /><span>Blockiert / Kühlung</span><strong>{revolverStats?.blockedOrCoolingScopes ?? 0}</strong></div>
               </div>
               <p className="llm-catalog__evidence">
-                Profilrevision {revolverV3.profile.revision ?? 1} · Preis-Evidence maximal {revolverV3.pricingEvidenceTtlHours} h ·
+                Profilrevision {revolverV3.profile.revision ?? 1} · Eligibility-Evidence maximal {revolverV3.eligibilityEvidenceTtlHours} h ·
                 Cache {revolverV3.semanticCachePolicy} · Auto-Gewichte {revolverV3.autoWeights}
               </p>
             </section>
           )}
           <FreeRevolverControlCenter
             api={freeApi}
-            pricingEvidenceTtlHours={revolverV3?.pricingEvidenceTtlHours ?? 24}
+            eligibilityEvidenceTtlHours={revolverV3?.eligibilityEvidenceTtlHours ?? 24}
           />
         </>
       ) : (

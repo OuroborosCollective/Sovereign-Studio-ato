@@ -301,21 +301,36 @@ def normalize_models_payload(
             or item.get("name")
             or model_id
         ).strip()[:160]
-        free_verified, pricing_source = zero_price_evidence(item)
+        explicit_zero_cost, provider_cost_source = zero_price_evidence(item)
+        free_eligible = explicit_zero_cost
+        eligibility_source = (
+            "explicit-provider-zero-cost"
+            if explicit_zero_cost
+            else provider_cost_source
+        )
         if (
             managed_quota_contract
-            and not free_verified
-            and pricing_source == "provider-pricing-unreported-or-incomplete"
+            and not free_eligible
+            and provider_cost_source == "provider-pricing-unreported-or-incomplete"
         ):
-            free_verified = True
-            pricing_source = "managed-freellm-zero-cost-quota-contract"
+            free_eligible = True
+            eligibility_source = "managed-freellm-quota-contract"
         capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), list) else ["chat"]
         normalized.append({
             "modelId": model_id,
             "displayName": display_name or model_id,
             "capabilities": [str(value)[:60] for value in capabilities[:20]],
-            "freeVerified": free_verified,
-            "pricingSource": pricing_source,
+            "freeEligible": free_eligible,
+            "eligibilitySource": eligibility_source,
+            "providerCostCatalogState": (
+                "zero"
+                if explicit_zero_cost
+                else "nonzero"
+                if provider_cost_source == "provider-pricing-nonzero"
+                else "invalid"
+                if provider_cost_source == "provider-pricing-invalid"
+                else "unreported"
+            ),
             "payloadSha256": hashlib.sha256(
                 json.dumps(item, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
             ).hexdigest(),

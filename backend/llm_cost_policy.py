@@ -1,14 +1,14 @@
-"""Three-category provider-cost policy for Sovereign LLM billing.
+"""Three-category Sovereign LLM billing policy.
 
 The categories are deliberately small and stable:
-- free: zero verified provider cost, reserved for the Revolver
-- standard: at least 4x real provider cost
-- premium: at least 8x real provider cost
+- free: managed provider quota, no user charge and no provider-price requirement
+- standard: at least 4x verified real provider cost
+- premium: at least 8x verified real provider cost
 
-All money calculations use integer micro-US-dollars. Paid calls are reserved
-before provider execution and settled from direct-provider cost evidence or verified
-usage/pricing metadata. Multipliers may only be raised, never lowered below the
-category floor.
+Only paid routes are price-gated. FreeLLM routes are gated by explicit eligibility,
+quota and canary evidence instead. All paid money calculations use integer
+micro-US-dollars. Multipliers may only be raised, never lowered below the category
+floor.
 """
 
 from __future__ import annotations
@@ -69,11 +69,13 @@ def normalize_funding_mode(category: Any, configured: Any = None) -> str:
     normalized_category = normalize_billing_category(category)
     if normalized_category != FREE_CATEGORY:
         return "provider_priced"
-    mode = str(configured or FREE_FUNDING_VERIFIED_ZERO_COST).strip().lower()
-    if mode not in {FREE_FUNDING_VERIFIED_ZERO_COST, FREE_FUNDING_PROVIDER_QUOTA}:
-        raise BillingPolicyError(
-            "free fundingMode must be verified_zero_cost or provider_free_quota"
-        )
+    mode = str(configured or FREE_FUNDING_PROVIDER_QUOTA).strip().lower()
+    if mode == FREE_FUNDING_VERIFIED_ZERO_COST:
+        # Historical FreeLLM rows are normalized onto the quota contract. The
+        # legacy label must never reintroduce a provider-price requirement.
+        return FREE_FUNDING_PROVIDER_QUOTA
+    if mode != FREE_FUNDING_PROVIDER_QUOTA:
+        raise BillingPolicyError("free fundingMode must be provider_free_quota")
     return mode
 
 
@@ -117,25 +119,44 @@ def route_billing_policy(route: Any) -> dict[str, Any]:
     )
     multiplier = normalized_multiplier(category, config.get("markupMultiplier"))
     funding_mode = normalize_funding_mode(category, config.get("fundingMode"))
-    prices = _route_prices(config, provider_model)
-    pricing_verified = bool(config.get("pricingVerified"))
 
     if not provider_model:
         raise BillingPolicyError("providerModel is required")
-    if prices["cachedInput"] > prices["input"]:
-        raise BillingPolicyError("cached input price cannot exceed input price")
+
     if category == FREE_CATEGORY:
-        if funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST:
-            if any(price != 0 for price in prices.values()):
-                raise BillingPolicyError("free routes require verified zero provider prices")
-        elif prices["input"] <= 0 or prices["output"] <= 0:
+        if config.get("pricingVerified") is True:
             raise BillingPolicyError(
-                "provider_free_quota routes require positive verified provider list prices"
+                "free routes must not claim provider pricing verification"
             )
-    elif prices["input"] <= 0 or prices["output"] <= 0:
-        raise BillingPolicyError("paid routes require positive input and output prices")
-    if not pricing_verified:
-        raise BillingPolicyError("route pricing is not verified")
+        if config.get("freeEligible") is not True:
+            raise BillingPolicyError("free route eligibility is not verified")
+        if config.get("quotaContractVerified") is not True:
+            raise BillingPolicyError("free route quota contract is not verified")
+        try:
+            user_charge_credits = int(config.get("userChargeCredits", 0))
+        except (TypeError, ValueError) as exc:
+            raise BillingPolicyError("userChargeCredits is invalid") from exc
+        if user_charge_credits != 0:
+            raise BillingPolicyError("free routes must charge zero user credits")
+        prices = {
+            "input": Decimal(0),
+            "cachedInput": Decimal(0),
+            "output": Decimal(0),
+        }
+        pricing_verified = False
+        pricing_source = "not-applicable-free-quota"
+    else:
+        prices = _route_prices(config, provider_model)
+        if prices["cachedInput"] > prices["input"]:
+            raise BillingPolicyError("cached input price cannot exceed input price")
+        if prices["input"] <= 0 or prices["output"] <= 0:
+            raise BillingPolicyError("paid routes require positive input and output prices")
+        pricing_verified = bool(config.get("pricingVerified"))
+        if not pricing_verified:
+            raise BillingPolicyError("route pricing is not verified")
+        pricing_source = str(
+            config.get("pricingSource") or "verified-route-config"
+        ).strip()
 
     return {
         "billingCategory": category,
@@ -147,8 +168,16 @@ def route_billing_policy(route: Any) -> dict[str, Any]:
         "cachedInputUsdPerMillion": prices["cachedInput"],
         "outputUsdPerMillion": prices["output"],
         "usdMicrosPerCredit": USD_MICROS_PER_CREDIT,
-        "pricingVerified": True,
-        "pricingSource": str(config.get("pricingSource") or "verified-route-config").strip(),
+        "pricingRequired": category != FREE_CATEGORY,
+        "pricingVerified": pricing_verified,
+        "pricingSource": pricing_source,
+        "freeEligible": bool(config.get("freeEligible")) if category == FREE_CATEGORY else False,
+        "quotaContractVerified": (
+            bool(config.get("quotaContractVerified"))
+            if category == FREE_CATEGORY
+            else False
+        ),
+        "userChargeCredits": 0 if category == FREE_CATEGORY else None,
     }
 
 

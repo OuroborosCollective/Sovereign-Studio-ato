@@ -1,4 +1,4 @@
-"""Deterministic, price-gated direct-FreeLLM revolver policy.
+"""Deterministic, quota-gated direct-FreeLLM revolver policy.
 
 The module is intentionally side-effect free. PostgreSQL persistence and provider
 network calls stay in runtime modules so candidate selection and retry decisions
@@ -24,7 +24,7 @@ _SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _RECEIPT_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v1"
+_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v2"
 _RETRY_WINDOWS_SECONDS = {
     "provider_quota_exhausted": 3600,
     "provider_rate_limited": 60,
@@ -109,14 +109,28 @@ def route_is_verified_free(route: dict[str, Any]) -> bool:
         return False
     if not _route_receipt_matches_runtime(route):
         return False
+    config = route.get("config") if isinstance(route.get("config"), dict) else {}
+    quota_evidence = (
+        config.get("quotaEvidence")
+        if isinstance(config.get("quotaEvidence"), dict)
+        else {}
+    )
     try:
         policy = route_billing_policy(route)
     except BillingPolicyError:
         return False
     return (
         policy["billingCategory"] == FREE_CATEGORY
-        and bool(policy["pricingVerified"])
+        and policy["fundingMode"] == "provider_free_quota"
+        and bool(policy["freeEligible"])
+        and bool(policy["quotaContractVerified"])
+        and config.get("canaryVerified") is True
+        and int(config.get("canaryConfirmationCount") or 0) >= 2
+        and str(quota_evidence.get("scope") or "") == route_quota_scope(route)
+        and str(quota_evidence.get("stateOwner") or "")
+            == "postgresql-revolver-state"
         and int(policy["markupMultiplier"]) == 0
+        and int(policy["userChargeCredits"] or 0) == 0
     )
 
 

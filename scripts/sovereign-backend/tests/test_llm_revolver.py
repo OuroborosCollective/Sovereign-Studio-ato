@@ -37,7 +37,6 @@ def route(
     category: str = "free",
     latency_ms: int = 100,
 ):
-    price = 0 if category == "free" else 1
     free = category == "free"
     transport = "freellm" if free else "openrouter"
     return {
@@ -55,15 +54,27 @@ def route(
             "executionProfile": "free_single_agent" if free else "paid_swarm_6",
             "billingCategory": category,
             "billingClass": category,
-            "fundingMode": "verified_zero_cost" if free else "provider_priced",
+            "fundingMode": "provider_free_quota" if free else "provider_priced",
             "markupMultiplier": 0 if free else 4,
-            "inputUsdPerMillion": price,
-            "cachedInputUsdPerMillion": price,
-            "outputUsdPerMillion": price,
-            "pricingVerified": True,
-            "pricingSource": "test",
+            "pricingVerified": not free,
+            "pricingSource": "test" if not free else "not-applicable-free-quota",
+            "freeEligible": free,
+            "quotaContractVerified": free,
+            "userChargeCredits": 0 if free else None,
             "quotaScope": scope,
+            "quotaEvidence": {
+                "scope": scope,
+                "stateOwner": "postgresql-revolver-state",
+                "contractVerified": True,
+            } if free else {},
+            "canaryVerified": free,
+            "canaryConfirmationCount": 2 if free else 0,
             "canaryLatencyMs": latency_ms,
+            **({
+                "inputUsdPerMillion": 1,
+                "cachedInputUsdPerMillion": 1,
+                "outputUsdPerMillion": 1,
+            } if not free else {}),
             "runtimeIdentity": {
                 "sourceRevision": SOURCE_REVISION,
                 "sourceRevisionVerified": True,
@@ -71,7 +82,7 @@ def route(
                 "imageDigestVerified": True,
             },
             "canaryReceipt": {
-                "schemaVersion": "sovereign.freellm-route-receipt.v1",
+                "schemaVersion": "sovereign.freellm-route-receipt.v2",
                 "receiptSha256": "3" * 64,
             },
         },

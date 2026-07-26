@@ -116,9 +116,12 @@ export interface LlmRoute {
   customerCachedInputUsdPerMillion: number | null;
   customerOutputUsdPerMillion: number | null;
   grossMarginPercent: number;
-  priceDisplayContract: 'provider-cost-and-customer-sale';
+  priceDisplayContract: 'provider-cost-and-customer-sale' | 'free-quota-no-provider-price';
+  pricingRequired: boolean;
   pricingVerified: boolean;
   pricingSource: string;
+  freeEligible: boolean;
+  quotaContractVerified: boolean;
   revolverEligible: boolean;
   quotaScope: string;
   revolverState: LlmRevolverState;
@@ -154,7 +157,7 @@ export interface LlmRevolverV3Status {
   structuredOutput24h: { checks: number; valid: number; invalid: number };
   semanticCachePolicy: 'cache_safe-only';
   autoWeights: 'recommendation-only';
-  pricingEvidenceTtlHours: number;
+  eligibilityEvidenceTtlHours: number;
 }
 
 export type FreeRevolverProviderAuthMode = 'bearer' | 'x-api-key' | 'none' | 'managed-bearer';
@@ -183,13 +186,13 @@ export interface FreeRevolverProviderModel {
   retryEvidence: Record<string, unknown>;
   cooldownEvidence: Record<string, unknown>;
   capabilities: string[];
-  freeVerified: boolean;
-  pricingSource: string;
-  pricingVerifiedAt: string | null;
+  freeEligible: boolean;
+  eligibilitySource: string;
+  eligibilityVerifiedAt: string | null;
   status: 'discovered' | 'ready' | 'blocked' | 'disabled';
   lastCanaryRequestId: string | null;
   lastCanaryAt: string | null;
-  canaryCostState: 'zero' | 'unreported' | 'nonzero';
+  providerCostState: 'zero' | 'unreported' | 'nonzero';
   lastProviderCostUsdMicros: number | null;
   lastErrorCode: string | null;
   enabled: boolean;
@@ -629,16 +632,16 @@ export const adminApiClient = {
       sourceId: string;
       modelsUrl: string;
       discovered: number;
-      freeVerified: number;
+      freeEligible: number;
       activated: Array<{
         modelId: string;
         routeId?: string;
         alias?: string;
         canaryRequestId?: string;
-        canaryCostState?: 'zero' | 'unreported';
+        providerCostState?: 'zero' | 'unreported';
       }>;
       blocked: Array<{ modelId: string; error?: string }>;
-      unverified: string[];
+      ineligible: string[];
       keyStoredBy: string;
     }>(`/api/admin/llm/revolver-v3/providers/${encodeURIComponent(sourceId)}/discover`, {
       method: 'POST',

@@ -59,12 +59,17 @@ def _route(*, transport: str, profile: str, category: str, base_url: str) -> dic
             "billingCategory": category,
             "billingClass": category,
             "markupMultiplier": 4 if category == "standard" else 0,
-            "fundingMode": "provider_priced" if category == "standard" else "verified_zero_cost",
-            "inputUsdPerMillion": 0.75 if category == "standard" else 0,
-            "cachedInputUsdPerMillion": 0.075 if category == "standard" else 0,
-            "outputUsdPerMillion": 4.5 if category == "standard" else 0,
-            "pricingVerified": True,
-            "pricingSource": "test",
+            "fundingMode": "provider_priced" if category == "standard" else "provider_free_quota",
+            "pricingVerified": category == "standard",
+            "pricingSource": "test" if category == "standard" else "not-applicable-free-quota",
+            "freeEligible": category == "free",
+            "quotaContractVerified": category == "free",
+            "userChargeCredits": 0 if category == "free" else None,
+            **({
+                "inputUsdPerMillion": 0.75,
+                "cachedInputUsdPerMillion": 0.075,
+                "outputUsdPerMillion": 4.5,
+            } if category == "standard" else {}),
         },
     }
 

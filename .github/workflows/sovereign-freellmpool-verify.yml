@@ -8,11 +8,23 @@ on:
       - 'tools/sovereign-chatgpt-mcp/managed_compose.py'
       - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/**'
       - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py'
+      - 'backend/llm_cost_policy.py'
+      - 'backend/llm_revolver.py'
+      - 'backend/migrations/042_separate_freellm_quota_from_provider_pricing.sql'
       - 'scripts/sovereign-backend/free_revolver_provider_contracts.py'
       - 'scripts/sovereign-backend/free_revolver_provider_runtime.py'
+      - 'scripts/sovereign-backend/free_revolver_runtime.py'
+      - 'scripts/sovereign-backend/free_revolver_v3.py'
+      - 'scripts/sovereign-backend/llm_cost_policy.py'
+      - 'scripts/sovereign-backend/llm_revolver.py'
       - 'scripts/sovereign-backend/llm_transport.py'
       - 'scripts/sovereign-backend/migrations/035_freellmpool_private_source.sql'
+      - 'scripts/sovereign-backend/migrations/042_separate_freellm_quota_from_provider_pricing.sql'
       - 'scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py'
+      - 'scripts/sovereign-backend/tests/test_free_revolver_v3.py'
+      - 'scripts/sovereign-backend/tests/test_llm_free_quota_policy.py'
+      - 'scripts/sovereign-backend/tests/test_llm_revolver.py'
+      - 'scripts/sovereign-backend/tests/test_migration_042_freellm_quota_pricing_separation.py'
   workflow_dispatch:
 
 permissions:
@@ -461,52 +473,107 @@ jobs:
           import urllib.error
           import urllib.request
 
+          import math
+
           candidates = [
               "pollinations/openai",
               "ovh/Llama-3.1-8B-Instruct",
               "kilo/openrouter/free",
               "llm7/codestral-latest",
           ]
+
+          def normalized_cost(value):
+              if value is None or isinstance(value, bool):
+                  return None
+              try:
+                  parsed = float(value)
+              except (TypeError, ValueError):
+                  return None
+              return parsed if math.isfinite(parsed) and parsed >= 0 else None
+
           receipts = []
           for model in candidates:
-              request = urllib.request.Request(
-                  "http://127.0.0.1:8080/v1/chat/completions",
-                  data=json.dumps({
-                      "model": model,
-                      "messages": [{"role": "user", "content": "Reply with OK."}],
-                      "max_tokens": 8,
-                      "temperature": 0,
-                  }).encode("utf-8"),
-                  headers={
-                      "Content-Type": "application/json",
-                      "Authorization": f"Bearer {os.environ['FREELLMPOOL_PROXY_KEY']}",
-                  },
-                  method="POST",
-              )
-              receipt = {"requestedModel": model, "ok": False, "httpStatus": 0}
-              try:
-                  with urllib.request.urlopen(request, timeout=45) as response:
-                      raw = response.read(2_000_001)
-                      assert len(raw) <= 2_000_000
-                      payload = json.loads(raw)
-                      choices = payload.get("choices") if isinstance(payload, dict) else None
-                      used = payload.get("x_freellmpool") if isinstance(payload, dict) else None
-                      receipt.update({
-                          "ok": bool(isinstance(choices, list) and choices),
-                          "httpStatus": int(response.status),
-                          "provider": str((used or {}).get("provider") or "")[:80],
-                          "providerModel": str((used or {}).get("model") or "")[:160],
-                          "responseModel": str(payload.get("model") or "")[:240],
-                          "responseContentPersisted": False,
+              confirmations = []
+              receipt = {
+                  "requestedModel": model,
+                  "ok": False,
+                  "confirmationCount": 0,
+                  "providerCostState": "unreported",
+                  "responseContentPersisted": False,
+              }
+              for confirmation_index in (1, 2):
+                  request = urllib.request.Request(
+                      "http://127.0.0.1:8080/v1/chat/completions",
+                      data=json.dumps({
+                          "model": model,
+                          "messages": [{"role": "user", "content": "Reply with OK."}],
+                          "max_tokens": 8,
+                          "temperature": 0,
+                      }).encode("utf-8"),
+                      headers={
+                          "Content-Type": "application/json",
+                          "Authorization": f"Bearer {os.environ['FREELLMPOOL_PROXY_KEY']}",
+                      },
+                      method="POST",
+                  )
+                  confirmation = {
+                      "confirmation": confirmation_index,
+                      "ok": False,
+                      "httpStatus": 0,
+                      "providerCostUsd": None,
+                  }
+                  try:
+                      with urllib.request.urlopen(request, timeout=45) as response:
+                          raw = response.read(2_000_001)
+                          assert len(raw) <= 2_000_000
+                          payload = json.loads(raw)
+                          choices = payload.get("choices") if isinstance(payload, dict) else None
+                          used = payload.get("x_freellmpool") if isinstance(payload, dict) else None
+                          usage = payload.get("usage") if isinstance(payload, dict) else None
+                          usage = usage if isinstance(usage, dict) else {}
+                          confirmation.update({
+                              "ok": bool(isinstance(choices, list) and choices),
+                              "httpStatus": int(response.status),
+                              "provider": str((used or {}).get("provider") or "")[:80],
+                              "providerModel": str((used or {}).get("model") or "")[:160],
+                              "responseModel": str(payload.get("model") or "")[:240],
+                              "providerCostUsd": normalized_cost(usage.get("cost")),
+                              "responseContentPersisted": False,
+                          })
+                  except urllib.error.HTTPError as error:
+                      confirmation.update({
+                          "httpStatus": int(error.code),
+                          "failureFamily": "http_error",
                       })
-              except urllib.error.HTTPError as error:
-                  receipt.update({"httpStatus": int(error.code), "failureFamily": "http_error"})
-              except Exception as error:
-                  receipt.update({"failureFamily": type(error).__name__[:80]})
+                  except Exception as error:
+                      confirmation.update({"failureFamily": type(error).__name__[:80]})
+                  confirmations.append(confirmation)
+                  if not confirmation["ok"]:
+                      break
+
+              costs = [item.get("providerCostUsd") for item in confirmations]
+              if any(value is not None and value > 0 for value in costs):
+                  cost_state = "nonzero"
+              elif len(costs) == 2 and all(value == 0 for value in costs):
+                  cost_state = "zero"
+              else:
+                  cost_state = "unreported"
+              receipt.update({
+                  "ok": (
+                      len(confirmations) == 2
+                      and all(item["ok"] for item in confirmations)
+                      and cost_state != "nonzero"
+                  ),
+                  "confirmationCount": len(confirmations),
+                  "providerCostState": cost_state,
+                  "confirmations": confirmations,
+              })
               receipts.append(receipt)
           print(json.dumps({
+              "schemaVersion": "sovereign.freellm-route-receipt.v2",
               "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
               "releaseVersion": "0.11.4",
+              "providerPricingRequired": False,
               "receipts": receipts,
               "successful": sum(1 for item in receipts if item["ok"]),
               "responseContentPersisted": False,
@@ -520,7 +587,12 @@ jobs:
           receipt = json.loads(
               Path('.sovereign-evidence/freellmpool-keyless-canaries.json').read_text('utf-8')
           )
-          assert int(receipt.get('successful') or 0) >= 1, 'no keyless provider canary succeeded'
+          assert receipt.get('schemaVersion') == 'sovereign.freellm-route-receipt.v2'
+          assert receipt.get('providerPricingRequired') is False
+          successful = [item for item in receipt.get('receipts') or [] if item.get('ok')]
+          assert successful, 'no keyless provider double-canary succeeded'
+          assert all(int(item.get('confirmationCount') or 0) == 2 for item in successful)
+          assert all(item.get('providerCostState') in {'zero', 'unreported'} for item in successful)
           PY
 
       - name: Write immutable evidence receipt
