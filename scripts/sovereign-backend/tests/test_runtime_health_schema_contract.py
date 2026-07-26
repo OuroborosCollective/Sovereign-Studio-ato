@@ -31,6 +31,22 @@ def test_health_contract_uses_release_schema_evidence_not_legacy_ledger_id() -> 
     assert '"imageDigest": os.getenv("SOVEREIGN_IMAGE_DIGEST"' in readiness
 
 
+def test_enterprise_llm_probe_separates_free_quota_from_paid_pricing() -> None:
+    service_source = (BACKEND / "enterprise_platform" / "service.py").read_text("utf-8")
+
+    assert "provider_free_quota" in service_source
+    assert "providerPricingRequired" in service_source
+    assert "pricingVerified" in service_source
+    assert "freeEligible" in service_source
+    assert "quotaContractVerified" in service_source
+    assert "canaryConfirmationCount" in service_source
+    assert "sovereign.freellm-route-receipt.v2" in service_source
+    assert "provider_priced" in service_source
+    assert "inputUsdPerMillion" in service_source
+    assert "outputUsdPerMillion" in service_source
+    assert "direct-freellm-quota-v2-and-direct-openrouter-priced-only" in service_source
+
+
 def test_enterprise_postgres_probe_accepts_production_version_ledger_layout() -> None:
     statements: list[str] = []
 

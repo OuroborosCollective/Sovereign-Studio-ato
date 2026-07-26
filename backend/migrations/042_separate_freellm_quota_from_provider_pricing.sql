@@ -68,4 +68,39 @@ BEGIN
 END
 $migration$;
 
+DO $migration_ledger$
+DECLARE
+    ledger_columns TEXT[];
+BEGIN
+    IF to_regclass(format('%I.schema_migrations', current_schema())) IS NULL THEN
+        RAISE EXCEPTION 'Migration 042 blocked: schema_migrations is missing';
+    END IF;
+
+    SELECT COALESCE(array_agg(column_name ORDER BY ordinal_position), ARRAY[]::TEXT[])
+    INTO ledger_columns
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'schema_migrations';
+
+    IF ledger_columns @> ARRAY['version', 'applied_at']::TEXT[]
+       AND NOT ledger_columns @> ARRAY['id', 'name']::TEXT[] THEN
+        INSERT INTO schema_migrations (version, applied_at)
+        VALUES ('042', NOW())
+        ON CONFLICT (version) DO NOTHING;
+    ELSIF ledger_columns @> ARRAY['version']::TEXT[]
+          AND NOT ledger_columns @> ARRAY['id', 'name']::TEXT[] THEN
+        INSERT INTO schema_migrations (version)
+        VALUES ('042')
+        ON CONFLICT (version) DO NOTHING;
+    ELSIF ledger_columns @> ARRAY['id', 'name']::TEXT[]
+          AND NOT ledger_columns @> ARRAY['version']::TEXT[] THEN
+        INSERT INTO schema_migrations (id, name)
+        VALUES (42, 'separate_freellm_quota_from_provider_pricing')
+        ON CONFLICT (id) DO NOTHING;
+    ELSE
+        RAISE EXCEPTION 'Migration 042 blocked: unsupported schema_migrations layout: %', ledger_columns;
+    END IF;
+END
+$migration_ledger$;
+
 COMMIT;
