@@ -78,6 +78,9 @@ class FakeCursor:
     def fetchone(self):
         if "FROM admin_users AS account" in self.last_sql:
             return {
+                "id": USER_ID,
+                "email": "owner@example.invalid",
+                "role": "owner",
                 "provider_funded_credits": 10_000,
                 "paid_purchase_verified": True,
             }
@@ -487,6 +490,8 @@ def _free_resolution() -> ExecutionResolution:
         max_background_agents=0,
         repository_execution_allowed=True,
         paid_purchase_verified=False,
+        paid_entitlement_verified=False,
+        paid_entitlement_source="none",
         provider_funded_credits=0,
         requested_mode="free",
         reason="explicit_quota_aware_direct_freellm",
