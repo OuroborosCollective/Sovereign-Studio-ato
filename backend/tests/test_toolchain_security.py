@@ -13,8 +13,12 @@ import urllib.parse
 
 import pytest
 
-# Add backend to Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Import the real production backend. backend/ intentionally has no second app.py truth.
+TEST_BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPOSITORY_ROOT = os.path.dirname(TEST_BACKEND_ROOT)
+PRODUCTION_BACKEND_ROOT = os.path.join(REPOSITORY_ROOT, "scripts", "sovereign-backend")
+sys.path.insert(0, TEST_BACKEND_ROOT)
+sys.path.insert(0, PRODUCTION_BACKEND_ROOT)
 
 # ── Mock psycopg2 before app.py import ───────────────────────────────────────
 
@@ -63,11 +67,23 @@ class MockPool:
     def closeall(self):
         pass
 
+
+class MockRealDictCursor:
+    pass
+
+
+class MockJson:
+    def __init__(self, value):
+        self.value = value
+
+
 psycopg2_module = types.ModuleType("psycopg2")
 psycopg2_extras_module = types.ModuleType("psycopg2.extras")
 psycopg2_pool_module = types.ModuleType("psycopg2.pool")
 
 psycopg2_pool_module.ThreadedConnectionPool = lambda *args, **kwargs: MockPool()
+psycopg2_extras_module.RealDictCursor = MockRealDictCursor
+psycopg2_extras_module.Json = MockJson
 psycopg2_module.connect = lambda *args, **kwargs: MockConnection()
 psycopg2_module.extras = psycopg2_extras_module
 psycopg2_module.pool = psycopg2_pool_module
@@ -118,6 +134,105 @@ def mock_app_deps(monkeypatch):
 
     # Mock allowlist check
     monkeypatch.setattr(app, "_tc_allowed", lambda owner, repo: None)
+
+
+class TestToolchainPathTraversalProtection:
+    """Verifies decoded traversal is blocked without rejecting valid filenames."""
+
+    @pytest.mark.parametrize(
+        "candidate",
+        [
+            "../secret.txt",
+            "docs/../secret.txt",
+            "%2e%2e/%2e%2e/other-owner/other-repo/contents/file",
+            "docs/%2E%2E/secret.txt",
+            "docs%5c..%5csecret.txt",
+            "/etc/passwd",
+            "%2Fetc/passwd",
+            "docs/%00secret.txt",
+        ],
+    )
+    def test_validate_path_rejects_traversal_absolute_and_null_forms(self, candidate):
+        with pytest.raises(PermissionError):
+            app._tc_validate_path(candidate)
+
+    def test_validate_path_preserves_legitimate_double_dot_filename(self):
+        assert app._tc_validate_path("docs/v1..v2.md") == "docs/v1..v2.md"
+        assert app._tc_validate_path("docs/%E2%9C%93.md") == "docs/✓.md"
+        assert app._tc_validate_path("", allow_empty=True) == ""
+
+    def test_read_file_rejects_encoded_traversal_before_github(self, mock_app_deps, monkeypatch):
+        calls = []
+
+        def forbidden_get(*args, **kwargs):
+            calls.append(args[0])
+            raise AssertionError("GitHub request must not execute for a rejected path")
+
+        monkeypatch.setattr(app.requests, "get", forbidden_get)
+        response = app.app.test_client().post(
+            "/api/toolchain/github/read-file",
+            json={
+                "owner": "OuroborosCollective",
+                "repo": "Sovereign-Studio-ato",
+                "path": "%2e%2e/%2e%2e/other-owner/other-repo/contents/file",
+            },
+        )
+
+        assert response.status_code == 403
+        assert calls == []
+        assert "Traversal" in response.get_json()["error"]
+
+    def test_list_directory_rejects_encoded_parent_segment(self, mock_app_deps, monkeypatch):
+        calls = []
+
+        def forbidden_get(*args, **kwargs):
+            calls.append(args[0])
+            raise AssertionError("GitHub request must not execute for a rejected path")
+
+        monkeypatch.setattr(app.requests, "get", forbidden_get)
+        response = app.app.test_client().post(
+            "/api/toolchain/github/list-directory",
+            json={
+                "owner": "OuroborosCollective",
+                "repo": "Sovereign-Studio-ato",
+                "path": "src/%2e%2e/secrets",
+            },
+        )
+
+        assert response.status_code == 403
+        assert calls == []
+
+    def test_tree_ref_rejects_encoded_parent_segment_before_github(self, mock_app_deps, monkeypatch):
+        calls = []
+
+        def forbidden_get(*args, **kwargs):
+            calls.append(args[0])
+            raise AssertionError("GitHub request must not execute for a rejected ref")
+
+        monkeypatch.setattr(app.requests, "get", forbidden_get)
+        with pytest.raises(PermissionError):
+            app._gh_list_tree(
+                "OuroborosCollective",
+                "Sovereign-Studio-ato",
+                "feature/%2e%2e/main",
+            )
+        assert calls == []
+
+    def test_worker_preview_accepts_legitimate_double_dot_filename(self, mock_app_deps):
+        response = app.app.test_client().post(
+            "/api/toolchain/apply-patch-worker",
+            json={
+                "owner": "OuroborosCollective",
+                "repo": "Sovereign-Studio-ato",
+                "path": "docs/v1..v2.md",
+                "message": "Preview only",
+                "blocks": [{"search": "a", "replace": "b"}],
+                "confirm": False,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.get_json()["payload"]["path"] == "docs/v1..v2.md"
 
 
 class TestToolchainSsrfProtection:
