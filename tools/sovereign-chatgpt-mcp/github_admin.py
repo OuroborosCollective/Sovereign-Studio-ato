@@ -651,7 +651,7 @@ class GitHubAdminRuntime:
         pr_number: int,
         expected_head_sha: str,
         merge_method: str = "squash",
-        self_update_after_merge: bool = True,
+        self_update_after_merge: bool = False,
         owner_approved: bool = False,
         mark_ready_if_draft: bool = False,
         allow_unrelated_android_pending: bool = False,
@@ -741,8 +741,16 @@ class GitHubAdminRuntime:
 
         touches_mcp = any(path.startswith(MCP_PATH_PREFIX) or path == MCP_WORKFLOW_PATH for path in changed_files)
         update_result: dict[str, Any] = {"ok": True, "status": "NOT_NEEDED"}
-        if self_update_after_merge and touches_mcp:
-            update_result = self.self_update.schedule(expected_revision=merge_sha, reason=f"merged_pr_{number}")
+        if touches_mcp:
+            update_result = {
+                "ok": True,
+                "status": "DEFERRED_TO_MAIN_MCP_WORKFLOW",
+                "expected_revision": merge_sha,
+                "workflow": "sovereign-chatgpt-mcp.yml",
+                "direct_self_update_requested": bool(self_update_after_merge),
+                "direct_self_update_scheduled": False,
+                "reason": "immutable_image_must_be_published_and_verified_before_install",
+            }
         return {
             "ok": True,
             "status": "MERGED",

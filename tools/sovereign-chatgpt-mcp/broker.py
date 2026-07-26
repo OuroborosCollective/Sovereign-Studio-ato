@@ -467,7 +467,7 @@ class BrokerRuntime:
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),
                 merge_method=str(values.get("merge_method") or "squash"),
-                self_update_after_merge=bool(values.get("self_update_after_merge", True)),
+                self_update_after_merge=bool(values.get("self_update_after_merge", False)),
                 owner_approved=bool(values.get("owner_approved", False)),
                 mark_ready_if_draft=bool(values.get("mark_ready_if_draft", False)),
                 allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
