@@ -4632,11 +4632,11 @@ def _tc_allowed(owner: str, repo: str) -> None:
 
 
 def _tc_validate_path(path: str, *, allow_empty: bool = False) -> str:
-    """Decode one request path and reject only real traversal/absolute forms."""
+    """Decode exactly once and preserve the repository target without retargeting."""
     if not isinstance(path, str):
         raise ValueError("Pfad muss ein String sein")
-    raw = path.strip()
-    if not raw:
+    raw = path
+    if raw == "":
         if allow_empty:
             return ""
         raise ValueError("Pfad ist ungültig oder leer")
@@ -4644,6 +4644,12 @@ def _tc_validate_path(path: str, *, allow_empty: bool = False) -> str:
         decoded = urllib.parse.unquote(raw, encoding="utf-8", errors="strict")
     except (UnicodeDecodeError, ValueError) as exc:
         raise PermissionError("Pfad enthält ungültige Prozentkodierung") from exc
+    if decoded == "":
+        if allow_empty:
+            return ""
+        raise ValueError("Pfad ist ungültig oder leer")
+    if decoded.strip() == "":
+        raise ValueError("Pfad darf nicht nur aus Leerzeichen bestehen")
     normalized = decoded.replace("\\", "/")
     if "\x00" in normalized:
         raise PermissionError("Pfad enthält ein Nullbyte")
@@ -4742,13 +4748,15 @@ def _tc_audit(user_id: str | None, action: str, details: dict) -> None:
 def _tc_read_github_file(owner: str, repo: str, path: str, ref: str | None = None) -> dict:
     _tc_allowed(owner, repo)
     path = _tc_validate_path(path)
+    encoded_path = urllib.parse.quote(path, safe="/")
     ref = _tc_validate_path(ref) if ref else None
     qs = f"?ref={urllib.parse.quote(ref, safe='')}" if ref else ""
-    data = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
+    data = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{encoded_path}{qs}")
     if isinstance(data, list):
         raise ValueError(f"{path} ist ein Verzeichnis, nicht eine Datei")
     raw = base64.b64decode(data.get("content", "").replace("\n", ""))
     return {
+        "path":     path,
         "sha":      data.get("sha", ""),
         "html_url": data.get("html_url", ""),
         "bytes":    len(raw),
@@ -4763,13 +4771,15 @@ def _tc_create_draft_pr(
 ) -> dict:
     _tc_allowed(owner, repo)
     path = _tc_validate_path(path)
+    encoded_path = urllib.parse.quote(path, safe="/")
     # Get base SHA
     base_data = _tc_gh_get(f"/repos/{owner}/{repo}")
     default_branch = _tc_validate_path(
         str(base_branch or base_data.get("default_branch", "main"))
     )
 
-    ref_data = _tc_gh_get(f"/repos/{owner}/{repo}/git/ref/heads/{default_branch}")
+    encoded_default_branch = urllib.parse.quote(default_branch, safe="/")
+    ref_data = _tc_gh_get(f"/repos/{owner}/{repo}/git/ref/heads/{encoded_default_branch}")
     base_sha = ref_data["object"]["sha"]
 
     # Create branch
@@ -4784,7 +4794,7 @@ def _tc_create_draft_pr(
     # Get current file SHA (needed for update)
     try:
         current = _tc_gh_get(
-            f"/repos/{owner}/{repo}/contents/{path}"
+            f"/repos/{owner}/{repo}/contents/{encoded_path}"
             f"?ref={urllib.parse.quote(default_branch, safe='')}"
         )
         file_sha = current.get("sha", "")
@@ -4799,7 +4809,7 @@ def _tc_create_draft_pr(
     }
     if file_sha:
         put_body["sha"] = file_sha
-    _tc_gh_put(f"/repos/{owner}/{repo}/contents/{path}", put_body)
+    _tc_gh_put(f"/repos/{owner}/{repo}/contents/{encoded_path}", put_body)
 
     # Create Draft PR
     pr = _tc_gh_post(f"/repos/{owner}/{repo}/pulls", {
@@ -4817,6 +4827,7 @@ def _tc_create_draft_pr(
     return {
         "pr_number":  pr.get("number"),
         "pr_url":     pr.get("html_url"),
+        "path":       path,
         "branch":     branch,
         "base":       default_branch,
         "draft":      True,
@@ -4872,8 +4883,13 @@ def tc_github_read_file():
         ref   = b.get("ref")
         if not owner or not repo or not path:
             return jsonify({"error": "owner, repo und path erforderlich"}), 400
+        normalized_path = _tc_validate_path(path)
         data = _tc_read_github_file(owner, repo, path, ref)
-        _tc_audit(request.session_user_id, "read_file", {"owner": owner, "repo": repo, "path": path})
+        _tc_audit(
+            request.session_user_id,
+            "read_file",
+            {"owner": owner, "repo": repo, "path": normalized_path},
+        )
         content = data["content"]
         if len(content) > 60_000:
             content = content[:60_000]
@@ -4882,6 +4898,8 @@ def tc_github_read_file():
         return jsonify(data)
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4899,9 +4917,10 @@ def tc_github_list_directory():
             return jsonify({"error": "owner und repo erforderlich"}), 400
         _tc_allowed(owner, repo)
         path = _tc_validate_path(path, allow_empty=True)
+        encoded_path = urllib.parse.quote(path, safe="/")
         ref = _tc_validate_path(ref) if ref else None
         qs = f"?ref={urllib.parse.quote(ref, safe='')}" if ref else ""
-        items = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
+        items = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{encoded_path}{qs}")
         if not isinstance(items, list):
             items = [items]
         _tc_audit(request.session_user_id, "list_dir", {"owner": owner, "repo": repo, "path": path})
@@ -4911,6 +4930,8 @@ def tc_github_list_directory():
         ]})
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -4972,13 +4993,17 @@ def tc_preview_patch():
         if not owner or not repo or not path or not blocks:
             return jsonify({"error": "owner, repo, path und blocks erforderlich"}), 400
 
+        normalized_path = _tc_validate_path(path)
         current = _tc_read_github_file(owner, repo, path, ref)
         before  = current["content"]
         after, report = _tc_apply_blocks(before, blocks)
-        diff    = _tc_unified_diff(before, after, path)
+        diff    = _tc_unified_diff(before, after, normalized_path)
 
-        _tc_audit(request.session_user_id, "preview_patch",
-                  {"owner": owner, "repo": repo, "path": path, "blocks": len(blocks)})
+        _tc_audit(
+            request.session_user_id,
+            "preview_patch",
+            {"owner": owner, "repo": repo, "path": normalized_path, "blocks": len(blocks)},
+        )
         return jsonify({
             "ok":           True,
             "write_action": False,
@@ -5012,12 +5037,16 @@ def tc_create_draft_pr():
         if not all([owner, repo, path, message, blocks]):
             return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
 
+        normalized_path = _tc_validate_path(path)
+
         if not confirm:
             # Preview only — no write
             try:
                 current = _tc_read_github_file(owner, repo, path)
                 after, report = _tc_apply_blocks(current["content"], blocks)
-                diff = _tc_unified_diff(current["content"], after, path)
+                diff = _tc_unified_diff(current["content"], after, normalized_path)
+            except PermissionError:
+                raise
             except Exception as prev_err:
                 diff, report = str(prev_err), []
             return jsonify({
@@ -5036,7 +5065,7 @@ def tc_create_draft_pr():
 
         current  = _tc_read_github_file(owner, repo, path)
         new_content, report = _tc_apply_blocks(current["content"], blocks)
-        diff     = _tc_unified_diff(current["content"], new_content, path)
+        diff     = _tc_unified_diff(current["content"], new_content, normalized_path)
         pr       = _tc_create_draft_pr(
             owner=owner, repo=repo, path=path,
             new_content=new_content, message=message,
@@ -5046,7 +5075,7 @@ def tc_create_draft_pr():
             base_branch=b.get("base_branch"),
         )
         _tc_audit(uid, "create_draft_pr", {
-            "owner": owner, "repo": repo, "path": path,
+            "owner": owner, "repo": repo, "path": normalized_path,
             "pr_url": pr.get("pr_url"), "blocks": len(blocks),
         })
         return jsonify({
@@ -5119,6 +5148,8 @@ def tc_apply_patch_worker():
         return jsonify({"sent": True, "status": resp.status_code, "response": result})
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
