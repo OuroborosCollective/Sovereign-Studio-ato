@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from typing import Any, Callable, Iterable
 
 from llm_cost_policy import (
@@ -25,6 +26,7 @@ from llm_transport import (
     route_snapshot_hashes,
     route_transport,
 )
+from paid_execution_entitlement import resolve_paid_execution_entitlement
 
 FREE_SINGLE_AGENT_PROFILE = "free_single_agent"
 PAID_SWARM_PROFILE = "paid_swarm_6"
@@ -72,6 +74,8 @@ class ExecutionResolution:
     max_background_agents: int
     repository_execution_allowed: bool
     paid_purchase_verified: bool
+    paid_entitlement_verified: bool
+    paid_entitlement_source: str
     provider_funded_credits: int
     requested_mode: str
     reason: str
@@ -103,6 +107,8 @@ class ExecutionResolution:
             "maxBackgroundAgents": self.max_background_agents,
             "repositoryExecutionAllowed": self.repository_execution_allowed,
             "paidPurchaseVerified": self.paid_purchase_verified,
+            "paidEntitlementVerified": self.paid_entitlement_verified,
+            "paidEntitlementSource": self.paid_entitlement_source,
             "providerFundedCredits": self.provider_funded_credits,
             "routeSnapshotSha256": main_route_hash,
             "priceSnapshotSha256": main_price_hash,
@@ -260,6 +266,8 @@ def resolve_execution_profile(
     state_by_scope: dict[str, dict[str, Any]] | None,
     paid_purchase_verified: bool,
     provider_funded_credits: int,
+    paid_entitlement_verified: bool | None = None,
+    paid_entitlement_source: str = "",
     requested_model: str = "",
     requested_main_model: str = "",
     requested_agent_model: str = "",
@@ -275,6 +283,15 @@ def resolve_execution_profile(
     main_requested = str(requested_main_model or legacy_requested).strip()
     agent_requested = str(requested_agent_model or legacy_requested).strip()
     funded = max(0, int(provider_funded_credits))
+    entitlement_verified = (
+        bool(paid_purchase_verified)
+        if paid_entitlement_verified is None
+        else bool(paid_entitlement_verified)
+    )
+    entitlement_source = str(
+        paid_entitlement_source
+        or ("verified_purchase" if paid_purchase_verified else "none")
+    ).strip()[:80]
 
     verified_paid_routes: list[dict[str, Any]] = []
     paid_routes: list[dict[str, Any]] = []
@@ -292,7 +309,7 @@ def resolve_execution_profile(
 
     if (
         mode != FREE_MODE
-        and paid_purchase_verified
+        and entitlement_verified
         and funded > 0
         and paid_routes
     ):
@@ -339,17 +356,19 @@ def resolve_execution_profile(
             max_foreground_agents=1,
             max_background_agents=6,
             repository_execution_allowed=True,
-            paid_purchase_verified=True,
+            paid_purchase_verified=bool(paid_purchase_verified),
+            paid_entitlement_verified=True,
+            paid_entitlement_source=entitlement_source,
             provider_funded_credits=funded,
             requested_mode=mode,
-            reason="verified_purchase_credits_and_selected_openrouter_model_pair_ready",
+            reason="verified_paid_entitlement_credits_and_selected_openrouter_model_pair_ready",
         )
 
     if mode == PAID_MODE:
-        if not paid_purchase_verified:
+        if not entitlement_verified:
             raise ExecutionResolutionError(
                 "paid_purchase_required",
-                "paid execution requires at least one verified completed purchase",
+                "paid execution requires a verified purchase or privileged internal entitlement",
                 status_code=403,
             )
         if funded <= 0:
@@ -386,13 +405,15 @@ def resolve_execution_profile(
         max_background_agents=0,
         repository_execution_allowed=True,
         paid_purchase_verified=bool(paid_purchase_verified),
+        paid_entitlement_verified=entitlement_verified,
+        paid_entitlement_source=entitlement_source,
         provider_funded_credits=funded,
         requested_mode=mode,
         reason=(
             "paid_route_unavailable_resolved_to_free_revolver"
             if (
                 mode == AUTO_MODE
-                and paid_purchase_verified
+                and entitlement_verified
                 and funded > 0
                 and verified_paid_routes
             )
@@ -435,6 +456,8 @@ def free_fallback_resolution(
         max_background_agents=0,
         repository_execution_allowed=True,
         paid_purchase_verified=resolution.paid_purchase_verified,
+        paid_entitlement_verified=resolution.paid_entitlement_verified,
+        paid_entitlement_source=resolution.paid_entitlement_source,
         provider_funded_credits=resolution.provider_funded_credits,
         requested_mode=AUTO_MODE,
         fallback_from_transport=fallback_transport,
@@ -484,6 +507,8 @@ def advance_free_revolver_resolution(
         max_background_agents=0,
         repository_execution_allowed=True,
         paid_purchase_verified=resolution.paid_purchase_verified,
+        paid_entitlement_verified=resolution.paid_entitlement_verified,
+        paid_entitlement_source=resolution.paid_entitlement_source,
         provider_funded_credits=resolution.provider_funded_credits,
         requested_mode=resolution.requested_mode,
         fallback_from_transport=resolution.fallback_from_transport,
@@ -505,7 +530,8 @@ def load_execution_resolution(
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                """SELECT account.provider_funded_credits::integer AS provider_funded_credits,
+                """SELECT account.id::text AS id, account.email, account.role,
+                          account.provider_funded_credits::integer AS provider_funded_credits,
                           EXISTS(
                             SELECT 1
                             FROM transactions AS tx
@@ -562,10 +588,20 @@ def load_execution_resolution(
         if callable(close):
             close()
 
+    entitlement = resolve_paid_execution_entitlement(
+        account_id=str(account["id"]),
+        email=str(account.get("email") or ""),
+        role=str(account.get("role") or ""),
+        purchase_verified=bool(account["paid_purchase_verified"]),
+        configured_owner_id=os.getenv("SOVEREIGN_OWNER_ADMIN_ID", ""),
+        configured_owner_email=os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", ""),
+    )
     return resolve_execution_profile(
         routes=routes,
         state_by_scope=states,
-        paid_purchase_verified=bool(account["paid_purchase_verified"]),
+        paid_purchase_verified=entitlement.purchase_verified,
+        paid_entitlement_verified=entitlement.verified,
+        paid_entitlement_source=entitlement.source,
         provider_funded_credits=int(account["provider_funded_credits"] or 0),
         requested_model=requested_model,
         requested_main_model=requested_main_model,
