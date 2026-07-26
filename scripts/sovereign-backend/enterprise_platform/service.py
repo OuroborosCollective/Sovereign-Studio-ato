@@ -186,11 +186,23 @@ class EnterprisePlatformService:
                      COUNT(*) FILTER (
                        WHERE disabled=false
                          AND lower(COALESCE(runtime_kind, provider))='freellm'
+                         AND COALESCE(config->>'fundingMode', '')='provider_free_quota'
+                         AND COALESCE((config->>'providerPricingRequired')::boolean, true)=false
+                         AND COALESCE((config->>'pricingVerified')::boolean, false)=false
+                         AND COALESCE((config->>'freeEligible')::boolean, false)=true
+                         AND COALESCE((config->>'quotaContractVerified')::boolean, false)=true
                          AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+                         AND COALESCE((config->>'canaryConfirmationCount')::integer, 0) >= 2
+                         AND COALESCE(config->'canaryReceipt'->>'schemaVersion', '')
+                             ='sovereign.freellm-route-receipt.v2'
                      ) AS freellm_ready,
                      COUNT(*) FILTER (
                        WHERE disabled=false
                          AND lower(COALESCE(runtime_kind, provider))='openrouter'
+                         AND COALESCE(config->>'fundingMode', '')='provider_priced'
+                         AND COALESCE((config->>'pricingVerified')::boolean, false)=true
+                         AND COALESCE((config->>'inputUsdPerMillion')::numeric, 0) > 0
+                         AND COALESCE((config->>'outputUsdPerMillion')::numeric, 0) > 0
                          AND COALESCE((config->>'canaryVerified')::boolean, false)=true
                      ) AS openrouter_ready,
                      COUNT(*) FILTER (
@@ -223,7 +235,7 @@ class EnterprisePlatformService:
                 "openrouterReadyRoutes": openrouter_ready,
                 "legacyLiteLlmActiveRoutes": litellm_active,
                 "legacyProviderProbePerformed": False,
-                "routingPolicy": "direct-freellm-free-and-direct-openrouter-paid-only",
+                "routingPolicy": "direct-freellm-quota-v2-and-direct-openrouter-priced-only",
             },
             blocker=blocker,
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),

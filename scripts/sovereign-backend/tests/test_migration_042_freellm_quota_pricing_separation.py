@@ -31,6 +31,19 @@ def test_migration_changes_only_direct_freellm_quota_routes() -> None:
     assert "provider='openrouter'" not in sql
 
 
+def test_migration_records_version_042_for_supported_ledgers() -> None:
+    sql = MIGRATION.read_text("utf-8")
+
+    assert "schema_migrations is missing" in sql
+    assert "INSERT INTO schema_migrations (version, applied_at)" in sql
+    assert "INSERT INTO schema_migrations (version)" in sql
+    assert "VALUES ('042', NOW())" in sql
+    assert "VALUES ('042')" in sql
+    assert "INSERT INTO schema_migrations (id, name)" in sql
+    assert "(42, 'separate_freellm_quota_from_provider_pricing')" in sql
+    assert "unsupported schema_migrations layout" in sql
+
+
 def test_migration_removes_free_price_projection_and_fails_closed() -> None:
     sql = MIGRATION.read_text("utf-8")
 
