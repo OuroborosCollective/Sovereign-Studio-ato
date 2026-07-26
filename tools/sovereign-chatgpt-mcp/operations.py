@@ -16,6 +16,9 @@ WORKSPACE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{5,63}$")
 SAFE_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 SAFE_CONTAINER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+DEPLOY_DIAGNOSTIC_RE = re.compile(
+    r"SOVEREIGN_DEPLOY_DIAGNOSTIC:([a-z0-9_-]{1,80}):([A-Za-z][A-Za-z0-9_]{0,79})"
+)
 FORBIDDEN_SQL = re.compile(
     r"\b(DROP\s+DATABASE|ALTER\s+SYSTEM|COPY\s+.+\s+PROGRAM|CREATE\s+EXTENSION\s+plpython|TRUNCATE\b|VACUUM\s+FULL|REINDEX\s+SYSTEM)\b",
     re.IGNORECASE | re.DOTALL,
@@ -270,6 +273,9 @@ class OperationsRuntime:
             return {"ok": False, "status": "BLOCKED", "blocker": f"Fixes Deploy-Skript fehlt: {self.deploy_script}"}
         result = self._run(self.deploy_script, [image_digest, expected_revision])
         if not result["ok"]:
+            diagnostic_matches = DEPLOY_DIAGNOSTIC_RE.findall(result["stderr"])
+            diagnostic_stage = diagnostic_matches[-1][0] if diagnostic_matches else None
+            diagnostic_error_type = diagnostic_matches[-1][1] if diagnostic_matches else None
             return {
                 "ok": False,
                 "status": "FAILED",
@@ -279,6 +285,8 @@ class OperationsRuntime:
                 "expected_revision": expected_revision,
                 "mutationPerformed": False,
                 "readbackVerified": False,
+                "diagnosticStage": diagnostic_stage,
+                "diagnosticErrorType": diagnostic_error_type,
                 "stderrSha256": hashlib.sha256(result["stderr"].encode("utf-8")).hexdigest(),
                 "secretValuesReturned": False,
             }

@@ -45,6 +45,41 @@ def test_invalid_digest_never_reaches_script(monkeypatch) -> None:
         )
 
 
+def test_failed_deploy_returns_only_bounded_diagnostic_marker(tmp_path, monkeypatch) -> None:
+    script = tmp_path / "deploy-sovereign-backend"
+    script.write_text("#!/usr/bin/env bash\n", "utf-8")
+    script.chmod(0o750)
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "1")
+    runtime = OperationsRuntime()
+    runtime.deploy_script = script
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda _script, _args: {
+            "ok": False,
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": (
+                "provider body and protected details\n"
+                "SOVEREIGN_DEPLOY_DIAGNOSTIC:platform_identity:HTTPError\n"
+            ),
+        },
+    )
+
+    result = runtime.deploy_verified_release(
+        image_digest=DIGEST,
+        expected_revision=REVISION,
+        confirmation_revision=REVISION,
+    )
+
+    assert result["status"] == "FAILED"
+    assert result["diagnosticStage"] == "platform_identity"
+    assert result["diagnosticErrorType"] == "HTTPError"
+    assert "provider body" not in str(result)
+    assert "stderr" not in result
+    assert len(result["stderrSha256"]) == 64
+
+
 def test_deploy_requires_structured_admin_and_rollback_readback(tmp_path, monkeypatch) -> None:
     script = tmp_path / "deploy-sovereign-backend"
     script.write_text("#!/usr/bin/env bash\n", "utf-8")

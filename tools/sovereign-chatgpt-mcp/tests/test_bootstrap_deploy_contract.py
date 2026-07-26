@@ -44,6 +44,11 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert 'b"CANONICAL_REACT_ADMIN" not in admin_body' not in deploy
     assert 'reactRootPresent' in deploy
     assert 'ADMIN_API_KEY' in deploy
+    assert 'SOVEREIGN_DEPLOY_DIAGNOSTIC' in deploy
+    assert 'stage = "platform_identity"' in deploy
+    assert 'stage = "platform_overview"' in deploy
+    assert 'stage = "platform_integrations"' in deploy
+    assert 'stage = "platform_evidence"' in deploy
     assert 'backend-rollback-receipt.json' in deploy
     assert 'RUNTIME_EVIDENCE_ROOT="/opt/sovereign-chatgpt-tools/runtime-evidence"' in deploy
     assert 'rollback receipt must remain inside the managed runtime evidence root' in deploy
