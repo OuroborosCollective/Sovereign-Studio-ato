@@ -4631,6 +4631,29 @@ def _tc_allowed(owner: str, repo: str) -> None:
         raise PermissionError(f"Repo {owner}/{repo} ist nicht in der Allowlist")
 
 
+def _tc_validate_path(path: str, *, allow_empty: bool = False) -> str:
+    """Decode one request path and reject only real traversal/absolute forms."""
+    if not isinstance(path, str):
+        raise ValueError("Pfad muss ein String sein")
+    raw = path.strip()
+    if not raw:
+        if allow_empty:
+            return ""
+        raise ValueError("Pfad ist ungültig oder leer")
+    try:
+        decoded = urllib.parse.unquote(raw, encoding="utf-8", errors="strict")
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise PermissionError("Pfad enthält ungültige Prozentkodierung") from exc
+    normalized = decoded.replace("\\", "/")
+    if "\x00" in normalized:
+        raise PermissionError("Pfad enthält ein Nullbyte")
+    if normalized.startswith("/"):
+        raise PermissionError("Absolute Repository-Pfade sind nicht erlaubt")
+    if any(segment == ".." for segment in normalized.split("/")):
+        raise PermissionError("Parent-Traversal ist nicht erlaubt")
+    return normalized
+
+
 def _tc_gh_headers() -> dict:
     h = {
         "Accept": "application/vnd.github+json",
@@ -4718,7 +4741,9 @@ def _tc_audit(user_id: str | None, action: str, details: dict) -> None:
 
 def _tc_read_github_file(owner: str, repo: str, path: str, ref: str | None = None) -> dict:
     _tc_allowed(owner, repo)
-    qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
+    path = _tc_validate_path(path)
+    ref = _tc_validate_path(ref) if ref else None
+    qs = f"?ref={urllib.parse.quote(ref, safe='')}" if ref else ""
     data = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
     if isinstance(data, list):
         raise ValueError(f"{path} ist ein Verzeichnis, nicht eine Datei")
@@ -4737,15 +4762,20 @@ def _tc_create_draft_pr(
     title: str | None, body: str | None, base_branch: str | None,
 ) -> dict:
     _tc_allowed(owner, repo)
+    path = _tc_validate_path(path)
     # Get base SHA
     base_data = _tc_gh_get(f"/repos/{owner}/{repo}")
-    default_branch = base_branch or base_data.get("default_branch", "main")
+    default_branch = _tc_validate_path(
+        str(base_branch or base_data.get("default_branch", "main"))
+    )
 
     ref_data = _tc_gh_get(f"/repos/{owner}/{repo}/git/ref/heads/{default_branch}")
     base_sha = ref_data["object"]["sha"]
 
     # Create branch
-    branch = branch_name or f"toolchain/patch-{int(time.time())}"
+    branch = _tc_validate_path(
+        str(branch_name or f"toolchain/patch-{int(time.time())}")
+    )
     _tc_gh_post(f"/repos/{owner}/{repo}/git/refs", {
         "ref": f"refs/heads/{branch}",
         "sha": base_sha,
@@ -4753,7 +4783,10 @@ def _tc_create_draft_pr(
 
     # Get current file SHA (needed for update)
     try:
-        current = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}?ref={default_branch}")
+        current = _tc_gh_get(
+            f"/repos/{owner}/{repo}/contents/{path}"
+            f"?ref={urllib.parse.quote(default_branch, safe='')}"
+        )
         file_sha = current.get("sha", "")
     except Exception:
         file_sha = ""
@@ -4865,7 +4898,9 @@ def tc_github_list_directory():
         if not owner or not repo:
             return jsonify({"error": "owner und repo erforderlich"}), 400
         _tc_allowed(owner, repo)
-        qs = f"?ref={urllib.parse.quote(ref)}" if ref else ""
+        path = _tc_validate_path(path, allow_empty=True)
+        ref = _tc_validate_path(ref) if ref else None
+        qs = f"?ref={urllib.parse.quote(ref, safe='')}" if ref else ""
         items = _tc_gh_get(f"/repos/{owner}/{repo}/contents/{path}{qs}")
         if not isinstance(items, list):
             items = [items]
@@ -5057,6 +5092,7 @@ def tc_apply_patch_worker():
         if not all([owner, repo, path, message, blocks]):
             return jsonify({"error": "owner, repo, path, message und blocks erforderlich"}), 400
 
+        path = _tc_validate_path(path)
         payload = {"owner": owner, "repo": repo, "path": path, "message": message, "blocks": blocks}
 
         if not confirm:
@@ -5251,10 +5287,11 @@ def _extract_skill_meta(content: str, path: str, framework: str) -> dict:
 
 def _gh_list_tree(owner: str, repo: str, ref: str | None = None, max_items: int = 300) -> list[dict]:
     """Fetch full file tree from GitHub (recursive). Returns list of {path, type, size}."""
-    qs = f"?recursive=1"
-    if ref:
-        qs += f"&ref={urllib.parse.quote(ref)}"
-    data = _tc_gh_get(f"/repos/{owner}/{repo}/git/trees/{ref or 'HEAD'}{qs}")
+    tree_ref = _tc_validate_path(str(ref or "HEAD"))
+    qs = "?recursive=1"
+    data = _tc_gh_get(
+        f"/repos/{owner}/{repo}/git/trees/{urllib.parse.quote(tree_ref, safe='')}{qs}"
+    )
     return [
         {"path": item["path"], "type": item["type"], "size": item.get("size", 0)}
         for item in (data.get("tree") or [])
@@ -5342,6 +5379,7 @@ def tc_skills_scan():
         if not owner or not repo:
             return jsonify({"error": "owner und repo erforderlich"}), 400
         _tc_allowed(owner, repo)
+        ref = _tc_validate_path(ref) if ref else None
 
         tree  = _gh_list_tree(owner, repo, ref)
         found = _scan_tree_for_skills(tree)
@@ -5349,9 +5387,10 @@ def tc_skills_scan():
         # Get previews (first 200 chars) for top 10 results
         for item in found[:10]:
             try:
+                item_path = _tc_validate_path(str(item["path"]))
                 data = _tc_gh_get(
-                    f"/repos/{owner}/{repo}/contents/{urllib.parse.quote(item['path'])}"
-                    + (f"?ref={urllib.parse.quote(ref)}" if ref else "")
+                    f"/repos/{owner}/{repo}/contents/{urllib.parse.quote(item_path, safe='/')}"
+                    + (f"?ref={urllib.parse.quote(ref, safe='')}" if ref else "")
                 )
                 raw = base64.b64decode(data.get("content", "").replace("\n", ""))
                 preview = raw.decode("utf-8", errors="replace")[:200]

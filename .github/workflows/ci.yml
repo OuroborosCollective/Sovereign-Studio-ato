@@ -11,6 +11,7 @@ on:
     - e2e/**
     - tests/**
     - scripts/check-backend-python-runtime.py
+    - scripts/sovereign-backend/app.py
     - scripts/sovereign-backend/requirements.txt
     - .github/actions/setup-backend-python/**
     - .github/workflows/ci.yml
@@ -96,6 +97,10 @@ jobs:
       run: |
         cd backend
         python -m pytest tests/test_oauth_contract.py -v
+    - name: Run Toolchain Path and SSRF Security Tests
+      run: |
+        cd backend
+        python -m pytest tests/test_toolchain_security.py -v
   android-build:
     name: Android Build Verification
     needs: quality-gate
