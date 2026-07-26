@@ -120,7 +120,7 @@ def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
     assert "no_check_evidence_reported" in result["checks"]["pending"]
 
 
-def test_merge_requires_exact_head_green_checks_and_schedules_mcp_reload(monkeypatch) -> None:
+def test_merge_requires_exact_head_green_checks_and_defers_mcp_release_to_main_workflow(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "1")
     head = "b" * 40
@@ -141,12 +141,26 @@ def test_merge_requires_exact_head_green_checks_and_schedules_mcp_reload(monkeyp
         },
     )
 
-    result = runtime.merge_pr(pr_number=7, expected_head_sha=head, merge_method="squash")
+    result = runtime.merge_pr(
+        pr_number=7,
+        expected_head_sha=head,
+        merge_method="squash",
+        self_update_after_merge=True,
+    )
 
     assert result["status"] == "MERGED"
     assert result["merge_commit_sha"] == merge_sha
     assert result["touches_private_mcp"] is True
-    assert update.calls == [{"expected_revision": merge_sha, "reason": "merged_pr_7"}]
+    assert result["self_update"] == {
+        "ok": True,
+        "status": "DEFERRED_TO_MAIN_MCP_WORKFLOW",
+        "expected_revision": merge_sha,
+        "workflow": "sovereign-chatgpt-mcp.yml",
+        "direct_self_update_requested": True,
+        "direct_self_update_scheduled": False,
+        "reason": "immutable_image_must_be_published_and_verified_before_install",
+    }
+    assert update.calls == []
 
 
 def test_close_pr_requires_exact_head_owner_approval_and_verifies_readback(monkeypatch) -> None:

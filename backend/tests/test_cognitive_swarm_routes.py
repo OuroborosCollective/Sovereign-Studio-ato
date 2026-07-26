@@ -49,6 +49,8 @@ def isolate_internal_provider_configuration(monkeypatch, tmp_path: Path) -> None
         "SOVEREIGN_OPENROUTER_API_KEY_FILE",
         str(owner_root / "openrouter_api_key.txt"),
     )
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("SOVEREIGN_IMAGE_DIGEST", "sha256:" + "b" * 64)
     monkeypatch.setattr(routes_runtime, "AgentStageBilling", FakeStageBilling)
 
 
@@ -459,6 +461,16 @@ def _verified_free_route(route_id: str, model: str, scope: str) -> dict[str, Any
             "pricingSource": "test-double-canary",
             "quotaScope": scope,
             "executionProfile": FREE_SINGLE_AGENT_PROFILE,
+            "runtimeIdentity": {
+                "sourceRevision": "a" * 40,
+                "imageDigest": "sha256:" + "b" * 64,
+                "sourceRevisionVerified": True,
+                "imageDigestVerified": True,
+            },
+            "canaryReceipt": {
+                "schemaVersion": "sovereign.freellm-route-receipt.v1",
+                "receiptSha256": "c" * 64,
+            },
         },
     }
 

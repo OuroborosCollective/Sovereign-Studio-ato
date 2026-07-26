@@ -17,6 +17,7 @@ from command_contract import is_mutating_action
 from document_pipeline import DocumentPipelineRuntime
 from github_admin import GitHubAdminRuntime
 from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
+from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
@@ -48,6 +49,7 @@ class BrokerRuntime:
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
         self.github_knowledge = GitHubKnowledgeCanaryRuntime()
+        self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -428,6 +430,11 @@ class BrokerRuntime:
                 expected_revision=str(values.get("expected_revision") or ""),
                 expected_image_digest=str(values.get("expected_image_digest") or ""),
             ),
+            "programming_language_catalog_persistent_import": lambda values: self.programming_language_catalog.persistent_import(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
             "resolve_backend_image": self.resolve_backend_image,
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
                 workspace_id=str(values.get("workspace_id") or ""),
@@ -467,7 +474,7 @@ class BrokerRuntime:
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),
                 merge_method=str(values.get("merge_method") or "squash"),
-                self_update_after_merge=bool(values.get("self_update_after_merge", True)),
+                self_update_after_merge=bool(values.get("self_update_after_merge", False)),
                 owner_approved=bool(values.get("owner_approved", False)),
                 mark_ready_if_draft=bool(values.get("mark_ready_if_draft", False)),
                 allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),

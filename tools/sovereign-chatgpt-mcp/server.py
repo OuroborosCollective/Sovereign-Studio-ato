@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 from typing import Annotated, Any
@@ -256,13 +258,14 @@ mcp = FastMCP(
         "Draft-PR bleibt verfügbar. Derselbe Workspace-Branch wird idempotent weitergeführt; parallele Draft-PRs werden vor Git-Mutationen blockiert. Wenn Workspace- und PR-Head auseinanderlaufen, verwende repository_sync_workspace_to_pr_head mit der exakt bestätigten PR-Revision; das Tool darf weder remote schreiben noch force-pushen oder main verändern. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
         "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. repository_close_pr darf ausschließlich mit privatem Owner-Modus, ausdrücklicher Owner-Freigabe, exaktem Head-SHA und einem begrenzten Redundanzgrund schließen; es führt niemals einen Merge aus. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
-        "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, kann der Merge automatisch die exakte "
-        "Merge-Revision zur Selbstinstallation einplanen. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
+        "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, darf der Merge keinen direkten Self-Update-Installer starten. "
+        "Ausschließlich der Main-Workflow sovereign-chatgpt-mcp.yml darf nach Validator, immutablem Image-Publish und Digest-Prüfung die bestätigte Merge-Revision auf dem VPS installieren. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
         "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bezahlte Provider-Routen verwende ausschließlich openrouter_provider_status und openrouter_provider_activate; OpenRouter-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, direkte Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_keyless_activate, freellm_provider_discover und freellm_provider_recheck. freellm_provider_keyless_activate darf ausschließlich die aktuell allowlisteten Kilo-/OVH-Marker konfigurieren und behauptet noch keine Route als bereit; erst Discovery oder Recheck dürfen nach frischem Katalog und direkter Nullkosten-Doppel-Canary ein Modell aktivieren. Diese Werkzeuge akzeptieren keinen Key. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Nutze controller_run_external_event nur für exakt identifizierte externe GitHub-, Broker-, MCP-, Dokument- oder Datenbank-Evidence; das Tool darf weder Run-/Task-Status noch aktive Blocker verändern. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
         "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt ein echtes flüchtiges DOCX, konvertiert es über Gotenbergs LibreOffice-Pfad zu PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
         "Für den GitHub-Knowledge-Livepfad verwende github_knowledge_live_canary nur mit exakt rückgelesener Backend-Revision und immutablem Image-Digest. Der Canary liest eine feste öffentliche GitHub-Datei ohne Credential, persistiert flüchtige echte pgvector-, Provenance- und Outbox-Evidence, prüft einen kontrollierten sicheren Transportfehler und muss Quelle, Blöcke, Outbox und Audit im finally-Pfad vollständig entfernen. Dokumentinhalt, URL, Exceptiondetails und Secrets dürfen nicht ausgegeben werden. "
+        "Für den ausdrücklich freigegebenen persistenten ProgrammiersprachenMD-Import verwende programming_language_catalog_persistent_import nur mit exakter laufender Backend-Revision, immutablem Image-Digest und owner_approved=true. Der Pfad ruft den echten Admin-HTTP-Endpunkt zweimal auf, beweist Deduplizierung und liest Quelle, Provenienz, Chunks, Embeddings, Learning Candidates, Vector-Outbox und die authentifizierte Knowledge-Library-Projektion zurück; er bereinigt die Quelle absichtlich nicht. "
         "Für den optionalen Milvus-Pfad verwende memory_gateway_collection_canary. Der Canary läuft ausschließlich über den laufenden Memory-Gateway-Container, erzeugt eine zufällige flüchtige Collection, prüft Insert, Query und Vektorsuche und muss die Collection im finally-Pfad wieder löschen. Ein TCP-Canary allein belegt keine fachliche Memory-Funktion. "
         "Vor jeder mehrstufigen oder mutierenden Mission prüfe sovereign_operating_profile_status und führe sovereign_mission_preflight mit strukturierten Capabilities, erlaubten Effekten und benötigter Evidence aus. Das versionierte Betriebsprofil ist fail-closed; jede Workspace- oder External-Write-Funktion wird vor ihrer eigentlichen Ausführung automatisch gegen Profil, Live-Registry, Output-Schema, Toolvertrag, Revisions-/Bestätigungsfelder, Owner-Gate und secret-freie Argumente geprüft. Ein blockierter Profil- oder Vertragscheck darf niemals durch direkte Toolwahl umgangen werden. "
         "Bei toolreichen Aufträgen beginne mit operational_skill_inventory und tool_recommend_for_mission. Mehrstufige Pläne werden mit mcp_toolchain_compile, mcp_toolchain_validate und mcp_toolchain_next_step vorbereitet und niemals selbst ausgeführt. Das Modell übersetzt freie Sprache in strukturierte Capabilities; die Runtime darf nur registrierte Tools innerhalb der erlaubten Effect-Klasse deterministisch empfehlen und niemals automatisch ausführen. Nutze mcp_tool_contract_registry und mcp_registry_snapshot_verify nach MCP-Änderungen, bevor der eingefrorene ChatGPT-App-Tool-Snapshot aktualisiert wird. Für revisionsgebundene Betriebsarbeit nutze evidence_graph_build, schema_migration_reconcile, llm_route_reliability_assess, agent_run_liveness_assess, semantic_intent_boundary_audit, cost_credit_settlement_reconcile, backup_restore_evidence_verify, slo_error_budget_assess, configuration_drift_assess, runtime_runbook_generate, ownership_codeowners_guard und compliance_evidence_export. Diese Tools sind read-only-first, akzeptieren keine Secrets, führen keine vorgeschlagenen Mutationen selbst aus und dürfen ohne die jeweilige Runtime-Evidence keinen Erfolg behaupten. "
@@ -442,7 +445,7 @@ def repository_merge_pr(
     pr_number: int,
     expected_head_sha: str,
     merge_method: str = "squash",
-    self_update_after_merge: bool = True,
+    self_update_after_merge: bool = False,
     owner_approved: bool = False,
     mark_ready_if_draft: bool = False,
     allow_unrelated_android_pending: bool = False,
@@ -632,10 +635,27 @@ def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
     return result
 
 
+def _live_mcp_registry_evidence() -> dict[str, Any]:
+    """Return bounded live registry identity without exposing full tool contracts."""
+    names = sorted(
+        str(getattr(tool, "name", ""))
+        for tool in mcp._tool_manager.list_tools()
+        if str(getattr(tool, "name", ""))
+    )
+    canonical = json.dumps(names, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return {
+        "registry_tool_count": len(names),
+        "registry_tool_names_sha256": hashlib.sha256(canonical).hexdigest(),
+        "registry_runtime_verified": True,
+    }
+
+
 @mcp.tool(annotations=READ_ONLY)
 def mcp_control_plane_status() -> dict[str, Any]:
-    """Probe the host broker with precise socket, permission, connection and timeout evidence."""
-    return broker.status()
+    """Probe the broker and bind it to the live FastMCP registry identity."""
+    status = dict(broker.status())
+    status.update(_live_mcp_registry_evidence())
+    return status
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -814,6 +834,30 @@ def github_knowledge_live_canary(
             "expected_image_digest": expected_image_digest,
         },
         timeout=480,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def programming_language_catalog_persistent_import(
+    expected_revision: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{40}$", description="Exact running backend source revision."),
+    ],
+    expected_image_digest: Annotated[
+        str,
+        Field(pattern=r"^sha256:[0-9a-f]{64}$", description="Exact running immutable backend image digest."),
+    ],
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Persist the pinned ProgrammiersprachenMD catalog and verify dedupe, pgvector and API projection readback."""
+    return broker.call(
+        "programming_language_catalog_persistent_import",
+        {
+            "expected_revision": expected_revision,
+            "expected_image_digest": expected_image_digest,
+            "owner_approved": owner_approved,
+        },
+        timeout=1020,
     )
 
 

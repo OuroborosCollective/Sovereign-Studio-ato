@@ -1,0 +1,376 @@
+name: Persistent ProgrammiersprachenMD Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_backend_revision:
+        description: Exact running backend source revision
+        required: true
+        type: string
+      expected_backend_image_digest:
+        description: Exact running immutable backend image digest
+        required: true
+        type: string
+      expected_mcp_revision:
+        description: Exact installed MCP source revision
+        required: true
+        type: string
+      expected_mcp_image_digest:
+        description: Exact installed immutable MCP image digest
+        required: true
+        type: string
+      owner_approved:
+        description: Explicit Owner approval for the persistent import
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: persistent-programming-language-catalog-import
+  cancel-in-progress: false
+
+jobs:
+  import-catalog:
+    name: Import and verify persistent language catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      EXPECTED_BACKEND_REVISION: ${{ inputs.expected_backend_revision }}
+      EXPECTED_BACKEND_IMAGE_DIGEST: ${{ inputs.expected_backend_image_digest }}
+      EXPECTED_MCP_REVISION: ${{ inputs.expected_mcp_revision }}
+      EXPECTED_MCP_IMAGE_DIGEST: ${{ inputs.expected_mcp_image_digest }}
+      OWNER_APPROVED: ${{ inputs.owner_approved }}
+
+    steps:
+      - name: Validate exact runtime identities and approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VPS_HOST:-}" || { echo 'VPS host is not configured.' >&2; exit 1; }
+          test -n "${VPS_USER:-}" || { echo 'VPS user is not configured.' >&2; exit 1; }
+          test -n "${VPS_PASSWORD:-}" || { echo 'VPS password is not configured.' >&2; exit 1; }
+          [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]
+          [[ "${EXPECTED_BACKEND_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_BACKEND_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${EXPECTED_MCP_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_MCP_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "${OWNER_APPROVED}" = 'true' || { echo 'Explicit Owner approval is required.' >&2; exit 1; }
+
+      - name: Execute persistent import through the installed host worker
+        id: persistent-import
+        continue-on-error: true
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 25m
+          capture_stdout: true
+          envs: SUDO_PASSWORD,EXPECTED_BACKEND_REVISION,EXPECTED_BACKEND_IMAGE_DIGEST,EXPECTED_MCP_REVISION,EXPECTED_MCP_IMAGE_DIGEST,OWNER_APPROVED
+          script: |
+            set -Eeuo pipefail
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password is unavailable.' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+
+            [[ "${EXPECTED_BACKEND_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+            [[ "${EXPECTED_BACKEND_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "${EXPECTED_MCP_REVISION}" =~ ^[0-9a-f]{40}$ ]]
+            [[ "${EXPECTED_MCP_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            test "${OWNER_APPROVED}" = 'true'
+
+            BACKEND_IMAGE_REFERENCE="$(run_root docker inspect sovereign-backend --format '{{.Config.Image}}')"
+            BACKEND_IMAGE_ID="$(run_root docker inspect sovereign-backend --format '{{.Image}}')"
+            BACKEND_REVISION="$(run_root docker image inspect "$BACKEND_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            BACKEND_STATE="$(run_root docker inspect sovereign-backend --format '{{.State.Status}}')"
+
+            MCP_IMAGE_REFERENCE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}')"
+            MCP_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            MCP_REVISION="$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            MCP_STATE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{.State.Health.Status}}')"
+            COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"
+            BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"
+            BROKER_SOCKET_STATE=missing
+            if run_root docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock; then
+              BROKER_SOCKET_STATE=visible
+            fi
+
+            python3 - \
+              "$BACKEND_IMAGE_REFERENCE" "$BACKEND_REVISION" "$BACKEND_STATE" \
+              "$MCP_IMAGE_REFERENCE" "$MCP_REVISION" "$MCP_STATE" \
+              "$COMMAND_WORKER_STATE" "$BROKER_SERVICE_STATE" "$BROKER_SOCKET_STATE" <<'PY'
+            import json
+            import sys
+
+            values = sys.argv[1:]
+            print(json.dumps({
+                "status": "PROGRAMMING_LANGUAGE_CATALOG_PREFLIGHT",
+                "backendImageReference": values[0],
+                "backendRevision": values[1],
+                "backendState": values[2],
+                "mcpImageReference": values[3],
+                "mcpRevision": values[4],
+                "mcpState": values[5],
+                "commandWorkerState": values[6],
+                "brokerServiceState": values[7],
+                "brokerSocketState": values[8],
+                "secretValuesReturned": False,
+            }, sort_keys=True, separators=(",", ":")))
+            PY
+
+            test "$BACKEND_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-backend@${EXPECTED_BACKEND_IMAGE_DIGEST}"
+            test "$BACKEND_REVISION" = "$EXPECTED_BACKEND_REVISION"
+            test "$BACKEND_STATE" = running
+            test "$MCP_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp@${EXPECTED_MCP_IMAGE_DIGEST}"
+            test "$MCP_REVISION" = "$EXPECTED_MCP_REVISION"
+            test "$MCP_STATE" = 'running healthy'
+            test "$COMMAND_WORKER_STATE" = active
+            test "$BROKER_SERVICE_STATE" = active
+            test "$BROKER_SOCKET_STATE" = visible
+
+            run_root docker exec -i sovereign-chatgpt-mcp python - \
+              "$EXPECTED_BACKEND_REVISION" \
+              "$EXPECTED_BACKEND_IMAGE_DIGEST" \
+              "$EXPECTED_MCP_REVISION" \
+              "$EXPECTED_MCP_IMAGE_DIGEST" <<'PY'
+            from __future__ import annotations
+
+            import hashlib
+            import json
+            import re
+            import sys
+            import time
+
+            import server
+
+            backend_revision, backend_digest, mcp_revision, mcp_digest = sys.argv[1:5]
+            action = "programming_language_catalog_persistent_import"
+            arguments = {
+                "expected_revision": backend_revision,
+                "expected_image_digest": backend_digest,
+                "owner_approved": True,
+            }
+            result = server.broker.call(action, arguments, timeout=1020)
+            request_id = str(result.get("request_id") or "")
+            if result.get("status") == "IN_PROGRESS" and re.fullmatch(r"[0-9a-f]{32}", request_id):
+                deadline = time.monotonic() + 300
+                while time.monotonic() < deadline:
+                    time.sleep(2)
+                    result = server.broker.command_status(request_id)
+                    if result.get("status") not in {"IN_PROGRESS", "QUEUED"}:
+                        break
+
+            print(json.dumps({
+                "status": "PROGRAMMING_LANGUAGE_CATALOG_OPERATOR_RESULT",
+                "result": result,
+            }, sort_keys=True, separators=(",", ":")))
+
+            catalog = result.get("catalog") if isinstance(result.get("catalog"), dict) else {}
+            http = result.get("http") if isinstance(result.get("http"), dict) else {}
+            dedupe = result.get("deduplication") if isinstance(result.get("deduplication"), dict) else {}
+            chunk_count = int(catalog.get("chunkCount") or 0)
+
+            assert result.get("ok") is True, result
+            assert result.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_PERSISTENT_IMPORT_VERIFIED", result
+            assert result.get("sourceRevision") == backend_revision, result
+            assert result.get("imageDigest") == backend_digest, result
+            assert catalog.get("catalogRevision") == "af9c4489e9151c5598622950631def2d4d561e94", result
+            assert catalog.get("commitSha") == "af9c4489e9151c5598622950631def2d4d561e94", result
+            assert re.fullmatch(r"[0-9a-f]{40}", str(catalog.get("treeSha") or "")), result
+            assert re.fullmatch(r"[0-9a-f-]{36}", str(catalog.get("sourceId") or "")), result
+            assert re.fullmatch(r"[0-9a-f]{64}", str(catalog.get("contentSha256") or "")), result
+            assert catalog.get("status") == "ready", result
+            assert chunk_count > 0, result
+            assert int(catalog.get("linkedBlocks") or 0) == chunk_count, result
+            assert int(catalog.get("embeddedBlocks") or 0) == chunk_count, result
+            assert int(catalog.get("missingEmbeddings") or -1) == 0, result
+            assert int(catalog.get("learningCandidateCount") or 0) == chunk_count, result
+            assert int(catalog.get("outboxCount") or 0) == chunk_count, result
+            assert int(catalog.get("languageCount") or 0) > 0, result
+            assert catalog.get("authority") == "curated-reference", result
+            assert catalog.get("bugfixObservationAuthority") == "unverified-reference-candidate", result
+            assert catalog.get("sourcePinned") is True, result
+            assert int(http.get("firstImportStatus") or 0) in {200, 201}, result
+            assert int(http.get("secondImportStatus") or 0) == 200, result
+            assert http.get("secondImportDuplicate") is True, result
+            assert http.get("knowledgeLibraryListStatus") == 200, result
+            assert http.get("knowledgeLibraryProjectionVisible") is True, result
+            assert dedupe.get("sameSourceId") is True, result
+            assert dedupe.get("sameContentSha256") is True, result
+            assert int(dedupe.get("sourceRowsForUserAndContent") or 0) == 1, result
+            assert result.get("mutationPerformed") is True, result
+            assert result.get("persistentMutation") is True, result
+            assert result.get("secretValuesReturned") is False, result
+            assert result.get("documentContentReturned") is False, result
+
+            summary = {
+                "schemaVersion": "sovereign.programming-language-catalog-import-evidence.v1",
+                "status": result["status"],
+                "backendRevision": backend_revision,
+                "backendImageDigest": backend_digest,
+                "mcpRevision": mcp_revision,
+                "mcpImageDigest": mcp_digest,
+                "catalogRevision": catalog["catalogRevision"],
+                "treeSha": catalog["treeSha"],
+                "sourceId": catalog["sourceId"],
+                "contentSha256": catalog["contentSha256"],
+                "chunkCount": chunk_count,
+                "linkedBlocks": int(catalog["linkedBlocks"]),
+                "embeddedBlocks": int(catalog["embeddedBlocks"]),
+                "missingEmbeddings": int(catalog["missingEmbeddings"]),
+                "learningCandidateCount": int(catalog["learningCandidateCount"]),
+                "outboxCount": int(catalog["outboxCount"]),
+                "languageCount": int(catalog["languageCount"]),
+                "bugfixObservationCount": int(catalog.get("bugfixObservationCount") or 0),
+                "authority": catalog["authority"],
+                "bugfixObservationAuthority": catalog["bugfixObservationAuthority"],
+                "sourcePinned": True,
+                "firstImportStatus": int(http["firstImportStatus"]),
+                "secondImportStatus": int(http["secondImportStatus"]),
+                "secondImportDuplicate": True,
+                "knowledgeLibraryProjectionVisible": True,
+                "sameSourceId": True,
+                "sameContentSha256": True,
+                "sourceRowsForUserAndContent": 1,
+                "persistentMutation": True,
+                "secretValuesReturned": False,
+                "documentContentReturned": False,
+            }
+            canonical = json.dumps(summary, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()
+            print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+            PY
+
+      - name: Persist bounded import evidence
+        if: always()
+        env:
+          IMPORT_STDOUT: ${{ steps.persistent-import.outputs.stdout }}
+          IMPORT_OUTCOME: ${{ steps.persistent-import.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+          import re
+
+          candidates = []
+          for line in os.environ.get("IMPORT_STDOUT", "").splitlines():
+              line = line.strip()
+              if not line.startswith("{"):
+                  continue
+              try:
+                  payload = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if isinstance(payload, dict):
+                  candidates.append(payload)
+
+          summary = next(
+              (
+                  item for item in reversed(candidates)
+                  if item.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_PERSISTENT_IMPORT_VERIFIED"
+              ),
+              None,
+          )
+          if summary is None:
+              operator = next(
+                  (
+                      item.get("result") for item in reversed(candidates)
+                      if item.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_OPERATOR_RESULT"
+                      and isinstance(item.get("result"), dict)
+                  ),
+                  {},
+              )
+              preflight = next(
+                  (
+                      item for item in reversed(candidates)
+                      if item.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_PREFLIGHT"
+                  ),
+                  {},
+              )
+              readback = operator.get("readback") if isinstance(operator.get("readback"), dict) else {}
+              summary = {
+                  "schemaVersion": "sovereign.programming-language-catalog-import-failure-evidence.v1",
+                  "status": "PROGRAMMING_LANGUAGE_CATALOG_PERSISTENT_IMPORT_FAILED",
+                  "sshOutcome": os.environ.get("IMPORT_OUTCOME", "unknown"),
+                  "failureFamily": str(operator.get("failureFamily") or operator.get("failure_family") or "WORKFLOW_OR_OPERATOR_FAILED"),
+                  "blocker": str(operator.get("blocker") or "Persistent import did not produce verified evidence")[:500],
+                  "operatorStatus": str(operator.get("status") or "missing"),
+                  "operatorExitCode": operator.get("exitCode"),
+                  "operatorMutationPerformed": bool(operator.get("mutationPerformed")),
+                  "operatorPersistentMutation": bool(operator.get("persistentMutation")),
+                  "operatorReadbackStatus": str(readback.get("status") or ""),
+                  "operatorReadbackFailureType": str(readback.get("failureType") or ""),
+                  "operatorReadbackFailureSha256": str(readback.get("failureSha256") or ""),
+                  "preflight": preflight,
+                  "secretValuesReturned": False,
+                  "documentContentReturned": False,
+              }
+              canonical = json.dumps(summary, sort_keys=True, separators=(",", ":")).encode("utf-8")
+              summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()
+
+          if not re.fullmatch(r"[0-9a-f]{64}", str(summary.get("evidenceSha256") or "")):
+              raise SystemExit("persistent import evidence hash is invalid")
+          if summary.get("secretValuesReturned") is not False:
+              raise SystemExit("secret-return contract was not preserved")
+          if summary.get("documentContentReturned") is not False:
+              raise SystemExit("document-content contract was not preserved")
+          target = Path(".sovereign-evidence/programming-language-catalog-import.json")
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(
+              json.dumps(summary, sort_keys=True, separators=(",", ":")) + "\n",
+              "utf-8",
+          )
+          PY
+
+      - name: Upload bounded persistent import evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: programming-language-catalog-import-${{ github.run_id }}
+          path: .sovereign-evidence/programming-language-catalog-import.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce verified persistent import
+        if: always()
+        env:
+          IMPORT_OUTCOME: ${{ steps.persistent-import.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${IMPORT_OUTCOME}" = success
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          payload = json.loads(
+              Path(".sovereign-evidence/programming-language-catalog-import.json").read_text("utf-8")
+          )
+          assert payload.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_PERSISTENT_IMPORT_VERIFIED", payload
+          assert payload.get("persistentMutation") is True, payload
+          PY

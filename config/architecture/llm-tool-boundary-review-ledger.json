@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "9d3739dc25f37f354f2cf288a9aa849f537b96f9",
+  "sourceRevision": "a5b6e5a9030a5ae2d2e1c9d3ea1bb69d3bd894f8",
   "rawCandidateCount": 76,
   "canonicalCandidateCount": 64,
   "entries": [
@@ -568,7 +568,7 @@
       "symbol": "GitHubAdminRuntime.merge_pr",
       "line": 662,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "7346227a37e5307c105b6172ea63544f52314093f4193866b8b5cdaf96430a34",
+      "fileSha256": "8bf325c4a841ba98515cf4dc2d586e88fdd91b3cc52cc87e5702f7f54d035a91",
       "anchorSha256": "4be124cfb705222dcc6474447317bb689e609671d071f21e36b8243922476ed9",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:37fa2836fe79be9285031425",
@@ -581,7 +581,7 @@
       "symbol": "GitHubAdminRuntime.merge_pr",
       "line": 663,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "7346227a37e5307c105b6172ea63544f52314093f4193866b8b5cdaf96430a34",
+      "fileSha256": "8bf325c4a841ba98515cf4dc2d586e88fdd91b3cc52cc87e5702f7f54d035a91",
       "anchorSha256": "ed747409eb91e564149b91519c92fc1d01cd47f69f059c648214be3a3517ceeb",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:d315b03c2ae2636812e3a47e",
@@ -594,7 +594,7 @@
       "symbol": "GitHubAdminRuntime.merge_pr",
       "line": 738,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "7346227a37e5307c105b6172ea63544f52314093f4193866b8b5cdaf96430a34",
+      "fileSha256": "8bf325c4a841ba98515cf4dc2d586e88fdd91b3cc52cc87e5702f7f54d035a91",
       "anchorSha256": "645a786ff90fba018853eb5bce65cfb12419f97398d5d2683e69b3c7fa00492e",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:268dd5dac16d3c7e2c594b41",
@@ -748,12 +748,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1096,
+      "line": 1140,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "5ee6b82b3a9196596279120b4a78ab3560bdd6109e90ea26492658026bf869f2",
+      "fileSha256": "ad56e8e906c3e9334fb79b1384fd8fbd001048394689037f11376581f34136c6",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:46d606c8d06e22cb5d6dbce8",
+      "candidateId": "llm-boundary:140437300714a23242a894a6",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -862,5 +862,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "1279df7bad8fde284310872055fcb2d2a1378fcf9bab4f4f42ef2c046ea8154a"
+  "ledgerSha256": "e5e874b4ceef3bc9bef607b35833f8e6175c916182b0100af77e6181ac0f7891"
 }

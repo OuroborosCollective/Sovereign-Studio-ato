@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+import os
 from typing import Any, Callable
 import uuid
 
@@ -22,6 +23,7 @@ from llm_transport import (
     route_snapshot_hashes,
     route_transport,
 )
+from paid_execution_entitlement import resolve_paid_execution_entitlement
 
 
 ConnectionFactory = Callable[[], Any]
@@ -74,6 +76,7 @@ class AgentStageReservation:
     transport: str
     route_snapshot_sha256: str
     price_snapshot_sha256: str
+    paid_entitlement_source: str
     policy: dict[str, Any]
 
 
@@ -304,7 +307,8 @@ class AgentStageBilling:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT id::text, credits::integer, provider_funded_credits::integer
+                    """SELECT id::text, email, role, credits::integer,
+                              provider_funded_credits::integer
                        FROM admin_users WHERE id=%s::uuid LIMIT 1 FOR UPDATE""",
                     (self.user_id,),
                 )
@@ -333,7 +337,16 @@ class AgentStageBilling:
                        ) AS purchased""",
                     (self.user_id,),
                 )
-                if not bool(cur.fetchone()["purchased"]):
+                purchase_verified = bool(cur.fetchone()["purchased"])
+                entitlement = resolve_paid_execution_entitlement(
+                    account_id=str(account["id"]),
+                    email=str(account.get("email") or ""),
+                    role=str(account.get("role") or ""),
+                    purchase_verified=purchase_verified,
+                    configured_owner_id=os.getenv("SOVEREIGN_OWNER_ADMIN_ID", ""),
+                    configured_owner_email=os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", ""),
+                )
+                if not entitlement.verified:
                     raise AgentBillingError("PAID_CREDIT_PURCHASE_REQUIRED")
                 funded = int(account["provider_funded_credits"])
                 if funded < credits or int(account["credits"]) < credits:
@@ -385,7 +398,11 @@ class AgentStageBilling:
                     (
                         self.user_id,
                         -credits,
-                        f"Agents SDK cost reservation: {profile['providerModel']}; stage={stage}",
+                        (
+                            "Agents SDK cost reservation: "
+                            f"{profile['providerModel']}; stage={stage}; "
+                            f"entitlement={entitlement.source}"
+                        ),
                         profile["transport"],
                         f"{request_id}:reservation",
                     ),
@@ -416,6 +433,7 @@ class AgentStageBilling:
             transport=str(profile["transport"]),
             route_snapshot_sha256=str(profile["routeSnapshotSha256"]),
             price_snapshot_sha256=str(profile["priceSnapshotSha256"]),
+            paid_entitlement_source=entitlement.source,
             policy=dict(policy),
         )
 
@@ -550,6 +568,7 @@ class AgentStageBilling:
             "billedCredits": billed_credits,
             "reservedCredits": reservation.reserved_credits,
             "refundedCredits": max(0, -delta),
+            "paidEntitlementSource": reservation.paid_entitlement_source,
         }
 
     def refund_failed_before_usage(
