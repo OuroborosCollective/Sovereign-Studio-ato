@@ -12,7 +12,7 @@
  *  - Pulsing lamp only on the current (last) event when executor is active.
  */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useMemo } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
 import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
@@ -225,7 +225,9 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
   return C.sky;
 }
 
-export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
+// Bolt ⚡ Optimization:
+// Wrap AgentEventStream in React.memo to prevent unnecessary re-renders of the component when parent container (BuilderContainer) updates.
+export const AgentEventStream = React.memo(function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
@@ -233,7 +235,10 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
   const changedFiles = job?.changedFiles ?? [];
   const draftPrUrl = job?.draftPrUrl ?? snapshot.draftPrUrl ?? null;
 
-  const stream = buildStream(snapshot, job, isActive);
+  // Bolt ⚡ Optimization:
+  // Memoize stream to prevent redundant list filtering, sorting, and mapping calculations
+  // on every render of AgentEventStream when parent props did not change.
+  const stream = useMemo(() => buildStream(snapshot, job, isActive), [snapshot, job, isActive]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -302,4 +307,4 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
       </div>
     </>
   );
-}
+});

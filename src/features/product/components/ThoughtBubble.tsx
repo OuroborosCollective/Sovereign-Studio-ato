@@ -21,7 +21,11 @@ function useTypedWorkStateText(text: string): string {
   return text.slice(0, visibleChars);
 }
 
-export function ThoughtBubble({ text }: { text: string }) {
+// Bolt ⚡ Optimization:
+// Wrap ThoughtBubble in React.memo to prevent unnecessary re-renders of the component
+// and its children when the parent container (BuilderContainer) updates, keeping
+// the rendering path highly responsive.
+export const ThoughtBubble = React.memo(function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const typedText = useTypedWorkStateText(text);
@@ -89,4 +93,4 @@ export function ThoughtBubble({ text }: { text: string }) {
       </span>
     </button>
   );
-}
+});
