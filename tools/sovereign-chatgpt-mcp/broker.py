@@ -17,6 +17,7 @@ from command_contract import is_mutating_action
 from document_pipeline import DocumentPipelineRuntime
 from github_admin import GitHubAdminRuntime
 from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
+from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
@@ -48,6 +49,7 @@ class BrokerRuntime:
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
         self.github_knowledge = GitHubKnowledgeCanaryRuntime()
+        self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -427,6 +429,11 @@ class BrokerRuntime:
             "github_knowledge_live_canary": lambda values: self.github_knowledge.live_canary(
                 expected_revision=str(values.get("expected_revision") or ""),
                 expected_image_digest=str(values.get("expected_image_digest") or ""),
+            ),
+            "programming_language_catalog_persistent_import": lambda values: self.programming_language_catalog.persistent_import(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
             ),
             "resolve_backend_image": self.resolve_backend_image,
             "apply_verified_migration": lambda values: self.admin.apply_verified_migration_with_self_heal(
