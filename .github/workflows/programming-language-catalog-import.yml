@@ -67,6 +67,7 @@ jobs:
 
       - name: Execute persistent import through the installed host worker
         id: persistent-import
+        continue-on-error: true
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
@@ -101,18 +102,52 @@ jobs:
 
             BACKEND_IMAGE_REFERENCE="$(run_root docker inspect sovereign-backend --format '{{.Config.Image}}')"
             BACKEND_IMAGE_ID="$(run_root docker inspect sovereign-backend --format '{{.Image}}')"
-            test "$BACKEND_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-backend@${EXPECTED_BACKEND_IMAGE_DIGEST}"
-            test "$(run_root docker image inspect "$BACKEND_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$EXPECTED_BACKEND_REVISION"
-            test "$(run_root docker inspect sovereign-backend --format '{{.State.Status}}')" = running
+            BACKEND_REVISION="$(run_root docker image inspect "$BACKEND_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            BACKEND_STATE="$(run_root docker inspect sovereign-backend --format '{{.State.Status}}')"
 
             MCP_IMAGE_REFERENCE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}')"
             MCP_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            MCP_REVISION="$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            MCP_STATE="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{.State.Health.Status}}')"
+            COMMAND_WORKER_STATE="$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)"
+            BROKER_SERVICE_STATE="$(run_root systemctl is-active sovereign-chatgpt-broker.service)"
+            BROKER_SOCKET_STATE=missing
+            if run_root docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock; then
+              BROKER_SOCKET_STATE=visible
+            fi
+
+            python3 - \
+              "$BACKEND_IMAGE_REFERENCE" "$BACKEND_REVISION" "$BACKEND_STATE" \
+              "$MCP_IMAGE_REFERENCE" "$MCP_REVISION" "$MCP_STATE" \
+              "$COMMAND_WORKER_STATE" "$BROKER_SERVICE_STATE" "$BROKER_SOCKET_STATE" <<'PY'
+            import json
+            import sys
+
+            values = sys.argv[1:]
+            print(json.dumps({
+                "status": "PROGRAMMING_LANGUAGE_CATALOG_PREFLIGHT",
+                "backendImageReference": values[0],
+                "backendRevision": values[1],
+                "backendState": values[2],
+                "mcpImageReference": values[3],
+                "mcpRevision": values[4],
+                "mcpState": values[5],
+                "commandWorkerState": values[6],
+                "brokerServiceState": values[7],
+                "brokerSocketState": values[8],
+                "secretValuesReturned": False,
+            }, sort_keys=True, separators=(",", ":")))
+            PY
+
+            test "$BACKEND_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-backend@${EXPECTED_BACKEND_IMAGE_DIGEST}"
+            test "$BACKEND_REVISION" = "$EXPECTED_BACKEND_REVISION"
+            test "$BACKEND_STATE" = running
             test "$MCP_IMAGE_REFERENCE" = "ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp@${EXPECTED_MCP_IMAGE_DIGEST}"
-            test "$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$EXPECTED_MCP_REVISION"
-            test "$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.State.Status}} {{.State.Health.Status}}')" = 'running healthy'
-            test "$(run_root systemctl is-active sovereign-chatgpt-command-worker.service)" = active
-            test "$(run_root systemctl is-active sovereign-chatgpt-broker.service)" = active
-            run_root docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock
+            test "$MCP_REVISION" = "$EXPECTED_MCP_REVISION"
+            test "$MCP_STATE" = 'running healthy'
+            test "$COMMAND_WORKER_STATE" = active
+            test "$BROKER_SERVICE_STATE" = active
+            test "$BROKER_SOCKET_STATE" = visible
 
             run_root docker exec -i sovereign-chatgpt-mcp python - \
               "$EXPECTED_BACKEND_REVISION" \
@@ -145,6 +180,11 @@ jobs:
                     result = server.broker.command_status(request_id)
                     if result.get("status") not in {"IN_PROGRESS", "QUEUED"}:
                         break
+
+            print(json.dumps({
+                "status": "PROGRAMMING_LANGUAGE_CATALOG_OPERATOR_RESULT",
+                "result": result,
+            }, sort_keys=True, separators=(",", ":")))
 
             catalog = result.get("catalog") if isinstance(result.get("catalog"), dict) else {}
             http = result.get("http") if isinstance(result.get("http"), dict) else {}
@@ -223,13 +263,16 @@ jobs:
             PY
 
       - name: Persist bounded import evidence
+        if: always()
         env:
           IMPORT_STDOUT: ${{ steps.persistent-import.outputs.stdout }}
+          IMPORT_OUTCOME: ${{ steps.persistent-import.outcome }}
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import hashlib
           import json
           import os
           import re
@@ -245,6 +288,7 @@ jobs:
                   continue
               if isinstance(payload, dict):
                   candidates.append(payload)
+
           summary = next(
               (
                   item for item in reversed(candidates)
@@ -253,7 +297,42 @@ jobs:
               None,
           )
           if summary is None:
-              raise SystemExit("bounded persistent import evidence is missing")
+              operator = next(
+                  (
+                      item.get("result") for item in reversed(candidates)
+                      if item.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_OPERATOR_RESULT"
+                      and isinstance(item.get("result"), dict)
+                  ),
+                  {},
+              )
+              preflight = next(
+                  (
+                      item for item in reversed(candidates)
+                      if item.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_PREFLIGHT"
+                  ),
+                  {},
+              )
+              readback = operator.get("readback") if isinstance(operator.get("readback"), dict) else {}
+              summary = {
+                  "schemaVersion": "sovereign.programming-language-catalog-import-failure-evidence.v1",
+                  "status": "PROGRAMMING_LANGUAGE_CATALOG_PERSISTENT_IMPORT_FAILED",
+                  "sshOutcome": os.environ.get("IMPORT_OUTCOME", "unknown"),
+                  "failureFamily": str(operator.get("failureFamily") or operator.get("failure_family") or "WORKFLOW_OR_OPERATOR_FAILED"),
+                  "blocker": str(operator.get("blocker") or "Persistent import did not produce verified evidence")[:500],
+                  "operatorStatus": str(operator.get("status") or "missing"),
+                  "operatorExitCode": operator.get("exitCode"),
+                  "operatorMutationPerformed": bool(operator.get("mutationPerformed")),
+                  "operatorPersistentMutation": bool(operator.get("persistentMutation")),
+                  "operatorReadbackStatus": str(readback.get("status") or ""),
+                  "operatorReadbackFailureType": str(readback.get("failureType") or ""),
+                  "operatorReadbackFailureSha256": str(readback.get("failureSha256") or ""),
+                  "preflight": preflight,
+                  "secretValuesReturned": False,
+                  "documentContentReturned": False,
+              }
+              canonical = json.dumps(summary, sort_keys=True, separators=(",", ":")).encode("utf-8")
+              summary["evidenceSha256"] = hashlib.sha256(canonical).hexdigest()
+
           if not re.fullmatch(r"[0-9a-f]{64}", str(summary.get("evidenceSha256") or "")):
               raise SystemExit("persistent import evidence hash is invalid")
           if summary.get("secretValuesReturned") is not False:
@@ -269,9 +348,29 @@ jobs:
           PY
 
       - name: Upload bounded persistent import evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: programming-language-catalog-import-${{ github.run_id }}
           path: .sovereign-evidence/programming-language-catalog-import.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Enforce verified persistent import
+        if: always()
+        env:
+          IMPORT_OUTCOME: ${{ steps.persistent-import.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${IMPORT_OUTCOME}" = success
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          payload = json.loads(
+              Path(".sovereign-evidence/programming-language-catalog-import.json").read_text("utf-8")
+          )
+          assert payload.get("status") == "PROGRAMMING_LANGUAGE_CATALOG_PERSISTENT_IMPORT_VERIFIED", payload
+          assert payload.get("persistentMutation") is True, payload
+          PY
