@@ -13,6 +13,9 @@ import { AutoCodeReviewCard } from './AutoCodeReviewCard';
 import { FileContentPreviewSheet } from './FileContentPreviewSheet';
 import { FileBadge } from './FileBadge';
 import { AgentEventStream } from './AgentEventStream';
+import { ChangelogPreviewCard } from './ChangelogPreviewCard';
+import { WorkflowRepairPanel } from './WorkflowRepairPanel';
+import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -134,6 +137,106 @@ describe('Palette Accessibility Enhancements', () => {
       const closeButton = screen.getByRole('button', { name: 'Vorschau schließen' });
       expect(closeButton).toHaveAttribute('aria-label', 'Vorschau schließen');
       expect(closeButton).toHaveAttribute('title', 'Vorschau schließen');
+    });
+  });
+
+  describe('ChangelogPreviewCard, WorkflowRepairPanel, and WorkbenchSidePanel Enhancements', () => {
+    it('ChangelogPreviewCard buttons have descriptive titles', () => {
+      const mockResult = {
+        commitCount: 3,
+        source: 'git log',
+        markdown: '# Changelog\n- Added something',
+      };
+      const onClose = vi.fn();
+      const onUseAsMission = vi.fn();
+
+      render(
+        <ChangelogPreviewCard
+          result={mockResult}
+          onClose={onClose}
+          onUseAsMission={onUseAsMission}
+        />
+      );
+
+      const closeBtn = screen.getByRole('button', { name: 'Schließen' });
+      expect(closeBtn).toHaveAttribute('title', 'Keep-a-Changelog Vorschau schließen');
+
+      const copyBtn = screen.getByRole('button', { name: 'Kopieren' });
+      expect(copyBtn).toHaveAttribute('title', 'Vorschau-Markdown in die Zwischenablage kopieren');
+
+      const missionBtn = screen.getByRole('button', { name: 'Als CHANGELOG-Auftrag übernehmen' });
+      expect(missionBtn).toHaveAttribute('title', 'Als CHANGELOG-Auftrag in den Builder übernehmen');
+    });
+
+    it('WorkflowRepairPanel Use Repair Mission button is stateful', () => {
+      const mockPlan = {
+        summary: 'Repair summary',
+        severity: 'high',
+        reason: 'Failed build',
+        mission: 'Repair mission content',
+        blocked: false,
+        actions: [],
+      };
+      const onUseMission = vi.fn();
+
+      const { rerender } = render(
+        <WorkflowRepairPanel plan={mockPlan} onUseMission={onUseMission} />
+      );
+
+      let repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
+      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag in den Builder übernehmen');
+
+      const blockedPlan = { ...mockPlan, blocked: true };
+      rerender(<WorkflowRepairPanel plan={blockedPlan} onUseMission={onUseMission} />);
+
+      repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
+      expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag blockiert');
+    });
+
+    it('WorkbenchSidePanel buttons have matching attributes', () => {
+      const slots = [
+        {
+          id: 'draftPr',
+          tone: 'positive' as const,
+          label: 'Draft PR',
+          value: 'Open',
+          emptyLabel: 'No PR',
+          items: ['https://github.com/test/pull/1'],
+        },
+      ];
+      const onOpenDraftPr = vi.fn();
+      const onToggleInspector = vi.fn();
+
+      const { rerender } = render(
+        <WorkbenchSidePanel
+          slots={slots}
+          onOpenDraftPr={onOpenDraftPr}
+          modules={[]}
+          signals={{}}
+          showInspector={false}
+          onToggleInspector={onToggleInspector}
+        />
+      );
+
+      const openPrBtn = screen.getByRole('button', { name: 'Draft PR öffnen: https://github.com/test/pull/1' });
+      expect(openPrBtn).toHaveAttribute('title', 'Draft PR öffnen: https://github.com/test/pull/1');
+
+      let inspectorBtn = screen.getByRole('button', { name: 'Inspector öffnen (intern)' });
+      expect(inspectorBtn).toHaveAttribute('title', 'Inspector öffnen (intern)');
+
+      rerender(
+        <WorkbenchSidePanel
+          slots={slots}
+          onOpenDraftPr={onOpenDraftPr}
+          modules={[]}
+          signals={{}}
+          showInspector={true}
+          onToggleInspector={onToggleInspector}
+        />
+      );
+
+      inspectorBtn = screen.getByRole('button', { name: 'Inspector schließen' });
+      expect(inspectorBtn).toHaveAttribute('title', 'Inspector schließen');
     });
   });
 
