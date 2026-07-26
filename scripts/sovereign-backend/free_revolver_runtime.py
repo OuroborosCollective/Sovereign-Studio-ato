@@ -11,9 +11,9 @@ from flask import jsonify, request
 from free_revolver_v3 import RevolverProfile, eligible_free_routes, plan_routes
 from llm_cost_policy import BillingPolicyError, route_billing_policy
 
-FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS = max(
+FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS = max(
     1,
-    min(int(os.getenv("FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS", "24")), 168),
+    min(int(os.getenv("FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS", "24")), 168),
 )
 
 
@@ -78,22 +78,19 @@ def resolve_free_revolver_plan(
              ON provider_model.litellm_alias=route.model_id
            LEFT JOIN llm_revolver_provider_sources AS provider_source
              ON provider_source.id=provider_model.source_id
-           WHERE route.disabled=false AND lower(route.provider)='litellm'
-             AND (
-               COALESCE(route.config->>'routingOwner','') <> 'free-revolver-v3'
-               OR (
-                 provider_model.free_verified=true
-                 AND provider_model.enabled=true
-                 AND provider_model.status='ready'
-                 AND provider_model.pricing_verified_at >=
-                     NOW() - (%s * INTERVAL '1 hour')
-                 AND provider_source.enabled=true
-                 AND provider_source.status IN ('healthy','degraded')
-               )
-             )
+           WHERE route.disabled=false
+             AND lower(COALESCE(route.runtime_kind, route.provider))='freellm'
+             AND COALESCE(route.config->>'routingOwner','')='free-revolver-v3'
+             AND provider_model.free_eligible=true
+             AND provider_model.enabled=true
+             AND provider_model.status='ready'
+             AND provider_model.last_canary_at >=
+                 NOW() - (%s * INTERVAL '1 hour')
+             AND provider_source.enabled=true
+             AND provider_source.status IN ('healthy','degraded')
            ORDER BY route.priority ASC, route.model_name ASC
            LIMIT 100""",
-        (FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,),
+        (FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS,),
     ) or []
     verified: list[dict[str, Any]] = []
     for source in rows:
@@ -148,7 +145,7 @@ def register_free_revolver_runtime(
             "ok": True,
             "schemaVersion": "sovereign.free-revolver-v3.admin.v1",
             "requestId": request_id,
-            "truthOwner": "postgresql-litellm-runtime-evidence",
+            "truthOwner": "postgresql-direct-freellm-quota-and-canary-evidence",
             "profile": {
                 "profileKey": profile.profile_key,
                 "mode": profile.mode,
@@ -177,7 +174,7 @@ def register_free_revolver_runtime(
             },
             "banditRecommendations": [dict(item) for item in recommendations],
             "semanticCachePolicy": "disabled-unless-cache_safe-capability-and-tenant-scope",
-            "pricingEvidenceTtlHours": FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
+            "eligibilityEvidenceTtlHours": FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS,
             "kubernetesSidecar": False,
         })
 

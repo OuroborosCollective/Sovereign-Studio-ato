@@ -34,25 +34,25 @@ function statusLabel(status: string): string {
   }
 }
 
-function isPricingEvidenceFresh(verifiedAt: string | null, ttlHours: number): boolean {
+function isEligibilityEvidenceFresh(verifiedAt: string | null, ttlHours: number): boolean {
   if (!verifiedAt) return false;
   const verified = new Date(verifiedAt);
   return !Number.isNaN(verified.getTime())
     && verified.getTime() + ttlHours * 60 * 60 * 1000 > Date.now();
 }
 
-function pricingEvidenceExpiry(verifiedAt: string | null, ttlHours: number): string {
-  if (!verifiedAt) return 'Preis-Evidence fehlt';
+function eligibilityEvidenceExpiry(verifiedAt: string | null, ttlHours: number): string {
+  if (!verifiedAt) return 'Eligibility-Evidence fehlt';
   const verified = new Date(verifiedAt);
-  if (Number.isNaN(verified.getTime())) return 'Preis-Evidence-Datum ungültig';
+  if (Number.isNaN(verified.getTime())) return 'Eligibility-Evidence-Datum ungültig';
   const expires = new Date(verified.getTime() + ttlHours * 60 * 60 * 1000);
   const formatted = new Intl.DateTimeFormat('de-DE', {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(expires);
   return expires.getTime() > Date.now()
-    ? `Preis-Evidence gültig bis ${formatted}`
-    : `Preis-Evidence abgelaufen seit ${formatted}`;
+    ? `Eligibility-Evidence gültig bis ${formatted}`
+    : `Eligibility-Evidence abgelaufen seit ${formatted}`;
 }
 
 function hasRevisionBoundReceipt(model: FreeRevolverProviderModel): boolean {
@@ -64,10 +64,10 @@ function hasRevisionBoundReceipt(model: FreeRevolverProviderModel): boolean {
 
 export function FreeRevolverControlCenter({
   api,
-  pricingEvidenceTtlHours,
+  eligibilityEvidenceTtlHours,
 }: {
   api: UseAdminFreeRevolverProvidersResult;
-  pricingEvidenceTtlHours: number;
+  eligibilityEvidenceTtlHours: number;
 }) {
   const [label, setLabel] = useState('');
   const [apiBase, setApiBase] = useState('');
@@ -86,16 +86,16 @@ export function FreeRevolverControlCenter({
         model.status === 'ready'
         && model.enabled
         && hasRevisionBoundReceipt(model)
-        && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
+        && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
       )).length,
       deferred: models.filter(model => model.status === 'discovered').length,
       blocked: models.filter(model => model.status === 'blocked').length,
       verified: models.filter(model => (
-        model.freeVerified
-        && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
+        model.freeEligible
+        && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
       )).length,
     };
-  }, [api.providers, pricingEvidenceTtlHours]);
+  }, [api.providers, eligibilityEvidenceTtlHours]);
 
   const run = async (id: string, action: () => Promise<void>, success: string) => {
     setBusyId(id);
@@ -132,7 +132,7 @@ export function FreeRevolverControlCenter({
       });
       setLabel('');
       setApiBase('');
-    }, 'Provider geprüft. Nur Modelle mit unabhängiger Nullpreis-Evidence und erfolgreicher Completion wurden aktiviert.');
+    }, 'Provider geprüft. Nur Modelle mit bestätigtem Free-Quota-Vertrag und erfolgreicher Completion wurden aktiviert.');
   };
 
   const renewProvider = (sourceId: string) => {
@@ -140,20 +140,20 @@ export function FreeRevolverControlCenter({
     setRenewalKeys(current => ({ ...current, [sourceId]: '' }));
     void run(`renew-${sourceId}`, async () => {
       await api.renewAndDiscover(sourceId, protectedValue);
-    }, 'Key erneuert, Providerpreise neu erkannt und echte Completion-Canaries ausgeführt.');
+    }, 'Key erneuert, Free-Quota-Katalog neu erkannt und echte Completion-Canaries ausgeführt.');
   };
 
   return (
     <div className="free-revolver-admin">
       <section className="llm-control-center__hero free-revolver-admin__hero">
         <div>
-          <span className="llm-kicker">Free Revolver / Nullkosten-Routen</span>
+          <span className="llm-kicker">Free Revolver / Quoten-Routen</span>
           <h1>Kostenfreie Provider sicher verbinden</h1>
           <p>
             Der Key wird einmalig über den geschützten Owner-Kanal übertragen und nie in der
             Sovereign-Datenbank gespeichert. Aktiviert werden ausschließlich Modelle mit
-            expliziter Nullkosten-Evidence und zwei echten direkten FreeLLM-Completion-Canaries,
-            die keinen positiven Kostenwert melden. Fehlende oder abgekühlte Upstreams bleiben
+            bestätigtem Free-Quota-Vertrag und zwei echten direkten FreeLLM-Completion-Canaries.
+            Ein ausdrücklich positiver Kostenwert blockiert weiterhin hart. Fehlende oder abgekühlte Upstreams bleiben
             prüfbar und werden nicht mehr fälschlich als defekte Modelle dargestellt.
           </p>
         </div>
@@ -165,7 +165,7 @@ export function FreeRevolverControlCenter({
       <div className="llm-stat-grid">
         <div><Server /><span>Provider</span><strong>{totals.providers}</strong></div>
         <div><ShieldCheck /><span>Aktive Free-Routen</span><strong>{totals.ready}</strong></div>
-        <div><Search /><span>Nullkosten bestätigt</span><strong>{totals.verified}</strong></div>
+        <div><Search /><span>Free-Quota bestätigt</span><strong>{totals.verified}</strong></div>
         <div><RefreshCw /><span>Wartet auf Upstream</span><strong>{totals.deferred}</strong></div>
         <div><Lock /><span>Hart blockiert</span><strong>{totals.blocked}</strong></div>
       </div>
@@ -233,7 +233,7 @@ export function FreeRevolverControlCenter({
           </button>
         </div>
         <p className="llm-catalog__evidence">
-          Kostenpflichtige, unvollständig bepreiste oder nur dem Namen nach „freie“ Modelle bleiben automatisch blockiert.
+          Modelle ohne Free-Quota-Vertrag oder mit ausdrücklich positiv gemeldeten Providerkosten bleiben automatisch blockiert.
         </p>
       </section>
 
@@ -255,12 +255,12 @@ export function FreeRevolverControlCenter({
               model.status === 'ready'
               && model.enabled
               && hasRevisionBoundReceipt(model)
-              && isPricingEvidenceFresh(model.pricingVerifiedAt, pricingEvidenceTtlHours)
+              && isEligibilityEvidenceFresh(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)
             ));
             const deferredModels = provider.models.filter(model => model.status === 'discovered');
             const blockedModels = provider.models.filter(model => model.status === 'blocked');
             const recheckableModels = provider.models.filter(model => (
-              model.freeVerified && Boolean(model.routeAlias)
+              model.freeEligible && Boolean(model.routeAlias)
             ));
             const renewalKey = renewalKeys[provider.id] ?? '';
             return (
@@ -300,28 +300,28 @@ export function FreeRevolverControlCenter({
 
                 <div className="free-revolver-provider__facts">
                   <div><span>Models-Endpunkt</span><strong>{provider.modelsUrl ?? 'noch nicht erkannt'}</strong></div>
-                  <div><span>Letzte Preis-Discovery</span><strong>{provider.lastDiscoveredAt ?? 'noch keine'}</strong></div>
+                  <div><span>Letzte Quota-Discovery</span><strong>{provider.lastDiscoveredAt ?? 'noch keine'}</strong></div>
                   <div><span>Letzter Completion-Check</span><strong>{provider.lastCheckedAt ?? 'noch keiner'}</strong></div>
                   <div><span>HTTP / Blocker</span><strong>{provider.lastHttpStatus ?? '—'}{provider.lastErrorCode ? ` · ${provider.lastErrorCode}` : ''}</strong></div>
                 </div>
 
                 <div className="free-revolver-model-list">
                   {provider.models.map(model => {
-                    const pricingFresh = isPricingEvidenceFresh(
-                      model.pricingVerifiedAt,
-                      pricingEvidenceTtlHours,
+                    const eligibilityFresh = isEligibilityEvidenceFresh(
+                      model.eligibilityVerifiedAt,
+                      eligibilityEvidenceTtlHours,
                     );
                     const receiptVerified = hasRevisionBoundReceipt(model);
                     const effectiveReady = model.status === 'ready'
                       && model.enabled
-                      && pricingFresh
+                      && eligibilityFresh
                       && receiptVerified;
                     return (
                     <div key={model.id} className="free-revolver-model">
                       <div>
                         <strong>{model.displayName || model.modelId}</strong>
                         <span>{model.modelId}</span>
-                        <span>{pricingEvidenceExpiry(model.pricingVerifiedAt, pricingEvidenceTtlHours)}</span>
+                        <span>{eligibilityEvidenceExpiry(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)}</span>
                         <span>
                           {model.canaryReceipt.receiptSha256
                             ? `Receipt ${model.canaryReceipt.receiptSha256.slice(0, 16)}…`
@@ -329,17 +329,17 @@ export function FreeRevolverControlCenter({
                         </span>
                       </div>
                       <span className={`llm-badge llm-badge--${effectiveReady ? 'ok' : model.status === 'discovered' ? 'warn' : 'danger'}`}>
-                        {!pricingFresh
-                          ? 'Preis-Evidence abgelaufen'
+                        {!eligibilityFresh
+                          ? 'Eligibility-Evidence abgelaufen'
                           : !receiptVerified
                             ? 'Revision, Image-Digest oder Canary-Receipt fehlt'
                           : model.status === 'discovered'
                             ? `wartet auf verfügbaren Upstream · ${model.lastErrorCode ?? 'noch nicht erfolgreich geprüft'}`
                             : model.status !== 'ready'
-                              ? model.lastErrorCode ?? model.pricingSource
-                              : model.canaryCostState === 'zero'
-                              ? 'Nullpreis + Canary Kosten 0'
-                              : 'Nullpreis + Canary ohne Kostenangabe'}
+                              ? model.lastErrorCode ?? model.eligibilitySource
+                              : model.providerCostState === 'zero'
+                              ? 'Free-Quota + Canary meldet Kosten 0'
+                              : 'Free-Quota + Canary ohne Kostenangabe'}
                       </span>
                     </div>
                     );
@@ -358,7 +358,7 @@ export function FreeRevolverControlCenter({
                         () => api.discover(provider.id),
                         'Discovery abgeschlossen. Erfolgreich doppelt gecanaryte Modelle wurden aktiviert; temporär nicht erreichbare Upstreams bleiben sichtbar und erneut prüfbar, echte Policy-Verstöße bleiben blockiert.',
                       )}>
-                      <Search size={17} /> Modelle + Preise neu erkennen
+                      <Search size={17} /> Modelle + Quoten neu erkennen
                     </button>
                   )}
                   <button type="button" className="llm-button" disabled={busyId !== null || !provider.enabled || recheckableModels.length === 0}
@@ -372,7 +372,7 @@ export function FreeRevolverControlCenter({
                   </button>
                   {provider.enabled && recheckableModels.length === 0 && (
                     <p className="llm-route-card__evidence">
-                      Noch kein Modell ist healthcheckfähig. Zuerst Modelle und Preise neu erkennen.
+                      Noch kein Modell ist healthcheckfähig. Zuerst Modelle und Quoten neu erkennen.
                     </p>
                   )}
                 </footer>

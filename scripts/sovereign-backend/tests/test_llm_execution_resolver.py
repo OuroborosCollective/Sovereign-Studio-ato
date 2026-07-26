@@ -34,7 +34,6 @@ def route(
     profile: str,
 ) -> dict:
     free = category == "free"
-    price = 1.0
     transport = "freellm" if free else "openrouter"
     return {
         "id": route_id,
@@ -53,13 +52,25 @@ def route(
             "billingClass": category,
             "fundingMode": "provider_free_quota" if free else "provider_priced",
             "markupMultiplier": 0 if free else 4,
-            "inputUsdPerMillion": price,
-            "cachedInputUsdPerMillion": price,
-            "outputUsdPerMillion": price,
-            "pricingVerified": True,
-            "pricingSource": "test",
+            "pricingVerified": not free,
+            "pricingSource": "test" if not free else "not-applicable-free-quota",
+            "freeEligible": free,
+            "quotaContractVerified": free,
+            "userChargeCredits": 0 if free else None,
             "quotaScope": scope,
+            "quotaEvidence": {
+                "scope": scope,
+                "stateOwner": "postgresql-revolver-state",
+                "contractVerified": True,
+            } if free else {},
+            "canaryVerified": free,
+            "canaryConfirmationCount": 2 if free else 0,
             "executionProfile": profile,
+            **({
+                "inputUsdPerMillion": 1.0,
+                "cachedInputUsdPerMillion": 1.0,
+                "outputUsdPerMillion": 1.0,
+            } if not free else {}),
             "catalogVerified": not free,
             "transportCanaryVerified": not free,
             "selectable": not free,
@@ -76,7 +87,7 @@ def route(
                 "imageDigestVerified": True,
             } if free else {},
             "canaryReceipt": {
-                "schemaVersion": "sovereign.freellm-route-receipt.v1",
+                "schemaVersion": "sovereign.freellm-route-receipt.v2",
                 "receiptSha256": "3" * 64,
             } if free else {},
         },

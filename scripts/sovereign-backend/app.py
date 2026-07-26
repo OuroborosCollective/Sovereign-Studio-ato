@@ -48,7 +48,6 @@ from llm_cost_policy import (
     BillingPolicyError,
     FREE_CATEGORY,
     FREE_FUNDING_PROVIDER_QUOTA,
-    FREE_FUNDING_VERIFIED_ZERO_COST,
     billed_credits_for_provider_cost,
     category_minimum_multiplier,
     normalize_billing_category,
@@ -72,7 +71,7 @@ from llm_execution_resolver import (
     build_paid_to_free_candidates,
 )
 from free_revolver_runtime import (
-    FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
+    FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS,
     register_free_revolver_runtime,
     resolve_free_revolver_plan,
 )
@@ -981,10 +980,23 @@ def _admin_llm_route_payload(row) -> dict:
             ) * 100,
             4,
         ) if int(policy.get("markupMultiplier") or 0) > 0 else 0.0,
-        "priceDisplayContract": "provider-cost-and-customer-sale",
+        "priceDisplayContract": (
+            "free-quota-no-provider-price"
+            if category == FREE_CATEGORY
+            else "provider-cost-and-customer-sale"
+        ),
+        "pricingRequired": bool(policy.get("pricingRequired")),
         "pricingVerified": bool(policy.get("pricingVerified")),
         "pricingSource": str(policy.get("pricingSource") or "unverified"),
-        "revolverEligible": category == FREE_CATEGORY and bool(policy.get("pricingVerified")),
+        "freeEligible": bool(policy.get("freeEligible")),
+        "quotaContractVerified": bool(policy.get("quotaContractVerified")),
+        "revolverEligible": (
+            category == FREE_CATEGORY
+            and bool(policy.get("freeEligible"))
+            and bool(policy.get("quotaContractVerified"))
+            and config.get("canaryVerified") is True
+            and int(config.get("canaryConfirmationCount") or 0) >= 2
+        ),
         "executionProfile": str(
             config.get("executionProfile")
             or (FREE_SINGLE_AGENT_PROFILE if category == FREE_CATEGORY else PAID_SWARM_PROFILE)
@@ -1118,7 +1130,7 @@ def admin_llm_routes():
             },
             "semanticCachePolicy": "cache_safe-only",
             "autoWeights": "recommendation-only",
-            "pricingEvidenceTtlHours": FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS,
+            "eligibilityEvidenceTtlHours": FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS,
         },
         "manualCreditsPerUnitEditing": False,
         "legacyDirectRouteCount": int(legacy_direct_routes.get("count") or 0),
@@ -2073,8 +2085,10 @@ def admin_llm_route_healthcheck(rid):
         }
     elif transport == "freellm":
         model_evidence = query(
-            """SELECT model.status, model.enabled, model.free_verified,
-                      model.last_canary_at, model.pricing_verified_at,
+            """SELECT model.status, model.enabled,
+                      model.free_eligible,
+                      model.last_canary_at,
+                      model.eligibility_verified_at,
                       model.last_error_code, source.enabled AS source_enabled,
                       source.last_http_status
                FROM llm_revolver_provider_models AS model
@@ -2090,9 +2104,13 @@ def admin_llm_route_healthcheck(rid):
             model_evidence.get("source_enabled")
             and model_evidence.get("status") == "ready"
             and model_evidence.get("enabled")
-            and model_evidence.get("free_verified")
+            and model_evidence.get("free_eligible")
             and model_evidence.get("last_canary_at")
-            and model_evidence.get("pricing_verified_at")
+            and model_evidence.get("eligibility_verified_at")
+            and config.get("freeEligible") is True
+            and config.get("quotaContractVerified") is True
+            and config.get("canaryVerified") is True
+            and int(config.get("canaryConfirmationCount") or 0) >= 2
             and not route.get("disabled")
         )
         result = {
@@ -2102,7 +2120,7 @@ def admin_llm_route_healthcheck(rid):
                 model_evidence.get("last_error_code")
                 or "freellm_route_not_currently_ready"
             ),
-            "error": None if verified else "FreeLLM-Route wartet auf aktuelle Nullkosten- und Completion-Evidence.",
+            "error": None if verified else "FreeLLM-Route wartet auf aktuelle Quoten-, Eligibility- und Doppel-Canary-Evidence.",
             "httpStatus": model_evidence.get("last_http_status"),
             "responseTimeMs": None,
             "readinessVerified": verified,
@@ -2114,11 +2132,12 @@ def admin_llm_route_healthcheck(rid):
                     if model_evidence.get("last_canary_at")
                     else None
                 ),
-                "pricingVerifiedAt": (
-                    model_evidence.get("pricing_verified_at").isoformat()
-                    if model_evidence.get("pricing_verified_at")
+                "eligibilityVerifiedAt": (
+                    model_evidence.get("eligibility_verified_at").isoformat()
+                    if model_evidence.get("eligibility_verified_at")
                     else None
                 ),
+                "providerPricingRequired": False,
                 "rawProviderResponseReturned": False,
             },
         }
@@ -2345,6 +2364,7 @@ def health_ready():
                 "038_reclassify_retryable_freellm_canary_failures.sql",
                 "039_openrouter_credit_rate_precision.sql",
                 "040_llm_route_scanner_free_quota_evidence.sql",
+                "042_separate_freellm_quota_from_provider_pricing.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -2359,7 +2379,13 @@ def health_ready():
                COUNT(*) FILTER (
                    WHERE disabled=false
                      AND lower(COALESCE(runtime_kind, provider))='freellm'
+                     AND COALESCE((config->>'freeEligible')::boolean, false)=true
+                     AND COALESCE((config->>'quotaContractVerified')::boolean, false)=true
                      AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+                     AND COALESCE((config->>'canaryConfirmationCount')::integer, 0) >= 2
+                     AND COALESCE(config->>'fundingMode', '')='provider_free_quota'
+                     AND COALESCE(config->'canaryReceipt'->>'schemaVersion', '')
+                         ='sovereign.freellm-route-receipt.v2'
                )::integer AS freellm_ready,
                COUNT(*) FILTER (
                    WHERE disabled=false
@@ -3809,8 +3835,11 @@ def _public_llm_route_payload(row) -> dict:
         },
         "grossMarginPercent": admin_payload["grossMarginPercent"],
         "priceDisplayContract": admin_payload["priceDisplayContract"],
+        "pricingRequired": admin_payload["pricingRequired"],
         "pricingVerified": admin_payload["pricingVerified"],
         "pricingSource": admin_payload["pricingSource"],
+        "freeEligible": admin_payload["freeEligible"],
+        "quotaContractVerified": admin_payload["quotaContractVerified"],
         "revolverEligible": admin_payload["revolverEligible"],
     }
 
@@ -6323,11 +6352,21 @@ def public_llm_auto_route():
         safe_routes = []
         for row in routes or []:
             payload = _public_llm_route_payload(row)
-            if payload["pricingVerified"]:
+            paid_ready = (
+                payload["billingCategory"] != FREE_CATEGORY
+                and payload["pricingVerified"]
+            )
+            free_ready = (
+                payload["billingCategory"] == FREE_CATEGORY
+                and payload["freeEligible"]
+                and payload["quotaContractVerified"]
+                and payload["revolverEligible"]
+            )
+            if paid_ready or free_ready:
                 safe_routes.append(payload)
         if not safe_routes:
             return jsonify({
-                "error": "Keine preisverifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar",
+                "error": "Keine policy-verifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar",
                 "blocker": "llm_routes_empty",
                 "suggestion": "OpenRouter Paid aktivieren oder im FreeLLM-Bereich eine direkte Route doppelt verifizieren.",
             }), 503
@@ -6655,8 +6694,37 @@ def _settle_llm_usage(
     provider_cost_micros = provider_cost_usd_to_micros(
         evidence.get("providerCostUsd")
     )
+    free_route = policy["billingCategory"] == FREE_CATEGORY
     charge_basis = "direct_provider_reported_cost"
-    if provider_cost_micros is None:
+    if free_route:
+        if provider_cost_micros is None:
+            provider_cost_micros = 0
+            charge_basis = "free_quota_no_provider_price"
+        elif provider_cost_micros > 0:
+            try:
+                _update_llm_usage_settlement(
+                    request_id,
+                    status="reconciliation_required",
+                    reserved_credits=reserved_credits,
+                    settled_credits=reserved_credits,
+                    refunded_credits=0,
+                    prompt_tokens=prompt_tokens,
+                    cached_prompt_tokens=cached_prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    upstream_request_id=str(evidence.get("upstreamRequestId") or "").strip() or None,
+                    provider_cost_usd=float(provider_cost_micros / 1_000_000),
+                    provider_cost_usd_micros=provider_cost_micros,
+                    billed_value_usd_micros=0,
+                    markup_multiplier=0,
+                    billing_category=FREE_CATEGORY,
+                    funded_credits_reserved=0,
+                    error_code="free_route_reported_provider_cost",
+                )
+            except Exception:
+                pass
+            return None, "free_route_reported_provider_cost"
+    elif provider_cost_micros is None:
         if total_tokens <= 0:
             try:
                 _update_llm_usage_settlement(
@@ -6686,34 +6754,6 @@ def _settle_llm_usage(
         markup_multiplier=int(policy["markupMultiplier"]),
     )
     funding_mode = str(policy.get("fundingMode") or "provider_priced")
-    if (
-        policy["billingCategory"] == FREE_CATEGORY
-        and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
-        and (provider_cost_micros != 0 or billed_credits != 0)
-    ):
-        try:
-            _update_llm_usage_settlement(
-                request_id,
-                status="reconciliation_required",
-                reserved_credits=reserved_credits,
-                settled_credits=reserved_credits,
-                refunded_credits=0,
-                prompt_tokens=prompt_tokens,
-                cached_prompt_tokens=cached_prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                upstream_request_id=str(evidence.get("upstreamRequestId") or "").strip() or None,
-                provider_cost_usd=float(provider_cost_micros / 1_000_000),
-                provider_cost_usd_micros=provider_cost_micros,
-                billed_value_usd_micros=provider_cost_micros,
-                markup_multiplier=0,
-                billing_category=FREE_CATEGORY,
-                funded_credits_reserved=0,
-                error_code="free_route_reported_provider_cost",
-            )
-        except Exception:
-            pass
-        return None, "free_route_reported_provider_cost"
     if policy["billingCategory"] == FREE_CATEGORY and billed_credits != 0:
         try:
             _update_llm_usage_settlement(
@@ -7085,7 +7125,7 @@ def public_llm_chat():
         route = _resolve_enabled_llm_route(model)
         if not route:
             return jsonify({
-                "error": "LLM Route nicht aktiv, nicht vorhanden oder nicht preisverifiziert",
+                "error": "LLM Route nicht aktiv, nicht vorhanden oder nicht policy-verifiziert",
                 "blocker": "llm_route_not_enabled",
             }), 404
         try:

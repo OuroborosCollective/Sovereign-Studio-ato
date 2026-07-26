@@ -52,7 +52,7 @@ _MAX_MODELS_RESPONSE_BYTES = 2_000_000
 _KNOWN_KEYLESS_POOL_PROVIDERS = {"ovh", "ovhcloud", "kilo", "llm7"}
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v1"
+_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v2"
 _DEFAULT_MIN_READY_ROUTES = 5
 _DEFAULT_RECONCILE_PACE_SECONDS = 0.25
 
@@ -492,7 +492,7 @@ def _request_owner_input(
                    RETURNING id::text""",
                 (
                     f"Free-Revolver-Zugang für {label}",
-                    "Einmalige geschützte Eingabe für Models-Discovery, Nullkostenprüfung und direkte FreeLLM-Aktivierung.",
+                    "Einmalige geschützte Eingabe für Models-Discovery, Quotenprüfung und direkte FreeLLM-Aktivierung.",
                 ),
             )
             request_id = str(cursor.fetchone()["id"])
@@ -543,13 +543,13 @@ def _source_payload(source: dict[str, Any], models: list[dict[str, Any]]) -> dic
             "retryEvidence": model.get("retry_evidence") or {},
             "cooldownEvidence": model.get("cooldown_evidence") or {},
             "capabilities": model.get("capabilities") or [],
-            "freeVerified": bool(model.get("free_verified")),
-            "pricingSource": str(model.get("pricing_source") or "unverified"),
-            "pricingVerifiedAt": model.get("pricing_verified_at").isoformat() if model.get("pricing_verified_at") else None,
+            "freeEligible": bool(model.get("free_eligible")),
+            "eligibilitySource": str(model.get("eligibility_source") or "unverified"),
+            "eligibilityVerifiedAt": model.get("eligibility_verified_at").isoformat() if model.get("eligibility_verified_at") else None,
             "status": str(model.get("status") or "discovered"),
             "lastCanaryRequestId": model.get("last_canary_request_id"),
             "lastCanaryAt": model.get("last_canary_at").isoformat() if model.get("last_canary_at") else None,
-            "canaryCostState": str(model.get("canary_cost_state") or "unreported"),
+            "providerCostState": str(model.get("canary_cost_state") or "unreported"),
             "lastProviderCostUsdMicros": model.get("last_provider_cost_usd_micros"),
             "lastErrorCode": model.get("last_error_code"),
             "enabled": bool(model.get("enabled")),
@@ -842,7 +842,8 @@ def register_free_revolver_provider_runtime(
         for source in sources:
             models = query(
                 """SELECT id::text, upstream_model_id, display_name, litellm_alias,
-                          capabilities, free_verified, pricing_source, pricing_verified_at, status,
+                          capabilities, free_eligible, eligibility_source,
+                          eligibility_verified_at, status,
                           last_canary_request_id, last_canary_at, canary_cost_state,
                           last_provider_cost_usd_micros, last_error_code, enabled,
                           (SELECT route.id::text FROM llm_routes AS route
@@ -865,7 +866,7 @@ def register_free_revolver_provider_runtime(
                            LIMIT 1) AS cooldown_evidence
                    FROM llm_revolver_provider_models
                    WHERE source_id=%s::uuid
-                   ORDER BY free_verified DESC, display_name ASC""",
+                   ORDER BY free_eligible DESC, display_name ASC""",
                 (source["id"],),
             ) or []
             result.append(_source_payload(dict(source), [dict(row) for row in models]))
@@ -875,7 +876,7 @@ def register_free_revolver_provider_runtime(
             "truthOwner": "postgresql-owner-input-direct-freellm",
             "providers": result,
             "keyStorage": "owner-managed-direct-freellm",
-            "activationRule": "explicit-provider-zero-pricing-and-noncontradictory-canary",
+            "activationRule": "managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction",
             "orphanedSecretFilesRemoved": orphaned_secret_files_removed,
         })
 
@@ -1059,7 +1060,7 @@ def register_free_revolver_provider_runtime(
                 "ok": False,
                 "alias": alias,
                 "error": "free_provider_cost_not_zero",
-                "canaryCostState": "nonzero",
+                "providerCostState": "nonzero",
             }
         provider_cost = provider_costs[-1]
         canary_cost_state = (
@@ -1099,7 +1100,9 @@ def register_free_revolver_provider_runtime(
         ]
         quota_contract = {
             "scope": quota_scope,
-            "evidence": "per-model-runtime-cooldown-and-provider-catalog",
+            "evidence": "managed-provider-quota-and-per-model-runtime-cooldown",
+            "stateOwner": "postgresql-revolver-state",
+            "contractVerified": True,
             "executionProfile": "free_single_agent",
             "maxForegroundAgents": 1,
             "maxBackgroundAgents": 0,
@@ -1135,13 +1138,12 @@ def register_free_revolver_provider_runtime(
                 "providerModel": evidence.get("providerModel"),
                 "responseModel": evidence.get("responseModel"),
             },
-            "pricingEvidence": {
-                "pricingSource": model["pricingSource"],
+            "eligibilityEvidence": {
+                "eligibilitySource": model["eligibilitySource"],
                 "discoveryPayloadSha256": model["payloadSha256"],
-                "canaryCostState": canary_cost_state,
-                "zeroCostContract": (
-                    "explicit-or-managed-zero-cost-contract-plus-"
-                    "noncontradictory-double-canary"
+                "providerCostState": canary_cost_state,
+                "freeQuotaContract": (
+                    "managed-provider-quota-plus-noncontradictory-double-canary"
                 ),
             },
             "canaryEvidence": {
@@ -1170,17 +1172,19 @@ def register_free_revolver_provider_runtime(
             "providerModel": model_id,
             "billingCategory": "free",
             "billingClass": "free",
-            "fundingMode": "verified_zero_cost",
+            "fundingMode": "provider_free_quota",
             "markupMultiplier": 0,
             "minimumMultiplier": 0,
-            "inputUsdPerMillion": 0,
-            "cachedInputUsdPerMillion": 0,
-            "outputUsdPerMillion": 0,
-            "pricingVerified": True,
-            "pricingSource": model["pricingSource"],
-            "pricingEvidence": {
+            "providerPricingRequired": False,
+            "pricingVerified": False,
+            "freeEligible": True,
+            "eligibilitySource": model["eligibilitySource"],
+            "quotaContractVerified": True,
+            "userChargeCredits": 0,
+            "providerCostState": canary_cost_state,
+            "eligibilityEvidence": {
                 "discoveryPayloadSha256": model["payloadSha256"],
-                "canaryCostState": canary_cost_state,
+                "providerCostState": canary_cost_state,
                 "canaryRequestId": evidence.get("upstreamRequestId") or None,
                 "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
             },
@@ -1238,14 +1242,14 @@ def register_free_revolver_provider_runtime(
                 cursor.execute(
                     """UPDATE llm_revolver_provider_models
                        SET litellm_alias=%s, status='ready', enabled=true,
-                           free_verified=true, pricing_source=%s,
-                           pricing_verified_at=NOW(),
+                           free_eligible=true, eligibility_source=%s,
+                           eligibility_verified_at=NOW(),
                            last_canary_request_id=%s, last_canary_at=NOW(),
                            canary_cost_state=%s, last_provider_cost_usd_micros=%s,
                            last_error_code=NULL, updated_at=NOW()
                        WHERE source_id=%s::uuid AND upstream_model_id=%s""",
                     (
-                        alias, model["pricingSource"],
+                        alias, model["eligibilitySource"],
                         str(evidence.get("upstreamRequestId") or "") or None,
                         canary_cost_state, provider_cost_micros,
                         source_id, model_id,
@@ -1272,7 +1276,7 @@ def register_free_revolver_provider_runtime(
             "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
             "canaryLatencyMs": int(evidence.get("latencyMs") or 0),
             "canaryRequestId": evidence.get("upstreamRequestId") or None,
-            "canaryCostState": canary_cost_state,
+            "providerCostState": canary_cost_state,
             "runtimeIdentity": runtime_identity,
             "receiptId": receipt_id,
             "receiptSha256": receipt_sha256,
@@ -1410,7 +1414,7 @@ def register_free_revolver_provider_runtime(
                 ),
             )
             model_ids = [model["modelId"] for model in models]
-            free_models = [model for model in models if model["freeVerified"]]
+            eligible_models = [model for model in models if model["freeEligible"]]
             connection = get_connection()
             try:
                 with connection.cursor() as cursor:
@@ -1418,8 +1422,8 @@ def register_free_revolver_provider_runtime(
                         cursor.execute(
                             """INSERT INTO llm_revolver_provider_models
                                    (source_id, upstream_model_id, display_name, capabilities,
-                                    free_verified, pricing_source, discovery_payload_sha256,
-                                    pricing_verified_at, status, enabled, last_seen_at, updated_at)
+                                    free_eligible, eligibility_source, discovery_payload_sha256,
+                                    eligibility_verified_at, status, enabled, last_seen_at, updated_at)
                                VALUES (
                                    %s::uuid,%s,%s,%s::jsonb,%s,%s,%s,
                                    CASE WHEN %s THEN NOW() ELSE NULL END,
@@ -1428,26 +1432,26 @@ def register_free_revolver_provider_runtime(
                                ON CONFLICT (source_id, upstream_model_id) DO UPDATE SET
                                    display_name=EXCLUDED.display_name,
                                    capabilities=EXCLUDED.capabilities,
-                                   free_verified=EXCLUDED.free_verified,
-                                   pricing_source=EXCLUDED.pricing_source,
+                                   free_eligible=EXCLUDED.free_eligible,
+                                   eligibility_source=EXCLUDED.eligibility_source,
                                    discovery_payload_sha256=EXCLUDED.discovery_payload_sha256,
-                                   pricing_verified_at=CASE WHEN EXCLUDED.free_verified THEN NOW() ELSE NULL END,
+                                   eligibility_verified_at=CASE WHEN EXCLUDED.free_eligible THEN NOW() ELSE NULL END,
                                    status=CASE WHEN llm_revolver_provider_models.status='ready'
-                                               AND EXCLUDED.free_verified THEN 'ready'
-                                               WHEN EXCLUDED.free_verified THEN 'discovered'
+                                               AND EXCLUDED.free_eligible THEN 'ready'
+                                               WHEN EXCLUDED.free_eligible THEN 'discovered'
                                                ELSE 'blocked' END,
-                                   enabled=CASE WHEN EXCLUDED.free_verified
+                                   enabled=CASE WHEN EXCLUDED.free_eligible
                                                 THEN llm_revolver_provider_models.enabled
                                                 ELSE false END,
-                                   last_error_code=CASE WHEN EXCLUDED.free_verified THEN NULL
-                                                        ELSE 'provider_pricing_unverified' END,
+                                   last_error_code=CASE WHEN EXCLUDED.free_eligible THEN NULL
+                                                        ELSE 'free_quota_ineligible' END,
                                    last_seen_at=NOW(), updated_at=NOW()""",
                             (
                                 source_id, model["modelId"], model["displayName"],
-                                json.dumps(model["capabilities"]), model["freeVerified"],
-                                model["pricingSource"], model["payloadSha256"],
-                                model["freeVerified"],
-                                "discovered" if model["freeVerified"] else "blocked",
+                                json.dumps(model["capabilities"]), model["freeEligible"],
+                                model["eligibilitySource"], model["payloadSha256"],
+                                model["freeEligible"],
+                                "discovered" if model["freeEligible"] else "blocked",
                             ),
                         )
                     if model_ids:
@@ -1475,7 +1479,7 @@ def register_free_revolver_provider_runtime(
                            FROM llm_revolver_provider_models AS model
                            WHERE model.source_id=%s::uuid
                              AND route.model_id=model.litellm_alias
-                             AND (model.free_verified=false OR model.status='blocked')""",
+                             AND (model.free_eligible=false OR model.status='blocked')""",
                         (source_id,),
                     )
                     cursor.execute(
@@ -1496,7 +1500,7 @@ def register_free_revolver_provider_runtime(
             activated = []
             deferred = []
             blocked = []
-            for model in free_models[:max_auto]:
+            for model in eligible_models[:max_auto]:
                 result = activate_model(dict(source), model, key)
                 if result.get("ok"):
                     activated.append({"modelId": model["modelId"], **result})
@@ -1523,13 +1527,13 @@ def register_free_revolver_provider_runtime(
                 else "blocked"
             )
             error_code = (
-                "some_zero_cost_routes_blocked"
+                "some_free_quota_routes_blocked"
                 if activated and blocked
-                else "some_zero_cost_routes_deferred"
+                else "some_free_quota_routes_deferred"
                 if activated and deferred
                 else None
                 if activated
-                else "no_zero_cost_route_activated"
+                else "no_free_quota_route_activated"
             )
             query(
                 """UPDATE llm_revolver_provider_sources
@@ -1545,19 +1549,19 @@ def register_free_revolver_provider_runtime(
                 http_status=last_status,
                 outcome="success" if activated else "degraded",
                 model_count=len(models),
-                free_count=len(free_models),
+                free_count=len(eligible_models),
                 evidence={
                     "activatedModels": [item["modelId"] for item in activated],
                     "deferredModels": [item["modelId"] for item in deferred],
                     "blockedModels": [item["modelId"] for item in blocked],
-                    "pricingRule": "explicit-zero-fields-only",
+                    "eligibilityRule": "managed-free-quota-or-explicit-zero-catalog-with-double-canary",
                     "availabilityFailuresAreRetryable": True,
                 },
             )
             audit("admin_free_revolver_provider_discovered", source_id, {
                 "modelsUrl": selected_url,
                 "modelCount": len(models),
-                "freeVerifiedCount": len(free_models),
+                "freeEligibleCount": len(eligible_models),
                 "activatedCount": len(activated),
                 "keyHint": key_hint,
             })
@@ -1567,11 +1571,11 @@ def register_free_revolver_provider_runtime(
                 "sourceId": source_id,
                 "modelsUrl": selected_url,
                 "discovered": len(models),
-                "freeVerified": len(free_models),
+                "freeEligible": len(eligible_models),
                 "activated": activated,
                 "deferred": deferred,
                 "blocked": blocked,
-                "unverified": [model["modelId"] for model in models if not model["freeVerified"]],
+                "ineligible": [model["modelId"] for model in models if not model["freeEligible"]],
                 "keyStoredBy": (
                     "owner-managed-direct-freellm"
                     if source["auth_mode"] == _MANAGED_AUTH_MODE
@@ -1725,7 +1729,7 @@ def register_free_revolver_provider_runtime(
                 raise ValueError("free_provider_models_endpoint_missing")
             models = normalize_models_payload(payload, managed_quota_contract=True)
             model_ids = [str(model["modelId"]) for model in models]
-            eligible_models = [model for model in models if bool(model.get("freeVerified"))]
+            eligible_models = [model for model in models if bool(model.get("freeEligible"))]
 
             bootstrap_stage = "catalog_persistence"
             connection = get_connection()
@@ -1735,8 +1739,8 @@ def register_free_revolver_provider_runtime(
                         cursor.execute(
                             """INSERT INTO llm_revolver_provider_models
                                    (source_id, upstream_model_id, display_name, capabilities,
-                                    free_verified, pricing_source, discovery_payload_sha256,
-                                    pricing_verified_at, status, enabled, last_seen_at, updated_at)
+                                    free_eligible, eligibility_source, discovery_payload_sha256,
+                                    eligibility_verified_at, status, enabled, last_seen_at, updated_at)
                                VALUES (
                                    %s::uuid,%s,%s,%s::jsonb,%s,%s,%s,
                                    CASE WHEN %s THEN NOW() ELSE NULL END,
@@ -1745,30 +1749,30 @@ def register_free_revolver_provider_runtime(
                                ON CONFLICT (source_id, upstream_model_id) DO UPDATE SET
                                    display_name=EXCLUDED.display_name,
                                    capabilities=EXCLUDED.capabilities,
-                                   free_verified=EXCLUDED.free_verified,
-                                   pricing_source=EXCLUDED.pricing_source,
+                                   free_eligible=EXCLUDED.free_eligible,
+                                   eligibility_source=EXCLUDED.eligibility_source,
                                    discovery_payload_sha256=EXCLUDED.discovery_payload_sha256,
-                                   pricing_verified_at=CASE WHEN EXCLUDED.free_verified THEN NOW() ELSE NULL END,
+                                   eligibility_verified_at=CASE WHEN EXCLUDED.free_eligible THEN NOW() ELSE NULL END,
                                    status=CASE WHEN llm_revolver_provider_models.status='ready'
-                                               AND EXCLUDED.free_verified THEN 'ready'
-                                               WHEN EXCLUDED.free_verified THEN 'discovered'
+                                               AND EXCLUDED.free_eligible THEN 'ready'
+                                               WHEN EXCLUDED.free_eligible THEN 'discovered'
                                                ELSE 'blocked' END,
-                                   enabled=CASE WHEN EXCLUDED.free_verified
+                                   enabled=CASE WHEN EXCLUDED.free_eligible
                                                 THEN llm_revolver_provider_models.enabled
                                                 ELSE false END,
-                                   last_error_code=CASE WHEN EXCLUDED.free_verified THEN NULL
-                                                        ELSE 'provider_pricing_unverified' END,
+                                   last_error_code=CASE WHEN EXCLUDED.free_eligible THEN NULL
+                                                        ELSE 'free_quota_ineligible' END,
                                    last_seen_at=NOW(), updated_at=NOW()""",
                             (
                                 source_id,
                                 model["modelId"],
                                 model["displayName"],
                                 json.dumps(model["capabilities"]),
-                                model["freeVerified"],
-                                model["pricingSource"],
+                                model["freeEligible"],
+                                model["eligibilitySource"],
                                 model["payloadSha256"],
-                                model["freeVerified"],
-                                "discovered" if model["freeVerified"] else "blocked",
+                                model["freeEligible"],
+                                "discovered" if model["freeEligible"] else "blocked",
                             ),
                         )
                     if model_ids:
@@ -1796,7 +1800,7 @@ def register_free_revolver_provider_runtime(
                            FROM llm_revolver_provider_models AS model
                            WHERE model.source_id=%s::uuid
                              AND route.model_id=model.litellm_alias
-                             AND (model.free_verified=false OR model.status='blocked')""",
+                             AND (model.free_eligible=false OR model.status='blocked')""",
                         (source_id,),
                     )
                     cursor.execute(
@@ -1831,7 +1835,7 @@ def register_free_revolver_provider_runtime(
                         "responseModel": result.get("responseModel"),
                         "upstreamKeyless": result.get("upstreamKeyless"),
                         "canaryConfirmationCount": result.get("canaryConfirmationCount"),
-                        "canaryCostState": result.get("canaryCostState"),
+                        "providerCostState": result.get("providerCostState"),
                         "runtimeIdentity": result.get("runtimeIdentity"),
                         "receiptId": result.get("receiptId"),
                         "receiptSha256": result.get("receiptSha256"),
@@ -2013,7 +2017,7 @@ def register_free_revolver_provider_runtime(
                       source.last_checked_at, source.key_fingerprint,
                       (source.key_fingerprint IS NOT NULL) AS key_fingerprint_present,
                       COUNT(model.id)::int AS model_count,
-                      COUNT(model.id) FILTER (WHERE model.free_verified=true)::int AS free_verified_count,
+                      COUNT(model.id) FILTER (WHERE model.free_eligible=true)::int AS free_eligible_count,
                       COUNT(model.id) FILTER (
                           WHERE model.status='ready' AND model.enabled=true
                       )::int AS ready_count
@@ -2043,7 +2047,7 @@ def register_free_revolver_provider_runtime(
                           route.config->'quotaEvidence' AS quota_evidence,
                           route.config->'retryEvidence' AS retry_evidence,
                           route.config->'cooldownEvidence' AS cooldown_evidence,
-                          route.config->'pricingEvidence' AS pricing_evidence
+                          route.config->'eligibilityEvidence' AS eligibility_evidence
                    FROM llm_revolver_provider_models AS model
                    JOIN llm_routes AS route
                      ON route.model_id=model.litellm_alias
@@ -2064,7 +2068,7 @@ def register_free_revolver_provider_runtime(
                 "quotaEvidence": item.get("quota_evidence") or {},
                 "retryEvidence": item.get("retry_evidence") or {},
                 "cooldownEvidence": item.get("cooldown_evidence") or {},
-                "pricingEvidence": item.get("pricing_evidence") or {},
+                "eligibilityEvidence": item.get("eligibility_evidence") or {},
             } for item in ready_rows]
             providers.append({
                 "sourceId": str(source.get("id") or ""),
@@ -2089,7 +2093,7 @@ def register_free_revolver_provider_runtime(
                 "managedKeyBlocker": managed_key["blocker"],
                 "keyFingerprintMatchesFile": managed_key["fingerprintMatches"],
                 "modelCount": int(source.get("model_count") or 0),
-                "freeVerifiedCount": int(source.get("free_verified_count") or 0),
+                "freeEligibleCount": int(source.get("free_eligible_count") or 0),
                 "readyCount": int(source.get("ready_count") or 0),
                 "readyEvidence": ready_evidence,
             })
@@ -2160,8 +2164,8 @@ def register_free_revolver_provider_runtime(
                FROM (
                    SELECT model.id::text, model.upstream_model_id,
                           model.display_name, model.litellm_alias,
-                          model.discovery_payload_sha256, model.free_verified,
-                          model.pricing_source, model.status, model.enabled,
+                          model.discovery_payload_sha256, model.free_eligible,
+                          model.eligibility_source, model.status, model.enabled,
                           model.last_error_code, model.last_canary_at,
                           COALESCE(
                               route.config->'runtimeIdentity'->>'sourceRevision'=%s
@@ -2180,10 +2184,14 @@ def register_free_revolver_provider_runtime(
                    WHERE model.source_id=%s::uuid
                      AND model.last_seen_at >= NOW() - INTERVAL '24 hours'
                      AND (
-                         model.free_verified=true
+                         model.free_eligible=true
                          OR (
-                             model.free_verified=false
-                             AND model.pricing_source='provider-pricing-unreported-or-incomplete'
+                             model.free_eligible=false
+                             AND model.eligibility_source IN (
+                                 'provider-pricing-unreported-or-incomplete',
+                                 'managed-freellm-quota-contract',
+                                 'migration-042-recheck-required'
+                             )
                          )
                      )
                ) AS candidate
@@ -2246,19 +2254,19 @@ def register_free_revolver_provider_runtime(
                         "receiptCurrent": True,
                     })
                     continue
-                pricing_source = str(
-                    stored.get("pricing_source")
-                    or "provider-pricing-unreported-or-incomplete"
+                eligibility_source = str(
+                    stored.get("eligibility_source")
+                    or "managed-freellm-quota-contract"
                 )
-                if not bool(stored.get("free_verified")):
-                    pricing_source = "managed-freellm-zero-cost-quota-contract"
+                if not bool(stored.get("free_eligible")):
+                    eligibility_source = "managed-freellm-quota-contract"
                 try:
                     result = activate_model(
                         source_payload,
                         {
                             "modelId": model_id,
                             "displayName": str(stored.get("display_name") or model_id),
-                            "pricingSource": pricing_source,
+                            "eligibilitySource": eligibility_source,
                             "payloadSha256": str(stored.get("discovery_payload_sha256") or ""),
                         },
                         key,
@@ -2285,7 +2293,7 @@ def register_free_revolver_provider_runtime(
                         "responseModel": result.get("responseModel"),
                         "upstreamKeyless": result.get("upstreamKeyless"),
                         "canaryConfirmationCount": result.get("canaryConfirmationCount"),
-                        "canaryCostState": result.get("canaryCostState"),
+                        "providerCostState": result.get("providerCostState"),
                         "canaryLatencyMs": result.get("canaryLatencyMs"),
                         "runtimeIdentity": result.get("runtimeIdentity"),
                         "receiptId": result.get("receiptId"),
@@ -2339,7 +2347,7 @@ def register_free_revolver_provider_runtime(
                    SET disabled=NOT (
                            model.status='ready'
                            AND model.enabled=true
-                           AND model.free_verified=true
+                           AND model.free_eligible=true
                            AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
                            AND route.config->'runtimeIdentity'->>'imageDigest'=%s
                            AND route.config->'runtimeIdentity'->>'sourceRevisionVerified'='true'
@@ -2368,7 +2376,7 @@ def register_free_revolver_provider_runtime(
                        COUNT(*) FILTER (
                            WHERE model.status='ready'
                              AND model.enabled=true
-                             AND model.free_verified=true
+                             AND model.free_eligible=true
                              AND route.disabled=false
                              AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
                              AND route.config->'runtimeIdentity'->>'imageDigest'=%s
@@ -2557,14 +2565,14 @@ def register_free_revolver_provider_runtime(
         models = query(
             """SELECT id::text, upstream_model_id, litellm_alias
                FROM llm_revolver_provider_models
-               WHERE source_id=%s::uuid AND free_verified=true
+               WHERE source_id=%s::uuid AND free_eligible=true
                  AND litellm_alias IS NOT NULL
                ORDER BY display_name ASC LIMIT 100""",
             (source_id,),
         ) or []
         if not models:
             return jsonify({
-                "error": "Keine healthcheckfähigen Free-Routen vorhanden. Zuerst Discovery und Preisprüfung ausführen.",
+                "error": "Keine healthcheckfähigen Free-Routen vorhanden. Zuerst Discovery und Quotenprüfung ausführen.",
                 "blocker": "free_provider_no_recheckable_routes",
                 "nextAction": "discover_provider_models",
             }), 409
@@ -2683,11 +2691,11 @@ def register_free_revolver_provider_runtime(
                                    jsonb_set(
                                        jsonb_set(
                                            config,
-                                           '{pricingEvidence,canaryCostState}',
+                                           '{eligibilityEvidence,providerCostState}',
                                            COALESCE(to_jsonb(%s::text), 'null'::jsonb),
                                            true
                                        ),
-                                       '{pricingEvidence,canaryRequestId}',
+                                       '{eligibilityEvidence,canaryRequestId}',
                                        COALESCE(to_jsonb(%s::text), 'null'::jsonb),
                                        true
                                    )

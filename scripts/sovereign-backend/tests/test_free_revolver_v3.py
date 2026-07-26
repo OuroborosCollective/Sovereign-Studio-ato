@@ -28,25 +28,31 @@ def route(route_id: str, priority: int = 10) -> dict:
         "config": {
             "transport": "freellm",
             "billingCategory": "free",
-            "fundingMode": "verified_zero_cost",
+            "fundingMode": "provider_free_quota",
             "executionProfile": "free_single_agent",
-            "pricingVerified": True,
+            "pricingVerified": False,
+            "freeEligible": True,
+            "quotaContractVerified": True,
+            "userChargeCredits": 0,
             "canaryVerified": True,
+            "canaryConfirmationCount": 2,
             "capabilities": ["chat", "structured_output"],
         },
     }
 
 
-def test_only_direct_double_verified_freellm_routes_are_eligible() -> None:
+def test_only_direct_quota_and_double_canary_verified_freellm_routes_are_eligible() -> None:
     verified = route("verified")
     legacy_litellm = {**route("legacy"), "provider": "litellm", "runtime_kind": "litellm"}
     missing_canary = route("missing-canary")
     missing_canary["config"] = {**missing_canary["config"], "canaryVerified": False}
+    missing_quota = route("missing-quota")
+    missing_quota["config"] = {**missing_quota["config"], "quotaContractVerified": False}
     wrong_profile = route("wrong-profile")
     wrong_profile["config"] = {**wrong_profile["config"], "executionProfile": "paid_swarm"}
 
     eligible = eligible_free_routes(
-        [verified, legacy_litellm, missing_canary, wrong_profile],
+        [verified, legacy_litellm, missing_canary, missing_quota, wrong_profile],
         ["chat"],
     )
 

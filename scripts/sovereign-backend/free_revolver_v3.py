@@ -2,7 +2,7 @@
 
 Provider credentials, billing, authentication and route truth remain owned by
 the Sovereign/PostgreSQL direct-FreeLLM contract. This module only plans and
-executes verified free route magazines supplied by the caller.
+executes quota-eligible, canary-verified free route magazines supplied by the caller.
 """
 from __future__ import annotations
 
@@ -111,11 +111,15 @@ def eligible_free_routes(routes: Iterable[Mapping[str, Any]], capabilities: Iter
             continue
         if str(config.get("billingCategory") or config.get("billingClass") or "") != "free":
             continue
-        if str(config.get("fundingMode") or "") != "verified_zero_cost":
+        if str(config.get("fundingMode") or "") != "provider_free_quota":
             continue
         if str(config.get("executionProfile") or "") != "free_single_agent":
             continue
-        if not config.get("pricingVerified") or not config.get("canaryVerified"):
+        if not config.get("freeEligible") or not config.get("quotaContractVerified"):
+            continue
+        if not config.get("canaryVerified") or int(config.get("canaryConfirmationCount") or 0) < 2:
+            continue
+        if int(config.get("userChargeCredits") or 0) != 0:
             continue
         if not required.issubset(route_capabilities):
             continue
@@ -207,7 +211,7 @@ class Revolver:
         rid = request_id or str(uuid.uuid4())
         planned = plan_routes(routes, profile, rid)
         if not planned:
-            raise RevolverExhausted("no verified free route")
+            raise RevolverExhausted("no eligible free route")
         payload_base = {"messages": list(messages), "max_tokens": max(1, min(int(max_tokens), 32000)), "stream": False, "request_id": rid}
         attempts: list[RevolverAttempt] = []
         if profile.mode != "race":

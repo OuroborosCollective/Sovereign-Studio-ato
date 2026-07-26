@@ -164,7 +164,7 @@ def test_zero_cost_requires_complete_explicit_pricing() -> None:
     )
 
 
-def test_model_names_and_free_flags_never_activate_without_price_evidence() -> None:
+def test_model_names_and_free_flags_never_activate_without_eligibility_evidence() -> None:
     models = normalize_models_payload({
         "data": [
             {"id": "looks-free", "free": True},
@@ -176,12 +176,12 @@ def test_model_names_and_free_flags_never_activate_without_price_evidence() -> N
         ],
     })
     by_id = {model["modelId"]: model for model in models}
-    assert by_id["looks-free"]["freeVerified"] is False
-    assert by_id["verified-free"]["freeVerified"] is True
+    assert by_id["looks-free"]["freeEligible"] is False
+    assert by_id["verified-free"]["freeEligible"] is True
     assert by_id["verified-free"]["capabilities"] == ["chat", "json"]
 
 
-def test_managed_quota_contract_only_promotes_missing_price_fields() -> None:
+def test_managed_quota_contract_promotes_unreported_cost_without_price_claim() -> None:
     models = normalize_models_payload(
         {
             "data": [
@@ -194,15 +194,16 @@ def test_managed_quota_contract_only_promotes_missing_price_fields() -> None:
         managed_quota_contract=True,
     )
     by_id = {model["modelId"]: model for model in models}
-    assert by_id["unreported"]["freeVerified"] is True
-    assert by_id["incomplete"]["freeVerified"] is True
-    assert by_id["unreported"]["pricingSource"] == (
-        "managed-freellm-zero-cost-quota-contract"
+    assert by_id["unreported"]["freeEligible"] is True
+    assert by_id["incomplete"]["freeEligible"] is True
+    assert by_id["unreported"]["eligibilitySource"] == (
+        "managed-freellm-quota-contract"
     )
-    assert by_id["nonzero"]["freeVerified"] is False
-    assert by_id["nonzero"]["pricingSource"] == "provider-pricing-nonzero"
-    assert by_id["invalid"]["freeVerified"] is False
-    assert by_id["invalid"]["pricingSource"] == "provider-pricing-invalid"
+    assert by_id["unreported"]["providerCostCatalogState"] == "unreported"
+    assert by_id["nonzero"]["freeEligible"] is False
+    assert by_id["nonzero"]["eligibilitySource"] == "provider-pricing-nonzero"
+    assert by_id["invalid"]["freeEligible"] is False
+    assert by_id["invalid"]["eligibilitySource"] == "provider-pricing-invalid"
 
 
 def test_database_never_receives_raw_provider_keys() -> None:
@@ -259,6 +260,7 @@ def test_app_registers_provider_runtime_and_readiness_requires_migration() -> No
     assert "037_reenable_verified_direct_freellm_routes.sql" in app
     assert "038_reclassify_retryable_freellm_canary_failures.sql" in app
     assert "040_llm_route_scanner_free_quota_evidence.sql" in app
+    assert "042_separate_freellm_quota_from_provider_pricing.sql" in app
     assert "llm_revolver_provider_sources" in app
     provider_runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     ast.parse(provider_runtime)
@@ -325,7 +327,7 @@ def test_provider_recovery_and_key_rotation_are_fail_closed() -> None:
     assert "model_id=EXCLUDED.model_id" in runtime
 
 
-def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
+def test_quota_and_canary_evidence_is_independent_bounded_and_non_circular() -> None:
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
     route_runtime = (BACKEND / "free_revolver_runtime.py").read_text("utf-8")
     migration = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
@@ -343,9 +345,16 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert runtime.count('evidence.get("providerCostsUsd")') >= 2
     assert "canary_cost_state" in migration
     assert "pricing_verified_at" in migration
+    migration_42 = (BACKEND / "migrations" / "042_separate_freellm_quota_from_provider_pricing.sql").read_text("utf-8")
+    assert "provider_free_quota" in migration_42
+    assert "pricingVerified', false" in migration_42
+    assert "freellm_quota_contract_recheck_required" in migration_42
+    assert "free_eligible BOOLEAN NOT NULL DEFAULT false" in migration_42
+    assert "eligibility_source TEXT NOT NULL DEFAULT 'unverified'" in migration_42
+    assert "eligibility_verified_at TIMESTAMPTZ" in migration_42
     assert "last_discovered_at" in migration
-    assert "FREE_REVOLVER_PRICING_EVIDENCE_TTL_HOURS" in route_runtime
-    assert "provider_model.pricing_verified_at" in route_runtime
+    assert "FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS" in route_runtime
+    assert "provider_model.last_canary_at" in route_runtime
     assert "provider_session.trust_env = False" in runtime
     assert runtime.count("COALESCE(to_jsonb(%s::text), 'null'::jsonb)") >= 2
     contracts = (BACKEND / "free_revolver_provider_contracts.py").read_text("utf-8")
@@ -365,7 +374,7 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert '"keyFingerprintMatchesFile"' in runtime
     assert 'source.get("auth_mode") in {"bearer", "x-api-key"}' in runtime
     assert "managed_quota_contract=(" in runtime
-    assert "managed-freellm-zero-cost-quota-contract" in runtime
+    assert "managed-freellm-quota-contract" in runtime
     assert "hmac.compare_digest(expected, presented)" in runtime
     assert '"/api/internal/llm/freellm/providers"' in runtime
     assert '"/api/internal/llm/freellm/providers/<source_id>/discover"' in runtime
@@ -388,7 +397,17 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert "rawProviderResponseBody" not in runtime
     assert "protected, key = _read_managed_key(" in runtime
     assert "freellm_managed_key_unavailable" in runtime
-    assert "free_verified=true, pricing_source=%s" in runtime
+    assert "free_eligible=true, eligibility_source=%s" in runtime
+    assert "free_verified" not in runtime
+    assert "pricing_source" not in runtime
+    assert "pricing_verified_at" not in runtime
+    assert '"fundingMode": "provider_free_quota"' in runtime
+    assert '"providerPricingRequired": False' in runtime
+    assert '"pricingVerified": False' in runtime
+    assert '"freeEligible": True' in runtime
+    assert '"quotaContractVerified": True' in runtime
+    assert '"eligibilityEvidence": {' in runtime
+    assert '"pricingEvidence": {' not in runtime
     assert '"maxForegroundAgents": 1' in runtime
     assert '"maxBackgroundAgents": 0' in runtime
     assert "def _runtime_identity()" in runtime
@@ -396,6 +415,7 @@ def test_price_evidence_is_independent_bounded_and_non_circular() -> None:
     assert 'os.getenv("SOVEREIGN_IMAGE_DIGEST"' in runtime
     assert "def _canonical_sha256" in runtime
     assert '"freellm_revision_bound_receipt_required"' in runtime
+    assert '_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v2"' in runtime
     assert '"schemaVersion": _FREELLM_RECEIPT_SCHEMA' in runtime
     assert '"receiptSha256": receipt_sha256' in runtime
     assert '"readyReceipts": [' in runtime

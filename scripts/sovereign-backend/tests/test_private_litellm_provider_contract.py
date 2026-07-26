@@ -71,7 +71,7 @@ def test_live_chat_and_catalog_use_verified_direct_transports() -> None:
     assert "classify_direct_llm_failure(" in app
     assert "extract_direct_llm_evidence(" in app
     assert "free_route_revolver_exhausted" in app
-    assert "Keine preisverifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar" in app
+    assert "Keine policy-verifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar" in app
     assert "allow_redirects=False" in direct_runtime
     assert "session.trust_env = False" in direct_runtime
     assert "_MAX_RESPONSE_BYTES" in direct_runtime
@@ -146,10 +146,13 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert 'PREMIUM_CATEGORY: Final[str] = "premium"' in policy
     assert "STANDARD_MARKUP_MULTIPLIER" in policy
     assert "PREMIUM_MARKUP_MULTIPLIER" in policy
-    assert "free routes require verified zero provider prices" in policy
+    assert "free routes must not claim provider pricing verification" in policy
+    assert "free route eligibility is not verified" in policy
+    assert "free route quota contract is not verified" in policy
+    assert "free routes must charge zero user credits" in policy
     assert 'FREE_FUNDING_PROVIDER_QUOTA: Final[str] = "provider_free_quota"' in policy
     assert "normalize_funding_mode" in policy
-    assert "provider_free_quota routes require positive verified provider list prices" in policy
+    assert "paid routes require positive input and output prices" in policy
     assert "AGENTS_PROVIDER_MODEL" not in policy
     assert "AGENTS_LITELLM_ALIAS" not in policy
 
@@ -173,11 +176,12 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert '"fundingModes": []' in provider
     assert "free_routes_require_revolver_provider_onboarding" in provider
     assert "_require_paid_admin_category" in provider
-    assert "FREE_FUNDING_PROVIDER_QUOTA" in provider
+    assert "FREE_FUNDING_PROVIDER_QUOTA" not in provider
     assert '"/api/admin/llm/model-catalog"' in provider
     assert '"/api/admin/llm/model-catalog/attach"' in provider
     assert "litellm_pricing_not_eligible" in provider
-    assert "free_route_nonzero_or_unreported_cost" in provider
+    assert "free_route_nonzero_or_unreported_cost" not in provider
+    assert "Bezahlte Routen müssen provider_priced verwenden" in provider
 
     assert "provider_funded_delta=-amount" in app
     assert "providerBillingCategory" in ui

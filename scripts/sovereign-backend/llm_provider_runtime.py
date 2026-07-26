@@ -25,8 +25,6 @@ from openrouter_provider_runtime import activate_openrouter_provider
 from llm_cost_policy import (
     BillingPolicyError,
     FREE_CATEGORY,
-    FREE_FUNDING_PROVIDER_QUOTA,
-    FREE_FUNDING_VERIFIED_ZERO_COST,
     category_minimum_multiplier,
     normalize_billing_category,
     normalize_funding_mode,
@@ -74,18 +72,7 @@ PROVIDER_PRESETS = (
     {"id": "openai_compatible", "label": "Andere OpenAI-kompatible API", "apiBase": ""},
 )
 
-FUNDING_MODE_OPTIONS = (
-    {
-        "id": FREE_FUNDING_VERIFIED_ZERO_COST,
-        "label": "Verifizierte Providerkosten 0",
-        "description": "Legacy-Rollback: nur aktiv, wenn Legacy-LiteLLM Kosten von exakt 0 bestätigt.",
-    },
-    {
-        "id": FREE_FUNDING_PROVIDER_QUOTA,
-        "label": "Provider-Free-Kontingent",
-        "description": "Nutzerpreis 0; echte Provider-Listenpreise bleiben sichtbar, Kontingentstatus ist owner-bestätigt und canary-belegt.",
-    },
-)
+FUNDING_MODE_OPTIONS: tuple[dict[str, str], ...] = ()
 
 BILLING_CATEGORY_OPTIONS = (
     {
@@ -239,20 +226,16 @@ def _validate_category_pricing(
     *,
     category: str,
     model: dict[str, Any],
-    funding_mode: str = FREE_FUNDING_VERIFIED_ZERO_COST,
+    funding_mode: str = "provider_priced",
 ) -> None:
+    _require_paid_admin_category(category)
+    if normalize_funding_mode(category, funding_mode) != "provider_priced":
+        raise BillingPolicyError("Bezahlte Routen müssen provider_priced verwenden")
     if not model.get("pricingVerified"):
         raise BillingPolicyError("Legacy-LiteLLM hat für dieses Modell keine verifizierten Kosten geliefert")
-    normalized_funding = normalize_funding_mode(category, funding_mode)
     input_price = _non_negative_decimal(model.get("inputUsdPerMillion"))
     output_price = _non_negative_decimal(model.get("outputUsdPerMillion"))
-    if category == FREE_CATEGORY:
-        if normalized_funding == FREE_FUNDING_VERIFIED_ZERO_COST and not model.get("freeEligible"):
-            raise BillingPolicyError("Free mit verified_zero_cost ist nur bei exakt 0 bestätigten Providerkosten erlaubt")
-        if normalized_funding == FREE_FUNDING_PROVIDER_QUOTA:
-            if input_price is None or output_price is None or input_price <= 0 or output_price <= 0:
-                raise BillingPolicyError("Provider-Free-Kontingent benötigt positive verifizierte Listenpreise")
-    elif input_price is None or output_price is None or input_price <= 0 or output_price <= 0:
+    if input_price is None or output_price is None or input_price <= 0 or output_price <= 0:
         raise BillingPolicyError("Bezahlte Routen benötigen positive verifizierte Providerpreise")
 
 
@@ -513,17 +496,6 @@ def register_llm_provider_routes(
         except ValueError:
             return jsonify({"error": "Provider-Canary lieferte kein gültiges JSON"}), 502
         evidence = extract_litellm_evidence(canary_response, canary_payload)
-        if (
-            category == FREE_CATEGORY
-            and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
-            and evidence.get("providerCostUsd") not in (0, 0.0)
-        ):
-            return jsonify({
-                "error": "Free-Route wurde abgelehnt: verified_zero_cost wurde nicht bestätigt.",
-                "blocker": "free_route_nonzero_or_unreported_cost",
-                "providerCostUsd": evidence.get("providerCostUsd"),
-            }), 409
-
         display_name = str(body.get("displayName") or model_id).strip()[:120] or model_id
         output_price = Decimal(str(model["outputUsdPerMillion"] or 0))
         credits_per_unit = int(
@@ -1002,7 +974,7 @@ def register_llm_provider_routes(
                       route.disabled AS route_disabled,
                       COALESCE((route.config->>'pricingVerified')::boolean, false)
                           AS route_pricing_verified,
-                      COALESCE(route.config->>'fundingMode', 'verified_zero_cost') AS funding_mode
+                      COALESCE(route.config->>'fundingMode', 'provider_priced') AS funding_mode
                FROM llm_provider_deployments AS deployment
                JOIN llm_routes AS route ON route.id=deployment.route_id
                WHERE deployment.route_id=%s LIMIT 1""",
@@ -1154,6 +1126,10 @@ def register_llm_provider_routes(
                 return fail("provider_canary_empty_output", "Provider-Canary lieferte keine Modellantwort")
             evidence = extract_litellm_evidence(canary_response, canary_payload)
             category = normalize_billing_category(deployment.get("billing_category"))
+            try:
+                _require_paid_admin_category(category)
+            except BillingPolicyError as exc:
+                return fail("free_routes_require_revolver_provider_onboarding", str(exc), 409)
             multiplier = normalized_multiplier(category, deployment.get("markup_multiplier"))
             funding_mode = normalize_funding_mode(category, deployment.get("funding_mode"))
             catalog_model = catalog_model or _catalog_model_with_retry(alias)
@@ -1171,17 +1147,6 @@ def register_llm_provider_routes(
                 )
             except BillingPolicyError as exc:
                 return fail("litellm_pricing_not_eligible", str(exc), 409)
-            if (
-                category == FREE_CATEGORY
-                and funding_mode == FREE_FUNDING_VERIFIED_ZERO_COST
-                and evidence.get("providerCostUsd") not in (0, 0.0)
-            ):
-                return fail(
-                    "free_route_nonzero_or_unreported_cost",
-                    "Free-Route wurde abgelehnt: verified_zero_cost wurde nicht bestätigt",
-                    409,
-                )
-
             output_price = Decimal(str(catalog_model["outputUsdPerMillion"] or 0))
             credits_per_unit = int(
                 (output_price * Decimal(multiplier)).to_integral_value(rounding=ROUND_CEILING)
