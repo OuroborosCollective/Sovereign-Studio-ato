@@ -29,25 +29,6 @@ jobs:
             --output docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md \
             | tee /tmp/sovereign-corpus-result.json
 
-      - name: Record corpus evidence
-        run: |
-          test -s docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md')
-          content = path.read_text(encoding='utf-8')
-          print({
-              'begin_count': content.count('<!-- SOVEREIGN_FILE_BEGIN '),
-              'end_count': content.count('<!-- SOVEREIGN_FILE_END -->'),
-              'complete_marker': '"complete": true' in content,
-              'contains_null': '\x00' in content,
-              'bytes': path.stat().st_size,
-          })
-          PY
-          sha256sum docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
-          wc -c docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
-
       - name: Remove temporary generator surfaces
         run: |
           git checkout origin/main -- .github/workflows/zz.yml
