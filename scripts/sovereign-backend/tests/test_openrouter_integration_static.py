@@ -84,7 +84,9 @@ def test_admin_price_contract_separates_provider_cost_from_customer_sale() -> No
     assert '"customerInputUsdPerMillion"' in app
     assert '"customerOutputUsdPerMillion"' in app
     assert '"grossMarginPercent"' in app
-    assert '"priceDisplayContract": "provider-cost-and-customer-sale"' in app
+    assert '"priceDisplayContract": (' in app
+    assert '"free-quota-no-provider-price"' in app
+    assert '"provider-cost-and-customer-sale"' in app
     assert "SET billing_category=%s," in app
     assert "markup_multiplier=%s," in app
     assert "WHERE route_id=%s" in app
