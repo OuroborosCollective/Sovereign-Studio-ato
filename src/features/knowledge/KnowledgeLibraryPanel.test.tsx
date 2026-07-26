@@ -5,6 +5,7 @@ import { KnowledgeLibraryPanel } from './KnowledgeLibraryPanel';
 const api = vi.hoisted(() => ({
   deleteKnowledgeSource: vi.fn(),
   importKnowledgeUrl: vi.fn(),
+  importProgrammingLanguageCatalog: vi.fn(),
   listKnowledgeSources: vi.fn(),
   searchKnowledge: vi.fn(),
   uploadKnowledgeFile: vi.fn(),
@@ -14,9 +15,11 @@ const api = vi.hoisted(() => ({
 vi.mock('./knowledgeApi', () => ({
   deleteKnowledgeSource: api.deleteKnowledgeSource,
   importKnowledgeUrl: api.importKnowledgeUrl,
+  importProgrammingLanguageCatalog: api.importProgrammingLanguageCatalog,
   listKnowledgeSources: api.listKnowledgeSources,
   searchKnowledge: api.searchKnowledge,
   uploadKnowledgeFile: api.uploadKnowledgeFile,
+  PROGRAMMING_LANGUAGE_CATALOG_REVISION: 'af9c4489e9151c5598622950631def2d4d561e94',
 }));
 
 vi.mock('../inference/areInferenceApi', () => ({
@@ -27,6 +30,27 @@ describe('KnowledgeLibraryPanel Markdown upload', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.listKnowledgeSources.mockResolvedValue([]);
+    api.importProgrammingLanguageCatalog.mockResolvedValue({
+      duplicate: false,
+      blocker: null,
+      catalogRevision: 'af9c4489e9151c5598622950631def2d4d561e94',
+      source: {
+        id: 'programming-language-catalog',
+        title: 'ProgrammiersprachenMD · kuratierter Sprachkatalog',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/OuroborosCollective/ProgrammiersprachenMD',
+        status: 'ready',
+        blocker: null,
+        chunkCount: 44,
+        metadata: {
+          languageCount: 22,
+          bugfixObservationCount: 4,
+          originRevision: 'af9c4489e9151c5598622950631def2d4d561e94',
+        },
+        createdAt: '2026-07-26T00:00:00Z',
+        updatedAt: '2026-07-26T00:00:00Z',
+      },
+    });
     api.uploadKnowledgeFile.mockResolvedValue({
       duplicate: false,
       blocker: null,
@@ -43,6 +67,16 @@ describe('KnowledgeLibraryPanel Markdown upload', () => {
         updatedAt: '2026-07-12T00:00:00Z',
       },
     });
+  });
+
+  it('imports the pinned historical programming-language catalog from the dedicated action', async () => {
+    render(<KnowledgeLibraryPanel onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sprachkatalog übernehmen' }));
+
+    await waitFor(() => expect(api.importProgrammingLanguageCatalog).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Gespeichert: ProgrammiersprachenMD · kuratierter Sprachkatalog')).toBeInTheDocument();
+    expect(screen.getByText(/af9c4489e915/)).toBeInTheDocument();
   });
 
   it('offers all supported Markdown extensions in the real file input', async () => {

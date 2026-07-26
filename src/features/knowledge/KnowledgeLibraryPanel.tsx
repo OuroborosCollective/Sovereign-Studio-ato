@@ -3,9 +3,11 @@ import { repairMissingKnowledgeEmbeddings } from '../inference/areInferenceApi';
 import {
   deleteKnowledgeSource,
   importKnowledgeUrl,
+  importProgrammingLanguageCatalog,
   listKnowledgeSources,
   searchKnowledge,
   uploadKnowledgeFile,
+  PROGRAMMING_LANGUAGE_CATALOG_REVISION,
   type KnowledgeSearchResult,
   type KnowledgeSource,
 } from './knowledgeApi';
@@ -52,7 +54,12 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
       <p style={{ color:C.sub, fontSize:12 }}>Getrennt von Erfahrungswissen. SHA-256 verhindert Duplikate; pgvector macht Inhalte semantisch auffindbar.</p>
       {message && <p role={messageKind==='error'?'alert':'status'} aria-live="polite" style={{ border:`1px solid ${messageKind==='error'?C.danger:C.border}`, padding:9, borderRadius:8, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>{message}</p>}
 
-      <Box title="URL importieren">
+      <Box title="Katalog und URL importieren">
+        <div style={{ border:`1px solid ${C.border}`, borderRadius:8, padding:10, marginBottom:10 }}>
+          <strong style={{ fontSize:12 }}>ProgrammiersprachenMD ausschlachten</strong>
+          <p style={{ color:C.sub, fontSize:10, margin:'5px 0 8px' }}>Importiert den kuratierten Sprachkatalog vom fest gepinnten Commit <code>{PROGRAMMING_LANGUAGE_CATALOG_REVISION.slice(0,12)}</code>. Historische Bugfix-Guides bleiben unbestätigte Referenzkandidaten.</p>
+          <button type="button" disabled={busy} style={{ ...control, width:'100%', background:C.accent, color:C.bg }} onClick={()=>void run(async()=>finishImport(await importProgrammingLanguageCatalog()))}>Sprachkatalog übernehmen</button>
+        </div>
         <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="GitHub- oder Wikipedia-URL" style={{ ...control, width:'100%', boxSizing:'border-box' }}/>
         <button type="button" disabled={busy||!url.trim()} style={{ ...control, width:'100%', marginTop:8, background:C.accent, color:C.bg }} onClick={()=>void run(async()=>{ const r=await importKnowledgeUrl(url.trim()); setUrl(''); await finishImport(r); })}>Importieren</button>
         <label style={{ ...control, display:'flex', alignItems:'center', justifyContent:'center', marginTop:8 }}>
@@ -68,7 +75,7 @@ export function KnowledgeLibraryPanel({ onClose }: { onClose: () => void }) {
 
       <Box title={`Quellen (${sources.length})`}>
         {sources.some(source=>source.status==='partial')&&<button type="button" disabled={busy} style={{ ...control, width:'100%', marginBottom:8 }} onClick={()=>void run(async()=>{ const repair=await repairMissingKnowledgeEmbeddings(25); setStatusMessage(`${repair.repaired} Vektoren repariert${repair.remaining>0?`, ${repair.remaining} noch offen`:''}.`); await load(); })}>Fehlende Vektoren reparieren</button>}
-        {sources.map(source=><div key={source.id} style={{ display:'flex', justifyContent:'space-between', gap:8, borderTop:`1px solid ${C.border}`, padding:'9px 0' }}><div><strong style={{ fontSize:12 }}>{source.title}</strong><div style={{ color:C.sub, fontSize:10 }}>{source.sourceType} · {source.status} · {source.chunkCount} Blöcke</div>{source.blocker&&<div style={{ color:'#d29922', fontSize:9 }}>{source.blocker}</div>}</div><button type="button" disabled={busy} style={{ ...control, color:C.danger }} onClick={()=>void run(async()=>{ await deleteKnowledgeSource(source.id); await load(); })}>Löschen</button></div>)}
+        {sources.map(source=>{ const languageCount=Number(source.metadata?.languageCount||0); const bugfixCount=Number(source.metadata?.bugfixObservationCount||0); const revision=String(source.metadata?.originRevision||''); return <div key={source.id} style={{ display:'flex', justifyContent:'space-between', gap:8, borderTop:`1px solid ${C.border}`, padding:'9px 0' }}><div><strong style={{ fontSize:12 }}>{source.title}</strong><div style={{ color:C.sub, fontSize:10 }}>{source.sourceType} · {source.status} · {source.chunkCount} Blöcke</div>{languageCount>0&&<div style={{ color:C.accent, fontSize:9 }}>{languageCount} Sprachprofile · {bugfixCount} unbestätigte Bugfix-Beobachtungen{revision?` · ${revision.slice(0,12)}`:''}</div>}{source.blocker&&<div style={{ color:'#d29922', fontSize:9 }}>{source.blocker}</div>}</div><button type="button" disabled={busy} style={{ ...control, color:C.danger }} onClick={()=>void run(async()=>{ await deleteKnowledgeSource(source.id); await load(); })}>Löschen</button></div>; })}
         {!sources.length&&<p style={{ color:C.sub, fontSize:12 }}>Noch keine Quellen.</p>}
       </Box>
     </section>

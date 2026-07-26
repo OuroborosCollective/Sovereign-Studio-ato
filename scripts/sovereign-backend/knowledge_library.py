@@ -23,6 +23,18 @@ import psycopg2.extras
 import requests
 
 from document_ingestion import extract_uploaded_document, supported_office_extensions
+from programming_language_catalog import (
+    PROGRAMMING_LANGUAGE_CATALOG_INDEX,
+    PROGRAMMING_LANGUAGE_CATALOG_OWNER,
+    PROGRAMMING_LANGUAGE_CATALOG_REPOSITORY,
+    PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+    PROGRAMMING_LANGUAGE_CATALOG_ROOT,
+    PROGRAMMING_LANGUAGE_CATALOG_TITLE,
+    normalize_programming_language_profiles,
+    programming_language_catalog_metadata,
+    programming_language_catalog_source_url,
+    render_programming_language_catalog,
+)
 from r2_storage import (
     MAX_KNOWLEDGE_BYTES,
     MAX_PDF_KNOWLEDGE_BYTES,
@@ -436,6 +448,116 @@ def _github_document(url: str) -> KnowledgeDocument:
             "treeSha": tree.get("sha") if isinstance(tree, dict) else None,
             "truncated": len(imported_paths) >= MAX_GITHUB_FILES,
         },
+    )
+
+
+def _programming_language_catalog_file(
+    path: str,
+    *,
+    auth_state: dict[str, bool],
+) -> str:
+    payload = _github_json(
+        "/repos/"
+        f"{quote(PROGRAMMING_LANGUAGE_CATALOG_OWNER)}/"
+        f"{quote(PROGRAMMING_LANGUAGE_CATALOG_REPOSITORY)}/contents/"
+        f"{quote(path, safe='/')}?ref={quote(PROGRAMMING_LANGUAGE_CATALOG_REVISION)}",
+        auth_state=auth_state,
+    )
+    if not isinstance(payload, dict) or payload.get("type") != "file":
+        raise ValueError(f"Programming-language catalog path is not a file: {path}")
+    content = _decode_github_content(payload).strip()
+    if not content:
+        raise ValueError(f"Programming-language catalog path is empty: {path}")
+    return content
+
+
+def programming_language_catalog_document() -> KnowledgeDocument:
+    """Fetch the exact historical catalog revision and preserve source identity."""
+    auth_state = {"authenticated": False}
+    repository_path = (
+        "/repos/"
+        f"{quote(PROGRAMMING_LANGUAGE_CATALOG_OWNER)}/"
+        f"{quote(PROGRAMMING_LANGUAGE_CATALOG_REPOSITORY)}"
+    )
+    commit_payload = _github_json(
+        f"{repository_path}/commits/{quote(PROGRAMMING_LANGUAGE_CATALOG_REVISION)}",
+        auth_state=auth_state,
+    )
+    resolved_revision = str(commit_payload.get("sha") or "") if isinstance(commit_payload, dict) else ""
+    if resolved_revision != PROGRAMMING_LANGUAGE_CATALOG_REVISION:
+        raise ValueError("Programming-language catalog revision identity mismatch")
+    tree_sha = str(
+        (commit_payload.get("commit") or {}).get("tree", {}).get("sha") or ""
+    )
+    if not re.fullmatch(r"[0-9a-f]{40}", tree_sha):
+        raise ValueError("Programming-language catalog commit has no valid tree identity")
+
+    tree = _github_json(
+        f"{repository_path}/git/trees/{quote(tree_sha)}?recursive=1",
+        auth_state=auth_state,
+    )
+    if not isinstance(tree, dict) or not isinstance(tree.get("tree"), list):
+        raise ValueError("Programming-language catalog tree response is invalid")
+    if tree.get("truncated"):
+        raise ValueError("Programming-language catalog tree is truncated; import stopped")
+    available_paths = {
+        str(entry.get("path") or "")
+        for entry in tree["tree"]
+        if isinstance(entry, dict) and entry.get("type") == "blob"
+    }
+    if PROGRAMMING_LANGUAGE_CATALOG_INDEX not in available_paths:
+        raise ValueError("Programming-language catalog index is missing at pinned revision")
+
+    try:
+        index_payload = json.loads(
+            _programming_language_catalog_file(
+                PROGRAMMING_LANGUAGE_CATALOG_INDEX,
+                auth_state=auth_state,
+            )
+        )
+    except json.JSONDecodeError as exc:
+        raise ValueError("Programming-language catalog index is not valid JSON") from exc
+    profiles = normalize_programming_language_profiles(index_payload)
+
+    imported_paths = [PROGRAMMING_LANGUAGE_CATALOG_INDEX]
+    language_markdown: dict[str, str] = {}
+    bugfix_markdown: dict[str, str] = {}
+    for profile in profiles:
+        slug = str(profile["slug"])
+        language_path = f"{PROGRAMMING_LANGUAGE_CATALOG_ROOT}/languages/{slug}.md"
+        if language_path in available_paths:
+            language_markdown[slug] = _programming_language_catalog_file(
+                language_path,
+                auth_state=auth_state,
+            )
+            imported_paths.append(language_path)
+
+        bugfix_path = f"{PROGRAMMING_LANGUAGE_CATALOG_ROOT}/bugfixes/{slug}.md"
+        if bugfix_path in available_paths:
+            bugfix_markdown[slug] = _programming_language_catalog_file(
+                bugfix_path,
+                auth_state=auth_state,
+            )
+            imported_paths.append(bugfix_path)
+
+    rendered = render_programming_language_catalog(
+        profiles,
+        language_markdown,
+        bugfix_markdown,
+    )[:MAX_SOURCE_TEXT_CHARS]
+    metadata = programming_language_catalog_metadata(
+        profiles,
+        tree_sha=tree_sha,
+        imported_paths=sorted(imported_paths),
+        bugfix_slugs=sorted(bugfix_markdown),
+    )
+    metadata["commitSha"] = resolved_revision
+    return KnowledgeDocument(
+        source_type="github",
+        title=PROGRAMMING_LANGUAGE_CATALOG_TITLE,
+        text=rendered,
+        source_url=programming_language_catalog_source_url(),
+        metadata=metadata,
     )
 
 
@@ -1150,6 +1272,54 @@ def register_knowledge_routes(
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)[:500]}), 500
 
+    @app.route("/api/knowledge/catalogs/programming-languages/import", methods=["POST"])
+    @require_session
+    def knowledge_programming_languages_import():
+        source_url = programming_language_catalog_source_url()
+        try:
+            document = programming_language_catalog_document()
+            conn = get_connection()
+            try:
+                result = _insert_document(conn, request.session_user_id, document)
+            finally:
+                _close(conn)
+            if callable(audit_event):
+                try:
+                    audit_event(
+                        "knowledge:programming_language_catalog_imported",
+                        str(result.get("source", {}).get("id") or "catalog"),
+                        {
+                            "result": "duplicate" if result.get("duplicate") else "stored",
+                            "originRevision": PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+                            "contentSha256": result.get("contentSha256"),
+                        },
+                    )
+                except Exception:
+                    pass
+            return jsonify({
+                "ok": True,
+                **result,
+                "catalogRevision": PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+            }), 200 if result["duplicate"] else 201
+        except GitHubKnowledgeAccessError as exc:
+            correlation_id, audit_recorded = _record_github_import_failure(
+                audit_event,
+                source_url,
+                exc,
+            )
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+                "blocker": exc.blocker,
+                "githubHttpStatus": exc.github_status,
+                "correlationId": correlation_id,
+                "auditRecorded": audit_recorded,
+            }), exc.response_status
+        except (ValueError, RuntimeError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+
     @app.route("/api/knowledge/sources/upload-ticket", methods=["POST"])
     @require_session
     def knowledge_source_upload_ticket():
@@ -1390,6 +1560,55 @@ def register_admin_knowledge_routes(
             correlation_id, audit_recorded = _record_github_import_failure(
                 audit_event,
                 str(body.get("url") or ""),
+                exc,
+            )
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+                "blocker": exc.blocker,
+                "githubHttpStatus": exc.github_status,
+                "correlationId": correlation_id,
+                "auditRecorded": audit_recorded,
+            }), exc.response_status
+        except (ValueError, RuntimeError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+
+    @app.route("/api/admin/knowledge/catalogs/programming-languages/import", methods=["POST"])
+    @require_admin
+    def admin_knowledge_programming_languages_import():
+        source_url = programming_language_catalog_source_url()
+        try:
+            document = programming_language_catalog_document()
+            user_id = admin_user_id()
+            conn = get_connection()
+            try:
+                result = _insert_document(conn, user_id, document)
+            finally:
+                _close(conn)
+            if callable(audit_event):
+                try:
+                    audit_event(
+                        "knowledge:programming_language_catalog_imported",
+                        str(result.get("source", {}).get("id") or "catalog"),
+                        {
+                            "result": "duplicate" if result.get("duplicate") else "stored",
+                            "originRevision": PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+                            "contentSha256": result.get("contentSha256"),
+                        },
+                    )
+                except Exception:
+                    pass
+            return jsonify({
+                "ok": True,
+                **result,
+                "catalogRevision": PROGRAMMING_LANGUAGE_CATALOG_REVISION,
+            }), 200 if result["duplicate"] else 201
+        except GitHubKnowledgeAccessError as exc:
+            correlation_id, audit_recorded = _record_github_import_failure(
+                audit_event,
+                source_url,
                 exc,
             )
             return jsonify({
