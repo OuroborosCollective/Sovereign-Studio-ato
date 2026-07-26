@@ -1057,12 +1057,31 @@ def patchmon_fleet_bootstrap_apply(
 
 def _patchmon_workflow_green(payload: Any) -> bool:
     evidence = payload if isinstance(payload, dict) else {}
-    for key in ("checksGreen", "checks_green", "allChecksGreen", "all_checks_green", "relevantChecksGreenClaimed"):
-        if evidence.get(key) is True:
-            return True
-    checks = evidence.get("checks") if isinstance(evidence.get("checks"), list) else []
+    containers = [evidence]
+    nested_checks = evidence.get("checks")
+    if isinstance(nested_checks, dict):
+        containers.append(nested_checks)
+
+    for container in containers:
+        for key in (
+            "checksGreen",
+            "checks_green",
+            "allChecksGreen",
+            "all_checks_green",
+            "relevantChecksGreenClaimed",
+        ):
+            if container.get(key) is True:
+                return True
+
+    checks: list[Any] = []
+    for container in containers:
+        candidate = container.get("checks")
+        if isinstance(candidate, list):
+            checks = candidate
+            break
     if not checks:
         return False
+
     allowed = {"success", "successful", "neutral", "skipped"}
     conclusions = []
     for item in checks:

@@ -5,6 +5,7 @@ const API_BASE = (
 
 export const MAX_KNOWLEDGE_UPLOAD_BYTES = 12 * 1024 * 1024;
 export const MAX_PDF_UPLOAD_BYTES = 33 * 1024 * 1024;
+export const PROGRAMMING_LANGUAGE_CATALOG_REVISION = 'af9c4489e9151c5598622950631def2d4d561e94';
 
 export type KnowledgeSourceType = 'github' | 'wikipedia' | 'pdf' | 'markdown' | 'text' | 'code';
 export type KnowledgeUploadStatus = 'preparing' | 'uploading' | 'verifying' | 'processing' | 'completed' | 'blocked';
@@ -168,6 +169,21 @@ export async function importKnowledgeUrl(url: string, title?: string): Promise<{
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, title }),
+  });
+  return parse(response);
+}
+
+export async function importProgrammingLanguageCatalog(): Promise<{
+  duplicate: boolean;
+  source: KnowledgeSource;
+  blocker?: string | null;
+  catalogRevision: string;
+}> {
+  const response = await fetch(`${API_BASE}/api/knowledge/catalogs/programming-languages/import`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
   });
   return parse(response);
 }
