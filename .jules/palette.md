@@ -12,7 +12,7 @@
 
 ## 2025-07-19 - [Accessible Input Association in Provider Card Lists]
 **Learning:** In dynamically generated card lists (such as API keys or settings lists) where inputs are wrapped inside custom containers without visible labels next to them, screen readers fail to associate the fields with their parent providers. Relying on visual context alone causes inputs to have blank accessible names.
-**Action:** Always provide an explicit, programmatically constructible `aria-label` attribute (e.g. `aria-label={`${provider.name} API-Key`}`) on credentials or technical fields rendered inside custom grid/card rows.
+**Action:** Always provide an explicit, programmatically constructible `aria-label` attribute (e.g. `aria-label={`${provider.name} API-Key`}`}) on credentials or technical fields rendered inside custom grid/card rows.
 
 ## 2025-07-20 - [Hover Tooltips for Truncated Paths]
 **Learning:** In sidebar navigators where workspace files or repository structures are listed, long paths and deeply-nested file names are often visually truncated (`text-overflow: ellipsis`) to fit narrow column views. This leaves users guessing or clicking through to find the correct file.
@@ -29,3 +29,7 @@
 ## 2025-07-23 - [Interactive vs. Informative Inline Badges]
 **Learning:** Conversational event logs and stream cards often display inline file paths. When these are interactive (i.e. click-to-open), they benefit from both descriptive visual 'title' hover tooltips and clear 'aria-label' attributes that convey the action (e.g., 'Repo Datei öffnen: path'). If they are merely static/informative, hover 'title' should default to the full path and any interactive actions should be removed to prevent confusing screen reader announcement states.
 **Action:** Always condition 'aria-label' and 'title' attributes in inline custom badge components on the presence of click handler callbacks to cleanly distinguish between active elements and static information tags.
+
+## 2025-07-24 - [Accessible Hover and State-Dependent Discovery for Inline Sub-Cards]
+**Learning:** Complex sub-cards (such as changelog previews, repair sheets, and workbench status cards) often render context-sensitive action items (such as copying content, applying a mission, or opening deep-links). Sighted and keyboard-navigated users require clear visual cues on action boundaries, and screen readers benefit from descriptive action-oriented `aria-label` and `title` attributes that update based on active/blocked/pressed states.
+**Action:** For interactive buttons within secondary workspace sheets and cards, always pair clear, detailed `title` tooltips with stateful, dynamic descriptive accessible names (e.g., using ternary expressions matching active/disabled states) to prevent confusion.

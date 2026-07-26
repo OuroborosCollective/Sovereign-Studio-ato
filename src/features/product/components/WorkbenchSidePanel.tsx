@@ -107,6 +107,8 @@ export function WorkbenchSidePanel({
               <button
                 type="button"
                 onClick={() => onOpenDraftPr(slot.items[0])}
+                aria-label={`Draft PR öffnen: ${slot.items[0]}`}
+                title={`Draft PR öffnen: ${slot.items[0]}`}
                 style={{
                   marginTop: 8,
                   width: "100%",
@@ -130,6 +132,8 @@ export function WorkbenchSidePanel({
         type="button"
         onClick={onToggleInspector}
         aria-pressed={showInspector}
+        aria-label={showInspector ? "Inspector schließen" : "Inspector öffnen (intern)"}
+        title={showInspector ? "Inspector schließen" : "Inspector öffnen (intern)"}
         style={{
           marginTop: 4,
           padding: "8px 10px",

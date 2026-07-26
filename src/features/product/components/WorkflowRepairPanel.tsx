@@ -33,6 +33,16 @@ export function WorkflowRepairPanel({ plan, onUseMission }: WorkflowRepairPanelP
           disabled={plan.blocked}
           onClick={() => onUseMission(plan.mission)}
           type="button"
+          aria-label={
+            plan.blocked
+              ? "Reparaturauftrag blockiert"
+              : "Reparaturauftrag in den Builder übernehmen"
+          }
+          title={
+            plan.blocked
+              ? "Reparaturauftrag blockiert"
+              : "Reparaturauftrag in den Builder übernehmen"
+          }
         >
           Use Repair Mission in Builder
         </button>
