@@ -240,6 +240,7 @@ def test_normal_user_without_purchase_is_still_blocked_before_debit() -> None:
 
 
 def test_paid_entitlement_runtime_mirrors_remain_byte_equal() -> None:
+    # Deployment mirrors are part of the production entitlement contract.
     mirror_pairs = [
         (
             BACKEND / "paid_execution_entitlement.py",
