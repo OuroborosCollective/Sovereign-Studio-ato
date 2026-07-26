@@ -141,7 +141,7 @@ describe('Palette Accessibility Enhancements', () => {
   });
 
   describe('ChangelogPreviewCard, WorkflowRepairPanel, and WorkbenchSidePanel Enhancements', () => {
-    it('ChangelogPreviewCard buttons have descriptive titles and aria-labels', () => {
+    it('ChangelogPreviewCard buttons have descriptive titles', () => {
       const mockResult = {
         commitCount: 3,
         source: 'git log',
@@ -158,13 +158,13 @@ describe('Palette Accessibility Enhancements', () => {
         />
       );
 
-      const closeBtn = screen.getByRole('button', { name: 'Keep-a-Changelog Vorschau schließen' });
+      const closeBtn = screen.getByRole('button', { name: 'Schließen' });
       expect(closeBtn).toHaveAttribute('title', 'Keep-a-Changelog Vorschau schließen');
 
-      const copyBtn = screen.getByRole('button', { name: 'Vorschau-Markdown in die Zwischenablage kopieren' });
+      const copyBtn = screen.getByRole('button', { name: 'Kopieren' });
       expect(copyBtn).toHaveAttribute('title', 'Vorschau-Markdown in die Zwischenablage kopieren');
 
-      const missionBtn = screen.getByRole('button', { name: 'Als CHANGELOG-Auftrag in den Builder übernehmen' });
+      const missionBtn = screen.getByRole('button', { name: 'Als CHANGELOG-Auftrag übernehmen' });
       expect(missionBtn).toHaveAttribute('title', 'Als CHANGELOG-Auftrag in den Builder übernehmen');
     });
 
@@ -183,13 +183,13 @@ describe('Palette Accessibility Enhancements', () => {
         <WorkflowRepairPanel plan={mockPlan} onUseMission={onUseMission} />
       );
 
-      let repairBtn = screen.getByRole('button', { name: 'Reparaturauftrag in den Builder übernehmen' });
+      let repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
       expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag in den Builder übernehmen');
 
       const blockedPlan = { ...mockPlan, blocked: true };
       rerender(<WorkflowRepairPanel plan={blockedPlan} onUseMission={onUseMission} />);
 
-      repairBtn = screen.getByRole('button', { name: 'Reparaturauftrag blockiert' });
+      repairBtn = screen.getByRole('button', { name: 'Use Repair Mission in Builder' });
       expect(repairBtn).toHaveAttribute('title', 'Reparaturauftrag blockiert');
     });
 

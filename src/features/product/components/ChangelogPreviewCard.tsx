@@ -18,7 +18,6 @@ export function ChangelogPreviewCard({ result, onClose, onUseAsMission }: Change
           type="button"
           className="px-2 py-1 text-xs"
           onClick={onClose}
-          aria-label="Keep-a-Changelog Vorschau schließen"
           title="Keep-a-Changelog Vorschau schließen"
         >
           Schließen
@@ -33,7 +32,6 @@ export function ChangelogPreviewCard({ result, onClose, onUseAsMission }: Change
           type="button"
           className="rounded-md border px-3 py-2 text-xs"
           onClick={() => void copy()}
-          aria-label="Vorschau-Markdown in die Zwischenablage kopieren"
           title="Vorschau-Markdown in die Zwischenablage kopieren"
         >
           Kopieren
@@ -42,7 +40,6 @@ export function ChangelogPreviewCard({ result, onClose, onUseAsMission }: Change
           type="button"
           className="rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground"
           onClick={() => onUseAsMission(result.markdown)}
-          aria-label="Als CHANGELOG-Auftrag in den Builder übernehmen"
           title="Als CHANGELOG-Auftrag in den Builder übernehmen"
         >
           Als CHANGELOG-Auftrag übernehmen
