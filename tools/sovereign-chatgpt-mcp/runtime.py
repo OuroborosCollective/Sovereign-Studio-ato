@@ -16,6 +16,7 @@ from typing import Any
 
 import requests
 
+import continuity
 from policy import (
     BLOCKED_PARTS,
     MAX_FILE_BYTES,
@@ -450,7 +451,7 @@ class OperatorRuntime:
         return result
 
     def _changed_files(self, repo: Path) -> list[str]:
-        result = self._run(["git", "status", "--porcelain"], cwd=repo)
+        result = self._run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=repo)
         files: list[str] = []
         for line in result["stdout"].splitlines():
             if len(line) >= 4:
@@ -463,6 +464,22 @@ class OperatorRuntime:
     @staticmethod
     def _has_successful_check(checks: dict[str, Any], prefix: str) -> bool:
         return any(key.startswith(prefix) and bool(value.get("ok")) for key, value in checks.items() if isinstance(value, dict))
+
+    def validate_continuity_completion(self, workspace_id: str) -> dict[str, Any]:
+        repo = self._repo(workspace_id)
+        changed = self._changed_files(repo)
+        if not changed:
+            raise RuntimeError("CONTINUITY_COMPLETION_REQUIRES_CHANGED_PATHS")
+        head = self._run(["git", "rev-parse", "HEAD"], cwd=repo)
+        if not head["ok"]:
+            raise RuntimeError("CONTINUITY_BASELINE_REVISION_UNAVAILABLE")
+        result = continuity.validate_workspace_completion(
+            repo,
+            changed,
+            baseline_revision=head["stdout"].strip().lower(),
+        )
+        self._record_check(workspace_id, "continuity:completion", result)
+        return result
 
     def sync_workspace_to_pr_head(
         self,
@@ -666,6 +683,7 @@ class OperatorRuntime:
         changed = self._changed_files(repo)
         if not changed:
             raise ValueError("Keine Änderungen vorhanden")
+        continuity_result = self.validate_continuity_completion(workspace_id)
 
         owner = self.config.repository.split("/", 1)[0]
         headers = {
@@ -789,4 +807,5 @@ class OperatorRuntime:
             "changed_files": changed,
             "checks": metadata.get("checks", {}),
             "remote_validation": metadata.get("remote_validation", {"required": False}),
+            "continuity": continuity_result,
         }

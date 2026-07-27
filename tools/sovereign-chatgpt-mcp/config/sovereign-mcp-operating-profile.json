@@ -1,8 +1,8 @@
 {
   "schemaVersion": "sovereign.mcp-operating-profile.v1",
   "profileId": "sovereign-mcp-optimal-operation",
-  "profileVersion": "1.0.0",
-  "purpose": "Persist and technically enforce mission-first, contract-bound, evidence-first operation across ChatGPT sessions and MCP revisions.",
+  "profileVersion": "1.1.0",
+  "purpose": "Persist and technically enforce continuity-read, mission-first, contract-bound and evidence-first operation across ChatGPT sessions and MCP revisions.",
   "enforcementMode": "fail-closed",
   "naturalLanguageBoundary": {
     "onlineUnderstanding": "llm-only",
@@ -33,6 +33,7 @@
       "release or rollback"
     ],
     "sequence": [
+      "read and bind the current Sovereign continuity policy, context and ledger",
       "inventory live tool contracts",
       "map mission to structured capabilities, allowed effects and required evidence",
       "select the smallest eligible tool set",
@@ -59,6 +60,8 @@
       "mcp_toolchain_compile",
       "mcp_toolchain_validate",
       "mcp_toolchain_next_step",
+      "sovereign_continuity_context_read",
+      "sovereign_continuity_status",
       "sovereign_operating_profile_status",
       "sovereign_mission_preflight"
     ],
@@ -67,6 +70,7 @@
       "explicit output schema",
       "declared effect class",
       "validated single-tool contract chain",
+      "current continuity policy, context and ledger hashes",
       "non-secret invocation arguments"
     ],
     "argumentRules": {
@@ -86,6 +90,12 @@
       "immutable image digest",
       "deployment readback",
       "runtime protocol canary"
+    ],
+    "continuityRequires": [
+      "current context read before every mutable MCP action",
+      "append-only ledger update before repository finalization",
+      "N+1 identity binding remains canonical",
+      "raw chat transcripts and secrets are not persisted"
     ],
     "learningRequires": [
       "proven fix or integration",
@@ -123,7 +133,20 @@
     "authoritativeProfilePath": "tools/sovereign-chatgpt-mcp/config/sovereign-mcp-operating-profile.json",
     "skillPath": "tools/sovereign-chatgpt-mcp/skills/sovereign-mcp-optimal-operation/SKILL.md",
     "handoffPath": "docs/SOVEREIGN_MCP_OPERATING_PROFILE_HANDOFF.md",
+    "continuityPolicyPath": "tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json",
+    "continuityContextPath": "docs/sovereign-continuity/CONTEXT.md",
+    "continuityLedgerPath": "docs/sovereign-continuity/LEDGER.jsonl",
     "runtimeStatusTool": "sovereign_operating_profile_status",
-    "memoryRole": "pointer and user preference only; repository profile and runtime evidence remain authoritative"
+    "continuityReadTool": "sovereign_continuity_context_read",
+    "memoryRole": "pointer and user preference only; repository continuity, profile and runtime evidence remain authoritative"
+  },
+  "continuity": {
+    "policyPath": "tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json",
+    "contextPath": "docs/sovereign-continuity/CONTEXT.md",
+    "ledgerPath": "docs/sovereign-continuity/LEDGER.jsonl",
+    "readTool": "sovereign_continuity_context_read",
+    "statusTool": "sovereign_continuity_status",
+    "requiredBeforeMutableTools": true,
+    "repositoryFinalizationRequiresLedgerUpdate": true
   }
 }

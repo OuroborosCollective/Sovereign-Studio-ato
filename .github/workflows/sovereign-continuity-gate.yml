@@ -1,0 +1,57 @@
+name: Sovereign Continuity Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-continuity-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  continuity:
+    name: continuity-ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fetch and verify exact PR base revision
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "$BASE_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$BASE_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          [[ "$MERGE_BASE" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Validate read and append-only completion contract
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SOVEREIGN_CONTINUITY_STDLIB_ONLY: '1'
+        run: |
+          set -euo pipefail
+          python3 tools/sovereign-chatgpt-mcp/validate_continuity.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA"

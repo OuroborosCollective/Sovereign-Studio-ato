@@ -198,6 +198,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
     requirements = (ROOT / "requirements.txt").read_text("utf-8")
     launcher = (ROOT / "launcher.py").read_text("utf-8")
+    runtime_source = (ROOT / "runtime.py").read_text("utf-8")
 
     assert 'android_hardening.py' in installer
     assert 'document_pipeline.py' in installer
@@ -210,6 +211,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'database_evidence_tools.py' in installer
     assert 'enterprise_backend_tools.py' in installer
     assert 'openai_project_access_tools.py' in installer
+    assert 'continuity.py' in installer
+    assert 'validate_continuity.py' in installer
     assert 'operating_profile.py' in installer
     assert 'operational_governance_tools.py' in installer
     assert 'operational_assurance_tools.py' in installer
@@ -223,6 +226,12 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '/app/skills/sovereign-mcp-optimal-operation/SKILL.md' in installer
     assert 'config/sovereign-mcp-operating-profile.json' in installer
     assert '/app/config/sovereign-mcp-operating-profile.json' in installer
+    assert 'config/sovereign-continuity-policy.json' in installer
+    assert '/app/config/sovereign-continuity-policy.json' in installer
+    assert 'continuity-data/CONTEXT.md' in installer
+    assert '/app/continuity-data/CONTEXT.md' in installer
+    assert 'continuity-data/LEDGER.jsonl' in installer
+    assert '/app/continuity-data/LEDGER.jsonl' in installer
     assert 'patchmon_operator.py' in installer
     assert 'launcher.py' in installer
     assert 'ANDROID_SDK_DIR="/opt/android-sdk"' in installer
@@ -242,14 +251,20 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'deterministic_architecture_tools.py' in dockerfile
     assert 'database_evidence_tools.py' in dockerfile
     assert 'enterprise_backend_tools.py' in dockerfile
+    assert 'continuity.py' in dockerfile
+    assert 'validate_continuity.py' in dockerfile
     assert 'operating_profile.py' in dockerfile
     assert 'operational_governance_tools.py' in dockerfile
     assert 'operational_assurance_tools.py' in dockerfile
     assert 'output_contracts.py' in dockerfile
     assert 'toolchain_composition.py' in dockerfile
     assert 'COPY config /app/config' in dockerfile
+    assert 'COPY continuity-data /app/continuity-data' in dockerfile
     assert 'COPY skills /app/skills' in dockerfile
     assert (ROOT / 'config' / 'sovereign-mcp-operating-profile.json').is_file()
+    assert (ROOT / 'config' / 'sovereign-continuity-policy.json').is_file()
+    assert (ROOT / 'continuity-data' / 'CONTEXT.md').is_file()
+    assert (ROOT / 'continuity-data' / 'LEDGER.jsonl').is_file()
     assert (ROOT / 'skills' / 'sovereign-mcp-optimal-operation' / 'SKILL.md').is_file()
     assert (ROOT / 'skills' / 'sovereign-operational-governance' / 'SKILL.md').is_file()
     assert (ROOT / 'skills' / 'sovereign-operational-assurance' / 'SKILL.md').is_file()
@@ -270,6 +285,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)' in launcher
     assert 'import openai_project_access_tools' in launcher
     assert 'openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)' in launcher
+    assert 'import continuity' in launcher
+    assert 'continuity.register(server.mcp)' in launcher
     assert 'import operating_profile' in launcher
     assert 'operating_profile.register(server.mcp)' in launcher
     assert 'operating_profile.install_enforcement(server.mcp)' in launcher
@@ -282,6 +299,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'toolchain_composition.register(server.mcp)' in launcher
     assert 'output_contracts.install_output_contracts(server.mcp)' in launcher
     assert 'CMD ["python", "launcher.py"]' in dockerfile
+    assert '["git", "status", "--porcelain", "--untracked-files=all"]' in runtime_source
     assert 'docker exec sovereign-chatgpt-mcp java -version' not in installer
     assert 'docker compose build' not in installer
     assert 'docker pull "$MCP_TAGGED_IMAGE"' in installer
@@ -368,6 +386,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"operational_governance_tools":true' in installer
     assert '"operational_assurance_tools":true' in installer
     assert '"operating_profile_enforced":true' in installer
+    assert '"continuity_enforced":true' in installer
     assert '"repository_revision_resolver":true' in installer
     assert '"workspace_pr_head_sync_available":true' in installer
     assert 'callable(server.repository_sync_workspace_to_pr_head)' in installer

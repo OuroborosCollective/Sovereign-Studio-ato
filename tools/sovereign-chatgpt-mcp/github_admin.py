@@ -39,7 +39,7 @@ ANDROID_SURFACE_FILES = frozenset({
     "gradle.properties",
 })
 MAIN_RULESET_NAME = "Sovereign Main Revision Green Gate"
-MAIN_RULESET_REQUIRED_CHECKS = ("Release Gate", "Agent Runtime Tests")
+MAIN_RULESET_REQUIRED_CHECKS = ("Release Gate", "Agent Runtime Tests", "continuity-ledger")
 
 
 def _enabled(name: str) -> bool:
