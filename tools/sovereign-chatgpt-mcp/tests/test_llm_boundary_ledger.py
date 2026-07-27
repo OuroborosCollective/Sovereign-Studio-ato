@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 
 from llm_boundary_ledger import discover_review_candidates, load_ledger, validate_ledger
@@ -11,9 +12,36 @@ LEDGER = ROOT / "config" / "architecture" / "llm-tool-boundary-review-ledger.jso
 
 
 def test_current_review_ledger_is_complete_and_fresh() -> None:
-    result = validate_ledger(ROOT, load_ledger(LEDGER))
+    payload = load_ledger(LEDGER)
+    result = validate_ledger(ROOT, payload)
+    discovery = discover_review_candidates(ROOT)
+    expected_by_id = {entry["candidateId"]: entry for entry in discovery["entries"]}
+    actual_by_id = {entry["candidateId"]: entry for entry in payload["entries"]}
+    relevant_ids: set[str] = set()
+    for finding in result["findings"]:
+        if finding.startswith(("MISSING_CANDIDATE:", "STALE_OR_REMOVED_CANDIDATE:")):
+            relevant_ids.add(finding.split(":", 1)[1])
+        elif finding.startswith("BINDING_DRIFT:"):
+            relevant_ids.add(finding.removeprefix("BINDING_DRIFT:").rsplit(":", 1)[0])
+    diagnostics = {
+        candidate_id: {
+            "expected": expected_by_id.get(candidate_id),
+            "actual": actual_by_id.get(candidate_id),
+        }
+        for candidate_id in sorted(relevant_ids)
+    }
 
-    assert result["ok"] is True, result["ledgerSha256"]
+    assert result["ok"] is True, json.dumps(
+        {
+            "findings": result["findings"],
+            "candidates": diagnostics,
+            "expectedLedgerSha256": result["ledgerSha256"],
+            "actualLedgerSha256": payload.get("ledgerSha256"),
+        },
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
     assert result["status"] == "LLM_BOUNDARY_LEDGER_VERIFIED"
     assert result["rawCandidateCount"] == 76
     assert result["canonicalCandidateCount"] == 64
