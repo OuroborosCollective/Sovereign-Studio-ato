@@ -9,15 +9,37 @@ import subprocess
 import time
 from typing import Any
 
-from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict
+
+_STDLIB_ONLY = os.getenv("SOVEREIGN_CONTINUITY_STDLIB_ONLY", "0").strip() == "1"
+_RUNTIME_IMPORT_ERROR = ""
+if not _STDLIB_ONLY:
+    try:
+        from mcp.types import ToolAnnotations
+        from pydantic import BaseModel, ConfigDict
+    except ModuleNotFoundError as exc:
+        _STDLIB_ONLY = True
+        _RUNTIME_IMPORT_ERROR = str(exc)
+
+if _STDLIB_ONLY:
+    ToolAnnotations = None
+
+    class BaseModel:
+        def __init__(self, **values: Any) -> None:
+            self.__dict__.update(values)
+
+    def ConfigDict(**values: Any) -> dict[str, Any]:
+        return dict(values)
 
 
-READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+READ_ONLY = (
+    ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+    if ToolAnnotations is not None
+    else None
 )
 
 MODULE_ROOT = Path(__file__).resolve().parent
@@ -493,6 +515,11 @@ def register(mcp: Any) -> None:
     _MCP = mcp
     if _REGISTERED:
         return
+    if READ_ONLY is None:
+        raise RuntimeError(
+            "continuity MCP registration requires runtime dependencies"
+            + (f": {_RUNTIME_IMPORT_ERROR}" if _RUNTIME_IMPORT_ERROR else "")
+        )
     mcp.tool(annotations=READ_ONLY)(sovereign_continuity_context_read)
     mcp.tool(annotations=READ_ONLY)(sovereign_continuity_status)
     _REGISTERED = True

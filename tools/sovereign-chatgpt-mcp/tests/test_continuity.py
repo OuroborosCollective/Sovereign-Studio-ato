@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -214,6 +215,41 @@ def test_workspace_completion_requires_append_only_mirrored_ledgers(tmp_path: Pa
     assert latest["funnyExperiences"] == []
     assert latest["familyFriendshipExperience"] == []
     assert latest["newEmotionallyFormedBondExperiences"] == []
+
+
+def test_validator_runs_in_explicit_stdlib_only_mode(tmp_path: Path) -> None:
+    repo, baseline, _changed_paths = _fixture_repo(tmp_path)
+    _git(repo, "add", "--all")
+    _git(repo, "commit", "-m", "commit continuity update")
+    head = _git(repo, "rev-parse", "HEAD")
+    script = Path(continuity.__file__).resolve().parent / "validate_continuity.py"
+    env = os.environ.copy()
+    env["SOVEREIGN_CONTINUITY_STDLIB_ONLY"] = "1"
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(script),
+            "--repository",
+            str(repo),
+            "--base",
+            baseline,
+            "--head",
+            head,
+        ],
+        cwd=repo,
+        env=env,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=90,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "CONTINUITY_COMPLETION_VERIFIED"
+    assert payload["headRevision"] == head
 
 
 def test_workspace_completion_rejects_runtime_mirror_drift(tmp_path: Path) -> None:

@@ -49,6 +49,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SOVEREIGN_CONTINUITY_STDLIB_ONLY: '1'
         run: |
           set -euo pipefail
           python3 tools/sovereign-chatgpt-mcp/validate_continuity.py \
