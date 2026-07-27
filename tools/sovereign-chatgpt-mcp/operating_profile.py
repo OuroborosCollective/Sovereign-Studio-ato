@@ -11,6 +11,7 @@ from typing import Annotated, Any
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
+import continuity
 import operational_governance_tools
 import toolchain_composition
 
@@ -144,6 +145,7 @@ def _load_profile() -> tuple[dict[str, Any], str]:
         "routeIsolation",
         "secretPolicy",
         "persistence",
+        "continuity",
     }
     missing = sorted(required - set(payload))
     if missing:
@@ -260,6 +262,8 @@ def _status_payload() -> OperatingProfileStatus:
             "automaticPaidToFreeFallback": False,
             "successRequiresAuthoritativeReadback": True,
             "learningRequiresProvenRuntimeOutcome": True,
+            "continuityReadRequiredBeforeMutation": True,
+            "continuityLedgerRequiredBeforeRepositoryFinalization": True,
             "protectedValuesAcceptedByMcpArguments": False,
         },
         findings=findings,
@@ -267,6 +271,9 @@ def _status_payload() -> OperatingProfileStatus:
             "profile": str(persistence.get("authoritativeProfilePath") or ""),
             "skill": str(persistence.get("skillPath") or ""),
             "handoff": str(persistence.get("handoffPath") or ""),
+            "continuityPolicy": str(persistence.get("continuityPolicyPath") or ""),
+            "continuityContext": str(persistence.get("continuityContextPath") or ""),
+            "continuityLedger": str(persistence.get("continuityLedgerPath") or ""),
         },
         mutationPerformed=False,
         runtimeVerified=True,
@@ -297,7 +304,14 @@ def sovereign_mission_preflight(
 ) -> MissionPreflightResult:
     """Use this before multi-step or mutating work to route, compile and validate a non-executing live-registry toolchain."""
     status = _status_payload()
-    if not status.ok:
+    continuity_findings = []
+    if any(effect != "read" for effect in allowed_effects):
+        continuity_findings = continuity.continuity_gate_findings(
+            "sovereign_mission_preflight",
+            "workspace-write",
+        )
+    if not status.ok or continuity_findings:
+        findings = list(status.findings) + list(continuity_findings)
         return MissionPreflightResult(
             schemaVersion="sovereign.mission-preflight.v1",
             ok=False,
@@ -309,12 +323,16 @@ def sovereign_mission_preflight(
             route={},
             proposal={},
             validation={},
-            findings=list(status.findings),
-            nextActions=["restore the operating profile and mutation-gate invariants before planning work"],
+            findings=findings,
+            nextActions=[
+                "read sovereign continuity context before mutating mission planning"
+                if continuity_findings
+                else "restore the operating profile and mutation-gate invariants before planning work"
+            ],
             mutationPerformed=False,
             runtimeVerified=True,
             secretValuesReturned=False,
-            truthNotice="No mission plan is trusted while the persistent operating contract is blocked.",
+            truthNotice="No mutating mission plan is trusted while the persistent operating or continuity contract is blocked.",
         )
     route = operational_governance_tools.tool_recommend_for_mission(
         mission_summary=mission_summary,
@@ -518,6 +536,7 @@ def _gate_or_raise(tool_name: str, effect: str, parameters: dict[str, Any], kwar
         validation = validated.model_dump(mode="json")
         findings.extend(validated.findings)
     findings.extend(_validate_invocation_arguments(tool_name, effect, parameters, kwargs))
+    findings.extend(continuity.continuity_gate_findings(tool_name, effect))
     if findings:
         payload = {
             "schemaVersion": "sovereign.mutation-gate-block.v1",

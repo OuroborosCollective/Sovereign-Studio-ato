@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+import continuity
 import launcher
 import operating_profile
 
@@ -24,7 +25,7 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert status.ok is True
     assert status.status == "OPERATING_PROFILE_ENFORCED"
     assert status.profileId == "sovereign-mcp-optimal-operation"
-    assert status.profileVersion == "1.0.0"
+    assert status.profileVersion == "1.1.0"
     assert len(status.profileSha256) == 64
     assert len(status.registrySnapshotSha256) == 64
     assert status.missingGovernanceTools == []
@@ -34,6 +35,8 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert report.ok is True
     assert report.enforcedToolCount == report.mutableToolCount
     assert status.enforcedToolCount == status.mutableToolCount
+    assert "sovereign_continuity_context_read" in tools
+    assert "sovereign_continuity_status" in tools
     assert "sovereign_operating_profile_status" in tools
     assert "sovereign_mission_preflight" in tools
 
@@ -125,17 +128,26 @@ def test_ci_and_vps_release_contract_require_live_profile_and_negative_canary() 
     installer = (Path(__file__).resolve().parents[1] / "deploy" / "install-on-vps.sh").read_text("utf-8")
 
     assert "operating_profile.py" in workflow
+    assert "continuity.py" in workflow
     assert "config/sovereign-mcp-operating-profile.json" in workflow
+    assert "config/sovereign-continuity-policy.json" in workflow
+    assert "continuity-data/CONTEXT.md" in workflow
+    assert "continuity-data/LEDGER.jsonl" in workflow
     assert "skills/sovereign-mcp-optimal-operation/SKILL.md" in workflow
     assert "OPERATING_PROFILE_ENFORCEMENT" in workflow
     assert "OPERATING_PROFILE_ENFORCED" in workflow
     assert "operating_profile_enforced" in workflow
     assert "negativeMutationCanary" not in workflow
     assert "operating_profile.py" in installer
+    assert "continuity.py" in installer
     assert "/app/config/sovereign-mcp-operating-profile.json" in installer
+    assert "/app/config/sovereign-continuity-policy.json" in installer
+    assert "/app/continuity-data/CONTEXT.md" in installer
+    assert "/app/continuity-data/LEDGER.jsonl" in installer
     assert "/app/skills/sovereign-mcp-optimal-operation/SKILL.md" in installer
     assert "OPERATING_PROFILE_ENFORCED" in installer
     assert "INSTALL_STAGE=\"verify_operating_profile_canaries\"" in installer
+    assert "CONTINUITY_CONTEXT_BOUND" in installer
     assert "MISSION_PREFLIGHT_VALID" in installer
     assert "MUTATION_BLOCKED_BY_OPERATING_PROFILE" in installer
     assert "OPERATING_PROFILE_OWNER_APPROVAL_REQUIRED" in installer

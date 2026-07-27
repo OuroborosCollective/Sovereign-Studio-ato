@@ -1,0 +1,41 @@
+name: Sovereign Continuity Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sovereign-continuity-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  continuity:
+    name: continuity-ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Validate read and append-only completion contract
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 tools/sovereign-chatgpt-mcp/validate_continuity.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA"

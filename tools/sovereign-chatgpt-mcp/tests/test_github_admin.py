@@ -583,6 +583,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
                     "required_status_checks": [
                         {"context": "Release Gate"},
                         {"context": "Agent Runtime Tests"},
+                        {"context": "continuity-ledger"},
                     ]
                 },
             },
@@ -603,12 +604,17 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
 
     assert result["status"] == "RULESET_CREATED"
     assert result["readback_verified"] is True
-    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests"]
+    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests", "continuity-ledger"]
     post_call = next(call for call in session.calls if call["method"] == "POST")
     assert post_call["json"]["bypass_actors"] == []
     assert post_call["json"]["conditions"]["ref_name"]["include"] == ["refs/heads/main"]
     required = next(rule for rule in post_call["json"]["rules"] if rule["type"] == "required_status_checks")
     assert required["parameters"]["strict_required_status_checks_policy"] is True
+    assert {item["context"] for item in required["parameters"]["required_status_checks"]} == {
+        "Release Gate",
+        "Agent Runtime Tests",
+        "continuity-ledger",
+    }
 
 
 def test_apply_main_ruleset_blocks_without_owner_approval(monkeypatch) -> None:
