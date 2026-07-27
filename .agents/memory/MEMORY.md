@@ -1,3 +1,6 @@
 - [Sovereign Studio Workbench status vocabulary](sovereign-workbench-status.md) — user-facing status slots (Actions/Files/Logs/Errors/Draft PR) front technical module lamps; lamps live behind an Inspector toggle only.
 - [BuilderContainer test quirk](builder-container-test-quirk.md) — one pre-existing failing test in BuilderContainer.test.tsx is unrelated to workbench changes; verified against unmodified HEAD.
 - [Sovereign execution routing order](sovereign-execution-routing.md) — correct _processSubmit routing precedence, credit guard placement, security card pattern, immediate timeline update on intent.
+- [Google Stitch MCP bridge](stitch-mcp-bridge.md) — official endpoint, dynamic tool discovery, protected-file authentication, read/write gates and required runtime readback.
+- [Memory continuity gap](memory-continuity-gap.md) — the memory index was incomplete on 2026-07-27; recovery procedure and unresolved search locations.
+- [Joyful project lore and relationship memory](joyful-project-lore.md) — canonical Stitch/Shirt incident, unresolved Hühnergeschichte search, affectionate collaboration language and strict cross-project boundaries.
