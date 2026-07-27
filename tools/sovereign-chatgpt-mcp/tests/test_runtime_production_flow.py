@@ -35,6 +35,18 @@ def command_result(argv: list[str], *, ok: bool = True, exit_code: int = 0) -> d
     }
 
 
+def continuity_completion_receipt() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "status": "CONTINUITY_COMPLETION_VERIFIED",
+        "appendOnlyVerified": True,
+        "runtimeMirrorsByteEqual": True,
+        "latestEntryId": "fixture-pr-flow",
+        "secretValuesStored": False,
+        "rawChatTranscriptStored": False,
+    }
+
+
 def test_dependency_install_is_delegated_without_starting_pnpm(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     calls: list[list[str]] = []
@@ -84,6 +96,7 @@ def test_node_checks_are_delegated_without_local_execution(repo_runtime, monkeyp
 
 def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     (repo / "src/menu.tsx").write_text("export const label = 'New';\n", "utf-8")
     original_run = runtime._run
     calls: list[list[str]] = []
@@ -132,6 +145,7 @@ def test_frontend_draft_pr_is_created_without_local_node_execution(repo_runtime,
 
 def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     metadata = runtime._read_metadata(workspace_id)
     branch = metadata["branch"]
     (repo / "README.md").write_text("updated\n", "utf-8")
@@ -188,6 +202,7 @@ def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, mo
 
 def test_other_open_draft_blocks_before_git_mutation(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
+    monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
     (repo / "README.md").write_text("blocked\n", "utf-8")
     original_run = runtime._run
     mutation_calls: list[list[str]] = []
