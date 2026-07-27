@@ -158,6 +158,16 @@ def test_changed_files_expands_untracked_directories(tmp_path: Path) -> None:
     ]
 
 
+def test_ci_fetches_exact_base_without_shallow_merge_base_loss() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    workflow = (repository / ".github/workflows/sovereign-continuity-gate.yml").read_text("utf-8")
+
+    assert 'git fetch --no-tags origin "$BASE_SHA"' in workflow
+    assert 'git fetch --no-tags --depth=1 origin "$BASE_SHA"' not in workflow
+    assert 'git merge-base "$BASE_SHA" "$HEAD_SHA"' in workflow
+    assert 'git cat-file -e "$BASE_SHA^{commit}"' in workflow
+
+
 def test_runtime_context_read_binds_nplusone_identity_and_hashes() -> None:
     result = continuity.sovereign_continuity_context_read()
 
