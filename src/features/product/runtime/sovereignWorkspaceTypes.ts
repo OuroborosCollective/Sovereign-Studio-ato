@@ -185,6 +185,20 @@ export interface WorkspaceTrigger {
   readonly suggestedPurpose?: WorkspacePurpose;
 }
 
+// Bolt ⚡ Optimization: Hoist and compile regular expression patterns at module level
+// to avoid dynamic re-compilation of pattern instances on every function call or recursion.
+const GITHUB_TOKEN_MASK_REGEX = /ghp_[a-zA-Z0-9]{36}/g;
+const API_KEY_MASK_REGEX = /sk-[a-zA-Z0-9]{48}/g;
+const BEARER_TOKEN_MASK_REGEX = /Bearer\s+[a-zA-Z0-9_-]+/gi;
+const TOKEN_LABEL_MASK_REGEX = /token["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]+/gi;
+
+const WORKSPACE_SECRET_PATTERNS = [
+  GITHUB_TOKEN_MASK_REGEX,
+  API_KEY_MASK_REGEX,
+  BEARER_TOKEN_MASK_REGEX,
+  TOKEN_LABEL_MASK_REGEX,
+];
+
 /**
  * Create a workspace event with secret masking
  * Ensures no tokens/secrets leak into events, logs, or PR body
@@ -195,11 +209,11 @@ export function createMaskedWorkspaceEvent(
   detail?: string,
   data?: Record<string, unknown>
 ): SovereignWorkspaceEvent {
-  // Mask any potential secrets in detail
+  // Mask any potential secrets in detail using pre-compiled regexes
   const maskedDetail = detail
-    ? detail.replace(/ghp_[a-zA-Z0-9]{36}/g, '[GITHUB_TOKEN_MASKED]')
-           .replace(/sk-[a-zA-Z0-9]{48}/g, '[API_KEY_MASKED]')
-           .replace(/Bearer\s+[a-zA-Z0-9_-]+/g, 'Bearer [TOKEN_MASKED]')
+    ? detail.replace(GITHUB_TOKEN_MASK_REGEX, '[GITHUB_TOKEN_MASKED]')
+           .replace(API_KEY_MASK_REGEX, '[API_KEY_MASKED]')
+           .replace(BEARER_TOKEN_MASK_REGEX, 'Bearer [TOKEN_MASKED]')
     : undefined;
 
   // Mask secrets in data
@@ -219,18 +233,12 @@ export function createMaskedWorkspaceEvent(
  */
 function maskSecretsInObject(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const secretPatterns = [
-    /ghp_[a-zA-Z0-9]{36}/,
-    /sk-[a-zA-Z0-9]{48}/,
-    /Bearer\s+[a-zA-Z0-9_-]+/,
-    /token["']?\s*[:=]\s*["']?[a-zA-Z0-9_-]+/i,
-  ];
 
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === 'string') {
       let masked = value;
-      for (const pattern of secretPatterns) {
-        masked = masked.replace(pattern, '[SECRET_MASKED]');
+      for (let i = 0; i < WORKSPACE_SECRET_PATTERNS.length; i++) {
+        masked = masked.replace(WORKSPACE_SECRET_PATTERNS[i], '[SECRET_MASKED]');
       }
       result[key] = masked;
     } else if (typeof value === 'object' && value !== null) {
