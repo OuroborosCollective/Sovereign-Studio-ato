@@ -73,6 +73,8 @@ export function ModelHealthPanel({
               onClick={onRefresh}
               disabled={isChecking}
               className="rounded border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"
+              aria-label={isChecking ? "Checking model health..." : "Refresh model health"}
+              title={isChecking ? "Checking model health..." : "Refresh model health"}
             >
               {isChecking ? 'Checking...' : 'Refresh'}
             </button>
@@ -90,7 +92,7 @@ export function ModelHealthPanel({
               className="flex items-center justify-between rounded border border-slate-800 bg-slate-900/70 p-3"
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg" role="img" aria-label={model.status}>
+                <span className="text-lg" role="img" aria-label={model.status} title={`Status: ${model.status}`}>
                   {statusIcon(model.status)}
                 </span>
                 <div>

@@ -172,6 +172,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
             opacity: canRetry ? 1 : 0.55,
           }}
           aria-label={canRetry ? 'Retry Worker request' : 'Retry unavailable: no previous worker request'}
+          title={canRetry ? 'Retry Worker request' : 'Retry unavailable: no previous worker request'}
         >
           {canRetry ? 'Retry' : 'Retry nicht verfügbar'}
         </button>
@@ -191,6 +192,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
             cursor: 'pointer',
           }}
           aria-label="Explain diagnostic"
+          title="Diagnose erklären"
         >
           Diagnose erklären
         </button>
@@ -211,6 +213,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
               cursor: 'pointer',
             }}
             aria-label="Use Sovereign Agent for code task instead"
+            title="Sovereign Agent für Code-Auftrag"
           >
             Sovereign Agent für Code-Auftrag
           </button>

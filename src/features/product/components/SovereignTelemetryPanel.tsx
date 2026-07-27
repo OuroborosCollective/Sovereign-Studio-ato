@@ -22,6 +22,8 @@ export function SovereignTelemetryPanel({ state, expanded, onToggle }: Sovereign
         className="flex w-full items-center justify-between p-3 text-left"
         onClick={onToggle}
         type="button"
+        aria-expanded={expanded}
+        title={expanded ? "Collapse telemetry log" : "Expand telemetry log"}
       >
         <span>
           <span className="font-bold">NoCode Live Monitor · Telemetry Log</span>

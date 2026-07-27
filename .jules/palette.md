@@ -33,3 +33,7 @@
 ## 2025-07-24 - [Accessible Hover and State-Dependent Discovery for Inline Sub-Cards]
 **Learning:** Complex sub-cards (such as changelog previews, repair sheets, and workbench status cards) often render context-sensitive action items (such as copying content, applying a mission, or opening deep-links). Sighted and keyboard-navigated users require clear visual cues on action boundaries, and screen readers benefit from descriptive action-oriented `aria-label` and `title` attributes that update based on active/blocked/pressed states.
 **Action:** For interactive buttons within secondary workspace sheets and cards, always pair clear, detailed `title` tooltips with stateful, dynamic descriptive accessible names (e.g., using ternary expressions matching active/disabled states) to prevent confusion.
+
+## 2025-07-25 - [Preserving Accessible Names for Buttons with Visible Text]
+**Learning:** Overriding a button's visible text with `aria-label` breaks speech-input voice activation (which relies on matching spoken visible text) and breaks query selectors in test suites looking for the button's visible content. For widgets with rich visible text labels, the correct disclosure pattern is to communicate status via `aria-expanded` and native hover tooltips (`title`), leaving the original visible content untouched.
+**Action:** Avoid applying `aria-label` to buttons that already have clear, visible text; instead, communicate toggle status with `aria-expanded` and stateful `title` hover attributes.

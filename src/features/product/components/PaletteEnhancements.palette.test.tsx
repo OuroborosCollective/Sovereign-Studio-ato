@@ -16,6 +16,9 @@ import { AgentEventStream } from './AgentEventStream';
 import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
+import { ModelHealthPanel } from './ModelHealthPanel';
+import { WorkerBlockerCard } from './WorkerBlockerCard';
+import { SovereignTelemetryPanel } from './SovereignTelemetryPanel';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -536,6 +539,120 @@ describe('Palette Accessibility Enhancements', () => {
       );
       const disabledInlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei: src/App.tsx' });
       expect(disabledInlineBadgeBtn).toHaveAttribute('title', 'src/App.tsx');
+    });
+  });
+
+  describe('ModelHealthPanel, WorkerBlockerCard, and SovereignTelemetryPanel Palette Enhancements', () => {
+    it('ModelHealthPanel refresh button and status indicators have accessibility attributes', () => {
+      const mockModels = [
+        {
+          id: 'model-1',
+          name: 'Gemini Flash',
+          isEnabled: true,
+          status: 'healthy' as const,
+          latencyMs: 150,
+          successCount: 10,
+          errorCount: 0,
+        }
+      ];
+
+      const { rerender } = render(
+        <ModelHealthPanel
+          models={mockModels}
+          isChecking={false}
+          onRefresh={vi.fn()}
+        />
+      );
+
+      const refreshBtn = screen.getByRole('button', { name: 'Refresh model health' });
+      expect(refreshBtn).toHaveAttribute('aria-label', 'Refresh model health');
+      expect(refreshBtn).toHaveAttribute('title', 'Refresh model health');
+
+      const statusSpan = screen.getByRole('img', { name: 'healthy' });
+      expect(statusSpan).toHaveAttribute('title', 'Status: healthy');
+
+      rerender(
+        <ModelHealthPanel
+          models={mockModels}
+          isChecking={true}
+          onRefresh={vi.fn()}
+        />
+      );
+
+      const checkingBtn = screen.getByRole('button', { name: 'Checking model health...' });
+      expect(checkingBtn).toHaveAttribute('aria-label', 'Checking model health...');
+      expect(checkingBtn).toHaveAttribute('title', 'Checking model health...');
+    });
+
+    it('WorkerBlockerCard buttons have matching title tooltips', () => {
+      const mockBlocker = {
+        message: 'Worker unreachable',
+        diagnostic: {
+          route: '/chat',
+          model: 'gemini',
+          messageCount: 0,
+          scope: 'network' as const,
+        },
+        createdAt: Date.now(),
+      };
+
+      const { rerender } = render(
+        <WorkerBlockerCard
+          blocker={mockBlocker}
+          onExplain={vi.fn()}
+          onRetry={vi.fn()}
+        />
+      );
+
+      const retryBtn = screen.getByRole('button', { name: 'Retry Worker request' });
+      expect(retryBtn).toHaveAttribute('title', 'Retry Worker request');
+
+      const explainBtn = screen.getByRole('button', { name: 'Explain diagnostic' });
+      expect(explainBtn).toHaveAttribute('title', 'Diagnose erklären');
+
+      // Non-interactive retry
+      rerender(
+        <WorkerBlockerCard
+          blocker={mockBlocker}
+          onExplain={vi.fn()}
+        />
+      );
+      const disabledRetryBtn = screen.getByRole('button', { name: /Retry unavailable/ });
+      expect(disabledRetryBtn).toHaveAttribute('title', 'Retry unavailable: no previous worker request');
+    });
+
+    it('SovereignTelemetryPanel toggle button has disclosure attributes', () => {
+      const mockState = {
+        events: [],
+        latestByStage: {},
+      };
+      const onToggle = vi.fn();
+
+      const { rerender } = render(
+        <SovereignTelemetryPanel
+          state={mockState}
+          expanded={false}
+          onToggle={onToggle}
+        />
+      );
+
+      const toggleBtn = screen.getByRole('button', { name: /NoCode Live Monitor/i });
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(toggleBtn).not.toHaveAttribute('aria-label');
+      expect(toggleBtn).toHaveAttribute('title', 'Expand telemetry log');
+
+      rerender(
+        <SovereignTelemetryPanel
+          state={mockState}
+          expanded={true}
+          onToggle={onToggle}
+        />
+      );
+
+      const expandedToggleBtn = screen.getByRole('button', { name: /NoCode Live Monitor/i });
+      expect(expandedToggleBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(expandedToggleBtn).not.toHaveAttribute('aria-label');
+      expect(expandedToggleBtn).toHaveAttribute('title', 'Collapse telemetry log');
     });
   });
 });
