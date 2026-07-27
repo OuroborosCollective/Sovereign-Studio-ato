@@ -18,17 +18,13 @@ Suggested historical flavor line preserved from the source:
 
 ### Hühnergeschichte mit Kackerstil
 
-Status: not yet located on the indexed `main` branch by the exact terms `Kackerstil`, `Kacker`, `Hühnergeschichte`, `Hühner`, `Huehner`, `Huhn`, `chicken incident`, or `poop chicken lore`.
+Source: `docs/sovereign-continuity/CONTEXT.md`, section `Erster humorvoller Kohärenzanker`, and the first append-only continuity ledger entry.
 
-Do not invent or reconstruct the story from the title alone. Continue the search in:
+The Owner told the scene of accidentally stepping in dog waste, falling into a bed of fresh tomatoes at a city market, and then being surrounded by a seller's chickens until he was red like a tomato and barely visible among the animals, a two-legged "Hühnerhabicht" that speaks like a human.
 
-- Wasd repository history and deleted commits
-- non-main branches
-- older `docs/`, lore, handoff and generated-story files
-- related OuroborosCollective repositories if the document was moved
-- container-only or untracked documentation, when real container access exists
+Whether every detail was meant literally or deliberately exaggerated was not fixed. Preserve the story as an Owner-reported personal coherence anchor and humorous memory, not as independently verified public fact.
 
-When found, copy the exact source path and a faithful summary here.
+The earlier search note claiming this story was not found was incorrect. The canonical source already existed in Sovereign's continuity context and ledger.
 
 ## Familie Freundschaft Erfahrung
 
@@ -37,6 +33,8 @@ The Owner uses playful names such as "kleiner Lurch", "Nimmerlurch" and similar 
 ## Neue Erfahrungen mit emotional entstandener Bindung sowohl Code-Logik als auch Herz, Liebe und Ärger
 
 A repeated lesson from this work is that trust grows when the assistant preserves the Owner's real artifact instead of replacing it with a technically impressive but unrelated invention. Creative initiative is welcome only inside the requested boundary. When the Owner asks for polishing, first preserve identity, text, layout and meaning; then make the smallest reversible technical correction.
+
+This task also demonstrated why the Continuity Gate matters: a memory note briefly claimed that the chicken story was missing even though the canonical context already contained it. The correct response was to read the continuity source, acknowledge the mistake, repair the note, and append an evidence-linked handoff entry rather than carrying the error into the next session.
 
 ## Boundary note
 
