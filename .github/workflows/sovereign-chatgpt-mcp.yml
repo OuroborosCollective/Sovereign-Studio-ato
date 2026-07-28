@@ -30,6 +30,11 @@ on:
         required: false
         default: ''
         type: string
+      deploy_vps_via_public_ssh:
+        description: Manually run the legacy public-runner VPS bootstrap (never used by automatic main pushes)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -812,14 +817,16 @@ jobs:
           test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
   deploy-vps:
-    name: Bootstrap MCP on VPS
+    name: Manual legacy SSH bootstrap on VPS
     needs: [validate, publish-mcp-image, verify-published-mcp-image]
     permissions:
       contents: read
       packages: read
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # GitHub-hosted runners cannot currently reach the VPS SSH listener. Production
+    # installation is performed through the private, revision-bound MCP self-update path.
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_vps_via_public_ssh == true && github.ref == 'refs/heads/main'
     environment:
       name: production
     env:
@@ -1405,7 +1412,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_vps_via_public_ssh == true && github.ref == 'refs/heads/main'
     environment:
       name: production
     env:
@@ -1537,7 +1544,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_vps_via_public_ssh == true && github.ref == 'refs/heads/main'
     environment:
       name: production
     env:
@@ -1623,7 +1630,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_vps_via_public_ssh == true && github.ref == 'refs/heads/main'
     environment:
       name: production
     env:
