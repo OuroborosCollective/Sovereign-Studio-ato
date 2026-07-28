@@ -43,6 +43,28 @@ def test_restore_toc_omits_complete_vault_extension_overlap() -> None:
     ]
 
 
+def test_restore_toc_accepts_trigger_tag_layout_variants() -> None:
+    vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+    vault_view = "373; 1259 16428 TABLE vault decrypted_secrets postgres"
+    trigger_name = "secrets_encrypt_secret_trigger_secret"
+    variants = (
+        f"374; 2620 16429 TRIGGER vault secrets {trigger_name} postgres",
+        f"374; 2620 16429 TRIGGER vault vault.secrets {trigger_name} postgres",
+        f"374; 2620 16429 TRIGGER vault {trigger_name} ON secrets postgres",
+    )
+
+    for vault_trigger in variants:
+        listing = "\n".join((vault_function, vault_view, vault_trigger)) + "\n"
+        filtered, omissions = _compatible_restore_toc(listing)
+
+        assert f";{vault_trigger}" in filtered
+        assert omissions == [
+            "FUNCTION vault.secrets_encrypt_secret_secret()",
+            "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
+            "VIEW vault.decrypted_secrets",
+        ]
+
+
 def test_restore_toc_blocks_incomplete_vault_extension_overlap() -> None:
     vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
     vault_view = "373; 1259 16428 TABLE vault decrypted_secrets postgres"

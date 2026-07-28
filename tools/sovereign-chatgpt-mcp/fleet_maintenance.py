@@ -31,7 +31,7 @@ _VAULT_RESTORE_COMPATIBILITY = (
         "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
         re.compile(
             r"^\d+;\s+\d+\s+\d+\s+TRIGGER\s+vault\s+"
-            r"(?:secrets\s+)?secrets_encrypt_secret_trigger_secret(?:\s+\S+)?$"
+            r"(?:\S+\s+)*secrets_encrypt_secret_trigger_secret(?:\s+\S+)*$"
         ),
     ),
     (
