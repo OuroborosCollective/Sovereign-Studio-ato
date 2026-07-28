@@ -217,6 +217,8 @@ import hashlib
 import json
 import os
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
 
 expected_revision, expected_digest = sys.argv[1:3]
@@ -262,14 +264,185 @@ def json_payload(path: str, *, authenticated: bool = False):
         "requestIdPresent": bool(headers.get("X-Request-ID")),
     }
 
+
+def internal_json_request(path: str, *, method: str = "GET", payload=None):
+    owner_request_key = os.environ.get("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    if not owner_request_key:
+        raise RuntimeError("owner request key unavailable")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Sovereign-Owner-Request-Key": owner_request_key,
+    }
+    data = (
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        if payload is not None
+        else None
+    )
+    request = urllib.request.Request(
+        base_url + path,
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    try:
+        response = urllib.request.urlopen(request, timeout=120)
+    except urllib.error.HTTPError as exc:
+        response = exc
+    with response:
+        body = response.read(2_000_000)
+        status = int(getattr(response, "status", getattr(response, "code", 0)))
+        final_url = response.geturl()
+        response_headers = dict(response.headers.items())
+    decoded = json.loads(body.decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise RuntimeError(f"invalid internal response contract: {path}")
+    return status, decoded, {
+        "httpStatus": status,
+        "responseSha256": hashlib.sha256(body).hexdigest(),
+        "finalPath": final_url.removeprefix(base_url),
+        "requestIdPresent": bool(response_headers.get("X-Request-ID")),
+    }
+
+
+def revision_bound_v2_receipts(provider_payload: dict):
+    verified = []
+    providers = (
+        provider_payload.get("providers")
+        if isinstance(provider_payload.get("providers"), list)
+        else []
+    )
+    for provider in providers:
+        if not isinstance(provider, dict):
+            continue
+        source_id = str(provider.get("sourceId") or "")
+        ready_evidence = (
+            provider.get("readyEvidence")
+            if isinstance(provider.get("readyEvidence"), list)
+            else []
+        )
+        for item in ready_evidence:
+            if not isinstance(item, dict):
+                continue
+            receipt = (
+                item.get("canaryReceipt")
+                if isinstance(item.get("canaryReceipt"), dict)
+                else {}
+            )
+            runtime = (
+                item.get("runtimeIdentity")
+                if isinstance(item.get("runtimeIdentity"), dict)
+                else {}
+            )
+            receipt_sha = str(receipt.get("receiptSha256") or "").lower()
+            if (
+                receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v2"
+                and len(receipt_sha) == 64
+                and all(character in "0123456789abcdef" for character in receipt_sha)
+                and runtime.get("sourceRevision") == expected_revision
+                and runtime.get("imageDigest") == expected_digest
+                and runtime.get("sourceRevisionVerified") is True
+                and runtime.get("imageDigestVerified") is True
+            ):
+                verified.append({
+                    "sourceId": source_id,
+                    "modelId": str(item.get("modelId") or "")[:240],
+                    "routeId": str(item.get("routeId") or "")[:80],
+                    "receiptSha256": receipt_sha,
+                })
+    return verified
+
+
 stage = "health"
 health, health_evidence = json_payload("/health")
-stage = "readiness"
-ready, ready_evidence = json_payload("/health/ready")
-if health.get("ok") is not True or ready.get("ok") is not True:
-    raise RuntimeError("health or readiness is not green")
+if health.get("ok") is not True:
+    raise RuntimeError("health is not green")
 if health.get("sourceRevision") != expected_revision or health.get("imageDigest") != expected_digest:
     raise RuntimeError("health runtime identity mismatch")
+
+stage = "freellm_bootstrap_status"
+provider_status_code, provider_status, provider_status_evidence = internal_json_request(
+    "/api/internal/llm/freellm/providers"
+)
+if provider_status_code != 200 or provider_status.get("ok") is not True:
+    raise RuntimeError("FreeLLM provider status is unavailable")
+providers = [
+    item for item in (provider_status.get("providers") or [])
+    if isinstance(item, dict) and item.get("enabled") is True
+]
+bootstrap_attempts = []
+for provider in providers:
+    source_id = str(provider.get("sourceId") or "")
+    if not source_id:
+        continue
+    encoded_source_id = urllib.parse.quote(source_id, safe="")
+    stage = "freellm_bootstrap_reconcile"
+    status_code, reconcile_payload, reconcile_evidence = internal_json_request(
+        f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
+        method="POST",
+        payload={"maxModels": 20},
+    )
+    bootstrap_attempts.append({
+        "sourceId": source_id,
+        "action": "reconcile",
+        "httpStatus": status_code,
+        "ok": reconcile_payload.get("ok") is True,
+        "blocker": str(reconcile_payload.get("blocker") or "")[:120] or None,
+        "responseSha256": reconcile_evidence["responseSha256"],
+    })
+    if status_code not in {200, 409}:
+        continue
+
+stage = "freellm_bootstrap_recheck_status"
+provider_status_code, provider_status, provider_status_evidence = internal_json_request(
+    "/api/internal/llm/freellm/providers"
+)
+verified_receipts = revision_bound_v2_receipts(provider_status)
+if not verified_receipts:
+    for provider in providers:
+        source_id = str(provider.get("sourceId") or "")
+        if not source_id:
+            continue
+        encoded_source_id = urllib.parse.quote(source_id, safe="")
+        stage = "freellm_bootstrap_discover"
+        status_code, discover_payload, discover_evidence = internal_json_request(
+            f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
+            method="POST",
+            payload={"maxModels": 20},
+        )
+        bootstrap_attempts.append({
+            "sourceId": source_id,
+            "action": "discover",
+            "httpStatus": status_code,
+            "ok": discover_payload.get("ok") is True,
+            "blocker": str(discover_payload.get("blocker") or "")[:120] or None,
+            "responseSha256": discover_evidence["responseSha256"],
+        })
+        if status_code not in {200, 409}:
+            continue
+    stage = "freellm_bootstrap_final_status"
+    provider_status_code, provider_status, provider_status_evidence = internal_json_request(
+        "/api/internal/llm/freellm/providers"
+    )
+    verified_receipts = revision_bound_v2_receipts(provider_status)
+if not verified_receipts:
+    raise RuntimeError("no revision-bound FreeLLM v2 receipt became ready")
+freellm_bootstrap = {
+    "ok": True,
+    "providerCount": len(providers),
+    "revisionBoundV2ReadyCount": len(verified_receipts),
+    "minimumReadyRoutes": 5,
+    "minimumReadySatisfied": len(verified_receipts) >= 5,
+    "receipts": verified_receipts[:20],
+    "attempts": bootstrap_attempts[:20],
+    "statusEvidence": provider_status_evidence,
+    "protectedValuesReturned": False,
+}
+
+stage = "readiness"
+ready, ready_evidence = json_payload("/health/ready")
+if ready.get("ok") is not True:
+    raise RuntimeError("readiness is not green")
 
 stage = "react_admin"
 admin_status, admin_url, admin_headers, admin_body = fetch("/admin")
@@ -311,6 +484,7 @@ result = {
     "sourceRevision": expected_revision,
     "imageDigest": expected_digest,
     "health": health_evidence,
+    "freellmBootstrap": freellm_bootstrap,
     "readiness": ready_evidence,
     "admin": {
         "httpStatus": admin_status,
