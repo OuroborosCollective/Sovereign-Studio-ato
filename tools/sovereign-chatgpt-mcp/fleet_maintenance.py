@@ -838,6 +838,12 @@ SELECT jsonb_build_object(
                     "docker",
                     "exec",
                     POSTGRES_CONTAINER,
+                    "sh",
+                    "-c",
+                    (
+                        'PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" '
+                        'exec pg_restore "$@"'
+                    ),
                     "pg_restore",
                     "--use-list",
                     container_toc,
