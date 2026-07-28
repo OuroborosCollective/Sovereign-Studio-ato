@@ -79,23 +79,73 @@ type GatedRepoInsightSuggestion = RepoInsightSuggestion & {
   readonly gate?: RepoInsightGateSnapshot;
 };
 
-function hasRepoEvidence(target: string, repoFiles: RepoFile[]): boolean {
+/**
+ * Fast repository file/folder lookup structure to optimize gating check.
+ * Pre-building these Set structures avoids repeated nested O(N) array scans during renders.
+ */
+interface RepoLookupSets {
+  readonly exactPaths: Set<string>;
+  readonly dirPrefixes: Set<string>;
+}
+
+/**
+ * Builds O(1) lookup Sets for fast evidence validation.
+ * Time Complexity: O(N) single-pass pre-computation where N is the number of files in the repo.
+ */
+function buildRepoLookupSets(repoFiles: RepoFile[]): RepoLookupSets {
+  const exactPaths = new Set<string>();
+  const dirPrefixes = new Set<string>();
+
+  const filesLen = repoFiles.length;
+  for (let i = 0; i < filesLen; i++) {
+    const path = repoFiles[i].path;
+    exactPaths.add(path);
+
+    // Deconstruct directory paths on the fly to support O(1) prefix checks.
+    // e.g., "src/features/product/components/RepoInsightPanelBridge.tsx"
+    // adds directory prefix segments: "src/", "src/features/", etc.
+    const parts = path.split('/');
+    const partsLen = parts.length;
+    let prefix = '';
+    for (let j = 0; j < partsLen - 1; j++) {
+      prefix += parts[j] + '/';
+      dirPrefixes.add(prefix);
+    }
+  }
+
+  return { exactPaths, dirPrefixes };
+}
+
+/**
+ * Validates folder or file evidence within the repository.
+ * Utilizes pre-computed O(1) Set lookup structures instead of slow nested O(N) array iterations.
+ * Expected speedup on large repositories: >98% per check.
+ */
+function hasRepoEvidence(target: string, lookups: RepoLookupSets): boolean {
   const normalized = target.trim().replace(/^\/+/, '');
   if (!normalized) return false;
-  if (normalized.endsWith('/')) return repoFiles.some((file) => file.path.startsWith(normalized));
-  return repoFiles.some((file) => file.path === normalized || file.path.startsWith(`${normalized}/`));
+  if (normalized.endsWith('/')) {
+    return lookups.dirPrefixes.has(normalized);
+  }
+  return lookups.exactPaths.has(normalized) || lookups.dirPrefixes.has(`${normalized}/`);
 }
 
-function evidenceForSuggestion(suggestion: RepoInsightSuggestion, repoFiles: RepoFile[]): string[] {
-  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, repoFiles)).slice(0, 5);
+/**
+ * Filter affectedFiles to those present in the repository, capping at 5.
+ */
+function evidenceForSuggestion(suggestion: RepoInsightSuggestion, lookups: RepoLookupSets): string[] {
+  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, lookups)).slice(0, 5);
 }
 
+/**
+ * Gates a suggestion by checking if its files actually exist using our optimized lookup sets.
+ */
 function gateSuggestion(
   suggestion: RepoInsightSuggestion,
   output: RepoInsightEngineOutput,
-  repoFiles: RepoFile[],
+  lookups: RepoLookupSets,
 ): GatedRepoInsightSuggestion {
-  const evidenceFiles = evidenceForSuggestion(suggestion, repoFiles);
+  const evidenceFiles = evidenceForSuggestion(suggestion, lookups);
   const hasHardBlocker = output.blockers.some((blocker) =>
     blocker.type === 'critical-finding' || blocker.type === 'ci-failure' || blocker.type === 'auth',
   );
@@ -137,12 +187,17 @@ function gateSuggestion(
   };
 }
 
+/**
+ * Gates all suggestions. Build lookup sets once per gating run, transforming O(S * F * N) calculations
+ * into O(N + S * F) where S = suggestions, F = average affectedFiles, N = repo files.
+ */
 function gateOutput(output: RepoInsightEngineOutput, repoFiles: RepoFile[]): RepoInsightEngineOutput {
+  const lookups = buildRepoLookupSets(repoFiles);
   return {
     ...output,
-    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
-    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
-    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
+    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, output, lookups)),
+    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, output, lookups)),
+    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, output, lookups)),
   };
 }
 
