@@ -415,9 +415,19 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
     assert result["isolatedTargetRemoved"] is True
     restore_calls = [call for call in calls if "pg_restore" in call and "--use-list" in call]
     assert len(restore_calls) == 1
-    restore_user_index = restore_calls[0].index("--username") + 1
-    assert restore_calls[0][restore_user_index] == "supabase_admin"
-    assert restore_calls[0][-1].endswith(".dump")
+    restore_call = restore_calls[0]
+    assert restore_call[3:6] == [
+        "sh",
+        "-c",
+        (
+            'PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" '
+            'exec pg_restore "$@"'
+        ),
+    ]
+    assert restore_call[6] == "pg_restore"
+    restore_user_index = restore_call.index("--username") + 1
+    assert restore_call[restore_user_index] == "supabase_admin"
+    assert restore_call[-1].endswith(".dump")
     assert any(call[:4] == ["docker", "exec", "--user", "0"] for call in calls)
 
 
