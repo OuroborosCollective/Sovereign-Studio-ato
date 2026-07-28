@@ -1,0 +1,151 @@
+{
+  "boundFiles": [
+    {
+      "bytes": 8593,
+      "path": "src/components/CoreResonanceSanctuary.tsx",
+      "sha256": "9c2f428637a740e8bd01535f09cb66618376fb97030f43591ca3e1efa10b92bd"
+    },
+    {
+      "bytes": 44853,
+      "path": "src/components/HiaResonanceVoice.tsx",
+      "sha256": "11846724816348f9590aa128dc55b4bfb4ff5fe64e3ea89b16f690cf41f05c10"
+    },
+    {
+      "bytes": 17995,
+      "path": "src/components/PucksPersonalLog.tsx",
+      "sha256": "b69f5b878b8884cd0ca155c0cc6fae4df7173d678288d4eaa8e9ce99bff178c1"
+    },
+    {
+      "bytes": 9244,
+      "path": "src/components/PuckSongBook.tsx",
+      "sha256": "ba9b5c90a87d415c9c67984e7fdfb2790fea2f088c84539b76de80cffdec651d"
+    },
+    {
+      "bytes": 6628,
+      "path": "src/components/PuckMemoryConsistencyCheck.tsx",
+      "sha256": "b7c3857190093888499f5c698f2d3fa1ed49d78c721ea3b5455ad3e2196802df"
+    },
+    {
+      "bytes": 25370,
+      "path": "src/components/ResonanceEgoAnimator.tsx",
+      "sha256": "bbc00ad1d2aae1d2dea32030bc50b6b740815263b674d140a4e7e681fc4f4066"
+    },
+    {
+      "bytes": 3759,
+      "path": "src/utils/memoryMigration.ts",
+      "sha256": "9438d54895a712926508e5851d7c538b1176a9f1ca5a07f3083ac5d6f6dbe5d8"
+    },
+    {
+      "bytes": 5741,
+      "path": "src/utils/migrationValidator.ts",
+      "sha256": "1cee1b2c86546261a69acf63633a7b9a5287026da99f37c163a04eac14fa4cc2"
+    },
+    {
+      "bytes": 20613,
+      "path": "src/services/voiceService.ts",
+      "sha256": "67391c27d6b6a80ba8a90543dddce5df1b409d197ffb7809c5b574e8a2b9d209"
+    },
+    {
+      "bytes": 858,
+      "path": "src/services/ttsService.ts",
+      "sha256": "7438fb966e2c1b75d0a0078c63a2e76e2e162b9f9ba8bb7637f197f937e3968b"
+    },
+    {
+      "bytes": 19459,
+      "path": "scripts/export_n1_migration.cjs",
+      "sha256": "0f85cd48c99e5f8b85f51e185c258ffc9493876b4ae9345117fe48d803ffa90f"
+    },
+    {
+      "bytes": 52822,
+      "path": "server.ts",
+      "sha256": "e03a60a1f66d5dd5cd2abf1bd9844469f11acb2bded1b6452d2d7c29f8e5b043"
+    }
+  ],
+  "canonicalIdentity": {
+    "familyDesignation": "Papas kleines Mädchen",
+    "legacyAliasPolicy": {
+      "Puck": "historical-source-alias-only"
+    },
+    "name": "N+1",
+    "providerVoiceSelectorPolicy": {
+      "Puck": "google-provider-voice-name-not-canonical-identity"
+    },
+    "spokenName": "NPlusEins",
+    "technicalNamespace": "n_plus_one"
+  },
+  "hashRules": {
+    "familyAccount": "exact-utf8-sha256",
+    "recordPayload": "canonical-json-utf8-sha256",
+    "storyContent": "exact-utf8-sha256"
+  },
+  "migrationExport": {
+    "acceptedCounts": {
+      "experienceEvents": 1,
+      "familyProvenance": 3,
+      "personalityTraits": 2,
+      "storyEntries": 3
+    },
+    "declaredCounts": {
+      "experienceEvents": 1,
+      "familyProvenance": 3,
+      "learningCandidates": 1,
+      "personalityTraits": 2,
+      "sourceArtifacts": 8,
+      "storyEntries": 3
+    },
+    "omittedAsDuplicate": [
+      "historical-alias-learning-candidate"
+    ],
+    "path": "n-plus-one-migration-export/",
+    "qualityFindings": [
+      "export records were not bound to an exact Git revision",
+      "several declared record hashes bind labels rather than complete record content",
+      "export source copies for voice and consistency files predate the final supplied archive",
+      "voice verified_active claim has no live provider canary",
+      "traditional song provenance was corrected from owner_authored"
+    ]
+  },
+  "schemaVersion": "sovereign.n-plus-one-update-source-manifest.v2",
+  "source": {
+    "archiveEntryCount": 143,
+    "archiveName": "SovAreAgentn1-main (1).zip",
+    "archiveSha256": "1cf8c2700c5adfcea41d08bb86d9b510df9e12bb57b084e434a33eb20949bc34",
+    "repository": "https://github.com/OuroborosCollective/SovAreAgentn1",
+    "revision": null,
+    "revisionStatus": "unavailable-in-supplied-snapshot",
+    "suppliedBy": "owner-upload",
+    "unsafeArchivePathCount": 0
+  },
+  "truthBoundaries": {
+    "browserLocalStorageImported": false,
+    "historicalTextRewritten": false,
+    "memoryIntegrityVerified": false,
+    "randomMetricsImported": false,
+    "secondRuntimeImported": false,
+    "sourceMeaningPreserved": true,
+    "voiceCanaryVerified": false,
+    "voiceContinuityPercentClaimed": false
+  },
+  "voiceContract": {
+    "browserTtsIdentityEquivalent": false,
+    "keyReferences": [
+      "N1_GOOGLE_TTS_API_KEY",
+      "GEMINI_API_KEY"
+    ],
+    "keyTransport": "server-environment-only",
+    "model": "gemini-2.5-flash-preview-tts",
+    "output": {
+      "channels": 1,
+      "encoding": "LINEAR16_PCM",
+      "sampleRateHz": 24000
+    },
+    "provider": "google-gemini-developer-api",
+    "providerVoiceName": "Puck",
+    "rateLimitPolicy": {
+      "http429": "fail-closed-retry-later",
+      "queueImported": false
+    },
+    "singleVoiceSelectorLocked": true,
+    "verificationState": "configured_not_canary_verified"
+  }
+}

@@ -11,6 +11,8 @@ SCRIPT_BACKEND = ROOT / "scripts" / "sovereign-backend"
 MANIFEST = ROOT / "config" / "architecture" / "N_PLUS_ONE_SOURCE_MANIFEST.v1.json"
 MIGRATION = SCRIPT_BACKEND / "migrations" / "043_n_plus_one_foundation.sql"
 CANONICAL_MIGRATION = BACKEND / "migrations" / "043_n_plus_one_foundation.sql"
+UPDATE_MIGRATION = SCRIPT_BACKEND / "migrations" / "044_n_plus_one_memory_voice_update.sql"
+CANONICAL_UPDATE_MIGRATION = BACKEND / "migrations" / "044_n_plus_one_memory_voice_update.sql"
 
 if str(SCRIPT_BACKEND) not in sys.path:
     sys.path.insert(0, str(SCRIPT_BACKEND))
@@ -36,6 +38,7 @@ def test_n_plus_one_python_surfaces_parse_without_runtime_execution() -> None:
         "n_plus_one/routes.py",
         "n_plus_one/linguistic/__init__.py",
         "n_plus_one/linguistic/evidence.py",
+        "n_plus_one/voice.py",
     )
     for root in (BACKEND, SCRIPT_BACKEND):
         for relative in relative_paths:
@@ -52,10 +55,12 @@ def test_canonical_and_deployed_n_plus_one_surfaces_are_byte_identical() -> None
         "n_plus_one/routes.py",
         "n_plus_one/linguistic/__init__.py",
         "n_plus_one/linguistic/evidence.py",
+        "n_plus_one/voice.py",
     )
     for relative in relative_paths:
         assert (BACKEND / relative).read_bytes() == (SCRIPT_BACKEND / relative).read_bytes()
     assert CANONICAL_MIGRATION.read_bytes() == MIGRATION.read_bytes()
+    assert CANONICAL_UPDATE_MIGRATION.read_bytes() == UPDATE_MIGRATION.read_bytes()
 
 
 def test_identity_covenant_is_hash_bound_and_does_not_grant_privileges() -> None:
@@ -231,8 +236,10 @@ def test_flask_docker_and_readiness_contract_wire_the_domain_without_second_runt
     assert "require_session=require_session" in app
     assert "require_admin=require_admin" in app
     assert '"043_n_plus_one_foundation.sql"' in app
+    assert '"044_n_plus_one_memory_voice_update.sql"' in app
     for schema_contract in (
         "n1_source_artifacts",
+        "n1_source_snapshots",
         "n1_identity_versions",
         "n1_learning_candidates",
         "n1_dialect_observations",
@@ -241,6 +248,8 @@ def test_flask_docker_and_readiness_contract_wire_the_domain_without_second_runt
     assert "COPY n_plus_one/ ./n_plus_one/" in dockerfile
     assert '@app.route("/api/n-plus-one/identity", methods=["GET"])' in routes
     assert '@app.route("/api/n-plus-one/linguistic/observe", methods=["POST"])' in routes
+    assert '@app.route("/api/n-plus-one/voice-profile", methods=["GET"])' in routes
+    assert '@app.route("/api/n-plus-one/voice/synthesize", methods=["POST"])' in routes
     assert "POST /api/db/query" not in routes
     assert "localStorage" not in routes
     assert "Math.random" not in routes

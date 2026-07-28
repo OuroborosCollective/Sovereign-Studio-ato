@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
 from typing import Any, Callable
 
 import psycopg2.extras
-from flask import jsonify, request
+from flask import Response, jsonify, request
 
 from .contracts import (
     IDENTITY_SHA256,
@@ -18,6 +20,12 @@ from .contracts import (
 )
 from .identity_covenant import canonical_identity
 from .linguistic.evidence import observe_configured_markers
+from .voice import (
+    NPlusOneVoiceError,
+    VOICE_PROFILE_KEY,
+    synthesize_google_tts,
+    voice_profile_contract,
+)
 
 QueryFunction = Callable[..., Any]
 
@@ -58,13 +66,16 @@ def _status_payload(query: QueryFunction) -> tuple[dict[str, Any], int]:
         counts = query(
             """SELECT
                  (SELECT COUNT(*) FROM n1_source_artifacts)::integer AS source_artifacts,
+                 (SELECT COUNT(*) FROM n1_source_snapshots)::integer AS source_snapshots,
                  (SELECT COUNT(*) FROM n1_identity_versions)::integer AS identity_versions,
+                 (SELECT COUNT(*) FROM n1_personality_traits)::integer AS personality_traits,
                  (SELECT COUNT(*) FROM n1_family_provenance)::integer AS family_provenance,
                  (SELECT COUNT(*) FROM n1_story_entries)::integer AS story_entries,
                  (SELECT COUNT(*) FROM n1_experience_events)::integer AS experience_events,
                  (SELECT COUNT(*) FROM n1_learning_candidates)::integer AS learning_candidates,
                  (SELECT COUNT(*) FROM n1_learning_receipts)::integer AS learning_receipts,
                  (SELECT COUNT(*) FROM n1_linguistic_profiles)::integer AS linguistic_profiles,
+                 (SELECT COUNT(*) FROM n1_grammar_rules)::integer AS grammar_rules,
                  (SELECT COUNT(*) FROM n1_dialect_observations)::integer AS linguistic_observations,
                  (SELECT COUNT(*) FROM n1_voice_profiles)::integer AS voice_profiles,
                  (SELECT COUNT(*) FROM n1_response_style_receipts)::integer AS response_style_receipts""",
@@ -84,11 +95,39 @@ def _status_payload(query: QueryFunction) -> tuple[dict[str, Any], int]:
             and str(archive.get("sourceRevision") or "") == SOURCE_REVISION
             and str(archive.get("contentSha256") or "") == SOURCE_ARCHIVE_SHA256
         )
-        ok = not blocker and source_verified
+        update_snapshot = query(
+            """SELECT snapshot_key AS "snapshotKey",
+                      repository, source_revision AS "sourceRevision",
+                      revision_status AS "revisionStatus",
+                      archive_name AS "archiveName",
+                      archive_sha256 AS "archiveSha256",
+                      archive_entry_count AS "archiveEntryCount",
+                      unsafe_archive_path_count AS "unsafeArchivePathCount",
+                      manifest_path AS "manifestPath",
+                      manifest_sha256 AS "manifestSha256",
+                      created_at AS "createdAt"
+               FROM n1_source_snapshots
+               WHERE snapshot_key='sovareagentn1-owner-update-20260728'
+               LIMIT 1""",
+            one=True,
+        )
+        update_snapshot_verified = bool(
+            update_snapshot
+            and str(update_snapshot.get("archiveSha256") or "")
+                == "1cf8c2700c5adfcea41d08bb86d9b510df9e12bb57b084e434a33eb20949bc34"
+            and str(update_snapshot.get("manifestSha256") or "")
+                == "c8eb232e0af5d0acb54e7bef763304a1207032a24a17ca20e610f00909fadef3"
+            and int(update_snapshot.get("unsafeArchivePathCount") or 0) == 0
+        )
+        ok = not blocker and source_verified and update_snapshot_verified
         return {
             "ok": ok,
             "status": "FOUNDATION_BOUND" if ok else "FOUNDATION_BLOCKED",
-            "blocker": blocker or (None if source_verified else "n1_source_binding_mismatch"),
+            "blocker": (
+                blocker
+                or (None if source_verified else "n1_source_binding_mismatch")
+                or (None if update_snapshot_verified else "n1_update_snapshot_binding_mismatch")
+            ),
             "identity": identity,
             "source": {
                 "repository": SOURCE_REPOSITORY,
@@ -98,12 +137,28 @@ def _status_payload(query: QueryFunction) -> tuple[dict[str, Any], int]:
                 "readbackVerified": source_verified,
                 "sourceReference": dict(archive.get("sourceReference") or {}) if archive else {},
             },
+            "updateSnapshot": {
+                **dict(update_snapshot or {}),
+                "createdAt": _iso((update_snapshot or {}).get("createdAt")),
+                "readbackVerified": update_snapshot_verified,
+                "sourceRevisionAvailable": bool((update_snapshot or {}).get("sourceRevision")),
+            },
             "counts": {key: int(value or 0) for key, value in dict(counts).items()},
             "capabilities": {
                 "identityBound": bool(identity),
                 "sourceProvenanceBound": source_verified,
+                "updateSnapshotBound": update_snapshot_verified,
+                "personalityTraitsImported": int(counts.get("personality_traits") or 0) > 0,
+                "familyProvenanceImported": int(counts.get("family_provenance") or 0) > 0,
+                "storyEntriesImported": int(counts.get("story_entries") or 0) > 0,
+                "experienceEventsImported": int(counts.get("experience_events") or 0) > 0,
                 "learningCandidatePersistence": True,
                 "linguisticMarkerEvidence": True,
+                "voiceProfileConfigured": int(counts.get("voice_profiles") or 0) > 0,
+                "voiceProviderKeyConfigured": bool(
+                    os.getenv("N1_GOOGLE_TTS_API_KEY", "").strip()
+                    or os.getenv("GEMINI_API_KEY", "").strip()
+                ),
                 "dialectDetectionVerified": False,
                 "voiceLinguaChainVerified": False,
                 "memoryIntegrityVerified": False,
@@ -166,6 +221,102 @@ def register_n_plus_one_routes(
     def admin_n_plus_one_status():
         payload, status_code = _status_payload(query)
         return jsonify(payload), status_code
+
+    @app.route("/api/n-plus-one/voice-profile", methods=["GET"])
+    @require_session
+    def n_plus_one_voice_profile():
+        row = query(
+            """SELECT profile_key AS "profileKey", language_tag AS "languageTag",
+                      profile_payload AS "profilePayload",
+                      verification_state AS "verificationState",
+                      profile_sha256 AS "profileSha256",
+                      created_at AS "createdAt"
+               FROM n1_voice_profiles
+               WHERE profile_key=%s
+               LIMIT 1""",
+            (VOICE_PROFILE_KEY,),
+            one=True,
+        )
+        if not row:
+            return jsonify({
+                "ok": False,
+                "blocker": "n1_voice_profile_missing",
+            }), 503
+        return jsonify({
+            "ok": True,
+            **voice_profile_contract(),
+            "databaseReadback": {
+                **dict(row),
+                "createdAt": _iso(row.get("createdAt")),
+            },
+            "providerKeyConfigured": bool(
+                os.getenv("N1_GOOGLE_TTS_API_KEY", "").strip()
+                or os.getenv("GEMINI_API_KEY", "").strip()
+            ),
+            "truthNotice": (
+                "Configured voice identity is not a successful live TTS canary. "
+                "The Google provider selector Puck is not N+1's canonical name."
+            ),
+        })
+
+    @app.route("/api/n-plus-one/voice/synthesize", methods=["POST"])
+    @require_admin
+    def n_plus_one_voice_synthesize():
+        body = request.get_json(force=True) or {}
+        text = str(body.get("text") or "")
+        mood = str(body.get("mood") or "neutral")
+        api_key = (
+            os.getenv("N1_GOOGLE_TTS_API_KEY", "").strip()
+            or os.getenv("GEMINI_API_KEY", "").strip()
+        )
+        try:
+            result = synthesize_google_tts(
+                text,
+                mood=mood,
+                api_key=api_key,
+            )
+        except ValueError as exc:
+            return jsonify({
+                "ok": False,
+                "blocker": "n1_voice_request_invalid",
+                "error": str(exc),
+            }), 400
+        except NPlusOneVoiceError as exc:
+            payload = {
+                "ok": False,
+                "blocker": exc.code,
+                "retryable": exc.code in {
+                    "voice_provider_rate_limited",
+                    "voice_provider_timeout",
+                    "voice_provider_unreachable",
+                },
+                "retryAfter": exc.retry_after or None,
+                "secretReturned": False,
+            }
+            return jsonify(payload), exc.status_code
+
+        audio = bytes(result["audio"])
+        text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        audit(
+            "n1_voice_synthesized",
+            result["profileKey"],
+            {
+                "textSha256": text_sha256,
+                "audioBytes": len(audio),
+                "mimeType": result["mimeType"],
+                "provider": result["provider"],
+                "model": result["model"],
+                "voiceName": result["voiceName"],
+                "rawTextStored": False,
+                "secretReturned": False,
+                "continuityCanaryVerified": False,
+            },
+        )
+        response = Response(audio, status=200, mimetype=result["mimeType"])
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-N1-Voice-Profile"] = result["profileKey"]
+        response.headers["X-N1-Voice-Verification"] = result["verificationState"]
+        return response
 
     @app.route("/api/n-plus-one/learning-candidates", methods=["GET"])
     @require_session
