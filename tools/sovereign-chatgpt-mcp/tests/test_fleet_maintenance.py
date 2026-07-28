@@ -86,17 +86,47 @@ def test_restore_toc_reports_secret_safe_trigger_candidate_on_layout_drift() -> 
         raise AssertionError("unexpected trigger layout was not blocked")
 
 
-def test_restore_toc_blocks_incomplete_vault_extension_overlap() -> None:
+def test_restore_toc_accepts_archive_without_separate_vault_trigger() -> None:
     vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
     vault_view = "373; 1259 16428 TABLE vault decrypted_secrets postgres"
 
+    filtered, omissions = _compatible_restore_toc(vault_function + "\n" + vault_view + "\n")
+
+    assert f";{vault_function}" in filtered
+    assert f";{vault_view}" in filtered
+    assert omissions == [
+        "FUNCTION vault.secrets_encrypt_secret_secret()",
+        "VIEW vault.decrypted_secrets",
+    ]
+
+
+def test_restore_toc_still_requires_function_and_view() -> None:
+    vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+
     try:
-        _compatible_restore_toc(vault_function + "\n" + vault_view + "\n")
+        _compatible_restore_toc(vault_function + "\n")
     except RuntimeError as exc:
         assert "Vault compatibility inventory drifted" in str(exc)
-        assert '"TRIGGER vault.secrets_encrypt_secret_trigger_secret":0' in str(exc)
+        assert '"VIEW vault.decrypted_secrets":0' in str(exc)
     else:
-        raise AssertionError("incomplete Vault compatibility inventory was not blocked")
+        raise AssertionError("missing required Vault view was not blocked")
+
+
+def test_restore_toc_blocks_duplicate_optional_trigger() -> None:
+    vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+    vault_view = "373; 1259 16428 TABLE vault decrypted_secrets postgres"
+    vault_trigger = (
+        "374; 2620 16429 TRIGGER vault secrets "
+        "secrets_encrypt_secret_trigger_secret postgres"
+    )
+    listing = "\n".join((vault_function, vault_view, vault_trigger, vault_trigger)) + "\n"
+
+    try:
+        _compatible_restore_toc(listing)
+    except RuntimeError as exc:
+        assert '"TRIGGER vault.secrets_encrypt_secret_trigger_secret":2' in str(exc)
+    else:
+        raise AssertionError("duplicate optional Vault trigger was not blocked")
 
 
 def test_vault_compatibility_digest_requires_complete_definitions(monkeypatch) -> None:
