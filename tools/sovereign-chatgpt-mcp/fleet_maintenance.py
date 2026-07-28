@@ -19,10 +19,28 @@ DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance"
 MIN_BACKUP_AVAILABLE_BYTES = 1_073_741_824
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-_VAULT_BOOTSTRAP_OBJECTS = (
-    "FUNCTION vault.secrets_encrypt_secret_secret()",
-    "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
-    "VIEW vault.decrypted_secrets",
+_VAULT_RESTORE_COMPATIBILITY = (
+    (
+        "FUNCTION vault.secrets_encrypt_secret_secret()",
+        re.compile(
+            r"^\d+;\s+\d+\s+\d+\s+FUNCTION\s+vault\s+"
+            r"secrets_encrypt_secret_secret\(\)(?:\s+\S+)?$"
+        ),
+    ),
+    (
+        "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
+        re.compile(
+            r"^\d+;\s+\d+\s+\d+\s+TRIGGER\s+vault\s+"
+            r"(?:secrets\s+)?secrets_encrypt_secret_trigger_secret(?:\s+\S+)?$"
+        ),
+    ),
+    (
+        "VIEW vault.decrypted_secrets",
+        re.compile(
+            r"^\d+;\s+\d+\s+\d+\s+(?:TABLE|VIEW)\s+vault\s+"
+            r"decrypted_secrets(?:\s+\S+)?$"
+        ),
+    ),
 )
 _SUCCESSFUL_PATCH_STATES = frozenset({"completed", "complete", "success", "succeeded"})
 _PREPATCH_STATES = frozenset({"pending_approval"})
@@ -44,14 +62,34 @@ def _quote_identifier(value: str) -> str:
 
 
 def _compatible_restore_toc(value: Any) -> tuple[str, list[str]]:
-    """Validate the archive list without omitting source-owned objects."""
+    """Omit the exact Vault objects recreated by the archived extension step."""
     if isinstance(value, bytes):
         listing = value.decode("utf-8", errors="strict")
     else:
         listing = str(value or "")
     if not listing.strip():
         raise RuntimeError("pg_restore archive list is empty")
-    return listing.rstrip("\n") + "\n", []
+    counts = {label: 0 for label, _pattern in _VAULT_RESTORE_COMPATIBILITY}
+    filtered: list[str] = []
+    for line in listing.splitlines():
+        matches = [
+            label
+            for label, pattern in _VAULT_RESTORE_COMPATIBILITY
+            if pattern.fullmatch(line)
+        ]
+        if len(matches) > 1:
+            raise RuntimeError("pg_restore Vault compatibility patterns overlap")
+        if matches:
+            counts[matches[0]] += 1
+            filtered.append(";" + line)
+        else:
+            filtered.append(line)
+    if any(count != 1 for count in counts.values()):
+        raise RuntimeError(
+            "pg_restore Vault compatibility inventory drifted: "
+            + json.dumps(counts, sort_keys=True, separators=(",", ":"))
+        )
+    return "\n".join(filtered) + "\n", list(counts)
 
 
 class FleetMaintenanceRuntime:
@@ -552,71 +590,45 @@ ORDER BY n.nspname, c.relname;
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def _prepare_isolated_restore_database(self, database: str) -> list[str]:
-        inventory_sql = """
-WITH candidates(object_name, present) AS (
-    VALUES
-        (
-            'FUNCTION vault.secrets_encrypt_secret_secret()',
-            to_regprocedure('vault.secrets_encrypt_secret_secret()') IS NOT NULL
-        ),
-        (
-            'TRIGGER vault.secrets_encrypt_secret_trigger_secret',
-            EXISTS (
-                SELECT 1
-                FROM pg_catalog.pg_trigger t
-                JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
-                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = 'vault'
-                  AND c.relname = 'secrets'
-                  AND t.tgname = 'secrets_encrypt_secret_trigger_secret'
-                  AND NOT t.tgisinternal
-            )
-        ),
-        (
-            'VIEW vault.decrypted_secrets',
-            EXISTS (
-                SELECT 1
-                FROM pg_catalog.pg_class c
-                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = 'vault'
-                  AND c.relname = 'decrypted_secrets'
-                  AND c.relkind = 'v'
-            )
-        )
-)
-SELECT object_name
-FROM candidates
-WHERE present
-ORDER BY object_name;
-""".strip()
-        inventory = self._psql(database, inventory_sql)
-        if not inventory.get("ok"):
-            raise RuntimeError("isolated database Vault bootstrap inventory failed")
-        observed = sorted(
-            line.strip()
-            for line in str(inventory.get("stdout") or "").splitlines()
-            if line.strip()
-        )
-        expected = sorted(_VAULT_BOOTSTRAP_OBJECTS)
-        if observed != expected:
-            raise RuntimeError(
-                "isolated database Vault bootstrap inventory drifted from the exact allowlist"
-            )
-        reset = self._psql(
+    def _vault_compatibility_digest(self, database: str) -> str:
+        result = self._psql(
             database,
             """
-DROP TRIGGER secrets_encrypt_secret_trigger_secret ON vault.secrets;
-DROP VIEW vault.decrypted_secrets;
-DROP FUNCTION vault.secrets_encrypt_secret_secret();
+SELECT jsonb_build_object(
+    'function',
+    pg_catalog.pg_get_functiondef(
+        to_regprocedure('vault.secrets_encrypt_secret_secret()')
+    ),
+    'trigger',
+    (
+        SELECT pg_catalog.pg_get_triggerdef(t.oid, true)
+        FROM pg_catalog.pg_trigger t
+        JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'vault'
+          AND c.relname = 'secrets'
+          AND t.tgname = 'secrets_encrypt_secret_trigger_secret'
+          AND NOT t.tgisinternal
+    ),
+    'view',
+    pg_catalog.pg_get_viewdef(to_regclass('vault.decrypted_secrets'), true)
+)::text;
 """.strip(),
         )
-        if not reset.get("ok"):
-            raise RuntimeError("isolated database Vault bootstrap reset failed")
-        remaining = self._psql(database, inventory_sql)
-        if not remaining.get("ok") or str(remaining.get("stdout") or "").strip():
-            raise RuntimeError("isolated database Vault bootstrap reset was not verified")
-        return observed
+        if not result.get("ok"):
+            raise RuntimeError("Vault compatibility definition inventory failed")
+        try:
+            payload = json.loads(str(result.get("stdout") or "").strip())
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Vault compatibility definition inventory is invalid") from exc
+        expected = {"function", "trigger", "view"}
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != expected
+            or any(not isinstance(payload[key], str) or not payload[key].strip() for key in expected)
+        ):
+            raise RuntimeError("Vault compatibility definition inventory is incomplete")
+        return _canonical_sha256(payload)
 
     def _drop_restore_database(self, database: str) -> bool:
         dropped = self._run_text(
@@ -695,10 +707,11 @@ DROP FUNCTION vault.secrets_encrypt_secret_secret();
         restore_created = False
         cleanup_verified = False
         restore_compatibility_omissions: list[str] = []
-        restore_bootstrap_resets: list[str] = []
         restore_toc_digest = ""
+        vault_compatibility_digest = ""
         try:
             source_before = self._database_manifest(POSTGRES_DATABASE)
+            source_vault_before = self._vault_compatibility_digest(POSTGRES_DATABASE)
             dumped = self._run_text(
                 [
                     "docker",
@@ -727,8 +740,10 @@ DROP FUNCTION vault.secrets_encrypt_secret_secret();
                 raise RuntimeError("backup archive copy failed")
             os.chmod(host_temporary, 0o600)
             source_after = self._database_manifest(POSTGRES_DATABASE)
-            if source_before != source_after:
+            source_vault_after = self._vault_compatibility_digest(POSTGRES_DATABASE)
+            if source_before != source_after or source_vault_before != source_vault_after:
                 raise RuntimeError("source database changed during backup evidence collection")
+            vault_compatibility_digest = source_vault_after
             listed = self._run_text(
                 ["docker", "exec", POSTGRES_CONTAINER, "pg_restore", "--list", container_temporary],
                 timeout=300,
@@ -789,9 +804,6 @@ DROP FUNCTION vault.secrets_encrypt_secret_secret();
             if not created.get("ok"):
                 raise RuntimeError("isolated restore database creation failed")
             restore_created = True
-            restore_bootstrap_resets = self._prepare_isolated_restore_database(
-                restore_database
-            )
             restored = self._run_text(
                 [
                     "docker",
@@ -817,8 +829,11 @@ DROP FUNCTION vault.secrets_encrypt_secret_secret();
                     f"isolated pg_restore failed (exit={restored.get('exit_code')}): {detail}"
                 )
             restored_manifest = self._database_manifest(restore_database)
+            restored_vault_digest = self._vault_compatibility_digest(restore_database)
             if restored_manifest != source_after:
                 raise RuntimeError("restored schema or table row counts differ from source evidence")
+            if restored_vault_digest != vault_compatibility_digest:
+                raise RuntimeError("restored Vault definitions differ from source evidence")
             cleanup_verified = self._drop_restore_database(restore_database)
             restore_created = False
             if not cleanup_verified:
@@ -842,7 +857,7 @@ DROP FUNCTION vault.secrets_encrypt_secret_secret();
                 "isolatedTargetRemoved": True,
                 "restoreTocDigest": f"sha256:{restore_toc_digest}",
                 "restoreCompatibilityOmissions": restore_compatibility_omissions,
-                "restoreBootstrapObjectsReset": restore_bootstrap_resets,
+                "vaultCompatibilityDigest": f"sha256:{vault_compatibility_digest}",
                 "patchRunId": str(patch_run_id).strip().lower(),
                 "bootId": str(plan.get("bootId") or ""),
                 "createdAtEpoch": int(time.time()),
@@ -872,7 +887,7 @@ DROP FUNCTION vault.secrets_encrypt_secret_secret();
                 "isolatedTargetRemoved": True,
                 "restoreTocDigest": receipt["restoreTocDigest"],
                 "restoreCompatibilityOmissions": receipt["restoreCompatibilityOmissions"],
-                "restoreBootstrapObjectsReset": receipt["restoreBootstrapObjectsReset"],
+                "vaultCompatibilityDigest": receipt["vaultCompatibilityDigest"],
                 "backupReceiptSha256": receipt_sha,
                 "patchRunId": receipt["patchRunId"],
                 "readbackVerified": True,
