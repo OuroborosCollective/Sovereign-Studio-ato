@@ -66,6 +66,44 @@ def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+def _manifest_difference(source: dict[str, Any], restored: dict[str, Any]) -> dict[str, Any]:
+    def inventory(payload: dict[str, Any]) -> dict[str, int]:
+        rows: dict[str, int] = {}
+        for item in payload.get("rowCounts") or []:
+            if not isinstance(item, list) or len(item) != 3:
+                continue
+            namespace, table, count = item
+            if not isinstance(namespace, str) or not isinstance(table, str):
+                continue
+            try:
+                rows[_bounded(f"{namespace}.{table}", 180)] = int(count)
+            except (TypeError, ValueError):
+                continue
+        return rows
+
+    source_rows = inventory(source)
+    restored_rows = inventory(restored)
+    differences = [
+        {
+            "table": table,
+            "source": source_rows.get(table),
+            "restored": restored_rows.get(table),
+        }
+        for table in sorted(set(source_rows) | set(restored_rows))
+        if source_rows.get(table) != restored_rows.get(table)
+    ]
+    return {
+        "schemaDigestMatch": source.get("schemaDigest") == restored.get("schemaDigest"),
+        "rowCountDigestMatch": source.get("rowCountDigest") == restored.get("rowCountDigest"),
+        "sourceTableCount": source.get("tableCount"),
+        "restoredTableCount": restored.get("tableCount"),
+        "sourceTotalRows": source.get("totalRows"),
+        "restoredTotalRows": restored.get("totalRows"),
+        "rowCountDifferences": differences[:3],
+        "rowCountDifferencesTruncated": len(differences) > 3,
+    }
+
+
 def _compatible_restore_toc(value: Any) -> tuple[str, list[str]]:
     """Omit the exact Vault objects recreated by the archived extension step."""
     if isinstance(value, bytes):
@@ -632,6 +670,7 @@ ORDER BY n.nspname, c.relname;
             "rowCountDigest": _canonical_sha256(rows),
             "tableCount": len(rows),
             "totalRows": sum(item[2] for item in rows),
+            "rowCounts": rows,
         }
 
     @staticmethod
@@ -904,7 +943,12 @@ SELECT jsonb_build_object(
                 username=POSTGRES_RESTORE_USER,
             )
             if restored_manifest != source_after:
-                raise RuntimeError("restored schema or table row counts differ from source evidence")
+                detail = json.dumps(
+                    _manifest_difference(source_after, restored_manifest),
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                )
+                raise RuntimeError(f"restored manifest differs from source evidence: {detail}")
             if restored_vault_digest != vault_compatibility_digest:
                 raise RuntimeError("restored Vault definitions differ from source evidence")
             cleanup_verified = self._drop_restore_database(restore_database)
