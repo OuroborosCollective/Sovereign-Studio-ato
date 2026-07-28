@@ -67,7 +67,7 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() == "1":
         capabilities.append("managed_compose_write")
     if os.getenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "0").strip() == "1":
-        capabilities.append("patchmon_patch_write")
+        capabilities.extend(("patchmon_patch_write", "fleet_maintenance_write"))
     return capabilities
 
 
@@ -875,6 +875,106 @@ def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
     """Read bounded logs from one allowlisted Docker container through the local broker."""
     return broker.call("container_logs", {"container": container, "tail": tail})
+
+
+@mcp.tool(annotations=READ_ONLY)
+def fleet_filebrowser_retirement_plan() -> dict[str, Any]:
+    """Plan retirement of the one fixed owner-retired Filebrowser container while preserving its image and volumes."""
+    return broker.call("fleet_filebrowser_retirement_plan", {}, timeout=60)
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def fleet_filebrowser_retirement_apply(
+    confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Remove only the exact confirmed Filebrowser container through the host queue; never remove images or volumes."""
+    return broker.call(
+        "fleet_filebrowser_retirement_apply",
+        {"confirmation_sha256": confirmation_sha256, "owner_approved": owner_approved},
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def host_postgres_backup_restore_plan(
+    patch_run_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
+) -> dict[str, Any]:
+    """Bind a real PostgreSQL backup and isolated restore check to one pending PatchMon run."""
+    return broker.call(
+        "host_postgres_backup_restore_plan",
+        {"patch_run_id": patch_run_id},
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def host_postgres_backup_restore_apply(
+    patch_run_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
+    confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Create a retained pg_dump, restore it into an isolated database, compare metadata and row counts, then remove the restore target."""
+    return broker.call(
+        "host_postgres_backup_restore_apply",
+        {
+            "patch_run_id": patch_run_id,
+            "confirmation_sha256": confirmation_sha256,
+            "owner_approved": owner_approved,
+        },
+        timeout=1800,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def host_reboot_plan(
+    patch_run_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
+    backup_receipt_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+) -> dict[str, Any]:
+    """Plan one reboot only after successful PatchMon, retained restore evidence, zero upgrades and healthy core containers."""
+    return broker.call(
+        "host_reboot_plan",
+        {"patch_run_id": patch_run_id, "backup_receipt_sha256": backup_receipt_sha256},
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def host_reboot_apply(
+    patch_run_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
+    backup_receipt_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+    confirmation_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Schedule one delayed systemd reboot through the host queue after exact state confirmation."""
+    return broker.call(
+        "host_reboot_apply",
+        {
+            "patch_run_id": patch_run_id,
+            "backup_receipt_sha256": backup_receipt_sha256,
+            "confirmation_sha256": confirmation_sha256,
+            "owner_approved": owner_approved,
+        },
+        timeout=180,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY)
+def host_post_reboot_verify(
+    expected_previous_boot_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
+    patch_run_id: Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")],
+    backup_receipt_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")],
+) -> dict[str, Any]:
+    """Verify boot-ID change, PatchMon success, retained backup, zero upgrades and healthy core containers after reboot."""
+    return broker.call(
+        "host_post_reboot_verify",
+        {
+            "expected_previous_boot_id": expected_previous_boot_id,
+            "patch_run_id": patch_run_id,
+            "backup_receipt_sha256": backup_receipt_sha256,
+        },
+        timeout=180,
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)

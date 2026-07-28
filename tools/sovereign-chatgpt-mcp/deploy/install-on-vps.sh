@@ -29,6 +29,7 @@ DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
 RUNTIME_EVIDENCE_DIR="$INSTALL_ROOT/runtime-evidence"
+MAINTENANCE_DIR="$INSTALL_ROOT/maintenance"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
@@ -484,6 +485,7 @@ unset MANAGED_COMPOSE_ROOT
 install -d -m 0755 "$ANDROID_SDK_DIR"
 install -d -m 0770 -o root -g sovereign-mcp "$COMMAND_QUEUE_DIR" "$COMMAND_QUEUE_DIR/inbox" "$COMMAND_QUEUE_DIR/processing" "$COMMAND_QUEUE_DIR/outbox"
 install -d -m 0700 -o root -g root "$RUNTIME_EVIDENCE_DIR"
+install -d -m 0700 -o root -g root "$MAINTENANCE_DIR" "$MAINTENANCE_DIR/backups" "$MAINTENANCE_DIR/receipts"
 [[ -d "$RUNTIME_EVIDENCE_DIR" && ! -L "$RUNTIME_EVIDENCE_DIR" ]] \
   || fail "runtime evidence root is not a regular directory"
 [[ -w "$RUNTIME_EVIDENCE_DIR" && -x "$RUNTIME_EVIDENCE_DIR" ]] \
@@ -547,7 +549,7 @@ done
 install -m 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md"
 install -m 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl"
 
-for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py; do
+for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   backup_control_plane_file "$BROKER_DIR/$file"
 done
 backup_control_plane_file "$BROKER_DIR/litellm_stack.py"
@@ -592,6 +594,7 @@ install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
 install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"
 install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"
 install -m 0640 "$SOURCE_DIR/patchmon_fleet.py" "$BROKER_DIR/patchmon_fleet.py"
+install -m 0640 "$SOURCE_DIR/fleet_maintenance.py" "$BROKER_DIR/fleet_maintenance.py"
 rm -f "$BROKER_DIR/litellm_stack.py"
 rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
 rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"

@@ -15,6 +15,7 @@ from admin_mode import PrivateAdminRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import is_mutating_action
 from document_pipeline import DocumentPipelineRuntime
+from fleet_maintenance import FleetMaintenanceRuntime
 from github_admin import GitHubAdminRuntime
 from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
 from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
@@ -53,6 +54,14 @@ class BrokerRuntime:
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
+        self.fleet_maintenance = FleetMaintenanceRuntime(
+            patch_run_reader=lambda _run_id: self.patchmon.query(
+                view="patch_runs",
+                limit=100,
+                host_id="",
+                status="",
+            )
+        )
         self.admin = PrivateAdminRuntime(self.operations)
         self.self_update = SelfUpdateRuntime()
         self.github = GitHubAdminRuntime(self.self_update)
@@ -421,6 +430,34 @@ class BrokerRuntime:
             },
             "container_status": self.container_status,
             "container_logs": self.container_logs,
+            "fleet_filebrowser_retirement_plan": lambda _values: self.fleet_maintenance.filebrowser_retirement_plan(),
+            "fleet_filebrowser_retirement_apply": lambda values: self.fleet_maintenance.filebrowser_retirement_apply(
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved")),
+            ),
+            "host_postgres_backup_restore_plan": lambda values: self.fleet_maintenance.postgres_backup_restore_plan(
+                patch_run_id=str(values.get("patch_run_id") or ""),
+            ),
+            "host_postgres_backup_restore_apply": lambda values: self.fleet_maintenance.postgres_backup_restore_apply(
+                patch_run_id=str(values.get("patch_run_id") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved")),
+            ),
+            "host_reboot_plan": lambda values: self.fleet_maintenance.host_reboot_plan(
+                patch_run_id=str(values.get("patch_run_id") or ""),
+                backup_receipt_sha256=str(values.get("backup_receipt_sha256") or ""),
+            ),
+            "host_reboot_apply": lambda values: self.fleet_maintenance.host_reboot_apply(
+                patch_run_id=str(values.get("patch_run_id") or ""),
+                backup_receipt_sha256=str(values.get("backup_receipt_sha256") or ""),
+                confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved")),
+            ),
+            "host_post_reboot_verify": lambda values: self.fleet_maintenance.host_post_reboot_verify(
+                expected_previous_boot_id=str(values.get("expected_previous_boot_id") or ""),
+                patch_run_id=str(values.get("patch_run_id") or ""),
+                backup_receipt_sha256=str(values.get("backup_receipt_sha256") or ""),
+            ),
             "runtime_capacity_snapshot": self.runtime_capacity_snapshot,
             "manus_public_replay_read": self.read_manus_replay,
             "document_pipeline_live_canary": lambda values: self.document_pipeline.live_canary(
