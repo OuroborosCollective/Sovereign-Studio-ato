@@ -54,7 +54,9 @@ describe('LauncherMenu', () => {
   it('schließt das Menu beim Klick auf den Close-Button', () => {
     useLauncherStore.setState({ isMenuOpen: true });
     render(<LauncherMenu />);
-    fireEvent.click(screen.getByLabelText('Launcher schließen'));
+    const closeBtn = screen.getByLabelText('Launcher schließen');
+    expect(closeBtn).toHaveAttribute('title', 'Launcher schließen');
+    fireEvent.click(closeBtn);
     expect(useLauncherStore.getState().isMenuOpen).toBe(false);
   });
 
@@ -63,5 +65,13 @@ describe('LauncherMenu', () => {
     render(<LauncherMenu />);
     fireEvent.click(screen.getByTestId('launcher-menu-backdrop'));
     expect(useLauncherStore.getState().isMenuOpen).toBe(false);
+  });
+
+  it('zeigt registrierte Tools mit barrierefreien Labels und Tooltips', () => {
+    useLauncherStore.setState({ isMenuOpen: true });
+    render(<LauncherMenu />);
+    const tileBtn = screen.getByTestId('launcher-tile-mock-tool');
+    expect(tileBtn).toHaveAttribute('aria-label', 'Mock Tool: Test');
+    expect(tileBtn).toHaveAttribute('title', 'Mock Tool: Test');
   });
 });

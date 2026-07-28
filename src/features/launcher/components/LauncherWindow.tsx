@@ -120,6 +120,7 @@ export function LauncherWindow({ id, zIndex }: LauncherWindowProps) {
         <button
           type="button"
           aria-label={`${entry.label} minimieren`}
+          title={`${entry.label} minimieren`}
           onClick={(e) => { e.stopPropagation(); minimizeWindow(id); }}
           style={{
             width: 26,
@@ -150,6 +151,7 @@ export function LauncherWindow({ id, zIndex }: LauncherWindowProps) {
         <button
           type="button"
           aria-label={`${entry.label} schließen`}
+          title={`${entry.label} schließen`}
           onClick={(e) => { e.stopPropagation(); closeWindow(id); }}
           style={{
             width: 26,

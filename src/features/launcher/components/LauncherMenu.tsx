@@ -60,6 +60,7 @@ export function LauncherMenu() {
             onClick={closeMenu}
             className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
             aria-label="Launcher schließen"
+            title="Launcher schließen"
           >
             <X size={16} />
           </button>
@@ -103,12 +104,15 @@ interface LauncherTileProps {
 
 function LauncherTile({ entry, onLaunch }: LauncherTileProps) {
   const Icon = entry.icon;
+  const tileLabel = `${entry.label}: ${entry.description}`;
 
   return (
     <button
       onClick={onLaunch}
       disabled={entry.disabled}
       data-testid={`launcher-tile-${entry.id}`}
+      aria-label={tileLabel}
+      title={tileLabel}
       className="relative flex flex-col items-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 active:scale-95 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-white/20"
     >
       {/* Badge */}

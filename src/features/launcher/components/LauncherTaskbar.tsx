@@ -45,11 +45,14 @@ export function LauncherTaskbar() {
         const Icon = entry.icon;
         const isMinimized = win.minimized;
 
+        const taskbarLabel = `${entry.label} ${isMinimized ? 'wiederherstellen' : 'fokussieren'}`;
+
         return (
           <button
             key={win.id}
             type="button"
-            aria-label={`${entry.label} ${isMinimized ? 'wiederherstellen' : 'fokussieren'}`}
+            aria-label={taskbarLabel}
+            title={taskbarLabel}
             data-testid={`taskbar-chip-${win.id}`}
             onClick={() => (isMinimized ? restoreWindow(win.id) : focusWindow(win.id))}
             style={{
