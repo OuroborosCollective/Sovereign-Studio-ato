@@ -437,7 +437,7 @@ def test_automatic_main_push_never_uses_public_runner_ssh_deployment() -> None:
         "inputs.deploy_vps_via_public_ssh == true && "
         "github.ref == 'refs/heads/main'"
     )
-    assert "name: Manual legacy SSH bootstrap on VPS" in deploy
+    assert "name: Bootstrap MCP on VPS" in deploy
     assert expected_gate in deploy
     assert "github.event_name == 'push'" not in deploy
     assert "VPS_PASSWORD" in deploy
