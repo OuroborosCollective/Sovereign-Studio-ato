@@ -3,12 +3,41 @@ from __future__ import annotations
 import json
 
 from command_contract import is_mutating_action
-from fleet_maintenance import FILEBROWSER_CONTAINER, FleetMaintenanceRuntime
+from fleet_maintenance import (
+    FILEBROWSER_CONTAINER,
+    FleetMaintenanceRuntime,
+    _compatible_restore_toc,
+)
 
 
 PATCH_RUN_ID = "a238357e-03a9-4212-a39a-1db0a18947f1"
 BOOT_ID = "11111111-1111-4111-8111-111111111111"
 RECEIPT_SHA = "a" * 64
+
+
+def test_restore_toc_omits_only_supabase_vault_bootstrap_duplicate() -> None:
+    vault = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+    table = "215; 1259 16384 TABLE public users postgres"
+
+    filtered, omissions = _compatible_restore_toc(
+        "; Archive created at 2026-07-28\n" + vault + "\n" + table + "\n"
+    )
+
+    assert f";{vault}" in filtered
+    assert table in filtered
+    assert f";{table}" not in filtered
+    assert omissions == ["FUNCTION vault secrets_encrypt_secret_secret()"]
+
+
+def test_restore_toc_rejects_multiple_vault_compatibility_entries() -> None:
+    vault = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+
+    try:
+        _compatible_restore_toc(vault + "\n" + vault + "\n")
+    except RuntimeError as exc:
+        assert "duplicate Vault compatibility entries" in str(exc)
+    else:
+        raise AssertionError("duplicate compatibility omission was not blocked")
 
 
 def _filebrowser_inspect(image: str = "filebrowser/filebrowser:latest") -> dict:
@@ -195,6 +224,74 @@ def test_backup_plan_binds_disk_safety_floor_not_volatile_free_space(monkeypatch
     assert first["availableBytes"] != second["availableBytes"]
     assert first["confirmationSha256"] == second["confirmationSha256"]
     assert len(first["confirmationSha256"]) == 64
+
+
+def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_path) -> None:
+    runtime = FleetMaintenanceRuntime(maintenance_root=str(tmp_path / "maintenance"))
+    confirmation = "b" * 64
+    calls: list[list[str]] = []
+    manifest = {
+        "schemaDigest": "c" * 64,
+        "rowCountDigest": "d" * 64,
+        "tableCount": 3,
+        "totalRows": 7,
+    }
+    vault = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "1")
+    monkeypatch.setattr(
+        runtime,
+        "postgres_backup_restore_plan",
+        lambda **_kwargs: {
+            "ok": True,
+            "status": "POSTGRES_BACKUP_RESTORE_PLAN_READY",
+            "confirmationSha256": confirmation,
+            "bootId": BOOT_ID,
+        },
+    )
+    monkeypatch.setattr(runtime, "_database_manifest", lambda _database: manifest)
+    monkeypatch.setattr(runtime, "_drop_restore_database", lambda _database: True)
+    monkeypatch.setattr(
+        runtime,
+        "_run_file_input",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("restore must use the in-container archive and filtered TOC")
+        ),
+    )
+
+    def run(argv, timeout=120):
+        calls.append(argv)
+        if argv[:2] == ["docker", "cp"] and ":/tmp/sovereign-prepatch-" in argv[2]:
+            target = argv[3]
+            with open(target, "wb") as handle:
+                handle.write(b"custom-format-backup")
+        if "pg_restore" in argv and "--list" in argv:
+            return {
+                "ok": True,
+                "exit_code": 0,
+                "stdout": "; archive\n" + vault + "\n215; 1259 16384 TABLE public users postgres\n",
+                "stderr": "",
+            }
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr(runtime, "_run_text", run)
+
+    result = runtime.postgres_backup_restore_apply(
+        patch_run_id=PATCH_RUN_ID,
+        confirmation_sha256=confirmation,
+        owner_approved=True,
+    )
+
+    assert result["status"] == "POSTGRES_BACKUP_RESTORE_VERIFIED"
+    assert result["restoreCompatibilityOmissions"] == [
+        "FUNCTION vault secrets_encrypt_secret_secret()"
+    ]
+    assert result["isolatedTargetRemoved"] is True
+    restore_calls = [call for call in calls if "pg_restore" in call and "--use-list" in call]
+    assert len(restore_calls) == 1
+    assert restore_calls[0][-1].endswith(".dump")
+    assert any(call[:4] == ["docker", "exec", "--user", "0"] for call in calls)
 
 
 def test_backup_plan_blocks_non_pending_patch_run(monkeypatch, tmp_path) -> None:

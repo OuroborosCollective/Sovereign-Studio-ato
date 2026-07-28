@@ -19,6 +19,10 @@ DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance"
 MIN_BACKUP_AVAILABLE_BYTES = 1_073_741_824
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+_VAULT_TRIGGER_FUNCTION = "FUNCTION vault secrets_encrypt_secret_secret()"
+_VAULT_TRIGGER_TOC_RE = re.compile(
+    r"^\d+;\s+\d+\s+\d+\s+FUNCTION\s+vault\s+secrets_encrypt_secret_secret\(\)(?:\s+.*)?$"
+)
 _SUCCESSFUL_PATCH_STATES = frozenset({"completed", "complete", "success", "succeeded"})
 _PREPATCH_STATES = frozenset({"pending_approval"})
 
@@ -36,6 +40,27 @@ def _quote_identifier(value: str) -> str:
     if not value or any(ord(char) < 32 for char in value):
         raise ValueError("database identifier contains control characters")
     return '"' + value.replace('"', '""') + '"'
+
+
+def _compatible_restore_toc(value: Any) -> tuple[str, list[str]]:
+    """Omit only the Supabase Vault trigger function recreated by database bootstrap hooks."""
+    if isinstance(value, bytes):
+        listing = value.decode("utf-8", errors="strict")
+    else:
+        listing = str(value or "")
+    if not listing.strip():
+        raise RuntimeError("pg_restore archive list is empty")
+    filtered: list[str] = []
+    omitted = 0
+    for line in listing.splitlines():
+        if _VAULT_TRIGGER_TOC_RE.fullmatch(line):
+            omitted += 1
+            filtered.append(";" + line)
+        else:
+            filtered.append(line)
+    if omitted > 1:
+        raise RuntimeError("pg_restore archive contains duplicate Vault compatibility entries")
+    return "\n".join(filtered) + "\n", ([_VAULT_TRIGGER_FUNCTION] if omitted else [])
 
 
 class FleetMaintenanceRuntime:
@@ -605,11 +630,15 @@ ORDER BY n.nspname, c.relname;
             os.chmod(directory, 0o700)
         backup_id = uuid.uuid4().hex
         host_temporary = backups / f".{backup_id}.dump.tmp"
+        host_toc = backups / f".{backup_id}.toc.tmp"
         host_final = backups / f"sovereign-prepatch-{backup_id}.dump"
         container_temporary = f"/tmp/sovereign-prepatch-{backup_id}.dump"
+        container_toc = f"/tmp/sovereign-prepatch-{backup_id}.toc"
         restore_database = f"sovereign_restore_{backup_id[:20]}"
         restore_created = False
         cleanup_verified = False
+        restore_compatibility_omissions: list[str] = []
+        restore_toc_digest = ""
         try:
             source_before = self._database_manifest(POSTGRES_DATABASE)
             dumped = self._run_text(
@@ -636,20 +665,55 @@ ORDER BY n.nspname, c.relname;
                 ["docker", "cp", f"{POSTGRES_CONTAINER}:{container_temporary}", str(host_temporary)],
                 timeout=600,
             )
-            self._run_text(["docker", "exec", POSTGRES_CONTAINER, "rm", "-f", container_temporary], timeout=30)
             if not copied.get("ok") or not host_temporary.is_file() or host_temporary.stat().st_size <= 0:
                 raise RuntimeError("backup archive copy failed")
             os.chmod(host_temporary, 0o600)
             source_after = self._database_manifest(POSTGRES_DATABASE)
             if source_before != source_after:
                 raise RuntimeError("source database changed during backup evidence collection")
-            listed = self._run_file_input(
-                ["docker", "exec", "-i", POSTGRES_CONTAINER, "pg_restore", "--list"],
-                host_temporary,
+            listed = self._run_text(
+                ["docker", "exec", POSTGRES_CONTAINER, "pg_restore", "--list", container_temporary],
                 timeout=300,
             )
-            if not listed.get("ok") or not bytes(listed.get("stdout") or b"").strip():
-                raise RuntimeError("pg_restore archive-list validation failed")
+            if not listed.get("ok") or not str(listed.get("stdout") or "").strip():
+                detail = _bounded(listed.get("stderr"), 800)
+                raise RuntimeError(f"pg_restore archive-list validation failed: {detail}")
+            restore_toc, restore_compatibility_omissions = _compatible_restore_toc(
+                listed.get("stdout")
+            )
+            restore_toc_digest = hashlib.sha256(restore_toc.encode("utf-8")).hexdigest()
+            descriptor = os.open(
+                host_toc,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600,
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(restore_toc)
+                handle.flush()
+                os.fsync(handle.fileno())
+            copied_toc = self._run_text(
+                ["docker", "cp", str(host_toc), f"{POSTGRES_CONTAINER}:{container_toc}"],
+                timeout=120,
+            )
+            if not copied_toc.get("ok"):
+                detail = _bounded(copied_toc.get("stderr"), 800)
+                raise RuntimeError(f"restore compatibility list copy failed: {detail}")
+            readable_toc = self._run_text(
+                [
+                    "docker",
+                    "exec",
+                    "--user",
+                    "0",
+                    POSTGRES_CONTAINER,
+                    "chmod",
+                    "0444",
+                    container_toc,
+                ],
+                timeout=30,
+            )
+            if not readable_toc.get("ok"):
+                detail = _bounded(readable_toc.get("stderr"), 800)
+                raise RuntimeError(f"restore compatibility list permission failed: {detail}")
             created = self._run_text(
                 [
                     "docker",
@@ -667,13 +731,14 @@ ORDER BY n.nspname, c.relname;
             if not created.get("ok"):
                 raise RuntimeError("isolated restore database creation failed")
             restore_created = True
-            restored = self._run_file_input(
+            restored = self._run_text(
                 [
                     "docker",
                     "exec",
-                    "-i",
                     POSTGRES_CONTAINER,
                     "pg_restore",
+                    "--use-list",
+                    container_toc,
                     "--exit-on-error",
                     "--no-owner",
                     "--no-privileges",
@@ -681,12 +746,15 @@ ORDER BY n.nspname, c.relname;
                     POSTGRES_USER,
                     "--dbname",
                     restore_database,
+                    container_temporary,
                 ],
-                host_temporary,
                 timeout=1200,
             )
             if not restored.get("ok"):
-                raise RuntimeError("isolated pg_restore failed")
+                detail = _bounded(restored.get("stderr"), 800)
+                raise RuntimeError(
+                    f"isolated pg_restore failed (exit={restored.get('exit_code')}): {detail}"
+                )
             restored_manifest = self._database_manifest(restore_database)
             if restored_manifest != source_after:
                 raise RuntimeError("restored schema or table row counts differ from source evidence")
@@ -711,6 +779,8 @@ ORDER BY n.nspname, c.relname;
                 "restoreStatus": "passed",
                 "isolatedTarget": True,
                 "isolatedTargetRemoved": True,
+                "restoreTocDigest": f"sha256:{restore_toc_digest}",
+                "restoreCompatibilityOmissions": restore_compatibility_omissions,
                 "patchRunId": str(patch_run_id).strip().lower(),
                 "bootId": str(plan.get("bootId") or ""),
                 "createdAtEpoch": int(time.time()),
@@ -738,6 +808,8 @@ ORDER BY n.nspname, c.relname;
                 "restoreStatus": "passed",
                 "isolatedTarget": True,
                 "isolatedTargetRemoved": True,
+                "restoreTocDigest": receipt["restoreTocDigest"],
+                "restoreCompatibilityOmissions": receipt["restoreCompatibilityOmissions"],
                 "backupReceiptSha256": receipt_sha,
                 "patchRunId": receipt["patchRunId"],
                 "readbackVerified": True,
@@ -751,11 +823,24 @@ ORDER BY n.nspname, c.relname;
                 _bounded(exc, 500),
             )
         finally:
-            self._run_text(["docker", "exec", POSTGRES_CONTAINER, "rm", "-f", container_temporary], timeout=30)
+            self._run_text(
+                [
+                    "docker",
+                    "exec",
+                    POSTGRES_CONTAINER,
+                    "rm",
+                    "-f",
+                    container_temporary,
+                    container_toc,
+                ],
+                timeout=30,
+            )
             if restore_created:
                 cleanup_verified = self._drop_restore_database(restore_database)
             if host_temporary.exists():
                 host_temporary.unlink(missing_ok=True)
+            if host_toc.exists():
+                host_toc.unlink(missing_ok=True)
 
     def _read_backup_receipt(self, receipt_sha256: str) -> dict[str, Any] | None:
         value = str(receipt_sha256 or "").strip().lower()

@@ -817,7 +817,7 @@ jobs:
           test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
   deploy-vps:
-    name: Manual legacy SSH bootstrap on VPS
+    name: Bootstrap MCP on VPS
     needs: [validate, publish-mcp-image, verify-published-mcp-image]
     permissions:
       contents: read
