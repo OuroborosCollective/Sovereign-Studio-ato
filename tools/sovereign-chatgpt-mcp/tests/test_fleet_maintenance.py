@@ -139,7 +139,7 @@ def test_vault_compatibility_digest_requires_complete_definitions(monkeypatch) -
     monkeypatch.setattr(
         runtime,
         "_psql",
-        lambda _database, _sql, timeout=300: {
+        lambda _database, _sql, timeout=300, **_kwargs: {
             "ok": True,
             "stdout": json.dumps(payload) + "\n",
             "stderr": "",
@@ -341,6 +341,8 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
     runtime = FleetMaintenanceRuntime(maintenance_root=str(tmp_path / "maintenance"))
     confirmation = "b" * 64
     calls: list[list[str]] = []
+    manifest_users: list[str] = []
+    vault_users: list[str] = []
     manifest = {
         "schemaDigest": "c" * 64,
         "rowCountDigest": "d" * 64,
@@ -367,8 +369,16 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
             "bootId": BOOT_ID,
         },
     )
-    monkeypatch.setattr(runtime, "_database_manifest", lambda _database: manifest)
-    monkeypatch.setattr(runtime, "_vault_compatibility_digest", lambda _database: vault_digest)
+    def database_manifest(_database, *, username="postgres"):
+        manifest_users.append(username)
+        return manifest
+
+    def vault_compatibility_digest(_database, *, username="postgres"):
+        vault_users.append(username)
+        return vault_digest
+
+    monkeypatch.setattr(runtime, "_database_manifest", database_manifest)
+    monkeypatch.setattr(runtime, "_vault_compatibility_digest", vault_compatibility_digest)
     monkeypatch.setattr(runtime, "_drop_restore_database", lambda _database: True)
     monkeypatch.setattr(
         runtime,
@@ -413,6 +423,8 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
     ]
     assert result["vaultCompatibilityDigest"] == f"sha256:{vault_digest}"
     assert result["isolatedTargetRemoved"] is True
+    assert manifest_users == ["postgres", "postgres", "supabase_admin"]
+    assert vault_users == ["postgres", "postgres", "supabase_admin"]
     restore_calls = [call for call in calls if "pg_restore" in call and "--use-list" in call]
     assert len(restore_calls) == 1
     restore_call = restore_calls[0]
@@ -429,6 +441,37 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
     assert restore_call[restore_user_index] == "supabase_admin"
     assert restore_call[-1].endswith(".dump")
     assert any(call[:4] == ["docker", "exec", "--user", "0"] for call in calls)
+
+
+def test_restore_readback_uses_admin_role_and_container_password(monkeypatch, tmp_path) -> None:
+    runtime = FleetMaintenanceRuntime(maintenance_root=str(tmp_path / "maintenance"))
+    calls: list[list[str]] = []
+
+    def run(argv, timeout=120):
+        calls.append(argv)
+        return {"ok": True, "exit_code": 0, "stdout": "1\n", "stderr": ""}
+
+    monkeypatch.setattr(runtime, "_run_text", run)
+
+    result = runtime._psql(
+        "sovereign_restore_test",
+        "SELECT 1;",
+        username="supabase_admin",
+    )
+
+    assert result["ok"] is True
+    assert len(calls) == 1
+    assert calls[0][3:6] == [
+        "sh",
+        "-c",
+        (
+            'PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" '
+            'exec psql "$@"'
+        ),
+    ]
+    assert calls[0][6] == "psql"
+    user_index = calls[0].index("--username") + 1
+    assert calls[0][user_index] == "supabase_admin"
 
 
 def test_backup_plan_blocks_non_pending_patch_run(monkeypatch, tmp_path) -> None:

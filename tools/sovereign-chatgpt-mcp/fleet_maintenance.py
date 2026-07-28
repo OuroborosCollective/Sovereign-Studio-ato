@@ -519,29 +519,54 @@ class FleetMaintenanceRuntime:
             "secretValuesReturned": False,
         }
 
-    def _psql(self, database: str, sql: str, timeout: int = 300) -> dict[str, Any]:
-        return self._run_text(
-            [
+    def _psql(
+        self,
+        database: str,
+        sql: str,
+        timeout: int = 300,
+        *,
+        username: str = POSTGRES_USER,
+    ) -> dict[str, Any]:
+        if username == POSTGRES_USER:
+            argv = ["docker", "exec", POSTGRES_CONTAINER, "psql"]
+        elif username == POSTGRES_RESTORE_USER:
+            argv = [
                 "docker",
                 "exec",
                 POSTGRES_CONTAINER,
+                "sh",
+                "-c",
+                (
+                    'PGPASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" '
+                    'exec psql "$@"'
+                ),
                 "psql",
+            ]
+        else:
+            raise ValueError("unexpected PostgreSQL client role")
+        argv.extend(
+            [
                 "--no-psqlrc",
                 "--tuples-only",
                 "--no-align",
                 "--set",
                 "ON_ERROR_STOP=1",
                 "--username",
-                POSTGRES_USER,
+                username,
                 "--dbname",
                 database,
                 "--command",
                 sql,
-            ],
-            timeout=timeout,
+            ]
         )
+        return self._run_text(argv, timeout=timeout)
 
-    def _database_manifest(self, database: str) -> dict[str, Any]:
+    def _database_manifest(
+        self,
+        database: str,
+        *,
+        username: str = POSTGRES_USER,
+    ) -> dict[str, Any]:
         schema_sql = """
 SELECT n.nspname, c.relname, c.relkind, COALESCE(a.attnum, 0), COALESCE(a.attname, ''),
        COALESCE(pg_catalog.format_type(a.atttypid, a.atttypmod), ''), COALESCE(a.attnotnull, false)
@@ -571,9 +596,9 @@ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND c.relkind IN ('r', 'p')
 ORDER BY n.nspname, c.relname;
 """.strip()
-        schema = self._psql(database, schema_sql)
-        constraints = self._psql(database, constraints_sql)
-        tables = self._psql(database, tables_sql)
+        schema = self._psql(database, schema_sql, username=username)
+        constraints = self._psql(database, constraints_sql, username=username)
+        tables = self._psql(database, tables_sql, username=username)
         if not schema.get("ok") or not constraints.get("ok") or not tables.get("ok"):
             raise RuntimeError("database metadata inventory failed")
         row_counts: list[tuple[str, str, int]] = []
@@ -588,6 +613,7 @@ ORDER BY n.nspname, c.relname;
                 database,
                 f"SELECT count(*)::bigint FROM {_quote_identifier(namespace)}.{_quote_identifier(table)};",
                 timeout=600,
+                username=username,
             )
             if not count.get("ok"):
                 raise RuntimeError("database row-count inventory failed")
@@ -619,7 +645,12 @@ ORDER BY n.nspname, c.relname;
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def _vault_compatibility_digest(self, database: str) -> str:
+    def _vault_compatibility_digest(
+        self,
+        database: str,
+        *,
+        username: str = POSTGRES_USER,
+    ) -> str:
         result = self._psql(
             database,
             """
@@ -643,6 +674,7 @@ SELECT jsonb_build_object(
     pg_catalog.pg_get_viewdef(to_regclass('vault.decrypted_secrets'), true)
 )::text;
 """.strip(),
+            username=username,
         )
         if not result.get("ok"):
             raise RuntimeError("Vault compatibility definition inventory failed")
@@ -863,8 +895,14 @@ SELECT jsonb_build_object(
                 raise RuntimeError(
                     f"isolated pg_restore failed (exit={restored.get('exit_code')}): {detail}"
                 )
-            restored_manifest = self._database_manifest(restore_database)
-            restored_vault_digest = self._vault_compatibility_digest(restore_database)
+            restored_manifest = self._database_manifest(
+                restore_database,
+                username=POSTGRES_RESTORE_USER,
+            )
+            restored_vault_digest = self._vault_compatibility_digest(
+                restore_database,
+                username=POSTGRES_RESTORE_USER,
+            )
             if restored_manifest != source_after:
                 raise RuntimeError("restored schema or table row counts differ from source evidence")
             if restored_vault_digest != vault_compatibility_digest:
