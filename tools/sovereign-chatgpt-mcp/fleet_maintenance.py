@@ -15,6 +15,7 @@ FILEBROWSER_IMAGE_PREFIX = "filebrowser/filebrowser:"
 POSTGRES_CONTAINER = "supabase-db"
 POSTGRES_DATABASE = "postgres"
 POSTGRES_USER = "postgres"
+POSTGRES_RESTORE_USER = "supabase_admin"
 DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance"
 MIN_BACKUP_AVAILABLE_BYTES = 1_073_741_824
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -844,7 +845,7 @@ SELECT jsonb_build_object(
                     "--no-owner",
                     "--no-privileges",
                     "--username",
-                    POSTGRES_USER,
+                    POSTGRES_RESTORE_USER,
                     "--dbname",
                     restore_database,
                     container_temporary,
