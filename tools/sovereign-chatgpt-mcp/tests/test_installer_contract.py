@@ -64,6 +64,10 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS' in script
     assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/fleet_maintenance.py" "$BROKER_DIR/fleet_maintenance.py"' in script
+    assert 'MAINTENANCE_DIR="$INSTALL_ROOT/maintenance"' in script
+    assert 'install -d -m 0700 -o root -g root "$MAINTENANCE_DIR" "$MAINTENANCE_DIR/backups" "$MAINTENANCE_DIR/receipts"' in script
+    assert '/opt/sovereign-chatgpt-tools/maintenance' in worker_service
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
     owner_capability_block = script.split(

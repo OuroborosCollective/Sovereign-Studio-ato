@@ -85,6 +85,9 @@ Der PatchMon-Operator bildet einen geschlossenen Wahrnehmungs- und Steuerungspfa
 - `patchmon_fleet_bootstrap_plan` bindet den lokalen Host-/Agent-Bootstrap an den aktuellen Runtime-, Datenbank-, systemd- und Flottenzustand.
 - `patchmon_fleet_bootstrap_apply` erstellt nur bei einer leeren Installation eine zufällige root-only Operator-Identität, konfiguriert die feste Loopback-Adresse, legt den lokalen Host über PatchMons offizielle API an, installiert dessen offiziellen Linux-Agenten und wartet auf reales Docker-Inventar.
 - `patchmon_fleet_orchestrator_status` trennt zwei Wahrheitspfade: PatchMon belegt Host-, Paket- und Docker-Evidence; GitHub- und Immutable-Image-Werkzeuge belegen Workflowstatus und exakte Containerrevision.
+- `fleet_filebrowser_retirement_plan/apply` ist ausschließlich auf `file-browser-cunr-filebrowser-1` plus die erwartete Filebrowser-Image-Identität fest verdrahtet. Der Apply-Pfad entfernt nur diesen Container; Images und Volumes bleiben erhalten und werden rückgelesen.
+- `host_postgres_backup_restore_plan/apply` bindet einen root-only `pg_dump` an genau einen noch nicht freigegebenen PatchMon-Lauf, stellt ihn in einer isolierten temporären Datenbank wieder her, vergleicht Schema und Tabellenzeilenzahlen und bewahrt nur das geprüfte Backup samt Hash-Receipt auf.
+- `host_reboot_plan/apply` wird erst nach erfolgreichem PatchMon-Terminalstatus, gültigem Backup-Receipt, null simulierten Paketupdates und gesunden Kerncontainern freigegeben. Der Apply-Pfad plant genau einen verzögerten systemd-Reboot; `host_post_reboot_verify` belegt anschließend Boot-ID-Wechsel, fehlenden Reboot-Marker und denselben gesunden Zustand.
 - Für bereits verbundene Clients mit noch eingefrorenem Tool-Schemacache existiert der feste Alias `action=bootstrap_local_fleet` über `patchmon_patch_action_plan` und `patchmon_patch_action_apply`. Er verwendet exakt denselben Bootstrap-Plan, dieselbe Zustandsbindung, denselben Bestätigungs-Hash und dieselbe Host-Command-Queue; freie Bootstrap-Parameter oder ein zweiter Wahrheitspfad entstehen dadurch nicht.
 
 PatchMon erhält damit ausdrücklich **keinen** erfundenen Container-Deploy-Endpunkt. Gestaffelte Rollouts dürfen erst freigegeben werden, wenn der PatchMon-Host-Lane aktiv ist, Docker-Assets beobachtet werden, die relevanten GitHub-Checks grün sind und die erwartete vollständige Revision mit der gelesenen PR-Revision übereinstimmt. Die eigentliche Container-Gleichschaltung bleibt beim bestehenden revisionsgebundenen Immutable-Image-/Deploy-Pfad.
@@ -139,6 +142,7 @@ Der Broker akzeptiert nur:
 - verifizierte Migration mit erneuter Pfad-, Hash-, SQL- und Rollback-Preview-Prüfung
 - verifizierter Deploy beziehungsweise Rollback
 - feste PatchMon-Runtime-/Datenbankabfragen und zustandsgebundene PatchMon-Aktionen einschließlich des festen `bootstrap_local_fleet`-Kompatibilitäts-Alias
+- die fest verdrahtete Filebrowser-Altlast-Bereinigung sowie den PatchMon-/Backup-gebundenen Host-Reboot; freie Containerziele oder Host-Befehle werden nicht akzeptiert
 
 Ein Action-Name wie `shell` oder ein frei formulierter SQL-Auftrag wird geblockt.
 
@@ -189,6 +193,7 @@ docker build -t sovereign-chatgpt-mcp:local .
 ├── bin/                 # feste Deploy-/Rollback-Gates
 ├── broker/              # lokaler Host-Broker
 ├── docker-auth/         # optionales root-only Registry-Login
+├── maintenance/         # root-only geprüfte Backups und Hash-Receipts
 └── workspaces/
 ```
 

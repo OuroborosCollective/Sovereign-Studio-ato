@@ -26,6 +26,9 @@ MUTATING_ACTIONS = frozenset(
         "litellm_model_aliases_activate",
         "patchmon_patch_action_apply",
         "patchmon_fleet_bootstrap_apply",
+        "fleet_filebrowser_retirement_apply",
+        "host_postgres_backup_restore_apply",
+        "host_reboot_apply",
     }
 )
 
