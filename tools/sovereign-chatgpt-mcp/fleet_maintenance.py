@@ -16,6 +16,7 @@ POSTGRES_CONTAINER = "supabase-db"
 POSTGRES_DATABASE = "postgres"
 POSTGRES_USER = "postgres"
 DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance"
+MIN_BACKUP_AVAILABLE_BYTES = 1_073_741_824
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 _SUCCESSFUL_PATCH_STATES = frozenset({"completed", "complete", "success", "succeeded"})
@@ -404,12 +405,13 @@ class FleetMaintenanceRuntime:
         if disk.get("ok"):
             values = [line.strip() for line in str(disk.get("stdout") or "").splitlines() if line.strip().isdigit()]
             available = int(values[-1]) if values else 0
-        if available < 1_073_741_824:
+        if available < MIN_BACKUP_AVAILABLE_BYTES:
             return self._failure(
                 "POSTGRES_BACKUP_RESTORE_PLAN_BLOCKED",
                 "BACKUP_DISK_CAPACITY_INSUFFICIENT",
                 "At least 1 GiB free space is required for the bounded backup/restore canary.",
                 availableBytes=available,
+                minimumAvailableBytes=MIN_BACKUP_AVAILABLE_BYTES,
             )
         state = {
             "schemaVersion": "sovereign.postgres-backup-restore.v1",
@@ -417,7 +419,7 @@ class FleetMaintenanceRuntime:
             "patchRun": patch_run,
             "postgres": postgres,
             "bootId": self._boot_id(),
-            "availableBytes": available,
+            "minimumAvailableBytes": MIN_BACKUP_AVAILABLE_BYTES,
         }
         return {
             "ok": True,
@@ -426,6 +428,7 @@ class FleetMaintenanceRuntime:
             "postgres": postgres,
             "bootId": state["bootId"],
             "availableBytes": available,
+            "minimumAvailableBytes": MIN_BACKUP_AVAILABLE_BYTES,
             "isolatedRestoreRequired": True,
             "backupRetention": "preserve_until_post_reboot_verification",
             "confirmationSha256": _canonical_sha256(state),
@@ -585,7 +588,7 @@ ORDER BY n.nspname, c.relname;
             return self._failure(
                 "POSTGRES_BACKUP_RESTORE_BLOCKED",
                 "CONFIRMATION_MISMATCH",
-                "The confirmation hash no longer matches PostgreSQL, PatchMon, boot and disk state.",
+                "The confirmation hash no longer matches PostgreSQL, PatchMon, boot and disk safety state.",
                 expectedConfirmationSha256=expected,
             )
         root = self.maintenance_root

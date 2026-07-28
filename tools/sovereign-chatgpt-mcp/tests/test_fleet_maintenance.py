@@ -146,7 +146,7 @@ def test_filebrowser_mutation_requires_owner_and_write_capability(monkeypatch) -
     assert disabled["failureFamily"] == "FLEET_MAINTENANCE_WRITE_DISABLED"
 
 
-def test_backup_plan_binds_pending_patch_run_postgres_boot_and_disk(monkeypatch, tmp_path) -> None:
+def test_backup_plan_binds_disk_safety_floor_not_volatile_free_space(monkeypatch, tmp_path) -> None:
     runtime = FleetMaintenanceRuntime(
         patch_run_reader=lambda _run_id: {
             "rows": [
@@ -172,24 +172,29 @@ def test_backup_plan_binds_pending_patch_run_postgres_boot_and_disk(monkeypatch,
         },
     )
     monkeypatch.setattr(runtime, "_boot_id", lambda: BOOT_ID)
+    available_values = iter((2_147_483_648, 3_221_225_472))
     monkeypatch.setattr(
         runtime,
         "_run_text",
         lambda argv, timeout=120: {
             "ok": True,
             "exit_code": 0,
-            "stdout": "Avail\n2147483648\n",
+            "stdout": f"Avail\n{next(available_values)}\n",
             "stderr": "",
         },
     )
 
-    result = runtime.postgres_backup_restore_plan(patch_run_id=PATCH_RUN_ID)
+    first = runtime.postgres_backup_restore_plan(patch_run_id=PATCH_RUN_ID)
+    second = runtime.postgres_backup_restore_plan(patch_run_id=PATCH_RUN_ID)
 
-    assert result["status"] == "POSTGRES_BACKUP_RESTORE_PLAN_READY"
-    assert result["patchRun"]["status"] == "pending_approval"
-    assert result["bootId"] == BOOT_ID
-    assert result["isolatedRestoreRequired"] is True
-    assert len(result["confirmationSha256"]) == 64
+    assert first["status"] == "POSTGRES_BACKUP_RESTORE_PLAN_READY"
+    assert first["patchRun"]["status"] == "pending_approval"
+    assert first["bootId"] == BOOT_ID
+    assert first["isolatedRestoreRequired"] is True
+    assert first["minimumAvailableBytes"] == 1_073_741_824
+    assert first["availableBytes"] != second["availableBytes"]
+    assert first["confirmationSha256"] == second["confirmationSha256"]
+    assert len(first["confirmationSha256"]) == 64
 
 
 def test_backup_plan_blocks_non_pending_patch_run(monkeypatch, tmp_path) -> None:
