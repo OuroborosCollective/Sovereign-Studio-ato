@@ -51,6 +51,8 @@ def test_restore_toc_accepts_trigger_tag_layout_variants() -> None:
         f"374; 2620 16429 TRIGGER vault secrets {trigger_name} postgres",
         f"374; 2620 16429 TRIGGER vault vault.secrets {trigger_name} postgres",
         f"374; 2620 16429 TRIGGER vault {trigger_name} ON secrets postgres",
+        f"374; 2620 16429 TRIGGER - secrets {trigger_name} postgres",
+        f"374; 2620 16429 CONSTRAINT TRIGGER - secrets {trigger_name} postgres",
     )
 
     for vault_trigger in variants:
@@ -63,6 +65,25 @@ def test_restore_toc_accepts_trigger_tag_layout_variants() -> None:
             "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
             "VIEW vault.decrypted_secrets",
         ]
+
+
+def test_restore_toc_reports_secret_safe_trigger_candidate_on_layout_drift() -> None:
+    vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+    vault_view = "373; 1259 16428 TABLE vault decrypted_secrets postgres"
+    vault_trigger = (
+        "374; 2620 16429 EVENT TRIGGER - secrets "
+        "secrets_encrypt_secret_trigger_secret postgres"
+    )
+
+    try:
+        _compatible_restore_toc("\n".join((vault_function, vault_view, vault_trigger)) + "\n")
+    except RuntimeError as exc:
+        detail = str(exc)
+        assert "triggerCandidates" in detail
+        assert "<owner>" in detail
+        assert "postgres" not in detail
+    else:
+        raise AssertionError("unexpected trigger layout was not blocked")
 
 
 def test_restore_toc_blocks_incomplete_vault_extension_overlap() -> None:

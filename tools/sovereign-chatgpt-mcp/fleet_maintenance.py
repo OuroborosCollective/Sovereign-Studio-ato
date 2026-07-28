@@ -30,7 +30,8 @@ _VAULT_RESTORE_COMPATIBILITY = (
     (
         "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
         re.compile(
-            r"^\d+;\s+\d+\s+\d+\s+TRIGGER\s+vault\s+"
+            r"^\d+;\s+\d+\s+\d+\s+"
+            r"(?:(?:CONSTRAINT\s+)?TRIGGER(?:\s+CONSTRAINT)?)\s+\S+\s+"
             r"(?:\S+\s+)*secrets_encrypt_secret_trigger_secret(?:\s+\S+)*$"
         ),
     ),
@@ -85,9 +86,21 @@ def _compatible_restore_toc(value: Any) -> tuple[str, list[str]]:
         else:
             filtered.append(line)
     if any(count != 1 for count in counts.values()):
+        trigger_candidates: list[str] = []
+        for line in listing.splitlines():
+            if "secrets_encrypt_secret_trigger_secret" not in line:
+                continue
+            tokens = line.split()
+            if tokens:
+                tokens[-1] = "<owner>"
+            trigger_candidates.append(_bounded(" ".join(tokens), 300))
+            if len(trigger_candidates) >= 5:
+                break
         raise RuntimeError(
             "pg_restore Vault compatibility inventory drifted: "
             + json.dumps(counts, sort_keys=True, separators=(",", ":"))
+            + "; triggerCandidates="
+            + json.dumps(trigger_candidates, sort_keys=True, separators=(",", ":"))
         )
     return "\n".join(filtered) + "\n", list(counts)
 
