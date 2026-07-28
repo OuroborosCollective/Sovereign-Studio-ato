@@ -182,3 +182,27 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - N+1 contract tests (repository_check, SHA-256 9e3bb5f9fa617fddd2837534700c732b3e3cca1439cd6af9919e3e67310f0fb2): Der revisionsgebundene N+1-Testvertrag enthält neun erfolgreiche Vertragsprüfungen.
 - PatchMon fleet (runtime_readback, SHA-256 5ab1b9e53a6216d5a83f1436058b791e15fc111bedf728e667a400495452ab7d): PatchMon Runtime und Fleet waren gesund und der Rollout revisionsgebunden freigegeben, ohne vorzeitige Mutation.
 
+<!-- proven-learning:2772353e5e86c460010ca9c46c424cd10c7cae763912307300e12657e63e8f3d -->
+## Sovottt-Erfahrung: Evidence-Bootstrap-Zirkel bei immutablem Backend-Release auflösen
+
+- Zeitpunkt: 2026-07-28T15:20:00+02:00
+- Vorgang: repair
+- Inhalts-Hash: sha256:2772353e5e86c460010ca9c46c424cd10c7cae763912307300e12657e63e8f3d
+- Quellrevision: fb2f747c75bdf8e3e930e61340d1422b8f6f294c
+- Merge-Ziel: main
+- Erwarteter PR-Head: wird beim PR-Gate gebunden
+- Geänderte Pfade: scripts/sovereign-backend/free_revolver_provider_runtime.py, scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py, scripts/sovereign-backend/tests/test_freellm_receipt_v2_bootstrap_contract.py, tools/sovereign-chatgpt-mcp/deploy/deploy-sovereign-backend, tools/sovereign-chatgpt-mcp/tests/test_backend_freellm_bootstrap_deploy_contract.py
+- Problem: Das neue Backend verlangte revisionsgebundene FreeLLM-Receipts v2 für Readiness, wurde aber vor dem Erzeugen dieser Receipts auf das alte Image zurückgerollt. Zusätzlich aktualisierte der Admin-Recheck nur Canary-Felder und ließ vorhandene v1-Receipts bestehen.
+- Lösung: Den Admin-Recheck auf den einzigen kanonischen activate_model-Pfad umgestellt. Den Backend-Deploy so geordnet, dass das neue revisionsgebundene Image nach erfolgreicher Liveness intern und geheimnisfrei Reconcile beziehungsweise Discovery ausführt, mindestens ein exakt zu Revision und Digest passendes v2-Receipt rückliest und erst danach /health/ready bewertet. HTTP 409 bleibt als partieller Reconcile-Zustand auswertbar; fehlende v2-Evidence löst Rollback aus.
+- Gültigkeit: Für immutable Deployments, bei denen eine neue Runtime strengere revisionsgebundene Evidence verlangt, deren Produzent jedoch erst in genau dieser neuen Runtime verfügbar ist.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@fb2f747c75bdf8e3e930e61340d1422b8f6f294c:scripts/sovereign-backend/free_revolver_provider_runtime.py; OuroborosCollective/Sovereign-Studio-ato@fb2f747c75bdf8e3e930e61340d1422b8f6f294c:tools/sovereign-chatgpt-mcp/deploy/deploy-sovereign-backend; OuroborosCollective/Sovereign-Studio-ato@fb2f747c75bdf8e3e930e61340d1422b8f6f294c:scripts/sovereign-backend/app.py
+
+### Nachweise
+
+- Deterministische Architektur- und Driftanalyse (repository_check, SHA-256 4aface7341773ef8da2906bf74f07224addbab48404456d197351a75bf6baed7): Systemweite statische Analyse verband Receipt-Produzent, Recheck, Deploy und Readiness auf derselben Revision.
+- Backend Receipt-Verträge (repository_check, SHA-256 8ffa51c149f43c8ad70907d6a8ca5d2ef76448ef6156060f6af6c6756713b6bf): 22 fokussierte Backendtests bestanden und bestätigten den einzigen kanonischen v2-Produzenten.
+- Deploy-, Installations- und Readiness-Verträge (repository_check, SHA-256 6ee09e639eab5143f17a32a1079fab466efe29382e45b0a8d2f1a0019de7e97c): 19 weitere Tests bestanden, einschließlich Shell- und eingebettetem Pythonvertrag.
+- Diff-Hygiene (repository_check, SHA-256 1880791abf79c04b1466806b7df24ec22e85b0cefc37b46d02518c076e1a76d7): git diff --check bestand mit Exit 0.
+- Kanonischer Receipt-Produzent (repository_file, SHA-256 2384f6a70dadcdb4ac11d1a74fa812b5b21a7d8da05d774aed5118e13366cdaa): Der Admin-Recheck delegiert an activate_model statt ein partielles v1-kompatibles Update zu pflegen.
+- Deploy-Bootstrap-Vertrag (repository_file, SHA-256 b229d8fd104f0ff582cd56aa9d18d7c8190231f7f3a92739037a619417fc4186): Der Deploy prüft Liveness, erzeugt v2-Evidence intern und bewertet erst danach Readiness.
+

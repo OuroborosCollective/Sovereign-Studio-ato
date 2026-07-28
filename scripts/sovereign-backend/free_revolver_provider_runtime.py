@@ -2563,7 +2563,9 @@ def register_free_revolver_provider_runtime(
                 "blocker": "free_direct_managed_source_required",
             }), 409
         models = query(
-            """SELECT id::text, upstream_model_id, litellm_alias
+            """SELECT id::text, upstream_model_id, display_name,
+                      litellm_alias, discovery_payload_sha256,
+                      eligibility_source
                FROM llm_revolver_provider_models
                WHERE source_id=%s::uuid AND free_eligible=true
                  AND litellm_alias IS NOT NULL
@@ -2588,133 +2590,65 @@ def register_free_revolver_provider_runtime(
             ready = []
             deferred = []
             blocked = []
+            source_payload = dict(source)
             for model in models:
                 alias = str(model["litellm_alias"])
-                canary = _confirmed_completion_canary(
-                    api_base=str(source["api_base"]),
-                    auth_mode=_MANAGED_AUTH_MODE,
-                    key=key,
-                    model_id=str(model["upstream_model_id"]),
-                )
-                evidence = dict(canary.get("evidence") or {})
-                raw_costs = evidence.get("providerCostsUsd")
-                provider_costs = (
-                    [_normalized_provider_cost(value) for value in raw_costs]
-                    if isinstance(raw_costs, list) and len(raw_costs) == 2
-                    else []
-                )
-                cost_state = (
-                    "nonzero"
-                    if provider_costs
-                    and any(value not in (None, 0, 0.0) for value in provider_costs)
-                    else "zero"
-                    if provider_costs
-                    and all(value in (0, 0.0) for value in provider_costs)
-                    else "unreported"
-                )
-                provider_cost = provider_costs[-1] if provider_costs else None
-                provider_cost_micros = (
-                    int(round(float(provider_cost) * 1_000_000))
-                    if provider_cost is not None
-                    else None
-                )
-                if not canary.get("ok"):
-                    model_status, blocker = _canary_failure_state(canary)
-                elif len(provider_costs) != 2:
-                    model_status, blocker = (
-                        "blocked",
-                        "freellm_double_canary_evidence_missing",
-                    )
-                elif cost_state == "nonzero":
-                    model_status, blocker = (
-                        "blocked",
-                        "free_provider_cost_not_zero",
-                    )
-                else:
-                    model_status, blocker = "ready", None
-                canary_request_id = str(evidence.get("upstreamRequestId") or "") or None
-                if blocker:
-                    target = deferred if model_status == "discovered" else blocked
-                    target.append({
+                result = activate_model(
+                    source_payload,
+                    {
                         "modelId": str(model["upstream_model_id"]),
-                        "blocker": blocker,
-                        "modelStatus": model_status,
-                        "failureFamily": canary.get("failureFamily"),
-                        "httpStatus": canary.get("httpStatus"),
-                    })
-                    query(
-                        """UPDATE llm_revolver_provider_models
-                           SET status=%s, enabled=false, last_error_code=%s,
-                               last_canary_request_id=%s, last_canary_at=NOW(),
-                               canary_cost_state=%s, last_provider_cost_usd_micros=%s,
-                               updated_at=NOW() WHERE id=%s::uuid""",
-                        (
-                            model_status, blocker, canary_request_id, cost_state,
-                            provider_cost_micros, model["id"],
+                        "displayName": str(
+                            model.get("display_name")
+                            or model["upstream_model_id"]
                         ),
-                        write=True,
-                    )
-                    query(
-                        "UPDATE llm_routes SET disabled=true, updated_at=NOW() WHERE model_id=%s",
-                        (alias,), write=True,
-                    )
-                else:
+                        "eligibilitySource": str(
+                            model.get("eligibility_source")
+                            or "managed-freellm-quota-contract"
+                        ),
+                        "payloadSha256": str(
+                            model.get("discovery_payload_sha256") or ""
+                        ),
+                    },
+                    key,
+                )
+                if result.get("ok"):
                     ready.append({
                         "modelId": str(model["upstream_model_id"]),
-                        "sourceType": evidence.get("sourceType"),
-                        "providerId": evidence.get("providerId"),
-                        "providerModel": evidence.get("providerModel"),
-                        "responseModel": evidence.get("responseModel"),
-                        "upstreamKeyless": evidence.get("upstreamKeyless"),
-                        "canaryConfirmationCount": int(evidence.get("confirmationCount") or 0),
+                        "routeId": result.get("routeId"),
+                        "sourceType": result.get("sourceType"),
+                        "providerId": result.get("providerId"),
+                        "providerModel": result.get("providerModel"),
+                        "responseModel": result.get("responseModel"),
+                        "upstreamKeyless": result.get("upstreamKeyless"),
+                        "canaryConfirmationCount": result.get(
+                            "canaryConfirmationCount"
+                        ),
+                        "providerCostState": result.get("providerCostState"),
+                        "runtimeIdentity": result.get("runtimeIdentity"),
+                        "receiptId": result.get("receiptId"),
+                        "receiptSha256": result.get("receiptSha256"),
                     })
-                    query(
-                        """UPDATE llm_revolver_provider_models
-                           SET status='ready', enabled=true, last_error_code=NULL,
-                               last_canary_request_id=%s, last_canary_at=NOW(),
-                               canary_cost_state=%s, last_provider_cost_usd_micros=%s,
-                               updated_at=NOW()
-                           WHERE id=%s::uuid""",
-                        (
-                            canary_request_id, cost_state,
-                            provider_cost_micros, model["id"],
-                        ),
-                        write=True,
-                    )
-                    query(
-                        """UPDATE llm_routes
-                           SET disabled=false,
-                               provider='freellm',
-                               runtime_kind='freellm',
-                               base_url=%s,
-                               config=(
-                                   jsonb_set(
-                                       jsonb_set(
-                                           config,
-                                           '{eligibilityEvidence,providerCostState}',
-                                           COALESCE(to_jsonb(%s::text), 'null'::jsonb),
-                                           true
-                                       ),
-                                       '{eligibilityEvidence,canaryRequestId}',
-                                       COALESCE(to_jsonb(%s::text), 'null'::jsonb),
-                                       true
-                                   )
-                                   || jsonb_build_object(
-                                       'transport', 'freellm',
-                                       'direct', true,
-                                       'canaryVerified', true
-                                   )
-                               ),
-                               updated_at=NOW()
-                           WHERE model_id=%s""",
-                        (
-                            str(source["api_base"]).rstrip("/"),
-                            cost_state,
-                            canary_request_id,
-                            alias,
-                        ),
-                        write=True,
-                    )
+                    continue
+                model_status, blocker = _canary_failure_state(result)
+                target = deferred if model_status == "discovered" else blocked
+                target.append({
+                    "modelId": str(model["upstream_model_id"]),
+                    "blocker": blocker,
+                    "modelStatus": model_status,
+                    "failureFamily": result.get("failureFamily"),
+                    "httpStatus": result.get("httpStatus"),
+                })
+                query(
+                    """UPDATE llm_revolver_provider_models
+                       SET status=%s, enabled=false, last_error_code=%s,
+                           updated_at=NOW() WHERE id=%s::uuid""",
+                    (model_status, blocker, model["id"]),
+                    write=True,
+                )
+                query(
+                    "UPDATE llm_routes SET disabled=true, updated_at=NOW() WHERE model_id=%s",
+                    (alias,), write=True,
+                )
             status = (
                 "healthy"
                 if ready and not blocked and not deferred

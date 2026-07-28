@@ -342,7 +342,8 @@ def test_quota_and_canary_evidence_is_independent_bounded_and_non_circular() -> 
     assert "any(value not in (None, 0, 0.0) for value in provider_costs)" in runtime
     assert "def _normalized_provider_cost" in runtime
     assert "math.isfinite(parsed)" in runtime
-    assert runtime.count('evidence.get("providerCostsUsd")') >= 2
+    assert runtime.count('evidence.get("providerCostsUsd")') == 1
+    assert runtime.count("result = activate_model(") >= 3
     assert "canary_cost_state" in migration
     assert "pricing_verified_at" in migration
     migration_42 = (BACKEND / "migrations" / "042_separate_freellm_quota_from_provider_pricing.sql").read_text("utf-8")
@@ -356,7 +357,7 @@ def test_quota_and_canary_evidence_is_independent_bounded_and_non_circular() -> 
     assert "FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS" in route_runtime
     assert "provider_model.last_canary_at" in route_runtime
     assert "provider_session.trust_env = False" in runtime
-    assert runtime.count("COALESCE(to_jsonb(%s::text), 'null'::jsonb)") >= 2
+    assert "COALESCE(to_jsonb(%s::text), 'null'::jsonb)" not in runtime
     contracts = (BACKEND / "free_revolver_provider_contracts.py").read_text("utf-8")
     assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in contracts
     assert 'SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' in contracts
