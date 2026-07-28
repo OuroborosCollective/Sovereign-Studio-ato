@@ -39,14 +39,49 @@ const INLINE_PATTERNS = [
 ];
 
 /**
- * Sanitizes URLs to prevent XSS (e.g., javascript: protocols)
+ * Sanitizes URLs to prevent XSS (e.g., javascript: protocols) using a strict whitelist.
  */
 function sanitizeUrl(url: string): string {
-  const trimmed = url.trim().toLowerCase();
-  if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:') || trimmed.startsWith('vbscript:')) {
-    return 'about:blank';
+  if (!url) return 'about:blank';
+
+  // Normalize by stripping whitespaces, control characters, percent encodings, and JS escape sequences
+  let sanitized = url.trim().toLowerCase();
+
+  // Remove actual control characters and whitespace
+  sanitized = sanitized.replace(/[\x00-\x20\x7F-\x9F\s]/g, '');
+
+  // Remove percent-encoded control characters and whitespaces (e.g. %00, %09, %0a, %0d, %20)
+  sanitized = sanitized.replace(/%(00|09|0a|0d|20|7f)/gi, '');
+
+  // Remove literal javascript escape sequences (e.g. \x00, \t, \n, \r)
+  sanitized = sanitized.replace(/\\(x00|x09|x0a|x0d|x7f|t|n|r)/gi, '');
+
+  // Remove HTML entity representations of control characters/whitespace
+  sanitized = sanitized.replace(/&#(x00|x09|x0a|x0d|x7f|00|09|10|13|127);/gi, '');
+
+  // Handle relative/anchor/local paths
+  if (
+    sanitized.startsWith('/') ||
+    sanitized.startsWith('#') ||
+    sanitized.startsWith('./') ||
+    sanitized.startsWith('../')
+  ) {
+    return url;
   }
-  return url;
+
+  // Use a strict whitelist of protocols: http, https, mailto, tel
+  const match = sanitized.match(/^([a-z0-9+.-]+):/i);
+  if (!match) {
+    // If no protocol is specified but it's not a known relative path, default to safe
+    return url;
+  }
+
+  const protocol = match[1];
+  if (protocol === 'http' || protocol === 'https' || protocol === 'mailto' || protocol === 'tel') {
+    return url;
+  }
+
+  return 'about:blank';
 }
 
 /**
