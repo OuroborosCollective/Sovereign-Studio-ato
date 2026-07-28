@@ -85,6 +85,7 @@ from knowledge_library import register_admin_knowledge_routes, register_knowledg
 from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
 from proven_learning_runtime import register_proven_learning_routes
+from n_plus_one import register_n_plus_one_routes
 from openrouter_provider_runtime import register_openrouter_provider_runtime
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
@@ -2301,6 +2302,10 @@ def health_ready():
                    to_regclass('llm_route_scanner_runtime') IS NOT NULL AS route_scanner_runtime,
                    to_regclass('llm_route_scanner_runs') IS NOT NULL AS route_scanner_runs,
                    to_regclass('llm_route_scanner_candidates') IS NOT NULL AS route_scanner_candidates,
+                   to_regclass('n1_source_artifacts') IS NOT NULL AS n1_source_artifacts,
+                   to_regclass('n1_identity_versions') IS NOT NULL AS n1_identity_versions,
+                   to_regclass('n1_learning_candidates') IS NOT NULL AS n1_learning_candidates,
+                   to_regclass('n1_dialect_observations') IS NOT NULL AS n1_dialect_observations,
                    to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
                    to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
                    to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
@@ -2340,6 +2345,10 @@ def health_ready():
             "route_scanner_runtime",
             "route_scanner_runs",
             "route_scanner_candidates",
+            "n1_source_artifacts",
+            "n1_identity_versions",
+            "n1_learning_candidates",
+            "n1_dialect_observations",
             "package_uniqueness",
             "github_app_credits",
             "github_app_credit_transactions",
@@ -2365,6 +2374,7 @@ def health_ready():
                 "039_openrouter_credit_rate_precision.sql",
                 "040_llm_route_scanner_free_quota_evidence.sql",
                 "042_separate_freellm_quota_from_provider_pricing.sql",
+                "043_n_plus_one_foundation.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -5789,6 +5799,13 @@ register_owner_input_routes(
 register_proven_learning_routes(
     app,
     get_connection=get_agent_runtime_connection,
+)
+register_n_plus_one_routes(
+    app,
+    require_session=require_session,
+    require_admin=require_admin,
+    query=query,
+    audit=audit,
 )
 register_openrouter_provider_runtime(
     app,

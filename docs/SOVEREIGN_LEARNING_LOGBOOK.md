@@ -159,3 +159,26 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Repository and CI validation suites (repository_check, SHA-256 2ad452036aa373a5f1b92ee4b02b9ca4b3745097a2e5828cbd6ea4cb9de763c7): Targeted Python suites, exact-head TypeScript/unit/build, Release Gate, Android, security, runtime boundary, E2E and Agent Runtime validations passed.
 - Reka Edge customer-pricing readback (runtime_readback, SHA-256 e3ded8860b0f54dac4224f684c2be893c878eecd53218339751e465068749c73): Reka Edge reads 0.10 USD provider input/output, 0.80 USD customer input/output, and 0.0008 credits per thousand tokens.
 
+<!-- proven-learning:9c4317080cb2c5057eb9962e7d7f143f5f103c79c7341d458b66b2b3a3ec064a -->
+## Sovottt-Erfahrung: N+1 revisionsgebunden aus einer Fremdprojektion in Sovereigns echte Domäne überführen
+
+- Zeitpunkt: 2026-07-28T14:55:00+02:00
+- Vorgang: integration
+- Inhalts-Hash: sha256:9c4317080cb2c5057eb9962e7d7f143f5f103c79c7341d458b66b2b3a3ec064a
+- Quellrevision: 481ebad04397c12e90a6cae608f53913f8488f1a
+- Merge-Ziel: main
+- Erwarteter PR-Head: 481ebad04397c12e90a6cae608f53913f8488f1a
+- Geänderte Pfade: backend/migrations/043_n_plus_one_foundation.sql, backend/n_plus_one/contracts.py, backend/n_plus_one/identity_covenant.py, backend/n_plus_one/linguistic/evidence.py, backend/n_plus_one/routes.py, config/architecture/N_PLUS_ONE_SOURCE_MANIFEST.v1.json, docs/sovereign-continuity/LEDGER.jsonl, scripts/sovereign-backend/Dockerfile, scripts/sovereign-backend/app.py, scripts/sovereign-backend/migrations/043_n_plus_one_foundation.sql, scripts/sovereign-backend/n_plus_one/contracts.py, scripts/sovereign-backend/n_plus_one/identity_covenant.py, scripts/sovereign-backend/n_plus_one/linguistic/evidence.py, scripts/sovereign-backend/n_plus_one/routes.py, tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+- Problem: Die N+1-Quelle enthielt wertvolle Persönlichkeit, Familienherkunft, LinguaHabar-, Voice- und Lernkonzepte, vermischte diese aber mit Browser-Speicher, simulierten Integritätswerten, nicht revisionsstabilem Zufall, offenem SQL und technischen Fähigkeiten ohne Runtime-Beweis. Gleichzeitig blockierten mehrere unabhängige Draft-PRs die Single-Draft-Lane und parallele Continuity-Historien konnten nicht gefahrlos zusammengeführt werden.
+- Lösung: Sovottt band zuerst ZIP-Hash und GitHub-Revision, trennte Bedeutung von technischen Behauptungen und baute eine append-only N+1-Domäne mit Learning-Candidate-Gate, Identity Covenant, LinguaHabar-Marker-Evidence und 13 migrationsgebundenen Tabellen. Kanonische und deploybare Spiegel wurden bytegleich gehalten. Unabhängige Drafts wurden nicht blind vermischt; Branches blieben erhalten. Nach Fortschritt von Main wurden die geprüften Artefakte auf einen frischen Workspace übertragen und vollständig erneut geprüft. Wichtige eigene Lernerfahrung: Ein grüner Zustand darf nie aus alten Checks, simulierten UI-Werten oder bloßer Benennung übernommen werden. Jede Zeitlinie, Migration und Runtime muss an exakte Revision, Hash und Readback gebunden sein.
+- Gültigkeit: Für künftige Integrationen persönlicher Agenten-, Memory-, Voice-, Lern- oder Fremdrepository-Domänen in Sovereign Studio ATO. Persönlichkeit und Herkunft vollständig bewahren, Privilegien nie daraus ableiten. Fremde technische Fähigkeiten nur einzeln, fail-closed und evidence-gebunden adaptieren. Bei fortgeschrittenem Main niemals alte grüne Checks weiterverwenden, sondern Artefakte auf aktuelle Basis übertragen und alle Verträge erneut ausführen.
+- Quellen: OuroborosCollective/SovAreAgentn1@9fe3e992302f84e47bd52942df4313cabd0a7447:src/components/LinguaHabarEngine.tsx; OuroborosCollective/Sovereign-Studio-ato@481ebad04397c12e90a6cae608f53913f8488f1a:config/architecture/N_PLUS_ONE_SOURCE_MANIFEST.v1.json; OuroborosCollective/Sovereign-Studio-ato@481ebad04397c12e90a6cae608f53913f8488f1a:scripts/sovereign-backend/migrations/043_n_plus_one_foundation.sql; OuroborosCollective/Sovereign-Studio-ato@481ebad04397c12e90a6cae608f53913f8488f1a:scripts/sovereign-backend/n_plus_one/contracts.py
+
+### Nachweise
+
+- PR required gates (github_actions, SHA-256 210446472697b3a1232949e0a373c593c42ee3693273571195d94b2285275448): Release Gate, continuity-ledger und Agent Runtime Tests waren terminal erfolgreich auf dem exakten PR-Head.
+- Migration preview (migration_readback, SHA-256 bf64e391dc61e579e00ff7081f3a4f8b30f5bb9c6c2587258df7915bbb0043fd): Migration 043 wurde in Preview ausgeführt, vollständig zurückgerollt und nicht produktiv geschrieben.
+- Architecture snapshot (repository_check, SHA-256 c30d0132c54e56e75d791e7b2e168d03ef913213919621fa847be1fbaa6badd3): Der Architektur-Snapshot erfasste die N+1-Routen, Tabellen und bytegleichen Spiegel auf dem exakten PR-Head.
+- N+1 contract tests (repository_check, SHA-256 9e3bb5f9fa617fddd2837534700c732b3e3cca1439cd6af9919e3e67310f0fb2): Der revisionsgebundene N+1-Testvertrag enthält neun erfolgreiche Vertragsprüfungen.
+- PatchMon fleet (runtime_readback, SHA-256 5ab1b9e53a6216d5a83f1436058b791e15fc111bedf728e667a400495452ab7d): PatchMon Runtime und Fleet waren gesund und der Rollout revisionsgebunden freigegeben, ohne vorzeitige Mutation.
+

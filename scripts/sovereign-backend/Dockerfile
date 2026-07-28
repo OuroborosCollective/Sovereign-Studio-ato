@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY enterprise_platform/ ./enterprise_platform/
 COPY agent_runtime/ ./agent_runtime/
+COPY n_plus_one/ ./n_plus_one/
 COPY migrations ./migrations
 COPY admin-dist/ ./admin-dist/
 COPY auto-migrate.sh /docker-entrypoint.d/auto-migrate.sh
