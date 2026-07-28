@@ -1,3 +1,5 @@
+import { maskSecrets } from '../../../shared/utils/crypto';
+
 export type RepoContentFindingKind = 'todo' | 'placeholder' | 'sensitive-marker' | 'risky-import' | 'large-content';
 export type RepoContentFindingSeverity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -44,7 +46,7 @@ function cleanEvidence(value: string): string {
 }
 
 function finding(path: string, line: number, kind: RepoContentFindingKind, severity: RepoContentFindingSeverity, evidence: string): RepoContentFinding {
-  return { id: stableId(path, line, kind), path, line, kind, severity, evidence: cleanEvidence(evidence), confidence: 'content-scanned' };
+  return { id: stableId(path, line, kind), path, line, kind, severity, evidence: cleanEvidence(maskSecrets(evidence)), confidence: 'content-scanned' };
 }
 
 export function scanRepoContent(snapshots: RepoContentSnapshot[]): RepoContentScanReport {

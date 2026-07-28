@@ -23,4 +23,14 @@ describe('repoContentScanner', () => {
     expect(report.findings).toHaveLength(1);
     expect(report.findings[0].kind).toBe('large-content');
   });
+
+  it('masks raw secrets in finding evidence to prevent leakage', () => {
+    const report = scanRepoContent([
+      { path: 'config.ts', content: 'const api_key = "sk-proj-abcdef12345678901234";' },
+    ]);
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0].kind).toBe('sensitive-marker');
+    expect(report.findings[0].evidence).toBe('const api_key = ****;');
+    expect(report.findings[0].evidence).not.toContain('abcdef12345678901234');
+  });
 });
