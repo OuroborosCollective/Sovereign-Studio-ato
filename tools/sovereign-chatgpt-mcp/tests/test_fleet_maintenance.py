@@ -15,29 +15,57 @@ BOOT_ID = "11111111-1111-4111-8111-111111111111"
 RECEIPT_SHA = "a" * 64
 
 
-def test_restore_toc_omits_only_supabase_vault_bootstrap_duplicate() -> None:
-    vault = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+def test_restore_toc_preserves_all_source_owned_objects() -> None:
+    vault_function = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+    vault_view = "373; 1259 16428 TABLE vault decrypted_secrets postgres"
+    vault_trigger = (
+        "374; 2620 16429 TRIGGER vault secrets "
+        "secrets_encrypt_secret_trigger_secret postgres"
+    )
     table = "215; 1259 16384 TABLE public users postgres"
-
-    filtered, omissions = _compatible_restore_toc(
-        "; Archive created at 2026-07-28\n" + vault + "\n" + table + "\n"
+    listing = (
+        "; Archive created at 2026-07-28\n"
+        + "\n".join((vault_function, vault_view, vault_trigger, table))
+        + "\n"
     )
 
-    assert f";{vault}" in filtered
-    assert table in filtered
-    assert f";{table}" not in filtered
-    assert omissions == ["FUNCTION vault secrets_encrypt_secret_secret()"]
+    validated, omissions = _compatible_restore_toc(listing)
+
+    assert validated == listing
+    assert omissions == []
 
 
-def test_restore_toc_rejects_multiple_vault_compatibility_entries() -> None:
-    vault = "372; 1255 16427 FUNCTION vault secrets_encrypt_secret_secret() postgres"
+def test_isolated_restore_resets_exact_vault_bootstrap_objects(monkeypatch) -> None:
+    runtime = FleetMaintenanceRuntime()
+    observed = [
+        "FUNCTION vault.secrets_encrypt_secret_secret()",
+        "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
+        "VIEW vault.decrypted_secrets",
+    ]
+    responses = iter(
+        (
+            {"ok": True, "stdout": "\n".join(observed) + "\n", "stderr": ""},
+            {"ok": True, "stdout": "", "stderr": ""},
+            {"ok": True, "stdout": "", "stderr": ""},
+        )
+    )
+    calls: list[tuple[str, str]] = []
 
-    try:
-        _compatible_restore_toc(vault + "\n" + vault + "\n")
-    except RuntimeError as exc:
-        assert "duplicate Vault compatibility entries" in str(exc)
-    else:
-        raise AssertionError("duplicate compatibility omission was not blocked")
+    def psql(database, sql, timeout=300):
+        calls.append((database, sql))
+        return next(responses)
+
+    monkeypatch.setattr(runtime, "_psql", psql)
+
+    reset = runtime._prepare_isolated_restore_database("sovereign_restore_test")
+
+    assert reset == observed
+    assert len(calls) == 3
+    assert all(call[0] == "sovereign_restore_test" for call in calls)
+    assert "DROP TRIGGER secrets_encrypt_secret_trigger_secret ON vault.secrets;" in calls[1][1]
+    assert "DROP VIEW vault.decrypted_secrets;" in calls[1][1]
+    assert "DROP FUNCTION vault.secrets_encrypt_secret_secret();" in calls[1][1]
+    assert "CASCADE" not in calls[1][1]
 
 
 def _filebrowser_inspect(image: str = "filebrowser/filebrowser:latest") -> dict:
@@ -254,6 +282,15 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
     monkeypatch.setattr(runtime, "_drop_restore_database", lambda _database: True)
     monkeypatch.setattr(
         runtime,
+        "_prepare_isolated_restore_database",
+        lambda _database: [
+            "FUNCTION vault.secrets_encrypt_secret_secret()",
+            "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
+            "VIEW vault.decrypted_secrets",
+        ],
+    )
+    monkeypatch.setattr(
+        runtime,
         "_run_file_input",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("restore must use the in-container archive and filtered TOC")
@@ -284,8 +321,11 @@ def test_backup_apply_uses_filtered_toc_and_verifies_restore(monkeypatch, tmp_pa
     )
 
     assert result["status"] == "POSTGRES_BACKUP_RESTORE_VERIFIED"
-    assert result["restoreCompatibilityOmissions"] == [
-        "FUNCTION vault secrets_encrypt_secret_secret()"
+    assert result["restoreCompatibilityOmissions"] == []
+    assert result["restoreBootstrapObjectsReset"] == [
+        "FUNCTION vault.secrets_encrypt_secret_secret()",
+        "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
+        "VIEW vault.decrypted_secrets",
     ]
     assert result["isolatedTargetRemoved"] is True
     restore_calls = [call for call in calls if "pg_restore" in call and "--use-list" in call]
