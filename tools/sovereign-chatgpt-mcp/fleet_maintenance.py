@@ -19,9 +19,10 @@ DEFAULT_MAINTENANCE_ROOT = "/opt/sovereign-chatgpt-tools/maintenance"
 MIN_BACKUP_AVAILABLE_BYTES = 1_073_741_824
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
-_VAULT_TRIGGER_FUNCTION = "FUNCTION vault secrets_encrypt_secret_secret()"
-_VAULT_TRIGGER_TOC_RE = re.compile(
-    r"^\d+;\s+\d+\s+\d+\s+FUNCTION\s+vault\s+secrets_encrypt_secret_secret\(\)(?:\s+.*)?$"
+_VAULT_BOOTSTRAP_OBJECTS = (
+    "FUNCTION vault.secrets_encrypt_secret_secret()",
+    "TRIGGER vault.secrets_encrypt_secret_trigger_secret",
+    "VIEW vault.decrypted_secrets",
 )
 _SUCCESSFUL_PATCH_STATES = frozenset({"completed", "complete", "success", "succeeded"})
 _PREPATCH_STATES = frozenset({"pending_approval"})
@@ -43,24 +44,14 @@ def _quote_identifier(value: str) -> str:
 
 
 def _compatible_restore_toc(value: Any) -> tuple[str, list[str]]:
-    """Omit only the Supabase Vault trigger function recreated by database bootstrap hooks."""
+    """Validate the archive list without omitting source-owned objects."""
     if isinstance(value, bytes):
         listing = value.decode("utf-8", errors="strict")
     else:
         listing = str(value or "")
     if not listing.strip():
         raise RuntimeError("pg_restore archive list is empty")
-    filtered: list[str] = []
-    omitted = 0
-    for line in listing.splitlines():
-        if _VAULT_TRIGGER_TOC_RE.fullmatch(line):
-            omitted += 1
-            filtered.append(";" + line)
-        else:
-            filtered.append(line)
-    if omitted > 1:
-        raise RuntimeError("pg_restore archive contains duplicate Vault compatibility entries")
-    return "\n".join(filtered) + "\n", ([_VAULT_TRIGGER_FUNCTION] if omitted else [])
+    return listing.rstrip("\n") + "\n", []
 
 
 class FleetMaintenanceRuntime:
@@ -561,6 +552,72 @@ ORDER BY n.nspname, c.relname;
                 digest.update(chunk)
         return digest.hexdigest()
 
+    def _prepare_isolated_restore_database(self, database: str) -> list[str]:
+        inventory_sql = """
+WITH candidates(object_name, present) AS (
+    VALUES
+        (
+            'FUNCTION vault.secrets_encrypt_secret_secret()',
+            to_regprocedure('vault.secrets_encrypt_secret_secret()') IS NOT NULL
+        ),
+        (
+            'TRIGGER vault.secrets_encrypt_secret_trigger_secret',
+            EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_trigger t
+                JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'vault'
+                  AND c.relname = 'secrets'
+                  AND t.tgname = 'secrets_encrypt_secret_trigger_secret'
+                  AND NOT t.tgisinternal
+            )
+        ),
+        (
+            'VIEW vault.decrypted_secrets',
+            EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'vault'
+                  AND c.relname = 'decrypted_secrets'
+                  AND c.relkind = 'v'
+            )
+        )
+)
+SELECT object_name
+FROM candidates
+WHERE present
+ORDER BY object_name;
+""".strip()
+        inventory = self._psql(database, inventory_sql)
+        if not inventory.get("ok"):
+            raise RuntimeError("isolated database Vault bootstrap inventory failed")
+        observed = sorted(
+            line.strip()
+            for line in str(inventory.get("stdout") or "").splitlines()
+            if line.strip()
+        )
+        expected = sorted(_VAULT_BOOTSTRAP_OBJECTS)
+        if observed != expected:
+            raise RuntimeError(
+                "isolated database Vault bootstrap inventory drifted from the exact allowlist"
+            )
+        reset = self._psql(
+            database,
+            """
+DROP TRIGGER secrets_encrypt_secret_trigger_secret ON vault.secrets;
+DROP VIEW vault.decrypted_secrets;
+DROP FUNCTION vault.secrets_encrypt_secret_secret();
+""".strip(),
+        )
+        if not reset.get("ok"):
+            raise RuntimeError("isolated database Vault bootstrap reset failed")
+        remaining = self._psql(database, inventory_sql)
+        if not remaining.get("ok") or str(remaining.get("stdout") or "").strip():
+            raise RuntimeError("isolated database Vault bootstrap reset was not verified")
+        return observed
+
     def _drop_restore_database(self, database: str) -> bool:
         dropped = self._run_text(
             [
@@ -638,6 +695,7 @@ ORDER BY n.nspname, c.relname;
         restore_created = False
         cleanup_verified = False
         restore_compatibility_omissions: list[str] = []
+        restore_bootstrap_resets: list[str] = []
         restore_toc_digest = ""
         try:
             source_before = self._database_manifest(POSTGRES_DATABASE)
@@ -731,6 +789,9 @@ ORDER BY n.nspname, c.relname;
             if not created.get("ok"):
                 raise RuntimeError("isolated restore database creation failed")
             restore_created = True
+            restore_bootstrap_resets = self._prepare_isolated_restore_database(
+                restore_database
+            )
             restored = self._run_text(
                 [
                     "docker",
@@ -781,6 +842,7 @@ ORDER BY n.nspname, c.relname;
                 "isolatedTargetRemoved": True,
                 "restoreTocDigest": f"sha256:{restore_toc_digest}",
                 "restoreCompatibilityOmissions": restore_compatibility_omissions,
+                "restoreBootstrapObjectsReset": restore_bootstrap_resets,
                 "patchRunId": str(patch_run_id).strip().lower(),
                 "bootId": str(plan.get("bootId") or ""),
                 "createdAtEpoch": int(time.time()),
@@ -810,6 +872,7 @@ ORDER BY n.nspname, c.relname;
                 "isolatedTargetRemoved": True,
                 "restoreTocDigest": receipt["restoreTocDigest"],
                 "restoreCompatibilityOmissions": receipt["restoreCompatibilityOmissions"],
+                "restoreBootstrapObjectsReset": receipt["restoreBootstrapObjectsReset"],
                 "backupReceiptSha256": receipt_sha,
                 "patchRunId": receipt["patchRunId"],
                 "readbackVerified": True,
