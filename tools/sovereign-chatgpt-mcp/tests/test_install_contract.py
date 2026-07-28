@@ -420,6 +420,45 @@ def test_historical_pr_992_review_resolver_is_isolated_from_active_ci() -> None:
     assert "push:" not in resolver
 
 
+def test_automatic_main_push_never_uses_public_runner_ssh_deployment() -> None:
+    workflow = (
+        ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+    ).read_text("utf-8")
+
+    assert "deploy_vps_via_public_ssh:" in workflow
+    assert "default: false" in workflow
+
+    deploy_start = workflow.index("  deploy-vps:")
+    next_job = workflow.index("\n  resolve-pr-992-review-thread:", deploy_start)
+    deploy = workflow[deploy_start:next_job]
+
+    expected_gate = (
+        "if: github.event_name == 'workflow_dispatch' && "
+        "inputs.deploy_vps_via_public_ssh == true && "
+        "github.ref == 'refs/heads/main'"
+    )
+    assert "name: Manual legacy SSH bootstrap on VPS" in deploy
+    assert expected_gate in deploy
+    assert "github.event_name == 'push'" not in deploy
+    assert "VPS_PASSWORD" in deploy
+    assert "key:" not in deploy
+
+
+def test_documented_paramiko_fallback_uses_password_not_client_key() -> None:
+    knowledge = (ROOT.parents[1] / "AGENTS_KNOWLEDGE.md").read_text("utf-8")
+
+    marker = "#### VPS Connection Pattern (direct operator fallback via Paramiko)"
+    start = knowledge.index(marker)
+    end = knowledge.index("\n#### Fetching Python Files from Container", start)
+    fallback = knowledge[start:end]
+
+    assert "password=os.environ['VPS_PASSWORD']" in fallback
+    assert "look_for_keys=False" in fallback
+    assert "allow_agent=False" in fallback
+    assert "VPS_SSH_KEY_FILE" not in fallback
+    assert "paramiko.RejectPolicy()" in fallback
+
+
 def test_main_workflow_runs_real_memory_collection_post_install_canary() -> None:
     workflow = (
         ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"

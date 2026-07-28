@@ -322,7 +322,10 @@ These bugs caused 12 jobs to hang permanently in "provisioning" status with no t
 
 ### Debugging VPS Production Issues
 
-#### VPS Connection Pattern (SSH via paramiko)
+#### VPS Connection Pattern (direct operator fallback via Paramiko)
+
+Production MCP releases use the private, revision-bound broker self-update path. GitHub-hosted runners must not be treated as an automatic deployment path while the VPS SSH listener is unreachable from that network. When a trusted operator environment has a valid network path, direct SSH uses host, user, and password authentication — never a client SSH key:
+
 ```python
 import os
 import paramiko
@@ -333,7 +336,9 @@ client.set_missing_host_key_policy(paramiko.RejectPolicy())
 client.connect(
     os.environ['VPS_HOST'],
     username=os.environ['VPS_USER'],
-    key_filename=os.environ['VPS_SSH_KEY_FILE'],
+    password=os.environ['VPS_PASSWORD'],
+    look_for_keys=False,
+    allow_agent=False,
     timeout=30,
 )
 
