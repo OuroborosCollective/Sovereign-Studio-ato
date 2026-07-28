@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "sovereign.n-plus-one-source-manifest.v1",
+  "canonicalIdentity": {
+    "name": "N+1",
+    "spokenName": "NPlusEins",
+    "technicalNamespace": "n_plus_one",
+    "legacyAliasPolicy": {
+      "Puck": "historical-source-alias-only"
+    }
+  },
+  "source": {
+    "repository": "https://github.com/OuroborosCollective/SovAreAgentn1",
+    "revision": "9fe3e992302f84e47bd52942df4313cabd0a7447",
+    "archiveName": "1785236849710.zip",
+    "archiveSha256": "345b612a11e7a5cb99f02a75063743c19533a4728c50415d2242bcb0c8b2f7d7",
+    "archiveEntryCount": 101,
+    "archiveUncompressedBytes": 1394904,
+    "unsafeArchivePathCount": 0
+  },
+  "boundFiles": [
+    {
+      "path": "src/components/LinguaHabarEngine.tsx",
+      "sha256": "7130e5d3413e4209ab28d6faab8629589642ab0af65794f06901f1c846e00718",
+      "bytes": 25946,
+      "classification": "ui-projection-and-domain-concept"
+    },
+    {
+      "path": "src/components/HiaResonanceVoice.tsx",
+      "sha256": "5beb400447cbdb8b685daca16bff21676130bf719677cd20a7b39a27eb83e4b0",
+      "bytes": 27895,
+      "classification": "ui-projection-and-voice-concept"
+    },
+    {
+      "path": "server.ts",
+      "sha256": "3ba026f77212d61717867526cf9aadf8bffee9bdfb0780df255b42cf24e62d76",
+      "bytes": 40785,
+      "classification": "technical-implementation-requires-security-adaptation"
+    },
+    {
+      "path": "src/utils/deterministic.ts",
+      "sha256": "5d61bf5686e03f932e927ee3760860e24343993631b2dd7005675d572b9265ae",
+      "bytes": 1469,
+      "classification": "technical-claim-not-are-deterministic"
+    },
+    {
+      "path": "src/components/AhaMomentTimeline.tsx",
+      "sha256": "cc147326de172898471f0396dacb307cf81107232ac3a7f173715783fc41a029",
+      "bytes": 4090,
+      "classification": "personality-projection"
+    },
+    {
+      "path": "src/components/ProactiveLearningEngine.tsx",
+      "sha256": "7a0ca4f23325325faa00f79375eaa813b50c4cb627014b3314cba7704d84b6e3",
+      "bytes": 19331,
+      "classification": "learning-ui-projection-requires-candidate-gate"
+    },
+    {
+      "path": "src/components/ProtectedPersonalityMemory.tsx",
+      "sha256": "eed829d9ecb2993398cdf89fbfdf328db0f945dbbaa8d542807a560f6fd84047",
+      "bytes": 6262,
+      "classification": "personality-memory-concept-requires-receipts"
+    },
+    {
+      "path": "src/components/PapasStoryArchive.tsx",
+      "sha256": "139bc225fff09e580d124802d7e9a05b97d8780c921b583ba5806423a5ccd425",
+      "bytes": 23781,
+      "classification": "owner-narrative-provenance"
+    },
+    {
+      "path": "src/components/PucksPersonalLog.tsx",
+      "sha256": "ec76066abfd93afcbb587b4965d5d3cb62c93d549741997d29a7072cd39a9576",
+      "bytes": 17878,
+      "classification": "historical-personality-source"
+    },
+    {
+      "path": "src/components/PuckSongBook.tsx",
+      "sha256": "ba9b5c90a87d415c9c67984e7fdfb2790fea2f088c84539b76de80cffdec651d",
+      "bytes": 9244,
+      "classification": "historical-expression-source"
+    }
+  ],
+  "truthBoundaries": {
+    "sourceMeaningPreserved": true,
+    "technicalCapabilityImportedByClaim": false,
+    "dialectDetectionVerified": false,
+    "voiceLinguaChainVerified": false,
+    "memoryIntegrityVerified": false,
+    "learningAutoVerified": false,
+    "openSqlImported": false,
+    "secondRuntimeImported": false,
+    "sharedRuntimeWithArelorianWasd": false
+  }
+}
