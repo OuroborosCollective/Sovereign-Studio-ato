@@ -12,12 +12,29 @@ from typing import Any
 from ..contracts import canonical_json
 
 
+# Global module-level cache to store compiled regular expressions and case-folded markers.
+# This prevents redundant re-compilation, string escaping, and casing operations across function calls.
+_MARKER_CACHE: dict[str, tuple[str, re.Pattern[str]]] = {}
+
+
+def _get_marker_cached_info(marker: str) -> tuple[str, re.Pattern[str]]:
+    """Gets the precomputed case-folded representation and compiled Pattern for a marker from the cache."""
+    info = _MARKER_CACHE.get(marker)
+    if info is None:
+        info = (marker.casefold(), re.compile(re.escape(marker), flags=re.IGNORECASE))
+        _MARKER_CACHE[marker] = info
+    return info
+
+
 def observe_configured_markers(text: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     source_text = str(text or "")
     if not source_text.strip():
         raise ValueError("text is required")
     if len(source_text) > 8_000:
         raise ValueError("text exceeds the bounded observation limit")
+
+    # Case-fold the source text once to perform fast O(1) string contains filtering per rule
+    source_text_folded = source_text.casefold()
 
     observations: list[dict[str, Any]] = []
     for rule in sorted(
@@ -31,7 +48,15 @@ def observe_configured_markers(text: str, rules: list[dict[str, Any]]) -> dict[s
         marker = str(rule.get("markerText") or "")
         if not marker:
             continue
-        for match in re.finditer(re.escape(marker), source_text, flags=re.IGNORECASE):
+
+        # Fast path check: retrieve cached case-folded marker and precompiled regex pattern
+        marker_folded, pattern = _get_marker_cached_info(marker)
+
+        # Skip scanning with the heavy regex engine if the case-insensitive marker is not present in the text
+        if marker_folded not in source_text_folded:
+            continue
+
+        for match in re.finditer(pattern, source_text):
             payload = {
                 "schemaVersion": "sovereign.n-plus-one-linguistic-observation.v1",
                 "profileKey": str(rule.get("profileKey") or ""),
