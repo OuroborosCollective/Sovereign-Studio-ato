@@ -338,3 +338,26 @@ class TestToolchainSsrfProtection:
 
         assert response.status_code == 400
         assert "Unauthorized worker host" in response.get_json()["error"]
+
+
+class TestToolchainPayloadValidation:
+    """Verifies that non-dictionary JSON payloads are rejected cleanly."""
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "/api/toolchain/github/read-file",
+            "/api/toolchain/github/list-directory",
+            "/api/toolchain/github/list-branches",
+            "/api/toolchain/github/search-code",
+            "/api/toolchain/preview-patch",
+            "/api/toolchain/create-draft-pr",
+            "/api/toolchain/apply-patch-worker",
+            "/api/toolchain/sandbox-plan",
+        ],
+    )
+    def test_endpoints_reject_non_dict_payload(self, mock_app_deps, endpoint):
+        client = app.app.test_client()
+        response = client.post(endpoint, json=[1, 2, 3])
+        assert response.status_code in (400, 422)
+        assert response.get_json()["error"] == "Malformed payload; dictionary required"

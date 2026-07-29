@@ -4918,7 +4918,10 @@ def tc_user_tools():
 @require_session
 def tc_github_read_file():
     try:
-        b     = request.get_json(force=True) or {}
+        b     = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b     = b or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
         path  = b.get("path", "")
@@ -4950,7 +4953,10 @@ def tc_github_read_file():
 @require_session
 def tc_github_list_directory():
     try:
-        b     = request.get_json(force=True) or {}
+        b     = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b     = b or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
         path  = b.get("path", "")
@@ -4982,7 +4988,10 @@ def tc_github_list_directory():
 @require_session
 def tc_github_list_branches():
     try:
-        b     = request.get_json(force=True) or {}
+        b     = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b     = b or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
         if not owner or not repo:
@@ -5001,7 +5010,10 @@ def tc_github_list_branches():
 @require_session
 def tc_github_search_code():
     try:
-        b     = request.get_json(force=True) or {}
+        b     = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b     = b or {}
         owner = b.get("owner", "")
         repo  = b.get("repo", "")
         query_str = b.get("q", "")
@@ -5026,7 +5038,10 @@ def tc_github_search_code():
 def tc_preview_patch():
     """Preview SEARCH/REPLACE blocks against a GitHub file — read-only."""
     try:
-        b      = request.get_json(force=True) or {}
+        b      = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b      = b or {}
         owner  = b.get("owner", "")
         repo   = b.get("repo", "")
         path   = b.get("path", "")
@@ -5068,7 +5083,10 @@ def tc_preview_patch():
 def tc_create_draft_pr():
     """Create a GitHub Draft PR. confirm=True required. Direct push to main: never."""
     try:
-        b       = request.get_json(force=True) or {}
+        b       = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b       = b or {}
         owner   = b.get("owner", "")
         repo    = b.get("repo", "")
         path    = b.get("path", "")
@@ -5140,7 +5158,10 @@ def tc_create_draft_pr():
 def tc_apply_patch_worker():
     """Send SEARCH/REPLACE blocks to the external Sovereign patch worker. confirm=True required."""
     try:
-        b       = request.get_json(force=True) or {}
+        b       = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b       = b or {}
         owner   = b.get("owner", "")
         repo    = b.get("repo", "")
         path    = b.get("path", "")
@@ -5200,41 +5221,47 @@ def tc_apply_patch_worker():
 @require_session
 def tc_sandbox_plan():
     """Plan Playwright/verify/doctor commands for a given goal — read-only."""
-    b    = request.get_json(force=True) or {}
-    goal = (b.get("goal") or "").strip()
+    try:
+        b    = request.get_json(force=True)
+        if not isinstance(b, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        b    = b or {}
+        goal = (b.get("goal") or "").strip()
 
-    COMMANDS = {
-        "verify":   "pnpm run verify",
-        "typecheck":"pnpm run type-check",
-        "test":     "pnpm run test:smoke",
-        "build":    "pnpm run build",
-        "apk":      "pnpm run build:apk:debug",
-        "doctor":   "pnpm exec playwright install --with-deps && pnpm run test:e2e",
-        "lint":     "pnpm run lint",
-        "audit":    "pnpm run audit:sovereign",
-    }
-    detected = []
-    goal_l   = goal.lower()
-    if any(w in goal_l for w in ("type", "ts", "typescript")):  detected.append(COMMANDS["typecheck"])
-    if any(w in goal_l for w in ("smoke", "test")):             detected.append(COMMANDS["test"])
-    if any(w in goal_l for w in ("build", "bundle")):           detected.append(COMMANDS["build"])
-    if any(w in goal_l for w in ("apk", "android", "play")):   detected.append(COMMANDS["apk"])
-    if any(w in goal_l for w in ("playwright", "e2e", "doctor")): detected.append(COMMANDS["doctor"])
-    if any(w in goal_l for w in ("lint",)):                     detected.append(COMMANDS["lint"])
-    if any(w in goal_l for w in ("audit", "security")):         detected.append(COMMANDS["audit"])
-    if not detected:                                            detected.append(COMMANDS["verify"])
+        COMMANDS = {
+            "verify":   "pnpm run verify",
+            "typecheck":"pnpm run type-check",
+            "test":     "pnpm run test:smoke",
+            "build":    "pnpm run build",
+            "apk":      "pnpm run build:apk:debug",
+            "doctor":   "pnpm exec playwright install --with-deps && pnpm run test:e2e",
+            "lint":     "pnpm run lint",
+            "audit":    "pnpm run audit:sovereign",
+        }
+        detected = []
+        goal_l   = goal.lower()
+        if any(w in goal_l for w in ("type", "ts", "typescript")):  detected.append(COMMANDS["typecheck"])
+        if any(w in goal_l for w in ("smoke", "test")):             detected.append(COMMANDS["test"])
+        if any(w in goal_l for w in ("build", "bundle")):           detected.append(COMMANDS["build"])
+        if any(w in goal_l for w in ("apk", "android", "play")):   detected.append(COMMANDS["apk"])
+        if any(w in goal_l for w in ("playwright", "e2e", "doctor")): detected.append(COMMANDS["doctor"])
+        if any(w in goal_l for w in ("lint",)):                     detected.append(COMMANDS["lint"])
+        if any(w in goal_l for w in ("audit", "security")):         detected.append(COMMANDS["audit"])
+        if not detected:                                            detected.append(COMMANDS["verify"])
 
-    _tc_audit(request.session_user_id, "sandbox_plan", {"goal": goal, "commands": detected})
-    return jsonify({
-        "goal":     goal,
-        "commands": detected,
-        "note":     "Node 22 + pnpm 9 + Playwright. Ausführen im Repo-Root.",
-        "rules": {
-            "push_to_main": False,
-            "draft_pr":     True,
-            "confirm":      True,
-        },
-    })
+        _tc_audit(request.session_user_id, "sandbox_plan", {"goal": goal, "commands": detected})
+        return jsonify({
+            "goal":     goal,
+            "commands": detected,
+            "note":     "Node 22 + pnpm 9 + Playwright. Ausführen im Repo-Root.",
+            "rules": {
+                "push_to_main": False,
+                "draft_pr":     True,
+                "confirm":      True,
+            },
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/toolchain/audit-log")
