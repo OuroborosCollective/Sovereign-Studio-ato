@@ -81,6 +81,25 @@ def _manifest_difference(source: dict[str, Any], restored: dict[str, Any]) -> di
                 continue
         return rows
 
+    def structural_inventory(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, str]]:
+        rows: dict[tuple[str, str], dict[str, str]] = {}
+        for kind, field, identity_parts in (
+            ("relation-column", "schemaRows", 5),
+            ("constraint", "constraintRows", 4),
+        ):
+            for raw in payload.get(field) or []:
+                line = str(raw or "").strip()
+                if not line:
+                    continue
+                definition_sha256 = hashlib.sha256(line.encode("utf-8")).hexdigest()
+                identity = _bounded("|".join(line.split("|")[:identity_parts]), 220)
+                rows[(kind, definition_sha256)] = {
+                    "kind": kind,
+                    "object": identity,
+                    "definitionSha256": definition_sha256,
+                }
+        return rows
+
     source_rows = inventory(source)
     restored_rows = inventory(restored)
     differences = [
@@ -92,8 +111,19 @@ def _manifest_difference(source: dict[str, Any], restored: dict[str, Any]) -> di
         for table in sorted(set(source_rows) | set(restored_rows))
         if source_rows.get(table) != restored_rows.get(table)
     ]
+    source_structural = structural_inventory(source)
+    restored_structural = structural_inventory(restored)
+    structural_differences = [
+        {**source_structural[key], "side": "source"}
+        for key in sorted(set(source_structural) - set(restored_structural))
+    ] + [
+        {**restored_structural[key], "side": "restored"}
+        for key in sorted(set(restored_structural) - set(source_structural))
+    ]
     return {
         "schemaDigestMatch": source.get("schemaDigest") == restored.get("schemaDigest"),
+        "structuralDifferences": structural_differences[:3],
+        "structuralDifferencesTruncated": len(structural_differences) > 3,
         "rowCountDigestMatch": source.get("rowCountDigest") == restored.get("rowCountDigest"),
         "sourceTableCount": source.get("tableCount"),
         "restoredTableCount": restored.get("tableCount"),
@@ -671,6 +701,16 @@ ORDER BY n.nspname, c.relname;
             "tableCount": len(rows),
             "totalRows": sum(item[2] for item in rows),
             "rowCounts": rows,
+            "schemaRows": [
+                line
+                for line in str(schema.get("stdout") or "").splitlines()
+                if line.strip()
+            ],
+            "constraintRows": [
+                line
+                for line in str(constraints.get("stdout") or "").splitlines()
+                if line.strip()
+            ],
         }
 
     @staticmethod
