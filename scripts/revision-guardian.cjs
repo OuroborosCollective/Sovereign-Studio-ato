@@ -113,12 +113,36 @@ function workflowSpecs(mode, changedFiles = []) {
 }
 
 function latestRunsByName(runs = []) {
-  const latest = new Map();
+  const grouped = new Map();
   for (const run of runs) {
     const name = String(run?.name || '');
     const id = Number(run?.id || 0);
     if (!name || id < 1) continue;
-    if (!latest.has(name) || id > Number(latest.get(name).id || 0)) latest.set(name, run);
+    if (!grouped.has(name)) grouped.set(name, []);
+    grouped.get(name).push(run);
+  }
+
+  const latest = new Map();
+  for (const [name, candidates] of grouped.entries()) {
+    candidates.sort((left, right) => Number(right?.id || 0) - Number(left?.id || 0));
+    const newest = candidates[0];
+    const newestRevision = String(newest?.head_sha || '').toLowerCase();
+    if (
+      newest?.status === 'completed'
+      && String(newest?.conclusion || '') === 'cancelled'
+      && newestRevision
+    ) {
+      const priorSuccess = candidates.find((candidate) => (
+        String(candidate?.head_sha || '').toLowerCase() === newestRevision
+        && candidate?.status === 'completed'
+        && SUCCESS.has(String(candidate?.conclusion || ''))
+      ));
+      if (priorSuccess) {
+        latest.set(name, priorSuccess);
+        continue;
+      }
+    }
+    latest.set(name, newest);
   }
   return latest;
 }

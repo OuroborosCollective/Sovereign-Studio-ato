@@ -101,6 +101,24 @@ test('latest workflow selection is deterministic by run id', () => {
   assert.equal(selected.get('Sovereign Agent Backend').id, 4);
 });
 
+test('cancelled duplicate runs do not invalidate successful evidence for the same revision', () => {
+  const selected = guardian.latestRunsByName([
+    { id: 10, name: 'Sovereign ChatGPT MCP', head_sha: HEAD, status: 'completed', conclusion: 'success' },
+    { id: 11, name: 'Sovereign ChatGPT MCP', head_sha: HEAD, status: 'completed', conclusion: 'cancelled' },
+    { id: 20, name: 'Release Verification', head_sha: HEAD, status: 'completed', conclusion: 'success' },
+    { id: 21, name: 'Release Verification', head_sha: HEAD, status: 'completed', conclusion: 'failure' },
+    { id: 30, name: 'Sovereign Agent Backend', head_sha: HEAD, status: 'completed', conclusion: 'success' },
+    { id: 31, name: 'Sovereign Agent Backend', head_sha: HEAD, status: 'in_progress', conclusion: null },
+    { id: 40, name: 'Sovereign Continuity Gate', head_sha: HEAD, status: 'completed', conclusion: 'success' },
+    { id: 41, name: 'Sovereign Continuity Gate', head_sha: BASE, status: 'completed', conclusion: 'cancelled' },
+  ]);
+
+  assert.equal(selected.get('Sovereign ChatGPT MCP').id, 10);
+  assert.equal(selected.get('Release Verification').id, 21);
+  assert.equal(selected.get('Sovereign Agent Backend').id, 31);
+  assert.equal(selected.get('Sovereign Continuity Gate').id, 41);
+});
+
 test('unsafe refs and non-full revisions fail closed', () => {
   assert.throws(() => guardian.fullSha('abc'), /REVISION_INVALID/);
   assert.throws(() => guardian.safeRef('../main'), /REF_INVALID/);
