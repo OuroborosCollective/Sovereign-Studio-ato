@@ -1,0 +1,156 @@
+name: Refresh Sovereign AI Architecture Corpus
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/1785326941-refresh-ai-architecture-corpus-2026-07-2-ea48ba
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-sovereign-ai-architecture-corpus-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate monolithic architecture corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+          import base64, hashlib, json, os, pathlib, re, subprocess
+          from datetime import datetime, timezone
+
+          ROOT = pathlib.Path('.').resolve()
+          OUT = pathlib.Path('docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md')
+          WORKFLOW = pathlib.Path('.github/workflows/refresh-sovereign-ai-architecture-corpus.yml')
+          ALLOWED = {'.ts','.tsx','.py','.md','.js','.mjs','.cjs','.json','.yml','.yaml','.sql','.sh','.xml','.css','.java','.toml','.ini','.cfg','.conf','.txt','.html','.htm','.go','.rs','.kt','.kts','.gradle','.properties'}
+          EXCLUDED_PREFIXES = ('.git/', 'node_modules/', 'dist/', 'build/', '.next/', '.venv/', 'venv/', '__pycache__/', '.pytest_cache/', '.mypy_cache/', '.ruff_cache/')
+          SECRET_PATTERNS = [
+              re.compile(r'(?i)(authorization\s*[:=]\s*bearer\s+)[A-Za-z0-9._~+/=-]{12,}'),
+              re.compile(r'(?i)((?:api[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*["\']?)[^\s"\']{8,}'),
+              re.compile(r'-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----', re.S),
+              re.compile(r'(?i)(https?://[^:/\s]+:)[^@/\s]+(@)'),
+          ]
+
+          def git(*args: str, binary: bool=False):
+              return subprocess.check_output(['git', *args], text=not binary)
+
+          source_revision = git('rev-parse', 'HEAD').strip()
+          tracked = [p for p in git('ls-tree','-r','--name-only',source_revision).splitlines() if p]
+          selected = []
+          for p in tracked:
+              pp = pathlib.PurePosixPath(p)
+              if p == OUT.as_posix() or p == WORKFLOW.as_posix():
+                  continue
+              if p.startswith(EXCLUDED_PREFIXES):
+                  continue
+              if pp.suffix.lower() in ALLOWED or pp.name in {'Dockerfile','Makefile','Procfile','LICENSE','AGENTS.md'}:
+                  selected.append(p)
+          selected.sort()
+
+          tree = {}
+          for p in tracked:
+              if p == WORKFLOW.as_posix():
+                  continue
+              node = tree
+              parts = p.split('/')
+              for part in parts[:-1]:
+                  node = node.setdefault(part,{})
+              node[parts[-1]] = None
+
+          lines=[]
+          def emit_tree(node, prefix=''):
+              items=sorted(node.items(), key=lambda kv:(kv[1] is None, kv[0].lower()))
+              for i,(name,child) in enumerate(items):
+                  last=i==len(items)-1
+                  lines.append(prefix+('└── ' if last else '├── ')+name)
+                  if isinstance(child,dict):
+                      emit_tree(child,prefix+('    ' if last else '│   '))
+          emit_tree(tree)
+
+          records=[]
+          redaction_total=0
+          for idx,p in enumerate(selected,1):
+              raw=git('show',f'{source_revision}:{p}',binary=True)
+              original_sha=hashlib.sha256(raw).hexdigest()
+              encoding='utf-8'
+              redactions=0
+              try:
+                  text=raw.decode('utf-8')
+                  if '\x00' in text:
+                      raise UnicodeError('nul')
+                  rendered=text
+                  for pattern in SECRET_PATTERNS:
+                      if pattern.pattern.startswith('-----BEGIN'):
+                          rendered,n=pattern.subn('[REDACTED_PRIVATE_KEY_BLOCK]',rendered)
+                      elif 'https?' in pattern.pattern:
+                          rendered,n=pattern.subn(r'\1[REDACTED]\2',rendered)
+                      else:
+                          rendered,n=pattern.subn(r'\1[REDACTED]',rendered)
+                      redactions += n
+              except UnicodeError:
+                  encoding='base64'
+                  rendered=base64.b64encode(raw).decode('ascii')
+              redaction_total += redactions
+              rendered_bytes=rendered.encode('utf-8')
+              lang=pathlib.PurePosixPath(p).suffix.lower().lstrip('.') or 'text'
+              records.append((idx,p,lang,len(raw),original_sha,hashlib.sha256(rendered_bytes).hexdigest(),encoding,redactions,rendered))
+
+          meta={
+              'schema':'sovereign.ai-architecture-corpus.v2',
+              'repository':'OuroborosCollective/Sovereign-Studio-ato',
+              'source_revision':source_revision,
+              'generated_at_utc':datetime.now(timezone.utc).isoformat(),
+              'tracked_file_count':len(tracked),
+              'embedded_file_count':len(records),
+              'coverage_basis':'tracked files with architecture-relevant text/config/source extensions',
+              'redaction_count':redaction_total,
+              'runtime_truth_notice':'Static repository content is architecture evidence, not proof of deployed runtime state.'
+          }
+          OUT.parent.mkdir(parents=True,exist_ok=True)
+          with OUT.open('w',encoding='utf-8',newline='\n') as f:
+              f.write('---\n'+json.dumps(meta,ensure_ascii=False,sort_keys=True,indent=2)+'\n---\n\n')
+              f.write('# Sovereign Studio ATO — KI-Architektur-Corpus\n\n')
+              f.write('## Vollständiger Repository-Baum\n\n```text\n'+ '\n'.join(lines) +'\n```\n\n')
+              f.write('## Eingebettete Dateien\n\n')
+              for idx,p,lang,size,osha,rsha,enc,reds,rendered in records:
+                  f.write(f'<!-- SOVEREIGN_FILE_BEGIN {idx}/{len(records)} path={json.dumps(p)} -->\n')
+                  f.write('```json\n'+json.dumps({'path':p,'language':lang,'original_bytes':size,'original_sha256':osha,'rendered_sha256':rsha,'encoding':enc,'redactions':reds},ensure_ascii=False,sort_keys=True)+'\n```\n')
+                  fence='````'
+                  f.write(f'{fence}{lang if enc=="utf-8" else "text"}\n{rendered}')
+                  if not rendered.endswith('\n'): f.write('\n')
+                  f.write(f'{fence}\n<!-- SOVEREIGN_FILE_END {idx}/{len(records)} -->\n\n')
+              f.write('<!-- SOVEREIGN_CORPUS_COMPLETE '+json.dumps({'source_revision':source_revision,'file_records':len(records)},sort_keys=True)+' -->\n')
+
+          if len(records) < 1500:
+              raise SystemExit(f'embedded file count unexpectedly low: {len(records)}')
+          content=OUT.read_bytes()
+          if content.count(b'SOVEREIGN_FILE_BEGIN') != len(records) or content.count(b'SOVEREIGN_FILE_END') != len(records):
+              raise SystemExit('record delimiter mismatch')
+          print(json.dumps({'source_revision':source_revision,'tracked':len(tracked),'embedded':len(records),'bytes':len(content),'sha256':hashlib.sha256(content).hexdigest(),'redactions':redaction_total},sort_keys=True))
+          PY
+
+      - name: Commit corpus only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/refresh-sovereign-ai-architecture-corpus.yml
+          git config user.name "sovereign-architecture-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md
+          git add -u .github/workflows/refresh-sovereign-ai-architecture-corpus.yml
+          git diff --cached --check
+          git commit -m "docs(architecture): refresh current AI architecture corpus"
+          git push origin HEAD:${GITHUB_REF_NAME}
