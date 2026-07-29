@@ -22,6 +22,8 @@ def test_manifest_difference_is_bounded_and_table_specific() -> None:
         "rowCountDigest": "b",
         "tableCount": 4,
         "totalRows": 10,
+        "schemaRows": ["public|alpha|r|1|id|bigint|t"],
+        "constraintRows": ["public|alpha|alpha_pkey|p|PRIMARY KEY (id)"],
         "rowCounts": [
             ["public", "alpha", 1],
             ["public", "beta", 2],
@@ -34,6 +36,8 @@ def test_manifest_difference_is_bounded_and_table_specific() -> None:
         "rowCountDigest": "d",
         "tableCount": 4,
         "totalRows": 14,
+        "schemaRows": ["public|alpha|r|1|id|integer|t"],
+        "constraintRows": ["public|alpha|alpha_pkey|p|PRIMARY KEY (id)"],
         "rowCounts": [
             ["public", "alpha", 2],
             ["public", "beta", 3],
@@ -45,6 +49,18 @@ def test_manifest_difference_is_bounded_and_table_specific() -> None:
     difference = _manifest_difference(source, restored)
 
     assert difference["schemaDigestMatch"] is False
+    assert [
+        (item["kind"], item["object"], item["side"])
+        for item in difference["structuralDifferences"]
+    ] == [
+        ("relation-column", "public|alpha|r|1|id", "source"),
+        ("relation-column", "public|alpha|r|1|id", "restored"),
+    ]
+    assert all(
+        len(item["definitionSha256"]) == 64
+        for item in difference["structuralDifferences"]
+    )
+    assert difference["structuralDifferencesTruncated"] is False
     assert difference["rowCountDigestMatch"] is False
     assert difference["sourceTotalRows"] == 10
     assert difference["restoredTotalRows"] == 14
