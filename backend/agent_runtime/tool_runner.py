@@ -99,13 +99,34 @@ class ToolRunner:
         return result
 
     def execute_single(self, tool_name: str, parameters: dict[str, Any]) -> ToolExecution:
-        """Execute a single tool call."""
+        """Execute a single tool call through the legacy compatibility path."""
         call = ToolCall(
             tool_name=tool_name,
             parameters=parameters,
             call_id=str(uuid.uuid4())[:8],
         )
         return self._execute_single(call)
+
+    def execute_provider_neutral(
+        self,
+        *,
+        kernel: Any,
+        context: Any,
+        descriptor: Any,
+        parameters: dict[str, Any],
+    ) -> Any:
+        """Execute through the deterministic provider-neutral policy/hook kernel.
+
+        The caller must supply explicit revision, tick, epoch and call identity in
+        ``context``. This method deliberately does not generate runtime truth.
+        """
+        return kernel.execute_registered_tool(
+            context=context,
+            tool=descriptor,
+            parameters=parameters,
+            registry=self.registry,
+            workspace_path=self.workspace_path,
+        )
 
     def _execute_single(self, call: ToolCall) -> ToolExecution:
         """Execute a single tool call with timing and event tracking."""
