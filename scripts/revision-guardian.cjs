@@ -12,6 +12,36 @@ const PR_WORKFLOWS = Object.freeze([
   { name: 'Sovereign Continuity Gate', workflowId: 'sovereign-continuity-gate.yml' },
 ]);
 
+const MAIN_WORKFLOWS = Object.freeze([
+  {
+    name: 'Release Verification',
+    workflowId: 'release-verification.yml',
+    patterns: [
+      'src/**', 'scripts/**', 'android/**', 'tests/**',
+      'config/architecture/SOVEREIGN_RUNTIME_CANARY_MATRIX.v1.json',
+      'docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md',
+      '.github/workflows/release-verification.yml',
+      '.github/workflows/revision-guardian.yml',
+      '.github/workflows/revision-guardian-sync-pr.yml',
+      '.github/workflows/sovereign-continuity-gate.yml',
+      '.github/workflows/supplemental-check-coordinator.yml',
+      '.github/workflows/sovereign-agent-supplemental.yml',
+      'package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'capacitor.config.*',
+    ],
+  },
+  {
+    name: 'Sovereign Agent Backend',
+    workflowId: 'sovereign-agent-backend.yml',
+    patterns: [
+      'backend/requirements-test.txt', 'backend/litellm_runtime.py',
+      'scripts/check-backend-python-runtime.py', 'scripts/sovereign-backend/**',
+      'scripts/sovereign-agent-internal-live-path.contract.mjs',
+      '.github/actions/setup-backend-python/**',
+      '.github/workflows/sovereign-agent-backend.yml',
+    ],
+  },
+]);
+
 const IMPACT_WORKFLOWS = Object.freeze([
   {
     name: 'Sovereign ChatGPT MCP',
@@ -68,9 +98,16 @@ function globToRegExp(pattern) {
 }
 
 function workflowSpecs(mode, changedFiles = []) {
-  const specs = mode === 'pr' ? [...PR_WORKFLOWS] : PR_WORKFLOWS.slice(0, 2);
+  const specs = mode === 'pr'
+    ? [...PR_WORKFLOWS]
+    : MAIN_WORKFLOWS.filter((spec) => (
+      changedFiles.some((file) => spec.patterns.some((pattern) => globToRegExp(pattern).test(file)))
+    ));
   for (const spec of IMPACT_WORKFLOWS) {
-    if (changedFiles.some((file) => spec.patterns.some((pattern) => globToRegExp(pattern).test(file)))) specs.push(spec);
+    if (
+      changedFiles.some((file) => spec.patterns.some((pattern) => globToRegExp(pattern).test(file)))
+      && !specs.some((selected) => selected.name === spec.name)
+    ) specs.push(spec);
   }
   return specs;
 }
@@ -97,4 +134,4 @@ function classifyRun(run, revision) {
   return 'failed';
 }
 
-module.exports = { SHA40, PR_WORKFLOWS, IMPACT_WORKFLOWS, fullSha, safeRef, resolveTarget, globToRegExp, workflowSpecs, latestRunsByName, classifyRun };
+module.exports = { SHA40, PR_WORKFLOWS, MAIN_WORKFLOWS, IMPACT_WORKFLOWS, fullSha, safeRef, resolveTarget, globToRegExp, workflowSpecs, latestRunsByName, classifyRun };

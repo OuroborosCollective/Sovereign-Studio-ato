@@ -61,7 +61,7 @@ test('workflow runs are classified only against the exact authoritative revision
   assert.equal(guardian.classifyRun({ head_sha: HEAD, status: 'completed', conclusion: 'cancelled' }, HEAD), 'rerun-all');
 });
 
-test('path impact selects immutable image workflows without replacing core gates', () => {
+test('path impact keeps all PR gates but selects only matching main workflows', () => {
   const prSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-chatgpt-mcp/server.py']);
   assert.deepEqual(prSpecs.map((item) => item.name), [
     'Release Verification',
@@ -69,12 +69,25 @@ test('path impact selects immutable image workflows without replacing core gates
     'Sovereign Continuity Gate',
     'Sovereign ChatGPT MCP',
   ]);
-  const mainSpecs = guardian.workflowSpecs('main', ['src/features/admin/api/adminApiClient.ts']);
-  assert.deepEqual(mainSpecs.map((item) => item.name), [
+
+  const frontendMainSpecs = guardian.workflowSpecs('main', ['src/features/admin/api/adminApiClient.ts']);
+  assert.deepEqual(frontendMainSpecs.map((item) => item.name), [
+    'Release Verification',
+    'Sovereign Backend Immutable Image',
+  ]);
+
+  const backendMainSpecs = guardian.workflowSpecs('main', ['scripts/sovereign-backend/app.py']);
+  assert.deepEqual(backendMainSpecs.map((item) => item.name), [
     'Release Verification',
     'Sovereign Agent Backend',
     'Sovereign Backend Immutable Image',
   ]);
+
+  const docsOnlyMainSpecs = guardian.workflowSpecs('main', [
+    'docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md',
+    'docs/sovereign-continuity/LEDGER.jsonl',
+  ]);
+  assert.deepEqual(docsOnlyMainSpecs, []);
 });
 
 test('latest workflow selection is deterministic by run id', () => {
