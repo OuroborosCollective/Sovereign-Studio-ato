@@ -11,9 +11,14 @@ on:
       - 'config/architecture/SOVEREIGN_RUNTIME_CANARY_MATRIX.v1.json'
       - 'docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md'
       - '.github/workflows/release-verification.yml'
+      - '.github/workflows/revision-guardian.yml'
+      - '.github/workflows/revision-guardian-sync-pr.yml'
+      - '.github/workflows/sovereign-continuity-gate.yml'
       - '.github/workflows/supplemental-check-coordinator.yml'
       - '.github/workflows/sovereign-agent-supplemental.yml'
       - 'scripts/required-gate-priority.contract.test.cjs'
+      - 'scripts/revision-guardian.cjs'
+      - 'scripts/revision-guardian.contract.test.cjs'
       - 'playwright.config.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -158,7 +163,7 @@ jobs:
       - name: Required Gate Priority Contract Tests
         id: required_gate_priority
         shell: bash
-        run: node --test scripts/required-gate-priority.contract.test.cjs
+        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs
 
       - name: Type Check
         id: type_check

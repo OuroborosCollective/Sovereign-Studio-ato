@@ -1,0 +1,147 @@
+name: Sovereign Revision Guardian PR Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_pr_number:
+        description: Exact open same-repository pull request number
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact current PR head before synchronization
+        required: true
+        type: string
+      expected_base_sha:
+        description: Exact current main revision to merge into the PR branch
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: revision-guardian-pr-sync-${{ inputs.target_pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  sync-pr-branch:
+    name: Synchronize exact main into PR branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Resolve exact same-repository PR identity
+        id: resolve
+        uses: actions/github-script@v7
+        env:
+          TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        with:
+          script: |
+            const numberText = String(process.env.TARGET_PR_NUMBER || '').trim();
+            const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+            const expectedBase = String(process.env.EXPECTED_BASE_SHA || '').trim().toLowerCase();
+            if (!/^[1-9][0-9]*$/.test(numberText)) {
+              core.setFailed('TARGET_PR_NUMBER_INVALID');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedHead) || !/^[0-9a-f]{40}$/.test(expectedBase)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            const number = Number(numberText);
+            const pull = (await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: number,
+            })).data;
+            const mainRef = (await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            })).data;
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const headRepository = String(pull.head?.repo?.full_name || '');
+            const headRef = String(pull.head?.ref || '');
+            const headSha = String(pull.head?.sha || '').toLowerCase();
+            const baseSha = String(mainRef.object?.sha || '').toLowerCase();
+            if (pull.state !== 'open' || pull.base?.ref !== 'main') {
+              core.setFailed('OPEN_MAIN_PR_REQUIRED');
+              return;
+            }
+            if (headRepository !== repositoryFullName) {
+              core.setFailed('FORK_PR_SYNC_FORBIDDEN');
+              return;
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(headRef) || headRef.includes('..')) {
+              core.setFailed('PR_HEAD_REF_INVALID');
+              return;
+            }
+            if (['main', 'master'].includes(headRef.toLowerCase())) {
+              core.setFailed('PROTECTED_PR_HEAD_REF');
+              return;
+            }
+            if (headSha !== expectedHead) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+              return;
+            }
+            if (baseSha !== expectedBase) {
+              core.setFailed('MAIN_REVISION_CHANGED');
+              return;
+            }
+            const comparison = await github.rest.repos.compareCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              base: baseSha,
+              head: headSha,
+              per_page: 1,
+            });
+            const relation = String(comparison.data.status || 'unknown');
+            core.setOutput('target_ref', headRef);
+            core.setOutput('relation', relation);
+            core.setOutput('already_current', String(['ahead', 'identical'].includes(relation)));
+
+      - name: Checkout exact PR branch
+        if: steps.resolve.outputs.already_current != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Merge exact main revision without force-push
+        if: steps.resolve.outputs.already_current != 'true'
+        env:
+          TARGET_REF: ${{ steps.resolve.outputs.target_ref }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TARGET_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]
+          [[ "$TARGET_REF" != *".."* ]]
+          test "$TARGET_REF" != main
+          test "$TARGET_REF" != master
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$EXPECTED_BASE_SHA"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git merge --no-ff --no-edit "$EXPECTED_BASE_SHA" \
+            -m "Synchronize confirmed main ${EXPECTED_BASE_SHA} into ${TARGET_REF}"
+          git diff --check "$EXPECTED_HEAD_SHA..HEAD"
+          UPDATED_HEAD_SHA="$(git rev-parse HEAD)"
+          test "$UPDATED_HEAD_SHA" != "$EXPECTED_HEAD_SHA"
+          git push origin "HEAD:${TARGET_REF}"
+          REMOTE_HEAD_SHA="$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')"
+          test "$REMOTE_HEAD_SHA" = "$UPDATED_HEAD_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$REMOTE_HEAD_SHA"
+          printf 'PR branch synchronized: %s -> %s; base %s\n' "$EXPECTED_HEAD_SHA" "$REMOTE_HEAD_SHA" "$EXPECTED_BASE_SHA"
+
+      - name: Report already-current branch
+        if: steps.resolve.outputs.already_current == 'true'
+        run: |
+          echo 'The PR head already contains the confirmed main revision; no mutation was necessary.'

@@ -124,6 +124,7 @@ def test_merge_requires_exact_head_green_checks_and_defers_mcp_release_to_main_w
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "1")
     head = "b" * 40
+    main_sha = "a" * 40
     merge_sha = "c" * 40
     check_runs, legacy = _green_checks()
     runtime, update, _session = _runtime(
@@ -134,6 +135,12 @@ def test_merge_requires_exact_head_green_checks_and_defers_mcp_release_to_main_w
             ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [legacy],
             ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
                 FakeResponse(200, [{"filename": "tools/sovereign-chatgpt-mcp/server.py"}])
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/git/ref/heads/main"): [
+                FakeResponse(200, {"object": {"sha": main_sha}})
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/compare/{main_sha}...{head}"): [
+                FakeResponse(200, {"status": "ahead", "merge_base_commit": {"sha": main_sha}})
             ],
             ("PUT", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/merge"): [
                 FakeResponse(200, {"merged": True, "sha": merge_sha, "message": "merged"})
@@ -151,6 +158,7 @@ def test_merge_requires_exact_head_green_checks_and_defers_mcp_release_to_main_w
     assert result["status"] == "MERGED"
     assert result["merge_commit_sha"] == merge_sha
     assert result["touches_private_mcp"] is True
+    assert result["revision_relation"]["contains_current_main"] is True
     assert result["self_update"] == {
         "ok": True,
         "status": "DEFERRED_TO_MAIN_MCP_WORKFLOW",
@@ -161,6 +169,39 @@ def test_merge_requires_exact_head_green_checks_and_defers_mcp_release_to_main_w
         "reason": "immutable_image_must_be_published_and_verified_before_install",
     }
     assert update.calls == []
+
+
+def test_merge_blocks_when_head_does_not_contain_current_main(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    head = "b" * 40
+    main_sha = "a" * 40
+    check_runs, legacy = _green_checks()
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head))
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [check_runs],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [legacy],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [{"filename": "backend/agent_runtime/cognitive_run_store.py"}])
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/git/ref/heads/main"): [
+                FakeResponse(200, {"object": {"sha": main_sha}})
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/compare/{main_sha}...{head}"): [
+                FakeResponse(200, {"status": "diverged", "merge_base_commit": {"sha": "9" * 40}})
+            ],
+        },
+    )
+
+    result = runtime.merge_pr(pr_number=7, expected_head_sha=head)
+
+    assert result["status"] == "BLOCKED"
+    assert result["failure_family"] == "PR_HEAD_BEHIND_MAIN"
+    assert result["revision_relation"]["contains_current_main"] is False
+    assert not any(call["path"].endswith("/merge") for call in session.calls)
 
 
 def test_close_pr_requires_exact_head_owner_approval_and_verifies_readback(monkeypatch) -> None:
@@ -347,6 +388,7 @@ def test_merge_blocks_draft_even_when_checks_are_green(monkeypatch) -> None:
 def test_owner_approved_merge_marks_draft_ready_and_ignores_only_unrelated_android_pending(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     head = "e" * 40
+    main_sha = "a" * 40
     merge_sha = "f" * 40
     first_checks, first_legacy = _android_pending_checks()
     second_checks, second_legacy = _android_pending_checks()
@@ -371,6 +413,12 @@ def test_owner_approved_merge_marks_draft_ready_and_ignores_only_unrelated_andro
             ],
             ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
                 FakeResponse(200, [{"filename": "backend/agent_runtime/cognitive_run_store.py"}])
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/git/ref/heads/main"): [
+                FakeResponse(200, {"object": {"sha": main_sha}})
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/compare/{main_sha}...{head}"): [
+                FakeResponse(200, {"status": "ahead", "merge_base_commit": {"sha": main_sha}})
             ],
             ("PUT", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/merge"): [
                 FakeResponse(200, {"merged": True, "sha": merge_sha, "message": "merged"})
@@ -584,6 +632,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
                         {"context": "Release Gate"},
                         {"context": "Agent Runtime Tests"},
                         {"context": "continuity-ledger"},
+                        {"context": "Revision Guardian"},
                     ]
                 },
             },
@@ -604,7 +653,12 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
 
     assert result["status"] == "RULESET_CREATED"
     assert result["readback_verified"] is True
-    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests", "continuity-ledger"]
+    assert result["required_status_checks"] == [
+        "Release Gate",
+        "Agent Runtime Tests",
+        "continuity-ledger",
+        "Revision Guardian",
+    ]
     post_call = next(call for call in session.calls if call["method"] == "POST")
     assert post_call["json"]["bypass_actors"] == []
     assert post_call["json"]["conditions"]["ref_name"]["include"] == ["refs/heads/main"]
@@ -614,6 +668,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
         "Release Gate",
         "Agent Runtime Tests",
         "continuity-ledger",
+        "Revision Guardian",
     }
 
 

@@ -39,7 +39,12 @@ ANDROID_SURFACE_FILES = frozenset({
     "gradle.properties",
 })
 MAIN_RULESET_NAME = "Sovereign Main Revision Green Gate"
-MAIN_RULESET_REQUIRED_CHECKS = ("Release Gate", "Agent Runtime Tests", "continuity-ledger")
+MAIN_RULESET_REQUIRED_CHECKS = (
+    "Release Gate",
+    "Agent Runtime Tests",
+    "continuity-ledger",
+    "Revision Guardian",
+)
 
 
 def _enabled(name: str) -> bool:
@@ -590,6 +595,34 @@ class GitHubAdminRuntime:
             ),
         }
 
+    def _main_revision_relation(self, head_sha: str) -> dict[str, Any]:
+        if not COMMIT_SHA_RE.fullmatch(head_sha):
+            raise ValueError("PR-Head ist kein vollständiger Commit-SHA")
+        ref = self._request(
+            "GET",
+            f"/repos/{self.repository}/git/ref/heads/main",
+        )
+        main_sha = str(((ref.get("object") or {}) if isinstance(ref, dict) else {}).get("sha") or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(main_sha):
+            raise RuntimeError("GitHub lieferte keinen vollständigen aktuellen Main-SHA")
+        comparison = self._request(
+            "GET",
+            f"/repos/{self.repository}/compare/{main_sha}...{head_sha}",
+            params={"per_page": 1},
+        )
+        relation = str(comparison.get("status") or "unknown") if isinstance(comparison, dict) else "unknown"
+        merge_base_sha = str(
+            (((comparison.get("merge_base_commit") or {}) if isinstance(comparison, dict) else {}).get("sha") or "")
+        ).strip().lower()
+        contains_main = relation in {"ahead", "identical"} and merge_base_sha == main_sha
+        return {
+            "main_sha": main_sha,
+            "head_sha": head_sha,
+            "relation": relation,
+            "merge_base_sha": merge_base_sha,
+            "contains_current_main": contains_main,
+        }
+
     def _changed_files(self, pr_number: int) -> list[str]:
         files: list[str] = []
         for page in range(1, 31):
@@ -726,6 +759,17 @@ class GitHubAdminRuntime:
             if not ignored_pending_checks:
                 return {"ok": False, "status": "BLOCKED", "blocker": "Keine fachfremden Android-Pending-Gates belegt", "pr": status}
 
+        main_relation = self._main_revision_relation(expected)
+        if not main_relation["contains_current_main"]:
+            return {
+                "ok": False,
+                "status": "BLOCKED",
+                "failure_family": "PR_HEAD_BEHIND_MAIN",
+                "blocker": "PR-Head enthält nicht die aktuelle Main-Revision; Revision Guardian muss den Branch zuerst exakt synchronisieren und alle Checks erneut ausführen",
+                "revision_relation": main_relation,
+                "pr": status,
+            }
+
         payload = self._request(
             "PUT",
             f"/repos/{self.repository}/pulls/{number}/merge",
@@ -763,6 +807,7 @@ class GitHubAdminRuntime:
             "owner_approved": bool(owner_approved),
             "ready_transition": ready_transition,
             "ignored_pending_checks": ignored_pending_checks,
+            "revision_relation": main_relation,
             "self_update": update_result,
         }
 

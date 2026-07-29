@@ -1189,9 +1189,38 @@ GitHub Intent
   → Patch/Commit
   → Draft PR
   → Checks beobachten
+  → Revision Guardian bestätigt aktuellen Main als Vorfahr des PR-Heads
   → Merge nur bei separater ausdrücklicher Owner-Freigabe,
     exakter Head-SHA und relevanten grünen Gates
 ```
+
+## 22.7 Revision Guardian und automatische PR-Synchronisierung
+
+Der `Sovereign Revision Guardian` ist die revisionsgebundene GitHub-Orchestrierung für Draft-PRs, PR-Synchronisierungen, Main-Pushes, abgeschlossene Workflows und Deployment-Statusereignisse.
+
+Verbindlicher Ablauf:
+
+```text
+PR- oder Main-Ereignis
+  → autoritativen 40-stelligen SHA aus dem Ereignis bestimmen
+  → aktuelle PR-/Main-Identität über GitHub zurücklesen
+  → bei offenem PR aktuellen Main-SHA mit PR-Head vergleichen
+  → falls Main kein Vorfahr des PR-Heads ist:
+       exakten alten PR-Head und exakten Main-SHA an den
+       separaten PR-Sync-Workflow übergeben
+       → Main ohne Force-Push in denselben PR-Branch mergen
+       → Remote-Head rücklesen
+       → neuer synchronize-Event startet alle Gates erneut
+  → fehlende Workflowläufe auf dem exakten Ref dispatchen
+  → fehlgeschlagene oder abgebrochene Läufe revisionsgebunden neu starten
+  → Revision-Guardian-Check nur bei vollständiger Gleichheit grün setzen
+```
+
+Nach jedem Main-Push werden alle offenen, auf `main` zielenden Same-Repository-PRs geprüft. Hinterherhinkende oder divergierte Heads werden konfliktfrei automatisch synchronisiert. Fork-PRs, geschützte Branches, geänderte Heads, geänderte Main-SHAs und Merge-Konflikte blockieren fail-closed; es gibt keinen Force-Push und keine automatische Konfliktauflösung.
+
+Der private Sovottt-Mergepfad besitzt zusätzlich einen unabhängigen Ancestor-Nachweis: Direkt vor dem Merge müssen aktueller Main-SHA, Merge-Base und PR-Head ergeben, dass der aktuelle Main vollständig im bestätigten PR-Head enthalten ist. Alte grüne Checks oder ein früher bestätigter Head reichen nicht aus.
+
+Repositorydateien werden ausdrücklich nicht so umgeschrieben, dass sie ihren eigenen endgültigen Commit-SHA enthalten. Eine solche Selbstreferenz würde bei jedem Commit erneut veralten. Revisionsgleichheit wird stattdessen über GitHub-Checkruns, exakte Workflow-Heads, immutable Image-Labels, Digests und Deployment-/Runtime-Readbacks gebunden.
 
 ---
 
