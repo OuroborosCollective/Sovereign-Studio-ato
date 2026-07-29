@@ -117,7 +117,15 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
   assert.match(syncWorkflow, /^\s{2}workflow_dispatch:\s*$/m);
   assert.match(syncWorkflow, /expected_head_sha:/);
   assert.match(syncWorkflow, /expected_base_sha:/);
+  assert.match(syncWorkflow, /pull-requests: write/);
   assert.match(syncWorkflow, /git merge --no-ff --no-edit "\$EXPECTED_BASE_SHA"/);
   assert.match(syncWorkflow, /git push origin "HEAD:\$\{TARGET_REF\}"/);
+  assert.match(syncWorkflow, /git checkout --detach "\$EXPECTED_BASE_SHA"/);
+  assert.match(syncWorkflow, /git rev-list --reverse --no-merges/);
+  assert.match(syncWorkflow, /test "\$\{#COMMITS\[@\]\}" -le 200/);
+  assert.match(syncWorkflow, /git cherry-pick --abort \|\| true/);
+  assert.match(syncWorkflow, /draft: true/);
+  assert.match(syncWorkflow, /SOURCE_PR_CHANGED_DURING_RECOVERY/);
+  assert.match(syncWorkflow, /The original PR remains open until the replacement evidence is reviewed/);
   assert.doesNotMatch(syncWorkflow, /git push[^\n]*(?:--force|-f\b)/);
 });
