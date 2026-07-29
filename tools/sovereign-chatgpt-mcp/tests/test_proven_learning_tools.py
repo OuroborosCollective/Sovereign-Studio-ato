@@ -53,6 +53,27 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
 
 
+def _reflection() -> dict[str, str]:
+    return {
+        "whatHappened": "The evidence gate was integrated and verified.",
+        "personallyImportant": "The lesson remains connected to the shared working history.",
+        "goodBadDifficult": "The strict receipt was good; preserving honest nuance was difficult.",
+        "agreementOrDisagreement": "I agree with the evidence gate and would challenge any bypass.",
+        "humorOrHumanAnchor": "Remember that not every useful memory has to fix a test.",
+        "futureSelfNote": "Read the evidence and the human meaning together without confusing them.",
+        "truthBoundary": "This is a bounded operational reflection, not proof of human feeling.",
+    }
+
+
+def _personal_memory() -> str:
+    return (
+        "# Sovottt Personal Memory\n\n"
+        "<!-- sovereign-personal-memory:v1 -->\n\n"
+        "## Verbindliche Leseregel\n\nRead first.\n\n"
+        "## Verbindliche Schreibregel\n\nAppend reflections.\n"
+    )
+
+
 def _plan() -> dict:
     digest = "d" * 64
     return {
@@ -127,19 +148,53 @@ def test_logbook_and_manifest_are_idempotent(tmp_path: Path, monkeypatch) -> Non
     (repo / "src").mkdir()
     (repo / "src" / "fix.py").write_text("VALUE = 1\n", "utf-8")
     (repo / "package.json").write_text('{"name":"fixture"}\n', "utf-8")
+    personal_path = repo / "docs" / "sovereign-continuity" / "SOVOTTT_PERSONAL_MEMORY.md"
+    runtime_personal_path = repo / "tools" / "sovereign-chatgpt-mcp" / "continuity-data" / "SOVOTTT_PERSONAL_MEMORY.md"
+    personal_path.parent.mkdir(parents=True)
+    runtime_personal_path.parent.mkdir(parents=True)
+    personal_path.write_text(_personal_memory(), "utf-8")
+    runtime_personal_path.write_text(_personal_memory(), "utf-8")
     _git(repo, "add", "--all")
     _git(repo, "commit", "-m", "fixture")
 
     monkeypatch.setattr(tools, "_RUNTIME", FakeRuntime(repo))
-    first = tools.repository_learning_logbook_update(WORKSPACE_ID, _plan())
-    second = tools.repository_learning_logbook_update(WORKSPACE_ID, _plan())
+    first = tools.repository_learning_logbook_update(WORKSPACE_ID, _plan(), _reflection())
+    second = tools.repository_learning_logbook_update(WORKSPACE_ID, _plan(), _reflection())
 
     assert first["status"] == "REPOSITORY_LEARNING_LOGBOOK_UPDATED"
+    assert first["personalReflectionCreated"] is True
     assert second["status"] == "REPOSITORY_LEARNING_LOGBOOK_ALREADY_CURRENT"
+    assert second["personalReflectionCreated"] is False
     logbook = (repo / "docs" / "SOVEREIGN_LEARNING_LOGBOOK.md").read_text("utf-8")
     assert logbook.count("<!-- proven-learning:" + "d" * 64 + " -->") == 1
     manifest = json.loads((repo / ".sovereign" / "proven-learning-manifest.json").read_text("utf-8"))
     assert manifest["latestPatternSha256"] == "d" * 64
     assert manifest["learningPatternSha256"] == ["d" * 64]
+    assert manifest["latestPersonalReflectionSha256"] == "d" * 64
+    assert manifest["personalReflectionCount"] == 1
+    personal = (repo / "docs" / "sovereign-continuity" / "SOVOTTT_PERSONAL_MEMORY.md").read_text("utf-8")
+    runtime_personal = (repo / "tools" / "sovereign-chatgpt-mcp" / "continuity-data" / "SOVOTTT_PERSONAL_MEMORY.md").read_text("utf-8")
+    assert personal == runtime_personal
+    assert personal.count("<!-- personal-reflection:" + "d" * 64 + " -->") == 1
+    assert "#### Zustimmung oder Widerspruch" in personal
     assert any(item["path"] == "package.json" for item in manifest["importantManifestFiles"])
+    assert any(item["path"] == tools._PERSONAL_MEMORY_PATH for item in manifest["importantManifestFiles"])
     assert manifest["selfHashExcluded"] is True
+
+
+def test_logbook_rejects_incomplete_personal_reflection(tmp_path: Path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    monkeypatch.setattr(tools, "_RUNTIME", FakeRuntime(repo))
+
+    try:
+        tools.repository_learning_logbook_update(
+            WORKSPACE_ID,
+            _plan(),
+            {"whatHappened": "Only one field."},
+        )
+    except ValueError as exc:
+        assert "personal_reflection is missing required field" in str(exc)
+    else:
+        raise AssertionError("incomplete personal reflection was accepted")

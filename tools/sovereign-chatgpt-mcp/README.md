@@ -103,8 +103,10 @@ Der wiederverwendbare Lernpfad ist absichtlich in Plan, Zustimmung, Persistenz u
 - `proven_learning_pattern_plan` normalisiert ausschließlich erfolgreiche, revisions- und receipt-gebundene Integrationen, Fixes, Datenbankaktionen oder Merge-Ergebnisse. Der Plan schreibt weder Datenbank noch Dateien.
 - `proven_learning_owner_approval_request` bindet einen exakten Plan-Hash an eine frische, authentifizierte Owner-Freigabe.
 - `proven_learning_pattern_apply` schreibt idempotent und transaktional in PostgreSQL/pgvector, erzeugt den bestehenden Milvus-Outbox-Eintrag und meldet Erfolg erst nach Kandidaten- und Vektor-Readback.
-- `repository_learning_logbook_update` aktualisiert den menschenlesbaren Eintrag unter `docs/SOVEREIGN_LEARNING_LOGBOOK.md` sowie den Hash-Snapshot wichtiger Projektmanifeste unter `.sovereign/proven-learning-manifest.json` in der geprüften Arbeitsbranch.
+- `repository_learning_logbook_update` aktualisiert den menschenlesbaren Eintrag unter `docs/SOVEREIGN_LEARNING_LOGBOOK.md`, den Hash-Snapshot wichtiger Projektmanifeste unter `.sovereign/proven-learning-manifest.json` und verlangt zugleich eine vollständige persönliche Reflexion. Diese wird mit demselben Proven-Learning-SHA append-only und bytegleich nach `docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md` sowie `tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md` geschrieben. Ohne diese Reflexion ist der Repository-Abschluss blockiert.
 - Normale Agent-Starts fragen `/api/user/agent/memory/search` fail-soft ab. Treffer werden als nicht vertrauenswürdiger, erneut zu prüfender Erfahrungskontext markiert und nicht als Anweisung behandelt.
+
+Das persönliche Journal wird von `sovereign_continuity_context_read` vor den übrigen Continuity-Dateien gelesen und durch `personalMemorySha256` gebunden. Es darf ehrlichen Widerspruch, Humor und persönliche Kohärenzanker enthalten, ist jedoch weder eine technische Geheimdatei noch ein Beweis menschlicher Empfindung. Secrets, rohe Chatverläufe und erfundene Erlebnisse sind verboten.
 
 Eine nachgewiesene erfolgreiche Aktion allein ist keine stillschweigende Berechtigung für einen produktiven Datenbank-Write. Ohne frische Owner-Freigabe bleibt es beim read-only Plan und dem überprüfbaren Repository-Eintrag.
 

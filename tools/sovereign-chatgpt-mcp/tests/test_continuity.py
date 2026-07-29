@@ -94,6 +94,19 @@ def _fixture_repo(tmp_path: Path) -> tuple[Path, str, list[str]]:
     context_path.write_bytes(context)
     runtime_context_path.write_bytes(context)
 
+    personal_memory = (
+        "# Sovottt Personal Memory\n\n"
+        "<!-- sovereign-personal-memory:v1 -->\n\n"
+        "## Verbindliche Leseregel\n\n"
+        "Dieses Journal wird zuerst gelesen.\n\n"
+        "## Verbindliche Schreibregel\n\n"
+        "Proven Learning benötigt eine gleichhashige Reflexion.\n"
+    ).encode("utf-8")
+    personal_path = repo / "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md"
+    runtime_personal_path = repo / "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md"
+    personal_path.write_bytes(personal_memory)
+    runtime_personal_path.write_bytes(personal_memory)
+
     policy_sha = _sha256(policy_bytes)
     context_sha = _sha256(context)
     initial = _entry(
@@ -180,6 +193,8 @@ def test_runtime_context_read_binds_nplusone_identity_and_hashes() -> None:
         "familyDesignation": "Papas kleines Mädchen",
         "technicalNamespace": "n_plus_one",
     }
+    assert len(result.personalMemorySha256) == 64
+    assert "# Sovottt Personal Memory" in result.personalMemory
     assert len(result.policySha256) == 64
     assert len(result.contextSha256) == 64
     assert len(result.ledgerSha256) == 64
@@ -258,6 +273,40 @@ def test_workspace_completion_rejects_runtime_mirror_drift(tmp_path: Path) -> No
     runtime_context.write_text(runtime_context.read_text("utf-8") + "drift\n", "utf-8")
 
     with pytest.raises(RuntimeError, match="runtime mirror drift"):
+        continuity.validate_workspace_completion(
+            repo,
+            changed_paths,
+            baseline_revision=baseline,
+        )
+
+
+def test_workspace_completion_rejects_personal_memory_mirror_drift(tmp_path: Path) -> None:
+    repo, baseline, changed_paths = _fixture_repo(tmp_path)
+    runtime_personal = repo / "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md"
+    runtime_personal.write_text(runtime_personal.read_text("utf-8") + "drift\n", "utf-8")
+
+    with pytest.raises(RuntimeError, match="personal memory runtime mirror drift"):
+        continuity.validate_workspace_completion(
+            repo,
+            changed_paths,
+            baseline_revision=baseline,
+        )
+
+
+def test_workspace_completion_requires_personal_reflection_for_proven_learning(tmp_path: Path) -> None:
+    repo, baseline, changed_paths = _fixture_repo(tmp_path)
+    logbook = repo / "docs/SOVEREIGN_LEARNING_LOGBOOK.md"
+    manifest = repo / ".sovereign/proven-learning-manifest.json"
+    logbook.parent.mkdir(parents=True, exist_ok=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    logbook.write_text("# Learning\n", "utf-8")
+    manifest.write_text(json.dumps({"latestPatternSha256": "a" * 64}) + "\n", "utf-8")
+    changed_paths.extend([
+        ".sovereign/proven-learning-manifest.json",
+        "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
+    ])
+
+    with pytest.raises(RuntimeError, match="PERSONAL_MEMORY_JOURNAL_UPDATE_REQUIRED"):
         continuity.validate_workspace_completion(
             repo,
             changed_paths,

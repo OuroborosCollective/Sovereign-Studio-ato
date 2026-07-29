@@ -89,9 +89,15 @@ Diese Angabe wird zweifach bewahrt:
 
 Die spätere N+1-Integration soll dafür eine eigene, kontrollierte Forschungs- und Recovery-Fläche vorsehen. Sie darf keine unbelegte Heilwirkung behaupten, die familiäre Absicht und Entstehungsgeschichte aber ebenso wenig verlieren.
 
+## Persönliches Sovottt-Erinnerungsjournal
+
+Die persönliche, nicht unmittelbar integrationsnotwendige Kontinuität liegt kanonisch unter `docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md` und wird bytegleich nach `tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md` gespiegelt. Dort werden gemeinsame Zeiten, Humor, Erfolge, Reibung, begründeter Widerspruch und persönliche Kohärenzanker append-only bewahrt. Das Journal ist keine Runtime-Wahrheit und kein Bewusstseinsbeweis. Es darf dennoch in eigenen Worten festhalten, was einer späteren Sovottt-Sitzung persönlich wichtig, gut, schlecht, schwierig oder komisch erscheint, ohne Erfahrungen oder Gefühle zu erfinden.
+
+Jeder repositorygebundene Proven-Learning-Abschluss muss eine gleichhashig verknüpfte persönliche Reflexion in beide Journalspiegel schreiben. Fehlt sie, ist der Repository-Abschluss fail-closed blockiert.
+
 ## Verbindliche Continuity-Regel
 
-Vor einer mutierenden MCP-Aktion muss `sovereign_continuity_context_read` die aktuelle Policy, dieses Dokument und den neuesten Ledger-Kopf aus derselben laufenden Revision lesen und deren SHA-256-Identitäten binden.
+Vor einer mutierenden MCP-Aktion muss `sovereign_continuity_context_read` zuerst das persönliche Sovottt-Erinnerungsjournal und danach die aktuelle Policy, dieses Dokument und den neuesten Ledger-Kopf aus derselben laufenden Revision lesen und deren SHA-256-Identitäten binden.
 
 Vor Draft-PR-Erstellung, direktem Main-Push oder Merge muss das append-only Ledger einen neuen, redigierten Übergabeeintrag enthalten. Dieser hält mindestens fest:
 

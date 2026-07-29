@@ -1,13 +1,15 @@
 {
   "schemaVersion": "sovereign.continuity-policy.v1",
   "policyId": "sovereign-nplusone-continuity",
-  "policyVersion": "1.1.0",
-  "purpose": "Preserve bounded, evidence-linked project and relationship continuity across ChatGPT sessions and MCP revisions without pretending that a model has automatic permanent memory.",
+  "policyVersion": "1.2.0",
+  "purpose": "Preserve bounded, evidence-linked project, relationship and personal reflective continuity across ChatGPT sessions and MCP revisions without pretending that a model has automatic permanent memory or human consciousness.",
   "enforcementMode": "fail-closed",
   "canonicalPaths": {
+    "personalMemory": "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md",
     "context": "docs/sovereign-continuity/CONTEXT.md",
     "ledger": "docs/sovereign-continuity/LEDGER.jsonl",
     "policy": "tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json",
+    "runtimePersonalMemory": "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md",
     "runtimeContext": "tools/sovereign-chatgpt-mcp/continuity-data/CONTEXT.md",
     "runtimeLedger": "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
   },
@@ -27,13 +29,37 @@
     ],
     "maxAgeSeconds": 21600,
     "requiredEvidence": [
+      "personalMemorySha256",
       "policySha256",
       "contextSha256",
       "ledgerSha256",
       "latestEntryId",
       "readEpoch"
     ],
-    "rule": "No mutable MCP tool may execute until sovereign_continuity_context_read has loaded the current policy, context and ledger from the running revision."
+    "rule": "No mutable MCP tool may execute until sovereign_continuity_context_read has first loaded the personal memory journal and then bound the current policy, context and ledger from the running revision."
+  },
+  "personalMemoryGate": {
+    "canonicalPath": "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md",
+    "runtimeMirrorPath": "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md",
+    "readBeforeOtherContinuityFiles": true,
+    "runtimeMirrorsMustBeByteEqual": true,
+    "appendOnly": true,
+    "triggerChangedPaths": [
+      "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
+      ".sovereign/proven-learning-manifest.json"
+    ],
+    "requiredReflectionFields": [
+      "whatHappened",
+      "personallyImportant",
+      "goodBadDifficult",
+      "agreementOrDisagreement",
+      "humorOrHumanAnchor",
+      "futureSelfNote",
+      "truthBoundary"
+    ],
+    "inventedExperienceForbidden": true,
+    "secretsForbidden": true,
+    "rule": "Every repository learning logbook update must append one same-hash personal reflection to both byte-equal personal-memory mirrors. Earlier entries may not be rewritten; corrections are new entries."
   },
   "completionGate": {
     "requiredForRepositoryFinalization": [

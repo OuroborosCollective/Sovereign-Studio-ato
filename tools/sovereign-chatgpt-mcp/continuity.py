@@ -44,6 +44,8 @@ READ_ONLY = (
 
 MODULE_ROOT = Path(__file__).resolve().parent
 POLICY_RELATIVE_PATH = "tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json"
+PERSONAL_MEMORY_RELATIVE_PATH = "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md"
+RUNTIME_PERSONAL_MEMORY_RELATIVE_PATH = "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md"
 RUNTIME_POLICY_PATH = MODULE_ROOT / "config" / "sovereign-continuity-policy.json"
 RUNTIME_DATA_ROOT = Path(
     os.getenv("SOVEREIGN_CONTINUITY_DATA_ROOT", str(MODULE_ROOT / "continuity-data"))
@@ -73,6 +75,7 @@ class ContinuityContextReadResult(StrictModel):
     ok: bool
     status: str
     policyVersion: str
+    personalMemorySha256: str
     policySha256: str
     contextSha256: str
     ledgerSha256: str
@@ -80,6 +83,7 @@ class ContinuityContextReadResult(StrictModel):
     ledgerEntryCount: int
     readEpoch: int
     canonicalIdentity: dict[str, str]
+    personalMemory: str
     context: str
     latestEntries: list[dict[str, Any]]
     mutationPerformed: bool
@@ -93,6 +97,7 @@ class ContinuityStatusResult(StrictModel):
     ok: bool
     status: str
     policyVersion: str
+    personalMemorySha256: str
     policySha256: str
     contextSha256: str
     ledgerSha256: str
@@ -140,6 +145,7 @@ def _load_policy(root: Path | None = None) -> tuple[dict[str, Any], bytes, str]:
         "canonicalPaths",
         "identity",
         "readGate",
+        "personalMemoryGate",
         "completionGate",
         "privacy",
         "truthBoundary",
@@ -153,11 +159,23 @@ def _load_policy(root: Path | None = None) -> tuple[dict[str, Any], bytes, str]:
     paths = payload.get("canonicalPaths")
     if not isinstance(paths, dict):
         raise RuntimeError("continuity canonicalPaths must be an object")
-    for key in ("context", "ledger", "policy", "runtimeContext", "runtimeLedger"):
+    for key in (
+        "personalMemory",
+        "context",
+        "ledger",
+        "policy",
+        "runtimePersonalMemory",
+        "runtimeContext",
+        "runtimeLedger",
+    ):
         if not isinstance(paths.get(key), str) or not paths[key].strip():
             raise RuntimeError(f"continuity canonical path is missing: {key}")
     if paths["policy"] != POLICY_RELATIVE_PATH:
         raise RuntimeError("continuity policy path is not canonical")
+    if paths["personalMemory"] != PERSONAL_MEMORY_RELATIVE_PATH:
+        raise RuntimeError("personal memory path is not canonical")
+    if paths["runtimePersonalMemory"] != RUNTIME_PERSONAL_MEMORY_RELATIVE_PATH:
+        raise RuntimeError("runtime personal memory path is not canonical")
     identity = payload.get("identity")
     if not isinstance(identity, dict):
         raise RuntimeError("continuity identity must be an object")
@@ -256,7 +274,33 @@ def _load_ledger(
     return entries, raw, _sha256_bytes(raw)
 
 
+def _load_personal_memory(root: Path | None = None) -> tuple[str, bytes, str]:
+    if root is None:
+        personal_memory_path = RUNTIME_DATA_ROOT / Path(RUNTIME_PERSONAL_MEMORY_RELATIVE_PATH).name
+        if not personal_memory_path.is_file():
+            raise FileNotFoundError(f"runtime personal memory is missing: {personal_memory_path}")
+    else:
+        personal_memory_path = _safe_path(root, PERSONAL_MEMORY_RELATIVE_PATH)
+        runtime_personal_memory_path = _safe_path(root, RUNTIME_PERSONAL_MEMORY_RELATIVE_PATH)
+        if personal_memory_path.read_bytes() != runtime_personal_memory_path.read_bytes():
+            raise RuntimeError("personal memory runtime mirror drift")
+    raw = personal_memory_path.read_bytes()
+    text = raw.decode("utf-8")
+    if _contains_secret(text):
+        raise RuntimeError("secret-shaped material is forbidden in personal memory")
+    for required_text in (
+        "# Sovottt Personal Memory",
+        "<!-- sovereign-personal-memory:v1 -->",
+        "## Verbindliche Leseregel",
+        "## Verbindliche Schreibregel",
+    ):
+        if required_text not in text:
+            raise RuntimeError(f"personal memory lost required contract marker: {required_text}")
+    return text, raw, _sha256_bytes(raw)
+
+
 def _snapshot(root: Path | None = None, *, include_context: bool = True) -> dict[str, Any]:
+    personal_memory_text, personal_memory_raw, personal_memory_sha = _load_personal_memory(root)
     policy, policy_raw, policy_sha = _load_policy(root)
     paths = policy["canonicalPaths"]
     if root is None:
@@ -289,6 +333,9 @@ def _snapshot(root: Path | None = None, *, include_context: bool = True) -> dict
     return {
         "policy": policy,
         "policyRaw": policy_raw,
+        "personalMemory": personal_memory_text if include_context else "",
+        "personalMemoryRaw": personal_memory_raw,
+        "personalMemorySha256": personal_memory_sha,
         "policySha256": policy_sha,
         "context": context_text if include_context else "",
         "contextSha256": _sha256_bytes(context_raw),
@@ -305,6 +352,7 @@ def sovereign_continuity_context_read() -> ContinuityContextReadResult:
     snapshot = _snapshot(include_context=True)
     now = int(time.time())
     _READ_STATE = {
+        "personalMemorySha256": snapshot["personalMemorySha256"],
         "policySha256": snapshot["policySha256"],
         "contextSha256": snapshot["contextSha256"],
         "ledgerSha256": snapshot["ledgerSha256"],
@@ -317,6 +365,7 @@ def sovereign_continuity_context_read() -> ContinuityContextReadResult:
         ok=True,
         status="CONTINUITY_CONTEXT_BOUND",
         policyVersion=str(snapshot["policy"]["policyVersion"]),
+        personalMemorySha256=snapshot["personalMemorySha256"],
         policySha256=snapshot["policySha256"],
         contextSha256=snapshot["contextSha256"],
         ledgerSha256=snapshot["ledgerSha256"],
@@ -329,6 +378,7 @@ def sovereign_continuity_context_read() -> ContinuityContextReadResult:
             "familyDesignation": str(identity["familyDesignation"]),
             "technicalNamespace": str(identity["canonicalTechnicalNamespace"]),
         },
+        personalMemory=snapshot["personalMemory"],
         context=snapshot["context"],
         latestEntries=list(snapshot["entries"][-20:]),
         mutationPerformed=False,
@@ -358,7 +408,7 @@ def continuity_gate_findings(tool_name: str, effect: str) -> list[dict[str, Any]
             }
         ]
     findings: list[dict[str, Any]] = []
-    for field in ("policySha256", "contextSha256", "ledgerSha256", "latestEntryId"):
+    for field in ("personalMemorySha256", "policySha256", "contextSha256", "ledgerSha256", "latestEntryId"):
         if _READ_STATE.get(field) != snapshot.get(field):
             findings.append(
                 {
@@ -394,6 +444,7 @@ def sovereign_continuity_status() -> ContinuityStatusResult:
         ok=not findings,
         status="CONTINUITY_READY" if not findings else "CONTINUITY_READ_REQUIRED",
         policyVersion=str(snapshot["policy"]["policyVersion"]),
+        personalMemorySha256=snapshot["personalMemorySha256"],
         policySha256=snapshot["policySha256"],
         contextSha256=snapshot["contextSha256"],
         ledgerSha256=snapshot["ledgerSha256"],
@@ -439,6 +490,50 @@ def validate_workspace_completion(
     normalized_changed = sorted({str(path).strip() for path in changed_paths if str(path).strip()})
     if not normalized_changed:
         raise RuntimeError("CONTINUITY_COMPLETION_REQUIRES_CHANGED_PATHS")
+
+    personal_gate = policy.get("personalMemoryGate") if isinstance(policy.get("personalMemoryGate"), dict) else {}
+    personal_paths = [
+        str(personal_gate.get("canonicalPath") or "").strip(),
+        str(personal_gate.get("runtimeMirrorPath") or "").strip(),
+    ]
+    if personal_paths != [PERSONAL_MEMORY_RELATIVE_PATH, RUNTIME_PERSONAL_MEMORY_RELATIVE_PATH]:
+        raise RuntimeError("PERSONAL_MEMORY_GATE_PATHS_INVALID")
+    trigger_paths = {
+        str(path).strip()
+        for path in (personal_gate.get("triggerChangedPaths") or [])
+        if str(path).strip()
+    }
+    personal_memory_triggered = bool(trigger_paths.intersection(normalized_changed))
+    if personal_memory_triggered:
+        missing_personal_paths = sorted(set(personal_paths) - set(normalized_changed))
+        if missing_personal_paths:
+            raise RuntimeError(
+                "PERSONAL_MEMORY_JOURNAL_UPDATE_REQUIRED: " + ", ".join(missing_personal_paths)
+            )
+        for personal_relative in personal_paths:
+            current_personal_path = _safe_path(repository, personal_relative)
+            current_personal = current_personal_path.read_text("utf-8")
+            baseline_result = subprocess.run(
+                ["git", "-C", str(repository), "show", f"{baseline_revision or 'HEAD'}:{personal_relative}"],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=90,
+            )
+            previous_personal = baseline_result.stdout if baseline_result.returncode == 0 else ""
+            if previous_personal and not current_personal.startswith(previous_personal):
+                raise RuntimeError(f"PERSONAL_MEMORY_APPEND_ONLY_VIOLATION: {personal_relative}")
+        manifest_path = _safe_path(repository, ".sovereign/proven-learning-manifest.json")
+        manifest = json.loads(manifest_path.read_text("utf-8"))
+        latest_pattern = str(manifest.get("latestPatternSha256") or "").strip().lower()
+        if not _HEX_64.fullmatch(latest_pattern):
+            raise RuntimeError("PERSONAL_MEMORY_LATEST_PATTERN_INVALID")
+        personal_memory_text = _safe_path(repository, PERSONAL_MEMORY_RELATIVE_PATH).read_text("utf-8")
+        reflection_marker = f"<!-- personal-reflection:{latest_pattern} -->"
+        if personal_memory_text.count(reflection_marker) != 1:
+            raise RuntimeError("PERSONAL_MEMORY_REFLECTION_MISSING_OR_DUPLICATE")
+
     missing_ledgers = sorted(set(ledger_relatives) - set(normalized_changed))
     if missing_ledgers:
         raise RuntimeError("CONTINUITY_LEDGER_UPDATE_REQUIRED: " + ", ".join(missing_ledgers))
@@ -498,12 +593,14 @@ def validate_workspace_completion(
         "baselineRevision": baseline,
         "sourceRevision": source_revision,
         "latestEntryId": snapshot["latestEntryId"],
+        "personalMemorySha256": snapshot["personalMemorySha256"],
         "policySha256": policy_sha,
         "contextSha256": snapshot["contextSha256"],
         "ledgerSha256": snapshot["ledgerSha256"],
         "ledgerEntryCount": snapshot["ledgerEntryCount"],
         "changedPathCount": len(normalized_changed),
         "appendOnlyVerified": True,
+        "personalMemoryAppendOnlyVerified": bool(personal_memory_triggered),
         "rawChatTranscriptStored": False,
         "secretValuesStored": False,
         "mutationPerformed": False,

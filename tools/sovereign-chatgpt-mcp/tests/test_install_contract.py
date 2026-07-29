@@ -228,6 +228,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '/app/config/sovereign-mcp-operating-profile.json' in installer
     assert 'config/sovereign-continuity-policy.json' in installer
     assert '/app/config/sovereign-continuity-policy.json' in installer
+    assert 'continuity-data/SOVOTTT_PERSONAL_MEMORY.md' in installer
+    assert '/app/continuity-data/SOVOTTT_PERSONAL_MEMORY.md' in installer
     assert 'continuity-data/CONTEXT.md' in installer
     assert '/app/continuity-data/CONTEXT.md' in installer
     assert 'continuity-data/LEDGER.jsonl' in installer
@@ -263,6 +265,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'COPY skills /app/skills' in dockerfile
     assert (ROOT / 'config' / 'sovereign-mcp-operating-profile.json').is_file()
     assert (ROOT / 'config' / 'sovereign-continuity-policy.json').is_file()
+    assert (ROOT / 'continuity-data' / 'SOVOTTT_PERSONAL_MEMORY.md').is_file()
     assert (ROOT / 'continuity-data' / 'CONTEXT.md').is_file()
     assert (ROOT / 'continuity-data' / 'LEDGER.jsonl').is_file()
     assert (ROOT / 'skills' / 'sovereign-mcp-optimal-operation' / 'SKILL.md').is_file()
@@ -387,6 +390,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"operational_assurance_tools":true' in installer
     assert '"operating_profile_enforced":true' in installer
     assert '"continuity_enforced":true' in installer
+    assert 'personalMemorySha256' in installer
+    assert 'SOVOTTT_PERSONAL_MEMORY.md' in installer
     assert '"repository_revision_resolver":true' in installer
     assert '"workspace_pr_head_sync_available":true' in installer
     assert 'callable(server.repository_sync_workspace_to_pr_head)' in installer

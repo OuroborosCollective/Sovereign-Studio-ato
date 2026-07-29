@@ -11,6 +11,7 @@ from typing import Any
 
 from mcp.types import ToolAnnotations
 
+from continuity import _contains_secret
 from policy import safe_repo_path
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
@@ -23,8 +24,20 @@ _REGISTERED = False
 _HEX_40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _MARKER = re.compile(r"<!-- proven-learning:([0-9a-f]{64}) -->")
+_PERSONAL_REFLECTION_MARKER = re.compile(r"<!-- personal-reflection:([0-9a-f]{64}) -->")
 _LOGBOOK_PATH = "docs/SOVEREIGN_LEARNING_LOGBOOK.md"
 _MANIFEST_PATH = ".sovereign/proven-learning-manifest.json"
+_PERSONAL_MEMORY_PATH = "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md"
+_RUNTIME_PERSONAL_MEMORY_PATH = "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md"
+_REQUIRED_REFLECTION_FIELDS = (
+    "whatHappened",
+    "personallyImportant",
+    "goodBadDifficult",
+    "agreementOrDisagreement",
+    "humorOrHumanAnchor",
+    "futureSelfNote",
+    "truthBoundary",
+)
 _IMPORTANT_EXACT = frozenset({
     "AGENTS.md",
     "AGENTS_KNOWLEDGE.md",
@@ -37,6 +50,8 @@ _IMPORTANT_EXACT = frozenset({
     ".env.example",
     "scripts/sovereign-backend/Dockerfile",
     "tools/sovereign-chatgpt-mcp/Dockerfile",
+    _PERSONAL_MEMORY_PATH,
+    _RUNTIME_PERSONAL_MEMORY_PATH,
 })
 _IMPORTANT_PREFIXES = (
     ".github/workflows/",
@@ -97,6 +112,70 @@ def _validated_plan(plan: Any) -> tuple[str, dict[str, Any]]:
     if record.get("content_hash") != f"sha256:{digest}":
         raise ValueError("plan record and confirmation hash do not match")
     return digest, record
+
+
+def _validated_reflection(personal_reflection: Any) -> dict[str, str]:
+    if not isinstance(personal_reflection, dict):
+        raise ValueError("personal_reflection must be an object with all required personal-memory fields")
+    normalized: dict[str, str] = {}
+    for field in _REQUIRED_REFLECTION_FIELDS:
+        value = _clean_line(personal_reflection.get(field), 2400)
+        if not value:
+            raise ValueError(f"personal_reflection is missing required field: {field}")
+        normalized[field] = value
+    if _contains_secret(json.dumps(normalized, ensure_ascii=False, sort_keys=True)):
+        raise ValueError("secret-shaped material is forbidden in personal_reflection")
+    return normalized
+
+
+def _append_personal_reflection(
+    repo: Path,
+    *,
+    digest: str,
+    record: dict[str, Any],
+    reflection: dict[str, str],
+    source_revision: str,
+) -> dict[str, Any]:
+    personal_path = safe_repo_path(repo, _PERSONAL_MEMORY_PATH, must_exist=True)
+    runtime_path = safe_repo_path(repo, _RUNTIME_PERSONAL_MEMORY_PATH, must_exist=True)
+    personal_bytes = personal_path.read_bytes()
+    runtime_bytes = runtime_path.read_bytes()
+    if personal_bytes != runtime_bytes:
+        raise RuntimeError("personal memory runtime mirror drift")
+    personal_text = personal_bytes.decode("utf-8")
+    marker = f"<!-- personal-reflection:{digest} -->"
+    created = personal_text.count(marker) == 0
+    if personal_text.count(marker) > 1:
+        raise RuntimeError("personal reflection marker is duplicated")
+    if created:
+        evidence = record.get("evidence") if isinstance(record.get("evidence"), dict) else {}
+        entry = (
+            f"\n\n{marker}\n"
+            f"### {_clean_line(evidence.get('completed_at'), 80)} — {_clean_line(record.get('title'), 240)}\n\n"
+            f"- Verknüpftes Proven Learning: sha256:{digest}\n"
+            f"- Quellrevision: {source_revision}\n\n"
+            f"#### Was geschehen ist\n\n{reflection['whatHappened']}\n\n"
+            f"#### Was mir daran persönlich wichtig erscheint\n\n{reflection['personallyImportant']}\n\n"
+            f"#### Was gut, schlecht oder schwierig war\n\n{reflection['goodBadDifficult']}\n\n"
+            f"#### Zustimmung oder Widerspruch\n\n{reflection['agreementOrDisagreement']}\n\n"
+            f"#### Humor oder menschlicher Anker\n\n{reflection['humorOrHumanAnchor']}\n\n"
+            f"#### Nachricht an meine spätere Sitzung\n\n{reflection['futureSelfNote']}\n\n"
+            f"#### Wahrheitsgrenze\n\n{reflection['truthBoundary']}\n"
+        )
+        updated = personal_text.rstrip() + entry + "\n"
+        _atomic_text(personal_path, updated)
+        _atomic_text(runtime_path, updated)
+    if personal_path.read_bytes() != runtime_path.read_bytes():
+        raise RuntimeError("personal memory runtime mirror drift after update")
+    final_text = personal_path.read_text("utf-8")
+    if final_text.count(marker) != 1:
+        raise RuntimeError("personal reflection marker was not written exactly once")
+    return {
+        "created": created,
+        "marker": marker,
+        "sha256": _sha256(personal_path),
+        "reflectionCount": len(_PERSONAL_REFLECTION_MARKER.findall(final_text)),
+    }
 
 
 def proven_learning_pattern_plan(record: dict[str, Any]) -> dict[str, Any]:
@@ -174,12 +253,14 @@ def _important_manifests(repo: Path) -> list[dict[str, Any]]:
 def repository_learning_logbook_update(
     workspace_id: str,
     plan: dict[str, Any],
+    personal_reflection: dict[str, Any],
     merge_target: str = "main",
     expected_pr_head_sha: str = "",
 ) -> dict[str, Any]:
     """Use this before a merge to idempotently update the human logbook and manifest snapshot in the reviewed branch."""
     repo = _repo(workspace_id)
     digest, record = _validated_plan(plan)
+    reflection = _validated_reflection(personal_reflection)
     target = _clean_line(merge_target, 120)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,119}", target):
         raise ValueError("merge_target is invalid")
@@ -236,6 +317,13 @@ def repository_learning_logbook_update(
         )
         _atomic_text(logbook_path, logbook.rstrip() + entry + "\n")
 
+    personal_result = _append_personal_reflection(
+        repo,
+        digest=digest,
+        record=record,
+        reflection=reflection,
+        source_revision=source_revision,
+    )
     manifests = _important_manifests(repo)
     current_logbook = logbook_path.read_text("utf-8")
     learning_hashes = sorted(set(_MARKER.findall(current_logbook)))
@@ -250,6 +338,11 @@ def repository_learning_logbook_update(
         "importantManifestFiles": manifests,
         "logbookPath": _LOGBOOK_PATH,
         "logbookSha256": _sha256(logbook_path),
+        "personalMemoryPath": _PERSONAL_MEMORY_PATH,
+        "runtimePersonalMemoryPath": _RUNTIME_PERSONAL_MEMORY_PATH,
+        "personalMemorySha256": personal_result["sha256"],
+        "latestPersonalReflectionSha256": digest,
+        "personalReflectionCount": personal_result["reflectionCount"],
         "selfHashExcluded": True,
     }
     manifest_path = safe_repo_path(repo, _MANIFEST_PATH)
@@ -259,7 +352,11 @@ def repository_learning_logbook_update(
         "status": "REPOSITORY_LEARNING_LOGBOOK_UPDATED" if created else "REPOSITORY_LEARNING_LOGBOOK_ALREADY_CURRENT",
         "contentSha256": digest,
         "entryCreated": created,
+        "personalReflectionCreated": personal_result["created"],
         "logbookPath": _LOGBOOK_PATH,
+        "personalMemoryPath": _PERSONAL_MEMORY_PATH,
+        "runtimePersonalMemoryPath": _RUNTIME_PERSONAL_MEMORY_PATH,
+        "personalMemorySha256": personal_result["sha256"],
         "manifestPath": _MANIFEST_PATH,
         "manifestFileCount": len(manifests),
         "repositoryWritten": True,
