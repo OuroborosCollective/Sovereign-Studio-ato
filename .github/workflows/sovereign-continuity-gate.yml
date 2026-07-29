@@ -126,6 +126,7 @@ jobs:
             --head "$HEAD_SHA"
 
       - name: Reconcile exact-head workflow evidence
+        if: ${{ false }}
         uses: actions/github-script@v9
         env:
           HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
