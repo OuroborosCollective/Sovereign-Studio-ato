@@ -55,7 +55,7 @@ jobs:
     timeout-minutes: 12
     steps:
       - name: Checkout trusted guardian implementation from main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 1
@@ -64,7 +64,7 @@ jobs:
         run: node --test scripts/revision-guardian.contract.test.cjs
 
       - name: Reconcile exact revision workflow evidence
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           INPUT_EXPECTED_REVISION: ${{ inputs.expected_revision || '' }}
           INPUT_TARGET_REF: ${{ inputs.target_ref || 'main' }}
@@ -99,6 +99,29 @@ jobs:
                 target.mode = 'pr';
                 target.prNumber = Number(openPull.number || 0);
                 target.ref = guardian.safeRef(openPull.head?.ref, 'workflow_pr_ref');
+              }
+            }
+
+            const priorFinalChecks = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: target.revision,
+              check_name: 'Revision Guardian',
+              per_page: 100,
+            });
+            for (const previous of priorFinalChecks.data.check_runs || []) {
+              if (previous.status !== 'completed') {
+                await github.rest.checks.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  check_run_id: Number(previous.id),
+                  status: 'completed',
+                  conclusion: 'neutral',
+                  output: {
+                    title: 'Superseded by a newer guardian run',
+                    summary: `A newer guardian run now owns revision ${target.revision}.`,
+                  },
+                });
               }
             }
 
