@@ -227,3 +227,25 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - ProviderRuntimeClient regression suite (repository_check, SHA-256 040d870f9d78aa4ce09a1adc6b3aa7ffb43a9d98684bdb178b45b5481e42330e): Der gezielte Pytestlauf bestand mit 23 Tests und prüft Discovery, Reconcile, Readbackprojektion sowie ungültige Source-IDs.
 - FreeLLM live receipt v2 (runtime_readback, SHA-256 3046e66b02a50365eac5e7d5cab04b717ae378e05a6afc6812d24d12768afc53): Der direkte Recheck erhöhte die Ready-Routen von vier auf fünf und lieferte ein neues revisions- und digestgebundenes Receipt v2.
 
+<!-- proven-learning:088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e -->
+## Aktive Architekturverträge sprach- und registrierungsgebunden prüfen
+
+- Zeitpunkt: 2026-07-29T05:26:08+02:00
+- Vorgang: fix
+- Inhalts-Hash: sha256:088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e
+- Quellrevision: a3751cd7f681c57d768a24351ca9088595707827
+- Merge-Ziel: main
+- Erwarteter PR-Head: wird beim PR-Gate gebunden
+- Geänderte Pfade: docs/SOVEREIGN_ARCHITECTURE_MANIFEST.md, docs/architecture/POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json, scripts/sovereign-backend/docker-compose.yml, scripts/sovereign-backend/llm_provider_runtime.py, scripts/sovereign-backend/tests/test_private_litellm_provider_contract.py, src/features/admin/api/adminApiClient.ts, src/features/admin/components/LlmRouteControlCenter.tsx, src/features/admin/hooks/useAdminApi.ts, tools/sovereign-chatgpt-mcp/deterministic_architecture_tools.py, tools/sovereign-chatgpt-mcp/operational_assurance_tools.py, tools/sovereign-chatgpt-mcp/operational_governance_tools.py, tools/sovereign-chatgpt-mcp/repository_skill_tools.py, tools/sovereign-chatgpt-mcp/tests/test_deterministic_architecture_tools.py, tools/sovereign-chatgpt-mcp/tests/test_operational_assurance_tools.py, tools/sovereign-chatgpt-mcp/tests/test_operational_governance_tools.py, tools/sovereign-chatgpt-mcp/tests/test_repository_skill_tools.py
+- Problem: Statische Repository-Prüfer behandelten Syntax verschiedener Programmiersprachen gleich und zählten dekorierte Endpunkte aus nicht registrierten Legacy-Modulen als aktive Backendverträge. Dadurch wurden normale Python-Imports als JavaScript-Dynamic-Import, regex.exec als Prozessausführung, Secret-Referenzen als eingebettete Zugangsdaten und tote LiteLLM-Routen als reale Client-Gegenstellen klassifiziert. Historisch mehrfach definierte Migrationstabellen wurden außerdem ohne exakten kanonischen Ownership-Vertrag pauschal als Drift gemeldet.
+- Lösung: Scanner werden nach Dateisprache und semantischem Kontext getrennt. Nichtaktive Endpoint-Module tragen eine explizite Surface-Markierung und werden aus aktiven Backendverträgen ausgeschlossen. Secret-Erkennung unterscheidet Literale, Referenzen, Detektionsmuster, Digests und Testwerte. Historische Mehrfach-Migrationseigentümer werden ausschließlich über Tabelle, kanonische Migration, vollständige Dateimenge und exakte SHA-256-Menge fail-closed akzeptiert. Das Admin-Frontend verwendet nur den registrierten direkten OpenRouter-Katalog-Refresh; LiteLLM-Umgebungswerte und tote Client-Endpunkte werden aus aktiven Pfaden entfernt.
+- Gültigkeit: Anwendbar auf polyglotte Repository-Scanner, Endpoint-/Client-Driftprüfungen, Secret-Triage, dynamische Ausführungs-Audits, semantische Intent-Grenzen, historische Migrationseigentümerschaft sowie jede Architekturprojektion, die aktive und Legacy-Flächen trennen muss.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@a3751cd7f681c57d768a24351ca9088595707827:docs/architecture/POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json; OuroborosCollective/Sovereign-Studio-ato@a3751cd7f681c57d768a24351ca9088595707827:src/features/admin/api/adminApiClient.ts; OuroborosCollective/Sovereign-Studio-ato@a3751cd7f681c57d768a24351ca9088595707827:tools/sovereign-chatgpt-mcp/operational_assurance_tools.py; OuroborosCollective/Sovereign-Studio-ato@a3751cd7f681c57d768a24351ca9088595707827:tools/sovereign-chatgpt-mcp/operational_governance_tools.py; OuroborosCollective/Sovereign-Studio-ato@a3751cd7f681c57d768a24351ca9088595707827:tools/sovereign-chatgpt-mcp/repository_skill_tools.py
+
+### Nachweise
+
+- Architecture snapshot (repository_check, SHA-256 2fbbcf3369341db2c07cb6ec12fc177e3486258973d6341fc9f5074ef4e8841f): 1803 getrackte Dateien wurden nach Rollen, Sprachen, Endpunkten, Workflows, Migrationen, Tests und Truth-Boundaries kartiert.
+- CODEOWNERS coverage (repository_check, SHA-256 31aa8b89b87fb42e567d46a7296204df943ae6923f8b0bf4f1519d9cf514732e): Alle sechzehn geänderten Pfade sind durch @OuroborosCollective abgedeckt.
+- Endpoint and frontend reference (repository_check, SHA-256 abc5b9fcb2325b5624baf18303dc2acbb3704d89fcb627fee86cea531f1a50c5): Aktive und nichtaktive Frontend-Aufrufe sowie Backendverträge wurden revisionsgebunden referenziert; der gefundene Legacy-Blindfleck erhielt Regressionstests.
+- Mirror equality (repository_check, SHA-256 0a6ee128bbd8e08ea87f93124d71d752198010388b851e5b1f03098730e6aa6a): Alle kanonischen Spiegelpaare waren bytegleich; mismatchCount war null.
+

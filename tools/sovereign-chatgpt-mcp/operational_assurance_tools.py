@@ -57,16 +57,43 @@ _SECRET_LITERAL_RE: Final[re.Pattern[str]] = re.compile(
     r"AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
     r"(?i:(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*['\"][^'\"]{8,}['\"]))"
 )
-_DYNAMIC_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
+_PYTHON_DYNAMIC_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("PYTHON_EVAL", re.compile(r"\beval\s*\(")),
     ("PYTHON_EXEC", re.compile(r"\bexec\s*\(")),
     ("PYTHON_DYNAMIC_IMPORT", re.compile(r"\bimportlib\.(?:import_module|__import__)\s*\(")),
-    ("PYTHON_SHELL_TRUE", re.compile(r"\b(?:subprocess\.(?:run|Popen|call)|os\.system)\b.{0,180}(?:shell\s*=\s*True|\()")),
+    (
+        "PYTHON_SUBPROCESS_SHELL_TRUE",
+        re.compile(r"\bsubprocess\.(?:run|Popen|call)\s*\([^#\n]{0,400}\bshell\s*=\s*True\b"),
+    ),
+    ("PYTHON_OS_SYSTEM", re.compile(r"\bos\.system\s*\(")),
+)
+_JAVASCRIPT_DYNAMIC_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("JS_FUNCTION_CONSTRUCTOR", re.compile(r"\bnew\s+Function\s*\(")),
-    ("JS_EVAL", re.compile(r"\beval\s*\(")),
-    ("JS_CHILD_PROCESS", re.compile(r"\b(?:exec|execSync|spawn|spawnSync)\s*\(")),
+    ("JS_EVAL", re.compile(r"(?<![.\w])eval\s*\(")),
+    (
+        "JS_CHILD_PROCESS",
+        re.compile(
+            r"\b(?:child_process|childProcess)\.(?:exec|execSync|spawn|spawnSync)\s*\("
+            r"|(?<![.\w])(?:exec|execSync|spawn|spawnSync)\s*\("
+        ),
+    ),
     ("JS_VM_RUNTIME", re.compile(r"\bvm\.(?:runIn|Script)")),
     ("JS_DYNAMIC_IMPORT", re.compile(r"\bimport\s*\([^)]")),
+)
+_PROVIDER_SECRET_LITERAL_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:sk-(?:proj-)?[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"AKIA[0-9A-Z]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)"
+)
+_SECRET_REFERENCE_LINE_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:\$\{[^}]+\}|\$\{\{\s*secrets\.|\bos\.(?:environ|getenv)\b|"
+    r"\bprocess\.env\b|\bimport\.meta\.env\b|\bsecretKeyRef\b|"
+    r"\bvalueFrom\b|\b[A-Z][A-Z0-9_]{2,}\s*=\s*[\"']?\$[A-Z{])",
+    re.I,
+)
+_SECRET_DETECTION_CONTEXT_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:\bre\.compile\b|\bRegExp\b|\bpattern\b|\bmask\b|\bredact\b|"
+    r"\bguard\b|\bdetect(?:ion|ed)?\b|_SECRET(?:_LITERAL)?_RE)",
+    re.I,
 )
 
 
@@ -1123,6 +1150,14 @@ def tool_permission_minimize(
     )
 
 
+def _dynamic_patterns_for_suffix(suffix: str) -> tuple[tuple[str, re.Pattern[str]], ...]:
+    if suffix == ".py":
+        return _PYTHON_DYNAMIC_PATTERNS
+    if suffix in {".ts", ".tsx", ".js", ".mjs", ".cjs"}:
+        return _JAVASCRIPT_DYNAMIC_PATTERNS
+    return ()
+
+
 def dynamic_execution_containment_audit(
     workspace_id: WorkspaceId,
     roots: Annotated[list[str], Field(max_length=16)] = ["backend", "scripts/sovereign-backend", "src", "tools/sovereign-chatgpt-mcp"],
@@ -1151,8 +1186,12 @@ def dynamic_execution_containment_audit(
                 continue
             scanned += 1
             path_class = "test" if any(marker in rel.casefold() for marker in ("/tests/", ".test.", ".spec.", "/fixtures/")) else "production-candidate"
+            patterns = _dynamic_patterns_for_suffix(path.suffix.lower())
             for line_number, line in enumerate(path.read_text("utf-8", errors="replace").splitlines(), 1):
-                for family, pattern in _DYNAMIC_PATTERNS:
+                stripped = line.lstrip()
+                if not stripped or stripped.startswith(("#", "//", "/*", "*")):
+                    continue
+                for family, pattern in patterns:
                     if pattern.search(line):
                         severity = "P2" if path_class == "test" else "P0"
                         findings.append({"severity": severity, "family": family, "path": rel, "line": line_number, "pathClass": path_class, "status": "CANDIDATE_REQUIRES_CALLER_AND_SANDBOX_REVIEW"})
@@ -1377,6 +1416,25 @@ def secret_lifecycle_rotation_assess(
     )
 
 
+def _classify_secret_literal(path: str, line: str, matched_literal: str) -> tuple[str, str]:
+    lower_path = path.casefold()
+    lower_line = line.casefold()
+    if any(marker in lower_path for marker in ("/tests/", ".test.", ".spec.", "/fixtures/")) or any(
+        marker in lower_line
+        for marker in ("example", "dummy", "fake", "placeholder", "test-only", "invalid")
+    ):
+        return "TEST_OR_PLACEHOLDER", "P3"
+    if re.search(r"sha256:[0-9a-f]{64}|[0-9a-f]{40,64}", line, re.I):
+        return "FINGERPRINT_OR_DIGEST", "P3"
+    if _SECRET_REFERENCE_LINE_RE.search(line):
+        return "SECRET_REFERENCE", "P3"
+    if _SECRET_DETECTION_CONTEXT_RE.search(line):
+        return "SECRET_DETECTION_PATTERN", "P3"
+    if lower_path.endswith(".md") and not _PROVIDER_SECRET_LITERAL_RE.search(matched_literal):
+        return "DOCUMENTATION_REFERENCE", "P3"
+    return "ROTATION_CANDIDATE", "P0"
+
+
 def secret_literal_triage(
     workspace_id: WorkspaceId,
     roots: Annotated[list[str], Field(max_length=16)] = ["backend", "scripts", "src", "tools", ".github"],
@@ -1409,16 +1467,11 @@ def secret_literal_triage(
                 match = _SECRET_LITERAL_RE.search(line)
                 if not match:
                     continue
-                lower_line = line.casefold()
-                if any(marker in lower_path for marker in ("/tests/", ".test.", ".spec.", "/fixtures/")) or any(marker in lower_line for marker in ("example", "dummy", "fake", "placeholder", "test-only", "invalid")):
-                    classification = "TEST_OR_PLACEHOLDER"
-                    severity = "P3"
-                elif re.search(r"sha256:[0-9a-f]{64}|[0-9a-f]{40,64}", line, re.I):
-                    classification = "FINGERPRINT_OR_DIGEST"
-                    severity = "P3"
-                else:
-                    classification = "ROTATION_CANDIDATE"
-                    severity = "P0"
+                classification, severity = _classify_secret_literal(
+                    rel,
+                    line,
+                    match.group(0),
+                )
                 findings.append({"severity": severity, "family": "SECRET_LITERAL_TRIAGE", "path": rel, "line": line_number, "classification": classification, "literalSha256": hashlib.sha256(match.group(0).encode("utf-8")).hexdigest(), "literalReturned": False})
                 if len(findings) >= max_findings:
                     break

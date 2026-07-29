@@ -244,6 +244,8 @@ def test_real_repository_scans_are_bounded_and_read_only() -> None:
     assert scan["runtimeSuccessClaimed"] is False
     assert kappa["mutationPerformed"] is False
     assert kappa["runtimeSuccessClaimed"] is False
+    assert all(item["surface"] != "TEST_ONLY" for item in kappa["findings"])
+    assert all(item["surface"] == "TEST_ONLY" for item in kappa["testFixtureFindings"])
     assert sql["mutationPerformed"] is False
     assert sql["runtimeSuccessClaimed"] is False
     assert len(json.dumps({"scan": scan, "kappa": kappa, "sql": sql}).encode("utf-8")) < 1_000_000

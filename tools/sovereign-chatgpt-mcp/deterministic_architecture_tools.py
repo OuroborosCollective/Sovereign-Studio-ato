@@ -391,6 +391,7 @@ _KAPPA_RULES: Final[tuple[tuple[re.Pattern[str], str, str, str], ...]] = (
 
 def _kappa_audit(repo: Path, max_findings: int) -> dict[str, Any]:
     findings: list[Finding] = []
+    test_fixture_findings: list[Finding] = []
     surfaces: list[dict[str, Any]] = []
     source_suffixes = {".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
     for path, text, surface in _bounded_files(repo):
@@ -408,16 +409,21 @@ def _kappa_audit(repo: Path, max_findings: int) -> dict[str, Any]:
             continue
         for pattern, family, description, recommendation in _KAPPA_RULES:
             for match in pattern.finditer(text):
-                findings.append(Finding(
-                    "P1",
+                finding = Finding(
+                    "P3" if surface == "TEST_ONLY" else "P1",
                     family,
                     path,
                     _line(text, match.start()),
                     description,
                     recommendation,
                     surface,
-                ))
+                )
+                if surface == "TEST_ONLY":
+                    test_fixture_findings.append(finding)
+                else:
+                    findings.append(finding)
     returned = _sort_findings(findings, max_findings)
+    returned_test_fixtures = _sort_findings(test_fixture_findings, max_findings)
     return {
         "schemaVersion": "sovereign.kappa-contract-audit.v1",
         "revision": _git(repo, "rev-parse", "HEAD"),
@@ -433,10 +439,12 @@ def _kappa_audit(repo: Path, max_findings: int) -> dict[str, Any]:
         "contractSurfaces": surfaces,
         "findingCount": len(findings),
         "findings": returned,
-        "truncated": len(findings) > len(returned),
+        "testFixtureFindingCount": len(test_fixture_findings),
+        "testFixtureFindings": returned_test_fixtures,
+        "truncated": len(findings) > len(returned) or len(test_fixture_findings) > len(returned_test_fixtures),
         "mutationPerformed": False,
         "runtimeSuccessClaimed": False,
-        "truthNotice": "A matching Kappa constant does not prove arithmetic parity; independent Python and TypeScript replay vectors remain required.",
+        "truthNotice": "Production Kappa candidates and intentionally invalid test fixtures are reported separately; matching constants alone do not prove cross-runtime arithmetic parity.",
     }
 
 

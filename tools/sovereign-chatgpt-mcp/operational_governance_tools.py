@@ -172,16 +172,21 @@ def _strip_sql_comments(text: str) -> str:
     return "".join(output)
 
 
-_KEYWORD_INTENT_PATTERNS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
-    (
-        "python_keyword_intent",
-        re.compile(r"(?:\.lower\(\)|\.casefold\(\)).{0,120}(?:\bin\b|startswith\(|endswith\()", re.I),
-    ),
-    (
-        "javascript_keyword_intent",
-        re.compile(r"(?:\.toLowerCase\(\)|\.includes\(|\.startsWith\(|\.endsWith\().{0,160}", re.I),
-    ),
+_PYTHON_KEYWORD_INTENT_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:\.lower\(\)|\.casefold\(\)).{0,160}(?:\bin\b|startswith\(|endswith\()"
+    r"|\bin\s+[A-Za-z_][A-Za-z0-9_.]*\.(?:lower|casefold)\(\)",
+    re.I,
 )
+_JAVASCRIPT_KEYWORD_INTENT_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:\.toLowerCase\(\)|\.includes\(|\.startsWith\(|\.endsWith\().{0,200}",
+    re.I,
+)
+_INTENT_CONTEXT_RE: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:intent|prompt|message|request|query|command|instruction|mission|goal|"
+    r"user[_-]?input|natural[_-]?language|free[_-]?text|description|text)\b",
+    re.I,
+)
+_QUOTED_KEYWORD_RE: Final[re.Pattern[str]] = re.compile(r"['\"][^'\"]{1,120}['\"]")
 
 _PREFIX_CAPABILITIES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("repository_", ("repository", "ci")),
@@ -1191,6 +1196,76 @@ def _load_historical_schema_ownership(
     return payload, entries, findings
 
 
+def _load_multiple_migration_owners(
+    manifest: dict[str, Any] | None,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    if manifest is None:
+        return {}, []
+    raw_entries = manifest.get("multipleMigrationOwners", [])
+    if not isinstance(raw_entries, list):
+        return {}, [
+            {
+                "severity": "P0",
+                "family": "DB_MULTIPLE_OWNER_MANIFEST_INVALID",
+                "reason": "multipleMigrationOwners_must_be_an_array",
+            }
+        ]
+    entries: dict[str, dict[str, Any]] = {}
+    findings: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_entries):
+        if not isinstance(raw, dict):
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_MULTIPLE_OWNER_MANIFEST_INVALID",
+                    "entry": index,
+                    "reason": "entry_must_be_an_object",
+                }
+            )
+            continue
+        table = str(raw.get("table") or "").strip().lower()
+        canonical = str(raw.get("canonicalMigration") or "").strip()
+        migration_files = raw.get("migrationFiles")
+        content_hashes = raw.get("contentSha256")
+        rationale = str(raw.get("rationale") or "").strip()
+        valid_hashes = (
+            isinstance(content_hashes, list)
+            and bool(content_hashes)
+            and all(isinstance(item, str) and re.fullmatch(r"[0-9a-f]{64}", item) for item in content_hashes)
+        )
+        valid_files = (
+            isinstance(migration_files, list)
+            and bool(migration_files)
+            and all(isinstance(item, str) and item.endswith(".sql") for item in migration_files)
+        )
+        if (
+            not _TABLE_IDENTITY_RE.fullmatch(table)
+            or table in entries
+            or not valid_files
+            or not valid_hashes
+            or canonical not in migration_files
+            or raw.get("allowByteDifferentHistoricalOwners") is not True
+            or not rationale
+        ):
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_MULTIPLE_OWNER_MANIFEST_INVALID",
+                    "entry": index,
+                    "table": table or None,
+                }
+            )
+            continue
+        entries[table] = {
+            **raw,
+            "table": table,
+            "canonicalMigration": canonical,
+            "migrationFiles": sorted(set(migration_files)),
+            "contentSha256": sorted(set(content_hashes)),
+        }
+    return entries, findings
+
+
 def _historical_contract_mismatches(expected: dict[str, Any], actual: dict[str, Any]) -> list[dict[str, Any]]:
     mismatches: list[dict[str, Any]] = []
     actual_columns = {
@@ -1356,7 +1431,11 @@ def schema_migration_reconcile(
     missing_live = sorted(static_names - live_tables)
 
     manifest, historical_entries, manifest_findings = _load_historical_schema_ownership(repo)
-    findings: list[dict[str, Any]] = list(manifest_findings)
+    multiple_owner_entries, multiple_owner_manifest_findings = _load_multiple_migration_owners(manifest)
+    findings: list[dict[str, Any]] = [
+        *manifest_findings,
+        *multiple_owner_manifest_findings,
+    ]
     historical_owned: list[str] = []
     historical_mismatches: list[dict[str, Any]] = []
     historical_missing: list[str] = []
@@ -1435,6 +1514,49 @@ def schema_migration_reconcile(
         for name, paths in sorted(static_tables.items())
         if len({migration_hashes[path] for path in set(paths)}) > 1
     ]
+    accepted_multiple_owners: list[dict[str, Any]] = []
+    remaining_duplicate_owners: list[dict[str, Any]] = []
+    observed_multiple_owner_tables: set[str] = set()
+    for item in duplicate_owners:
+        table = item["table"]
+        observed_multiple_owner_tables.add(table)
+        expected = multiple_owner_entries.get(table)
+        exact_match = bool(
+            expected
+            and expected["migrationFiles"] == item["migrationFiles"]
+            and expected["contentSha256"] == item["contentSha256"]
+        )
+        if exact_match:
+            accepted_multiple_owners.append(
+                {
+                    **item,
+                    "canonicalMigration": expected["canonicalMigration"],
+                    "rationale": expected["rationale"],
+                    "manifestBound": True,
+                }
+            )
+            continue
+        remaining_duplicate_owners.append(item)
+        if expected:
+            findings.append(
+                {
+                    "severity": "P0",
+                    "family": "DB_MULTIPLE_OWNER_MANIFEST_MISMATCH",
+                    "table": table,
+                    "expectedMigrationFiles": expected["migrationFiles"],
+                    "actualMigrationFiles": item["migrationFiles"],
+                    "expectedContentSha256": expected["contentSha256"],
+                    "actualContentSha256": item["contentSha256"],
+                }
+            )
+    for table in sorted(set(multiple_owner_entries) - observed_multiple_owner_tables):
+        findings.append(
+            {
+                "severity": "P1",
+                "family": "DB_MULTIPLE_OWNER_MANIFEST_ENTRY_UNUSED",
+                "table": table,
+            }
+        )
     byte_equal_mirrors = [
         {"table": name, "migrationFiles": sorted(set(paths)), "byteEqual": True}
         for name, paths in sorted(static_tables.items())
@@ -1451,7 +1573,7 @@ def schema_migration_reconcile(
     )
     findings.extend(
         {"severity": "P1", "family": "MIGRATION_TABLE_MULTIPLE_OWNERS", **item}
-        for item in duplicate_owners
+        for item in remaining_duplicate_owners
     )
     ok = not findings
     manifest_path = str(_HISTORICAL_SCHEMA_OWNERSHIP_PATH)
@@ -1474,7 +1596,9 @@ def schema_migration_reconcile(
             "historicalOwnershipManifestLoaded": manifest is not None,
             "historicalOwnershipManifestSha256": _sha256(manifest) if manifest is not None else None,
             "historicalOwnershipInventoryStatus": historical_inventory.get("status") if historical_inventory else None,
-            "multipleOwners": duplicate_owners,
+            "multipleOwners": remaining_duplicate_owners,
+            "acceptedMultipleOwners": accepted_multiple_owners,
+            "declaredMultipleOwnerCount": len(multiple_owner_entries),
             "byteEqualMigrationMirrors": byte_equal_mirrors,
             "liveSchemaStatus": live.get("status") if isinstance(live, dict) else "UNKNOWN",
             "rowDataReturned": False,
@@ -1619,6 +1743,16 @@ def agent_run_liveness_assess(run: AgentRunEvidence) -> GenericResult:
     )
 
 
+def _semantic_intent_pattern_family(suffix: str, line: str) -> str | None:
+    if not _INTENT_CONTEXT_RE.search(line) or not _QUOTED_KEYWORD_RE.search(line):
+        return None
+    if suffix == ".py" and _PYTHON_KEYWORD_INTENT_RE.search(line):
+        return "python_keyword_intent"
+    if suffix in {".ts", ".tsx", ".js", ".mjs"} and _JAVASCRIPT_KEYWORD_INTENT_RE.search(line):
+        return "javascript_keyword_intent"
+    return None
+
+
 def semantic_intent_boundary_audit(
     workspace_id: WorkspaceId,
     roots: Annotated[list[str], Field(max_length=16)] = ["backend", "scripts/sovereign-backend", "src", "tools/sovereign-chatgpt-mcp"],
@@ -1650,21 +1784,24 @@ def semantic_intent_boundary_audit(
                 continue
             scanned += 1
             lines = path.read_text("utf-8", errors="replace").splitlines()
+            suffix = path.suffix.lower()
             for line_number, line in enumerate(lines, 1):
-                for family, pattern in _KEYWORD_INTENT_PATTERNS:
-                    if pattern.search(line):
-                        findings.append(
-                            {
-                                "severity": "P1",
-                                "family": "SEMANTIC_INTENT_BOUNDARY_CANDIDATE",
-                                "patternFamily": family,
-                                "path": rel,
-                                "line": line_number,
-                                "status": "CANDIDATE_REQUIRES_REVIEW",
-                                "truthNotice": "Structured enum handling and explicitly marked offline fallback may be valid.",
-                            }
-                        )
-                        break
+                stripped = line.lstrip()
+                if not stripped or stripped.startswith(("#", "//", "/*", "*")):
+                    continue
+                family = _semantic_intent_pattern_family(suffix, line)
+                if family:
+                    findings.append(
+                        {
+                            "severity": "P1",
+                            "family": "SEMANTIC_INTENT_BOUNDARY_CANDIDATE",
+                            "patternFamily": family,
+                            "path": rel,
+                            "line": line_number,
+                            "status": "CANDIDATE_REQUIRES_REVIEW",
+                            "truthNotice": "Structured enum handling and explicitly marked offline fallback may be valid.",
+                        }
+                    )
                 if len(findings) >= max_findings:
                     break
     return _generic_result(

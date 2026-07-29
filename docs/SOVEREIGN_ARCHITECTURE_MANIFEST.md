@@ -1014,22 +1014,35 @@ Die folgenden Familien sind im Backendvertrag belegt oder als kanonische Gruppen
 
 ## 21.4 Admin LLM und Provider
 
+### Gemeinsame Routenverwaltung
+
 - `/api/admin/llm/routes`
 - `/api/admin/llm/routes/<id>`
 - `/api/admin/llm/routes/<id>/healthcheck`
-- `/api/admin/llm/provider-presets`
-- `/api/admin/llm/provider-deployments`
-- `/api/admin/llm/provider-deployments/prepare`
-- `/api/admin/llm/provider-deployments/<id>/activate`
-- `/api/admin/llm/model-catalog`
-- `/api/admin/llm/model-catalog/attach`
-- `/api/admin/llm/gateway/providers`
-- `/api/admin/llm/gateway/sync`
-- `/api/admin/llm/worker-ai/status`
-- `/api/admin/llm/worker-ai/models`
-- `/api/admin/llm/worker-ai/sync`
 
-Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar. Produktive Paid-Modelle laufen direkt über OpenRouter, produktive Free-Routen direkt über FreeLLM; LiteLLM bleibt ausschließlich deaktivierte historische Evidence.
+### Direkter OpenRouter-Paid-Vertrag
+
+- `/api/admin/llm/openrouter/owner-input`
+- `/api/admin/llm/openrouter/activate`
+- `/api/admin/llm/openrouter/catalog/refresh`
+- `/api/admin/llm/openrouter/status`
+- `/api/admin/llm/openrouter/models`
+- `/api/admin/llm/openrouter/models/<route_id>/markup`
+
+Der Katalog-Refresh liest den echten OpenRouter-Modellkatalog, prüft Preise und Agentenparameter, führt eine Tool-Completion-Canary aus und synchronisiert die zulässigen Paid-Modelle atomar in `llm_routes`. Das Admin-Frontend ruft ausschließlich diesen registrierten Direktvertrag auf; ein separates Anhängen über einen LiteLLM-Modellkatalog existiert im aktiven Clientpfad nicht.
+
+### Direkter FreeLLM-/Revolver-Vertrag
+
+- `/api/admin/llm/freellm/provider-credentials`
+- `/api/admin/llm/freellm/provider-credentials/<provider_id>/owner-input`
+- `/api/admin/llm/freellm/provider-credentials/<provider_id>/keyless`
+- `/api/admin/llm/revolver-v3/providers`
+- `/api/admin/llm/revolver-v3/providers/<source_id>/owner-input`
+- `/api/admin/llm/revolver-v3/providers/<source_id>/discover`
+- `/api/admin/llm/revolver-v3/providers/<source_id>/recheck`
+- `/api/admin/llm/revolver-v3/providers/<source_id>`
+
+Frühere Provider-Preset-, Provider-Deployment-, LiteLLM-Modellkatalog-, Gateway- und Worker-AI-Routen bleiben ausschließlich als nicht registrierte Legacy-Tombstones oder historische Provenance erhalten. Sie werden durch den Endpoint-Scanner als `legacy-unreferenced` aus der aktiven Vertragsmenge ausgeschlossen und dürfen weder einen Frontend-Aufruf erfüllen noch Produkt-Readiness erzeugen.
 
 ## 21.5 Admin Benutzer, Credits und Billing
 
