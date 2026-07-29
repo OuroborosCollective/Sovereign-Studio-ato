@@ -206,3 +206,24 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Kanonischer Receipt-Produzent (repository_file, SHA-256 2384f6a70dadcdb4ac11d1a74fa812b5b21a7d8da05d774aed5118e13366cdaa): Der Admin-Recheck delegiert an activate_model statt ein partielles v1-kompatibles Update zu pflegen.
 - Deploy-Bootstrap-Vertrag (repository_file, SHA-256 b229d8fd104f0ff582cd56aa9d18d7c8190231f7f3a92739037a619417fc4186): Der Deploy prüft Liveness, erzeugt v2-Evidence intern und bewertet erst danach Readiness.
 
+<!-- proven-learning:4417bfb1c96cef4f2f42a68277c7069f25ca01df212b783c230fec692b7c03e8 -->
+## FreeLLM-Schreibwirkung aus Receipt-v2-Evidence ableiten
+
+- Zeitpunkt: 2026-07-29T04:11:30+02:00
+- Vorgang: fix
+- Inhalts-Hash: sha256:4417bfb1c96cef4f2f42a68277c7069f25ca01df212b783c230fec692b7c03e8
+- Quellrevision: eebd3634e02f6eb3e821869cf3d0df71cc9375b2
+- Merge-Ziel: main
+- Erwarteter PR-Head: wird beim PR-Gate gebunden
+- Geänderte Pfade: tools/sovereign-chatgpt-mcp/owner_input_client.py, tools/sovereign-chatgpt-mcp/tests/test_owner_input_client.py
+- Problem: Die MCP-Projektion von FreeLLM Discovery und Reconcile konnte neue revisions- und digestgebundene Route-Receipts zurückgeben, meldete den realen Persistenzeffekt jedoch weiterhin als mutationPerformed=false, observedEffect=none und readbackVerified=false. Dadurch erschien ein echter PostgreSQL-Revolver-Schreibvorgang fälschlich als read-only.
+- Lösung: Discovery und Reconcile verwenden einen gemeinsamen kanonischen Normalisierer. Er sammelt eindeutige Receipt-IDs, setzt mutationPerformed nur bei tatsächlich zurückgegebenen neuen Receipt-Identitäten, beschreibt den Effekt als provider-route-receipts-written und setzt readbackVerified ausschließlich dann, wenn jedes geschriebene Receipt eine verifizierte Source-Revision und einen verifizierten Image-Digest enthält. Ohne Receipt bleibt der Effekt ehrlich none.
+- Gültigkeit: Anwendbar auf externe Provider-Operationen, bei denen die Antwort selbst persistierte, revisionsgebundene Effektidentitäten enthält. Nicht aus Statusnamen oder HTTP 200 allein ableiten; maßgeblich sind konkrete Receipt-Identitäten und deren Runtime-Bindung.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@eebd3634e02f6eb3e821869cf3d0df71cc9375b2:tools/sovereign-chatgpt-mcp/owner_input_client.py; OuroborosCollective/Sovereign-Studio-ato@eebd3634e02f6eb3e821869cf3d0df71cc9375b2:tools/sovereign-chatgpt-mcp/tests/test_owner_input_client.py
+
+### Nachweise
+
+- FreeLLM effect normalizer source (repository_check, SHA-256 91066fe28ee8b191fec3608c72776b4c0ee7fb6264cc0e70c6e8c83ae843938d): Der gemeinsame Effekt-Normalisierer ist in der gepatchten ProviderRuntimeClient-Datei hashgebunden.
+- ProviderRuntimeClient regression suite (repository_check, SHA-256 040d870f9d78aa4ce09a1adc6b3aa7ffb43a9d98684bdb178b45b5481e42330e): Der gezielte Pytestlauf bestand mit 23 Tests und prüft Discovery, Reconcile, Readbackprojektion sowie ungültige Source-IDs.
+- FreeLLM live receipt v2 (runtime_readback, SHA-256 3046e66b02a50365eac5e7d5cab04b717ae378e05a6afc6812d24d12768afc53): Der direkte Recheck erhöhte die Ready-Routen von vier auf fünf und lieferte ein neues revisions- und digestgebundenes Receipt v2.
+
