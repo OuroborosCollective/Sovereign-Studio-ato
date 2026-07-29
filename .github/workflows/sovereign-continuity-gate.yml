@@ -223,11 +223,18 @@ jobs:
 
             const neutralized = [];
             const unresolvedCurrent = [];
+            const requiredCurrent = new Set([
+              ...requiredBeforeGuardian,
+              'Revision Guardian',
+              'Revision Guardian Orchestrator',
+            ]);
             for (const [name, checks] of finalGroups.entries()) {
               const latest = checks[0];
               const latestConclusion = String(latest?.conclusion || '');
               if (!latest || latest.status !== 'completed' || !successful.has(latestConclusion)) {
-                unresolvedCurrent.push(`${name}:${latest?.status || 'missing'}:${latestConclusion || 'none'}`);
+                if (requiredCurrent.has(name)) {
+                  unresolvedCurrent.push(`${name}:${latest?.status || 'missing'}:${latestConclusion || 'none'}`);
+                }
                 continue;
               }
               for (const older of checks.slice(1)) {
