@@ -32,7 +32,7 @@ jobs:
     steps:
       - name: Resolve exact same-repository PR identity
         id: resolve
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
@@ -104,7 +104,7 @@ jobs:
 
       - name: Checkout exact PR branch
         if: steps.resolve.outputs.already_current != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.resolve.outputs.target_ref }}
           fetch-depth: 0

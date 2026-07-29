@@ -2,9 +2,9 @@
 
 const SHA40 = /^[0-9a-f]{40}$/;
 const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
-const SUCCESS = new Set(['success', 'neutral', 'skipped']);
+const SUCCESS = new Set(['success']);
 const RERUN_FAILED = new Set(['failure']);
-const RERUN_ALL = new Set(['cancelled', 'timed_out', 'action_required', 'stale']);
+const RERUN_ALL = new Set(['cancelled', 'timed_out', 'action_required', 'stale', 'neutral', 'skipped']);
 
 const PR_WORKFLOWS = Object.freeze([
   { name: 'Release Verification', workflowId: 'release-verification.yml' },
