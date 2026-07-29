@@ -1,0 +1,115 @@
+name: Sovereign Superseded Check Reconciler
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: read
+  checks: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: superseded-check-reconciler-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  reconcile-superseded-checks:
+    name: Reconcile superseded checks
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Neutralize only older failed attempts after newer success
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+            if (!/^[0-9a-f]{40}$/.test(expectedHead)) {
+              core.setFailed('EXPECTED_HEAD_SHA_INVALID');
+              return;
+            }
+            const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+            const successful = new Set(['success', 'neutral', 'skipped']);
+            const supersedable = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'stale']);
+            const ignoredNames = new Set([
+              'Cursor Automation: Assign PR reviewers',
+              'Reconcile superseded checks',
+            ]);
+            let finalGroups = new Map();
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const response = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: expectedHead,
+                  per_page: 100,
+                  filter: 'all',
+                },
+                (page) => page.data.check_runs,
+              );
+              const groups = new Map();
+              for (const check of response) {
+                const name = String(check.name || '').trim();
+                if (!name || ignoredNames.has(name)) continue;
+                if (!groups.has(name)) groups.set(name, []);
+                groups.get(name).push(check);
+              }
+              for (const checks of groups.values()) {
+                checks.sort((left, right) => Number(right.id || 0) - Number(left.id || 0));
+              }
+              finalGroups = groups;
+              const pending = [...groups.values()].some((checks) => {
+                const latest = checks[0];
+                return latest && String(latest.status || '') !== 'completed';
+              });
+              if (!pending) break;
+              if (attempt === 59) {
+                core.setFailed('LATEST_CHECKS_DID_NOT_REACH_TERMINAL_STATE');
+                return;
+              }
+              await sleep(10000);
+            }
+
+            const unresolved = [];
+            const neutralized = [];
+            for (const [name, checks] of finalGroups.entries()) {
+              const latest = checks[0];
+              const latestConclusion = String(latest?.conclusion || '');
+              if (!latest || latest.status !== 'completed' || !successful.has(latestConclusion)) {
+                unresolved.push(`${name}:${latest?.status || 'missing'}:${latestConclusion || 'none'}`);
+                continue;
+              }
+              for (const older of checks.slice(1)) {
+                const conclusion = String(older.conclusion || '');
+                if (older.status !== 'completed' || !supersedable.has(conclusion)) continue;
+                await github.rest.checks.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  check_run_id: Number(older.id),
+                  status: 'completed',
+                  conclusion: 'neutral',
+                  output: {
+                    title: 'Superseded by newer successful exact-head evidence',
+                    summary: [
+                      `Head: ${expectedHead}`,
+                      `Check: ${name}`,
+                      `Superseded check run: ${older.id}`,
+                      `Newer successful check run: ${latest.id}`,
+                      'No current failure was changed; only an older attempt on the identical head was neutralized.',
+                    ].join('\n'),
+                  },
+                });
+                neutralized.push({ name, olderId: Number(older.id), latestId: Number(latest.id) });
+              }
+            }
+            if (unresolved.length) {
+              core.setFailed(`CURRENT_CHECK_FAILURES_REMAIN: ${unresolved.join(', ')}`);
+              return;
+            }
+            core.info(`Neutralized ${neutralized.length} superseded check attempts on ${expectedHead}.`);
