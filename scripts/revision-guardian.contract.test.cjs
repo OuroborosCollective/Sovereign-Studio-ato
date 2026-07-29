@@ -80,6 +80,7 @@ test('path impact keeps all PR gates but selects only matching main workflows', 
   assert.deepEqual(backendMainSpecs.map((item) => item.name), [
     'Release Verification',
     'Sovereign Agent Backend',
+    'Sovereign ChatGPT MCP',
     'Sovereign Backend Immutable Image',
   ]);
 
