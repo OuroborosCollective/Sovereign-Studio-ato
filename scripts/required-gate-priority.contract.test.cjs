@@ -99,6 +99,9 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
   const continuity = read('.github/workflows/sovereign-continuity-gate.yml');
   const syncWorkflow = read('.github/workflows/revision-guardian-sync-pr.yml');
 
+  const guardianScript = extractGithubScript(workflow);
+  assert.doesNotThrow(() => new AsyncFunction('github', 'context', 'core', guardianScript));
+
   const requiredMarkers = [
     [workflow, '  pull_request_target:\n', 'trusted pull_request_target trigger'],
     [workflow, '  push:\n    branches: [main]\n', 'main push trigger'],
@@ -113,8 +116,15 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
     [workflow, 'expected_base_sha: currentMain', 'exact main binding'],
     [workflow, 'FORK_PR_REPAIR_FORBIDDEN', 'fork repair prohibition'],
     [workflow, "core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')", 'post-repair evidence requirement'],
-    [workflow, "context.eventName === 'workflow_run' ? 10000 : 0", 'workflow-run settle delay'],
+    [workflow, "['workflow_run', 'workflow_dispatch'].includes(context.eventName) ? 10000 : 0", 'workflow-run and manual-audit settle delay'],
+    [workflow, "const evidencePath = path.join(process.env.GITHUB_WORKSPACE, '.revision-guardian-evidence.json')", 'bounded evidence path'],
+    [workflow, "schemaVersion: 'sovereign.revision-guardian-evidence.v1'", 'versioned evidence schema'],
+    [workflow, 'candidateRuns,', 'candidate run evidence'],
+    [workflow, 'writeEvidence({', 'evidence persistence before outcome'],
     [workflow, 'if (repairRequested)', 'single repair mutation guard'],
+    [workflow, '- name: Upload revision guardian evidence', 'always-uploaded guardian evidence'],
+    [workflow, 'if: always()', 'failure evidence upload'],
+    [workflow, 'revision-guardian-evidence-${{ github.run_id }}', 'run-bound evidence artifact'],
     [continuity, '  workflow_dispatch:\n', 'continuity repair dispatch'],
     [continuity, 'expected_head_sha:', 'continuity exact-head input'],
     [continuity, 'PR_HEAD_IDENTITY_MISMATCH', 'continuity identity enforcement'],

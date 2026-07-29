@@ -72,6 +72,7 @@ jobs:
           INPUT_REPAIR: ${{ github.event_name != 'workflow_dispatch' || inputs.repair == true }}
         with:
           script: |
+            const fs = require('node:fs');
             const path = require('node:path');
             const guardian = require(path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'revision-guardian.cjs'));
             const inputs = {
@@ -80,8 +81,32 @@ jobs:
               pr_number: process.env.INPUT_PR_NUMBER,
             };
             const repair = String(process.env.INPUT_REPAIR || '').toLowerCase() === 'true';
+            const evidencePath = path.join(process.env.GITHUB_WORKSPACE, '.revision-guardian-evidence.json');
+            const evidence = {
+              schemaVersion: 'sovereign.revision-guardian-evidence.v1',
+              eventName: context.eventName,
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              repair,
+              workflowRunId: Number(context.runId || 0),
+            };
+            const writeEvidence = (updates = {}) => {
+              Object.assign(evidence, updates);
+              fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, {
+                encoding: 'utf8',
+                mode: 0o600,
+              });
+            };
+            writeEvidence();
             const target = guardian.resolveTarget(context.eventName, context.payload, inputs);
             const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            writeEvidence({
+              target: {
+                mode: target.mode,
+                revision: target.revision,
+                ref: target.ref,
+                prNumber: target.prNumber,
+              },
+            });
             if (context.eventName === 'workflow_run' && target.mode === 'main') {
               const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
                 owner: context.repo.owner,
@@ -115,6 +140,21 @@ jobs:
             });
             const checkId = Number(created.data.id);
             const finish = async (conclusion, title, summary) => {
+              writeEvidence({
+                target: {
+                  mode: target.mode,
+                  revision: target.revision,
+                  ref: target.ref,
+                  prNumber: target.prNumber,
+                  baseRevision: target.baseRevision || null,
+                  baseRelation: target.baseRelation || null,
+                },
+                outcome: {
+                  conclusion,
+                  title,
+                  summary: String(summary).slice(0, 60000),
+                },
+              });
               await github.rest.checks.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -306,7 +346,7 @@ jobs:
 
               const settleDelayMs = ['pull_request_target', 'push'].includes(context.eventName)
                 ? 15000
-                : (context.eventName === 'workflow_run' ? 10000 : 0);
+                : (['workflow_run', 'workflow_dispatch'].includes(context.eventName) ? 10000 : 0);
               if (settleDelayMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, settleDelayMs));
               }
@@ -371,6 +411,29 @@ jobs:
               const deploymentStatus = context.eventName === 'deployment_status'
                 ? String(context.payload.deployment_status?.state || 'unknown')
                 : 'not-applicable';
+              const relevantWorkflowNames = new Set(specs.map((spec) => spec.name));
+              const candidateRuns = allRuns
+                .filter((run) => relevantWorkflowNames.has(String(run?.name || '')))
+                .map((run) => ({
+                  id: Number(run?.id || 0),
+                  name: String(run?.name || ''),
+                  headSha: String(run?.head_sha || '').toLowerCase(),
+                  status: String(run?.status || ''),
+                  conclusion: run?.conclusion == null ? null : String(run.conclusion),
+                  event: String(run?.event || ''),
+                  runAttempt: Number(run?.run_attempt || 0),
+                  createdAt: String(run?.created_at || ''),
+                  updatedAt: String(run?.updated_at || ''),
+                }));
+              writeEvidence({
+                changedFiles,
+                workflowSpecs: specs.map((spec) => ({ name: spec.name, workflowId: spec.workflowId })),
+                candidateRuns,
+                results,
+                hardFailure,
+                repairRequested,
+                deploymentStatus,
+              });
               const summary = [
                 `Mode: ${target.mode}`,
                 `Revision: ${target.revision}`,
@@ -399,6 +462,21 @@ jobs:
               }
               await finish('success', 'Revision equality verified', summary);
             } catch (error) {
+              writeEvidence({
+                error: {
+                  name: String(error?.name || 'Error'),
+                  message: String(error?.message || error),
+                },
+              });
               await finish('failure', 'Revision Guardian failed closed', String(error?.stack || error));
               throw error;
             }
+
+      - name: Upload revision guardian evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: revision-guardian-evidence-${{ github.run_id }}
+          path: .revision-guardian-evidence.json
+          if-no-files-found: error
+          retention-days: 14
