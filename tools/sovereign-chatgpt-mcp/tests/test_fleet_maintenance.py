@@ -7,12 +7,53 @@ from fleet_maintenance import (
     FILEBROWSER_CONTAINER,
     FleetMaintenanceRuntime,
     _compatible_restore_toc,
+    _manifest_difference,
 )
 
 
 PATCH_RUN_ID = "a238357e-03a9-4212-a39a-1db0a18947f1"
 BOOT_ID = "11111111-1111-4111-8111-111111111111"
 RECEIPT_SHA = "a" * 64
+
+
+def test_manifest_difference_is_bounded_and_table_specific() -> None:
+    source = {
+        "schemaDigest": "a",
+        "rowCountDigest": "b",
+        "tableCount": 4,
+        "totalRows": 10,
+        "rowCounts": [
+            ["public", "alpha", 1],
+            ["public", "beta", 2],
+            ["public", "delta", 3],
+            ["public", "gamma", 4],
+        ],
+    }
+    restored = {
+        "schemaDigest": "c",
+        "rowCountDigest": "d",
+        "tableCount": 4,
+        "totalRows": 14,
+        "rowCounts": [
+            ["public", "alpha", 2],
+            ["public", "beta", 3],
+            ["public", "delta", 4],
+            ["public", "gamma", 5],
+        ],
+    }
+
+    difference = _manifest_difference(source, restored)
+
+    assert difference["schemaDigestMatch"] is False
+    assert difference["rowCountDigestMatch"] is False
+    assert difference["sourceTotalRows"] == 10
+    assert difference["restoredTotalRows"] == 14
+    assert difference["rowCountDifferences"] == [
+        {"table": "public.alpha", "source": 1, "restored": 2},
+        {"table": "public.beta", "source": 2, "restored": 3},
+        {"table": "public.delta", "source": 3, "restored": 4},
+    ]
+    assert difference["rowCountDifferencesTruncated"] is True
 
 
 def test_restore_toc_omits_complete_vault_extension_overlap() -> None:
