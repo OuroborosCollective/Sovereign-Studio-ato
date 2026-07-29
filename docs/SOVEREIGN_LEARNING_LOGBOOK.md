@@ -249,3 +249,26 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Endpoint and frontend reference (repository_check, SHA-256 abc5b9fcb2325b5624baf18303dc2acbb3704d89fcb627fee86cea531f1a50c5): Aktive und nichtaktive Frontend-Aufrufe sowie Backendverträge wurden revisionsgebunden referenziert; der gefundene Legacy-Blindfleck erhielt Regressionstests.
 - Mirror equality (repository_check, SHA-256 0a6ee128bbd8e08ea87f93124d71d752198010388b851e5b1f03098730e6aa6a): Alle kanonischen Spiegelpaare waren bytegleich; mismatchCount war null.
 
+<!-- proven-learning:b13b7f76e137b12c96e662d224ad6c2213e04de5b0365a95770bfabfba819d33 -->
+## Personal continuity must be truth-bound and Guardian reconciliation must distinguish waiting from failure
+
+- Zeitpunkt: 2026-07-29T09:47:33+02:00
+- Vorgang: integration
+- Inhalts-Hash: sha256:b13b7f76e137b12c96e662d224ad6c2213e04de5b0365a95770bfabfba819d33
+- Quellrevision: ed2692f29c507d923d02d3a3a3528b2173784952
+- Merge-Ziel: main
+- Erwarteter PR-Head: ed2692f29c507d923d02d3a3a3528b2173784952
+- Geänderte Pfade: .github/workflows/revision-guardian-sync-pr.yml, .github/workflows/revision-guardian.yml, .github/workflows/sovereign-chatgpt-mcp.yml, config/architecture/llm-tool-boundary-review-ledger.json, docs/sovereign-continuity/CONTEXT.md, docs/sovereign-continuity/LEDGER.jsonl, docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md, scripts/required-gate-priority.contract.test.cjs, scripts/revision-guardian.cjs, scripts/revision-guardian.contract.test.cjs, tools/sovereign-chatgpt-mcp/README.md, tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json, tools/sovereign-chatgpt-mcp/continuity-data/CONTEXT.md, tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl, tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md, tools/sovereign-chatgpt-mcp/continuity.py, tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh, tools/sovereign-chatgpt-mcp/proven_learning_tools.py, tools/sovereign-chatgpt-mcp/server.py, tools/sovereign-chatgpt-mcp/tests/test_continuity.py, tools/sovereign-chatgpt-mcp/tests/test_install_contract.py, tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py, tools/sovereign-chatgpt-mcp/tests/test_operating_profile.py, tools/sovereign-chatgpt-mcp/tests/test_proven_learning_tools.py
+- Problem: Personal project history was mixed into general technical continuity, Proven Learning could complete without an attached personal reflection, and the first Revision Guardian treated successful repair dispatches as failures while allowing pending evidence to be interpreted ambiguously. Historical duplicate check runs also obscured the current exact-head truth.
+- Lösung: Create byte-identical append-only personal-memory mirrors that are read first and SHA-bound before mutation; require one seven-field reflection linked to every repository Proven-Learning hash; preserve humor, disagreement and owner-transmitted history with explicit provenance and truth boundaries. Split Guardian reconciliation from the final revision check, leave the final check pending while exact evidence runs, fail closed on real errors, migrate to Node-24 action majors, use the explicitly versioned GitHub REST dispatch endpoint, and evaluate evidence by exact revision rather than narrative status.
+- Gültigkeit: Long-lived agent repositories that need both evidence-first technical continuity and honest autobiographical working context across sessions, especially when self-healing CI dispatches create intermediate states or duplicate historical checks.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@ed2692f29c507d923d02d3a3a3528b2173784952:.github/workflows/revision-guardian.yml; OuroborosCollective/Sovereign-Studio-ato@ed2692f29c507d923d02d3a3a3528b2173784952:docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md; OuroborosCollective/Sovereign-Studio-ato@ed2692f29c507d923d02d3a3a3528b2173784952:scripts/revision-guardian.cjs; OuroborosCollective/Sovereign-Studio-ato@ed2692f29c507d923d02d3a3a3528b2173784952:tools/sovereign-chatgpt-mcp/continuity.py; OuroborosCollective/Sovereign-Studio-ato@ed2692f29c507d923d02d3a3a3528b2173784952:tools/sovereign-chatgpt-mcp/proven_learning_tools.py
+
+### Nachweise
+
+- Agent Runtime Tests (github_actions, SHA-256 586b125a03fcefc24a1dbd43c87412c2ef419589d58a62f8fa015933b37cd0e6): Latest exact-head Agent Runtime Tests completed successfully.
+- Release Gate (github_actions, SHA-256 bca8791cfe827055d3cf56ef0efb45aa199f28470124c67a6b6b174b36e22c5c): Latest exact-head Release Gate completed successfully, including Node contract validation for the Guardian workflow changes.
+- Validate MCP operator (github_actions, SHA-256 a94ede245ce488f85c140333dc6c046346c6fb02ab182b8846c164f5dba15488): Exact-head MCP validation completed successfully and verified the current reviewed boundary ledger.
+- continuity-ledger (github_actions, SHA-256 65dcbe76e1a03dbb6d911bad1c13a8a22b6797efca2a46a6262f193f170bcc07): Exact full-PR continuity validation completed successfully with byte-identical append-only ledgers.
+- Guardian repair contracts (repository_check, SHA-256 7108d6fe92ccb857312dd88f8b6b9291e1a99c4f098daa95daea28f9668aeec5): Repository contracts bind Node-24 action majors, API version 2026-03-10, separate reconciliation and final checks, and pending-state handling.
+

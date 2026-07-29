@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": "381390b5ed829a01eb510fe4bbaf625638aef532",
-  "generatedAt": "2026-07-29T05:26:08+02:00",
-  "generatedFromRepositoryRevision": "381390b5ed829a01eb510fe4bbaf625638aef532",
+  "expectedPrHeadSha": "ed2692f29c507d923d02d3a3a3528b2173784952",
+  "generatedAt": "2026-07-29T09:47:33+02:00",
+  "generatedFromRepositoryRevision": "ed2692f29c507d923d02d3a3a3528b2173784952",
   "importantManifestFiles": [
     {
       "bytes": 14520,
@@ -134,14 +134,24 @@
       "sha256": "5b579bd93ff8cd36b1deb51e19fef99fe4247427552b105ac42196aeb8985b0e"
     },
     {
-      "bytes": 8038,
+      "bytes": 8342,
       "path": ".github/workflows/release-verification.yml",
-      "sha256": "a0fd889ee2038abb43cf34a141fa1823a44e94b6f66afd213840e13727d13cc4"
+      "sha256": "6f4a75c10cbefe5e86863cd27a589d93d052b816544926729d63dd4248295231"
     },
     {
       "bytes": 2484,
       "path": ".github/workflows/repair-sovereign-chatgpt-mcp-env.yml",
       "sha256": "eef8a19f02c70ed22ab5dc74c49eb2a6a071e1a204ab319e92c91000d53e3ff6"
+    },
+    {
+      "bytes": 6169,
+      "path": ".github/workflows/revision-guardian-sync-pr.yml",
+      "sha256": "163ad0922682f58c67599fe0ce3a9c36a571b53206d744d88eb5ef4632dea44c"
+    },
+    {
+      "bytes": 23450,
+      "path": ".github/workflows/revision-guardian.yml",
+      "sha256": "a256be118d0b3409a5966bb3787ae6a0f582b40550ede9e29470837ab33d7d9b"
     },
     {
       "bytes": 1523,
@@ -159,14 +169,14 @@
       "sha256": "0fac064b2d78d1cbf0f4dd17ff4e7d571f7b2c001881cf5f2056cdbeb9170aca"
     },
     {
-      "bytes": 92264,
+      "bytes": 92817,
       "path": ".github/workflows/sovereign-chatgpt-mcp.yml",
-      "sha256": "cecad78e54fc1a1875bb458bb22e84cd0f8327b39a7a18676e51b4b69e6c5f88"
+      "sha256": "db1b436517abd7acb7df0b0461bc742fae2e3f1824f650e9d141eff66ca25ac8"
     },
     {
-      "bytes": 1655,
+      "bytes": 4153,
       "path": ".github/workflows/sovereign-continuity-gate.yml",
-      "sha256": "d44c69ef2d4a1b418ca6953e3d649b275b58b16fe768c5f21a776edac6361985"
+      "sha256": "9ea8c1ba57e0a54afedeb91acc8683154dac7c233b4e82ca7096391fd75f9dbc"
     },
     {
       "bytes": 9181,
@@ -259,14 +269,19 @@
       "sha256": "bb279727b0663949f83184dee95ee7da55aea9134ccb3409b8071745a52b53a2"
     },
     {
-      "bytes": 38012,
+      "bytes": 42772,
       "path": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-      "sha256": "f96d4e98a61d1cc94da263fa0f43b7e5766d2ac3d3abc35cf07ed24015a4f12b"
+      "sha256": "7982de612bee7c0b33c4a70e4e2620c40e677cf02e5f2ef2e3eb29778aaa02c2"
     },
     {
-      "bytes": 7399,
+      "bytes": 13707,
+      "path": "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md",
+      "sha256": "a52a20257c9efaf2ad52ad6725e253e9cb8aaf16d9116b39d31777d8b1e1fadd"
+    },
+    {
+      "bytes": 7457,
       "path": "package.json",
-      "sha256": "ef33f9767ee51fb4cdbabdbdf8179cbd087640aef9d0055e373622266518990b"
+      "sha256": "8c1d3bac66c3c480a37d36e49f09c3419d1e190eae4e48474e731ca24b7a83ae"
     },
     {
       "bytes": 186167,
@@ -554,6 +569,11 @@
       "sha256": "4cca4bea9df2e9eaca3ce906a4b13cef37a68d9ec0a2ba83cb6842a81350f167"
     },
     {
+      "bytes": 13707,
+      "path": "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md",
+      "sha256": "a52a20257c9efaf2ad52ad6725e253e9cb8aaf16d9116b39d31777d8b1e1fadd"
+    },
+    {
       "bytes": 1333,
       "path": "tools/sovereign-chatgpt-mcp/docker-compose.yml",
       "sha256": "5b28ff0c8496c73363be9d4df17560d4e2776bd602dd23b2eec39eca57734b22"
@@ -609,7 +629,8 @@
       "sha256": "82b80c0312430fcb68651dfa43e0f44ca65a2e732249b7c461145c7966bb4c65"
     }
   ],
-  "latestPatternSha256": "088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e",
+  "latestPatternSha256": "b13b7f76e137b12c96e662d224ad6c2213e04de5b0365a95770bfabfba819d33",
+  "latestPersonalReflectionSha256": "b13b7f76e137b12c96e662d224ad6c2213e04de5b0365a95770bfabfba819d33",
   "learningPatternSha256": [
     "088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e",
     "0d31aca077a3030a12a983c043e3601980980f7cd75982e00fce822536eb3d49",
@@ -620,12 +641,17 @@
     "554ab837fad61bd97dd2aa1ebb54cd337fd863f9b2729b20911ead497d5d87a2",
     "55ffd93ae01bc44cd139bc6b1de37ef6a5fe054ae30b718bba16bd69294ee30f",
     "9c4317080cb2c5057eb9962e7d7f143f5f103c79c7341d458b66b2b3a3ec064a",
+    "b13b7f76e137b12c96e662d224ad6c2213e04de5b0365a95770bfabfba819d33",
     "c6bff5e4a01f06cb5417c35a3771ff71e42dfaa81b28b93bef82cae7ecf1e49d",
     "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1"
   ],
   "logbookPath": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-  "logbookSha256": "f96d4e98a61d1cc94da263fa0f43b7e5766d2ac3d3abc35cf07ed24015a4f12b",
+  "logbookSha256": "7982de612bee7c0b33c4a70e4e2620c40e677cf02e5f2ef2e3eb29778aaa02c2",
   "mergeTarget": "main",
+  "personalMemoryPath": "docs/sovereign-continuity/SOVOTTT_PERSONAL_MEMORY.md",
+  "personalMemorySha256": "a52a20257c9efaf2ad52ad6725e253e9cb8aaf16d9116b39d31777d8b1e1fadd",
+  "personalReflectionCount": 1,
+  "runtimePersonalMemoryPath": "tools/sovereign-chatgpt-mcp/continuity-data/SOVOTTT_PERSONAL_MEMORY.md",
   "schemaVersion": "sovereign.proven-learning-manifest.v1",
   "selfHashExcluded": true
 }
