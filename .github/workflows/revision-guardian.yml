@@ -350,11 +350,14 @@ jobs:
               if (settleDelayMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, settleDelayMs));
               }
-              const allRuns = await github.paginate(
+              const branchRuns = await github.paginate(
                 github.rest.actions.listWorkflowRunsForRepo,
-                { owner: context.repo.owner, repo: context.repo.repo, head_sha: target.revision, per_page: 100 },
+                { owner: context.repo.owner, repo: context.repo.repo, branch: target.ref, per_page: 100 },
                 (response) => response.data.workflow_runs,
               );
+              const allRuns = branchRuns.filter((run) => (
+                String(run?.head_sha || '').toLowerCase() === target.revision
+              ));
               const latest = guardian.latestRunsByName(allRuns);
               const specs = guardian.workflowSpecs(target.mode, changedFiles);
               const results = [];
