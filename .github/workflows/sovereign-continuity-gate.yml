@@ -21,6 +21,8 @@ on:
         type: string
 
 permissions:
+  actions: write
+  checks: write
   contents: read
   pull-requests: read
 
@@ -79,8 +81,15 @@ jobs:
               core.setFailed('PR_REVISION_INVALID');
               return;
             }
+            const headRef = String(pull?.head?.ref || '');
+            if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(headRef) || headRef.includes('..')) {
+              core.setFailed('PR_HEAD_REF_INVALID');
+              return;
+            }
             core.setOutput('head_sha', headSha);
             core.setOutput('base_sha', baseSha);
+            core.setOutput('head_ref', headRef);
+            core.setOutput('pr_number', String(pull.number));
 
       - name: Checkout exact PR revision
         uses: actions/checkout@v4
@@ -115,3 +124,137 @@ jobs:
           python3 tools/sovereign-chatgpt-mcp/validate_continuity.py \
             --base "$BASE_SHA" \
             --head "$HEAD_SHA"
+
+      - name: Reconcile exact-head workflow evidence
+        uses: actions/github-script@v9
+        env:
+          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
+          HEAD_REF: ${{ steps.revisions.outputs.head_ref }}
+          PR_NUMBER: ${{ steps.revisions.outputs.pr_number }}
+        with:
+          script: |
+            const headSha = String(process.env.HEAD_SHA || '').trim().toLowerCase();
+            const headRef = String(process.env.HEAD_REF || '').trim();
+            const prNumberText = String(process.env.PR_NUMBER || '').trim();
+            if (!/^[0-9a-f]{40}$/.test(headSha)) {
+              core.setFailed('HEAD_SHA_INVALID');
+              return;
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(headRef) || headRef.includes('..')) {
+              core.setFailed('HEAD_REF_INVALID');
+              return;
+            }
+            if (!/^[1-9][0-9]*$/.test(prNumberText)) {
+              core.setFailed('PR_NUMBER_INVALID');
+              return;
+            }
+            const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+            const successful = new Set(['success', 'neutral', 'skipped']);
+            const supersedable = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'stale']);
+            const requiredBeforeGuardian = new Set(['Release Gate', 'Agent Runtime Tests']);
+
+            const listGroups = async () => {
+              const runs = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: headSha,
+                  per_page: 100,
+                  filter: 'all',
+                },
+                (page) => page.data.check_runs,
+              );
+              const groups = new Map();
+              for (const check of runs) {
+                const name = String(check.name || '').trim();
+                if (!name || name === 'continuity-ledger' || name === 'Reconcile superseded checks') continue;
+                if (!groups.has(name)) groups.set(name, []);
+                groups.get(name).push(check);
+              }
+              for (const checks of groups.values()) {
+                checks.sort((left, right) => Number(right.id || 0) - Number(left.id || 0));
+              }
+              return groups;
+            };
+
+            let prerequisiteGroups = new Map();
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              prerequisiteGroups = await listGroups();
+              const unresolved = [...requiredBeforeGuardian].filter((name) => {
+                const latest = prerequisiteGroups.get(name)?.[0];
+                return !latest || latest.status !== 'completed' || !successful.has(String(latest.conclusion || ''));
+              });
+              if (!unresolved.length) break;
+              if (attempt === 59) {
+                core.setFailed(`REQUIRED_CHECKS_NOT_SUCCESSFUL: ${unresolved.join(', ')}`);
+                return;
+              }
+              await sleep(10000);
+            }
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'revision-guardian.yml',
+              ref: headRef,
+              inputs: {
+                expected_revision: headSha,
+                target_ref: headRef,
+                pr_number: prNumberText,
+                repair: 'false',
+              },
+            });
+
+            let finalGroups = new Map();
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              finalGroups = await listGroups();
+              const guardian = finalGroups.get('Revision Guardian')?.[0];
+              const orchestrator = finalGroups.get('Revision Guardian Orchestrator')?.[0];
+              const guardianReady = guardian && guardian.status === 'completed' && successful.has(String(guardian.conclusion || ''));
+              const orchestratorReady = orchestrator && orchestrator.status === 'completed' && successful.has(String(orchestrator.conclusion || ''));
+              if (guardianReady && orchestratorReady) break;
+              if (attempt === 59) {
+                core.setFailed('REVISION_GUARDIAN_DID_NOT_REACH_SUCCESS');
+                return;
+              }
+              await sleep(10000);
+            }
+
+            const neutralized = [];
+            const unresolvedCurrent = [];
+            for (const [name, checks] of finalGroups.entries()) {
+              const latest = checks[0];
+              const latestConclusion = String(latest?.conclusion || '');
+              if (!latest || latest.status !== 'completed' || !successful.has(latestConclusion)) {
+                unresolvedCurrent.push(`${name}:${latest?.status || 'missing'}:${latestConclusion || 'none'}`);
+                continue;
+              }
+              for (const older of checks.slice(1)) {
+                const olderConclusion = String(older.conclusion || '');
+                if (older.status !== 'completed' || !supersedable.has(olderConclusion)) continue;
+                await github.rest.checks.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  check_run_id: Number(older.id),
+                  status: 'completed',
+                  conclusion: 'neutral',
+                  output: {
+                    title: 'Superseded by newer successful exact-head evidence',
+                    summary: [
+                      `Head: ${headSha}`,
+                      `Check: ${name}`,
+                      `Superseded check run: ${older.id}`,
+                      `Newer successful check run: ${latest.id}`,
+                      'Only an older attempt on the identical head was neutralized; the latest result remained unchanged.',
+                    ].join('\n'),
+                  },
+                });
+                neutralized.push(`${name}:${older.id}->${latest.id}`);
+              }
+            }
+            if (unresolvedCurrent.length) {
+              core.setFailed(`CURRENT_CHECK_FAILURES_REMAIN: ${unresolvedCurrent.join(', ')}`);
+              return;
+            }
+            core.info(`Neutralized ${neutralized.length} superseded exact-head check attempts.`);

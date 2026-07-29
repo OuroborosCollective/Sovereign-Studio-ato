@@ -1,9 +1,12 @@
 name: Sovereign Superseded Check Reconciler
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      expected_head_sha:
+        description: Exact revision whose superseded check attempts may be reconciled
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -12,20 +15,20 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: superseded-check-reconciler-${{ github.event.pull_request.head.sha }}
+  group: superseded-check-reconciler-${{ inputs.expected_head_sha }}
   cancel-in-progress: true
 
 jobs:
   reconcile-superseded-checks:
     name: Reconcile superseded checks
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - name: Neutralize only older failed attempts after newer success
         uses: actions/github-script@v9
         env:
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
         with:
           script: |
             const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
