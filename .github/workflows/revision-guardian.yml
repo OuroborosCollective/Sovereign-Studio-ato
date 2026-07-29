@@ -1,0 +1,398 @@
+name: Sovereign Revision Guardian
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
+  push:
+    branches: [main]
+  workflow_run:
+    workflows:
+      - Release Verification
+      - Sovereign Agent Backend
+      - Sovereign Continuity Gate
+      - Sovereign ChatGPT MCP
+      - Sovereign Backend Immutable Image
+    types: [completed]
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact revision to audit
+        required: true
+        type: string
+      target_ref:
+        description: Exact branch ref whose current head must equal expected_revision
+        required: false
+        default: main
+        type: string
+      pr_number:
+        description: Optional open same-repository pull request number
+        required: false
+        default: '0'
+        type: string
+      repair:
+        description: Dispatch missing exact-ref workflows and rerun failed exact-revision workflows
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  actions: write
+  checks: write
+  contents: read
+  deployments: read
+  pull-requests: read
+
+concurrency:
+  group: revision-guardian-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.deployment.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  revision-guardian:
+    name: Revision Guardian Orchestrator
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout trusted guardian implementation from main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Verify deterministic guardian contracts
+        run: node --test scripts/revision-guardian.contract.test.cjs
+
+      - name: Reconcile exact revision workflow evidence
+        uses: actions/github-script@v7
+        env:
+          INPUT_EXPECTED_REVISION: ${{ inputs.expected_revision || '' }}
+          INPUT_TARGET_REF: ${{ inputs.target_ref || 'main' }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number || '0' }}
+          INPUT_REPAIR: ${{ github.event_name != 'workflow_dispatch' || inputs.repair == true }}
+        with:
+          script: |
+            const path = require('node:path');
+            const guardian = require(path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'revision-guardian.cjs'));
+            const inputs = {
+              expected_revision: process.env.INPUT_EXPECTED_REVISION,
+              target_ref: process.env.INPUT_TARGET_REF,
+              pr_number: process.env.INPUT_PR_NUMBER,
+            };
+            const repair = String(process.env.INPUT_REPAIR || '').toLowerCase() === 'true';
+            const target = guardian.resolveTarget(context.eventName, context.payload, inputs);
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            if (context.eventName === 'workflow_run' && target.mode === 'main') {
+              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: target.revision,
+                per_page: 100,
+              });
+              const openPull = associated.data.find((candidate) => (
+                candidate.state === 'open'
+                && candidate.base?.ref === 'main'
+                && candidate.head?.repo?.full_name === repositoryFullName
+                && String(candidate.head?.sha || '').toLowerCase() === target.revision
+              ));
+              if (openPull) {
+                target.mode = 'pr';
+                target.prNumber = Number(openPull.number || 0);
+                target.ref = guardian.safeRef(openPull.head?.ref, 'workflow_pr_ref');
+              }
+            }
+
+            const created = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Revision Guardian',
+              head_sha: target.revision,
+              status: 'in_progress',
+              output: {
+                title: 'Revision equality is being verified',
+                summary: `Authoritative revision: ${target.revision}`,
+              },
+            });
+            const checkId = Number(created.data.id);
+            const finish = async (conclusion, title, summary) => {
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: checkId,
+                status: 'completed',
+                conclusion,
+                output: { title, summary: String(summary).slice(0, 60000) },
+              });
+            };
+
+            try {
+              let pull = null;
+              if (target.mode === 'pr') {
+                if (target.prNumber < 1) {
+                  const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    commit_sha: target.revision,
+                    per_page: 100,
+                  });
+                  pull = associated.data.find((candidate) => (
+                    candidate.state === 'open'
+                    && candidate.base?.ref === 'main'
+                    && String(candidate.head?.sha || '').toLowerCase() === target.revision
+                  ));
+                  if (!pull) throw new Error('OPEN_MAIN_PR_FOR_REVISION_NOT_FOUND');
+                  target.prNumber = Number(pull.number);
+                  target.ref = guardian.safeRef(pull.head?.ref, 'pr_ref');
+                } else {
+                  pull = (await github.rest.pulls.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: target.prNumber,
+                  })).data;
+                }
+                if (pull.state !== 'open') {
+                  await finish('neutral', 'Superseded PR event', 'The pull request is no longer open; no stale workflow was mutated.');
+                  return;
+                }
+                if (pull.base?.ref !== 'main') throw new Error('PR_BASE_IS_NOT_MAIN');
+                if (pull.head?.repo?.full_name !== repositoryFullName) throw new Error('FORK_PR_REPAIR_FORBIDDEN');
+                if (String(pull.head?.sha || '').toLowerCase() !== target.revision) {
+                  await finish('neutral', 'Superseded PR revision', 'The PR head advanced; a newer synchronize event owns the repair.');
+                  return;
+                }
+                if (guardian.safeRef(pull.head?.ref, 'current_pr_ref') !== target.ref) throw new Error('PR_REF_MISMATCH');
+
+                const mainRef = await github.rest.git.getRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: 'heads/main',
+                });
+                const currentMain = guardian.fullSha(mainRef.data.object?.sha, 'current_main');
+                const comparison = await github.rest.repos.compareCommits({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base: currentMain,
+                  head: target.revision,
+                  per_page: 1,
+                });
+                const branchStatus = String(comparison.data.status || 'unknown');
+                target.baseRevision = currentMain;
+                target.baseRelation = branchStatus;
+                if (!['ahead', 'identical'].includes(branchStatus)) {
+                  if (repair) {
+                    await github.rest.actions.createWorkflowDispatch({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      workflow_id: 'revision-guardian-sync-pr.yml',
+                      ref: 'main',
+                      inputs: {
+                        target_pr_number: String(target.prNumber),
+                        expected_head_sha: target.revision,
+                        expected_base_sha: currentMain,
+                      },
+                    });
+                  }
+                  await finish(
+                    'failure',
+                    repair ? 'Exact main-to-PR synchronization dispatched' : 'PR head is behind main',
+                    [
+                      `PR: #${target.prNumber}`,
+                      `PR head: ${target.revision}`,
+                      `Current main: ${currentMain}`,
+                      `Relation: ${branchStatus}`,
+                      repair
+                        ? 'The trusted update workflow will merge this exact main revision into the same-repository PR branch without force-push. The resulting synchronize event must pass all checks on the new head.'
+                        : 'Automatic repair is disabled for this run.',
+                    ].join('\n'),
+                  );
+                  core.setFailed('PR_HEAD_NOT_BASED_ON_CURRENT_MAIN');
+                  return;
+                }
+              } else {
+                const mainRef = await github.rest.git.getRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: 'heads/main',
+                });
+                const currentMain = guardian.fullSha(mainRef.data.object?.sha, 'current_main');
+                if (currentMain !== target.revision) {
+                  await finish('neutral', 'Superseded main revision', `Main advanced to ${currentMain}; no old run or deployment was mutated.`);
+                  return;
+                }
+                target.ref = 'main';
+
+                if (context.eventName === 'push' && repair) {
+                  const openPulls = await github.paginate(
+                    github.rest.pulls.list,
+                    {
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      state: 'open',
+                      base: 'main',
+                      per_page: 100,
+                    },
+                    (response) => response.data,
+                  );
+                  const synchronized = [];
+                  const skipped = [];
+                  for (const candidate of openPulls) {
+                    const prNumber = Number(candidate.number || 0);
+                    const headSha = String(candidate.head?.sha || '').toLowerCase();
+                    const headRef = String(candidate.head?.ref || '');
+                    const headRepository = String(candidate.head?.repo?.full_name || '');
+                    if (
+                      prNumber < 1
+                      || !guardian.SHA40.test(headSha)
+                      || headRepository !== repositoryFullName
+                    ) {
+                      skipped.push({ prNumber, reason: 'unsafe-or-fork-head' });
+                      continue;
+                    }
+                    guardian.safeRef(headRef, 'open_pr_ref');
+                    const relation = await github.rest.repos.compareCommits({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      base: currentMain,
+                      head: headSha,
+                      per_page: 1,
+                    });
+                    const status = String(relation.data.status || 'unknown');
+                    if (['ahead', 'identical'].includes(status)) {
+                      skipped.push({ prNumber, reason: `already-${status}` });
+                      continue;
+                    }
+                    await github.rest.actions.createWorkflowDispatch({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      workflow_id: 'revision-guardian-sync-pr.yml',
+                      ref: 'main',
+                      inputs: {
+                        target_pr_number: String(prNumber),
+                        expected_head_sha: headSha,
+                        expected_base_sha: currentMain,
+                      },
+                    });
+                    synchronized.push({ prNumber, headSha, baseSha: currentMain, relation: status });
+                  }
+                  target.openPrSynchronizations = synchronized;
+                  target.openPrSynchronizationSkips = skipped;
+                }
+              }
+
+              let changedFiles = [];
+              if (target.mode === 'pr') {
+                changedFiles = await github.paginate(
+                  github.rest.pulls.listFiles,
+                  { owner: context.repo.owner, repo: context.repo.repo, pull_number: target.prNumber, per_page: 100 },
+                  (response) => response.data.map((file) => String(file.filename || '')),
+                );
+              } else if (guardian.SHA40.test(String(target.before || '')) && !/^0+$/.test(target.before || '')) {
+                const comparison = await github.rest.repos.compareCommits({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base: target.before,
+                  head: target.revision,
+                  per_page: 100,
+                });
+                changedFiles = (comparison.data.files || []).map((file) => String(file.filename || ''));
+              } else {
+                const commit = await github.rest.repos.getCommit({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: target.revision,
+                });
+                changedFiles = (commit.data.files || []).map((file) => String(file.filename || ''));
+              }
+
+              if (['pull_request_target', 'push'].includes(context.eventName)) {
+                await new Promise((resolve) => setTimeout(resolve, 15000));
+              }
+              const allRuns = await github.paginate(
+                github.rest.actions.listWorkflowRunsForRepo,
+                { owner: context.repo.owner, repo: context.repo.repo, head_sha: target.revision, per_page: 100 },
+                (response) => response.data.workflow_runs,
+              );
+              const latest = guardian.latestRunsByName(allRuns);
+              const specs = guardian.workflowSpecs(target.mode, changedFiles);
+              const results = [];
+              let repairRequested = false;
+              let hardFailure = false;
+
+              for (const spec of specs) {
+                const run = latest.get(spec.name);
+                const state = guardian.classifyRun(run, target.revision);
+                const result = { workflow: spec.name, state, runId: Number(run?.id || 0) || null };
+                if (repair && (state === 'missing' || state === 'stale')) {
+                  const workflowInputs = {};
+                  if (spec.workflowId === 'sovereign-continuity-gate.yml') {
+                    workflowInputs.pr_number = String(target.prNumber);
+                    workflowInputs.expected_head_sha = target.revision;
+                  }
+                  if (spec.workflowId === 'sovereign-backend-image.yml' && target.mode === 'pr') {
+                    workflowInputs.pr_validation = 'true';
+                  }
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id: spec.workflowId,
+                    ref: target.ref,
+                    inputs: workflowInputs,
+                  });
+                  result.repair = 'dispatch-exact-ref';
+                  repairRequested = true;
+                } else if (repair && state === 'rerun-failed') {
+                  await github.rest.actions.reRunWorkflowFailedJobs({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: Number(run.id),
+                  });
+                  result.repair = 'rerun-failed-jobs';
+                  repairRequested = true;
+                } else if (repair && state === 'rerun-all') {
+                  await github.rest.actions.reRunWorkflow({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: Number(run.id),
+                  });
+                  result.repair = 'rerun-workflow';
+                  repairRequested = true;
+                } else if (['missing', 'stale', 'failed', 'rerun-failed', 'rerun-all'].includes(state)) {
+                  hardFailure = true;
+                }
+                results.push(result);
+              }
+
+              const deploymentStatus = context.eventName === 'deployment_status'
+                ? String(context.payload.deployment_status?.state || 'unknown')
+                : 'not-applicable';
+              const summary = [
+                `Mode: ${target.mode}`,
+                `Revision: ${target.revision}`,
+                `Ref: ${target.ref}`,
+                `PR: ${target.prNumber || 'none'}`,
+                `Base revision: ${target.baseRevision || target.revision}`,
+                `Base relation: ${target.baseRelation || 'main-event'}`,
+                `Changed files: ${changedFiles.length}`,
+                `Open PR synchronizations: ${(target.openPrSynchronizations || []).length}`,
+                `Deployment status: ${deploymentStatus}`,
+                '',
+                ...results.map((result) => `- ${result.workflow}: ${result.state}${result.repair ? ` → ${result.repair}` : ''}`),
+                '',
+                'The guardian never rewrites repository files to contain their own final commit SHA. Exact identity is bound through GitHub checks, workflow runs, immutable image labels and deployment readbacks.',
+              ].join('\n');
+
+              if (hardFailure) {
+                await finish('failure', 'Revision evidence is stale or incomplete', summary);
+                core.setFailed('REVISION_GUARDIAN_FAILED');
+                return;
+              }
+              if (repairRequested) {
+                await finish('failure', 'Exact-revision repair dispatched', summary);
+                core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE');
+                return;
+              }
+              await finish('success', 'Revision equality verified', summary);
+            } catch (error) {
+              await finish('failure', 'Revision Guardian failed closed', String(error?.stack || error));
+              throw error;
+            }

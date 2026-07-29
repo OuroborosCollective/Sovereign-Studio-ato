@@ -9,12 +9,23 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Exact open same-repository pull request number
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact current PR head revision
+        required: true
+        type: string
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: sovereign-continuity-${{ github.event.pull_request.number }}
+  group: sovereign-continuity-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
@@ -23,21 +34,70 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Resolve exact PR revisions
+        id: revisions
+        uses: actions/github-script@v7
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+          INPUT_EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha || '' }}
+        with:
+          script: |
+            let pull = context.payload.pull_request;
+            if (context.eventName === 'workflow_dispatch') {
+              const numberText = String(process.env.INPUT_PR_NUMBER || '').trim();
+              const expectedHead = String(process.env.INPUT_EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+              if (!/^[1-9][0-9]*$/.test(numberText)) {
+                core.setFailed('PR_NUMBER_INVALID');
+                return;
+              }
+              if (!/^[0-9a-f]{40}$/.test(expectedHead)) {
+                core.setFailed('EXPECTED_HEAD_SHA_INVALID');
+                return;
+              }
+              pull = (await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(numberText),
+              })).data;
+              if (String(pull.head?.sha || '').toLowerCase() !== expectedHead) {
+                core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+                return;
+              }
+            }
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const headSha = String(pull?.head?.sha || '').toLowerCase();
+            const baseSha = String(pull?.base?.sha || '').toLowerCase();
+            if (pull?.state !== 'open' || pull?.base?.ref !== 'main') {
+              core.setFailed('OPEN_MAIN_PR_REQUIRED');
+              return;
+            }
+            if (pull?.head?.repo?.full_name !== repositoryFullName) {
+              core.setFailed('SAME_REPOSITORY_PR_REQUIRED');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(headSha) || !/^[0-9a-f]{40}$/.test(baseSha)) {
+              core.setFailed('PR_REVISION_INVALID');
+              return;
+            }
+            core.setOutput('head_sha', headSha);
+            core.setOutput('base_sha', baseSha);
+
       - name: Checkout exact PR revision
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.revisions.outputs.head_sha }}
 
       - name: Fetch and verify exact PR base revision
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
         run: |
           set -euo pipefail
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           git fetch --no-tags origin "$BASE_SHA"
           test "$(git rev-parse FETCH_HEAD)" = "$BASE_SHA"
           git cat-file -e "$BASE_SHA^{commit}"
@@ -47,8 +107,8 @@ jobs:
       - name: Validate read and append-only completion contract
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
           SOVEREIGN_CONTINUITY_STDLIB_ONLY: '1'
         run: |
           set -euo pipefail

@@ -90,6 +90,22 @@ def repository(tmp_path: Path) -> Path:
         "API_KEY = 'sk-proj-" + "x" * 30 + "'\n",
         "utf-8",
     )
+    (repo / "src" / "ordinary_import.py").write_text(
+        "from package import (\n    value,\n)\n",
+        "utf-8",
+    )
+    (repo / "src" / "regex_client.ts").write_text(
+        "export function match(regex: RegExp, text: string) { return regex.exec(text); }\n",
+        "utf-8",
+    )
+    (repo / "src" / "env_reference.sh").write_text(
+        ': "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"\nAPI_KEY="${API_KEY:-}"\n',
+        "utf-8",
+    )
+    (repo / "src" / "secret_guard.ts").write_text(
+        'const pattern = "password=\'detectedvalue123\'";\n',
+        "utf-8",
+    )
     return repo
 
 
@@ -450,6 +466,11 @@ def test_mcp_governance_permission_and_static_containment(registered) -> None:
     )
     assert dynamic.ok is False
     assert any(item["family"] == "PYTHON_EVAL" for item in dynamic.findings)
+    assert not any(item["family"] == "JS_DYNAMIC_IMPORT" for item in dynamic.findings)
+    assert not any(
+        item["family"] == "JS_CHILD_PROCESS" and item["path"].endswith("regex_client.ts")
+        for item in dynamic.findings
+    )
 
     triage = tools.secret_literal_triage(
         "job-assurance-test",
@@ -457,6 +478,9 @@ def test_mcp_governance_permission_and_static_containment(registered) -> None:
     )
     assert triage.ok is False
     assert triage.evidence["rotationCandidates"] == 1
+    classifications = {item["classification"] for item in triage.findings}
+    assert "SECRET_REFERENCE" in classifications
+    assert "SECRET_DETECTION_PATTERN" in classifications
     assert "sk-proj" not in str(triage.evidence)
     assert all(item["literalReturned"] is False for item in triage.findings)
 

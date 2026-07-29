@@ -93,6 +93,9 @@ def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     assert "uq_credit_packages_name" in app
     assert "invalidDirectRoutes" in app
     assert "/health/ready" in backend_compose
+    assert "LITELLM_BASE_URL" not in backend_compose
+    assert "LITELLM_MASTER_KEY_FILE" not in backend_compose
+    assert "direct OpenRouter and FreeLLM routing network" in backend_compose
     assert 'RETIREMENT_BLOCKER = "legacy_litellm_runtime_retired"' in stack
     assert "raise RuntimeError(" in stack
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in installer
@@ -184,6 +187,15 @@ def test_three_category_cost_policy_is_fail_closed() -> None:
     assert "Bezahlte Routen müssen provider_priced verwenden" in provider
 
     assert "provider_funded_delta=-amount" in app
+    admin_client = (ROOT / "src" / "features" / "admin" / "api" / "adminApiClient.ts").read_text("utf-8")
+    admin_hook = (ROOT / "src" / "features" / "admin" / "hooks" / "useAdminApi.ts").read_text("utf-8")
+    admin_routes = (ROOT / "src" / "features" / "admin" / "components" / "LlmRouteControlCenter.tsx").read_text("utf-8")
+    assert "/api/admin/llm/model-catalog" not in admin_client
+    assert "/api/admin/llm/model-catalog/attach" not in admin_client
+    assert "/api/admin/llm/openrouter/catalog/refresh" in admin_client
+    assert "refreshOpenRouterCatalog" in admin_hook
+    assert "OpenRouter-Katalog live prüfen" in admin_routes
+
     assert "providerBillingCategory" in ui
     assert "providerFundingMode" not in ui
     assert "providerMarkupMultiplier" in ui

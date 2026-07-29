@@ -382,6 +382,9 @@ def _backend_contracts(repo: Path, files: list[str]) -> list[dict[str, Any]]:
         text = _safe_text(repo / relative)
         if text is None:
             continue
+        surface = _endpoint_surface_metadata(text)
+        if surface["activeSurface"] is False:
+            continue
         if suffix == ".py":
             for match in _BACKEND_ROUTE_DECORATOR.finditer(text):
                 path = _normalize_contract_path(match.group("path"))

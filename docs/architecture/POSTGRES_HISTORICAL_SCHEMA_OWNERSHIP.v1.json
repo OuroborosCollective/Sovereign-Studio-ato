@@ -13,6 +13,111 @@
     "structureMismatchMode": "fail-closed",
     "recoveryRequiresManualReview": true
   },
+  "multipleMigrationOwners": [
+    {
+      "table": "public.admin_api_keys",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/001_admin_api_keys_and_credit_ledger.sql",
+      "migrationFiles": [
+        "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+        "scripts/sovereign-backend/migrations/001_admin_api_keys_and_credit_ledger.sql"
+      ],
+      "contentSha256": [
+        "04229cd67dc0debc0421af32acacfd16bccb80a9942978bb292564baa71dec37",
+        "0e55dbde70ab38e93f399fd474abdac456cb364c069afdc98d5aea8fb9120abc"
+      ],
+      "rationale": "The bootstrap establishes the base table while migration 001 is the canonical focused owner for the admin-key contract.",
+      "allowByteDifferentHistoricalOwners": true
+    },
+    {
+      "table": "public.credit_ledger",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/001_admin_api_keys_and_credit_ledger.sql",
+      "migrationFiles": [
+        "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+        "scripts/sovereign-backend/migrations/001_admin_api_keys_and_credit_ledger.sql"
+      ],
+      "contentSha256": [
+        "04229cd67dc0debc0421af32acacfd16bccb80a9942978bb292564baa71dec37",
+        "0e55dbde70ab38e93f399fd474abdac456cb364c069afdc98d5aea8fb9120abc"
+      ],
+      "rationale": "The bootstrap establishes the base table while migration 001 is the canonical focused owner for credit-ledger constraints and evolution.",
+      "allowByteDifferentHistoricalOwners": true
+    },
+    {
+      "table": "public.llm_routes",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/008_knowledge_memory_passkeys_stepup.sql",
+      "migrationFiles": [
+        "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+        "scripts/sovereign-backend/migrations/008_knowledge_memory_passkeys_stepup.sql"
+      ],
+      "contentSha256": [
+        "0e55dbde70ab38e93f399fd474abdac456cb364c069afdc98d5aea8fb9120abc",
+        "bfbfa64306fdf94d6949897927c8554b876693b8ebd1a32f78ae69f9862824dc"
+      ],
+      "rationale": "The bootstrap supplies initial compatibility; migration 008 is the canonical versioned owner of the expanded route contract.",
+      "allowByteDifferentHistoricalOwners": true
+    },
+    {
+      "table": "public.schema_migrations",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+      "migrationFiles": [
+        "backend/migrations/025_enterprise_platform_runtime_evidence.sql",
+        "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+        "scripts/sovereign-backend/migrations/008_knowledge_memory_passkeys_stepup.sql",
+        "scripts/sovereign-backend/migrations/009_are_inference_quarantine.sql",
+        "scripts/sovereign-backend/migrations/025_enterprise_platform_runtime_evidence.sql"
+      ],
+      "contentSha256": [
+        "0e55dbde70ab38e93f399fd474abdac456cb364c069afdc98d5aea8fb9120abc",
+        "166bf24426ccf52db950bd43dd2b00dcdf3739e02aa421a311495535c1e531d2",
+        "30d10a3f88557cc2d23e2dd5e7fde2d3fc10f3bdfe6eaa9b75202eb0a395048e",
+        "bfbfa64306fdf94d6949897927c8554b876693b8ebd1a32f78ae69f9862824dc"
+      ],
+      "rationale": "Migration 000 owns the canonical ledger bootstrap; later migrations contain guarded compatibility creation for independently replayable historical paths.",
+      "allowByteDifferentHistoricalOwners": true
+    },
+    {
+      "table": "public.sovereign_agent_pattern_candidates",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/006_sovereign_agent_pattern_learning.sql",
+      "migrationFiles": [
+        "scripts/sovereign-backend/migrations/006_sovereign_agent_pattern_learning.sql",
+        "scripts/sovereign-backend/migrations/008_knowledge_memory_passkeys_stepup.sql"
+      ],
+      "contentSha256": [
+        "b3bdeb3aac004ddb2c92d03d8358c14665f84f8ef43d275ffe1a0aa6d665788a",
+        "bfbfa64306fdf94d6949897927c8554b876693b8ebd1a32f78ae69f9862824dc"
+      ],
+      "rationale": "Migration 006 is the focused pattern-learning owner; migration 008 retains a guarded compatibility contract for the knowledge expansion.",
+      "allowByteDifferentHistoricalOwners": true
+    },
+    {
+      "table": "public.transactions",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/010_admin_billing_runtime_contracts.sql",
+      "migrationFiles": [
+        "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+        "scripts/sovereign-backend/migrations/010_admin_billing_runtime_contracts.sql"
+      ],
+      "contentSha256": [
+        "0e55dbde70ab38e93f399fd474abdac456cb364c069afdc98d5aea8fb9120abc",
+        "9e4b172d8e864e78d770a0195f0e7338d29aee52e41a129199101a90a5711108"
+      ],
+      "rationale": "The bootstrap creates the compatibility table; migration 010 is the canonical billing-runtime owner.",
+      "allowByteDifferentHistoricalOwners": true
+    },
+    {
+      "table": "public.user_skills",
+      "canonicalMigration": "scripts/sovereign-backend/migrations/020_user_skills_runtime_contract.sql",
+      "migrationFiles": [
+        "scripts/sovereign-backend/migrations/000_backend_bootstrap_schema.sql",
+        "scripts/sovereign-backend/migrations/020_user_skills_runtime_contract.sql"
+      ],
+      "contentSha256": [
+        "0e55dbde70ab38e93f399fd474abdac456cb364c069afdc98d5aea8fb9120abc",
+        "fc97381c26150d374a05156d73eff873641caa58b69c859c73014c9cc76bf352"
+      ],
+      "rationale": "The bootstrap provides initial compatibility; migration 020 is the canonical focused owner of the user-skills runtime contract.",
+      "allowByteDifferentHistoricalOwners": true
+    }
+  ],
   "tables": [
     {
       "table": "public.admin_users",

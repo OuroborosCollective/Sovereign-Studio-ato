@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": null,
-  "generatedAt": "2026-07-29T04:11:30+02:00",
-  "generatedFromRepositoryRevision": "eebd3634e02f6eb3e821869cf3d0df71cc9375b2",
+  "expectedPrHeadSha": "381390b5ed829a01eb510fe4bbaf625638aef532",
+  "generatedAt": "2026-07-29T05:26:08+02:00",
+  "generatedFromRepositoryRevision": "381390b5ed829a01eb510fe4bbaf625638aef532",
   "importantManifestFiles": [
     {
       "bytes": 14520,
@@ -259,9 +259,9 @@
       "sha256": "bb279727b0663949f83184dee95ee7da55aea9134ccb3409b8071745a52b53a2"
     },
     {
-      "bytes": 33492,
+      "bytes": 38012,
       "path": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-      "sha256": "e8980f4894c01b5a13748655d94b070981c67798850c5aaf2a2c4505c8cfa02a"
+      "sha256": "f96d4e98a61d1cc94da263fa0f43b7e5766d2ac3d3abc35cf07ed24015a4f12b"
     },
     {
       "bytes": 7399,
@@ -279,9 +279,9 @@
       "sha256": "ba16ad9a8cba1fce84460061aca22ef28c170d5bedb01aaa14e38a62d3d4e5f8"
     },
     {
-      "bytes": 2734,
+      "bytes": 2629,
       "path": "scripts/sovereign-backend/docker-compose.yml",
-      "sha256": "abc83421d3c0c1c9347124cacba51e13650b64346de6951e05b6f747959a73fe"
+      "sha256": "745341e76d1a34f50e99f177cc74a3600a81f8600b0e442d58686123de0dbfe3"
     },
     {
       "bytes": 11620,
@@ -609,8 +609,9 @@
       "sha256": "82b80c0312430fcb68651dfa43e0f44ca65a2e732249b7c461145c7966bb4c65"
     }
   ],
-  "latestPatternSha256": "4417bfb1c96cef4f2f42a68277c7069f25ca01df212b783c230fec692b7c03e8",
+  "latestPatternSha256": "088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e",
   "learningPatternSha256": [
+    "088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e",
     "0d31aca077a3030a12a983c043e3601980980f7cd75982e00fce822536eb3d49",
     "2772353e5e86c460010ca9c46c424cd10c7cae763912307300e12657e63e8f3d",
     "2e4e1b65d673f9c4f93865d40acfe09c57ac0c2cad59cd1a08b17c9a59f9361a",
@@ -623,7 +624,7 @@
     "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1"
   ],
   "logbookPath": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-  "logbookSha256": "e8980f4894c01b5a13748655d94b070981c67798850c5aaf2a2c4505c8cfa02a",
+  "logbookSha256": "f96d4e98a61d1cc94da263fa0f43b7e5766d2ac3d3abc35cf07ed24015a4f12b",
   "mergeTarget": "main",
   "schemaVersion": "sovereign.proven-learning-manifest.v1",
   "selfHashExcluded": true

@@ -215,18 +215,6 @@ export interface FreeRevolverProviderSource {
   models: FreeRevolverProviderModel[];
 }
 
-export interface LlmModelCatalogEntry {
-  modelId: string;
-  providerModel: string;
-  provider: string | null;
-  inputUsdPerMillion: number | null;
-  cachedInputUsdPerMillion: number | null;
-  outputUsdPerMillion: number | null;
-  pricingVerified: boolean;
-  pricingSource: string;
-  freeEligible: boolean;
-}
-
 export type LlmRouteUpdate = Partial<Pick<
   LlmRoute,
   'disabled' | 'priority' | 'billingCategory' | 'markupMultiplier' | 'quotaScope'
@@ -668,26 +656,21 @@ export const adminApiClient = {
     );
   },
 
-  getLlmModelCatalog() {
+  refreshOpenRouterCatalog() {
     return req<{
-      models: LlmModelCatalogEntry[];
-      billingCategories: LlmBillingCategoryOption[];
-      pricingAuthority: string;
-    }>('/api/admin/llm/model-catalog');
-  },
-
-  attachLlmModel(input: {
-    modelId: string;
-    displayName?: string;
-    billingCategory: LlmBillingCategory;
-    markupMultiplier: number;
-    priority: number;
-  }) {
-    return req<{ ok: true; routeId: string; modelId: string }>(
-      '/api/admin/llm/model-catalog/attach',
-      { method: 'POST', body: JSON.stringify(input) },
-      120_000,
-    );
+      ok: true;
+      status: 'ready';
+      catalog: {
+        modelCount: number;
+        catalogSnapshotSha256: string;
+        catalogRequestId: string | null;
+        defaultModel: string;
+      };
+      secretValuesReturned: false;
+    }>('/api/admin/llm/openrouter/catalog/refresh', {
+      method: 'POST',
+      body: '{}',
+    }, 180_000);
   },
 
   getAuditLog(p?: { page?: number; limit?: number }) {

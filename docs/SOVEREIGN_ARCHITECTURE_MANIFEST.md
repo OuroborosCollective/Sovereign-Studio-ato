@@ -1014,22 +1014,35 @@ Die folgenden Familien sind im Backendvertrag belegt oder als kanonische Gruppen
 
 ## 21.4 Admin LLM und Provider
 
+### Gemeinsame Routenverwaltung
+
 - `/api/admin/llm/routes`
 - `/api/admin/llm/routes/<id>`
 - `/api/admin/llm/routes/<id>/healthcheck`
-- `/api/admin/llm/provider-presets`
-- `/api/admin/llm/provider-deployments`
-- `/api/admin/llm/provider-deployments/prepare`
-- `/api/admin/llm/provider-deployments/<id>/activate`
-- `/api/admin/llm/model-catalog`
-- `/api/admin/llm/model-catalog/attach`
-- `/api/admin/llm/gateway/providers`
-- `/api/admin/llm/gateway/sync`
-- `/api/admin/llm/worker-ai/status`
-- `/api/admin/llm/worker-ai/models`
-- `/api/admin/llm/worker-ai/sync`
 
-Die Gateway- und Worker-AI-Endpunkte bleiben als Legacy-Tombstones sichtbar. Produktive Paid-Modelle laufen direkt über OpenRouter, produktive Free-Routen direkt über FreeLLM; LiteLLM bleibt ausschließlich deaktivierte historische Evidence.
+### Direkter OpenRouter-Paid-Vertrag
+
+- `/api/admin/llm/openrouter/owner-input`
+- `/api/admin/llm/openrouter/activate`
+- `/api/admin/llm/openrouter/catalog/refresh`
+- `/api/admin/llm/openrouter/status`
+- `/api/admin/llm/openrouter/models`
+- `/api/admin/llm/openrouter/models/<route_id>/markup`
+
+Der Katalog-Refresh liest den echten OpenRouter-Modellkatalog, prüft Preise und Agentenparameter, führt eine Tool-Completion-Canary aus und synchronisiert die zulässigen Paid-Modelle atomar in `llm_routes`. Das Admin-Frontend ruft ausschließlich diesen registrierten Direktvertrag auf; ein separates Anhängen über einen LiteLLM-Modellkatalog existiert im aktiven Clientpfad nicht.
+
+### Direkter FreeLLM-/Revolver-Vertrag
+
+- `/api/admin/llm/freellm/provider-credentials`
+- `/api/admin/llm/freellm/provider-credentials/<provider_id>/owner-input`
+- `/api/admin/llm/freellm/provider-credentials/<provider_id>/keyless`
+- `/api/admin/llm/revolver-v3/providers`
+- `/api/admin/llm/revolver-v3/providers/<source_id>/owner-input`
+- `/api/admin/llm/revolver-v3/providers/<source_id>/discover`
+- `/api/admin/llm/revolver-v3/providers/<source_id>/recheck`
+- `/api/admin/llm/revolver-v3/providers/<source_id>`
+
+Frühere Provider-Preset-, Provider-Deployment-, LiteLLM-Modellkatalog-, Gateway- und Worker-AI-Routen bleiben ausschließlich als nicht registrierte Legacy-Tombstones oder historische Provenance erhalten. Sie werden durch den Endpoint-Scanner als `legacy-unreferenced` aus der aktiven Vertragsmenge ausgeschlossen und dürfen weder einen Frontend-Aufruf erfüllen noch Produkt-Readiness erzeugen.
 
 ## 21.5 Admin Benutzer, Credits und Billing
 
@@ -1176,9 +1189,38 @@ GitHub Intent
   → Patch/Commit
   → Draft PR
   → Checks beobachten
+  → Revision Guardian bestätigt aktuellen Main als Vorfahr des PR-Heads
   → Merge nur bei separater ausdrücklicher Owner-Freigabe,
     exakter Head-SHA und relevanten grünen Gates
 ```
+
+## 22.7 Revision Guardian und automatische PR-Synchronisierung
+
+Der `Sovereign Revision Guardian` ist die revisionsgebundene GitHub-Orchestrierung für Draft-PRs, PR-Synchronisierungen, Main-Pushes, abgeschlossene Workflows und Deployment-Statusereignisse.
+
+Verbindlicher Ablauf:
+
+```text
+PR- oder Main-Ereignis
+  → autoritativen 40-stelligen SHA aus dem Ereignis bestimmen
+  → aktuelle PR-/Main-Identität über GitHub zurücklesen
+  → bei offenem PR aktuellen Main-SHA mit PR-Head vergleichen
+  → falls Main kein Vorfahr des PR-Heads ist:
+       exakten alten PR-Head und exakten Main-SHA an den
+       separaten PR-Sync-Workflow übergeben
+       → Main ohne Force-Push in denselben PR-Branch mergen
+       → Remote-Head rücklesen
+       → neuer synchronize-Event startet alle Gates erneut
+  → fehlende Workflowläufe auf dem exakten Ref dispatchen
+  → fehlgeschlagene oder abgebrochene Läufe revisionsgebunden neu starten
+  → Revision-Guardian-Check nur bei vollständiger Gleichheit grün setzen
+```
+
+Nach jedem Main-Push werden alle offenen, auf `main` zielenden Same-Repository-PRs geprüft. Hinterherhinkende oder divergierte Heads werden konfliktfrei automatisch synchronisiert. Fork-PRs, geschützte Branches, geänderte Heads, geänderte Main-SHAs und Merge-Konflikte blockieren fail-closed; es gibt keinen Force-Push und keine automatische Konfliktauflösung.
+
+Der private Sovottt-Mergepfad besitzt zusätzlich einen unabhängigen Ancestor-Nachweis: Direkt vor dem Merge müssen aktueller Main-SHA, Merge-Base und PR-Head ergeben, dass der aktuelle Main vollständig im bestätigten PR-Head enthalten ist. Alte grüne Checks oder ein früher bestätigter Head reichen nicht aus.
+
+Repositorydateien werden ausdrücklich nicht so umgeschrieben, dass sie ihren eigenen endgültigen Commit-SHA enthalten. Eine solche Selbstreferenz würde bei jedem Commit erneut veralten. Revisionsgleichheit wird stattdessen über GitHub-Checkruns, exakte Workflow-Heads, immutable Image-Labels, Digests und Deployment-/Runtime-Readbacks gebunden.
 
 ---
 

@@ -14,7 +14,6 @@ import {
   type LlmRouteUpdate,
   type LlmBillingCategory,
   type LlmBillingCategoryOption,
-  type LlmModelCatalogEntry,
   type LlmRevolverStats,
   type LlmRevolverV3Status,
   type FreeRevolverProviderSource,
@@ -177,19 +176,12 @@ export interface UseAdminLlmRoutesResult {
   revolverStats: LlmRevolverStats | null;
   revolverV3: LlmRevolverV3Status | null;
   legacyDirectRouteCount: number;
-  catalog: LlmModelCatalogEntry[];
-  catalogError: string | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
   updateRoute: (id: string, changes: LlmRouteUpdate) => Promise<void>;
   resetRevolver: (id: string) => Promise<void>;
-  attachModel: (
-    modelId: string,
-    billingCategory: LlmBillingCategory,
-    markupMultiplier: number,
-    priority: number,
-  ) => Promise<void>;
+  refreshOpenRouterCatalog: () => Promise<void>;
 }
 
 export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
@@ -198,8 +190,6 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
   const [revolverStats, setRevolverStats] = useState<LlmRevolverStats | null>(null);
   const [revolverV3, setRevolverV3] = useState<LlmRevolverV3Status | null>(null);
   const [legacyDirectRouteCount, setLegacyDirectRouteCount] = useState(0);
-  const [catalog, setCatalog] = useState<LlmModelCatalogEntry[]>([]);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [tick, setTick]       = useState(0);
@@ -209,30 +199,17 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setCatalogError(null);
-    Promise.allSettled([
-      adminApiClient.getLlmRoutes(),
-      adminApiClient.getLlmModelCatalog(),
-    ]).then(([routesResult, catalogResult]) => {
-      if (cancelled) return;
-      if (routesResult.status === 'fulfilled') {
-        setRoutes(routesResult.value.routes);
-        setBillingCategories(routesResult.value.billingCategories);
-        setRevolverStats(routesResult.value.revolverStats);
-        setRevolverV3(routesResult.value.revolverV3);
-        setLegacyDirectRouteCount(routesResult.value.legacyDirectRouteCount ?? 0);
-      } else {
-        setError(String(routesResult.reason));
-      }
-      if (catalogResult.status === 'fulfilled') {
-        setCatalog(catalogResult.value.models);
-      } else {
-        setCatalog([]);
-        setCatalogError(String(catalogResult.reason));
-      }
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
+    adminApiClient.getLlmRoutes()
+      .then(result => {
+        if (cancelled) return;
+        setRoutes(result.routes);
+        setBillingCategories(result.billingCategories);
+        setRevolverStats(result.revolverStats);
+        setRevolverV3(result.revolverV3);
+        setLegacyDirectRouteCount(result.legacyDirectRouteCount ?? 0);
+      })
+      .catch(reason => { if (!cancelled) setError(String(reason)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [tick]);
 
@@ -246,18 +223,8 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
     reload();
   }, [reload]);
 
-  const attachModel = useCallback(async (
-    modelId: string,
-    billingCategory: LlmBillingCategory,
-    markupMultiplier: number,
-    priority: number,
-  ) => {
-    await adminApiClient.attachLlmModel({
-      modelId,
-      billingCategory,
-      markupMultiplier,
-      priority,
-    });
+  const refreshOpenRouterCatalog = useCallback(async () => {
+    await adminApiClient.refreshOpenRouterCatalog();
     reload();
   }, [reload]);
 
@@ -267,14 +234,12 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
     revolverStats,
     revolverV3,
     legacyDirectRouteCount,
-    catalog,
-    catalogError,
     loading,
     error,
     reload,
     updateRoute,
     resetRevolver,
-    attachModel,
+    refreshOpenRouterCatalog,
   };
 }
 

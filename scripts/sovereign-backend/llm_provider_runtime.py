@@ -1,3 +1,4 @@
+# sovereign-endpoint-surface: legacy-unreferenced
 """Owner-gated provider onboarding for the private Legacy-LiteLLM gateway.
 
 Provider metadata is stored in Sovereign PostgreSQL. The protected provider

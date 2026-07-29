@@ -93,3 +93,31 @@ test('coordinator starts only after both required workflow families complete', (
   assert.match(workflow, /types: \[completed\]/);
   assert.match(workflow, /requiredWorkflowNames = \[\n\s+'Release Verification',\n\s+'Sovereign Agent Backend',/);
 });
+
+test('revision guardian is trusted, exact-head bound and auto-synchronizes stale same-repository PRs', () => {
+  const workflow = read('.github/workflows/revision-guardian.yml');
+  const continuity = read('.github/workflows/sovereign-continuity-gate.yml');
+  assert.match(workflow, /^\s{2}pull_request_target:\s*$/m);
+  assert.doesNotMatch(workflow, /^\s{2}pull_request:\s*$/m);
+  assert.match(workflow, /^\s{2}push:\n\s+branches: \[main\]/m);
+  assert.match(workflow, /^\s{2}workflow_run:\s*$/m);
+  assert.match(workflow, /^\s{2}deployment_status:\s*$/m);
+  assert.match(workflow, /ref: main\n\s+fetch-depth: 1/);
+  assert.match(workflow, /name: 'Revision Guardian'/);
+  assert.match(workflow, /PR_HEAD_NOT_BASED_ON_CURRENT_MAIN/);
+  assert.match(workflow, /workflow_id: 'revision-guardian-sync-pr\.yml'/);
+  assert.match(workflow, /expected_head_sha: target\.revision/);
+  assert.match(workflow, /expected_base_sha: currentMain/);
+  assert.match(workflow, /FORK_PR_REPAIR_FORBIDDEN/);
+  assert.match(workflow, /core\.setFailed\('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE'\)/);
+  assert.match(continuity, /^\s{2}workflow_dispatch:\s*$/m);
+  assert.match(continuity, /expected_head_sha:/);
+  assert.match(continuity, /PR_HEAD_IDENTITY_MISMATCH/);
+  const syncWorkflow = read('.github/workflows/revision-guardian-sync-pr.yml');
+  assert.match(syncWorkflow, /^\s{2}workflow_dispatch:\s*$/m);
+  assert.match(syncWorkflow, /expected_head_sha:/);
+  assert.match(syncWorkflow, /expected_base_sha:/);
+  assert.match(syncWorkflow, /git merge --no-ff --no-edit "\$EXPECTED_BASE_SHA"/);
+  assert.match(syncWorkflow, /git push origin "HEAD:\$\{TARGET_REF\}"/);
+  assert.doesNotMatch(syncWorkflow, /git push[^\n]*(?:--force|-f\b)/);
+});

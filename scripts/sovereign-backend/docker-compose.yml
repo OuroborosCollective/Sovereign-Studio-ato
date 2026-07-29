@@ -7,7 +7,7 @@
 # Networks:
 # - supabase_default: Network for PostgreSQL database access
 # - areloria_arelorian-network: Network for Areloria services
-# - sovereign-private: Internal-only LiteLLM routing network
+# - sovereign-private: Internal-only direct OpenRouter and FreeLLM routing network
 # =============================================================================
 
 services:
@@ -33,8 +33,6 @@ services:
       - .env
       - /opt/sovereign-chatgpt-tools/backend-runtime.env
     environment:
-      LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_MASTER_KEY_FILE: /opt/sovereign-owner-managed/litellm_master_key.txt
       SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE: /opt/sovereign-owner-managed/freellmapi_unified_key.txt
       SOVEREIGN_RUNTIME_ENVIRONMENT: production
       # Source revision is baked into the image; do not override it at runtime.

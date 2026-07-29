@@ -116,6 +116,12 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
         "def order():\n    return 'ok'\n",
         "utf-8",
     )
+    (repo / "scripts" / "sovereign-backend" / "legacy_runtime.py").write_text(
+        "# sovereign-endpoint-surface: legacy-unreferenced\n"
+        "@app.get('/api/retired-provider')\n"
+        "def retired_provider():\n    return 'retired'\n",
+        "utf-8",
+    )
     (repo / "src" / "contracts.ts").write_text(
         "fetch(`/api/items/${itemId}`);\n"
         "api.post('/api/orders');\n"
@@ -253,6 +259,7 @@ def test_architecture_guardian_detects_cross_layer_drift_without_claiming_runtim
         }
     ]
     assert not any(item["path"] == "/api/legacy-only" for item in snapshot["backendContracts"])
+    assert not any(item["path"] == "/api/retired-provider" for item in snapshot["backendContracts"])
 
     families = {item["family"] for item in drift["findings"]}
     assert "CONTRACT_DRIFT" in families
@@ -285,6 +292,7 @@ def test_mirror_diff_and_endpoint_reference_are_precise_and_read_only(repository
     non_active = {(item["method"], item["path"], item["surfaceStatus"]) for item in endpoints["nonActiveFrontendCalls"]}
     assert ("GET", "/api/items/<p>") in contracts
     assert ("POST", "/api/orders") in contracts
+    assert ("GET", "/api/retired-provider") not in contracts
     assert ("POST", "/api/items/<p>") in unmatched
     assert ("DELETE", "/api/missing") in unmatched
     assert ("GET", "/api/legacy-client", "legacy-unreferenced") in non_active

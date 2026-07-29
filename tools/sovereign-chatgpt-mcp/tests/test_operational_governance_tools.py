@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import json
 import subprocess
 
@@ -99,6 +100,7 @@ def _write_historical_manifest(
     *,
     schema_version: str = "sovereign.postgres-historical-schema-ownership.v1",
     table_contract: dict | None = None,
+    multiple_owners: list[dict] | None = None,
 ) -> Path:
     actual = table_contract or _live_only_contract()
     entry = {
@@ -122,8 +124,11 @@ def _write_historical_manifest(
     }
     path = repo / "docs" / "architecture" / "POSTGRES_HISTORICAL_SCHEMA_OWNERSHIP.v1.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"schemaVersion": schema_version, "tables": [entry]}
+    if multiple_owners is not None:
+        payload["multipleMigrationOwners"] = multiple_owners
     path.write_text(
-        json.dumps({"schemaVersion": schema_version, "tables": [entry]}, indent=2) + "\n",
+        json.dumps(payload, indent=2) + "\n",
         "utf-8",
     )
     return path
@@ -180,6 +185,7 @@ def repository(tmp_path: Path) -> tuple[Path, str]:
     (repo / "backend" / "migrations").mkdir(parents=True)
     (repo / "scripts" / "sovereign-backend" / "migrations").mkdir(parents=True)
     (repo / ".github").mkdir()
+    (repo / "src").mkdir()
     (repo / "backend" / "migrations" / "001_users.sql").write_text(
         "CREATE TABLE public.users (id text primary key);\n",
         "utf-8",
@@ -201,6 +207,14 @@ def repository(tmp_path: Path) -> tuple[Path, str]:
     )
     (repo / "runtime_candidate.py").write_text(
         "def route(text):\n    return 'python' if 'python' in text.lower() else 'other'\n",
+        "utf-8",
+    )
+    (repo / "backend" / "runtime_candidate.py").write_text(
+        "def route(message):\n    return 'python' if 'python' in message.lower() else 'other'\n",
+        "utf-8",
+    )
+    (repo / "src" / "structured.ts").write_text(
+        "export const contains = (items: string[], value: string) => items.includes(value);\n",
         "utf-8",
     )
     _git(repo, "add", "--all")
@@ -543,6 +557,67 @@ def test_historical_reconciliation_reads_only_catalog_contracts_and_never_mutate
     assert result.evidence["rowDataReturned"] is False
     assert result.evidence["automaticDatabaseMutationPerformed"] is False
     assert result.mutationPerformed is False
+
+
+def test_multiple_migration_owners_require_exact_manifest_binding(registered, monkeypatch) -> None:
+    _, repo, _ = registered
+    mirror = repo / "scripts" / "sovereign-backend" / "migrations" / "003_users_mirror.sql"
+    mirror.write_text(
+        "CREATE TABLE public.users (id text primary key, source text);\n",
+        "utf-8",
+    )
+    canonical = repo / "backend" / "migrations" / "001_users.sql"
+    migration_files = [
+        "backend/migrations/001_users.sql",
+        "scripts/sovereign-backend/migrations/003_users_mirror.sql",
+    ]
+    content_hashes = sorted(
+        hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (canonical, mirror)
+    )
+    _write_historical_manifest(
+        repo,
+        multiple_owners=[
+            {
+                "table": "public.users",
+                "canonicalMigration": "backend/migrations/001_users.sql",
+                "migrationFiles": migration_files,
+                "contentSha256": content_hashes,
+                "rationale": "The focused backend migration is canonical; the second file is a historical compatibility owner.",
+                "allowByteDifferentHistoricalOwners": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        tools,
+        "_DATABASE",
+        FakeDatabase(
+            [("public", "users"), ("public", "jobs"), ("public", "live_only")],
+            {"public.live_only": _live_only_contract()},
+        ),
+    )
+
+    result = tools.schema_migration_reconcile("job-operational-test")
+
+    assert result.ok is True
+    assert result.evidence["multipleOwners"] == []
+    assert result.evidence["acceptedMultipleOwners"][0]["table"] == "public.users"
+    assert result.evidence["acceptedMultipleOwners"][0]["manifestBound"] is True
+
+
+def test_semantic_intent_audit_is_language_and_context_sensitive(registered) -> None:
+    result = tools.semantic_intent_boundary_audit(
+        "job-operational-test",
+        roots=["backend", "src"],
+    )
+
+    assert any(
+        item["path"] == "backend/runtime_candidate.py"
+        and item["patternFamily"] == "python_keyword_intent"
+        for item in result.findings
+    )
+    assert not any(item["path"] == "src/structured.ts" for item in result.findings)
+    assert not any(item["patternFamily"] == "javascript_keyword_intent" for item in result.findings)
 
 
 def test_llm_route_sre_requires_inventory_price_health_and_quota(registered) -> None:

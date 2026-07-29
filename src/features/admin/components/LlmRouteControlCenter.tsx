@@ -3,7 +3,6 @@ import {
   Activity,
   BadgeDollarSign,
   DatabaseZap,
-  Plus,
   Power,
   RefreshCw,
   RotateCcw,
@@ -11,7 +10,6 @@ import {
 } from 'lucide-react';
 import type {
   LlmBillingCategory,
-  LlmModelCatalogEntry,
   LlmRoute,
   LlmRouteUpdate,
 } from '../api/adminApiClient';
@@ -233,111 +231,18 @@ function RouteCard({
   );
 }
 
-function CatalogAttach({
-  catalog,
-  busy,
-  onAttach,
-}: {
-  catalog: LlmModelCatalogEntry[];
-  busy: boolean;
-  onAttach: (
-    modelId: string,
-    category: LlmBillingCategory,
-    multiplier: number,
-    priority: number,
-  ) => Promise<void>;
-}) {
-  const [modelId, setModelId] = useState('');
-  const [category, setCategory] = useState<LlmBillingCategory>('standard');
-  const [multiplier, setMultiplier] = useState(4);
-  const [priority, setPriority] = useState(50);
-  const selected = catalog.find(model => model.modelId === modelId);
-
-  const chooseCategory = (next: LlmBillingCategory) => {
-    setCategory(next);
-    setMultiplier(FLOOR[next]);
-  };
-
-  return (
-    <section className="llm-catalog">
-      <div className="llm-section-title">
-        <div><DatabaseZap size={21} /><div><h2>OpenRouter-Modellkatalog</h2><p>Nur live erkannte Paid-Modelle mit verifizierten Providerpreisen.</p></div></div>
-      </div>
-      <div className="llm-catalog__form">
-        <label className="llm-catalog__model">
-          <span>Erkanntes Modell</span>
-          <select value={modelId} disabled={busy} onChange={event => setModelId(event.target.value)}>
-            <option value="">Modell auswählen</option>
-            {catalog.map(model => (
-              <option key={model.modelId} value={model.modelId}>
-                {model.modelId}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Kategorie</span>
-          <select
-            value={category}
-            disabled={busy}
-            onChange={event => chooseCategory(event.target.value as LlmBillingCategory)}
-          >
-            <option value="standard">Standard 4×+</option>
-            <option value="premium">Premium 8×+</option>
-          </select>
-        </label>
-        <label>
-          <span>Faktor</span>
-          <input
-            type="number"
-            min={FLOOR[category]}
-            max={1000}
-            value={multiplier}
-            disabled={busy || category === 'free'}
-            onChange={event => setMultiplier(Math.max(
-              FLOOR[category],
-              Number.parseInt(event.target.value, 10) || FLOOR[category],
-            ))}
-          />
-        </label>
-        <label>
-          <span>Priorität</span>
-          <input type="number" value={priority} min={-10000} max={10000} disabled={busy}
-            onChange={event => setPriority(Number.parseInt(event.target.value, 10) || 0)} />
-        </label>
-        <button
-          type="button"
-          className="llm-button llm-button--primary"
-          disabled={busy || !selected || !selected.pricingVerified}
-          onClick={() => modelId && void onAttach(modelId, category, multiplier, priority)}
-        >
-          <Plus size={18} /> Mit Canary hinzufügen
-        </button>
-      </div>
-      {selected && (
-        <p className="llm-catalog__evidence">
-          {selected.provider || 'Provider'} · Input {money(selected.inputUsdPerMillion)} ·
-          Output {money(selected.outputUsdPerMillion)} · Quelle {selected.pricingSource}
-        </p>
-      )}
-    </section>
-  );
-}
-
 export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
   const {
     routes,
     revolverStats,
     revolverV3,
     legacyDirectRouteCount,
-    catalog,
-    catalogError,
     loading,
     error,
     reload,
     updateRoute,
     resetRevolver,
-    attachModel,
+    refreshOpenRouterCatalog,
   } = api;
   const freeApi = useAdminFreeRevolverProviders();
   const [surface, setSurface] = useState<'paid' | 'free'>('paid');
@@ -415,9 +320,19 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
               <h1>Standard- und Premium-OpenRouter-Routen</h1>
               <p>Aktivieren lassen sich ausschließlich Routen mit bestätigten Providerpreisen und erfolgreicher Live-Canary. Kostenfreie Provider gehören in den getrennten Free-Revolver-Bereich.</p>
             </div>
-            <button type="button" className="llm-button" onClick={reload} disabled={loading || busyId !== null}>
-              <RefreshCw className={loading ? 'llm-spin' : ''} size={18} /> Aktualisieren
-            </button>
+            <div className="llm-route-card__actions">
+              <button type="button" className="llm-button" onClick={reload} disabled={loading || busyId !== null}>
+                <RefreshCw className={loading ? 'llm-spin' : ''} size={18} /> Ansicht aktualisieren
+              </button>
+              <button
+                type="button"
+                className="llm-button llm-button--primary"
+                disabled={loading || busyId !== null}
+                onClick={() => void run('openrouter-catalog', refreshOpenRouterCatalog)}
+              >
+                <DatabaseZap size={18} /> OpenRouter-Katalog live prüfen
+              </button>
+            </div>
           </div>
 
           <div className="llm-stat-grid">
@@ -428,7 +343,6 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
           </div>
 
           {error && <div className="llm-alert llm-alert--danger">{error}</div>}
-          {catalogError && <div className="llm-alert">Modellkatalog derzeit nicht verfügbar: {catalogError}</div>}
           {legacyDirectRouteCount > 0 && (
             <div className="llm-alert">
               {legacyDirectRouteCount} unbekannte oder historische Transport-Routen bleiben deaktiviert und werden weder als OpenRouter Paid noch als FreeLLM angezeigt.
@@ -439,15 +353,6 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
               Noch keine Paid-Route besitzt frische Preisevidence. Aktivierung bleibt deshalb fail-closed gesperrt.
             </div>
           )}
-
-          <CatalogAttach
-            catalog={catalog.filter(model => !model.freeEligible)}
-            busy={busyId !== null}
-            onAttach={(modelId, category, multiplier, priority) => run(
-              'catalog',
-              () => attachModel(modelId, category, multiplier, priority),
-            )}
-          />
 
           <section>
             <div className="llm-section-title">
