@@ -350,12 +350,15 @@ jobs:
               if (settleDelayMs > 0) {
                 await new Promise((resolve) => setTimeout(resolve, settleDelayMs));
               }
-              const branchRuns = await github.paginate(
-                github.rest.actions.listWorkflowRunsForRepo,
-                { owner: context.repo.owner, repo: context.repo.repo, branch: target.ref, per_page: 100 },
-                (response) => response.data.workflow_runs,
-              );
-              const allRuns = branchRuns.filter((run) => (
+              const runsResponse = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              const recentRuns = Array.isArray(runsResponse.data?.workflow_runs)
+                ? runsResponse.data.workflow_runs
+                : [];
+              const allRuns = recentRuns.filter((run) => (
                 String(run?.head_sha || '').toLowerCase() === target.revision
               ));
               const latest = guardian.latestRunsByName(allRuns);
@@ -428,9 +431,23 @@ jobs:
                   createdAt: String(run?.created_at || ''),
                   updatedAt: String(run?.updated_at || ''),
                 }));
+              const recentRunSample = recentRuns.slice(0, 20).map((run) => ({
+                id: Number(run?.id || 0),
+                name: String(run?.name || ''),
+                headSha: String(run?.head_sha || '').toLowerCase(),
+                headBranch: String(run?.head_branch || ''),
+                status: String(run?.status || ''),
+                conclusion: run?.conclusion == null ? null : String(run.conclusion),
+                event: String(run?.event || ''),
+                runAttempt: Number(run?.run_attempt || 0),
+                createdAt: String(run?.created_at || ''),
+                updatedAt: String(run?.updated_at || ''),
+              }));
               writeEvidence({
                 changedFiles,
                 workflowSpecs: specs.map((spec) => ({ name: spec.name, workflowId: spec.workflowId })),
+                queriedRunCount: recentRuns.length,
+                recentRunSample,
                 candidateRuns,
                 results,
                 hardFailure,

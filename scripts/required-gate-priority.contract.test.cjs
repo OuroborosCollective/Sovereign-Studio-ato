@@ -117,8 +117,11 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
     [workflow, 'FORK_PR_REPAIR_FORBIDDEN', 'fork repair prohibition'],
     [workflow, "core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')", 'post-repair evidence requirement'],
     [workflow, "['workflow_run', 'workflow_dispatch'].includes(context.eventName) ? 10000 : 0", 'workflow-run and manual-audit settle delay'],
-    [workflow, 'branch: target.ref', 'branch-bounded workflow run query'],
+    [workflow, 'per_page: 100', 'bounded recent workflow run query'],
+    [workflow, 'const recentRuns = Array.isArray(runsResponse.data?.workflow_runs)', 'bounded response normalization'],
     [workflow, "String(run?.head_sha || '').toLowerCase() === target.revision", 'local exact-revision run filter'],
+    [workflow, 'queriedRunCount: recentRuns.length', 'raw query count evidence'],
+    [workflow, 'const recentRunSample = recentRuns.slice(0, 20)', 'bounded raw run sample evidence'],
     [workflow, "const evidencePath = path.join(process.env.GITHUB_WORKSPACE, 'revision-guardian-evidence.json')", 'bounded visible evidence path'],
     [workflow, "schemaVersion: 'sovereign.revision-guardian-evidence.v1'", 'versioned evidence schema'],
     [workflow, 'candidateRuns,', 'candidate run evidence'],
@@ -150,6 +153,7 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
     assert.equal(surface.includes(marker), true, `missing revision guardian contract: ${label}`);
   }
   assert.equal(workflow.includes('\n  pull_request:\n'), false, 'guardian must not execute untrusted PR workflow code');
-  assert.doesNotMatch(workflow, /listWorkflowRunsForRepo,[\s\S]{0,240}head_sha:\s*target\.revision/);
+  assert.doesNotMatch(workflow, /listWorkflowRunsForRepo,[\s\S]{0,300}(?:head_sha:\s*target\.revision|branch:\s*target\.ref)/);
+  assert.doesNotMatch(workflow, /github\.paginate\([\s\S]{0,180}listWorkflowRunsForRepo/);
   assert.doesNotMatch(syncWorkflow, /git push[^\n]*(?:--force|-f\b)/);
 });
