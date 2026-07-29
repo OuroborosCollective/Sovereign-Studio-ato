@@ -356,6 +356,32 @@ class ProviderRuntimeClient(OwnerInputClient):
             raise ValueError("max_models muss eine ganze Zahl sein")
         return max(1, min(max_models, 100))
 
+    @staticmethod
+    def _freellm_write_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+        ready = payload.get("ready")
+        ready_items = ready if isinstance(ready, list) else []
+        receipt_ids = sorted({
+            str(item.get("receiptId") or "").strip()
+            for item in ready_items
+            if isinstance(item, dict) and str(item.get("receiptId") or "").strip()
+        })
+        mutation_performed = bool(receipt_ids)
+        return {
+            "mutationPerformed": mutation_performed,
+            "observedEffect": "provider-route-receipts-written" if mutation_performed else "none",
+            "readbackVerified": bool(
+                mutation_performed
+                and all(
+                    isinstance(item.get("runtimeIdentity"), dict)
+                    and item["runtimeIdentity"].get("sourceRevisionVerified") is True
+                    and item["runtimeIdentity"].get("imageDigestVerified") is True
+                    for item in ready_items
+                    if isinstance(item, dict) and str(item.get("receiptId") or "").strip()
+                )
+            ),
+            "writtenReceiptIds": receipt_ids,
+        }
+
     def freellm_discover(self, source_id: str, max_models: int = 20) -> dict[str, Any]:
         selected = self._source_id(source_id)
         bounded_max = self._bounded_model_count(max_models)
@@ -368,6 +394,7 @@ class ProviderRuntimeClient(OwnerInputClient):
         )
         return {
             **payload,
+            **self._freellm_write_evidence(payload),
             "sourceId": str(payload.get("sourceId") or selected),
             "protected_values_returned": False,
             "secret_argument_accepted": False,
@@ -385,6 +412,7 @@ class ProviderRuntimeClient(OwnerInputClient):
         )
         return {
             **payload,
+            **self._freellm_write_evidence(payload),
             "sourceId": str(payload.get("sourceId") or selected),
             "protected_values_returned": False,
             "secret_argument_accepted": False,

@@ -406,13 +406,29 @@ def test_freellm_status_discover_and_reconcile_are_secret_free(monkeypatch) -> N
         FakeResponse(200, {
             "ok": True,
             "sourceId": source_id,
-            "ready": [{"modelId": "bootstrap-model", "routeId": "route-bootstrap"}],
+            "ready": [{
+                "modelId": "bootstrap-model",
+                "routeId": "route-bootstrap",
+                "receiptId": "freellm-route:route-bootstrap:receipt-a",
+                "runtimeIdentity": {
+                    "sourceRevisionVerified": True,
+                    "imageDigestVerified": True,
+                },
+            }],
             "protectedValuesReturned": False,
         }),
         FakeResponse(200, {
             "ok": True,
             "sourceId": source_id,
-            "ready": [{"modelId": "free-model", "routeId": "route-1"}],
+            "ready": [{
+                "modelId": "free-model",
+                "routeId": "route-1",
+                "receiptId": "freellm-route:route-1:receipt-b",
+                "runtimeIdentity": {
+                    "sourceRevisionVerified": True,
+                    "imageDigestVerified": True,
+                },
+            }],
             "protectedValuesReturned": False,
         }),
     ])
@@ -442,8 +458,16 @@ def test_freellm_status_discover_and_reconcile_are_secret_free(monkeypatch) -> N
     assert status["protected_values_returned"] is False
     assert discovered["protected_values_returned"] is False
     assert discovered["secret_argument_accepted"] is False
+    assert discovered["mutationPerformed"] is True
+    assert discovered["observedEffect"] == "provider-route-receipts-written"
+    assert discovered["readbackVerified"] is True
+    assert discovered["writtenReceiptIds"] == ["freellm-route:route-bootstrap:receipt-a"]
     assert reconciled["protected_values_returned"] is False
     assert reconciled["secret_argument_accepted"] is False
+    assert reconciled["mutationPerformed"] is True
+    assert reconciled["observedEffect"] == "provider-route-receipts-written"
+    assert reconciled["readbackVerified"] is True
+    assert reconciled["writtenReceiptIds"] == ["freellm-route:route-1:receipt-b"]
 
 
 def test_freellm_discover_and_reconcile_reject_invalid_source_before_network(monkeypatch) -> None:
