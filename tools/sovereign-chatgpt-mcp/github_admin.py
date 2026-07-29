@@ -379,10 +379,16 @@ class GitHubAdminRuntime:
         normalized: list[dict[str, Any]] = []
         pending: list[str] = []
         failed: list[str] = []
+        latest_checks: dict[str, dict[str, Any]] = {}
         for check in check_runs:
             if not isinstance(check, dict):
                 continue
             name = str(check.get("name") or "unnamed")
+            check_id = int(check.get("id") or 0)
+            current = latest_checks.get(name)
+            if current is None or check_id >= int(current.get("id") or 0):
+                latest_checks[name] = check
+        for name, check in latest_checks.items():
             status = str(check.get("status") or "")
             conclusion = check.get("conclusion")
             normalized.append({"name": name, "status": status, "conclusion": conclusion})
@@ -391,19 +397,23 @@ class GitHubAdminRuntime:
             elif str(conclusion) not in SUCCESSFUL_CHECK_CONCLUSIONS:
                 failed.append(name)
 
-        legacy_state = str(status_payload.get("state") or "pending") if isinstance(status_payload, dict) else "pending"
-        if legacy_state in {"failure", "error"}:
-            failed.extend(
-                str(item.get("context") or "legacy-status")
-                for item in legacy_statuses
-                if isinstance(item, dict) and str(item.get("state")) in {"failure", "error"}
-            )
-        elif legacy_state == "pending" and legacy_statuses:
-            pending.extend(
-                str(item.get("context") or "legacy-status")
-                for item in legacy_statuses
-                if isinstance(item, dict) and str(item.get("state")) == "pending"
-            )
+        latest_legacy: dict[str, dict[str, Any]] = {}
+        for item in legacy_statuses:
+            if not isinstance(item, dict):
+                continue
+            context = str(item.get("context") or "legacy-status")
+            if context not in latest_legacy:
+                latest_legacy[context] = item
+        legacy_state = "success"
+        for context, item in latest_legacy.items():
+            state = str(item.get("state") or "pending")
+            if state in {"failure", "error"}:
+                failed.append(context)
+                legacy_state = "failure"
+            elif state == "pending":
+                pending.append(context)
+                if legacy_state != "failure":
+                    legacy_state = "pending"
 
         has_evidence = bool(normalized or legacy_statuses)
         if not has_evidence and not _enabled("SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS"):

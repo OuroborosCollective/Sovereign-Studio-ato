@@ -120,6 +120,70 @@ def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
     assert "no_check_evidence_reported" in result["checks"]["pending"]
 
 
+def test_pr_status_uses_latest_check_run_per_name(monkeypatch) -> None:
+    head = "1" * 40
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [FakeResponse(200, _pull(head))],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [
+                FakeResponse(
+                    200,
+                    {
+                        "check_runs": [
+                            {"id": 10, "name": "Revision Guardian", "status": "completed", "conclusion": "failure"},
+                            {"id": 20, "name": "Revision Guardian", "status": "completed", "conclusion": "success"},
+                        ]
+                    },
+                )
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [
+                FakeResponse(200, {"state": "success", "statuses": []})
+            ],
+        },
+    )
+
+    result = runtime.pr_status(pr_number=7)
+
+    assert result["checks"]["ok"] is True
+    assert result["checks"]["failed"] == []
+    assert result["checks"]["checks"] == [
+        {"name": "Revision Guardian", "status": "completed", "conclusion": "success"}
+    ]
+
+
+def test_pr_status_blocks_when_latest_check_run_is_failed(monkeypatch) -> None:
+    head = "2" * 40
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [FakeResponse(200, _pull(head))],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [
+                FakeResponse(
+                    200,
+                    {
+                        "check_runs": [
+                            {"id": 10, "name": "Revision Guardian", "status": "completed", "conclusion": "success"},
+                            {"id": 20, "name": "Revision Guardian", "status": "completed", "conclusion": "failure"},
+                        ]
+                    },
+                )
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [
+                FakeResponse(200, {"state": "failure", "statuses": []})
+            ],
+        },
+    )
+
+    result = runtime.pr_status(pr_number=7)
+
+    assert result["checks"]["ok"] is False
+    assert result["checks"]["failed"] == ["Revision Guardian"]
+    assert result["checks"]["checks"] == [
+        {"name": "Revision Guardian", "status": "completed", "conclusion": "failure"}
+    ]
+
+
 def test_merge_requires_exact_head_green_checks_and_defers_mcp_release_to_main_workflow(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "1")

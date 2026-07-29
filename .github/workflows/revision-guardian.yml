@@ -304,8 +304,11 @@ jobs:
                 changedFiles = (commit.data.files || []).map((file) => String(file.filename || ''));
               }
 
-              if (['pull_request_target', 'push'].includes(context.eventName)) {
-                await new Promise((resolve) => setTimeout(resolve, 15000));
+              const settleDelayMs = ['pull_request_target', 'push'].includes(context.eventName)
+                ? 15000
+                : (context.eventName === 'workflow_run' ? 10000 : 0);
+              if (settleDelayMs > 0) {
+                await new Promise((resolve) => setTimeout(resolve, settleDelayMs));
               }
               const allRuns = await github.paginate(
                 github.rest.actions.listWorkflowRunsForRepo,
@@ -360,6 +363,9 @@ jobs:
                   hardFailure = true;
                 }
                 results.push(result);
+                if (repairRequested) {
+                  break;
+                }
               }
 
               const deploymentStatus = context.eventName === 'deployment_status'
