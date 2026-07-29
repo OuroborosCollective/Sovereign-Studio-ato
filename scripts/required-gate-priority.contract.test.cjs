@@ -97,39 +97,45 @@ test('coordinator starts only after both required workflow families complete', (
 test('revision guardian is trusted, exact-head bound and auto-synchronizes stale same-repository PRs', () => {
   const workflow = read('.github/workflows/revision-guardian.yml');
   const continuity = read('.github/workflows/sovereign-continuity-gate.yml');
-  assert.match(workflow, /^\s{2}pull_request_target:\s*$/m);
-  assert.doesNotMatch(workflow, /^\s{2}pull_request:\s*$/m);
-  assert.match(workflow, /^\s{2}push:\n\s+branches: \[main\]/m);
-  assert.match(workflow, /^\s{2}workflow_run:\s*$/m);
-  assert.match(workflow, /^\s{2}deployment_status:\s*$/m);
-  assert.match(workflow, /ref: main\n\s+fetch-depth: 1/);
-  assert.match(workflow, /name: 'Revision Guardian'/);
-  assert.match(workflow, /PR_HEAD_NOT_BASED_ON_CURRENT_MAIN/);
-  assert.match(workflow, /workflow_id: 'revision-guardian-sync-pr\.yml'/);
-  assert.match(workflow, /expected_head_sha: target\.revision/);
-  assert.match(workflow, /expected_base_sha: currentMain/);
-  assert.match(workflow, /FORK_PR_REPAIR_FORBIDDEN/);
-  assert.match(workflow, /core\.setFailed\('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE'\)/);
-  assert.match(continuity, /^\s{2}workflow_dispatch:\s*$/m);
-  assert.match(continuity, /expected_head_sha:/);
-  assert.match(continuity, /PR_HEAD_IDENTITY_MISMATCH/);
   const syncWorkflow = read('.github/workflows/revision-guardian-sync-pr.yml');
-  assert.match(syncWorkflow, /^\s{2}workflow_dispatch:\s*$/m);
-  assert.match(syncWorkflow, /expected_head_sha:/);
-  assert.match(syncWorkflow, /expected_base_sha:/);
-  for (const requiredMarker of [
-    'pull-requests: write',
-    'git merge --no-ff --no-edit "$EXPECTED_BASE_SHA"',
-    'git push origin "HEAD:${TARGET_REF}"',
-    'git checkout --detach "$EXPECTED_BASE_SHA"',
-    'git rev-list --reverse --no-merges',
-    'test "${#COMMITS[@]}" -le 200',
-    'git cherry-pick --abort || true',
-    'draft: true',
-    'SOURCE_PR_CHANGED_DURING_RECOVERY',
-    'The original PR remains open until the replacement evidence is reviewed',
-  ]) {
-    assert.equal(syncWorkflow.includes(requiredMarker), true, `missing recovery contract marker: ${requiredMarker}`);
+
+  const requiredMarkers = [
+    [workflow, '  pull_request_target:\n', 'trusted pull_request_target trigger'],
+    [workflow, '  push:\n    branches: [main]\n', 'main push trigger'],
+    [workflow, '  workflow_run:\n', 'workflow completion trigger'],
+    [workflow, '  deployment_status:\n', 'deployment trigger'],
+    [workflow, 'ref: main', 'trusted main checkout'],
+    [workflow, 'fetch-depth: 1', 'bounded trusted checkout'],
+    [workflow, "name: 'Revision Guardian'", 'required check projection'],
+    [workflow, 'PR_HEAD_NOT_BASED_ON_CURRENT_MAIN', 'main ancestor enforcement'],
+    [workflow, "workflow_id: 'revision-guardian-sync-pr.yml'", 'bounded sync dispatch'],
+    [workflow, 'expected_head_sha: target.revision', 'exact PR head binding'],
+    [workflow, 'expected_base_sha: currentMain', 'exact main binding'],
+    [workflow, 'FORK_PR_REPAIR_FORBIDDEN', 'fork repair prohibition'],
+    [workflow, "core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')", 'post-repair evidence requirement'],
+    [workflow, "context.eventName === 'workflow_run' ? 10000 : 0", 'workflow-run settle delay'],
+    [workflow, 'if (repairRequested)', 'single repair mutation guard'],
+    [continuity, '  workflow_dispatch:\n', 'continuity repair dispatch'],
+    [continuity, 'expected_head_sha:', 'continuity exact-head input'],
+    [continuity, 'PR_HEAD_IDENTITY_MISMATCH', 'continuity identity enforcement'],
+    [syncWorkflow, '  workflow_dispatch:\n', 'sync dispatch trigger'],
+    [syncWorkflow, 'expected_head_sha:', 'sync exact-head input'],
+    [syncWorkflow, 'expected_base_sha:', 'sync exact-base input'],
+    [syncWorkflow, 'pull-requests: write', 'bounded PR write permission'],
+    [syncWorkflow, 'git merge --no-ff --no-edit "$EXPECTED_BASE_SHA"', 'preferred exact-main merge'],
+    [syncWorkflow, 'git push origin "HEAD:${TARGET_REF}"', 'non-force source branch update'],
+    [syncWorkflow, 'git checkout --detach "$EXPECTED_BASE_SHA"', 'recovery starts at exact main'],
+    [syncWorkflow, 'git rev-list --reverse --no-merges', 'deterministic source commit order'],
+    [syncWorkflow, 'test "${#COMMITS[@]}" -le 200', 'bounded replay size'],
+    [syncWorkflow, 'git cherry-pick --abort || true', 'fail-closed replay conflict'],
+    [syncWorkflow, 'draft: true', 'replacement remains draft'],
+    [syncWorkflow, 'SOURCE_PR_CHANGED_DURING_RECOVERY', 'source identity recheck'],
+    [syncWorkflow, 'The original PR remains open until the replacement evidence is reviewed', 'auditable replacement handoff'],
+  ];
+
+  for (const [surface, marker, label] of requiredMarkers) {
+    assert.equal(surface.includes(marker), true, `missing revision guardian contract: ${label}`);
   }
+  assert.equal(workflow.includes('\n  pull_request:\n'), false, 'guardian must not execute untrusted PR workflow code');
   assert.doesNotMatch(syncWorkflow, /git push[^\n]*(?:--force|-f\b)/);
 });
