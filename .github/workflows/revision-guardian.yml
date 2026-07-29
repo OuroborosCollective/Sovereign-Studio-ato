@@ -81,7 +81,7 @@ jobs:
               pr_number: process.env.INPUT_PR_NUMBER,
             };
             const repair = String(process.env.INPUT_REPAIR || '').toLowerCase() === 'true';
-            const evidencePath = path.join(process.env.GITHUB_WORKSPACE, '.revision-guardian-evidence.json');
+            const evidencePath = path.join(process.env.GITHUB_WORKSPACE, 'revision-guardian-evidence.json');
             const evidence = {
               schemaVersion: 'sovereign.revision-guardian-evidence.v1',
               eventName: context.eventName,
@@ -477,6 +477,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: revision-guardian-evidence-${{ github.run_id }}
-          path: .revision-guardian-evidence.json
+          path: revision-guardian-evidence.json
           if-no-files-found: error
           retention-days: 14
