@@ -36,6 +36,16 @@ class FakeCursor:
                 self.last_result = {"credits": user["credits"]}
         elif normalized.startswith("INSERT INTO CREDIT_LEDGER"):
             self.conn.credit_ledger.append(params)
+        elif "FROM SOVEREIGN_RESCUE_REPAIRS" in normalized and "WHERE JOB_ID" in normalized:
+            job_id, user_id = params
+            row = self.conn.rescue_repairs.get(job_id)
+            self.last_result = row if row and row["user_id"] == user_id else None
+        elif normalized.startswith("UPDATE SOVEREIGN_RESCUE_REPAIRS"):
+            published_head_sha, job_id, user_id = params
+            row = self.conn.rescue_repairs.get(job_id)
+            if row and row["user_id"] == user_id:
+                row["state"] = "draft_pr_ready"
+                row["published_head_sha"] = published_head_sha
         elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_JOBS"):
             self.conn.jobs[params[1]] = {
                 "user_id": params[0],
@@ -128,6 +138,7 @@ class FakeConnection:
             "user-2": {"credits": 100, "role": "admin"},
         }
         self.credit_ledger = []
+        self.rescue_repairs = {}
         self.commits = 0
         self.rollbacks = 0
 
@@ -153,7 +164,7 @@ def request_contract():
     )
 
 
-def create_test_app(conn: FakeConnection):
+def create_test_app(conn: FakeConnection, resolve_session_github_token=None):
     app = Flask(__name__)
 
     def require_session(fn):
@@ -167,7 +178,12 @@ def create_test_app(conn: FakeConnection):
         wrapped.__name__ = fn.__name__
         return wrapped
 
-    register_sovereign_agent_routes(app, require_session=require_session, get_connection=lambda: conn)
+    register_sovereign_agent_routes(
+        app,
+        require_session=require_session,
+        get_connection=lambda: conn,
+        resolve_session_github_token=resolve_session_github_token,
+    )
     return app
 
 
@@ -401,6 +417,58 @@ def test_non_admin_success_charges_once_and_uses_real_ledger_columns(monkeypatch
     }
     assert conn.users["user-1"]["credits"] == 10
     assert len(conn.credit_ledger) == 1
+
+
+def test_rescue_draft_pr_uses_session_credential_and_never_double_charges(monkeypatch):
+    import agent_runtime.routes as routes
+
+    observed = {}
+
+    def fake_create_draft_pr_for_job(job, token=None):
+        observed["token"] = token
+        return DraftPrCreateResult(
+            allowed=True,
+            status="created",
+            pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/125",
+            published_head_sha="c" * 40,
+            summary="GitHub Draft PR created.",
+            predictive_signal="agent_draft_pr_created",
+        )
+
+    monkeypatch.setattr(routes, "create_draft_pr_for_job", fake_create_draft_pr_for_job)
+    conn = FakeConnection()
+    conn.users["user-1"] = {"credits": 20, "role": "user"}
+    conn.rescue_repairs["agent-1"] = {
+        "repair_id": "11111111-1111-4111-8111-111111111111",
+        "user_id": "user-1",
+        "entitlement_source": "verified_purchase",
+        "charged_credits": 10,
+        "state": "blocked",
+        "published_head_sha": None,
+    }
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    session_token = "gh" + "p_" + "testvalue123"
+    app = create_test_app(
+        conn,
+        resolve_session_github_token=lambda user_id: (
+            session_token if user_id == "user-1" else None
+        ),
+    )
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert observed["token"] == session_token
+    assert payload["creditSettlement"]["chargedCredits"] == 0
+    assert conn.users["user-1"]["credits"] == 20
+    assert conn.credit_ledger == []
+    assert conn.rescue_repairs["agent-1"]["state"] == "draft_pr_ready"
+    assert conn.rescue_repairs["agent-1"]["published_head_sha"] == "c" * 40
 
 
 def test_draft_pr_create_rejects_invalid_ephemeral_token_before_creator(monkeypatch):

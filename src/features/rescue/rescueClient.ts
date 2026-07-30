@@ -59,6 +59,8 @@ export interface RescueProofPack {
   readonly proofSha256: string;
   readonly baseSha: string;
   readonly headSha?: string;
+  readonly publishedHeadSha?: string;
+  readonly draftPr: boolean;
   readonly draftPrUrl?: string;
   readonly changedFiles: string[];
   readonly blockers: string[];
@@ -69,7 +71,6 @@ interface RequestInput {
   readonly baseBranch: string;
   readonly evidenceText: string;
   readonly failureFamily?: RescueFailureFamily;
-  readonly githubAccessToken?: string;
 }
 
 function endpoint(baseUrl: string, path: string): string {
@@ -146,14 +147,14 @@ export class SovereignRescueClient {
     return body.repair as unknown as RescueRepair;
   }
 
-  async proofPack(repairId: string, githubAccessToken?: string): Promise<RescueProofPack> {
+  async proofPack(repairId: string): Promise<RescueProofPack> {
     const response = await this.fetcher(
       endpoint(this.baseUrl, `/api/user/agent/rescue/repairs/${encodeURIComponent(repairId)}/proof-pack`),
       {
         method: 'POST',
         credentials: 'include',
         headers: headers(),
-        body: JSON.stringify(githubAccessToken ? { githubAccessToken } : {}),
+        body: JSON.stringify({}),
       },
     );
     const body = await responseObject(response);

@@ -14,15 +14,15 @@ The user-facing promise is:
 
 ## User journey
 
-1. Sign in and provide a canonical GitHub repository URL, base branch and error
-   evidence. A private repository may use an ephemeral fine-grained GitHub token.
-   The token is sent only to the authenticated backend request and is not stored
-   or returned.
+1. Sign in, connect GitHub to the authenticated account, and provide a canonical
+   repository URL, base branch and error evidence. Private repository credentials
+   are read only from the existing server-side encrypted account binding; Rescue
+   never accepts or returns a browser-supplied token.
 2. Select a failure family or let Rescue classify the evidence.
-3. Run the free diagnosis. The backend resolves the branch through GitHub and
-   binds the report to the returned 40-character commit SHA. The diagnosis
-   classifies the family, affected paths, risk and proposal without cloning or
-   mutating the repository.
+3. Run the free diagnosis. The backend resolves the branch through GitHub,
+   verifies each affected path at the returned 40-character commit SHA, and binds
+   the report to that revision. Missing repository evidence remains a visible
+   blocker; diagnosis never invents suggested paths or mutates the repository.
 4. Review the Sovereign Outcome Contract.
 5. Start one Repair Pack. The backend verifies a real purchase receipt or a
    privileged internal entitlement, locks the account, reserves the pack once,
@@ -33,9 +33,10 @@ The user-facing promise is:
    files, diff and tests.
 7. The existing evidence gate prepares and creates a Draft PR. Rescue-reserved
    jobs do not receive the legacy Draft-PR credit charge a second time.
-8. The ProofPack reads the real Draft PR and check runs from GitHub. It is ready
-   only when the check-run head SHA equals the Draft PR head, all required
-   evidence is present and CI is green.
+8. The ProofPack reads the real Draft PR, branch rules, CheckRuns and legacy
+   commit statuses from GitHub. It is ready only when the PR is still a draft,
+   its head equals the exact isolated-workspace commit published by Rescue, every
+   required context is present, and required CI is green on that same SHA.
 
 ## Freemium and paid boundary
 
@@ -75,8 +76,11 @@ All routes require the existing HTTP-only Sovereign session.
 | `POST` | `/api/user/agent/rescue/repairs/<id>/proof-pack` | Read PR/check evidence |
 
 `POST /repair` requires a UUID `Idempotency-Key`. A replay with the same tenant,
-repository, base SHA and family returns the existing repair and charges zero
-additional credits. A changed request with the same key fails closed.
+repository, base SHA and family charges zero additional credits. A reserved
+execution is atomically claimed once; a stale running claim without a run or job
+may be reclaimed after two minutes, while active, completed, blocked and
+cancelled states are returned distinctly. A changed request with the same key
+fails closed.
 
 ## Outcome Contract
 
@@ -110,7 +114,9 @@ UI-only flag or old runtime cannot satisfy it.
 
 ## Secrets and tenancy
 
-- GitHub tokens are optional, request-scoped and never persisted by Rescue.
+- GitHub credentials are never accepted from the Rescue browser payload. The
+  backend reads the authenticated user's existing encrypted GitHub account
+  binding and decrypts it only for the bounded request.
 - Token-, password-, authorization- and API-key-shaped values are redacted from
   bounded diagnosis, errors, test summaries and ProofPack output.
 - Repair rows are always read through `(repair_id, user_id)`.
@@ -122,8 +128,9 @@ UI-only flag or old runtime cannot satisfy it.
 ## Deployment
 
 1. Build the backend image from the exact merged commit.
-2. Run `045_sovereign_rescue.sql` through the existing migration runner.
-3. Verify the migration transaction and schema constraints in a non-production
+2. Run `045_sovereign_rescue.sql` and then the additive
+   `046_sovereign_rescue_hardening.sql` through the existing migration runner.
+3. Verify both migration transactions and schema constraints in a non-production
    preview first.
 4. Deploy the immutable backend image and web bundle through the existing
    protected workflows.
@@ -148,9 +155,10 @@ authorized merely by merging the repository change.
 ## Known limitations
 
 - v1 does not repair application bugs outside the three declared families.
-- Private repositories require an explicit ephemeral fine-grained GitHub token
-  until a tenant-bound GitHub App installation flow is production-approved.
+- Private repositories require an account-bound encrypted GitHub credential with
+  repository read/write access. Rescue does not provide a browser token fallback.
 - Runtime verification against a customer production environment is optional
   and requires a separate revision-bound owner approval.
-- ProofPack readiness requires GitHub check runs; a repository without checks
-  stays visibly incomplete.
+- ProofPack readiness requires GitHub to expose the applicable branch rules and
+  at least one exact-head CheckRun or commit status. Missing rule evidence stays
+  visibly incomplete.

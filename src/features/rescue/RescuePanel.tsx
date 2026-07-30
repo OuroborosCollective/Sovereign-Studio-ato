@@ -77,7 +77,6 @@ export function RescuePanel({
   const [branch, setBranch] = useState('main');
   const [evidence, setEvidence] = useState('');
   const [family, setFamily] = useState<'' | RescueFailureFamily>('');
-  const [githubToken, setGithubToken] = useState('');
   const [diagnosis, setDiagnosis] = useState<RescueDiagnosis>();
   const [entitlement, setEntitlement] = useState<RescueEntitlement>();
   const [repair, setRepair] = useState<RescueRepair>();
@@ -88,12 +87,17 @@ export function RescuePanel({
   const idempotency = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!open) {
-      setGithubToken('');
-      return;
-    }
+    if (!open) return;
     void client.entitlement().then(setEntitlement).catch(() => setEntitlement(undefined));
   }, [client, open]);
+
+  useEffect(() => {
+    idempotency.current = undefined;
+    setDiagnosis(undefined);
+    setRepair(undefined);
+    setProofPack(undefined);
+    setMessage('');
+  }, [repository, branch, evidence, family]);
 
   if (!open) return null;
 
@@ -102,10 +106,10 @@ export function RescuePanel({
     baseBranch: branch.trim() || 'main',
     evidenceText: evidence,
     ...(family ? { failureFamily: family } : {}),
-    ...(githubToken.trim() ? { githubAccessToken: githubToken.trim() } : {}),
   };
 
   const diagnose = async () => {
+    idempotency.current = undefined;
     setBusy(true);
     setMessage('Revision und Fehlerfamilie werden geprüft …');
     setRepair(undefined);
@@ -118,7 +122,6 @@ export function RescuePanel({
       setDiagnosis(undefined);
       setMessage(error instanceof Error ? error.message : 'Diagnose fehlgeschlagen.');
     } finally {
-      setGithubToken('');
       setBusy(false);
     }
   };
@@ -145,7 +148,6 @@ export function RescuePanel({
         ? 'Für den Repair Pack ist ein serverseitig bestätigter Kauf erforderlich.'
         : error instanceof Error ? error.message : 'Repair Pack konnte nicht starten.');
     } finally {
-      setGithubToken('');
       setBusy(false);
     }
   };
@@ -155,7 +157,7 @@ export function RescuePanel({
     setBusy(true);
     setMessage('Draft-PR-Head und CI werden revisionsgenau geprüft …');
     try {
-      const pack = await client.proofPack(repair.repairId, githubToken.trim() || undefined);
+      const pack = await client.proofPack(repair.repairId);
       setProofPack(pack);
       setMessage(pack.ready ? 'ProofPack vollständig und verifiziert.' : 'ProofPack enthält noch offene Evidence.');
     } catch (error) {
@@ -164,7 +166,6 @@ export function RescuePanel({
       if (pack) setProofPack(pack);
       setMessage(error instanceof Error ? error.message : 'ProofPack konnte nicht geprüft werden.');
     } finally {
-      setGithubToken('');
       setBusy(false);
     }
   };
@@ -219,17 +220,10 @@ export function RescuePanel({
             placeholder="Fehlerausgabe hier einfügen. Secret-ähnliche Werte werden serverseitig redigiert."
           />
         </label>
-        <label>
-          GitHub-Zugang für private Repositories (optional, wird nicht gespeichert)
-          <input
-            style={input}
-            type="password"
-            value={githubToken}
-            onChange={(event) => setGithubToken(event.target.value)}
-            autoComplete="off"
-            placeholder="github_pat_…"
-          />
-        </label>
+        <p style={{ margin: 0, color: '#94a3b8' }}>
+          Private Repositories verwenden ausschließlich den mit deiner Sitzung
+          verbundenen, serverseitig verschlüsselten GitHub-Zugang.
+        </p>
         <button type="button" style={button} disabled={busy || !repository.trim() || !evidence.trim()} onClick={() => { void diagnose(); }}>
           Kostenlos diagnostizieren
         </button>

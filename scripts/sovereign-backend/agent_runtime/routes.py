@@ -48,6 +48,7 @@ from .rescue import (
     REPAIR_PACK_CREDITS,
     build_free_diagnosis,
     build_proof_pack,
+    claim_repair_execution,
     entitlement_payload,
     normalize_head_sha,
     public_repair_row,
@@ -57,6 +58,7 @@ from .rescue import (
     resolve_account_entitlement,
     resolve_github_head,
     update_repair_execution,
+    verify_github_affected_files,
     verify_proof_pack,
 )
 from .universal_toolchain import (
@@ -206,7 +208,13 @@ def _workspace_root() -> Path | None:
     return Path(configured) if configured else None
 
 
-def register_sovereign_agent_routes(app, *, require_session, get_connection: ConnectionFactory) -> None:
+def register_sovereign_agent_routes(
+    app,
+    *,
+    require_session,
+    get_connection: ConnectionFactory,
+    resolve_session_github_token: Callable[[str], str | None] | None = None,
+) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
     Routes:
@@ -336,12 +344,32 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         account["configured_owner_email"] = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "")
         return account
 
-    def _rescue_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
-        raw_token = body.get("githubAccessToken")
-        token = normalize_ephemeral_github_token(raw_token)
-        if raw_token is not None and token is None:
-            return None, (jsonify({"error": "githubAccessToken has an invalid format"}), 400)
-        return token, None
+    def _session_github_token(user_id: str) -> str | None:
+        if resolve_session_github_token is None:
+            return None
+        try:
+            return normalize_ephemeral_github_token(
+                resolve_session_github_token(user_id)
+            )
+        except Exception:
+            return None
+
+    def _rescue_token(
+        body: dict[str, Any],
+        user_id: str,
+    ) -> tuple[str | None, tuple[Any, int] | None]:
+        if "githubAccessToken" in body:
+            return None, (
+                jsonify({
+                    "error": (
+                        "GitHub credentials must be connected to the authenticated "
+                        "server session."
+                    ),
+                    "blocker": "github_session_credential_required",
+                }),
+                400,
+            )
+        return _session_github_token(user_id), None
 
     def _read_owned_rescue(conn, user_id: str, repair_id: str) -> dict[str, Any] | None:
         with conn.cursor() as cur:
@@ -375,8 +403,9 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @app.route("/api/user/agent/rescue/diagnose", methods=["POST"])
     @require_session
     def user_diagnose_sovereign_rescue():
+        user_id = _current_session_user_id()
         body: dict[str, Any] = request.get_json(force=True) or {}
-        token, token_error = _rescue_token(body)
+        token, token_error = _rescue_token(body, user_id)
         if token_error:
             return token_error
         try:
@@ -385,13 +414,30 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 body.get("baseBranch") or body.get("branch") or "main",
                 token=token,
             )
+            evidence_text = body.get("evidenceText") or body.get("logText") or ""
+            requested_family = str(body.get("failureFamily") or "")
             diagnosis = build_free_diagnosis(
                 repository=revision["repository"],
                 base_branch=revision["baseBranch"],
                 base_sha=revision["baseSha"],
-                evidence_text=body.get("evidenceText") or body.get("logText") or "",
-                requested_family=str(body.get("failureFamily") or ""),
+                evidence_text=evidence_text,
+                requested_family=requested_family,
             )
+            if diagnosis.get("ok"):
+                verified_files = verify_github_affected_files(
+                    revision["repository"],
+                    revision["baseSha"],
+                    diagnosis.get("affectedFiles"),
+                    token=token,
+                )
+                diagnosis = build_free_diagnosis(
+                    repository=revision["repository"],
+                    base_branch=revision["baseBranch"],
+                    base_sha=revision["baseSha"],
+                    evidence_text=evidence_text,
+                    requested_family=requested_family,
+                    verified_affected_files=verified_files,
+                )
         except (ValueError, HTTPError, URLError, TimeoutError) as exc:
             return jsonify({
                 "ok": False,
@@ -411,7 +457,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     def user_start_sovereign_rescue_repair():
         user_id = _current_session_user_id()
         body: dict[str, Any] = request.get_json(force=True) or {}
-        token, token_error = _rescue_token(body)
+        token, token_error = _rescue_token(body, user_id)
         if token_error:
             return token_error
         try:
@@ -435,13 +481,30 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "actualBaseSha": revision["baseSha"],
                     "nextAction": "Run a new free diagnosis on the current revision.",
                 }), 409
+            evidence_text = body.get("evidenceText") or body.get("logText") or ""
+            requested_family = str(body.get("failureFamily") or "")
             diagnosis = build_free_diagnosis(
                 repository=revision["repository"],
                 base_branch=revision["baseBranch"],
                 base_sha=revision["baseSha"],
-                evidence_text=body.get("evidenceText") or body.get("logText") or "",
-                requested_family=str(body.get("failureFamily") or ""),
+                evidence_text=evidence_text,
+                requested_family=requested_family,
             )
+            if diagnosis.get("ok"):
+                verified_files = verify_github_affected_files(
+                    revision["repository"],
+                    revision["baseSha"],
+                    diagnosis.get("affectedFiles"),
+                    token=token,
+                )
+                diagnosis = build_free_diagnosis(
+                    repository=revision["repository"],
+                    base_branch=revision["baseBranch"],
+                    base_sha=revision["baseSha"],
+                    evidence_text=evidence_text,
+                    requested_family=requested_family,
+                    verified_affected_files=verified_files,
+                )
             if not diagnosis.get("ok"):
                 return jsonify({
                     "ok": False,
@@ -493,13 +556,30 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "runtime": "sovereign-rescue",
                     "blocker": redact_secret_text(exc, 400),
                 }), status
-            if reservation.get("duplicate"):
+            repair_id = str(reservation["repairId"])
+            implementation_job_id = str(reservation["jobId"])
+            claim = claim_repair_execution(
+                conn,
+                user_id=user_id,
+                repair_id=repair_id,
+            )
+            if not claim.get("claimed"):
+                state = str(claim.get("state") or "missing")
+                active = state in {"running", "draft_pr_ready", "completed"}
+                status = 202 if state == "running" else 200 if active else 409
                 return jsonify({
-                    "ok": True,
+                    "ok": active,
                     "runtime": "sovereign-rescue",
-                    "duplicate": True,
-                    "repair": reservation,
-                }), 200
+                    "duplicate": bool(reservation.get("duplicate")),
+                    "repair": {
+                        **reservation,
+                        "jobId": str(claim.get("job_id") or implementation_job_id),
+                        "runId": claim.get("run_id"),
+                        "state": state,
+                        "blocker": redact_secret_text(claim.get("blocker"), 1200) or None,
+                    },
+                }), status
+            reservation = {**reservation, "state": "running"}
         finally:
             _close(conn)
 
@@ -586,7 +666,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     def user_get_sovereign_rescue_proof_pack(repair_id: str):
         user_id = _current_session_user_id()
         body: dict[str, Any] = request.get_json(silent=True) or {}
-        token, token_error = _rescue_token(body)
+        token, token_error = _rescue_token(body, user_id)
         if token_error:
             return token_error
         try:
@@ -619,7 +699,9 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 },
                 pr_evidence=pr_evidence,
             )
-            if pack["ready"]:
+            verified = verify_proof_pack(pack)
+            ready = bool(pack["ready"] and verified)
+            if ready:
                 update_repair_execution(
                     conn,
                     user_id=user_id,
@@ -629,11 +711,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     state="completed",
                 )
             return jsonify({
-                "ok": bool(pack["ready"]),
+                "ok": ready,
                 "runtime": "sovereign-rescue",
                 "proofPack": pack,
-                "verified": verify_proof_pack(pack),
-            }), 200 if pack["ready"] else 409
+                "verified": verified,
+            }), 200 if ready else 409
         finally:
             _close(conn)
 
@@ -1115,15 +1197,32 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT repair_id::text, entitlement_source, charged_credits
+                    """SELECT repair_id::text, entitlement_source, charged_credits,
+                              state, published_head_sha
                        FROM sovereign_rescue_repairs
                        WHERE job_id = %s AND user_id = %s::uuid
-                         AND state IN ('reserved', 'running', 'draft_pr_ready')
                        LIMIT 1""",
                     (job_id, user_id),
                 )
                 rescue_reservation = cur.fetchone()
             credit_cost = 0 if rescue_reservation else 10
+            if (
+                rescue_reservation
+                and not (job.pr_state == "created" and (job.pr_url or job.draft_pr_url))
+            ):
+                github_token = _session_github_token(user_id)
+                if not github_token:
+                    conn.rollback()
+                    return jsonify({
+                        "ok": False,
+                        "runtime": "sovereign-agent",
+                        "jobId": job_id,
+                        "blocker": "github_session_credential_missing",
+                        "error": (
+                            "Connect GitHub to the authenticated account before "
+                            "publishing a Rescue Draft PR."
+                        ),
+                    }), 409
 
             if job.pr_state == "created" and (job.pr_url or job.draft_pr_url):
                 result = create_draft_pr_for_job(job, token=github_token)
@@ -1171,6 +1270,19 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                         "duplicate": False,
                     },
                 }), 400
+            if rescue_reservation and not result.published_head_sha:
+                conn.rollback()
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "blocker": "published_head_sha_missing",
+                    "draftPrCreate": draft_pr_create_signal(result),
+                    "creditSettlement": {
+                        "chargedCredits": 0,
+                        "duplicate": False,
+                    },
+                }), 409
 
             remaining_credits: int | None = None
             charged_credits = 0
@@ -1214,9 +1326,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 with conn.cursor() as cur:
                     cur.execute(
                         """UPDATE sovereign_rescue_repairs
-                           SET state = 'draft_pr_ready', updated_at = NOW()
+                           SET state = 'draft_pr_ready',
+                               published_head_sha = %s,
+                               updated_at = NOW()
                            WHERE job_id = %s AND user_id = %s::uuid""",
-                        (job_id, user_id),
+                        (result.published_head_sha, job_id, user_id),
                     )
             conn.commit()
             return jsonify({

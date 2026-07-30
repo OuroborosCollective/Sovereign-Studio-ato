@@ -54,6 +54,7 @@ class DraftPrCreateResult:
     allowed: bool
     status: DraftPrCreateStatus
     pr_url: str | None = None
+    published_head_sha: str | None = None
     blocker: str | None = None
     summary: str = "Draft PR create blocked."
     predictive_signal: str = "agent_draft_pr_create_blocked"
@@ -99,6 +100,9 @@ def _valid_pr_url(value: str | None) -> bool:
 
 class GitHubApiDraftPrCreator:
     """Publish the verified workspace branch and create or recover one Draft PR."""
+
+    def __init__(self) -> None:
+        self.published_head_sha: str | None = None
 
     def _existing_draft_pr(self, request: DraftPrCreateRequest, token: str, owner: str, repo: str) -> str | None:
         query = urlencode({
@@ -149,6 +153,9 @@ class GitHubApiDraftPrCreator:
         )
         if publication.status != "done" or not publication.commit_sha:
             raise RuntimeError(publication.blocker or "workspace branch publication failed")
+        if not re.fullmatch(r"[0-9a-f]{40}", publication.commit_sha):
+            raise RuntimeError("workspace publication returned an invalid commit SHA")
+        self.published_head_sha = publication.commit_sha
         owner, repo = owner_repo
         existing = self._existing_draft_pr(request, token, owner, repo)
         if existing:
@@ -313,10 +320,22 @@ def create_draft_pr_for_job(
             predictive_signal="agent_draft_pr_create_blocked",
         )
 
+    published_head_sha = str(
+        getattr(active_creator, "published_head_sha", "") or ""
+    ).lower()
+    if published_head_sha and not re.fullmatch(r"[0-9a-f]{40}", published_head_sha):
+        return DraftPrCreateResult(
+            allowed=False,
+            status="blocked",
+            blocker="Draft PR creator returned an invalid published head SHA",
+            summary="Draft PR create blocked by invalid publication evidence.",
+            predictive_signal="agent_draft_pr_create_blocked",
+        )
     return DraftPrCreateResult(
         allowed=True,
         status="created",
         pr_url=pr_url,
+        published_head_sha=published_head_sha or None,
         summary="GitHub Draft PR created.",
         predictive_signal="agent_draft_pr_created",
     )
@@ -327,6 +346,7 @@ def draft_pr_create_signal(result: DraftPrCreateResult) -> dict[str, Any]:
         "allowed": result.allowed,
         "status": result.status,
         "prUrl": result.pr_url,
+        "publishedHeadSha": result.published_head_sha,
         "blocker": result.blocker,
         "summary": result.summary,
         "signal": result.predictive_signal,

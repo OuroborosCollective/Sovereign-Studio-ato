@@ -1629,10 +1629,28 @@ def require_session(f):
     return decorated
 
 
+def resolve_agent_session_github_token(user_id: str) -> str | None:
+    """Read and decrypt the authenticated user's server-bound GitHub credential."""
+
+    conn = get_agent_runtime_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT github_access_token FROM admin_users WHERE id=%s::uuid LIMIT 1",
+                (user_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    encrypted = str((row or {}).get("github_access_token") or "")
+    return _decrypt_token(encrypted) if encrypted else None
+
+
 register_sovereign_agent_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+    resolve_session_github_token=resolve_agent_session_github_token,
 )
 register_cognitive_swarm_routes(
     app,

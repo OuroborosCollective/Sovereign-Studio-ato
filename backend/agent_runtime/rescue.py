@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 from typing import Any, Mapping
+from urllib.error import HTTPError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 import uuid
@@ -32,8 +33,9 @@ _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$")
 _FILE_PATH = re.compile(
     r"(?<![A-Za-z0-9_.-])"
-    r"((?:\.github/workflows/|docker/|migrations?/|src/|backend/|scripts/)"
+    r"((?:(?:\.github/workflows/|docker/|migrations?/|src/|backend/|scripts/)"
     r"[A-Za-z0-9_./@+-]{1,220}\.(?:ya?ml|json|toml|py|ts|tsx|js|sql|sh|env))"
+    r"|(?:docker-compose|compose)\.ya?ml|Dockerfile)"
 )
 _SECRET_PATTERNS = (
     re.compile(r"github_pat_[A-Za-z0-9_]{8,}", re.IGNORECASE),
@@ -233,13 +235,89 @@ def resolve_github_head(
     }
 
 
+def _github_json(url: str, *, token: str | None, opener: Any) -> Any:
+    request = Request(url, method="GET", headers=_github_headers(token))
+    with opener(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def verify_github_affected_files(
+    repository: Any,
+    head_sha: Any,
+    candidates: Any,
+    *,
+    token: str | None = None,
+    opener=urlopen,
+) -> tuple[str, ...]:
+    """Return only candidate paths that exist at the exact diagnosed revision."""
+
+    owner, repo = github_owner_repo(repository)
+    verified_sha = normalize_head_sha(head_sha)
+    verified: list[str] = []
+    for item in list(candidates or [])[:MAX_AFFECTED_FILES]:
+        path = str(item or "").strip()
+        if (
+            not path
+            or path.startswith("/")
+            or ".." in path.split("/")
+            or not re.fullmatch(r"[A-Za-z0-9_./@+-]{1,240}", path)
+        ):
+            continue
+        url = (
+            f"https://api.github.com/repos/{quote(owner, safe='')}/"
+            f"{quote(repo, safe='')}/contents/{quote(path, safe='/')}"
+            f"?ref={verified_sha}"
+        )
+        try:
+            body = _github_json(url, token=token, opener=opener)
+        except HTTPError as exc:
+            if exc.code == 404:
+                continue
+            raise
+        if (
+            isinstance(body, dict)
+            and body.get("type") in {"file", "symlink", "submodule"}
+            and str(body.get("path") or "") == path
+            and body.get("sha")
+        ):
+            verified.append(path)
+    return tuple(dict.fromkeys(verified))
+
+
+def _required_contexts(branch_body: Any, rules_body: Any) -> tuple[str, ...]:
+    required: list[str] = []
+    protection = branch_body.get("protection") if isinstance(branch_body, dict) else {}
+    status_checks = (
+        protection.get("required_status_checks")
+        if isinstance(protection, dict)
+        else {}
+    )
+    if isinstance(status_checks, dict):
+        required.extend(str(item) for item in status_checks.get("contexts") or [] if item)
+        required.extend(
+            str(item.get("context") or "")
+            for item in status_checks.get("checks") or []
+            if isinstance(item, dict) and item.get("context")
+        )
+    for rule in rules_body if isinstance(rules_body, list) else []:
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        parameters = rule.get("parameters") if isinstance(rule.get("parameters"), dict) else {}
+        required.extend(
+            str(item.get("context") or "")
+            for item in parameters.get("required_status_checks") or []
+            if isinstance(item, dict) and item.get("context")
+        )
+    return tuple(dict.fromkeys(item for item in required if item))
+
+
 def read_github_pr_evidence(
     pr_url: Any,
     *,
     token: str | None = None,
     opener=urlopen,
 ) -> dict[str, Any]:
-    """Read PR head and check-runs; absent or pending checks remain non-green."""
+    """Read exact-head PR, required-check, CheckRun and legacy status evidence."""
 
     parsed = urlparse(str(pr_url or "").strip())
     parts = [part for part in parsed.path.strip("/").split("/") if part]
@@ -252,24 +330,40 @@ def read_github_pr_evidence(
     ):
         raise ValueError("A canonical GitHub pull request URL is required.")
     owner, repo, _, number = parts
-    pr_request = Request(
+    api_root = (
         f"https://api.github.com/repos/{quote(owner, safe='')}/"
-        f"{quote(repo, safe='')}/pulls/{number}",
-        method="GET",
-        headers=_github_headers(token),
+        f"{quote(repo, safe='')}"
     )
-    with opener(pr_request, timeout=30) as response:
-        pr_body = json.loads(response.read().decode("utf-8"))
+    pr_body = _github_json(
+        f"{api_root}/pulls/{number}",
+        token=token,
+        opener=opener,
+    )
     head = pr_body.get("head") if isinstance(pr_body, dict) else {}
+    base = pr_body.get("base") if isinstance(pr_body, dict) else {}
     head_sha = normalize_head_sha(head.get("sha") if isinstance(head, dict) else "")
-    check_request = Request(
-        f"https://api.github.com/repos/{quote(owner, safe='')}/"
-        f"{quote(repo, safe='')}/commits/{head_sha}/check-runs?per_page=100",
-        method="GET",
-        headers=_github_headers(token),
+    base_branch = normalize_branch(base.get("ref") if isinstance(base, dict) else "")
+    check_body = _github_json(
+        f"{api_root}/commits/{head_sha}/check-runs?per_page=100",
+        token=token,
+        opener=opener,
     )
-    with opener(check_request, timeout=30) as response:
-        check_body = json.loads(response.read().decode("utf-8"))
+    status_body = _github_json(
+        f"{api_root}/commits/{head_sha}/status?per_page=100",
+        token=token,
+        opener=opener,
+    )
+    branch_body = _github_json(
+        f"{api_root}/branches/{quote(base_branch, safe='')}",
+        token=token,
+        opener=opener,
+    )
+    rules_body = _github_json(
+        f"{api_root}/rules/branches/{quote(base_branch, safe='')}",
+        token=token,
+        opener=opener,
+    )
+
     raw_runs = check_body.get("check_runs") if isinstance(check_body, dict) else []
     checks = [
         {
@@ -281,19 +375,70 @@ def read_github_pr_evidence(
         for item in raw_runs
         if isinstance(item, dict)
     ][:100]
-    complete = bool(checks) and all(item["status"] == "completed" for item in checks)
-    green = complete and all(
-        item["conclusion"] in {"success", "neutral", "skipped"}
-        for item in checks
+    raw_statuses = status_body.get("statuses") if isinstance(status_body, dict) else []
+    statuses: list[dict[str, str]] = []
+    seen_status_contexts: set[str] = set()
+    for item in raw_statuses if isinstance(raw_statuses, list) else []:
+        if not isinstance(item, dict):
+            continue
+        context = redact_secret_text(item.get("context"), 160)
+        if not context or context in seen_status_contexts:
+            continue
+        seen_status_contexts.add(context)
+        statuses.append({
+            "context": context,
+            "state": str(item.get("state") or ""),
+        })
+        if len(statuses) >= 100:
+            break
+
+    required = _required_contexts(branch_body, rules_body)
+    check_by_name = {
+        name: [item for item in checks if item["name"] == name]
+        for name in required
+    }
+    status_by_context = {item["context"]: item for item in statuses}
+    required_present = all(
+        bool(check_by_name.get(name)) or name in status_by_context
+        for name in required
     )
-    head_match = bool(checks) and all(item["headSha"] == head_sha for item in checks)
+    required_green = required_present and all(
+        (
+            not check_by_name.get(name)
+            or all(
+                item["status"] == "completed"
+                and item["conclusion"] in {"success", "neutral", "skipped"}
+                for item in check_by_name[name]
+            )
+        )
+        and (
+            name not in status_by_context
+            or status_by_context[name]["state"] == "success"
+        )
+        for name in required
+    )
+    observed = bool(checks or statuses)
+    all_observed_green = observed and all(
+        item["status"] == "completed"
+        and item["conclusion"] in {"success", "neutral", "skipped"}
+        for item in checks
+    ) and all(item["state"] == "success" for item in statuses)
+    head_match = observed and all(item["headSha"] == head_sha for item in checks)
+    ci_green = head_match and (
+        required_green if required else all_observed_green
+    )
     return {
         "url": f"https://github.com/{owner}/{repo}/pull/{number}",
         "headSha": head_sha,
+        "baseBranch": base_branch,
         "draft": pr_body.get("draft") is True if isinstance(pr_body, dict) else False,
         "ciHeadShaMatch": head_match,
-        "ciGreen": green and head_match,
+        "ciGreen": ci_green,
+        "requiredChecksKnown": True,
+        "requiredChecksPresent": required_present,
+        "requiredChecks": list(required),
         "checks": checks,
+        "statuses": statuses,
         "mutationPerformed": False,
     }
 
@@ -326,10 +471,9 @@ def classify_failure_family(
 
 
 def affected_files(evidence_text: Any, family: RescueFailureFamily) -> tuple[str, ...]:
+    del family
     evidence = redact_secret_text(evidence_text)
     found = list(dict.fromkeys(match.group(1) for match in _FILE_PATH.finditer(evidence)))
-    if not found:
-        found.extend(family.suggested_paths)
     return tuple(found[:MAX_AFFECTED_FILES])
 
 
@@ -382,6 +526,7 @@ def build_free_diagnosis(
     base_sha: str,
     evidence_text: Any,
     requested_family: str = "",
+    verified_affected_files: Any = None,
 ) -> dict[str, Any]:
     """Build a deterministic free report without a repository mutation."""
 
@@ -392,41 +537,64 @@ def build_free_diagnosis(
         evidence,
         requested_family=requested_family,
     )
+    common = {
+        "schemaVersion": RESCUE_SCHEMA_VERSION,
+        "mutationPerformed": False,
+        "repository": repository,
+        "baseBranch": branch,
+        "baseSha": verified_sha,
+        "evidenceSha256": hashlib.sha256(evidence.encode("utf-8")).hexdigest(),
+        "familyScores": list(scores),
+        "secretValuesReturned": False,
+    }
     if not family:
         return {
-            "schemaVersion": RESCUE_SCHEMA_VERSION,
+            **common,
             "ok": False,
             "supported": False,
-            "mutationPerformed": False,
-            "repository": repository,
-            "baseBranch": branch,
-            "baseSha": verified_sha,
-            "evidenceSha256": hashlib.sha256(evidence.encode("utf-8")).hexdigest(),
-            "familyScores": list(scores),
             "blocker": "unsupported_failure_family",
             "message": (
                 "Rescue v1 supports only GitHub Actions/CI, Docker Compose/container, "
                 "and PostgreSQL migration/schema failures."
             ),
         }
+
+    candidates = affected_files(evidence, family)
+    selected_files = (
+        candidates
+        if verified_affected_files is None
+        else tuple(
+            item
+            for item in dict.fromkeys(str(value) for value in verified_affected_files or [])
+            if item in candidates
+        )
+    )
+    if not selected_files:
+        return {
+            **common,
+            "ok": False,
+            "supported": True,
+            "failureFamily": family.code,
+            "failureFamilyTitle": family.title,
+            "affectedFiles": [],
+            "blocker": "repository_evidence_missing",
+            "message": (
+                "No affected file from the supplied failure evidence could be "
+                "verified at the exact repository revision."
+            ),
+        }
+
     risk = "high" if family.code == "postgresql_migration_schema" else "medium"
     report = {
-        "schemaVersion": RESCUE_SCHEMA_VERSION,
+        **common,
         "ok": True,
         "supported": True,
-        "mutationPerformed": False,
-        "repository": repository,
-        "baseBranch": branch,
-        "baseSha": verified_sha,
         "failureFamily": family.code,
         "failureFamilyTitle": family.title,
         "riskClass": risk,
-        "affectedFiles": list(affected_files(evidence, family)),
+        "affectedFiles": list(selected_files),
         "repairProposal": family.repair_proposal,
         "verificationPlan": list(family.verification),
-        "evidenceSha256": hashlib.sha256(evidence.encode("utf-8")).hexdigest(),
-        "familyScores": list(scores),
-        "secretValuesReturned": False,
     }
     return {**report, "outcomeContract": build_outcome_contract(report)}
 
@@ -459,7 +627,7 @@ def entitlement_payload(
         "repairPackId": REPAIR_PACK_ID,
         "serverSideVerified": True,
         "checkout": {
-            "required": not entitlement.verified,
+            "required": not funded,
             "surface": "existing-paywall-modal",
             "external": True,
         },
@@ -616,6 +784,53 @@ def reserve_repair_pack(
     }
 
 
+def claim_repair_execution(
+    conn: Any,
+    *,
+    user_id: str,
+    repair_id: str,
+) -> dict[str, Any]:
+    """Atomically claim one reserved repair so retries cannot execute it twice."""
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE sovereign_rescue_repairs AS repair
+               SET state = 'running', blocker = NULL, updated_at = NOW()
+               WHERE repair.repair_id = %s::uuid
+                 AND repair.user_id = %s::uuid
+                 AND (
+                   repair.state = 'reserved'
+                   OR (
+                     repair.state = 'running'
+                     AND repair.run_id IS NULL
+                     AND repair.updated_at < NOW() - INTERVAL '2 minutes'
+                     AND NOT EXISTS (
+                       SELECT 1
+                       FROM sovereign_agent_jobs AS job
+                       WHERE job.job_id = repair.job_id
+                         AND job.user_id = repair.user_id
+                     )
+                   )
+                 )
+               RETURNING repair_id::text, job_id, run_id, state, charged_credits""",
+            (repair_id, user_id),
+        )
+        claimed = cur.fetchone()
+        if claimed:
+            conn.commit()
+            return {"claimed": True, **dict(claimed)}
+        cur.execute(
+            """SELECT repair_id::text, job_id, run_id, state, charged_credits, blocker
+               FROM sovereign_rescue_repairs
+               WHERE repair_id = %s::uuid AND user_id = %s::uuid
+               LIMIT 1""",
+            (repair_id, user_id),
+        )
+        current = cur.fetchone()
+    conn.rollback()
+    return {"claimed": False, **(dict(current) if current else {"state": "missing"})}
+
+
 def update_repair_execution(
     conn: Any,
     *,
@@ -654,11 +869,15 @@ def build_proof_pack(
     pr = dict(pr_evidence or {})
     base_sha = normalize_head_sha(repair.get("base_sha") or repair.get("baseSha"))
     head_sha = str(pr.get("headSha") or "").lower()
-    changed_files = [
+    published_head_sha = str(
+        repair.get("published_head_sha") or repair.get("publishedHeadSha") or ""
+    ).lower()
+    raw_changed_files = [
         str(item)
         for item in (job.get("changed_files") or job.get("changedFiles") or [])
         if isinstance(item, str)
-    ][:12]
+    ]
+    changed_files = raw_changed_files[:12]
     test_summary = redact_secret_text(
         job.get("test_summary") or job.get("testSummary") or "",
         4000,
@@ -667,16 +886,28 @@ def build_proof_pack(
     blockers: list[str] = []
     if not changed_files:
         blockers.append("changed_file_evidence_missing")
+    if len(raw_changed_files) > 12:
+        blockers.append("changed_file_limit_exceeded")
     if not test_summary:
         blockers.append("test_evidence_missing")
     if "[REDACTED]" in test_summary:
         blockers.append("secret_material_redacted")
     if not pr_url.startswith("https://github.com/") or "/pull/" not in pr_url:
         blockers.append("draft_pr_evidence_missing")
+    if pr.get("draft") is not True:
+        blockers.append("draft_pr_not_draft")
     if not _SHA40.fullmatch(head_sha):
         blockers.append("draft_pr_head_sha_missing")
+    if not _SHA40.fullmatch(published_head_sha):
+        blockers.append("published_head_sha_missing")
+    elif head_sha != published_head_sha:
+        blockers.append("published_head_sha_mismatch")
     if pr.get("ciHeadShaMatch") is not True:
         blockers.append("ci_head_sha_not_bound")
+    if pr.get("requiredChecksKnown") is not True:
+        blockers.append("required_checks_unverified")
+    if pr.get("requiredChecksPresent") is not True:
+        blockers.append("required_checks_missing")
     if pr.get("ciGreen") is not True:
         blockers.append("ci_not_green")
 
@@ -688,13 +919,23 @@ def build_proof_pack(
         "failureFamily": str(repair.get("failure_family") or repair.get("failureFamily") or ""),
         "baseSha": base_sha,
         "headSha": head_sha or None,
+        "publishedHeadSha": published_head_sha or None,
+        "draftPr": pr.get("draft") is True,
         "draftPrUrl": pr_url or None,
         "changedFiles": changed_files,
         "testSummary": test_summary or None,
         "ci": {
             "headShaMatch": pr.get("ciHeadShaMatch") is True,
             "green": pr.get("ciGreen") is True,
+            "requiredChecksKnown": pr.get("requiredChecksKnown") is True,
+            "requiredChecksPresent": pr.get("requiredChecksPresent") is True,
+            "requiredChecks": (
+                pr.get("requiredChecks")
+                if isinstance(pr.get("requiredChecks"), list)
+                else []
+            ),
             "checks": pr.get("checks") if isinstance(pr.get("checks"), list) else [],
+            "statuses": pr.get("statuses") if isinstance(pr.get("statuses"), list) else [],
         },
         "rollback": {
             "strategy": "close the Draft PR or revert its isolated commit",
@@ -715,6 +956,13 @@ def verify_proof_pack(pack: Mapping[str, Any]) -> bool:
         and not pack.get("blockers")
         and _SHA40.fullmatch(str(pack.get("baseSha") or ""))
         and _SHA40.fullmatch(str(pack.get("headSha") or ""))
+        and _SHA40.fullmatch(str(pack.get("publishedHeadSha") or ""))
+        and pack.get("headSha") == pack.get("publishedHeadSha")
+        and pack.get("draftPr") is True
+        and isinstance(pack.get("ci"), Mapping)
+        and pack["ci"].get("requiredChecksKnown") is True
+        and pack["ci"].get("requiredChecksPresent") is True
+        and pack["ci"].get("green") is True
         and proof_sha == canonical_sha256(payload)
         and "[REDACTED]" not in json.dumps(pack)
     )
@@ -728,6 +976,7 @@ def public_repair_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "repository",
         "base_branch",
         "base_sha",
+        "published_head_sha",
         "failure_family",
         "repair_pack_id",
         "outcome_contract_sha256",
@@ -746,6 +995,7 @@ def public_repair_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "repository": str(payload["repository"] or ""),
         "baseBranch": str(payload["base_branch"] or ""),
         "baseSha": str(payload["base_sha"] or ""),
+        "publishedHeadSha": str(payload["published_head_sha"] or "") or None,
         "failureFamily": str(payload["failure_family"] or ""),
         "repairPackId": str(payload["repair_pack_id"] or ""),
         "outcomeContractSha256": str(payload["outcome_contract_sha256"] or ""),

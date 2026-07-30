@@ -19,8 +19,13 @@ from agent_runtime.job_store import StoredSovereignAgentJob  # noqa: E402
 
 
 class FakeDraftPrCreator:
-    def __init__(self, url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/123"):
+    def __init__(
+        self,
+        url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/123",
+        published_head_sha="a" * 40,
+    ):
         self.url = url
+        self.published_head_sha = published_head_sha
         self.calls = []
 
     def create_draft_pr(self, request, token):
@@ -131,6 +136,7 @@ def test_create_uses_injected_creator_and_requires_valid_url(monkeypatch):
     assert result.allowed is True
     assert result.status == "created"
     assert result.pr_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/123"
+    assert result.published_head_sha == "a" * 40
     assert result.predictive_signal == "agent_draft_pr_created"
     assert creator.calls[0][1] == "test-token"
 
@@ -176,9 +182,11 @@ def test_github_creator_reuses_existing_draft_pr(monkeypatch):
 
     monkeypatch.setattr(draft_pr_create_gate, "urlopen", lambda request, timeout=30: FakeResponse())
 
-    url = GitHubApiDraftPrCreator().create_draft_pr(request, "test-token")
+    creator = GitHubApiDraftPrCreator()
+    url = creator.create_draft_pr(request, "test-token")
 
     assert url.endswith("/pull/444")
+    assert creator.published_head_sha == "a" * 40
 
 
 def test_github_creator_blocks_existing_non_draft_pr(monkeypatch):
@@ -219,4 +227,5 @@ def test_draft_pr_create_signal_is_serializable():
     assert signal["allowed"] is True
     assert signal["status"] == "created"
     assert signal["prUrl"].endswith("/pull/321")
+    assert signal["publishedHeadSha"] is None
     assert signal["signal"] == "agent_draft_pr_created"
