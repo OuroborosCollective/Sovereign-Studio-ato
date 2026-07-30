@@ -60,7 +60,7 @@ describe('WorkflowContainer', () => {
 
     expect(screen.getByTestId('workflow-container')).toBeDefined();
     expect(screen.getAllByText(/All checks passed/i).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: /Watch Commit Checks/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start monitoring commit checks/i }));
     expect(onWatch).toHaveBeenCalledOnce();
   });
 
@@ -78,7 +78,7 @@ describe('WorkflowContainer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /Draft PR zuerst erstellen/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Workflow Watch blocked: Create a Draft PR first/i })).toBeDisabled();
     expect(screen.getByText(/Create a Draft PR before watching/i)).toBeDefined();
   });
 
