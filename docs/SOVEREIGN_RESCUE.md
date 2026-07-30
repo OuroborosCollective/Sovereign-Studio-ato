@@ -154,4 +154,3 @@ authorized merely by merging the repository change.
   and requires a separate revision-bound owner approval.
 - ProofPack readiness requires GitHub check runs; a repository without checks
   stays visibly incomplete.
-
