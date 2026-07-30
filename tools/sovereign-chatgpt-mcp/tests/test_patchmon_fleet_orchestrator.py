@@ -59,6 +59,45 @@ def test_patchmon_workflow_green_rejects_nested_pending_check() -> None:
     assert server._patchmon_workflow_green(payload) is False
 
 
+def test_patchmon_workflow_green_accepts_verified_workflow_run() -> None:
+    payload = {
+        "ok": True,
+        "validation_complete": True,
+        "passed": True,
+        "status": "PASS",
+        "run_status": "completed",
+        "conclusion": "success",
+        "jobs": [
+            {
+                "name": "Revision Guardian Orchestrator",
+                "status": "completed",
+                "conclusion": "success",
+                "failed_steps": [],
+            }
+        ],
+    }
+
+    assert server._patchmon_workflow_green(payload) is True
+
+
+def test_patchmon_workflow_green_rejects_incomplete_workflow_run() -> None:
+    payload = {
+        "validation_complete": False,
+        "passed": False,
+        "run_status": "in_progress",
+        "conclusion": None,
+        "jobs": [
+            {
+                "name": "Revision Guardian Orchestrator",
+                "status": "in_progress",
+                "conclusion": None,
+            }
+        ],
+    }
+
+    assert server._patchmon_workflow_green(payload) is False
+
+
 def test_patchmon_workflow_green_keeps_flat_workflow_contract() -> None:
     payload = {
         "checks": [
