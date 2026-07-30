@@ -1,0 +1,19 @@
+{
+  "schema_version": "sovereign.proof-golden-vectors.v1",
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "operation_identity": "repository:issue-1098:proof-core",
+  "input_sha256": "fce1ff11268acbf195e88174e67a4daeaf34749529f11e6af7f1b1a4cc8cb4ee",
+  "diff_sha256": "ded8c2905a738251cef1c6fe1f7a6ce58fc749b819e73640fa3bdc8ccf3c2b86",
+  "requirement_set_sha256": "6cddaf99d0916b10ef0102096dac507b432da1505a080815d154ed764616bd79",
+  "envelope_sha256": "4d36a5f7fe4f324722d3325f9e255f12783a1190c2c635f4b3f33a1f7805ca9d",
+  "observation_sha256s": {
+    "agent_run_receipt": "eb0caa9042127e90b4d20ce798077e2ac6403664753e90739242f5002f42d747",
+    "authoritative_readback": "9b7a19c37748f1f07de578338b9a209dd1585eaffe3e3833680b4d8f6a90791a",
+    "mismatched_readback": "dd1f95134de650d4071d40ee40be85aa225fc1e7eaf487ef4bd50c4ae63f395a"
+  },
+  "verdict_sha256s": {
+    "verified": "991bc59843422bcc1e171ae8f538f0994330f23fa96b79f2f5e1d3aa2527bd2f",
+    "blocked": "e61e9481fdcbac8a0829f02d4c1b08daf2e864fafe9af3680aa11dc539a37311",
+    "contradicted": "b27d08a2a1efc45d7ebbdfbbe8a3b2c8114e627edbc1dceda66f4e6150f44c44"
+  }
+}

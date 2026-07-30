@@ -71,6 +71,21 @@ from .evidence_gate import (  # noqa: F401
     evidence_gate_signal,
     evidence_input_from_tool_result,
 )
+from .proof_verdict import (  # noqa: F401
+    AGENT_REPOSITORY_MUTATION_REQUIREMENTS_V1,
+    DEFAULT_PROOF_REQUIREMENT_SETS,
+    ProofContractError,
+    ProofEnvelope,
+    ProofObservation,
+    ProofRequirement,
+    ProofRequirementSet,
+    ProofVerdict,
+    build_proof_envelope,
+    canonical_proof_sha256,
+    canonical_proof_value,
+    evaluate_proof,
+    observation_from_agent_run_receipt,
+)
 from .git_workspace import (  # noqa: F401
     GitWorkspaceResult,
     build_git_clone_command,
