@@ -1419,11 +1419,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Resolve exact repaired Codex threads
+      - name: Locate ten exact repaired Codex threads
+        id: locate
         uses: actions/github-script@v7
         with:
           script: |
-            const expectedHead = context.sha;
             const expectedComments = new Map([
               ['3678755307', 'backend/agent_runtime/provider_neutral_runtime.py'],
               ['3678755311', 'backend/agent_runtime/provider_neutral_runtime.py'],
@@ -1441,52 +1441,64 @@ jobs:
                 pullRequest(number:$number){
                   headRefOid
                   reviewThreads(first:100){
-                    nodes{
-                      id
-                      isResolved
-                      path
-                      comments(first:100){nodes{author{login} url}}
-                    }
+                    nodes{id isResolved path comments(first:100){nodes{url}}}
                   }
                 }
               }
             }`;
-            const variables = {
+            const data = await github.graphql(query, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               number: 1091,
-            };
-            const read = async () => {
-              const data = await github.graphql(query, variables);
-              const pull = data.repository.pullRequest;
-              if (!pull || String(pull.headRefOid || '').toLowerCase() !== expectedHead.toLowerCase()) {
-                throw new Error('PR_HEAD_IDENTITY_MISMATCH');
-              }
-              return pull.reviewThreads.nodes || [];
-            };
-            const locate = (threads, discussionId, expectedPath) => {
-              const suffix = `#discussion_r${discussionId}`;
-              return threads.filter((thread) => (
-                String(thread.path || '') === expectedPath
-                && (thread.comments?.nodes || []).some((comment) => {
-                  const login = String(comment.author?.login || '');
-                  return login.startsWith('chatgpt-codex-connector')
-                    && String(comment.url || '').endsWith(suffix);
-                })
-              ));
-            };
-            const initialThreads = await read();
+            });
+            const pull = data.repository.pullRequest;
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase()) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+              return;
+            }
+            const threads = pull.reviewThreads.nodes || [];
             const targets = [];
             for (const [discussionId, expectedPath] of expectedComments) {
-              const matches = locate(initialThreads, discussionId, expectedPath);
+              const suffix = `#discussion_r${discussionId}`;
+              const matches = threads.filter((thread) => (
+                String(thread.path || '') === expectedPath
+                && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(suffix))
+              ));
               if (matches.length !== 1) {
                 core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`);
                 return;
               }
-              targets.push({ discussionId, expectedPath, thread: matches[0] });
+              targets.push({
+                discussionId,
+                expectedPath,
+                threadId: matches[0].id,
+                alreadyResolved: matches[0].isResolved === true,
+              });
             }
-            if (new Set(targets.map((target) => target.thread.id)).size !== expectedComments.size) {
+            if (new Set(targets.map((target) => target.threadId)).size !== expectedComments.size) {
               core.setFailed('REVIEW_THREAD_IDENTITY_COLLISION');
+              return;
+            }
+            return targets;
+
+      - name: Resolve ten exact repaired Codex threads
+        uses: actions/github-script@v7
+        env:
+          TARGETS_JSON: ${{ steps.locate.outputs.result }}
+        with:
+          script: |
+            const targets = JSON.parse(process.env.TARGETS_JSON || '[]');
+            if (!Array.isArray(targets) || targets.length !== 10) {
+              core.setFailed('REVIEW_THREAD_TARGET_COUNT_INVALID');
+              return;
+            }
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: 1091,
+            });
+            if (String(pull.head?.sha || '').toLowerCase() !== context.sha.toLowerCase()) {
+              core.setFailed('PR_HEAD_CHANGED_BEFORE_RESOLUTION');
               return;
             }
             const mutation = `mutation($threadId:ID!){
@@ -1495,18 +1507,59 @@ jobs:
               }
             }`;
             for (const target of targets) {
-              if (target.thread.isResolved !== true) {
-                const result = await github.graphql(mutation, { threadId: target.thread.id });
+              if (target.alreadyResolved !== true) {
+                const result = await github.graphql(mutation, { threadId: target.threadId });
                 const resolved = result.resolveReviewThread?.thread;
-                if (!resolved || resolved.id !== target.thread.id || resolved.isResolved !== true) {
+                if (!resolved || resolved.id !== target.threadId || resolved.isResolved !== true) {
                   core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${target.discussionId}`);
                   return;
                 }
               }
             }
-            const verifiedThreads = await read();
+
+      - name: Verify ten Codex threads resolved
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const expectedComments = new Map([
+              ['3678755307', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678755311', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678755319', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678755324', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678755330', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678755338', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678889494', 'tools/sovereign-chatgpt-mcp/owner_input_client.py'],
+              ['3678889497', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678889501', 'backend/agent_runtime/provider_neutral_runtime.py'],
+              ['3678889502', 'backend/agent_runtime/provider_neutral_runtime.py'],
+            ]);
+            const query = `query($owner:String!,$repo:String!,$number:Int!){
+              repository(owner:$owner,name:$repo){
+                pullRequest(number:$number){
+                  headRefOid
+                  reviewThreads(first:100){
+                    nodes{id isResolved path comments(first:100){nodes{url}}}
+                  }
+                }
+              }
+            }`;
+            const data = await github.graphql(query, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: 1091,
+            });
+            const pull = data.repository.pullRequest;
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase()) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH_ON_READBACK');
+              return;
+            }
+            const threads = pull.reviewThreads.nodes || [];
             for (const [discussionId, expectedPath] of expectedComments) {
-              const matches = locate(verifiedThreads, discussionId, expectedPath);
+              const suffix = `#discussion_r${discussionId}`;
+              const matches = threads.filter((thread) => (
+                String(thread.path || '') === expectedPath
+                && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(suffix))
+              ));
               if (matches.length !== 1 || matches[0].isResolved !== true) {
                 core.setFailed(`REVIEW_THREAD_READBACK_NOT_RESOLVED:${discussionId}`);
                 return;
@@ -1515,7 +1568,7 @@ jobs:
             core.info(JSON.stringify({
               status: 'PR_1091_CODEX_REVIEW_THREADS_RESOLVED',
               prNumber: 1091,
-              headSha: expectedHead,
+              headSha: context.sha,
               resolvedDiscussionIds: [...expectedComments.keys()],
               resolvedCount: expectedComments.size,
               secretValuesReturned: false,
