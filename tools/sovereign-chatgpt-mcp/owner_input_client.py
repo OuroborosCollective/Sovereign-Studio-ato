@@ -18,6 +18,7 @@ import requests
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+EVIDENCE_ID_RE = re.compile(r"^evidence-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
 FREELLM_KEYLESS_PROVIDER_IDS = frozenset({"kilo", "ovh"})
@@ -423,6 +424,59 @@ class ProviderRuntimeClient(OwnerInputClient):
 
 
 class ControllerRuntimeClient(OwnerInputClient):
+    @staticmethod
+    def _controller_write_evidence(
+        payload: dict[str, Any],
+        *,
+        expected_run_id: str = "",
+        require_event: bool = False,
+        require_resume_claim: bool = False,
+    ) -> dict[str, Any]:
+        run = payload.get("run") if isinstance(payload.get("run"), dict) else {}
+        event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        observed_run_id = str(
+            payload.get("runId")
+            or payload.get("run_id")
+            or run.get("run_id")
+            or ""
+        ).strip()
+        observed_run_verified = bool(
+            RUN_ID_RE.fullmatch(observed_run_id)
+            and (not expected_run_id or observed_run_id == expected_run_id)
+        )
+        scoped_run_id = observed_run_id or str(expected_run_id or "").strip()
+        scoped_run_verified = bool(RUN_ID_RE.fullmatch(scoped_run_id))
+        event_id = str(event.get("eventId") or event.get("event_id") or "").strip()
+        event_verified = bool(event_id and event.get("created") is not False)
+        resume_claim_evidence_id = str(payload.get("resumeClaimEvidenceId") or "").strip()
+        resume_claim_verified = bool(
+            EVIDENCE_ID_RE.fullmatch(resume_claim_evidence_id)
+            and payload.get("resumed") is True
+        )
+        if require_event:
+            write_verified = bool(event_verified and scoped_run_verified)
+        elif require_resume_claim:
+            write_verified = bool(observed_run_verified and resume_claim_verified)
+        else:
+            write_verified = observed_run_verified
+        return {
+            "operationId": event_id or resume_claim_evidence_id or observed_run_id or None,
+            "mutationPerformed": write_verified,
+            "observedEffect": (
+                "controller-event-persisted"
+                if require_event and write_verified
+                else (
+                    "controller-resume-claim-persisted"
+                    if require_resume_claim and write_verified
+                    else ("controller-run-persisted" if write_verified else "none")
+                )
+            ),
+            "readbackVerified": write_verified,
+            "persistedRunId": scoped_run_id or None,
+            "persistedEventId": event_id or None,
+            "persistedEvidenceId": resume_claim_evidence_id or None,
+        }
+
     def _run_id(self, run_id: str) -> str:
         selected = str(run_id or "").strip()
         if not RUN_ID_RE.fullmatch(selected):
@@ -455,7 +509,7 @@ class ControllerRuntimeClient(OwnerInputClient):
             raise ValueError("intent_mode ist ungültig")
         if selected_mode == "free" and selected_intent_mode == "auto":
             selected_intent_mode = "conversation"
-        return self._request(
+        payload = self._request(
             "POST",
             "/api/internal/controller/runs",
             json_body={
@@ -467,6 +521,11 @@ class ControllerRuntimeClient(OwnerInputClient):
             expected=(200, 202, 502, 503),
             timeout=1200,
         )
+        return {
+            **payload,
+            **self._controller_write_evidence(payload),
+            "protected_values_returned": False,
+        }
 
     def list_runs(self, limit: int = 20) -> dict[str, Any]:
         bounded_limit = max(1, min(int(limit), 100))
@@ -538,6 +597,11 @@ class ControllerRuntimeClient(OwnerInputClient):
         )
         return {
             **response,
+            **self._controller_write_evidence(
+                response,
+                expected_run_id=selected,
+                require_event=True,
+            ),
             "status": "CONTROLLER_EXTERNAL_EVENT_RECORDED",
             "protected_values_returned": False,
         }
@@ -550,10 +614,19 @@ class ControllerRuntimeClient(OwnerInputClient):
         normalized = bounded_evidence.casefold()
         if any(marker in normalized for marker in OPERATOR_SECRET_MARKERS):
             raise ValueError("Secret-förmige Evidence ist im Operator-Resume verboten")
-        return self._request(
+        payload = self._request(
             "POST",
             f"/api/internal/controller/runs/{selected}/resume",
             json_body={"evidence": bounded_evidence},
             expected=(200, 202, 409, 502, 503),
             timeout=1200,
         )
+        return {
+            **payload,
+            **self._controller_write_evidence(
+                payload,
+                expected_run_id=selected,
+                require_resume_claim=True,
+            ),
+            "protected_values_returned": False,
+        }

@@ -124,6 +124,11 @@ def test_live_canary_correlates_start_stream_task_controller_and_resume(monkeypa
     assert result["resumeAttempted"] is True
     assert result["resumeVerified"] is True
     assert result["finalControllerStatus"] == "COMPLETED"
+    assert result["mutationPerformed"] is True
+    assert result["observedEffect"] == "controller-run-and-events-persisted"
+    assert result["readbackVerified"] is True
+    assert result["operationId"] == RUN_ID
+    assert result["repositoryMutationPerformed"] is False
     assert result["protectedValuesReturned"] is False
     assert session.calls[2]["headers"].get("X-Sovereign-Owner-Request-Key") is None
     assert "model" not in session.calls[1]["json"]["message"]["metadata"]

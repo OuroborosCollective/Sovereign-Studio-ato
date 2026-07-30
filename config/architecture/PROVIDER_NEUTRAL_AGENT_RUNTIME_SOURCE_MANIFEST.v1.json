@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "sovereign.provider-neutral-agent-runtime-source.v1",
+  "integrationId": "provider-neutral-agent-runtime-20260730",
+  "targetProject": "Sovereign Studio ATO",
+  "targetRevisionBase": "57069f66f95925f7a1544d2b5e045f645e9c882e",
+  "integrationMode": "clean-room-conceptual-reimplementation",
+  "sourceCodeCopied": false,
+  "runtimeDependenciesAdded": [],
+  "providerDependenciesAdded": [],
+  "conceptualReference": {
+    "repository": "google-antigravity/antigravity-sdk-python",
+    "observedVersion": "0.1.8",
+    "exactCommitResolved": false,
+    "licenseObserved": "Apache-2.0",
+    "conceptsReviewed": [
+      "agent-session-adapter layering",
+      "declarative hooks and policies",
+      "typed tool and MCP registry contracts",
+      "periodic triggers",
+      "multimodal inputs",
+      "streamed response and tool events"
+    ],
+    "explicitlyExcluded": [
+      "provider SDK imports",
+      "provider API-key contracts",
+      "bundled compiled runtime binaries",
+      "provider-owned session truth",
+      "background threads with implicit clocks",
+      "raw in-memory binary attachments",
+      "model reasoning or chain-of-thought streams"
+    ],
+    "pinningNotice": "The public reference commit was not resolved by the bounded operator evaluation. No foreign source, package or binary is imported, so this manifest records conceptual provenance rather than a dependency pin."
+  },
+  "sovereignImplementation": {
+    "canonicalModule": "backend/agent_runtime/provider_neutral_runtime.py",
+    "deploymentMirror": "scripts/sovereign-backend/agent_runtime/provider_neutral_runtime.py",
+    "runnerEntry": "ToolRunner.execute_provider_neutral",
+    "testContract": "backend/tests/test_provider_neutral_agent_runtime.py",
+    "truthBoundaries": [
+      "all run, call, revision, tick and epoch identities are caller-supplied",
+      "all tool effects remain in existing Sovereign ToolRegistry adapters",
+      "policy defaults to deny and owner approval never executes the effect adapter",
+      "hook exceptions fail closed",
+      "canonical evidence rejects floats and raw bytes",
+      "multimodal parts are immutable artifact references with SHA-256 provenance",
+      "stream events are append-only hash-chain projections",
+      "conversation views derive from events and are not independent mutable truth",
+      "triggers evaluate only explicit integer ticks",
+      "no model reasoning or chain-of-thought enters the stream contract"
+    ]
+  }
+}
