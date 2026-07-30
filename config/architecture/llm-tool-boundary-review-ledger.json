@@ -2,8 +2,8 @@
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
   "sourceRevision": "c574d0237db4077914daa755970bc10cde027895",
-  "rawCandidateCount": 77,
-  "canonicalCandidateCount": 65,
+  "rawCandidateCount": 79,
+  "canonicalCandidateCount": 66,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py",
@@ -64,6 +64,21 @@
       "candidateId": "llm-boundary:d8b78e74d383055c2a6fb926",
       "classification": "STRUCTURED_POLICY",
       "rationale": "is_actionable_evidence_file evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/draft_pr_create_gate.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/draft_pr_create_gate.py"
+      ],
+      "symbol": "create_draft_pr_for_job",
+      "line": 325,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "adad28a202988d50bacd9a59e5b2b3411e7ea6da017fd5dff7cd4037bed43aa0",
+      "anchorSha256": "9ec184102989c2f2fa312d7fd424a95aa4acf0416d7a2b1c45ad57fbcac70983",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:53a60e2f3d097398aaf7bb7c",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "create_draft_pr_for_job evaluates only bounded Draft PR publication status and immutable commit-SHA evidence; it does not infer free-language intent or authorize a model-selected action."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/pattern_gateway.py",
@@ -875,5 +890,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "e9eb9491ceb784cc8061288d0aaa1142517694cd21b50d4aa286153281eced4e"
+  "ledgerSha256": "5645b9f1bd877c71afb631175147646df5f25e8f6e7102a64213489ad48c93c7"
 }
