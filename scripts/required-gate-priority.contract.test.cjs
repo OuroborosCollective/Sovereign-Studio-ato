@@ -115,7 +115,8 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
     [workflow, 'expected_head_sha: target.revision', 'exact PR head binding'],
     [workflow, 'expected_base_sha: currentMain', 'exact main binding'],
     [workflow, 'FORK_PR_REPAIR_FORBIDDEN', 'fork repair prohibition'],
-    [workflow, "core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')", 'post-repair evidence requirement'],
+    [workflow, "core.notice('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')", 'repair dispatch leaves the orchestrator job green while the projected check remains fail-closed'],
+    [workflow, "core.notice('PR_HEAD_SYNC_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')", 'PR synchronization dispatch leaves no stale failed workflow job'],
     [workflow, "['workflow_run', 'workflow_dispatch'].includes(context.eventName) ? 10000 : 0", 'workflow-run and manual-audit settle delay'],
     [workflow, 'per_page: 100', 'bounded recent workflow run query'],
     [workflow, 'const recentRuns = Array.isArray(runsResponse.data?.workflow_runs)', 'bounded response normalization'],
@@ -153,6 +154,11 @@ test('revision guardian is trusted, exact-head bound and auto-synchronizes stale
     assert.equal(surface.includes(marker), true, `missing revision guardian contract: ${label}`);
   }
   assert.equal(workflow.includes('\n  pull_request:\n'), false, 'guardian must not execute untrusted PR workflow code');
+  assert.equal(
+    workflow.includes("core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE')"),
+    false,
+    'a successful repair dispatch must not leave a permanent failed workflow job',
+  );
   assert.doesNotMatch(workflow, /listWorkflowRunsForRepo,[\s\S]{0,300}(?:head_sha:\s*target\.revision|branch:\s*target\.ref)/);
   assert.doesNotMatch(workflow, /github\.paginate\([\s\S]{0,180}listWorkflowRunsForRepo/);
   assert.doesNotMatch(syncWorkflow, /git push[^\n]*(?:--force|-f\b)/);

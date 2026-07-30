@@ -1206,6 +1206,25 @@ def patchmon_fleet_bootstrap_apply(
 
 def _patchmon_workflow_green(payload: Any) -> bool:
     evidence = payload if isinstance(payload, dict) else {}
+    allowed = {"success", "successful", "neutral", "skipped"}
+
+    jobs = evidence.get("jobs")
+    if (
+        evidence.get("passed") is True
+        and evidence.get("validation_complete") is True
+        and str(evidence.get("run_status") or "").strip().lower() == "completed"
+        and str(evidence.get("conclusion") or "").strip().lower() in {"success", "successful"}
+        and isinstance(jobs, list)
+        and bool(jobs)
+    ):
+        job_conclusions = []
+        for item in jobs:
+            job = item if isinstance(item, dict) else {}
+            if str(job.get("status") or "").strip().lower() != "completed":
+                return False
+            job_conclusions.append(str(job.get("conclusion") or "").strip().lower())
+        return bool(job_conclusions) and all(item in allowed for item in job_conclusions)
+
     containers = [evidence]
     nested_checks = evidence.get("checks")
     if isinstance(nested_checks, dict):
@@ -1231,7 +1250,6 @@ def _patchmon_workflow_green(payload: Any) -> bool:
     if not checks:
         return False
 
-    allowed = {"success", "successful", "neutral", "skipped"}
     conclusions = []
     for item in checks:
         check = item if isinstance(item, dict) else {}

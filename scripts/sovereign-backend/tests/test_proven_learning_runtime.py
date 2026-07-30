@@ -64,10 +64,35 @@ def test_plan_is_deterministic_secret_safe_and_read_only() -> None:
     assert len(first["confirmationSha256"]) == 64
     assert first["record"]["content_hash"] == f"sha256:{first['confirmationSha256']}"
     assert first["record"]["embedding_text"].startswith("Title: Persist only proven learning")
+    assert first["record"]["confidence"] == "0.990000"
+    assert first["record"]["confidenceKappa"] == 990_000
     assert first["databaseAccessed"] is False
     assert first["embeddingGenerated"] is False
     assert first["ownerApprovalRequired"] is False
     assert first["approvalMode"] == "persisted-owner-policy-or-fresh-owner-approval"
+
+
+def test_confidence_identity_uses_canonical_decimal_and_kappa_units() -> None:
+    numeric = _record()
+    text = _record()
+    extra_precision = _record()
+    text["confidence"] = "0.990000"
+    extra_precision["confidence"] = "0.9900009"
+
+    numeric_plan = runtime.plan_proven_learning(numeric)
+    text_plan = runtime.plan_proven_learning(text)
+    extra_plan = runtime.plan_proven_learning(extra_precision)
+
+    assert numeric_plan["confirmationSha256"] == text_plan["confirmationSha256"]
+    assert text_plan["confirmationSha256"] == extra_plan["confirmationSha256"]
+    assert extra_plan["record"]["confidence"] == "0.990000"
+    assert extra_plan["record"]["confidenceKappa"] == 990_000
+
+    for invalid in (True, "NaN", "Infinity", "-0.1", "1.1"):
+        record = _record()
+        record["confidence"] = invalid
+        with pytest.raises(ValueError, match="confidence"):
+            runtime.plan_proven_learning(record)
 
 
 def test_database_and_merge_require_operation_specific_readback() -> None:
