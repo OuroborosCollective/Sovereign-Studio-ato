@@ -86,6 +86,23 @@ from .proof_verdict import (  # noqa: F401
     evaluate_proof,
     observation_from_agent_run_receipt,
 )
+from .mutation_evidence_layer import (  # noqa: F401
+    CANONICAL_MIRROR_OWNERSHIP_REQUIREMENTS_V1,
+    FLEET_DEPLOYMENT_REQUIREMENTS_V1,
+    GITHUB_MERGE_RELEASE_REQUIREMENTS_V1,
+    MCP_REGISTRY_SELF_UPDATE_REQUIREMENTS_V1,
+    MUTATION_FAMILY_IDS,
+    MUTATION_REQUIREMENT_REGISTRY_SHA256,
+    MUTATION_REQUIREMENT_SETS_V1,
+    POSTGRES_PGVECTOR_MUTATION_REQUIREMENTS_V1,
+    PROVIDER_ROUTING_MUTATION_REQUIREMENTS_V1,
+    SECURITY_PERMISSION_CHANGE_REQUIREMENTS_V1,
+    SOVEREIGN_RESCUE_REPAIR_REQUIREMENTS_V1,
+    build_mutation_proof_envelope,
+    evaluate_mutation_evidence,
+    mutation_requirement_registry_snapshot,
+    mutation_requirement_set,
+)
 from .git_workspace import (  # noqa: F401
     GitWorkspaceResult,
     build_git_clone_command,
