@@ -279,6 +279,19 @@ def _python_findings(path: str, text: str, surface: str) -> list[Finding]:
     return visitor.findings
 
 
+_JS_LITERAL_OR_COMMENT = re.compile(
+    r"/\*.*?\*/|//[^\n]*|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`",
+    re.S,
+)
+
+
+def _mask_js_literals_and_comments(text: str) -> str:
+    return _JS_LITERAL_OR_COMMENT.sub(
+        lambda match: "".join("\n" if char == "\n" else " " for char in match.group(0)),
+        text,
+    )
+
+
 _TEXT_RULES: Final[tuple[tuple[re.Pattern[str], str, str, str], ...]] = (
     (re.compile(r"\bMath\.random\s*\("), "RANDOMNESS_IN_TRUTH_PATH", "Math.random() is process-local entropy.", "Persist entropy as Action evidence or derive a stable digest-based value."),
     (re.compile(r"\bDate\.now\s*\(|\bnew\s+Date\s*\("), "IMPLICIT_TIME_SOURCE", "Wall-clock time is read directly.", "Inject observed time as persisted evidence."),
@@ -291,8 +304,9 @@ _TEXT_RULES: Final[tuple[tuple[re.Pattern[str], str, str, str], ...]] = (
 
 def _text_findings(path: str, text: str, surface: str) -> list[Finding]:
     output: list[Finding] = []
+    searchable = _mask_js_literals_and_comments(text)
     for pattern, family, description, recommendation in _TEXT_RULES:
-        for match in pattern.finditer(text):
+        for match in pattern.finditer(searchable):
             severity = "P2" if surface in {"EFFECT_ADAPTER", "TEST_ONLY", "RUNTIME_PROJECTION"} else "P1"
             output.append(Finding(
                 severity,
@@ -304,7 +318,7 @@ def _text_findings(path: str, text: str, surface: str) -> list[Finding]:
                 surface,
             ))
     if surface in {"PURE_CORE_CANDIDATE", "PERSISTED_TRUTH", "UNCLASSIFIED_PRODUCTION"}:
-        for match in re.finditer(r"(?<![\w.])-?[0-9]+\.[0-9]+(?![\w.])", text):
+        for match in re.finditer(r"(?<![\w.])-?[0-9]+\.[0-9]+(?![\w.])", searchable):
             output.append(Finding(
                 "P1",
                 "FLOAT_IN_TRUTH_PATH",

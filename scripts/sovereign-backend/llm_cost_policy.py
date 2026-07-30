@@ -83,7 +83,7 @@ def normalized_multiplier(category: Any, configured: Any = None) -> int:
     normalized_category = normalize_billing_category(category)
     minimum = category_minimum_multiplier(normalized_category)
     if normalized_category == FREE_CATEGORY:
-        if configured not in (None, "", 0, "0", 0.0):
+        if configured not in (None, "", 0, "0"):
             raise BillingPolicyError("free routes must use markupMultiplier 0")
         return 0
     try:

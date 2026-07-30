@@ -73,6 +73,12 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
         "export type KappaPos = bigint;\n",
         "utf-8",
     )
+    (repo / "src" / "runtime" / "canonicalDecimal.ts").write_text(
+        "export const confidence = parseKappa('0.900000');\n"
+        "// Documentation example: 0.750000\n"
+        "export const endpoint = `https://example.invalid/v1.2`;\n",
+        "utf-8",
+    )
     (repo / "src" / "components" / "Particles.tsx").write_text(
         "export const Particle = () => Math.random();\n",
         "utf-8",
@@ -170,6 +176,11 @@ def test_nondeterminism_scan_finds_uploaded_failure_families_without_promoting_r
     assert "LIMIT_WITHOUT_ORDER_BY" in families
     assert result["runtimeSuccessClaimed"] is False
     assert all(item["status"] == "STATIC_CANDIDATE" for item in result["findings"])
+    assert not any(
+        item["family"] == "FLOAT_IN_TRUTH_PATH"
+        and item["path"] == "src/runtime/canonicalDecimal.ts"
+        for item in result["findings"]
+    )
 
 
 def test_kappa_audit_rejects_float_first_demo_but_recognizes_bigint_surface(repository: Path) -> None:

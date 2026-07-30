@@ -10,6 +10,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from llm_revolver import (
+    _datetime_rank,
     build_revolver_candidates,
     failure_decision,
     normalize_quota_scope,
@@ -142,6 +143,38 @@ def test_request_id_alone_is_not_usage_evidence():
     }) is False
     assert provider_usage_seen({"totalTokens": 1}) is True
     assert provider_usage_seen({"providerCostUsd": 0.001}) is True
+    assert provider_usage_seen({"providerCostUsd": "0.000000000000000001"}) is True
+    assert provider_usage_seen({"providerCostUsd": "NaN"}) is False
+
+
+def test_revolver_uses_exact_decimal_quota_ranking() -> None:
+    more = route("z-more", scope="provider:key-more", priority=10)
+    less = route("a-less", scope="provider:key-less", priority=10)
+    states = {
+        "provider:key-more": {
+            "status": "ready",
+            "quota_remaining": "0.3000000000000000000000001",
+            "quota_limit": "1",
+        },
+        "provider:key-less": {
+            "status": "ready",
+            "quota_remaining": "0.3",
+            "quota_limit": "1",
+        },
+    }
+
+    assert [item["id"] for item in build_revolver_candidates(
+        less,
+        [more, less],
+        state_by_scope=states,
+    )] == ["z-more", "a-less"]
+
+
+def test_datetime_rank_preserves_microsecond_order_without_float_timestamp() -> None:
+    older = datetime(9999, 1, 1, 0, 0, 0, 1, tzinfo=timezone.utc)
+    newer = datetime(9999, 1, 1, 0, 0, 0, 2, tzinfo=timezone.utc)
+
+    assert _datetime_rank(older) + 1 == _datetime_rank(newer)
 
 
 def test_quota_scope_is_validated_and_default_is_opaque():
