@@ -33,3 +33,7 @@
 ## 2025-07-24 - [Accessible Hover and State-Dependent Discovery for Inline Sub-Cards]
 **Learning:** Complex sub-cards (such as changelog previews, repair sheets, and workbench status cards) often render context-sensitive action items (such as copying content, applying a mission, or opening deep-links). Sighted and keyboard-navigated users require clear visual cues on action boundaries, and screen readers benefit from descriptive action-oriented `aria-label` and `title` attributes that update based on active/blocked/pressed states.
 **Action:** For interactive buttons within secondary workspace sheets and cards, always pair clear, detailed `title` tooltips with stateful, dynamic descriptive accessible names (e.g., using ternary expressions matching active/disabled states) to prevent confusion.
+
+## 2025-07-25 - [Consistent Language in Accessible Attributes]
+**Learning:** When adding accessibility attributes like `aria-label` and `title` hover tooltips, they must precisely match the primary language used in the surrounding visual components and text. Mixing languages (e.g., German ARIA/tooltips in an English layout or vice-versa) degrades the experience for screen readers and creates confusion for internationalized users.
+**Action:** Always verify the surrounding context language and use matching, consistent localization in all added accessible labels, tooltips, and status descriptions.
