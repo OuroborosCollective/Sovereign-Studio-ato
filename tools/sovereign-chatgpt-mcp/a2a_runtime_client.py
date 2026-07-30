@@ -357,6 +357,7 @@ class A2ARuntimeClient(ControllerRuntimeClient):
             ))
         )
         ok = bool(card_verified and owner_scope_verified and same_run and projected and persisted_events and stream_observed)
+        mutation_performed = bool(run_id and persisted_events)
         return {
             "ok": ok,
             "status": "A2A_LIVE_CANARY_VERIFIED" if ok else "A2A_LIVE_CANARY_INCOMPLETE",
@@ -374,6 +375,10 @@ class A2ARuntimeClient(ControllerRuntimeClient):
             "finalControllerStatus": final_status,
             "finalA2ATaskState": final_state,
             "expectedRevision": revision or None,
+            "operationId": run_id,
+            "mutationPerformed": mutation_performed,
+            "observedEffect": "controller-run-and-events-persisted" if mutation_performed else "none",
+            "readbackVerified": bool(ok and mutation_performed),
             "repositoryMutationPerformed": False,
             "protectedValuesReturned": False,
             "rawModelOutputReturned": False,

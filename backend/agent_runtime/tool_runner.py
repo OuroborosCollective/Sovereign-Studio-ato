@@ -7,11 +7,18 @@ boundaries. It handles tool routing, validation, and event tracking.
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from .provider_neutral_runtime import (
+    PolicyRule,
+    ProviderNeutralRuntimeKernel,
+    RuntimeContext,
+    descriptor_from_registry,
+)
 from .tools import get_tool_registry, ToolResult, ToolCall
 from .tool_events import ToolEventLog
 from .workspace_policy import repo_dir_for_workspace
@@ -99,7 +106,7 @@ class ToolRunner:
         return result
 
     def execute_single(self, tool_name: str, parameters: dict[str, Any]) -> ToolExecution:
-        """Execute a single tool call."""
+        """Execute a single tool call through the legacy compatibility path."""
         call = ToolCall(
             tool_name=tool_name,
             parameters=parameters,
@@ -107,18 +114,77 @@ class ToolRunner:
         )
         return self._execute_single(call)
 
-    def _execute_single(self, call: ToolCall) -> ToolExecution:
-        """Execute a single tool call with timing and event tracking."""
+    def execute_provider_neutral(
+        self,
+        *,
+        kernel: Any,
+        context: Any,
+        descriptor: Any,
+        parameters: dict[str, Any],
+        previous_events: tuple[Any, ...] = (),
+    ) -> Any:
+        """Execute through the deterministic provider-neutral policy/hook kernel.
+
+        The caller must supply explicit revision, tick, epoch and call identity in
+        ``context``. This method deliberately does not generate runtime truth.
+        """
+        return kernel.execute_registered_tool(
+            context=context,
+            tool=descriptor,
+            parameters=parameters,
+            registry=self.registry,
+            workspace_path=self.workspace_path,
+            previous_events=previous_events,
+        )
+
+    def _execute_single(
+        self,
+        call: ToolCall,
+        *,
+        owner_id: str = "legacy-tool-runner",
+        revision: str | None = None,
+    ) -> ToolExecution:
+        """Execute every live tool call through the provider-neutral kernel."""
         start_time = time.time()
         call_id = call.call_id or str(uuid.uuid4())[:8]
+        exact_revision = revision or _workspace_revision(self.workspace_path)
+        context = RuntimeContext(
+            run_id=f"tool-run-{call_id}",
+            owner_id=owner_id,
+            revision=exact_revision,
+            tick=0,
+            epoch_ms=0,
+            call_id=call_id,
+        )
+        descriptor = descriptor_from_registry(self.registry, call.tool_name)
+        kernel = ProviderNeutralRuntimeKernel(
+            policy_rules=(
+                PolicyRule(
+                    rule_id=f"live-{call.tool_name}-allow",
+                    decision="ALLOW",
+                    reason="The authenticated live ToolRunner route already admitted this exact registered tool.",
+                    tool_name=call.tool_name,
+                ),
+            )
+        )
 
         self.event_log.tool_started(call.tool_name, call_id)
-
-        tool_result = self.registry.execute_tool(
-            tool_name=call.tool_name,
-            params=call.parameters,
-            workspace_path=self.workspace_path,
-        )
+        try:
+            neutral_execution = kernel.execute_registered_tool(
+                context=context,
+                tool=descriptor,
+                parameters=call.parameters,
+                registry=self.registry,
+                workspace_path=self.workspace_path,
+            )
+            tool_result = _tool_result_from_provider_neutral(neutral_execution, call.tool_name)
+        except Exception as exc:
+            tool_result = ToolResult(
+                status="blocked",
+                tool=call.tool_name,
+                blocker=f"Provider-neutral runtime blocked the tool call: {exc}",
+                predictive_signal="agent_tool_policy_blocked",
+            )
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -177,6 +243,50 @@ def run_tool_sequence(
     return runner.execute(calls)
 
 
+def _workspace_revision(workspace_path: str | None) -> str:
+    if workspace_path:
+        try:
+            completed = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=workspace_path,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            revision = completed.stdout.strip().lower()
+            if len(revision) == 40 and all(character in "0123456789abcdef" for character in revision):
+                return revision
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "0" * 40
+
+
+def _tool_result_from_provider_neutral(execution: Any, tool_name: str) -> ToolResult:
+    result = dict(execution.result)
+    status = str(result.get("status") or execution.status)
+    return ToolResult(
+        status="done" if status == "done" else "blocked" if status in {"blocked", "approval-required"} else "error",
+        output=result.get("output") or result.get("stdout"),
+        error=result.get("error") or result.get("stderr"),
+        blocker=result.get("blocker") or result.get("reason"),
+        metadata={
+            **dict(result.get("metadata") or {}),
+            "providerNeutralEvidenceSha256": execution.evidence_sha256,
+            "providerNeutralEventCount": len(execution.events),
+        },
+        tool=tool_name,
+        allowed=execution.status == "done",
+        stdout=result.get("stdout") or result.get("output"),
+        stderr=result.get("stderr") or result.get("error"),
+        changed_files=tuple(result.get("changed_files") or ()),
+        diff_summary=result.get("diff_summary"),
+        test_summary=result.get("test_summary"),
+        exit_code=result.get("exit_code"),
+        predictive_signal=str(result.get("predictive_signal") or "agent_tool_result"),
+    )
+
+
 def _resolve_job_id(job_or_id: Any) -> str:
     return str(getattr(job_or_id, "job_id", job_or_id))
 
@@ -208,23 +318,29 @@ def _normalize_route_tool(action: str, parameters: dict[str, Any]) -> tuple[str,
     if action == "git-status":
         return "git_status", {}
     if action == "diff":
-        return "git_diff", {
-            "file": parameters.get("file"),
+        normalized = {
             "staged": bool(parameters.get("staged", False)),
             "stat": bool(parameters.get("stat", False)),
         }
+        if parameters.get("file") is not None:
+            normalized["file"] = parameters.get("file")
+        return "git_diff", normalized
     if action == "test":
         command = parameters.get("command")
         argv = parameters.get("argv")
         if not command and isinstance(argv, list):
             command = " ".join(str(part) for part in argv)
-        return "test", {
-            "command": command,
-            "path": parameters.get("path"),
-            "framework": parameters.get("framework"),
+        normalized = {
             "timeout": parameters.get("timeout", 300),
             "verbose": parameters.get("verbose", True),
         }
+        if command is not None:
+            normalized["command"] = command
+        if parameters.get("path") is not None:
+            normalized["path"] = parameters.get("path")
+        if parameters.get("framework") is not None:
+            normalized["framework"] = parameters.get("framework")
+        return "test", normalized
     if action == "janitor":
         return "janitor", dict(parameters)
     return action, parameters
@@ -322,5 +438,8 @@ def run_agent_job_tool(
     call_id = f"{_resolve_job_id(job_or_id)[:8]}-{normalized_tool[:8]}"
 
     runner = ToolRunner(resolved_workspace)
-    execution = runner._execute_single(ToolCall(tool_name=normalized_tool, parameters=normalized_params, call_id=call_id))
+    execution = runner._execute_single(
+        ToolCall(tool_name=normalized_tool, parameters=normalized_params, call_id=call_id),
+        owner_id=str(getattr(job_or_id, "user_id", "agent-job-owner") or "agent-job-owner"),
+    )
     return _route_result(tool_name, normalized_tool, execution)

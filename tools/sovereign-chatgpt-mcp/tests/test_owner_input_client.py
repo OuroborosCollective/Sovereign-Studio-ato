@@ -234,6 +234,10 @@ def test_controller_start_sends_bounded_non_secret_mission(monkeypatch) -> None:
     }
     assert call["timeout"] == 1200
     assert result["runtime"] == "openai-agents-sdk"
+    assert result["mutationPerformed"] is True
+    assert result["observedEffect"] == "controller-run-persisted"
+    assert result["readbackVerified"] is True
+    assert result["persistedRunId"] == "run-11111111111111111111111111111111"
 
 
 def test_controller_start_can_explicitly_select_free_mode(monkeypatch) -> None:
@@ -345,7 +349,72 @@ def test_controller_external_event_uses_idempotent_owner_bridge_contract(monkeyp
     assert call["json"]["externalIdentity"] == "workflow:29648652001"
     assert call["timeout"] == 30
     assert result["status"] == "CONTROLLER_EXTERNAL_EVENT_RECORDED"
+    assert result["mutationPerformed"] is True
+    assert result["observedEffect"] == "controller-event-persisted"
+    assert result["readbackVerified"] is True
+    assert result["persistedRunId"] == run_id
+    assert result["persistedEventId"] == "event-external-1234"
     assert result["protected_values_returned"] is False
+
+
+def test_controller_resume_projects_persisted_run_effect(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    run_id = "run-11111111111111111111111111111111"
+    resume_evidence_id = "evidence-" + "a" * 32
+    session = FakeSession([
+        FakeResponse(202, {
+            "ok": True,
+            "run": {"run_id": run_id, "status": "RUNNING"},
+            "resumed": True,
+            "resumeClaimEvidenceId": resume_evidence_id,
+        })
+    ])
+    client = ControllerRuntimeClient(session=session)
+
+    result = client.resume_run(run_id, evidence="Verified recovery evidence.")
+
+    assert result["mutationPerformed"] is True
+    assert result["observedEffect"] == "controller-resume-claim-persisted"
+    assert result["readbackVerified"] is True
+    assert result["persistedRunId"] == run_id
+    assert result["persistedEvidenceId"] == resume_evidence_id
+    assert result["protected_values_returned"] is False
+
+
+def test_controller_resume_already_claimed_does_not_claim_mutation(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    run_id = "run-11111111111111111111111111111111"
+    session = FakeSession([
+        FakeResponse(409, {
+            "ok": False,
+            "runId": run_id,
+            "status": "RUNNING",
+            "blocker": "RUN_ALREADY_CLAIMED",
+        })
+    ])
+    client = ControllerRuntimeClient(session=session)
+
+    result = client.resume_run(run_id)
+
+    assert result["mutationPerformed"] is False
+    assert result["observedEffect"] == "none"
+    assert result["readbackVerified"] is False
+    assert result["persistedRunId"] == run_id
+    assert result["persistedEvidenceId"] is None
+
+
+def test_controller_write_evidence_fails_closed_without_persisted_identity() -> None:
+    result = ControllerRuntimeClient._controller_write_evidence(
+        {"ok": True, "status": "COMPLETED"},
+        expected_run_id="run-11111111111111111111111111111111",
+    )
+
+    assert result["mutationPerformed"] is False
+    assert result["observedEffect"] == "none"
+    assert result["readbackVerified"] is False
+    assert result["operationId"] is None
 
 
 def test_controller_external_event_rejects_secret_before_network(monkeypatch) -> None:
