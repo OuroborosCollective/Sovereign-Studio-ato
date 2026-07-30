@@ -1479,19 +1479,15 @@ jobs:
               core.setFailed('REVIEW_THREAD_IDENTITY_COLLISION');
               return;
             }
-            return targets;
+            for (const target of targets) {
+              core.setOutput(`thread_${target.discussionId}`, target.threadId);
+              core.setOutput(`resolved_${target.discussionId}`, String(target.alreadyResolved));
+            }
 
-      - name: Resolve ten exact repaired Codex threads
+      - name: Verify exact PR head before resolution
         uses: actions/github-script@v7
-        env:
-          TARGETS_JSON: ${{ steps.locate.outputs.result }}
         with:
           script: |
-            const targets = JSON.parse(process.env.TARGETS_JSON || '[]');
-            if (!Array.isArray(targets) || targets.length !== 10) {
-              core.setFailed('REVIEW_THREAD_TARGET_COUNT_INVALID');
-              return;
-            }
             const { data: pull } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -1499,23 +1495,127 @@ jobs:
             });
             if (String(pull.head?.sha || '').toLowerCase() !== context.sha.toLowerCase()) {
               core.setFailed('PR_HEAD_CHANGED_BEFORE_RESOLUTION');
-              return;
             }
-            const mutation = `mutation($threadId:ID!){
-              resolveReviewThread(input:{threadId:$threadId}){
-                thread{id isResolved}
-              }
-            }`;
-            for (const target of targets) {
-              if (target.alreadyResolved !== true) {
-                const result = await github.graphql(mutation, { threadId: target.threadId });
-                const resolved = result.resolveReviewThread?.thread;
-                if (!resolved || resolved.id !== target.threadId || resolved.isResolved !== true) {
-                  core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${target.discussionId}`);
-                  return;
-                }
-              }
-            }
+
+      - name: Resolve Codex discussion 3678755307
+        if: steps.locate.outputs.resolved_3678755307 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678755307 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755307');
+
+      - name: Resolve Codex discussion 3678755311
+        if: steps.locate.outputs.resolved_3678755311 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678755311 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755311');
+
+      - name: Resolve Codex discussion 3678755319
+        if: steps.locate.outputs.resolved_3678755319 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678755319 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755319');
+
+      - name: Resolve Codex discussion 3678755324
+        if: steps.locate.outputs.resolved_3678755324 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678755324 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755324');
+
+      - name: Resolve Codex discussion 3678755330
+        if: steps.locate.outputs.resolved_3678755330 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678755330 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755330');
+
+      - name: Resolve Codex discussion 3678755338
+        if: steps.locate.outputs.resolved_3678755338 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678755338 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755338');
+
+      - name: Resolve Codex discussion 3678889494
+        if: steps.locate.outputs.resolved_3678889494 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678889494 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889494');
+
+      - name: Resolve Codex discussion 3678889497
+        if: steps.locate.outputs.resolved_3678889497 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678889497 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889497');
+
+      - name: Resolve Codex discussion 3678889501
+        if: steps.locate.outputs.resolved_3678889501 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678889501 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889501');
+
+      - name: Resolve Codex discussion 3678889502
+        if: steps.locate.outputs.resolved_3678889502 != 'true'
+        uses: actions/github-script@v7
+        env:
+          THREAD_ID: ${{ steps.locate.outputs.thread_3678889502 }}
+        with:
+          script: |
+            const threadId = String(process.env.THREAD_ID || '');
+            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
+            const resolved = result.resolveReviewThread?.thread;
+            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889502');
 
       - name: Verify ten Codex threads resolved
         uses: actions/github-script@v7
