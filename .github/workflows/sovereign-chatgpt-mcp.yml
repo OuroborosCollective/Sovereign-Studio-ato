@@ -1498,124 +1498,174 @@ jobs:
             }
 
       - name: Resolve Codex discussion 3678755307
-        if: steps.locate.outputs.resolved_3678755307 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678755307 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755307');
+            const discussionId = '3678755307';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678755311
-        if: steps.locate.outputs.resolved_3678755311 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678755311 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755311');
+            const discussionId = '3678755311';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678755319
-        if: steps.locate.outputs.resolved_3678755319 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678755319 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755319');
+            const discussionId = '3678755319';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678755324
-        if: steps.locate.outputs.resolved_3678755324 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678755324 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755324');
+            const discussionId = '3678755324';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678755330
-        if: steps.locate.outputs.resolved_3678755330 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678755330 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755330');
+            const discussionId = '3678755330';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678755338
-        if: steps.locate.outputs.resolved_3678755338 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678755338 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678755338');
+            const discussionId = '3678755338';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678889494
-        if: steps.locate.outputs.resolved_3678889494 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678889494 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889494');
+            const discussionId = '3678889494';
+            const expectedPath = 'tools/sovereign-chatgpt-mcp/owner_input_client.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678889497
-        if: steps.locate.outputs.resolved_3678889497 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678889497 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889497');
+            const discussionId = '3678889497';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678889501
-        if: steps.locate.outputs.resolved_3678889501 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678889501 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889501');
+            const discussionId = '3678889501';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Resolve Codex discussion 3678889502
-        if: steps.locate.outputs.resolved_3678889502 != 'true'
         uses: actions/github-script@v7
-        env:
-          THREAD_ID: ${{ steps.locate.outputs.thread_3678889502 }}
         with:
           script: |
-            const threadId = String(process.env.THREAD_ID || '');
-            const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, { threadId });
-            const resolved = result.resolveReviewThread?.thread;
-            if (!resolved || resolved.id !== threadId || resolved.isResolved !== true) core.setFailed('REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:3678889502');
+            const discussionId = '3678889502';
+            const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
+            const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid reviewThreads(first:100){nodes{id isResolved path comments(first:100){nodes{url}}}}}}}`;
+            const data = await github.graphql(query, {owner:context.repo.owner,repo:context.repo.repo,number:1091});
+            const pull = data.repository.pullRequest;
+            const matches = (pull?.reviewThreads?.nodes || []).filter((thread) => String(thread.path || '') === expectedPath && (thread.comments?.nodes || []).some((comment) => String(comment.url || '').endsWith(`#discussion_r${discussionId}`)));
+            if (!pull || String(pull.headRefOid || '').toLowerCase() !== context.sha.toLowerCase() || matches.length !== 1) { core.setFailed(`REVIEW_THREAD_EVIDENCE_MISMATCH:${discussionId}:${matches.length}`); return; }
+            if (matches[0].isResolved !== true) {
+              const result = await github.graphql(`mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`, {threadId:matches[0].id});
+              const resolved = result.resolveReviewThread?.thread;
+              if (!resolved || resolved.id !== matches[0].id || resolved.isResolved !== true) core.setFailed(`REVIEW_THREAD_RESOLUTION_NOT_CONFIRMED:${discussionId}`);
+            }
 
       - name: Verify ten Codex threads resolved
         uses: actions/github-script@v7
