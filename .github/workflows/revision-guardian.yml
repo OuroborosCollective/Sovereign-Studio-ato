@@ -245,7 +245,11 @@ jobs:
                         : 'Automatic repair is disabled for this run.',
                     ].join('\n'),
                   );
-                  core.setFailed('PR_HEAD_NOT_BASED_ON_CURRENT_MAIN');
+                  if (repair) {
+                    core.notice('PR_HEAD_SYNC_DISPATCHED_WAIT_FOR_NEW_EVIDENCE');
+                  } else {
+                    core.setFailed('PR_HEAD_NOT_BASED_ON_CURRENT_MAIN');
+                  }
                   return;
                 }
               } else {
@@ -477,7 +481,7 @@ jobs:
               }
               if (repairRequested) {
                 await finish('failure', 'Exact-revision repair dispatched', summary);
-                core.setFailed('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE');
+                core.notice('REVISION_REPAIR_DISPATCHED_WAIT_FOR_NEW_EVIDENCE');
                 return;
               }
               await finish('success', 'Revision equality verified', summary);
