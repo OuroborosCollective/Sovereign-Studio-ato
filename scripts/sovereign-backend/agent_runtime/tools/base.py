@@ -7,8 +7,20 @@ Tools are runtime-verified before any command reaches the filesystem or shell.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def _thaw_immutable_metadata(value: Any) -> Any:
+    """Convert immutable mapping wrappers into route-safe plain containers."""
+    if isinstance(value, Mapping):
+        return {key: _thaw_immutable_metadata(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_thaw_immutable_metadata(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_thaw_immutable_metadata(item) for item in value)
+    return value
 
 
 @dataclass
@@ -41,6 +53,10 @@ class ToolResult:
     predictive_signal: str = "agent_tool_result"
 
     def __post_init__(self) -> None:
+        normalized_metadata = _thaw_immutable_metadata(self.metadata)
+        if not isinstance(normalized_metadata, dict):
+            raise TypeError("ToolResult metadata must be a mapping.")
+        self.metadata = normalized_metadata
         if self.status == "blocked":
             self.allowed = False
         if self.stdout is None and self.output is not None:
