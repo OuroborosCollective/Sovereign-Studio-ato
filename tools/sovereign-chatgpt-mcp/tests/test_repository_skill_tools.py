@@ -358,8 +358,35 @@ def test_normalization_preview_deduplicates_without_writing(repository: Path) ->
     assert result["embeddingsGenerated"] is False
     assert result["repositoryWritten"] is False
     assert result["records"][0]["tags"] == ["runtime-truth"]
+    assert result["records"][0]["confidence"] == "0.900000"
+    assert result["records"][0]["confidenceKappa"] == 900_000
     assert result["records"][0]["content_hash"].startswith("sha256:")
     assert not (repository / "patterns.normalized.jsonl").exists()
+
+
+def test_normalization_confidence_identity_is_canonical() -> None:
+    base = {
+        "title": "Canonical confidence",
+        "problem": "Binary float identity can drift.",
+        "solution": "Hash canonical decimal text and Kappa units.",
+        "applicability": "Learning records",
+        "validation": ["Compare normalized content hashes"],
+        "source_refs": [{
+            "repository": "example/repo",
+            "revision": "c" * 40,
+            "path": "record.json",
+            "lines": "1",
+            "license": "project-owned",
+        }],
+    }
+    numeric = skill_tools._normalize_record({**base, "confidence": 0.9})
+    text = skill_tools._normalize_record({**base, "confidence": "0.9000009"})
+
+    assert numeric["content_hash"] == text["content_hash"]
+    assert numeric["confidence"] == "0.900000"
+    assert numeric["confidenceKappa"] == 900_000
+    with pytest.raises(ValueError, match="confidence"):
+        skill_tools._normalize_record({**base, "confidence": True})
 
 
 def test_real_repository_architecture_snapshot_is_bounded_and_read_only() -> None:

@@ -7,6 +7,7 @@ existing idempotent outbox projection; no second source of truth is created.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 import hashlib
 import hmac
 import json
@@ -29,6 +30,7 @@ _PLAN_SCHEMA_VERSION = "sovereign.proven-learning-plan.v1"
 _APPROVAL_TARGET = "proven_learning_confirmation"
 _APPROVAL_FILENAME = "proven_learning_confirmation.txt"
 _MAX_RECORD_BYTES = 80_000
+_CONFIDENCE_SCALE = 1_000_000
 _OPERATION_TYPES = frozenset({"integration", "fix", "database", "merge"})
 _EVIDENCE_SOURCES = frozenset({
     "repository_check",
@@ -180,6 +182,23 @@ def _normalize_evidence(value: Any) -> dict[str, Any]:
     }
 
 
+def _normalize_confidence(value: Any) -> tuple[str, int]:
+    if isinstance(value, bool):
+        raise ValueError("confidence must be numeric")
+    raw = "0" if value in (None, "") else str(value).strip()
+    try:
+        parsed = Decimal(raw)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("confidence must be numeric") from exc
+    if not parsed.is_finite() or parsed < 0 or parsed > 1:
+        raise ValueError("confidence must be between 0 and 1")
+    units = int(
+        (parsed * Decimal(_CONFIDENCE_SCALE)).to_integral_value(rounding=ROUND_DOWN)
+    )
+    canonical = f"{units // _CONFIDENCE_SCALE}.{units % _CONFIDENCE_SCALE:06d}"
+    return canonical, units
+
+
 def normalize_proven_learning_record(record: Any) -> dict[str, Any]:
     if not isinstance(record, dict):
         raise ValueError("record must be an object")
@@ -204,13 +223,9 @@ def normalize_proven_learning_record(record: Any) -> dict[str, Any]:
         (_source_ref(item) for item in refs),
         key=lambda item: (item["repository"], item["revision"], item["path"], item["lines"]),
     )
-    try:
-        confidence = float(record.get("confidence", 0.0))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("confidence must be numeric") from exc
-    if not 0.0 <= confidence <= 1.0:
-        raise ValueError("confidence must be between 0 and 1")
-    normalized["confidence"] = round(confidence, 6)
+    confidence, confidence_kappa = _normalize_confidence(record.get("confidence", "0"))
+    normalized["confidence"] = confidence
+    normalized["confidenceKappa"] = confidence_kappa
     normalized["evidence"] = _normalize_evidence(record.get("evidence"))
 
     serialized = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

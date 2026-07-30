@@ -10,6 +10,7 @@ import hashlib
 import os
 import re
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
 from llm_cost_policy import BillingPolicyError, FREE_CATEGORY, route_billing_policy
@@ -134,15 +135,17 @@ def route_is_verified_free(route: dict[str, Any]) -> bool:
     )
 
 
-def _number(value: Any) -> float | None:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
+def _number(value: Any) -> Decimal | None:
+    if isinstance(value, bool):
         return None
-    return parsed if parsed >= 0 else None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return parsed if parsed.is_finite() and parsed >= 0 else None
 
 
-def _first_number(*values: Any) -> float | None:
+def _first_number(*values: Any) -> Decimal | None:
     for value in values:
         if value is None:
             continue
@@ -161,6 +164,17 @@ def _as_datetime(value: Any) -> datetime | None:
     if not isinstance(value, datetime):
         return None
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+_UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _datetime_rank(value: datetime | None) -> int:
+    if value is None:
+        return -1
+    normalized = value.astimezone(timezone.utc)
+    delta = normalized - _UTC_EPOCH
+    return ((delta.days * 86_400 + delta.seconds) * 1_000_000) + delta.microseconds
 
 
 def _quota_rank(
@@ -204,7 +218,7 @@ def _quota_rank(
     last_attempt = _as_datetime(
         current.get("last_attempt_at") or current.get("lastAttemptAt")
     )
-    attempt_rank = last_attempt.timestamp() if last_attempt is not None else -1.0
+    attempt_rank = _datetime_rank(last_attempt)
     latency_ms = _first_number(
         current.get("last_latency_ms"),
         current.get("lastLatencyMs"),
@@ -212,11 +226,12 @@ def _quota_rank(
     )
     return (
         availability,
-        -(ratio if ratio is not None else 0),
+        -(ratio if ratio is not None else Decimal(0)),
         failure_count,
         0 if last_attempt is None else 1,
         attempt_rank,
-        latency_ms if latency_ms is not None else float("inf"),
+        0 if latency_ms is not None else 1,
+        latency_ms if latency_ms is not None else Decimal(0),
         int(route.get("priority") or 0),
         0 if str(route.get("id") or "") == primary_id else 1,
         str(route.get("model_id") or route.get("modelId") or "").casefold(),
@@ -294,11 +309,8 @@ def provider_usage_seen(evidence: dict[str, Any]) -> bool:
             return True
     except (TypeError, ValueError):
         pass
-    try:
-        cost = evidence.get("providerCostUsd")
-        return cost is not None and float(cost) > 0
-    except (TypeError, ValueError):
-        return False
+    cost = _number(evidence.get("providerCostUsd"))
+    return cost is not None and cost > 0
 
 
 def failure_decision(classified: dict[str, Any], *, usage_seen: bool) -> dict[str, Any]:

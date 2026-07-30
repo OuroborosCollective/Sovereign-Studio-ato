@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 import difflib
 import hashlib
 import json
@@ -23,6 +24,7 @@ _MAX_TRACKED_FILES: Final[int] = 30_000
 _MAX_TEXT_BYTES: Final[int] = 1_200_000
 _MAX_RESULT_ITEMS: Final[int] = 160
 _MAX_NORMALIZE_RECORDS: Final[int] = 100
+_CONFIDENCE_SCALE: Final[int] = 1_000_000
 _ALLOWED_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,159}$")
 _TEXT_SUFFIXES = {
     ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
@@ -1282,6 +1284,23 @@ def _source_ref(value: Any) -> dict[str, str]:
     return result
 
 
+def _normalize_confidence(value: Any) -> tuple[str, int]:
+    if isinstance(value, bool):
+        raise ValueError("confidence must be numeric")
+    raw = "0" if value in (None, "") else str(value).strip()
+    try:
+        parsed = Decimal(raw)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("confidence must be numeric") from exc
+    if not parsed.is_finite() or parsed < 0 or parsed > 1:
+        raise ValueError("confidence must be between 0 and 1")
+    units = int(
+        (parsed * Decimal(_CONFIDENCE_SCALE)).to_integral_value(rounding=ROUND_DOWN)
+    )
+    canonical = f"{units // _CONFIDENCE_SCALE}.{units % _CONFIDENCE_SCALE:06d}"
+    return canonical, units
+
+
 def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {"schema_version": "knowledge-pattern.v1"}
     for field in _REQUIRED_TEXT:
@@ -1297,13 +1316,9 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(refs, list) or not refs:
         raise ValueError("source_refs must contain at least one source")
     normalized["source_refs"] = sorted((_source_ref(item) for item in refs), key=lambda item: (item["repository"], item["revision"], item["path"], item["lines"]))
-    try:
-        confidence = float(record.get("confidence", 0.0))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("confidence must be numeric") from exc
-    if not 0.0 <= confidence <= 1.0:
-        raise ValueError("confidence must be between 0 and 1")
-    normalized["confidence"] = round(confidence, 6)
+    confidence, confidence_kappa = _normalize_confidence(record.get("confidence", "0"))
+    normalized["confidence"] = confidence
+    normalized["confidenceKappa"] = confidence_kappa
     serialized = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if _SECRET_MARKER.search(serialized):
         raise ValueError("record contains a secret-like marker")
