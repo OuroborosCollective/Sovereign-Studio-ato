@@ -2310,6 +2310,7 @@ def health_ready():
                    to_regclass('uq_credit_packages_name') IS NOT NULL AS package_uniqueness,
                    to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
                    to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
+                   to_regclass('sovereign_rescue_repairs') IS NOT NULL AS sovereign_rescue_repairs,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
                        WHERE table_schema=current_schema()
@@ -2354,6 +2355,7 @@ def health_ready():
             "package_uniqueness",
             "github_app_credits",
             "github_app_credit_transactions",
+            "sovereign_rescue_repairs",
             "transaction_receipts",
             "receipt_fingerprints",
         ))
@@ -2378,6 +2380,7 @@ def health_ready():
                 "042_separate_freellm_quota_from_provider_pricing.sql",
                 "043_n_plus_one_foundation.sql",
                 "044_n_plus_one_memory_voice_update.sql",
+                "045_sovereign_rescue.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),

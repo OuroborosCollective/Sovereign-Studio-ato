@@ -27,6 +27,7 @@ from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owne
 from runtime import OperatorRuntime
 from self_heal import REPAIR_ENGINE
 from sovereign_cognitive_widget import register_sovereign_cognitive_widget
+from sovereign_rescue_widget import register_sovereign_rescue_widget
 
 
 def _host() -> str:
@@ -1420,6 +1421,7 @@ def rollback_backend_release(target_image_digest: str, confirmation_digest: str)
 
 
 register_owner_input_widget(mcp)
+register_sovereign_rescue_widget(mcp, read_only_annotations=READ_ONLY)
 register_sovereign_cognitive_widget(
     mcp,
     read_only_annotations=READ_ONLY,

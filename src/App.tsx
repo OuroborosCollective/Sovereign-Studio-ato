@@ -20,6 +20,7 @@ import {
   reusableMemoryContext,
   searchReusableMemory,
 } from './features/knowledge/knowledgeApi';
+import { RescuePanel } from './features/rescue/RescuePanel';
 
 const CHAT_ONLY_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -41,6 +42,10 @@ export default function App() {
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
   >();
+  const [rescueOpen, setRescueOpen] = useState(
+    () => typeof window !== 'undefined'
+      && new URLSearchParams(window.location.search).get('rescue') === '1',
+  );
 
   useEffect(() => {
     if (!agentConfig.ready || agentJob.status !== 'idle') return;
@@ -345,6 +350,12 @@ export default function App() {
     }
   };
 
+  const adoptRescueJob = async (jobId: string) => {
+    const snapshot = await agentClient.getJob(jobId);
+    setAgentJob(snapshot);
+    setMission('Sovereign Rescue');
+  };
+
   return (
     <LlmAdapterProvider>
       <main data-testid="chat-only-app" data-layout="chat-only-live-entry" aria-label="Sovereign Chat" style={CHAT_ONLY_STYLE}>
@@ -369,6 +380,36 @@ export default function App() {
           agentIsRunning={agentIsRunning}
           onStartAgent={startChatOnlyTask}
           onCancelAgent={cancelChatOnlyTask}
+        />
+        <button
+          type="button"
+          onClick={() => setRescueOpen(true)}
+          aria-label="Sovereign Rescue öffnen"
+          style={{
+            position: 'fixed',
+            right: 14,
+            bottom: 14,
+            zIndex: 70,
+            minHeight: 48,
+            borderRadius: 24,
+            border: '1px solid #38bdf8',
+            background: '#0c4a6e',
+            color: '#f0f9ff',
+            padding: '10px 16px',
+            fontWeight: 800,
+            boxShadow: '0 12px 30px rgba(0,0,0,.35)',
+          }}
+        >
+          Rescue
+        </button>
+        <RescuePanel
+          open={rescueOpen}
+          apiBaseUrl={agentConfig.agentApiUrl}
+          currentJobId={agentJob.jobId}
+          draftPrUrl={agentJob.draftPrUrl}
+          onClose={() => setRescueOpen(false)}
+          onJobReady={adoptRescueJob}
+          onPublishDraftPr={() => publishDraftPr()}
         />
       </main>
     </LlmAdapterProvider>

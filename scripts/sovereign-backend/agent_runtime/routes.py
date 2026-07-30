@@ -11,6 +11,8 @@ from dataclasses import asdict
 import os
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
+import uuid
 
 from flask import jsonify, request
 
@@ -24,11 +26,12 @@ from .productivity_insights import (
     validate_mission,
 )
 from .contracts import SovereignAgentEvent, normalize_agent_job_result
+from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .git_workspace import normalize_ephemeral_github_token
-from .job_lifecycle import create_sovereign_agent_job
+from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import (
     evaluate_pattern_learning,
@@ -41,6 +44,21 @@ from .reusable_memory import search_reusable_memory
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
+from .rescue import (
+    REPAIR_PACK_CREDITS,
+    build_free_diagnosis,
+    build_proof_pack,
+    entitlement_payload,
+    normalize_head_sha,
+    public_repair_row,
+    read_github_pr_evidence,
+    redact_secret_text,
+    reserve_repair_pack,
+    resolve_account_entitlement,
+    resolve_github_head,
+    update_repair_execution,
+    verify_proof_pack,
+)
 from .universal_toolchain import (
     build_agent_handoff_context,
     persist_toolchain_handoff,
@@ -286,6 +304,336 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
             }), 200 if response_ok else 400
+        finally:
+            _close(conn)
+
+    def _rescue_account(conn, user_id: str) -> dict[str, Any] | None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT account.id::text AS id, account.email, account.role,
+                          account.credits::integer AS credits,
+                          EXISTS(
+                            SELECT 1
+                            FROM transactions AS tx
+                            JOIN credit_receipts AS receipt
+                              ON receipt.user_id = tx.user_id
+                             AND receipt.provider = tx.provider
+                             AND receipt.provider_tx_id = tx.provider_tx_id
+                            WHERE tx.user_id = account.id
+                              AND tx.type = 'credit_purchase'
+                              AND tx.status = 'completed'
+                          ) AS paid_purchase_verified
+                   FROM admin_users AS account
+                   WHERE account.id = %s::uuid
+                   LIMIT 1""",
+                (user_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        account = dict(row)
+        account["configured_owner_id"] = os.getenv("SOVEREIGN_OWNER_ADMIN_ID", "")
+        account["configured_owner_email"] = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "")
+        return account
+
+    def _rescue_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
+        raw_token = body.get("githubAccessToken")
+        token = normalize_ephemeral_github_token(raw_token)
+        if raw_token is not None and token is None:
+            return None, (jsonify({"error": "githubAccessToken has an invalid format"}), 400)
+        return token, None
+
+    def _read_owned_rescue(conn, user_id: str, repair_id: str) -> dict[str, Any] | None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT * FROM sovereign_rescue_repairs
+                   WHERE repair_id = %s::uuid AND user_id = %s::uuid
+                   LIMIT 1""",
+                (repair_id, user_id),
+            )
+            row = cur.fetchone()
+        return dict(row) if row else None
+
+    @app.route("/api/user/agent/rescue/entitlement", methods=["GET"])
+    @require_session
+    def user_get_rescue_entitlement():
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            account = _rescue_account(conn, user_id)
+            if not account:
+                return jsonify({"error": "Authenticated account not found"}), 404
+            entitlement = resolve_account_entitlement(account)
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-rescue",
+                "entitlement": entitlement_payload(account, entitlement),
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/rescue/diagnose", methods=["POST"])
+    @require_session
+    def user_diagnose_sovereign_rescue():
+        body: dict[str, Any] = request.get_json(force=True) or {}
+        token, token_error = _rescue_token(body)
+        if token_error:
+            return token_error
+        try:
+            revision = resolve_github_head(
+                body.get("repository") or body.get("repoUrl"),
+                body.get("baseBranch") or body.get("branch") or "main",
+                token=token,
+            )
+            diagnosis = build_free_diagnosis(
+                repository=revision["repository"],
+                base_branch=revision["baseBranch"],
+                base_sha=revision["baseSha"],
+                evidence_text=body.get("evidenceText") or body.get("logText") or "",
+                requested_family=str(body.get("failureFamily") or ""),
+            )
+        except (ValueError, HTTPError, URLError, TimeoutError) as exc:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-rescue",
+                "mutationPerformed": False,
+                "blocker": "github_revision_unverified",
+                "error": redact_secret_text(exc, 400),
+            }), 422
+        return jsonify({
+            "ok": bool(diagnosis.get("ok")),
+            "runtime": "sovereign-rescue",
+            "diagnosis": diagnosis,
+        }), 200 if diagnosis.get("ok") else 422
+
+    @app.route("/api/user/agent/rescue/repair", methods=["POST"])
+    @require_session
+    def user_start_sovereign_rescue_repair():
+        user_id = _current_session_user_id()
+        body: dict[str, Any] = request.get_json(force=True) or {}
+        token, token_error = _rescue_token(body)
+        if token_error:
+            return token_error
+        try:
+            idempotency_key = str(uuid.UUID(str(
+                request.headers.get("Idempotency-Key")
+                or body.get("idempotencyKey")
+                or ""
+            )))
+            expected_base_sha = normalize_head_sha(body.get("expectedBaseSha"))
+            revision = resolve_github_head(
+                body.get("repository") or body.get("repoUrl"),
+                body.get("baseBranch") or body.get("branch") or "main",
+                token=token,
+            )
+            if revision["baseSha"] != expected_base_sha:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "blocker": "repository_head_changed",
+                    "expectedBaseSha": expected_base_sha,
+                    "actualBaseSha": revision["baseSha"],
+                    "nextAction": "Run a new free diagnosis on the current revision.",
+                }), 409
+            diagnosis = build_free_diagnosis(
+                repository=revision["repository"],
+                base_branch=revision["baseBranch"],
+                base_sha=revision["baseSha"],
+                evidence_text=body.get("evidenceText") or body.get("logText") or "",
+                requested_family=str(body.get("failureFamily") or ""),
+            )
+            if not diagnosis.get("ok"):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "blocker": diagnosis.get("blocker"),
+                    "diagnosis": diagnosis,
+                }), 422
+            contract = diagnosis["outcomeContract"]
+            repair_id = str(uuid.uuid4())
+            implementation_job_id = generate_agent_job_id()
+        except (ValueError, HTTPError, URLError, TimeoutError) as exc:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-rescue",
+                "blocker": "repair_request_invalid",
+                "error": redact_secret_text(exc, 400),
+            }), 400
+
+        conn = _connection()
+        try:
+            try:
+                reservation = reserve_repair_pack(
+                    conn,
+                    user_id=user_id,
+                    repair_id=repair_id,
+                    job_id=implementation_job_id,
+                    idempotency_key=idempotency_key,
+                    repository=revision["repository"],
+                    base_branch=revision["baseBranch"],
+                    base_sha=revision["baseSha"],
+                    failure_family=str(diagnosis["failureFamily"]),
+                    outcome_contract_sha256=str(contract["contractSha256"]),
+                    configured_owner_id=os.getenv("SOVEREIGN_OWNER_ADMIN_ID", ""),
+                    configured_owner_email=os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", ""),
+                )
+            except PermissionError as exc:
+                blocker = str(exc)
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "blocker": blocker,
+                    "requiredCredits": REPAIR_PACK_CREDITS,
+                    "checkout": {"surface": "existing-paywall-modal", "external": True},
+                }), 402
+            except RuntimeError as exc:
+                status = 409 if "conflict" in str(exc) or "race" in str(exc) else 500
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "blocker": redact_secret_text(exc, 400),
+                }), status
+            if reservation.get("duplicate"):
+                return jsonify({
+                    "ok": True,
+                    "runtime": "sovereign-rescue",
+                    "duplicate": True,
+                    "repair": reservation,
+                }), 200
+        finally:
+            _close(conn)
+
+        mission = (
+            "Sovereign Rescue Repair Pack. "
+            f"Repair only failure family {diagnosis['failureFamily']} at exact base "
+            f"{revision['baseSha']}. Follow Outcome Contract {contract['contractSha256']}. "
+            "Keep the change bounded, run the required targeted checks, create no "
+            "production side effect, and stop at Draft-PR-ready evidence."
+        )
+        execution, status_code = start_cognitive_swarm_run(
+            get_connection=_connection,
+            user_id=user_id,
+            mission=mission,
+            evidence=redact_secret_text(
+                body.get("evidenceText") or body.get("logText") or ""
+            ),
+            mode="free",
+            intent_mode="repository_execution",
+            repository_url=revision["repository"],
+            repository_branch=revision["baseBranch"],
+            expected_head_sha=revision["baseSha"],
+            github_access_token=token,
+            implementation_job_id=implementation_job_id,
+        )
+        run_id = str(execution.get("runId") or "") or None
+        job_id = str(execution.get("jobId") or implementation_job_id)
+        completed = status_code == 200 and execution.get("status") == "COMPLETED"
+        conn = _connection()
+        try:
+            update_repair_execution(
+                conn,
+                user_id=user_id,
+                repair_id=str(reservation["repairId"]),
+                run_id=run_id,
+                job_id=job_id,
+                state="draft_pr_ready" if completed else "blocked",
+                blocker="" if completed else str(execution.get("blocker") or execution.get("reason") or ""),
+            )
+        finally:
+            _close(conn)
+        return jsonify({
+            "ok": completed,
+            "runtime": "sovereign-rescue",
+            "diagnosis": diagnosis,
+            "outcomeContract": contract,
+            "repair": {
+                **reservation,
+                "runId": run_id,
+                "jobId": job_id,
+                "state": "draft_pr_ready" if completed else "blocked",
+            },
+            "execution": execution,
+        }), 202 if completed else status_code
+
+    @app.route("/api/user/agent/rescue/repairs/<repair_id>", methods=["GET"])
+    @require_session
+    def user_get_sovereign_rescue_repair(repair_id: str):
+        user_id = _current_session_user_id()
+        try:
+            repair_uuid = str(uuid.UUID(repair_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid repair id"}), 400
+        conn = _connection()
+        try:
+            repair = _read_owned_rescue(conn, user_id, repair_uuid)
+            if not repair:
+                return jsonify({"error": "Repair not found"}), 404
+            job = _read_owned_job(conn, user_id, str(repair.get("job_id") or ""))
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-rescue",
+                "repair": public_repair_row(repair),
+                "job": _job_to_api(job) if job else None,
+            })
+        finally:
+            _close(conn)
+
+    @app.route(
+        "/api/user/agent/rescue/repairs/<repair_id>/proof-pack",
+        methods=["POST"],
+    )
+    @require_session
+    def user_get_sovereign_rescue_proof_pack(repair_id: str):
+        user_id = _current_session_user_id()
+        body: dict[str, Any] = request.get_json(silent=True) or {}
+        token, token_error = _rescue_token(body)
+        if token_error:
+            return token_error
+        try:
+            repair_uuid = str(uuid.UUID(repair_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid repair id"}), 400
+        conn = _connection()
+        try:
+            repair = _read_owned_rescue(conn, user_id, repair_uuid)
+            if not repair:
+                return jsonify({"error": "Repair not found"}), 404
+            job = _read_owned_job(conn, user_id, str(repair.get("job_id") or ""))
+            if not job:
+                return jsonify({"error": "Repair job not found"}), 404
+            pr_evidence: dict[str, Any] = {}
+            if job.draft_pr_url:
+                try:
+                    pr_evidence = read_github_pr_evidence(job.draft_pr_url, token=token)
+                except (ValueError, HTTPError, URLError, TimeoutError) as exc:
+                    pr_evidence = {
+                        "url": job.draft_pr_url,
+                        "error": redact_secret_text(exc, 400),
+                    }
+            pack = build_proof_pack(
+                repair=repair,
+                job={
+                    "changed_files": list(job.changed_files),
+                    "test_summary": job.test_summary,
+                    "draft_pr_url": job.draft_pr_url,
+                },
+                pr_evidence=pr_evidence,
+            )
+            if pack["ready"]:
+                update_repair_execution(
+                    conn,
+                    user_id=user_id,
+                    repair_id=repair_uuid,
+                    run_id=str(repair.get("run_id") or "") or None,
+                    job_id=str(repair.get("job_id") or "") or None,
+                    state="completed",
+                )
+            return jsonify({
+                "ok": bool(pack["ready"]),
+                "runtime": "sovereign-rescue",
+                "proofPack": pack,
+                "verified": verify_proof_pack(pack),
+            }), 200 if pack["ready"] else 409
         finally:
             _close(conn)
 
@@ -749,7 +1097,6 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         if raw_github_token is not None and github_token is None:
             return jsonify({"error": "githubAccessToken has an invalid format"}), 400
 
-        credit_cost = 10
         conn = _connection()
         try:
             # One job can cross the GitHub side-effect boundary only once at a time.
@@ -765,6 +1112,18 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 conn.rollback()
                 return jsonify({"error": "Job nicht gefunden"}), 404
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT repair_id::text, entitlement_source, charged_credits
+                       FROM sovereign_rescue_repairs
+                       WHERE job_id = %s AND user_id = %s::uuid
+                         AND state IN ('reserved', 'running', 'draft_pr_ready')
+                       LIMIT 1""",
+                    (job_id, user_id),
+                )
+                rescue_reservation = cur.fetchone()
+            credit_cost = 0 if rescue_reservation else 10
 
             if job.pr_state == "created" and (job.pr_url or job.draft_pr_url):
                 result = create_draft_pr_for_job(job, token=github_token)
@@ -851,6 +1210,14 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 pr_url=result.pr_url,
                 commit=False,
             )
+            if rescue_reservation:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE sovereign_rescue_repairs
+                           SET state = 'draft_pr_ready', updated_at = NOW()
+                           WHERE job_id = %s AND user_id = %s::uuid""",
+                        (job_id, user_id),
+                    )
             conn.commit()
             return jsonify({
                 "ok": True,
