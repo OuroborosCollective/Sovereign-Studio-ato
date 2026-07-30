@@ -114,6 +114,7 @@ class ToolRunner:
         context: Any,
         descriptor: Any,
         parameters: dict[str, Any],
+        previous_events: tuple[Any, ...] = (),
     ) -> Any:
         """Execute through the deterministic provider-neutral policy/hook kernel.
 
@@ -126,6 +127,7 @@ class ToolRunner:
             parameters=parameters,
             registry=self.registry,
             workspace_path=self.workspace_path,
+            previous_events=previous_events,
         )
 
     def _execute_single(self, call: ToolCall) -> ToolExecution:

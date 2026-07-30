@@ -93,10 +93,36 @@ def test_runtime_context_requires_explicit_revision_tick_epoch_and_call_identity
     assert context().sha256 == context().sha256
     with pytest.raises(ProviderNeutralRuntimeError, match="revision"):
         RuntimeContext("run-1", "owner-1", "main", 0, 0, "call-1")
+    with pytest.raises(ProviderNeutralRuntimeError, match="tick"):
+        RuntimeContext("run-1", "owner-1", REVISION, True, 0, "call-1")
+    with pytest.raises(ProviderNeutralRuntimeError, match="epoch_ms"):
+        RuntimeContext("run-1", "owner-1", REVISION, 0, False, "call-1")
     with pytest.raises(ProviderNeutralRuntimeError, match="call_id"):
         ProviderNeutralRuntimeKernel(
             policy_rules=(PolicyRule("allow", "ALLOW", "allowed"),)
         ).authorize_tool(context=context(call_id=""), tool=descriptor(), parameters={})
+
+
+def test_runtime_context_snapshots_nested_metadata() -> None:
+    metadata = {"scope": {"paths": ["before"]}}
+    runtime_context = RuntimeContext("run-1", "owner-1", REVISION, 0, 0, "call-1", metadata)
+    original_sha256 = runtime_context.sha256
+    metadata["scope"]["paths"].append("after")
+    assert runtime_context.sha256 == original_sha256
+    with pytest.raises(TypeError):
+        runtime_context.metadata["new"] = "forbidden"  # type: ignore[index]
+
+
+def test_runtime_input_hash_binds_exact_unsanitized_text() -> None:
+    secret_prefix = "sk" + "-proj-"
+    first = RuntimeInputEnvelope(
+        parts=(RuntimeInputPart(kind="text", text=f"token {secret_prefix}{'a' * 24}"),)
+    )
+    second = RuntimeInputEnvelope(
+        parts=(RuntimeInputPart(kind="text", text=f"token {secret_prefix}{'b' * 24}"),)
+    )
+    assert first.to_dict() == second.to_dict()
+    assert first.sha256 != second.sha256
 
 
 def test_multimodal_input_accepts_only_provenance_bound_references() -> None:
@@ -175,6 +201,19 @@ def test_hook_order_is_priority_then_registration_sequence() -> None:
     assert len({receipt.receipt_sha256 for receipt in result.receipts}) == 3
 
 
+def test_hook_payload_is_deeply_immutable_and_mutation_fails_closed() -> None:
+    pipeline = HookPipeline()
+
+    def mutating_hook(_ctx, payload):
+        payload["parameters"]["path"] = "replaced"
+        return HookDecision()
+
+    pipeline.register("mutator", "BEFORE_TOOL", mutating_hook)
+    result = pipeline.run("BEFORE_TOOL", context(), {"parameters": {"path": "original"}})
+    assert result.decision == "DENY"
+    assert "failed closed" in result.reason
+
+
 def test_hook_exception_fails_closed() -> None:
     pipeline = HookPipeline()
 
@@ -220,6 +259,21 @@ def test_stream_hash_chain_rejects_reasoning_and_detects_tampering() -> None:
         build_stream_event(sequence=0, kind="reasoning", context=context(), payload={"text": "hidden"})
 
 
+def test_terminal_stream_cannot_be_reopened() -> None:
+    events = append_stream_event((), kind="run_started", context=context(), payload={})
+    events = append_stream_event(events, kind="run_completed", context=context(), payload={})
+    with pytest.raises(ProviderNeutralRuntimeError, match="terminal run streams"):
+        append_stream_event(events, kind="text_delta", context=context(), payload={"text": "late"})
+    late = build_stream_event(
+        sequence=2,
+        kind="text_delta",
+        context=context(),
+        payload={"text": "late"},
+        previous_sha256=events[-1].event_sha256,
+    )
+    assert validate_stream_chain((*events, late)) is False
+
+
 def test_text_delta_stream_and_conversation_are_event_projections_not_state_truth() -> None:
     events = append_stream_event((), kind="run_started", context=context(), payload={})
     events = build_text_delta_stream(context=context(), chunks=("small ", "heart"), previous_events=events)
@@ -242,7 +296,7 @@ def test_deterministic_trigger_uses_explicit_ticks_only() -> None:
 def test_blocked_tool_does_not_reach_effect_adapter() -> None:
     registry = ToolRegistry()
     tool = CountingTool()
-    registry.register(tool)
+    registry.register(tool, effect="read", capabilities=("repository",))
     kernel = ProviderNeutralRuntimeKernel(policy_rules=())
     result = kernel.execute_registered_tool(
         context=context(),
@@ -258,7 +312,7 @@ def test_blocked_tool_does_not_reach_effect_adapter() -> None:
 def test_owner_approval_policy_does_not_reach_effect_adapter() -> None:
     registry = ToolRegistry()
     tool = CountingTool()
-    registry.register(tool)
+    registry.register(tool, effect="read", capabilities=("repository",))
     kernel = ProviderNeutralRuntimeKernel(
         policy_rules=(PolicyRule("ask-counting", "ASK_OWNER", "owner confirmation", tool_name="counting"),)
     )
@@ -276,7 +330,7 @@ def test_owner_approval_policy_does_not_reach_effect_adapter() -> None:
 def test_allowed_tool_runs_once_through_existing_registry_with_hash_evidence() -> None:
     registry = ToolRegistry()
     tool = CountingTool()
-    registry.register(tool)
+    registry.register(tool, effect="read", capabilities=("repository",))
     kernel = ProviderNeutralRuntimeKernel(
         policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded local call", tool_name="counting"),)
     )
@@ -293,11 +347,94 @@ def test_allowed_tool_runs_once_through_existing_registry_with_hash_evidence() -
     assert len(result.evidence_sha256) == 64
 
 
+def test_registry_owned_contract_blocks_caller_effect_downgrade() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="workspace-write", capabilities=("repository",))
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-read", "ALLOW", "read only", effect="read"),)
+    )
+    with pytest.raises(ProviderNeutralRuntimeError, match="registry-owned contract"):
+        kernel.execute_registered_tool(
+            context=context(),
+            tool=descriptor("counting", effect="read"),
+            parameters={"value": 1},
+            registry=registry,
+        )
+    assert tool.calls == 0
+    registered = descriptor_from_registry(registry, "counting")
+    assert registered.effect == "workspace-write"
+    with pytest.raises(ProviderNeutralRuntimeError, match="caller effect"):
+        descriptor_from_registry(registry, "counting", effect="read")
+
+
+def test_descriptor_from_registry_emits_object_level_required_parameters() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="read", capabilities=("test",))
+    registered = descriptor_from_registry(registry, "counting")
+    assert registered.input_schema["required"] == ("value",)
+    assert "required" not in registered.input_schema["properties"]["value"]
+
+
+def test_after_tool_ask_owner_preserves_executed_effect_truth() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="read", capabilities=("repository",))
+    hooks = HookPipeline()
+    hooks.register(
+        "late-approval",
+        "AFTER_TOOL",
+        lambda _ctx, _payload: HookDecision("ASK_OWNER", "too late to gate"),
+    )
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded", tool_name="counting"),),
+        hooks=hooks,
+    )
+    result = kernel.execute_registered_tool(
+        context=context(),
+        tool=descriptor("counting"),
+        parameters={"value": 4},
+        registry=registry,
+    )
+    assert tool.calls == 1
+    assert result.status == "done"
+    assert result.result["postHookDecision"] == "ASK_OWNER"
+    assert result.result["effectAlreadyExecuted"] is True
+    assert result.events[-1].kind == "evidence"
+
+
+def test_tool_execution_continues_preparation_stream_chain() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="read", capabilities=("repository",))
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded", tool_name="counting"),)
+    )
+    envelope = RuntimeInputEnvelope(parts=(RuntimeInputPart(kind="text", text="continue"),))
+    prepared = kernel.prepare_run(context=context(), envelope=envelope, tools=(descriptor("counting"),))
+    result = kernel.execute_registered_tool(
+        context=context(),
+        tool=descriptor("counting"),
+        parameters={"value": 3},
+        registry=registry,
+        previous_events=prepared.events,
+    )
+    assert [event.sequence for event in result.events] == list(range(len(result.events)))
+    assert [event.kind for event in result.events] == [
+        "run_started",
+        "input_accepted",
+        "tool_call",
+        "tool_result",
+    ]
+    assert validate_stream_chain(result.events) is True
+
+
 def test_tool_runner_exposes_provider_neutral_entry_without_changing_legacy_path() -> None:
     runner = ToolRunner()
     registry = ToolRegistry()
     counting = CountingTool()
-    registry.register(counting)
+    registry.register(counting, effect="read", capabilities=("test",))
     runner.registry = registry
     kernel = ProviderNeutralRuntimeKernel(
         policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded", tool_name="counting"),)

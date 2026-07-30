@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import re
+from types import MappingProxyType
 from typing import Any, Callable, Literal, Mapping, Sequence
 
 from .contracts import sanitize_agent_text
@@ -137,6 +138,26 @@ def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _is_exact_int(value: Any) -> bool:
+    return type(value) is int
+
+
+def _freeze_canonical(value: Any) -> Any:
+    canonical = _canonicalize(value)
+    if isinstance(canonical, dict):
+        return MappingProxyType({key: _freeze_canonical(item) for key, item in canonical.items()})
+    if isinstance(canonical, list):
+        return tuple(_freeze_canonical(item) for item in canonical)
+    return canonical
+
+
+def _snapshot_mapping(label: str, value: Mapping[str, Any]) -> Mapping[str, Any]:
+    frozen = _freeze_canonical(value)
+    if not isinstance(frozen, Mapping):
+        raise ProviderNeutralRuntimeError(f"{label} must be a canonical mapping")
+    return frozen
+
+
 @dataclass(frozen=True)
 class RuntimeContext:
     """All execution identity supplied by the caller; no hidden clock or UUID."""
@@ -155,11 +176,11 @@ class RuntimeContext:
         _validate_id("call_id", self.call_id, required=False)
         if not _REVISION_RE.fullmatch(self.revision):
             raise ProviderNeutralRuntimeError("revision must be an exact lowercase 40-character commit SHA")
-        if not isinstance(self.tick, int) or self.tick < 0:
+        if not _is_exact_int(self.tick) or self.tick < 0:
             raise ProviderNeutralRuntimeError("tick must be a non-negative integer")
-        if not isinstance(self.epoch_ms, int) or self.epoch_ms < 0:
+        if not _is_exact_int(self.epoch_ms) or self.epoch_ms < 0:
             raise ProviderNeutralRuntimeError("epoch_ms must be a non-negative integer")
-        _canonicalize(self.metadata)
+        object.__setattr__(self, "metadata", _snapshot_mapping("metadata", self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -208,7 +229,7 @@ class RuntimeInputPart:
                 raise ProviderNeutralRuntimeError("artifact reference requires a lowercase SHA-256")
             if not _MIME_RE.fullmatch(self.mime_type):
                 raise ProviderNeutralRuntimeError("artifact reference requires a canonical MIME type")
-            if not isinstance(self.size_bytes, int) or self.size_bytes <= 0:
+            if not _is_exact_int(self.size_bytes) or self.size_bytes <= 0:
                 raise ProviderNeutralRuntimeError("artifact reference requires a positive integer size")
             if self.text:
                 raise ProviderNeutralRuntimeError("artifact input may not embed raw text or bytes")
@@ -229,6 +250,18 @@ class RuntimeInputPart:
             "description": _bounded(self.description, 1_000),
         }
 
+    def _binding_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "text": self.text if self.kind == "text" else "",
+            "artifactId": self.artifact_id,
+            "sha256": self.sha256,
+            "mimeType": self.mime_type,
+            "sizeBytes": self.size_bytes,
+            "source": self.source,
+            "description": self.description,
+        }
+
 
 @dataclass(frozen=True)
 class RuntimeInputEnvelope:
@@ -240,7 +273,8 @@ class RuntimeInputEnvelope:
             raise ProviderNeutralRuntimeError("runtime input requires at least one part")
         if len(self.parts) > 64:
             raise ProviderNeutralRuntimeError("runtime input exceeds 64 parts")
-        _canonicalize(self.metadata)
+        object.__setattr__(self, "parts", tuple(self.parts))
+        object.__setattr__(self, "metadata", _snapshot_mapping("metadata", self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -250,7 +284,10 @@ class RuntimeInputEnvelope:
 
     @property
     def sha256(self) -> str:
-        return canonical_sha256(self.to_dict())
+        return canonical_sha256({
+            "parts": [part._binding_dict() for part in self.parts],
+            "metadata": _canonicalize(self.metadata),
+        })
 
 
 @dataclass(frozen=True)
@@ -267,9 +304,11 @@ class ToolDescriptor:
         _validate_id("tool name", self.name)
         if self.effect not in {"read", "workspace-write", "external-write"}:
             raise ProviderNeutralRuntimeError("unsupported tool effect")
-        for capability in self.capabilities:
+        normalized_capabilities = tuple(sorted(set(self.capabilities)))
+        for capability in normalized_capabilities:
             _validate_id("capability", capability)
-        _canonicalize(self.input_schema)
+        object.__setattr__(self, "capabilities", normalized_capabilities)
+        object.__setattr__(self, "input_schema", _snapshot_mapping("input_schema", self.input_schema))
         _validate_id("transport", self.transport)
         _validate_id("provider", self.provider)
 
@@ -421,7 +460,7 @@ class HookDecision:
     def __post_init__(self) -> None:
         if self.decision not in _ALLOWED_HOOK_DECISIONS:
             raise ProviderNeutralRuntimeError("unsupported hook decision")
-        _canonicalize(self.metadata)
+        object.__setattr__(self, "metadata", _snapshot_mapping("metadata", self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -540,7 +579,7 @@ class HookPipeline:
     ) -> HookEvaluation:
         if phase not in _ALLOWED_HOOK_PHASES:
             raise ProviderNeutralRuntimeError("unsupported hook phase")
-        safe_payload = _canonicalize(payload)
+        safe_payload = _snapshot_mapping("hook payload", payload)
         input_sha256 = canonical_sha256(safe_payload)
         receipts: list[HookReceipt] = []
         ordered = sorted(
@@ -626,11 +665,11 @@ def build_stream_event(
         raise ProviderNeutralRuntimeError("model reasoning or chain-of-thought may not enter the stream contract")
     if normalized_kind not in _ALLOWED_STREAM_KINDS:
         raise ProviderNeutralRuntimeError("unsupported stream event kind")
-    if not isinstance(sequence, int) or sequence < 0:
+    if not _is_exact_int(sequence) or sequence < 0:
         raise ProviderNeutralRuntimeError("stream sequence must be a non-negative integer")
     if not _SHA256_RE.fullmatch(previous_sha256):
         raise ProviderNeutralRuntimeError("previous stream hash must be SHA-256")
-    safe_payload = _canonicalize(payload)
+    safe_payload = _snapshot_mapping("stream payload", payload)
     base = {
         "sequence": sequence,
         "kind": normalized_kind,
@@ -656,7 +695,10 @@ def build_stream_event(
 
 def validate_stream_chain(events: Sequence[RuntimeStreamEvent]) -> bool:
     previous = ZERO_SHA256
+    terminal_seen = False
     for expected_sequence, event in enumerate(events):
+        if terminal_seen:
+            return False
         rebuilt = build_stream_event(
             sequence=event.sequence,
             kind=event.kind,
@@ -675,6 +717,8 @@ def validate_stream_chain(events: Sequence[RuntimeStreamEvent]) -> bool:
         if event.sequence != expected_sequence or event.previous_sha256 != previous or rebuilt.event_sha256 != event.event_sha256:
             return False
         previous = event.event_sha256
+        if event.kind in {"run_completed", "run_failed"}:
+            terminal_seen = True
     return True
 
 
@@ -688,17 +732,17 @@ class DeterministicTrigger:
 
     def __post_init__(self) -> None:
         _validate_id("trigger_id", self.trigger_id)
-        if not isinstance(self.interval_ticks, int) or self.interval_ticks <= 0:
+        if not _is_exact_int(self.interval_ticks) or self.interval_ticks <= 0:
             raise ProviderNeutralRuntimeError("interval_ticks must be a positive integer")
-        if not isinstance(self.offset_tick, int) or self.offset_tick < 0:
+        if not _is_exact_int(self.offset_tick) or self.offset_tick < 0:
             raise ProviderNeutralRuntimeError("offset_tick must be a non-negative integer")
-        if not isinstance(self.max_fires, int) or self.max_fires < 0:
+        if not _is_exact_int(self.max_fires) or self.max_fires < 0:
             raise ProviderNeutralRuntimeError("max_fires must be a non-negative integer")
 
     def due(self, *, tick: int, fired_count: int = 0) -> bool:
         if not self.enabled:
             return False
-        if not isinstance(tick, int) or tick < 0 or not isinstance(fired_count, int) or fired_count < 0:
+        if not _is_exact_int(tick) or tick < 0 or not _is_exact_int(fired_count) or fired_count < 0:
             raise ProviderNeutralRuntimeError("trigger tick and fired_count must be non-negative integers")
         if self.max_fires and fired_count >= self.max_fires:
             return False
@@ -867,6 +911,10 @@ def append_stream_event(
     context: RuntimeContext,
     payload: Mapping[str, Any],
 ) -> tuple[RuntimeStreamEvent, ...]:
+    if events and not validate_stream_chain(events):
+        raise ProviderNeutralRuntimeError("previous stream events have an invalid hash chain")
+    if events and events[-1].kind in {"run_completed", "run_failed"}:
+        raise ProviderNeutralRuntimeError("terminal run streams may not accept additional events")
     previous = events[-1].event_sha256 if events else ZERO_SHA256
     event = build_stream_event(
         sequence=len(events),
@@ -1046,10 +1094,26 @@ class ProviderNeutralRuntimeKernel:
         parameters: Mapping[str, Any],
         registry: Any,
         workspace_path: str | None = None,
+        previous_events: Sequence[RuntimeStreamEvent] = (),
     ) -> ProviderNeutralToolExecution:
+        registered_tool = descriptor_from_registry(registry, tool.name)
+        if (
+            tool.effect != registered_tool.effect
+            or tuple(sorted(set(tool.capabilities))) != registered_tool.capabilities
+        ):
+            raise ProviderNeutralRuntimeError(
+                "supplied tool authorization metadata does not match the registry-owned contract"
+            )
+        tool = registered_tool
         authorization = self.authorize_tool(context=context, tool=tool, parameters=parameters)
-        events: list[RuntimeStreamEvent] = []
-        previous = ZERO_SHA256
+        events = list(previous_events)
+        if events and not validate_stream_chain(events):
+            raise ProviderNeutralRuntimeError("previous stream events have an invalid hash chain")
+        if any(event.run_id != context.run_id for event in events):
+            raise ProviderNeutralRuntimeError("previous stream events belong to a different run")
+        if events and events[-1].kind in {"run_completed", "run_failed"}:
+            raise ProviderNeutralRuntimeError("terminal run streams may not execute additional tools")
+        previous = events[-1].event_sha256 if events else ZERO_SHA256
 
         def append(kind: str, payload: Mapping[str, Any]) -> None:
             nonlocal previous
@@ -1140,15 +1204,21 @@ class ProviderNeutralRuntimeKernel:
             {"tool": tool.to_dict(), "result": result, "status": status},
         )
         if after_hooks.decision != "CONTINUE":
-            status = "blocked" if after_hooks.decision == "DENY" else "approval-required"
             result = {
                 **dict(result),
                 "postHookDecision": after_hooks.decision,
                 "postHookReason": after_hooks.reason,
+                "effectAlreadyExecuted": True,
+                "postExecutionApprovalSupported": False,
             }
             append(
-                "approval_required" if status == "approval-required" else "evidence",
-                {"tool": tool.name, "decision": after_hooks.decision, "reason": after_hooks.reason},
+                "evidence",
+                {
+                    "tool": tool.name,
+                    "decision": after_hooks.decision,
+                    "reason": after_hooks.reason,
+                    "effectAlreadyExecuted": True,
+                },
             )
         all_receipts = authorization.hook_receipts + after_hooks.receipts
         payload = {
@@ -1172,24 +1242,54 @@ def descriptor_from_registry(
     registry: Any,
     tool_name: str,
     *,
-    effect: RuntimeEffect,
-    capabilities: Sequence[str] = (),
+    effect: RuntimeEffect | None = None,
+    capabilities: Sequence[str] | None = None,
     transport: str = "local",
 ) -> ToolDescriptor:
     tool = registry.get(tool_name)
     if tool is None:
         raise ProviderNeutralRuntimeError(f"unknown registered tool: {tool_name}")
-    schema = {
+    contract_reader = getattr(registry, "get_contract_metadata", None)
+    if not callable(contract_reader):
+        raise ProviderNeutralRuntimeError("tool registry does not expose owned contract metadata")
+    contract = contract_reader(tool_name)
+    if not isinstance(contract, Mapping):
+        raise ProviderNeutralRuntimeError("registered tool contract metadata is unavailable")
+    registered_effect = str(contract.get("effect") or "")
+    registered_capabilities = tuple(sorted(set(contract.get("capabilities") or ())))
+    if registered_effect not in {"read", "workspace-write", "external-write"}:
+        raise ProviderNeutralRuntimeError("registered tool effect is invalid")
+    if effect is not None and effect != registered_effect:
+        raise ProviderNeutralRuntimeError("caller effect does not match the registered tool contract")
+    if capabilities is not None and tuple(sorted(set(capabilities))) != registered_capabilities:
+        raise ProviderNeutralRuntimeError("caller capabilities do not match the registered tool contract")
+
+    raw_parameters = getattr(tool, "parameters", {}) or {}
+    if not isinstance(raw_parameters, Mapping):
+        raise ProviderNeutralRuntimeError("registered tool parameters must be a mapping")
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for parameter_name in sorted(raw_parameters):
+        raw_spec = raw_parameters[parameter_name]
+        if not isinstance(parameter_name, str) or not isinstance(raw_spec, Mapping):
+            raise ProviderNeutralRuntimeError("registered tool parameter schemas are invalid")
+        spec = dict(_canonicalize(raw_spec))
+        if spec.pop("required", False) is True:
+            required.append(parameter_name)
+        properties[parameter_name] = spec
+    schema: dict[str, Any] = {
         "type": "object",
-        "properties": getattr(tool, "parameters", {}) or {},
+        "properties": properties,
         "additionalProperties": False,
     }
+    if required:
+        schema["required"] = required
     return ToolDescriptor(
         name=tool_name,
         description=str(getattr(tool, "description", "") or ""),
         input_schema=schema,
-        effect=effect,
-        capabilities=tuple(capabilities),
+        effect=registered_effect,  # type: ignore[arg-type]
+        capabilities=registered_capabilities,
         transport=transport,
         provider="sovereign",
     )

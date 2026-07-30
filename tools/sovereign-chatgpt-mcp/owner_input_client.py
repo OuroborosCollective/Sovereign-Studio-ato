@@ -18,6 +18,7 @@ import requests
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+EVIDENCE_ID_RE = re.compile(r"^evidence-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
 EXTERNAL_EVENT_SOURCES = frozenset({"mcp", "broker", "github", "browserless", "tika", "gotenberg", "database"})
 FREELLM_KEYLESS_PROVIDER_IDS = frozenset({"kilo", "ovh"})
@@ -429,6 +430,7 @@ class ControllerRuntimeClient(OwnerInputClient):
         *,
         expected_run_id: str = "",
         require_event: bool = False,
+        require_resume_claim: bool = False,
     ) -> dict[str, Any]:
         run = payload.get("run") if isinstance(payload.get("run"), dict) else {}
         event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
@@ -446,22 +448,33 @@ class ControllerRuntimeClient(OwnerInputClient):
         scoped_run_verified = bool(RUN_ID_RE.fullmatch(scoped_run_id))
         event_id = str(event.get("eventId") or event.get("event_id") or "").strip()
         event_verified = bool(event_id and event.get("created") is not False)
-        write_verified = bool(
-            event_verified and scoped_run_verified
-            if require_event
-            else observed_run_verified
+        resume_claim_evidence_id = str(payload.get("resumeClaimEvidenceId") or "").strip()
+        resume_claim_verified = bool(
+            EVIDENCE_ID_RE.fullmatch(resume_claim_evidence_id)
+            and payload.get("resumed") is True
         )
+        if require_event:
+            write_verified = bool(event_verified and scoped_run_verified)
+        elif require_resume_claim:
+            write_verified = bool(observed_run_verified and resume_claim_verified)
+        else:
+            write_verified = observed_run_verified
         return {
-            "operationId": event_id or observed_run_id or None,
+            "operationId": event_id or resume_claim_evidence_id or observed_run_id or None,
             "mutationPerformed": write_verified,
             "observedEffect": (
                 "controller-event-persisted"
                 if require_event and write_verified
-                else ("controller-run-persisted" if write_verified else "none")
+                else (
+                    "controller-resume-claim-persisted"
+                    if require_resume_claim and write_verified
+                    else ("controller-run-persisted" if write_verified else "none")
+                )
             ),
             "readbackVerified": write_verified,
             "persistedRunId": scoped_run_id or None,
             "persistedEventId": event_id or None,
+            "persistedEvidenceId": resume_claim_evidence_id or None,
         }
 
     def _run_id(self, run_id: str) -> str:
@@ -610,6 +623,10 @@ class ControllerRuntimeClient(OwnerInputClient):
         )
         return {
             **payload,
-            **self._controller_write_evidence(payload, expected_run_id=selected),
+            **self._controller_write_evidence(
+                payload,
+                expected_run_id=selected,
+                require_resume_claim=True,
+            ),
             "protected_values_returned": False,
         }

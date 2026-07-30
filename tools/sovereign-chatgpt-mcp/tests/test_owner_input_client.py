@@ -361,10 +361,13 @@ def test_controller_resume_projects_persisted_run_effect(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
     run_id = "run-11111111111111111111111111111111"
+    resume_evidence_id = "evidence-" + "a" * 32
     session = FakeSession([
         FakeResponse(202, {
             "ok": True,
             "run": {"run_id": run_id, "status": "RUNNING"},
+            "resumed": True,
+            "resumeClaimEvidenceId": resume_evidence_id,
         })
     ])
     client = ControllerRuntimeClient(session=session)
@@ -372,10 +375,34 @@ def test_controller_resume_projects_persisted_run_effect(monkeypatch) -> None:
     result = client.resume_run(run_id, evidence="Verified recovery evidence.")
 
     assert result["mutationPerformed"] is True
-    assert result["observedEffect"] == "controller-run-persisted"
+    assert result["observedEffect"] == "controller-resume-claim-persisted"
     assert result["readbackVerified"] is True
     assert result["persistedRunId"] == run_id
+    assert result["persistedEvidenceId"] == resume_evidence_id
     assert result["protected_values_returned"] is False
+
+
+def test_controller_resume_already_claimed_does_not_claim_mutation(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    run_id = "run-11111111111111111111111111111111"
+    session = FakeSession([
+        FakeResponse(409, {
+            "ok": False,
+            "runId": run_id,
+            "status": "RUNNING",
+            "blocker": "RUN_ALREADY_CLAIMED",
+        })
+    ])
+    client = ControllerRuntimeClient(session=session)
+
+    result = client.resume_run(run_id)
+
+    assert result["mutationPerformed"] is False
+    assert result["observedEffect"] == "none"
+    assert result["readbackVerified"] is False
+    assert result["persistedRunId"] == run_id
+    assert result["persistedEvidenceId"] is None
 
 
 def test_controller_write_evidence_fails_closed_without_persisted_identity() -> None:

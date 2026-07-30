@@ -152,16 +152,37 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools: dict[str, ToolBase] = {}
+        self._contracts: dict[str, dict[str, Any]] = {}
 
-    def register(self, tool: ToolBase) -> None:
-        """Register a tool by its name."""
+    def register(
+        self,
+        tool: ToolBase,
+        *,
+        effect: str = "read",
+        capabilities: tuple[str, ...] = (),
+    ) -> None:
+        """Register a tool and its registry-owned authorization contract."""
         if tool.name in self._tools:
             raise ValueError(f"Tool '{tool.name}' already registered")
+        if effect not in {"read", "workspace-write", "external-write"}:
+            raise ValueError(f"Tool '{tool.name}' declares an invalid effect")
+        normalized_capabilities = tuple(sorted(set(capabilities)))
+        if any(not isinstance(item, str) or not item for item in normalized_capabilities):
+            raise ValueError(f"Tool '{tool.name}' declares invalid capabilities")
         self._tools[tool.name] = tool
+        self._contracts[tool.name] = {
+            "effect": effect,
+            "capabilities": normalized_capabilities,
+        }
 
     def get(self, name: str) -> ToolBase | None:
         """Get a tool by name."""
         return self._tools.get(name)
+
+    def get_contract_metadata(self, name: str) -> dict[str, Any] | None:
+        """Return a copy of registry-owned effect and capability metadata."""
+        contract = self._contracts.get(name)
+        return dict(contract) if contract is not None else None
 
     def list_tools(self) -> list[dict[str, Any]]:
         """List all registered tools with metadata."""
@@ -171,6 +192,8 @@ class ToolRegistry:
                 "description": tool.description,
                 "parameters": tool.parameters,
                 "requires_workspace": tool.requires_workspace,
+                "effect": self._contracts[tool.name]["effect"],
+                "capabilities": list(self._contracts[tool.name]["capabilities"]),
             }
             for tool in self._tools.values()
         ]
@@ -233,13 +256,13 @@ def _register_default_tools(registry: ToolRegistry) -> None:
     from .test_tool import TestTool
     from .janitor_tool import DynamicJanitorTool
 
-    registry.register(FileReadTool())
-    registry.register(FileWriteTool())
-    registry.register(ShellTool())
-    registry.register(GitStatusTool())
-    registry.register(GitDiffTool())
-    registry.register(GitAddTool())
-    registry.register(GitUniversalTool())
-    registry.register(DiffTool())
-    registry.register(TestTool())
-    registry.register(DynamicJanitorTool())
+    registry.register(FileReadTool(), effect="read", capabilities=("filesystem", "repository"))
+    registry.register(FileWriteTool(), effect="workspace-write", capabilities=("filesystem", "repository"))
+    registry.register(ShellTool(), effect="workspace-write", capabilities=("repository", "shell"))
+    registry.register(GitStatusTool(), effect="read", capabilities=("git", "repository"))
+    registry.register(GitDiffTool(), effect="read", capabilities=("git", "repository"))
+    registry.register(GitAddTool(), effect="workspace-write", capabilities=("git", "repository"))
+    registry.register(GitUniversalTool(), effect="workspace-write", capabilities=("git", "repository"))
+    registry.register(DiffTool(), effect="read", capabilities=("repository",))
+    registry.register(TestTool(), effect="workspace-write", capabilities=("repository", "test"))
+    registry.register(DynamicJanitorTool(), effect="workspace-write", capabilities=("repository", "test"))
