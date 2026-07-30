@@ -59,8 +59,11 @@ export interface RescueProofPack {
   readonly proofSha256: string;
   readonly baseSha: string;
   readonly headSha?: string;
+  readonly publishedHeadSha?: string;
   readonly draftPrUrl?: string;
   readonly changedFiles: string[];
+  readonly changedFileCount?: number;
+  readonly maxChangedFiles?: number;
   readonly blockers: string[];
 }
 
@@ -97,27 +100,49 @@ async function responseObject(response: Response): Promise<Record<string, unknow
   return value;
 }
 
-function headers(idempotencyKey?: string): HeadersInit {
+interface RescueHeadersOptions {
+  readonly idempotencyKey?: string;
+  readonly origin: string;
+  readonly csrfToken?: string;
+}
+
+function headers(options: RescueHeadersOptions): HeadersInit {
   return {
     Accept: 'application/json',
     'Content-Type': 'application/json',
-    ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    'X-Sovereign-Rescue-Origin': options.origin,
+    ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
+    ...(options.csrfToken ? { 'X-Sovereign-Rescue-CSRF': options.csrfToken } : {}),
   };
 }
 
 export class SovereignRescueClient {
+  private csrfToken?: string;
+  private readonly requestOrigin: string;
+
   constructor(
     private readonly baseUrl: string,
     private readonly fetcher: typeof fetch = fetch,
-  ) {}
+  ) {
+    const activeOrigin = typeof globalThis.location?.origin === 'string'
+      ? globalThis.location.origin
+      : '';
+    this.requestOrigin = activeOrigin && activeOrigin !== 'null'
+      ? activeOrigin
+      : new URL(baseUrl).origin;
+  }
 
   async entitlement(): Promise<RescueEntitlement> {
     const response = await this.fetcher(endpoint(this.baseUrl, '/api/user/agent/rescue/entitlement'), {
       method: 'GET',
       credentials: 'include',
-      headers: headers(),
+      headers: headers({ origin: this.requestOrigin }),
     });
     const body = await responseObject(response);
+    if (typeof body.csrfToken !== 'string' || !body.csrfToken) {
+      throw new Error('Sovereign Rescue returned no CSRF evidence.');
+    }
+    this.csrfToken = body.csrfToken;
     return body.entitlement as unknown as RescueEntitlement;
   }
 
@@ -125,7 +150,7 @@ export class SovereignRescueClient {
     const response = await this.fetcher(endpoint(this.baseUrl, '/api/user/agent/rescue/diagnose'), {
       method: 'POST',
       credentials: 'include',
-      headers: headers(),
+      headers: headers({ origin: this.requestOrigin }),
       body: JSON.stringify(input),
     });
     const body = await responseObject(response);
@@ -136,10 +161,17 @@ export class SovereignRescueClient {
     input: RequestInput & { readonly expectedBaseSha: string },
     idempotencyKey: string,
   ): Promise<RescueRepair> {
+    if (!this.csrfToken) {
+      throw new Error('Sovereign Rescue requires fresh CSRF evidence before repair.');
+    }
     const response = await this.fetcher(endpoint(this.baseUrl, '/api/user/agent/rescue/repair'), {
       method: 'POST',
       credentials: 'include',
-      headers: headers(idempotencyKey),
+      headers: headers({
+        idempotencyKey,
+        origin: this.requestOrigin,
+        csrfToken: this.csrfToken,
+      }),
       body: JSON.stringify(input),
     });
     const body = await responseObject(response);
@@ -147,12 +179,18 @@ export class SovereignRescueClient {
   }
 
   async proofPack(repairId: string, githubAccessToken?: string): Promise<RescueProofPack> {
+    if (!this.csrfToken) {
+      throw new Error('Sovereign Rescue requires fresh CSRF evidence before ProofPack verification.');
+    }
     const response = await this.fetcher(
       endpoint(this.baseUrl, `/api/user/agent/rescue/repairs/${encodeURIComponent(repairId)}/proof-pack`),
       {
         method: 'POST',
         credentials: 'include',
-        headers: headers(),
+        headers: headers({
+          origin: this.requestOrigin,
+          csrfToken: this.csrfToken,
+        }),
         body: JSON.stringify(githubAccessToken ? { githubAccessToken } : {}),
       },
     );

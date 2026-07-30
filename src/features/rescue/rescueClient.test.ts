@@ -34,11 +34,18 @@ describe('SovereignRescueClient', () => {
   });
 
   it('sends the repair idempotency key server-side', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
-      ok: true,
-      repair: { repairId: 'repair-1', jobId: 'agent-1', state: 'running', chargedCredits: 10 },
-    }, 202));
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        csrfToken: 'csrf-bound-token',
+        entitlement: { entitled: true },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        repair: { repairId: 'repair-1', jobId: 'agent-1', state: 'running', chargedCredits: 10 },
+      }, 202));
     const client = new SovereignRescueClient('https://agent.example.test', fetcher);
+    await client.entitlement();
     const repair = await client.repair({
       repository: 'https://github.com/acme/app',
       baseBranch: 'main',
@@ -52,6 +59,8 @@ describe('SovereignRescueClient', () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           'Idempotency-Key': '11111111-1111-4111-8111-111111111111',
+          'X-Sovereign-Rescue-CSRF': 'csrf-bound-token',
+          'X-Sovereign-Rescue-Origin': expect.any(String),
         }),
       }),
     );
@@ -59,6 +68,11 @@ describe('SovereignRescueClient', () => {
 
   it('returns backend blocker evidence on paywall and incomplete ProofPack states', async () => {
     const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        csrfToken: 'csrf-bound-token',
+        entitlement: { entitled: true },
+      }))
       .mockResolvedValueOnce(jsonResponse({ blocker: 'verified_purchase_required' }, 402))
       .mockResolvedValueOnce(jsonResponse({
         ok: false,
@@ -71,6 +85,7 @@ describe('SovereignRescueClient', () => {
         },
       }, 409));
     const client = new SovereignRescueClient('https://agent.example.test', fetcher);
+    await client.entitlement();
     await expect(client.repair({
       repository: 'https://github.com/acme/app',
       baseBranch: 'main',

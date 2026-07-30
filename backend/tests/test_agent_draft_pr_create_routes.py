@@ -36,6 +36,15 @@ class FakeCursor:
                 self.last_result = {"credits": user["credits"]}
         elif normalized.startswith("INSERT INTO CREDIT_LEDGER"):
             self.conn.credit_ledger.append(params)
+        elif normalized.startswith("SELECT REPAIR_ID::TEXT") and "FROM SOVEREIGN_RESCUE_REPAIRS" in normalized:
+            job_id, user_id = params
+            self.last_result = self.conn.rescue_repairs.get((user_id, job_id))
+        elif normalized.startswith("UPDATE SOVEREIGN_RESCUE_REPAIRS") and "SET PUBLISHED_HEAD_SHA" in normalized:
+            published_head_sha, job_id, user_id = params
+            self.conn.rescue_repairs[(user_id, job_id)]["published_head_sha"] = published_head_sha
+        elif normalized.startswith("UPDATE SOVEREIGN_RESCUE_REPAIRS") and "SET STATE = 'DRAFT_PR_READY'" in normalized:
+            job_id, user_id = params
+            self.conn.rescue_repairs[(user_id, job_id)]["state"] = "draft_pr_ready"
         elif normalized.startswith("INSERT INTO SOVEREIGN_AGENT_JOBS"):
             self.conn.jobs[params[1]] = {
                 "user_id": params[0],
@@ -128,6 +137,7 @@ class FakeConnection:
             "user-2": {"credits": 100, "role": "admin"},
         }
         self.credit_ledger = []
+        self.rescue_repairs = {}
         self.commits = 0
         self.rollbacks = 0
 
@@ -420,4 +430,89 @@ def test_draft_pr_create_rejects_invalid_ephemeral_token_before_creator(monkeypa
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "githubAccessToken has an invalid format"
+    assert conn.jobs["agent-1"]["pr_state"] == "ready"
+
+
+def test_blocked_rescue_reservation_remains_credit_exempt_and_binds_published_head(monkeypatch):
+    import agent_runtime.routes as routes
+
+    published_head_sha = "d" * 40
+    monkeypatch.setattr(
+        routes,
+        "create_draft_pr_for_job",
+        lambda *_args, **_kwargs: DraftPrCreateResult(
+            allowed=True,
+            status="created",
+            pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/125",
+            head_sha=published_head_sha,
+            summary="GitHub Draft PR created.",
+            predictive_signal="agent_draft_pr_created",
+        ),
+    )
+    conn = FakeConnection()
+    conn.users["user-1"] = {"credits": 20, "role": "user"}
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    conn.rescue_repairs[("user-1", "agent-1")] = {
+        "repair_id": "repair-1",
+        "entitlement_source": "verified_purchase",
+        "charged_credits": 10,
+        "published_head_sha": None,
+        "state": "blocked",
+    }
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={"githubAccessToken": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["creditSettlement"] == {
+        "chargedCredits": 0,
+        "remainingCredits": 20,
+        "duplicate": False,
+    }
+    assert conn.users["user-1"]["credits"] == 20
+    assert conn.credit_ledger == []
+    assert conn.rescue_repairs[("user-1", "agent-1")]["published_head_sha"] == published_head_sha
+    assert conn.rescue_repairs[("user-1", "agent-1")]["state"] == "draft_pr_ready"
+
+
+def test_rescue_draft_pr_is_blocked_before_publication_when_file_limit_is_exceeded(monkeypatch):
+    import agent_runtime.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "create_draft_pr_for_job",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("over-limit Rescue must not publish")
+        ),
+    )
+    conn = FakeConnection()
+    seed_ready_job(conn, user_id="user-1", job_id="agent-1")
+    conn.jobs["agent-1"]["changed_files"] = [
+        f"backend/change_{index}.py" for index in range(13)
+    ]
+    conn.rescue_repairs[("user-1", "agent-1")] = {
+        "repair_id": "repair-limit",
+        "entitlement_source": "verified_purchase",
+        "charged_credits": 10,
+        "published_head_sha": None,
+        "state": "draft_pr_ready",
+    }
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-1/draft-pr/create",
+        headers={"X-Test-User": "user-1"},
+        json={},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 409
+    assert payload["blocker"] == "changed_file_limit_exceeded:13>12"
+    assert payload["changedFileCount"] == 13
+    assert payload["creditSettlement"]["chargedCredits"] == 0
     assert conn.jobs["agent-1"]["pr_state"] == "ready"

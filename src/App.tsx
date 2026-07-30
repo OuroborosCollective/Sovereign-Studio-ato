@@ -258,7 +258,10 @@ export default function App() {
   const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
-  const publishDraftPr = async (input?: SovereignDraftPrPublishInput) => {
+  const publishDraftPr = async (
+    input?: SovereignDraftPrPublishInput,
+    requestGithubAccessToken?: string,
+  ) => {
     let jobId = agentJob.jobId;
     let repoUrl = agentJob.repoUrl;
 
@@ -325,7 +328,10 @@ export default function App() {
         );
       }
 
-      const creation = await agentClient.createDraftPr(jobId, input?.githubAccessToken);
+      const creation = await agentClient.createDraftPr(
+        jobId,
+        requestGithubAccessToken || input?.githubAccessToken,
+      );
       if (!creation.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
         throw new Error(
           creation.draftPrCreate.blocker
@@ -409,7 +415,7 @@ export default function App() {
           draftPrUrl={agentJob.draftPrUrl}
           onClose={() => setRescueOpen(false)}
           onJobReady={adoptRescueJob}
-          onPublishDraftPr={() => publishDraftPr()}
+          onPublishDraftPr={(githubAccessToken) => publishDraftPr(undefined, githubAccessToken)}
         />
       </main>
     </LlmAdapterProvider>
