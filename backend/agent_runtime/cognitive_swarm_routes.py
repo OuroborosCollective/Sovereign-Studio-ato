@@ -865,6 +865,11 @@ def start_cognitive_swarm_run(
     session_key: str | None = None,
     a2a_context_id: str | None = None,
     trace_id: str | None = None,
+    repository_url: str | None = None,
+    repository_branch: str = "main",
+    expected_head_sha: str | None = None,
+    github_access_token: str | None = None,
+    implementation_job_id: str | None = None,
     _reuse_received_state: dict[str, str] | None = None,
     _force_free_profile: bool = False,
     _fallback_reason: str = "",
@@ -885,6 +890,15 @@ def start_cognitive_swarm_run(
         agent_model or normalized_model or normalized_main_model or ""
     ).strip() or None
     normalized_mode = str(mode or "auto").strip().lower()
+    normalized_repository_url = str(repository_url or "").strip()
+    normalized_repository_branch = str(repository_branch or "main").strip()
+    normalized_expected_head_sha = str(expected_head_sha or "").strip().lower()
+    normalized_github_access_token = str(github_access_token or "").strip() or None
+    normalized_implementation_job_id = str(implementation_job_id or "").strip() or None
+    if normalized_expected_head_sha and not re.fullmatch(r"[0-9a-f]{40}", normalized_expected_head_sha):
+        return {"error": "expected_head_sha must be a 40-character Git commit SHA"}, 400
+    if normalized_implementation_job_id and not re.fullmatch(r"agent-[0-9a-f]{32}", normalized_implementation_job_id):
+        return {"error": "implementation_job_id is invalid"}, 400
     try:
         normalized_intent_mode = _normalize_intent_mode(
             intent_mode,
@@ -1146,21 +1160,31 @@ def start_cognitive_swarm_run(
             ):
                 conn = get_connection()
                 try:
-                    repository = _configured_repository()
+                    configured_repository = _configured_repository()
+                    selected_repository_url = (
+                        normalized_repository_url
+                        or f"https://github.com/{configured_repository}"
+                    )
+                    job_payload: dict[str, Any] = {
+                        "repoUrl": selected_repository_url,
+                        "branch": normalized_repository_branch,
+                        "mission": mission_intent.normalized_goal,
+                        "executor": "sovereign-local-runner",
+                        "draftPrOnly": True,
+                        "allowAutoMerge": False,
+                    }
+                    if normalized_expected_head_sha:
+                        job_payload["expectedHeadSha"] = normalized_expected_head_sha
+                    if normalized_github_access_token:
+                        job_payload["githubAccessToken"] = normalized_github_access_token
                     implementation_job = create_sovereign_agent_job(
                         conn,
                         user_id=user_id,
-                        payload={
-                            "repoUrl": f"https://github.com/{repository}",
-                            "branch": "main",
-                            "mission": mission_intent.normalized_goal,
-                            "executor": "sovereign-local-runner",
-                            "draftPrOnly": True,
-                            "allowAutoMerge": False,
-                        },
+                        payload=job_payload,
                         workspace_root=_workspace_root(),
                         provision_workspace=True,
                         clone_repo=True,
+                        job_id=normalized_implementation_job_id,
                     )
                     linked_state = link_agent_run_job(
                         conn,
@@ -1390,6 +1414,11 @@ def start_cognitive_swarm_run(
                         session_key=resolved_session_key,
                         a2a_context_id=a2a_context_id,
                         trace_id=resolved_trace_id,
+                        repository_url=normalized_repository_url or None,
+                        repository_branch=normalized_repository_branch,
+                        expected_head_sha=normalized_expected_head_sha or None,
+                        github_access_token=normalized_github_access_token,
+                        implementation_job_id=normalized_implementation_job_id,
                         _reuse_received_state=received_state,
                         _free_resolution_override=next_resolution,
                         _free_retry_count=_free_retry_count + 1,
@@ -1503,6 +1532,11 @@ def start_cognitive_swarm_run(
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
                     trace_id=resolved_trace_id,
+                    repository_url=normalized_repository_url or None,
+                    repository_branch=normalized_repository_branch,
+                    expected_head_sha=normalized_expected_head_sha or None,
+                    github_access_token=normalized_github_access_token,
+                    implementation_job_id=normalized_implementation_job_id,
                     _reuse_received_state=received_state,
                     _force_free_profile=True,
                     _fallback_reason="paid_credit_capacity_resolved_to_free_revolver",
@@ -1578,6 +1612,11 @@ def start_cognitive_swarm_run(
                     session_key=resolved_session_key,
                     a2a_context_id=a2a_context_id,
                     trace_id=resolved_trace_id,
+                    repository_url=normalized_repository_url or None,
+                    repository_branch=normalized_repository_branch,
+                    expected_head_sha=normalized_expected_head_sha or None,
+                    github_access_token=normalized_github_access_token,
+                    implementation_job_id=normalized_implementation_job_id,
                     _reuse_received_state=received_state,
                     _force_free_profile=True,
                     _fallback_reason="paid_provider_429_resolved_to_free_revolver",

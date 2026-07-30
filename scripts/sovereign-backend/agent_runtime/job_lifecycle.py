@@ -28,7 +28,9 @@ from .git_workspace import (
     git_diff_summary,
     git_status_changed_files,
     normalize_ephemeral_github_token,
+    run_git_command,
 )
+from .rescue import normalize_head_sha
 from .job_store import (
     append_agent_event,
     create_agent_job_record,
@@ -245,6 +247,48 @@ def create_sovereign_agent_job(
             workspace_id=resolved_job_id,
         ))
         return SovereignAgentLifecycleResult(job_id=resolved_job_id, result=result, events=result.events)
+
+    expected_head_sha = str(payload.get("expectedHeadSha") or "").strip().lower()
+    if expected_head_sha:
+        try:
+            expected_head_sha = normalize_head_sha(expected_head_sha)
+        except ValueError as exc:
+            blocker = str(exc)
+        else:
+            repo_path = repo_dir_for_workspace(resolved_job_id, workspace_root)
+            revision = run_git_command(("git", "rev-parse", "HEAD"), repo_path, 30)
+            actual_head_sha = revision.stdout.strip().lower() if revision.returncode == 0 else ""
+            blocker = (
+                None
+                if actual_head_sha == expected_head_sha
+                else (
+                    "repository head changed after diagnosis: "
+                    f"expected={expected_head_sha}, actual={actual_head_sha or 'unavailable'}"
+                )
+            )
+        if blocker:
+            update_agent_job_state(
+                conn,
+                job_id=resolved_job_id,
+                status="blocked",
+                workspace_id=resolved_job_id,
+                blocker=blocker,
+            )
+            event = SovereignAgentEvent(
+                stage="repository_revision_mismatch",
+                level="warning",
+                message=blocker,
+            )
+            append_agent_event(conn, resolved_job_id, event)
+            blocked = normalize_agent_job_result(SovereignAgentJobResult(
+                job_id=resolved_job_id,
+                status="blocked",
+                executor=request.executor,
+                blocker=blocker,
+                workspace_id=resolved_job_id,
+                events=workspace_result.events + clone_result.events + (event,),
+            ))
+            return SovereignAgentLifecycleResult(resolved_job_id, blocked, blocked.events)
 
     staged_events: list[SovereignAgentEvent] = []
     changed_files: tuple[str, ...] = ()

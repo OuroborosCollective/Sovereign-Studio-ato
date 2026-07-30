@@ -761,12 +761,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1244,
+      "line": 1245,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "e32e469c52a168468cc5b241dc98b4a2dc98fd721bd5889a01e5f27f9bac6f64",
+      "fileSha256": "76efbc3df6e752406c1e2f0d1bdb9b01fa5ae88576e69197b21dc4e3d17d800c",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:573b3dc224a2ea2a61a8a51a",
+      "candidateId": "llm-boundary:93bc0bfd2aff82b80dbb0040",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -875,5 +875,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "a1a880d65942ae63dbd163ecea71bad70292c2d46826e11b14e7fe7db7b119c3"
+  "ledgerSha256": "e9eb9491ceb784cc8061288d0aaa1142517694cd21b50d4aa286153281eced4e"
 }

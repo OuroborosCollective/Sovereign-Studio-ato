@@ -14,6 +14,7 @@ from agent_runtime.contracts import (  # noqa: E402
     SovereignAgentJobResult,
 )
 from agent_runtime.job_store import create_agent_job_record, update_agent_job_state  # noqa: E402
+import agent_runtime.routes as routes_module  # noqa: E402
 from agent_runtime.routes import register_sovereign_agent_routes  # noqa: E402
 
 
@@ -370,3 +371,105 @@ def test_workspace_editor_shared_runtime_blocks_non_owner(tmp_path, monkeypatch)
     assert response.status_code == 403
     assert response.get_json()["workspaceAuthority"] == "sovereign-backend"
     assert "owner-only" in response.get_json()["error"]
+
+
+def test_rescue_free_diagnosis_is_revision_bound_and_read_only(monkeypatch):
+    conn = FakeConnection()
+    base_sha = "a" * 40
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_github_head",
+        lambda repository, branch, token=None: {
+            "repository": "https://github.com/example/broken-app",
+            "baseBranch": "main",
+            "baseSha": base_sha,
+        },
+    )
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/rescue/diagnose",
+        headers={"X-Test-User": "11111111-1111-4111-8111-111111111111"},
+        json={
+            "repository": "https://github.com/example/broken-app",
+            "baseBranch": "main",
+            "failureFamily": "github_actions_ci",
+            "evidenceText": "GitHub Actions workflow failed in .github/workflows/ci.yml",
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["diagnosis"]["baseSha"] == base_sha
+    assert payload["diagnosis"]["failureFamily"] == "github_actions_ci"
+    assert payload["diagnosis"]["mutationPerformed"] is False
+    assert conn.jobs == {}
+
+
+def test_rescue_paid_repair_reuses_free_executor_at_exact_head(monkeypatch):
+    conn = FakeConnection()
+    base_sha = "b" * 40
+    repair_id = "22222222-2222-4222-8222-222222222222"
+    job_id = "agent-rescue-test"
+    captured = {}
+
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_github_head",
+        lambda repository, branch, token=None: {
+            "repository": "https://github.com/example/broken-app",
+            "baseBranch": "main",
+            "baseSha": base_sha,
+        },
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "reserve_repair_pack",
+        lambda connection, **kwargs: {
+            "repairId": repair_id,
+            "jobId": job_id,
+            "state": "reserved",
+            "chargedCredits": 10,
+            "duplicate": False,
+        },
+    )
+
+    def fake_start(**kwargs):
+        captured["start"] = kwargs
+        return {"status": "COMPLETED", "runId": "run-rescue-test", "jobId": job_id}, 200
+
+    def fake_update(connection, **kwargs):
+        captured["update"] = kwargs
+        return {"repairId": repair_id, **kwargs}
+
+    monkeypatch.setattr(routes_module, "start_cognitive_swarm_run", fake_start)
+    monkeypatch.setattr(routes_module, "update_repair_execution", fake_update)
+    monkeypatch.setattr(routes_module, "generate_agent_job_id", lambda: job_id)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/rescue/repair",
+        headers={
+            "X-Test-User": "11111111-1111-4111-8111-111111111111",
+            "Idempotency-Key": "33333333-3333-4333-8333-333333333333",
+        },
+        json={
+            "repository": "https://github.com/example/broken-app",
+            "baseBranch": "main",
+            "expectedBaseSha": base_sha,
+            "failureFamily": "github_actions_ci",
+            "evidenceText": "GitHub Actions workflow failed in .github/workflows/ci.yml",
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 202
+    assert payload["ok"] is True
+    assert captured["start"]["mode"] == "free"
+    assert captured["start"]["intent_mode"] == "repository_execution"
+    assert captured["start"]["repository_url"] == "https://github.com/example/broken-app"
+    assert captured["start"]["repository_branch"] == "main"
+    assert captured["start"]["expected_head_sha"] == base_sha
+    assert captured["start"]["implementation_job_id"] == job_id
+    assert captured["update"]["state"] == "draft_pr_ready"
