@@ -34,7 +34,7 @@ from agent_runtime.provider_neutral_runtime import (
     validate_stream_chain,
 )
 from agent_runtime.tool_runner import ToolRunner
-from agent_runtime.tools.base import ToolBase, ToolRegistry, ToolResult
+from agent_runtime.tools.base import ToolBase, ToolCall, ToolRegistry, ToolResult
 
 
 REVISION = "a" * 40
@@ -64,6 +64,18 @@ def descriptor(
         effect=effect,  # type: ignore[arg-type]
         capabilities=capabilities,
     )
+
+
+class MutableResultTool(ToolBase):
+    name = "mutable-result"
+    description = "Return nested mutable metadata"
+    parameters = {}
+
+    def __init__(self) -> None:
+        self.metadata = {"nested": {"value": "before"}}
+
+    def execute(self, params: dict, workspace_path: str | None = None) -> ToolResult:
+        return ToolResult(status="done", metadata=self.metadata)
 
 
 class CountingTool(ToolBase):
@@ -246,21 +258,29 @@ def test_stream_hash_chain_rejects_reasoning_and_detects_tampering() -> None:
         context=context(),
         payload={"source": "runtime"},
     )
-    second = build_stream_event(
+    accepted = build_stream_event(
         sequence=1,
+        kind="input_accepted",
+        context=context(),
+        payload={"inputSha256": "a" * 64},
+        previous_sha256=first.event_sha256,
+    )
+    second = build_stream_event(
+        sequence=2,
         kind="text_delta",
         context=context(),
         payload={"text": "hello"},
-        previous_sha256=first.event_sha256,
+        previous_sha256=accepted.event_sha256,
     )
-    assert validate_stream_chain((first, second)) is True
-    assert validate_stream_chain((first, replace(second, previous_sha256=ZERO_SHA256))) is False
+    assert validate_stream_chain((first, accepted, second)) is True
+    assert validate_stream_chain((first, accepted, replace(second, previous_sha256=ZERO_SHA256))) is False
     with pytest.raises(ProviderNeutralRuntimeError, match="chain-of-thought"):
         build_stream_event(sequence=0, kind="reasoning", context=context(), payload={"text": "hidden"})
 
 
 def test_terminal_stream_cannot_be_reopened() -> None:
     events = append_stream_event((), kind="run_started", context=context(), payload={})
+    events = append_stream_event(events, kind="input_accepted", context=context(), payload={})
     events = append_stream_event(events, kind="run_completed", context=context(), payload={})
     with pytest.raises(ProviderNeutralRuntimeError, match="terminal run streams"):
         append_stream_event(events, kind="text_delta", context=context(), payload={"text": "late"})
@@ -276,6 +296,7 @@ def test_terminal_stream_cannot_be_reopened() -> None:
 
 def test_text_delta_stream_and_conversation_are_event_projections_not_state_truth() -> None:
     events = append_stream_event((), kind="run_started", context=context(), payload={})
+    events = append_stream_event(events, kind="input_accepted", context=context(), payload={})
     events = build_text_delta_stream(context=context(), chunks=("small ", "heart"), previous_events=events)
     events = append_stream_event(events, kind="run_completed", context=context(), payload={"evidence": "verified"})
     projection = project_conversation(events)
@@ -306,7 +327,7 @@ def test_blocked_tool_does_not_reach_effect_adapter() -> None:
     )
     assert result.status == "blocked"
     assert tool.calls == 0
-    assert result.events[0].kind == "evidence"
+    assert [event.kind for event in result.events] == ["run_started", "input_accepted", "evidence"]
 
 
 def test_owner_approval_policy_does_not_reach_effect_adapter() -> None:
@@ -324,7 +345,7 @@ def test_owner_approval_policy_does_not_reach_effect_adapter() -> None:
     )
     assert result.status == "approval-required"
     assert tool.calls == 0
-    assert result.events[0].kind == "approval_required"
+    assert [event.kind for event in result.events] == ["run_started", "input_accepted", "approval_required"]
 
 
 def test_allowed_tool_runs_once_through_existing_registry_with_hash_evidence() -> None:
@@ -342,7 +363,7 @@ def test_allowed_tool_runs_once_through_existing_registry_with_hash_evidence() -
     )
     assert result.status == "done"
     assert tool.calls == 1
-    assert [event.kind for event in result.events] == ["tool_call", "tool_result"]
+    assert [event.kind for event in result.events] == ["run_started", "input_accepted", "tool_call", "tool_result"]
     assert validate_stream_chain(result.events) is True
     assert len(result.evidence_sha256) == 64
 
@@ -428,6 +449,143 @@ def test_tool_execution_continues_preparation_stream_chain() -> None:
         "tool_result",
     ]
     assert validate_stream_chain(result.events) is True
+
+
+def test_runtime_rejects_invalid_schema_types_and_additional_properties_before_effect() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="read", capabilities=("test",))
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded", tool_name="counting"),)
+    )
+    with pytest.raises(ProviderNeutralRuntimeError, match="must be an integer"):
+        kernel.execute_registered_tool(
+            context=context(),
+            tool=descriptor_from_registry(registry, "counting"),
+            parameters={"value": "7"},
+            registry=registry,
+        )
+    with pytest.raises(ProviderNeutralRuntimeError, match="additional properties"):
+        kernel.execute_registered_tool(
+            context=context(),
+            tool=descriptor_from_registry(registry, "counting"),
+            parameters={"value": 7, "extra": True},
+            registry=registry,
+        )
+    assert tool.calls == 0
+
+
+def test_authorized_parameter_snapshot_is_the_one_executed() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="read", capabilities=("test",))
+    parameters = {"value": 7}
+    hooks = HookPipeline()
+
+    def mutate_original(_ctx, _payload):
+        parameters["value"] = 99
+        return HookDecision()
+
+    hooks.register("mutate-original", "BEFORE_TOOL", mutate_original)
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded", tool_name="counting"),),
+        hooks=hooks,
+    )
+    result = kernel.execute_registered_tool(
+        context=context(),
+        tool=descriptor_from_registry(registry, "counting"),
+        parameters=parameters,
+        registry=registry,
+    )
+    assert result.result["output"] == "value=7"
+    assert parameters["value"] == 99
+
+
+def test_run_stream_preserves_owner_and_revision_identity() -> None:
+    registry = ToolRegistry()
+    tool = CountingTool()
+    registry.register(tool, effect="read", capabilities=("test",))
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-counting", "ALLOW", "bounded", tool_name="counting"),)
+    )
+    prepared = kernel.prepare_run(
+        context=context(),
+        envelope=RuntimeInputEnvelope(parts=(RuntimeInputPart(kind="text", text="hello"),)),
+        tools=(descriptor_from_registry(registry, "counting"),),
+    )
+    substituted = RuntimeContext("run-1", "owner-2", "b" * 40, 100, 1000, "call-1")
+    with pytest.raises(ProviderNeutralRuntimeError, match="different owner or revision"):
+        kernel.execute_registered_tool(
+            context=substituted,
+            tool=descriptor_from_registry(registry, "counting"),
+            parameters={"value": 1},
+            registry=registry,
+            previous_events=prepared.events,
+        )
+
+
+def test_oversized_text_delta_is_safely_bounded() -> None:
+    events = append_stream_event((), kind="run_started", context=context(), payload={})
+    events = append_stream_event(events, kind="input_accepted", context=context(), payload={})
+    streamed = build_text_delta_stream(context=context(), chunks=("x" * 100_500,), previous_events=events)
+    assert len(streamed[-1].payload["text"]) == 100_000
+    assert validate_stream_chain(streamed) is True
+
+
+def test_semantically_impossible_stream_is_rejected_even_with_valid_hashes() -> None:
+    terminal_only = build_stream_event(
+        sequence=0,
+        kind="run_completed",
+        context=context(),
+        payload={},
+    )
+    assert validate_stream_chain((terminal_only,)) is False
+
+
+def test_tool_execution_result_is_deeply_frozen() -> None:
+    registry = ToolRegistry()
+    tool = MutableResultTool()
+    registry.register(tool, effect="read", capabilities=("test",))
+    kernel = ProviderNeutralRuntimeKernel(
+        policy_rules=(PolicyRule("allow-mutable", "ALLOW", "bounded", tool_name="mutable-result"),)
+    )
+    execution = kernel.execute_registered_tool(
+        context=context(),
+        tool=descriptor_from_registry(registry, "mutable-result"),
+        parameters={},
+        registry=registry,
+    )
+    original = execution.to_dict()
+    tool.metadata["nested"]["value"] = "after"
+    assert execution.to_dict() == original
+    with pytest.raises(TypeError):
+        execution.result["new"] = "forbidden"  # type: ignore[index]
+
+
+def test_trigger_rejects_non_boolean_enabled_values() -> None:
+    with pytest.raises(ProviderNeutralRuntimeError, match="enabled must be a boolean"):
+        DeterministicTrigger("bad", interval_ticks=1, enabled="false")  # type: ignore[arg-type]
+
+
+def test_live_tool_runner_routes_through_provider_neutral_kernel() -> None:
+    runner = ToolRunner()
+    registry = ToolRegistry()
+    counting = CountingTool()
+    registry.register(counting, effect="read", capabilities=("test",))
+    runner.registry = registry
+    execution = runner._execute_single(
+        ToolCall(tool_name="counting", parameters={"value": 9}, call_id="live-call"),
+        revision=REVISION,
+    )
+    assert execution.result.status == "done"
+    assert counting.calls == 1
+    assert len(execution.result.metadata["providerNeutralEvidenceSha256"]) == 64
+    blocked = runner._execute_single(
+        ToolCall(tool_name="counting", parameters={"value": "9"}, call_id="bad-call"),
+        revision=REVISION,
+    )
+    assert blocked.result.status == "blocked"
+    assert counting.calls == 1
 
 
 def test_tool_runner_exposes_provider_neutral_entry_without_changing_legacy_path() -> None:

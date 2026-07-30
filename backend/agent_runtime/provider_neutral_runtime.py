@@ -92,10 +92,12 @@ def _bounded(value: Any, maximum: int) -> str:
 
 
 def _bounded_stream_text(value: Any, maximum: int) -> str:
-    """Sanitize a text delta without deleting meaningful edge whitespace."""
+    """Sanitize a bounded text delta while preserving both edge markers."""
     start_marker = "\u0002"
     end_marker = "\u0003"
-    wrapped = f"{start_marker}{str(value or '')}{end_marker}"
+    raw = str(value or "")
+    bounded_raw = raw[:maximum]
+    wrapped = f"{start_marker}{bounded_raw}{end_marker}"
     sanitized = sanitize_agent_text(wrapped, maximum + 2)
     if sanitized.startswith(start_marker) and sanitized.endswith(end_marker):
         return sanitized[1:-1]
@@ -156,6 +158,47 @@ def _snapshot_mapping(label: str, value: Mapping[str, Any]) -> Mapping[str, Any]
     if not isinstance(frozen, Mapping):
         raise ProviderNeutralRuntimeError(f"{label} must be a canonical mapping")
     return frozen
+
+
+def _validate_schema_value(value: Any, schema: Mapping[str, Any], *, path: str = "parameters") -> None:
+    """Validate the bounded JSON-Schema subset emitted by registered tools."""
+    expected_type = schema.get("type")
+    if expected_type == "object":
+        if not isinstance(value, Mapping):
+            raise ProviderNeutralRuntimeError(f"{path} must be an object")
+        properties = schema.get("properties") or {}
+        if not isinstance(properties, Mapping):
+            raise ProviderNeutralRuntimeError(f"{path} schema properties must be an object")
+        required = schema.get("required") or ()
+        if not isinstance(required, (list, tuple)):
+            raise ProviderNeutralRuntimeError(f"{path} schema required must be an array")
+        missing = [name for name in required if name not in value]
+        if missing:
+            raise ProviderNeutralRuntimeError(f"{path} is missing required properties: {', '.join(missing)}")
+        if schema.get("additionalProperties") is False:
+            extras = sorted(set(value) - set(properties))
+            if extras:
+                raise ProviderNeutralRuntimeError(f"{path} contains additional properties: {', '.join(extras)}")
+        for name, item in value.items():
+            child_schema = properties.get(name)
+            if isinstance(child_schema, Mapping):
+                _validate_schema_value(item, child_schema, path=f"{path}.{name}")
+        return
+    if expected_type == "string" and not isinstance(value, str):
+        raise ProviderNeutralRuntimeError(f"{path} must be a string")
+    if expected_type == "boolean" and type(value) is not bool:
+        raise ProviderNeutralRuntimeError(f"{path} must be a boolean")
+    if expected_type == "integer" and not _is_exact_int(value):
+        raise ProviderNeutralRuntimeError(f"{path} must be an integer")
+    if expected_type == "array":
+        if not isinstance(value, (list, tuple)):
+            raise ProviderNeutralRuntimeError(f"{path} must be an array")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, Mapping):
+            for index, item in enumerate(value):
+                _validate_schema_value(item, item_schema, path=f"{path}[{index}]")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ProviderNeutralRuntimeError(f"{path} is not an allowed enum value")
 
 
 @dataclass(frozen=True)
@@ -694,10 +737,27 @@ def build_stream_event(
 
 
 def validate_stream_chain(events: Sequence[RuntimeStreamEvent]) -> bool:
+    if not events or events[0].kind != "run_started":
+        return False
     previous = ZERO_SHA256
     terminal_seen = False
+    prior_kind = ""
     for expected_sequence, event in enumerate(events):
         if terminal_seen:
+            return False
+        if event.kind == "run_started" and expected_sequence != 0:
+            return False
+        if event.kind == "input_accepted" and prior_kind != "run_started":
+            return False
+        if event.kind in {"model_started", "text_delta", "tool_call"} and prior_kind not in {
+            "input_accepted", "model_started", "text_delta", "tool_result", "evidence"
+        }:
+            return False
+        if event.kind == "tool_result" and prior_kind != "tool_call":
+            return False
+        if event.kind in {"run_completed", "run_failed"} and prior_kind not in {
+            "input_accepted", "model_started", "text_delta", "tool_result", "evidence", "approval_required"
+        }:
             return False
         rebuilt = build_stream_event(
             sequence=event.sequence,
@@ -719,6 +779,7 @@ def validate_stream_chain(events: Sequence[RuntimeStreamEvent]) -> bool:
         previous = event.event_sha256
         if event.kind in {"run_completed", "run_failed"}:
             terminal_seen = True
+        prior_kind = event.kind
     return True
 
 
@@ -736,6 +797,8 @@ class DeterministicTrigger:
             raise ProviderNeutralRuntimeError("interval_ticks must be a positive integer")
         if not _is_exact_int(self.offset_tick) or self.offset_tick < 0:
             raise ProviderNeutralRuntimeError("offset_tick must be a non-negative integer")
+        if type(self.enabled) is not bool:
+            raise ProviderNeutralRuntimeError("enabled must be a boolean")
         if not _is_exact_int(self.max_fires) or self.max_fires < 0:
             raise ProviderNeutralRuntimeError("max_fires must be a non-negative integer")
 
@@ -794,6 +857,11 @@ class ProviderNeutralToolExecution:
     events: tuple[RuntimeStreamEvent, ...]
     hook_receipts: tuple[HookReceipt, ...]
     evidence_sha256: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "result", _snapshot_mapping("tool result", self.result))
+        object.__setattr__(self, "events", tuple(self.events))
+        object.__setattr__(self, "hook_receipts", tuple(self.hook_receipts))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -970,6 +1038,8 @@ class ProviderNeutralRuntimeKernel:
             context=context,
             payload={
                 "contextSha256": context.sha256,
+                "ownerId": context.owner_id,
+                "revision": context.revision,
                 "inputSha256": envelope.sha256,
                 "registrySha256": registry["registrySha256"],
             },
@@ -1105,12 +1175,18 @@ class ProviderNeutralRuntimeKernel:
                 "supplied tool authorization metadata does not match the registry-owned contract"
             )
         tool = registered_tool
-        authorization = self.authorize_tool(context=context, tool=tool, parameters=parameters)
+        parameter_snapshot = _snapshot_mapping("tool parameters", parameters)
+        _validate_schema_value(parameter_snapshot, tool.input_schema)
+        authorization = self.authorize_tool(context=context, tool=tool, parameters=parameter_snapshot)
         events = list(previous_events)
         if events and not validate_stream_chain(events):
             raise ProviderNeutralRuntimeError("previous stream events have an invalid hash chain")
         if any(event.run_id != context.run_id for event in events):
             raise ProviderNeutralRuntimeError("previous stream events belong to a different run")
+        if events:
+            start_payload = events[0].payload
+            if start_payload.get("ownerId") != context.owner_id or start_payload.get("revision") != context.revision:
+                raise ProviderNeutralRuntimeError("previous stream events belong to a different owner or revision")
         if events and events[-1].kind in {"run_completed", "run_failed"}:
             raise ProviderNeutralRuntimeError("terminal run streams may not execute additional tools")
         previous = events[-1].event_sha256 if events else ZERO_SHA256
@@ -1126,6 +1202,22 @@ class ProviderNeutralRuntimeKernel:
             )
             events.append(event)
             previous = event.event_sha256
+
+        if not events:
+            append(
+                "run_started",
+                {
+                    "contextSha256": context.sha256,
+                    "ownerId": context.owner_id,
+                    "revision": context.revision,
+                    "inputSha256": canonical_sha256(parameter_snapshot),
+                    "registrySha256": canonical_sha256(tool.to_dict()),
+                },
+            )
+            append(
+                "input_accepted",
+                {"inputSha256": canonical_sha256(parameter_snapshot), "partCount": 1},
+            )
 
         if authorization.decision == "DENY":
             append("evidence", {"decision": "DENY", "reason": authorization.reason})
@@ -1168,13 +1260,13 @@ class ProviderNeutralRuntimeKernel:
                 "tool": tool.name,
                 "effect": tool.effect,
                 "contractSha256": tool.contract_sha256,
-                "parametersSha256": canonical_sha256(parameters),
+                "parametersSha256": canonical_sha256(parameter_snapshot),
             },
         )
         try:
             raw_result = registry.execute_tool(
                 tool_name=tool.name,
-                params=dict(parameters),
+                params=dict(parameter_snapshot),
                 workspace_path=workspace_path,
             )
             result = _tool_result_mapping(raw_result)
