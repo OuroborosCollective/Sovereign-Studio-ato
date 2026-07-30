@@ -1500,6 +1500,7 @@ jobs:
       - name: Resolve Codex discussion 3678755307
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678755307';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1517,6 +1518,7 @@ jobs:
       - name: Resolve Codex discussion 3678755311
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678755311';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1534,6 +1536,7 @@ jobs:
       - name: Resolve Codex discussion 3678755319
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678755319';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1551,6 +1554,7 @@ jobs:
       - name: Resolve Codex discussion 3678755324
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678755324';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1568,6 +1572,7 @@ jobs:
       - name: Resolve Codex discussion 3678755330
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678755330';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1585,6 +1590,7 @@ jobs:
       - name: Resolve Codex discussion 3678755338
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678755338';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1602,6 +1608,7 @@ jobs:
       - name: Resolve Codex discussion 3678889494
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678889494';
             const expectedPath = 'tools/sovereign-chatgpt-mcp/owner_input_client.py';
@@ -1619,6 +1626,7 @@ jobs:
       - name: Resolve Codex discussion 3678889497
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678889497';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1636,6 +1644,7 @@ jobs:
       - name: Resolve Codex discussion 3678889501
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678889501';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
@@ -1653,6 +1662,7 @@ jobs:
       - name: Resolve Codex discussion 3678889502
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SOVEREIGN_GITHUB_TOKEN }}
           script: |
             const discussionId = '3678889502';
             const expectedPath = 'backend/agent_runtime/provider_neutral_runtime.py';
