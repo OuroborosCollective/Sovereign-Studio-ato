@@ -33,3 +33,7 @@
 ## 2025-07-24 - [Accessible Hover and State-Dependent Discovery for Inline Sub-Cards]
 **Learning:** Complex sub-cards (such as changelog previews, repair sheets, and workbench status cards) often render context-sensitive action items (such as copying content, applying a mission, or opening deep-links). Sighted and keyboard-navigated users require clear visual cues on action boundaries, and screen readers benefit from descriptive action-oriented `aria-label` and `title` attributes that update based on active/blocked/pressed states.
 **Action:** For interactive buttons within secondary workspace sheets and cards, always pair clear, detailed `title` tooltips with stateful, dynamic descriptive accessible names (e.g., using ternary expressions matching active/disabled states) to prevent confusion.
+
+## 2025-07-25 - [Accessible Tabular Status Indicators and External Links in Check Panels]
+**Learning:** Overriding visible buttons with `aria-label` is bad because it hides text for screen readers and breaks unit tests. Additionally, color-based status indicators in list tables must pair with accessible icons (like `CheckCircle2`, `XCircle`, `Clock`) to support colorblind users, and tabular check names with direct external URLs are highly useful when styled as keyboard-accessible links.
+**Action:** Keep visible button text as its accessible name (relying on `title` for descriptive hovers) and enrich tabular lists with distinct status icons and clear external deep links.
