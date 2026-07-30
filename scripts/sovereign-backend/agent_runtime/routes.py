@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import os
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 import uuid
 
@@ -46,18 +46,24 @@ from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
 from .rescue import (
     REPAIR_PACK_CREDITS,
+    RESCUE_CSRF_TTL_SECONDS,
     build_free_diagnosis,
     build_proof_pack,
     entitlement_payload,
+    issue_rescue_csrf_token,
     normalize_head_sha,
+    normalize_repair_changed_files,
+    normalize_rescue_origin,
     public_repair_row,
     read_github_pr_evidence,
     redact_secret_text,
+    repair_changed_file_limit_blocker,
     reserve_repair_pack,
     resolve_account_entitlement,
     resolve_github_head,
     update_repair_execution,
     verify_proof_pack,
+    verify_rescue_csrf_token,
 )
 from .universal_toolchain import (
     build_agent_handoff_context,
@@ -343,6 +349,73 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             return None, (jsonify({"error": "githubAccessToken has an invalid format"}), 400)
         return token, None
 
+    def _rescue_request_origin() -> str | None:
+        declared = str(request.headers.get("X-Sovereign-Rescue-Origin") or "").strip()
+        actual = str(request.headers.get("Origin") or "").strip()
+        try:
+            normalized_declared = normalize_rescue_origin(declared) if declared else None
+            normalized_actual = normalize_rescue_origin(actual) if actual else None
+        except ValueError:
+            return None
+        if normalized_actual and normalized_declared and normalized_actual != normalized_declared:
+            return None
+        return normalized_actual or normalized_declared
+
+    def _rescue_csrf_secret() -> str:
+        return str(
+            os.getenv("SOVEREIGN_RESCUE_CSRF_SECRET")
+            or os.getenv("JWT_SECRET")
+            or ""
+        )
+
+    def _issue_rescue_csrf(user_id: str) -> tuple[str | None, tuple[Any, int] | None]:
+        origin = _rescue_request_origin()
+        if not origin:
+            return None, (
+                jsonify({"error": "rescue_origin_required", "blocker": "csrf_origin_unverified"}),
+                403,
+            )
+        try:
+            token = issue_rescue_csrf_token(
+                user_id=user_id,
+                origin=origin,
+                secret=_rescue_csrf_secret(),
+            )
+        except RuntimeError as exc:
+            return None, (
+                jsonify({"error": str(exc), "blocker": "csrf_runtime_unavailable"}),
+                503,
+            )
+        return token, None
+
+    def _rescue_csrf_request_error(user_id: str) -> tuple[Any, int] | None:
+        if not request.is_json:
+            return (
+                jsonify({
+                    "error": "application/json is required",
+                    "blocker": "rescue_json_content_type_required",
+                }),
+                415,
+            )
+        origin = _rescue_request_origin()
+        if not origin:
+            return (
+                jsonify({"error": "rescue_origin_required", "blocker": "csrf_origin_unverified"}),
+                403,
+            )
+        supplied = request.headers.get("X-Sovereign-Rescue-CSRF")
+        if not verify_rescue_csrf_token(
+            supplied,
+            user_id=user_id,
+            origin=origin,
+            secret=_rescue_csrf_secret(),
+        ):
+            return (
+                jsonify({"error": "rescue_csrf_invalid", "blocker": "csrf_verification_failed"}),
+                403,
+            )
+        return None
+
     def _read_owned_rescue(conn, user_id: str, repair_id: str) -> dict[str, Any] | None:
         with conn.cursor() as cur:
             cur.execute(
@@ -354,10 +427,45 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             row = cur.fetchone()
         return dict(row) if row else None
 
+    def _bind_rescue_published_head(
+        conn: Any,
+        *,
+        reservation: Mapping[str, Any] | None,
+        user_id: str,
+        job_id: str,
+        observed_head_sha: str | None,
+    ) -> str | None:
+        if not reservation:
+            return None
+        stored_raw = str(reservation.get("published_head_sha") or "").strip()
+        observed_raw = str(observed_head_sha or "").strip()
+        try:
+            stored = normalize_head_sha(stored_raw) if stored_raw else None
+            observed = normalize_head_sha(observed_raw) if observed_raw else None
+        except ValueError:
+            return None
+        if stored and observed and stored != observed:
+            return None
+        bound = stored or observed
+        if not bound:
+            return None
+        if not stored:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE sovereign_rescue_repairs
+                       SET published_head_sha = %s, updated_at = NOW()
+                       WHERE job_id = %s AND user_id = %s::uuid""",
+                    (bound, job_id, user_id),
+                )
+        return bound
+
     @app.route("/api/user/agent/rescue/entitlement", methods=["GET"])
     @require_session
     def user_get_rescue_entitlement():
         user_id = _current_session_user_id()
+        csrf_token, csrf_error = _issue_rescue_csrf(user_id)
+        if csrf_error:
+            return csrf_error
         conn = _connection()
         try:
             account = _rescue_account(conn, user_id)
@@ -367,6 +475,8 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             return jsonify({
                 "ok": True,
                 "runtime": "sovereign-rescue",
+                "csrfToken": csrf_token,
+                "csrfExpiresInSeconds": RESCUE_CSRF_TTL_SECONDS,
                 "entitlement": entitlement_payload(account, entitlement),
             })
         finally:
@@ -410,14 +520,19 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_start_sovereign_rescue_repair():
         user_id = _current_session_user_id()
-        body: dict[str, Any] = request.get_json(force=True) or {}
+        csrf_error = _rescue_csrf_request_error(user_id)
+        if csrf_error:
+            return csrf_error
+        parsed_body = request.get_json(silent=True)
+        if not isinstance(parsed_body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        body: dict[str, Any] = parsed_body
         token, token_error = _rescue_token(body)
         if token_error:
             return token_error
         try:
             idempotency_key = str(uuid.UUID(str(
                 request.headers.get("Idempotency-Key")
-                or body.get("idempotencyKey")
                 or ""
             )))
             expected_base_sha = normalize_head_sha(body.get("expectedBaseSha"))
@@ -494,12 +609,68 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "blocker": redact_secret_text(exc, 400),
                 }), status
             if reservation.get("duplicate"):
-                return jsonify({
-                    "ok": True,
-                    "runtime": "sovereign-rescue",
-                    "duplicate": True,
-                    "repair": reservation,
-                }), 200
+                existing_job = _read_owned_job(
+                    conn,
+                    user_id,
+                    str(reservation.get("jobId") or ""),
+                )
+                existing_state = str(reservation.get("state") or "")
+                if existing_job:
+                    job_state = str(getattr(existing_job, "status", "") or "")
+                    if job_state == "completed" or existing_state in {"draft_pr_ready", "completed"}:
+                        update_repair_execution(
+                            conn,
+                            user_id=user_id,
+                            repair_id=str(reservation["repairId"]),
+                            run_id=str(reservation.get("runId") or "") or None,
+                            job_id=existing_job.job_id,
+                            state="draft_pr_ready",
+                        )
+                        return jsonify({
+                            "ok": True,
+                            "runtime": "sovereign-rescue",
+                            "duplicate": True,
+                            "repair": {**reservation, "state": "draft_pr_ready"},
+                        }), 200
+                    if job_state in {
+                        "queued",
+                        "provisioning",
+                        "running",
+                        "waiting-for-user",
+                        "validating",
+                    }:
+                        update_repair_execution(
+                            conn,
+                            user_id=user_id,
+                            repair_id=str(reservation["repairId"]),
+                            run_id=str(reservation.get("runId") or "") or None,
+                            job_id=existing_job.job_id,
+                            state="running",
+                        )
+                        return jsonify({
+                            "ok": True,
+                            "runtime": "sovereign-rescue",
+                            "duplicate": True,
+                            "repair": {**reservation, "state": "running"},
+                        }), 202
+                    return jsonify({
+                        "ok": False,
+                        "runtime": "sovereign-rescue",
+                        "duplicate": True,
+                        "blocker": "rescue_existing_job_recovery_required",
+                        "repair": reservation,
+                        "jobState": job_state or "unknown",
+                        "nextAction": "Inspect the persisted job evidence before retrying publication.",
+                    }), 409
+                if existing_state not in {"reserved", "blocked"}:
+                    return jsonify({
+                        "ok": False,
+                        "runtime": "sovereign-rescue",
+                        "duplicate": True,
+                        "blocker": "rescue_reservation_state_inconsistent",
+                        "repair": reservation,
+                    }), 409
+                implementation_job_id = str(reservation.get("jobId") or "")
         finally:
             _close(conn)
 
@@ -585,7 +756,13 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_get_sovereign_rescue_proof_pack(repair_id: str):
         user_id = _current_session_user_id()
-        body: dict[str, Any] = request.get_json(silent=True) or {}
+        csrf_error = _rescue_csrf_request_error(user_id)
+        if csrf_error:
+            return csrf_error
+        parsed_body = request.get_json(silent=True)
+        if not isinstance(parsed_body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        body: dict[str, Any] = parsed_body
         token, token_error = _rescue_token(body)
         if token_error:
             return token_error
@@ -1115,19 +1292,52 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT repair_id::text, entitlement_source, charged_credits
+                    """SELECT repair_id::text, entitlement_source, charged_credits,
+                              published_head_sha, state
                        FROM sovereign_rescue_repairs
                        WHERE job_id = %s AND user_id = %s::uuid
-                         AND state IN ('reserved', 'running', 'draft_pr_ready')
+                         AND state IN (
+                             'reserved', 'running', 'blocked',
+                             'draft_pr_ready', 'completed'
+                         )
                        LIMIT 1""",
                     (job_id, user_id),
                 )
                 rescue_reservation = cur.fetchone()
+            changed_file_blocker = repair_changed_file_limit_blocker(job.changed_files)
+            if rescue_reservation and changed_file_blocker:
+                conn.rollback()
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "blocker": changed_file_blocker,
+                    "changedFileCount": len(normalize_repair_changed_files(job.changed_files)),
+                    "creditSettlement": {"chargedCredits": 0, "duplicate": False},
+                }), 409
             credit_cost = 0 if rescue_reservation else 10
 
             if job.pr_state == "created" and (job.pr_url or job.draft_pr_url):
                 result = create_draft_pr_for_job(job, token=github_token)
-                conn.rollback()
+                published_head_sha = _bind_rescue_published_head(
+                    conn,
+                    reservation=rescue_reservation,
+                    user_id=user_id,
+                    job_id=job_id,
+                    observed_head_sha=result.head_sha,
+                )
+                if rescue_reservation and not published_head_sha:
+                    conn.rollback()
+                    return jsonify({
+                        "ok": False,
+                        "runtime": "sovereign-agent",
+                        "jobId": job_id,
+                        "blocker": "rescue_published_head_sha_missing",
+                    }), 409
+                if rescue_reservation:
+                    conn.commit()
+                else:
+                    conn.rollback()
                 return jsonify({
                     "ok": result.allowed,
                     "runtime": "sovereign-agent",
@@ -1172,9 +1382,26 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     },
                 }), 400
 
+            published_head_sha = _bind_rescue_published_head(
+                conn,
+                reservation=rescue_reservation,
+                user_id=user_id,
+                job_id=job_id,
+                observed_head_sha=result.head_sha,
+            )
+            if rescue_reservation and not published_head_sha:
+                conn.rollback()
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "blocker": "rescue_published_head_sha_missing",
+                    "creditSettlement": {"chargedCredits": 0, "duplicate": False},
+                }), 409
+
             remaining_credits: int | None = None
             charged_credits = 0
-            if not is_admin:
+            if not is_admin and credit_cost > 0:
                 with conn.cursor() as cur:
                     cur.execute(
                         """UPDATE admin_users
@@ -1203,6 +1430,8 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                         ),
                     )
                 charged_credits = credit_cost
+            elif not is_admin:
+                remaining_credits = available_credits
 
             mark_draft_pr_created(
                 conn,

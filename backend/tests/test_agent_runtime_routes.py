@@ -446,6 +446,7 @@ def test_rescue_paid_repair_reuses_free_executor_at_exact_head(monkeypatch):
     monkeypatch.setattr(routes_module, "start_cognitive_swarm_run", fake_start)
     monkeypatch.setattr(routes_module, "update_repair_execution", fake_update)
     monkeypatch.setattr(routes_module, "generate_agent_job_id", lambda: job_id)
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
     app = create_test_app(conn)
 
     response = app.test_client().post(
@@ -453,6 +454,9 @@ def test_rescue_paid_repair_reuses_free_executor_at_exact_head(monkeypatch):
         headers={
             "X-Test-User": "11111111-1111-4111-8111-111111111111",
             "Idempotency-Key": "33333333-3333-4333-8333-333333333333",
+            "Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-CSRF": "bound-test-token",
         },
         json={
             "repository": "https://github.com/example/broken-app",
@@ -473,3 +477,100 @@ def test_rescue_paid_repair_reuses_free_executor_at_exact_head(monkeypatch):
     assert captured["start"]["expected_head_sha"] == base_sha
     assert captured["start"]["implementation_job_id"] == job_id
     assert captured["update"]["state"] == "draft_pr_ready"
+
+
+
+def test_rescue_paid_repair_rejects_simple_content_type_before_reservation(monkeypatch):
+    conn = FakeConnection()
+    reserve_calls = []
+    monkeypatch.setattr(
+        routes_module,
+        "reserve_repair_pack",
+        lambda *args, **kwargs: reserve_calls.append((args, kwargs)),
+    )
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/rescue/repair",
+        headers={
+            "X-Test-User": "11111111-1111-4111-8111-111111111111",
+            "Origin": "https://evil.example.test",
+            "X-Sovereign-Rescue-Origin": "https://evil.example.test",
+        },
+        data='{"idempotencyKey":"body-only-must-not-charge"}',
+        content_type="text/plain",
+    )
+
+    assert response.status_code == 415
+    assert response.get_json()["blocker"] == "rescue_json_content_type_required"
+    assert reserve_calls == []
+
+
+def test_rescue_duplicate_repair_returns_persisted_running_job_without_second_execution(monkeypatch):
+    conn = FakeConnection()
+    user_id = "11111111-1111-4111-8111-111111111111"
+    base_sha = "c" * 40
+    repair_id = "44444444-4444-4444-8444-444444444444"
+    job_id = "agent-rescue-persisted"
+    seed_job(conn, user_id, job_id, status="running")
+    captured = {}
+
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_github_head",
+        lambda repository, branch, token=None: {
+            "repository": "https://github.com/example/broken-app",
+            "baseBranch": "main",
+            "baseSha": base_sha,
+        },
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "reserve_repair_pack",
+        lambda connection, **kwargs: {
+            "repairId": repair_id,
+            "jobId": job_id,
+            "runId": "run-persisted",
+            "state": "running",
+            "chargedCredits": 10,
+            "duplicate": True,
+        },
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "start_cognitive_swarm_run",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("duplicate execution must not start")),
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "update_repair_execution",
+        lambda connection, **kwargs: captured.update(kwargs) or {"repairId": repair_id, **kwargs},
+    )
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/rescue/repair",
+        headers={
+            "X-Test-User": user_id,
+            "Idempotency-Key": "55555555-5555-4555-8555-555555555555",
+            "Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-CSRF": "bound-test-token",
+        },
+        json={
+            "repository": "https://github.com/example/broken-app",
+            "baseBranch": "main",
+            "expectedBaseSha": base_sha,
+            "failureFamily": "github_actions_ci",
+            "evidenceText": "GitHub Actions workflow failed in .github/workflows/ci.yml",
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 202
+    assert payload["duplicate"] is True
+    assert payload["repair"]["jobId"] == job_id
+    assert payload["repair"]["state"] == "running"
+    assert captured["state"] == "running"
+    assert captured["job_id"] == job_id

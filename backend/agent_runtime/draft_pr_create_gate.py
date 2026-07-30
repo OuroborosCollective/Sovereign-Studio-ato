@@ -23,6 +23,7 @@ DraftPrCreateStatus = Literal["created", "blocked"]
 
 _SAFE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/_-]{0,119}$")
 _GITHUB_PR_URL = re.compile(r"^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$")
+_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SECRET_PATTERNS = (
     re.compile(r"github_pat_[A-Za-z0-9_]{10,}", re.IGNORECASE),
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{10,}", re.IGNORECASE),
@@ -54,14 +55,19 @@ class DraftPrCreateResult:
     allowed: bool
     status: DraftPrCreateStatus
     pr_url: str | None = None
+    head_sha: str | None = None
     blocker: str | None = None
     summary: str = "Draft PR create blocked."
     predictive_signal: str = "agent_draft_pr_create_blocked"
 
 
 class DraftPrCreator(Protocol):
-    def create_draft_pr(self, request: DraftPrCreateRequest, token: str) -> str:
-        """Create a GitHub Draft PR and return its html_url."""
+    def create_draft_pr(
+        self,
+        request: DraftPrCreateRequest,
+        token: str,
+    ) -> str | tuple[str, str]:
+        """Create a GitHub Draft PR and optionally return its published head SHA."""
 
 
 def _safe_branch(value: str | None) -> bool:
@@ -132,7 +138,11 @@ class GitHubApiDraftPrCreator:
             return url
         return None
 
-    def create_draft_pr(self, request: DraftPrCreateRequest, token: str) -> str:
+    def create_draft_pr(
+        self,
+        request: DraftPrCreateRequest,
+        token: str,
+    ) -> tuple[str, str]:
         owner_repo = _repo_owner_name(request.repo_url)
         if not owner_repo:
             raise ValueError("repo_url must be a GitHub HTTPS URL")
@@ -152,7 +162,7 @@ class GitHubApiDraftPrCreator:
         owner, repo = owner_repo
         existing = self._existing_draft_pr(request, token, owner, repo)
         if existing:
-            return existing
+            return existing, publication.commit_sha
         payload = json.dumps({
             "title": request.title,
             "head": request.head_branch,
@@ -183,11 +193,11 @@ class GitHubApiDraftPrCreator:
             existing = self._existing_draft_pr(request, token, owner, repo)
             if not existing:
                 raise
-            return existing
+            return existing, publication.commit_sha
         url = str(data.get("html_url") or "")
         if not _valid_pr_url(url):
             raise ValueError("GitHub did not return a valid pull request URL")
-        return url
+        return url, publication.commit_sha
 
 
 def draft_pr_create_request_from_job(job: StoredSovereignAgentJob) -> DraftPrCreateRequest:
@@ -286,7 +296,13 @@ def create_draft_pr_for_job(
 
     active_creator = creator or GitHubApiDraftPrCreator()
     try:
-        pr_url = active_creator.create_draft_pr(request, safe_token)
+        created = active_creator.create_draft_pr(request, safe_token)
+        if isinstance(created, tuple):
+            pr_url, published_head_sha = created
+        else:
+            pr_url, published_head_sha = created, None
+        if published_head_sha and not _COMMIT_SHA.fullmatch(published_head_sha):
+            raise ValueError("GitHub publication returned an invalid head SHA")
     except HTTPError as exc:
         return DraftPrCreateResult(
             allowed=False,
@@ -317,6 +333,7 @@ def create_draft_pr_for_job(
         allowed=True,
         status="created",
         pr_url=pr_url,
+        head_sha=published_head_sha,
         summary="GitHub Draft PR created.",
         predictive_signal="agent_draft_pr_created",
     )
@@ -327,6 +344,7 @@ def draft_pr_create_signal(result: DraftPrCreateResult) -> dict[str, Any]:
         "allowed": result.allowed,
         "status": result.status,
         "prUrl": result.pr_url,
+        "headSha": result.head_sha,
         "blocker": result.blocker,
         "summary": result.summary,
         "signal": result.predictive_signal,

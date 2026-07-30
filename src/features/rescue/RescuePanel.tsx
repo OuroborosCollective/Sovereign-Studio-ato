@@ -60,7 +60,7 @@ export interface RescuePanelProps {
   readonly draftPrUrl?: string;
   readonly onClose: () => void;
   readonly onJobReady: (jobId: string) => void | Promise<void>;
-  readonly onPublishDraftPr: () => void | Promise<void>;
+  readonly onPublishDraftPr: (githubAccessToken?: string) => void | Promise<void>;
 }
 
 export function RescuePanel({
@@ -106,6 +106,7 @@ export function RescuePanel({
   };
 
   const diagnose = async () => {
+    idempotency.current = undefined;
     setBusy(true);
     setMessage('Revision und Fehlerfamilie werden geprüft …');
     setRepair(undefined);
@@ -144,6 +145,21 @@ export function RescuePanel({
       setMessage(status === 402
         ? 'Für den Repair Pack ist ein serverseitig bestätigter Kauf erforderlich.'
         : error instanceof Error ? error.message : 'Repair Pack konnte nicht starten.');
+    } finally {
+      setGithubToken('');
+      setBusy(false);
+    }
+  };
+
+  const publishDraftPr = async () => {
+    const ephemeralToken = githubToken.trim() || undefined;
+    setBusy(true);
+    setMessage('Draft-PR-Anfrage wird revisionsgebunden übergeben …');
+    try {
+      await onPublishDraftPr(ephemeralToken);
+      setMessage('Draft-PR-Anfrage übergeben. GitHub-Readback und CI-Evidence entscheiden den Status.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Draft-PR-Anfrage konnte nicht übergeben werden.');
     } finally {
       setGithubToken('');
       setBusy(false);
@@ -273,7 +289,7 @@ export function RescuePanel({
           <h2 style={{ marginTop: 0 }}>Reparaturstatus</h2>
           <p>Repair {repair.repairId} · Job {repair.jobId} · {repair.state}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button type="button" style={button} disabled={busy || currentJobId !== repair.jobId} onClick={() => { void onPublishDraftPr(); }}>
+            <button type="button" style={button} disabled={busy || currentJobId !== repair.jobId} onClick={() => { void publishDraftPr(); }}>
               Draft PR aus geprüfter Evidence erstellen
             </button>
             <button type="button" style={button} disabled={busy || !draftPrUrl} onClick={() => { void loadProofPack(); }}>

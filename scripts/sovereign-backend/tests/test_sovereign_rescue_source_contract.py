@@ -10,11 +10,16 @@ BACKEND = ROOT / "backend"
 
 
 def test_rescue_runtime_and_migration_mirrors_are_byte_equal() -> None:
-    assert (
-        SCRIPT_BACKEND / "agent_runtime" / "rescue.py"
-    ).read_bytes() == (
-        BACKEND / "agent_runtime" / "rescue.py"
-    ).read_bytes()
+    for relative_path in (
+        Path("agent_runtime/rescue.py"),
+        Path("agent_runtime/routes.py"),
+        Path("agent_runtime/draft_pr_create_gate.py"),
+    ):
+        assert (
+            SCRIPT_BACKEND / relative_path
+        ).read_bytes() == (
+            BACKEND / relative_path
+        ).read_bytes()
     assert (
         SCRIPT_BACKEND / "migrations" / "045_sovereign_rescue.sql"
     ).read_bytes() == (
@@ -30,6 +35,8 @@ def test_rescue_migration_enforces_tenant_idempotency_and_bounded_states() -> No
     assert "UNIQUE (job_id)" in migration
     assert "sovereign_rescue_family_check" in migration
     assert "sovereign_rescue_state_check" in migration
+    assert "ADD COLUMN IF NOT EXISTS published_head_sha CHAR(40)" in migration
+    assert "sovereign_rescue_published_head_sha_check" in migration
     assert "REFERENCES admin_users(id) ON DELETE CASCADE" in migration
 
 

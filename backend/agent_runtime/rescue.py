@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import hmac
 import json
 import re
+import time
 from typing import Any, Mapping
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
@@ -27,6 +29,8 @@ REPAIR_PACK_ID = "rescue-repair-pack-v1"
 REPAIR_PACK_CREDITS = 10
 MAX_EVIDENCE_CHARS = 120_000
 MAX_AFFECTED_FILES = 20
+MAX_REPAIR_CHANGED_FILES = 12
+RESCUE_CSRF_TTL_SECONDS = 600
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SAFE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$")
@@ -40,6 +44,10 @@ _SECRET_PATTERNS = (
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{8,}", re.IGNORECASE),
     re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{10,}", re.IGNORECASE),
     re.compile(r"Authorization:\s*(?:Bearer\s+)?[^\s\n]+", re.IGNORECASE),
+    re.compile(
+        r"(?i)\b((?:[a-z][a-z0-9]*_)+(?:token|password|passwd|secret|api[_-]?key))"
+        r"(\s*[=:]\s*)([^\s,;]+)"
+    ),
     re.compile(
         r"(?i)\b(token|password|passwd|secret|api[_-]?key)\b"
         r"(\s*[=:]\s*)([^\s,;]+)"
@@ -144,6 +152,105 @@ def redact_secret_text(value: Any, limit: int = MAX_EVIDENCE_CHARS) -> str:
         else:
             text = pattern.sub("[REDACTED]", text)
     return text
+
+
+def normalize_rescue_origin(value: Any) -> str:
+    """Return one path-free browser origin suitable for CSRF binding."""
+
+    parsed = urlparse(str(value or "").strip())
+    if (
+        parsed.scheme.lower() not in {"http", "https", "capacitor"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("A canonical Rescue request origin is required.")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Rescue request origin port is invalid.") from exc
+    host = parsed.hostname.lower()
+    authority = f"[{host}]" if ":" in host else host
+    if port is not None:
+        authority = f"{authority}:{port}"
+    return f"{parsed.scheme.lower()}://{authority}"
+
+
+def issue_rescue_csrf_token(
+    *,
+    user_id: str,
+    origin: Any,
+    secret: Any,
+    now: int | None = None,
+) -> str:
+    """Issue a bounded HMAC token without persisting session or secret material."""
+
+    normalized_user = str(user_id or "").strip()
+    normalized_origin = normalize_rescue_origin(origin)
+    secret_bytes = str(secret or "").encode("utf-8")
+    if not normalized_user:
+        raise ValueError("Authenticated user id is required for Rescue CSRF.")
+    if len(secret_bytes) < 32:
+        raise RuntimeError("rescue_csrf_secret_unavailable")
+    issued_at = int(time.time() if now is None else now)
+    message = f"{normalized_user}\n{normalized_origin}\n{issued_at}".encode("utf-8")
+    signature = hmac.new(secret_bytes, message, hashlib.sha256).hexdigest()
+    return f"v1.{issued_at}.{signature}"
+
+
+def verify_rescue_csrf_token(
+    token: Any,
+    *,
+    user_id: str,
+    origin: Any,
+    secret: Any,
+    now: int | None = None,
+    ttl_seconds: int = RESCUE_CSRF_TTL_SECONDS,
+) -> bool:
+    """Verify token version, age, user and request-origin binding."""
+
+    try:
+        version, issued_text, supplied_signature = str(token or "").split(".", 2)
+        if version != "v1" or not issued_text.isdigit():
+            return False
+        issued_at = int(issued_text)
+        current = int(time.time() if now is None else now)
+        if issued_at > current + 30 or current - issued_at > max(1, int(ttl_seconds)):
+            return False
+        normalized_user = str(user_id or "").strip()
+        normalized_origin = normalize_rescue_origin(origin)
+        secret_bytes = str(secret or "").encode("utf-8")
+        if not normalized_user or len(secret_bytes) < 32:
+            return False
+        message = f"{normalized_user}\n{normalized_origin}\n{issued_at}".encode("utf-8")
+        expected = hmac.new(secret_bytes, message, hashlib.sha256).hexdigest()
+        return bool(
+            re.fullmatch(r"[0-9a-f]{64}", supplied_signature)
+            and hmac.compare_digest(supplied_signature, expected)
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def normalize_repair_changed_files(value: Any) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or value is None:
+        return ()
+    return tuple(dict.fromkeys(
+        str(item)
+        for item in value
+        if isinstance(item, str) and str(item).strip()
+    ))
+
+
+def repair_changed_file_limit_blocker(value: Any) -> str | None:
+    count = len(normalize_repair_changed_files(value))
+    if count <= MAX_REPAIR_CHANGED_FILES:
+        return None
+    return f"changed_file_limit_exceeded:{count}>{MAX_REPAIR_CHANGED_FILES}"
 
 
 def canonical_sha256(value: Any) -> str:
@@ -349,7 +456,7 @@ def build_outcome_contract(diagnosis: Mapping[str, Any]) -> dict[str, Any]:
         "repairPack": {
             "id": REPAIR_PACK_ID,
             "credits": REPAIR_PACK_CREDITS,
-            "maxChangedFiles": 12,
+            "maxChangedFiles": MAX_REPAIR_CHANGED_FILES,
             "maxRepairAttempts": 3,
             "draftPrOnly": True,
             "autoMerge": False,
@@ -654,19 +761,23 @@ def build_proof_pack(
     pr = dict(pr_evidence or {})
     base_sha = normalize_head_sha(repair.get("base_sha") or repair.get("baseSha"))
     head_sha = str(pr.get("headSha") or "").lower()
-    changed_files = [
-        str(item)
-        for item in (job.get("changed_files") or job.get("changedFiles") or [])
-        if isinstance(item, str)
-    ][:12]
+    changed_files = list(normalize_repair_changed_files(
+        job.get("changed_files") or job.get("changedFiles") or []
+    ))
     test_summary = redact_secret_text(
         job.get("test_summary") or job.get("testSummary") or "",
         4000,
     )
     pr_url = str(job.get("draft_pr_url") or job.get("draftPrUrl") or pr.get("url") or "")
+    published_head_sha = str(
+        repair.get("published_head_sha") or repair.get("publishedHeadSha") or ""
+    ).strip().lower()
     blockers: list[str] = []
+    changed_file_blocker = repair_changed_file_limit_blocker(changed_files)
     if not changed_files:
         blockers.append("changed_file_evidence_missing")
+    if changed_file_blocker:
+        blockers.append(changed_file_blocker)
     if not test_summary:
         blockers.append("test_evidence_missing")
     if "[REDACTED]" in test_summary:
@@ -675,6 +786,10 @@ def build_proof_pack(
         blockers.append("draft_pr_evidence_missing")
     if not _SHA40.fullmatch(head_sha):
         blockers.append("draft_pr_head_sha_missing")
+    if not _SHA40.fullmatch(published_head_sha):
+        blockers.append("published_head_sha_missing")
+    elif head_sha and head_sha != published_head_sha:
+        blockers.append("draft_pr_head_changed_after_publication")
     if pr.get("ciHeadShaMatch") is not True:
         blockers.append("ci_head_sha_not_bound")
     if pr.get("ciGreen") is not True:
@@ -688,8 +803,11 @@ def build_proof_pack(
         "failureFamily": str(repair.get("failure_family") or repair.get("failureFamily") or ""),
         "baseSha": base_sha,
         "headSha": head_sha or None,
+        "publishedHeadSha": published_head_sha or None,
         "draftPrUrl": pr_url or None,
         "changedFiles": changed_files,
+        "changedFileCount": len(changed_files),
+        "maxChangedFiles": MAX_REPAIR_CHANGED_FILES,
         "testSummary": test_summary or None,
         "ci": {
             "headShaMatch": pr.get("ciHeadShaMatch") is True,
@@ -715,6 +833,9 @@ def verify_proof_pack(pack: Mapping[str, Any]) -> bool:
         and not pack.get("blockers")
         and _SHA40.fullmatch(str(pack.get("baseSha") or ""))
         and _SHA40.fullmatch(str(pack.get("headSha") or ""))
+        and _SHA40.fullmatch(str(pack.get("publishedHeadSha") or ""))
+        and str(pack.get("headSha") or "") == str(pack.get("publishedHeadSha") or "")
+        and len(normalize_repair_changed_files(pack.get("changedFiles"))) <= MAX_REPAIR_CHANGED_FILES
         and proof_sha == canonical_sha256(payload)
         and "[REDACTED]" not in json.dumps(pack)
     )
@@ -733,6 +854,7 @@ def public_repair_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "outcome_contract_sha256",
         "entitlement_source",
         "charged_credits",
+        "published_head_sha",
         "state",
         "blocker",
         "created_at",
@@ -751,6 +873,7 @@ def public_repair_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "outcomeContractSha256": str(payload["outcome_contract_sha256"] or ""),
         "entitlementSource": str(payload["entitlement_source"] or ""),
         "chargedCredits": int(payload["charged_credits"] or 0),
+        "publishedHeadSha": str(payload["published_head_sha"] or "") or None,
         "state": str(payload["state"] or ""),
         "blocker": redact_secret_text(payload["blocker"], 1200) or None,
         "createdAt": str(payload["created_at"] or ""),
