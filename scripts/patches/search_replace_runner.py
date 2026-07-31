@@ -188,31 +188,6 @@ def main(argv: list[str]) -> None:
         fail("Usage: search_replace_runner.py <patch_file.json>")
     patch = read_patch(argv[1])
     repo = os.environ.get("REPO_FULL_NAME", DEFAULT_REPO)
-    if patch.get("mode") == "continuity_append_from_base":
-        target = str(patch.get("target") or "").strip()
-        source_ref = str(patch.get("source_ref") or "").strip()
-        baseline_ref = str(patch.get("baseline_ref") or "").strip()
-        entry = str(patch.get("entry") or "").rstrip("\r\n")
-        commit_message = str(patch.get("commit_message") or "chore(continuity): exact append")
-        if not target or not source_ref or not baseline_ref or not entry:
-            fail("continuity append mode requires target, source_ref, baseline_ref and entry")
-        try:
-            parsed_entry = json.loads(entry)
-        except json.JSONDecodeError as error:
-            fail(f"continuity entry is invalid JSON: {error}")
-        if not isinstance(parsed_entry, dict):
-            fail("continuity entry must be a JSON object")
-        api = GitHubApi(repo, os.environ.get("GITHUB_TOKEN", ""))
-        current_sha, _ = read_file(api, target, source_ref)
-        _, baseline_content = read_file(api, target, baseline_ref)
-        separator = "" if baseline_content.endswith("\n") else "\n"
-        after = baseline_content + separator + entry + "\n"
-        if not after.startswith(baseline_content):
-            fail("exact baseline prefix was not preserved")
-        commit_sha = update_file(api, source_ref, target, current_sha, after, commit_message)
-        print("✓ EXACT CONTINUITY PREFIX APPEND COMPLETE")
-        print(f"Commit: {commit_sha}")
-        return
     env_base = os.environ.get("BASE_BRANCH", DEFAULT_BASE)
     target = str(patch.get("target") or "").strip()
     if not target:
