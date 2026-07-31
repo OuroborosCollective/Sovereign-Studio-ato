@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "aa38e3e1fd53345bf077af5e8095072aaf1de097",
-  "rawCandidateCount": 81,
-  "canonicalCandidateCount": 67,
+  "sourceRevision": "add35e6eb9cf60c078cc88511980b4991ba5523f",
+  "rawCandidateCount": 89,
+  "canonicalCandidateCount": 71,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py",
@@ -64,6 +64,66 @@
       "candidateId": "llm-boundary:d8b78e74d383055c2a6fb926",
       "classification": "STRUCTURED_POLICY",
       "rationale": "is_actionable_evidence_file evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/evidence_collectors.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/evidence_collectors.py"
+      ],
+      "symbol": "collect_git_workspace",
+      "line": 351,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "180d3d52163d73b3171e7a4461551166fb61e3e723b9059c2b0252bcffef1d95",
+      "anchorSha256": "f42933d7351433d3b325365ca09a311c0dea6019ff16a68e1f4ab841f7f6d81d",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:004797cc6f7b6e3154e4906d",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_git_workspace validates caller-supplied Git SHAs, a canonical diff hash, bounded paths and an explicit clean-state boolean to build read-only evidence; it does not infer user intent or authorize effects."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/evidence_collectors.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/evidence_collectors.py"
+      ],
+      "symbol": "collect_github_ci",
+      "line": 402,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "180d3d52163d73b3171e7a4461551166fb61e3e723b9059c2b0252bcffef1d95",
+      "anchorSha256": "a5b3bac2c4f4d2072c17f392907a613ccc8e815997728ae9e105ae615e4845d2",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:c8705fd9731ec686d7149243",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_github_ci compares exact GitHub run, check, conclusion and revision identifiers to construct read-only CI evidence; it does not interpret free language or authorize workflow mutations."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/evidence_collectors.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/evidence_collectors.py"
+      ],
+      "symbol": "collect_github_ci",
+      "line": 440,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "180d3d52163d73b3171e7a4461551166fb61e3e723b9059c2b0252bcffef1d95",
+      "anchorSha256": "6594864b65110db08d72966e2b5312faafcbcfaad9ac3b33cb1927061cfca970",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:c964c12fda9cc638c8c34b31",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_github_ci compares a fixed conclusion enum and exact workflow and head SHAs to detect stale structured evidence; it does not infer semantic intent or authorize execution."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/evidence_collectors.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/evidence_collectors.py"
+      ],
+      "symbol": "collect_provider",
+      "line": 638,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "180d3d52163d73b3171e7a4461551166fb61e3e723b9059c2b0252bcffef1d95",
+      "anchorSha256": "2cec118591f92514e2f118d6f2bec81ce20a1d365de52224824cbab5c84ae129",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:f2f9e19a6dbc146874576101",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_provider compares explicit route-health booleans, a revision and a SHA-256 truth-boundary identifier to build read-only provider evidence; it does not interpret free language or select or authorize a provider effect."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/pattern_gateway.py",
@@ -905,5 +965,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "418a3593294a14c1b1e4626f21fedc4be16bfa79f54a5ad1ac8e6fe386f4e017"
+  "ledgerSha256": "440f1c19c4fbe03ec0d8bfdc154debbd3775270e6ec89140c3ea85b01222aeab"
 }

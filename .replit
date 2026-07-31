@@ -4,3 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
+
+[deployment]
+deploymentTarget = "static"
+publicDir = "dist/public"
