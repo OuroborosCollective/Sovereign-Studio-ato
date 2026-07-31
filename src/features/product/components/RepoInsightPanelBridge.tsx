@@ -79,26 +79,55 @@ type GatedRepoInsightSuggestion = RepoInsightSuggestion & {
   readonly gate?: RepoInsightGateSnapshot;
 };
 
-function hasRepoEvidence(target: string, repoFiles: RepoFile[]): boolean {
-  const normalized = target.trim().replace(/^\/+/, '');
-  if (!normalized) return false;
-  if (normalized.endsWith('/')) return repoFiles.some((file) => file.path.startsWith(normalized));
-  return repoFiles.some((file) => file.path === normalized || file.path.startsWith(`${normalized}/`));
+export interface RepoEvidenceIndex {
+  readonly exactPaths: ReadonlySet<string>;
+  readonly directoryPrefixes: ReadonlySet<string>;
 }
 
-function evidenceForSuggestion(suggestion: RepoInsightSuggestion, repoFiles: RepoFile[]): string[] {
-  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, repoFiles)).slice(0, 5);
+interface RepoInsightGateContext {
+  readonly evidenceIndex: RepoEvidenceIndex;
+  readonly hasHardBlocker: boolean;
+}
+
+function normalizeRepoPath(path: string): string {
+  return path.trim().replace(/^\/+/, '');
+}
+
+export function buildRepoEvidenceIndex(repoFiles: RepoFile[]): RepoEvidenceIndex {
+  const exactPaths = new Set<string>();
+  const directoryPrefixes = new Set<string>();
+
+  for (const file of repoFiles) {
+    const normalized = normalizeRepoPath(file.path);
+    if (!normalized) continue;
+
+    exactPaths.add(normalized);
+    const segments = normalized.split('/');
+    for (let index = 1; index < segments.length; index += 1) {
+      directoryPrefixes.add(`${segments.slice(0, index).join('/')}/`);
+    }
+  }
+
+  return { exactPaths, directoryPrefixes };
+}
+
+export function hasRepoEvidence(target: string, index: RepoEvidenceIndex): boolean {
+  const normalized = normalizeRepoPath(target);
+  if (!normalized) return false;
+  if (normalized.endsWith('/')) return index.directoryPrefixes.has(normalized);
+  return index.exactPaths.has(normalized) || index.directoryPrefixes.has(`${normalized}/`);
+}
+
+function evidenceForSuggestion(suggestion: RepoInsightSuggestion, index: RepoEvidenceIndex): string[] {
+  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, index)).slice(0, 5);
 }
 
 function gateSuggestion(
   suggestion: RepoInsightSuggestion,
-  output: RepoInsightEngineOutput,
-  repoFiles: RepoFile[],
+  context: RepoInsightGateContext,
 ): GatedRepoInsightSuggestion {
-  const evidenceFiles = evidenceForSuggestion(suggestion, repoFiles);
-  const hasHardBlocker = output.blockers.some((blocker) =>
-    blocker.type === 'critical-finding' || blocker.type === 'ci-failure' || blocker.type === 'auth',
-  );
+  const evidenceFiles = evidenceForSuggestion(suggestion, context.evidenceIndex);
+  const { hasHardBlocker } = context;
 
   if (suggestion.category === 'feature' && hasHardBlocker) {
     return {
@@ -137,12 +166,19 @@ function gateSuggestion(
   };
 }
 
-function gateOutput(output: RepoInsightEngineOutput, repoFiles: RepoFile[]): RepoInsightEngineOutput {
+export function gateOutput(output: RepoInsightEngineOutput, repoFiles: RepoFile[]): RepoInsightEngineOutput {
+  const context: RepoInsightGateContext = {
+    evidenceIndex: buildRepoEvidenceIndex(repoFiles),
+    hasHardBlocker: output.blockers.some((blocker) =>
+      blocker.type === 'critical-finding' || blocker.type === 'ci-failure' || blocker.type === 'auth',
+    ),
+  };
+
   return {
     ...output,
-    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
-    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
-    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
+    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, context)),
+    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, context)),
+    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, context)),
   };
 }
 
@@ -215,7 +251,10 @@ export function RepoInsightPanelBridge({
   void analyze;
   void coachState;
 
-  const effectiveOutput = displayOutput(output ? gateOutput(output, repoFiles) : null);
+  const effectiveOutput = React.useMemo(
+    () => displayOutput(output ? gateOutput(output, repoFiles) : null),
+    [output, repoFiles],
+  );
 
   const handleSuggestionClick = (suggestion: RepoInsightSuggestion) => {
     if (isGateBlocked(suggestion)) return;
