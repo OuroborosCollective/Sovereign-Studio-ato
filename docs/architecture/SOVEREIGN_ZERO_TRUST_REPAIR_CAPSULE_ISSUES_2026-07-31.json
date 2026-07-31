@@ -1,0 +1,181 @@
+{
+  "schemaVersion": "sovereign.manifest-open-issues.v1",
+  "auditBaseline": "0afd83557cd222d0174e71ceb52feb737fa7db99",
+  "generatedAt": "2026-07-31",
+  "manifestPath": "docs/SOVEREIGN_RESCUE.md",
+  "openIssueCount": 4,
+  "issues": [
+    {
+      "key": "zero-trust-repair-capsule-epic",
+      "title": "[Rescue/Zero-Trust] Implement revision-bound Repair Capsule without GitHub write access",
+      "evidence": "Baseline `main`: `0afd83557cd222d0174e71ceb52feb737fa7db99`. Sovereign Rescue already owns revision-bound diagnosis, isolated repair workspaces, real diff/test evidence, Outcome Contracts, a 12-file limit, secret redaction and ProofPack logic. The missing product surface is a delivery mode that gives the customer a locally verifiable patch without granting Sovereign GitHub write access. Related existing work: #1100 and #1113; neither is treated as completed by this issue.",
+      "goal": "Add one bounded Sovereign Rescue delivery mode that returns `repair.patch`, `manifest.json`, `verify.py` and `README.md`. The customer verifies and applies the patch locally. Product promise: `Lass deine Software von einer KI reparieren, ohne ihr Schreibzugriff auf dein Repository zu geben.` Re-resolve the exact current `main` SHA before implementation.",
+      "paths": [
+        "`backend/agent_runtime/rescue.py` and canonical deployment mirror",
+        "`backend/agent_runtime/routes.py` and canonical deployment mirror",
+        "`src/features/rescue/rescueClient.ts`",
+        "`src/features/rescue/RescuePanel.tsx`",
+        "corresponding backend/frontend contract tests",
+        "`docs/SOVEREIGN_RESCUE.md`"
+      ],
+      "rules": [
+        "No automatic apply and no GitHub write token in Capsule mode.",
+        "No branch, commit, PR, merge, deployment or customer database migration from Capsule delivery.",
+        "Bind every Capsule to an exact Git base SHA, deterministic canonical hashes, the real workspace diff, real targeted test evidence and at most 12 changed files.",
+        "Derive patch paths from patch bytes and require exact identity with persisted changed-file evidence.",
+        "Fail closed on secrets, traversal, absolute paths, `.git/`, binary patches, submodules, unsafe symlink or mode changes and unknown diff features.",
+        "Do not claim production health, CI green, applied patch, digital signature or runtime success without corresponding real evidence.",
+        "Mocks, stubs, fake repositories, fake heads, UI flags and workflow tricks cannot satisfy product acceptance."
+      ],
+      "workflow": [
+        "Re-resolve current `main` and inventory canonical Rescue, diff, workspace, route and mirror ownership.",
+        "Implement and review the pure Capsule contract and offline verifier first.",
+        "Add the tenant-safe zero-write delivery route and explicit frontend mode.",
+        "Run real sandbox acceptance for CI, Docker Compose and PostgreSQL failure families plus one unsupported case.",
+        "Record observed benchmark values and release only if every zero-write security invariant holds."
+      ],
+      "integrationPlan": [
+        "Keep pure-core construction separate from effect adapters and UI.",
+        "Reuse existing Outcome Contract, repair row, job evidence, diff tool, secret redaction and max-file boundary instead of duplicating truth.",
+        "Use separate PRs for core, delivery/UI and real evidence if they cannot be reviewed safely together.",
+        "Do not add persistent patch/blob storage in PostgreSQL; persist only identities or hashes if later justified by a separate migration."
+      ],
+      "example": "capsule = {\n  \"schemaVersion\": \"sovereign.repair-capsule.v1\",\n  \"baseSha\": \"<exact-40-char-sha>\",\n  \"patchSha256\": \"<sha256>\",\n  \"changedFiles\": [\"<derived-from-patch>\"],\n  \"productionMutationIncluded\": false,\n  \"ready\": blockers.length === 0\n}",
+      "acceptance": [
+        "Capsule delivery performs zero GitHub writes and requires no GitHub write credential.",
+        "A fresh clone at the exact base SHA passes `verify.py` and `git apply --check` before explicit local apply.",
+        "After local apply, the same real targeted checks used in the repair workspace are rerun and recorded.",
+        "Base-SHA mismatch, patch-hash mismatch, path mismatch, traversal, secret material or unsupported diff feature blocks delivery.",
+        "The unsupported application-bug case produces no successful Capsule."
+      ]
+    },
+    {
+      "key": "zero-trust-repair-capsule-core",
+      "title": "[Rescue/Capsule Core] Build deterministic manifest, secure diff parser, and local verifier",
+      "evidence": "Part of the Zero-Trust Repair Capsule program. Baseline `main`: `0afd83557cd222d0174e71ceb52feb737fa7db99`. Existing Rescue core already normalizes revisions, changed files, secrets and canonical SHA-256 values, but it does not yet construct a portable patch package or independently parse and validate unified-diff paths.",
+      "goal": "Implement only the deterministic, side-effect-free `sovereign.repair-capsule.v1` contract, a secure unified-diff parser and an offline local verifier. Re-resolve current `main` before coding. This issue must introduce no API, UI or GitHub mutation.",
+      "paths": [
+        "`backend/agent_runtime/rescue.py`",
+        "`scripts/sovereign-backend/agent_runtime/rescue.py`",
+        "`backend/tests/test_sovereign_rescue_contracts.py`",
+        "canonical mirror/contract tests required by the current repository ownership model"
+      ],
+      "rules": [
+        "Manifest fields include repair ID, hashed repository identity, base SHA, failure family, Outcome Contract SHA-256, ordered changed paths, patch SHA-256, test-evidence SHA-256, max changed files, `productionMutationIncluded=false`, blockers, ready and canonical Capsule SHA-256.",
+        "Patch paths come from parsed patch bytes, never solely from agent-reported `changedFiles`.",
+        "Block absolute paths, `..`, `.git/`, empty patches, more than 12 paths, path-set mismatch, secret-shaped content, binary patches, submodules, unsafe symlink/mode changes and unknown diff syntax.",
+        "`verify.py` is deterministic and offline: check local HEAD, manifest hash, patch hash, exact path set and `git apply --check`; do not access a network or apply the patch automatically.",
+        "Timestamp or archive metadata must not make identical evidence produce different canonical hashes.",
+        "Canonical and deployment mirror implementations remain byte-identical or pass the repository's explicit mirror contract."
+      ],
+      "workflow": [
+        "Inventory the current diff format and all supported file-change classes.",
+        "Define strict manifest and parser contracts with closed schemas.",
+        "Implement deterministic builder and verifier generation.",
+        "Add adversarial parser and hash tests.",
+        "Run canonical/mirror and existing Rescue contract suites."
+      ],
+      "integrationPlan": [
+        "Reuse `normalize_head_sha`, `normalize_repair_changed_files`, `redact_secret_text`, `canonical_sha256` and the existing max-file boundary where canonical.",
+        "Separate path parsing from manifest assembly so both can be tested without filesystem or GitHub access.",
+        "Treat rename, delete, new-file, mode, symlink, submodule and binary changes as explicitly supported or explicitly blocked; never silently accept.",
+        "Document the exact supported unified-diff subset."
+      ],
+      "example": "assert parsed_paths(patch_bytes) == manifest[\"changedFiles\"]\nassert sha256(patch_bytes) == manifest[\"patchSha256\"]\nassert local_git_head(repo) == manifest[\"baseSha\"]\nrun([\"git\", \"apply\", \"--check\", \"repair.patch\"])",
+      "acceptance": [
+        "Same evidence produces the same manifest and Capsule SHA-256.",
+        "One changed patch byte or base SHA changes the corresponding identity and fails verification.",
+        "All traversal, secret, binary, submodule, unsafe symlink/mode and unknown-feature fixtures fail closed.",
+        "Ordering, Unicode and path edge cases are deterministic and adversarially tested.",
+        "No network, API, UI, GitHub write or repository publication effect is added."
+      ]
+    },
+    {
+      "key": "zero-trust-repair-capsule-delivery",
+      "title": "[Rescue/Capsule Delivery] Add tenant-safe download API and explicit zero-write user flow",
+      "evidence": "Part of the Zero-Trust Repair Capsule program. Baseline `main`: `0afd83557cd222d0174e71ceb52feb737fa7db99`. Rescue already exposes tenant-scoped diagnosis, repair and ProofPack routes plus a frontend panel. A dedicated Capsule route and user flow are needed so patch delivery remains distinct from Draft-PR publication.",
+      "goal": "Add a tenant-safe, bounded Capsule download endpoint and explicit frontend choice between Draft PR and Zero-Trust Capsule. Re-resolve current `main` before coding. Capsule delivery must accept no GitHub write credential and must perform no GitHub write.",
+      "paths": [
+        "`backend/agent_runtime/routes.py`",
+        "`scripts/sovereign-backend/agent_runtime/routes.py`",
+        "`backend/tests/test_agent_runtime_routes.py`",
+        "`src/features/rescue/rescueClient.ts` and tests",
+        "`src/features/rescue/RescuePanel.tsx` and tests",
+        "`docs/SOVEREIGN_RESCUE.md`"
+      ],
+      "rules": [
+        "Use `POST /api/user/agent/rescue/repairs/<repair_id>/capsule` or the canonically equivalent owner route.",
+        "Read only tenant-owned repair, job and workspace evidence.",
+        "Return a bounded attachment containing exactly the approved Capsule files.",
+        "Do not require or accept a GitHub token for Capsule delivery.",
+        "Do not branch, commit, push, create a PR, merge, deploy, migrate a customer database or apply to a customer repository.",
+        "Use ephemeral generation or bounded artifact storage; do not persist raw source, patches, archives, secrets or model output in PostgreSQL.",
+        "Enforce session, CSRF, tenant ownership, content type, size limit, same-evidence idempotency, workspace-diff identity and stale-evidence blocking.",
+        "UI must show exact base SHA and never claim applied patch, green CI or healthy production."
+      ],
+      "workflow": [
+        "Bind the route to the canonical Capsule core output.",
+        "Add tenant/session/CSRF and bounded-download contracts.",
+        "Add explicit Draft PR versus Zero-Trust Capsule selection in the Rescue UI.",
+        "Add negative and accessibility tests.",
+        "Verify through real route readback that Capsule mode performs zero GitHub writes."
+      ],
+      "integrationPlan": [
+        "Keep Draft-PR publication unchanged and visibly separate.",
+        "Reuse existing repair/job tenancy and CSRF boundaries.",
+        "Do not add a database migration in v1 unless reproducibility cannot be achieved from existing persisted evidence; any migration requires separate review.",
+        "Return explicit blockers rather than partial archives."
+      ],
+      "example": "POST /api/user/agent/rescue/repairs/<repair_id>/capsule\nAuthorization: existing session\nX-Sovereign-Rescue-CSRF: <bound token>\nResponse: attachment; no githubAccessToken field accepted",
+      "acceptance": [
+        "Cross-tenant access is denied without leaking identifiers or Capsule bytes.",
+        "Frontend sends no GitHub token and backend invokes no write-capable GitHub method.",
+        "Repeated requests over identical evidence return identical manifest and patch hashes.",
+        "Changed/stale workspace diff, oversized output or missing test evidence blocks the download.",
+        "Draft-PR and Capsule modes never share a misleading success state."
+      ]
+    },
+    {
+      "key": "zero-trust-repair-capsule-evidence",
+      "title": "[Rescue/Capsule Evidence] Prove zero-write repair delivery with real sandbox repositories and benchmark it",
+      "evidence": "Part of the Zero-Trust Repair Capsule program. Baseline `main`: `0afd83557cd222d0174e71ceb52feb737fa7db99`. Unit and adapter tests can validate contracts, but they cannot prove the product promise that a real repair can be delivered, verified and applied locally with zero GitHub writes.",
+      "goal": "Produce revision-bound real acceptance evidence and an observed-value benchmark for Capsule delivery using disposable or owner-approved GitHub repositories. Re-resolve current `main` before execution. No mock, fake head, fake CI, UI flag or workflow trick may satisfy acceptance.",
+      "paths": [
+        "real sandbox repositories for GitHub Actions/CI, Docker Compose and PostgreSQL migration failures",
+        "one real unsupported application-bug repository",
+        "Capsule and Draft-PR delivery endpoints",
+        "real repair workspace, diff and targeted-test evidence",
+        "versioned benchmark/evidence documentation under the canonically selected docs path"
+      ],
+      "rules": [
+        "For each supported case read the real GitHub base SHA, diagnose, repair in an isolated workspace, run real targeted tests, produce real `git diff`, create Capsule, clone fresh at the exact base SHA, run `verify.py`, run `git apply --check`, apply locally, rerun the same tests and read back paths/hashes.",
+        "The unsupported application-bug case must fail closed without a successful Capsule.",
+        "Record observed values only; do not invent targets or transfer competitor metrics.",
+        "Compare Capsule and existing Draft-PR delivery without changing either result definition.",
+        "Security invariants must remain zero: Capsule GitHub writes, automatic applies, accepted traversal, accepted base-SHA mismatch, secret output and accepted changed-file mismatch.",
+        "Unit mocks may test adapters only and never count as product proof."
+      ],
+      "workflow": [
+        "Create or select four real disposable/owner-approved repositories and record exact identities.",
+        "Execute supported Rescue flows and unsupported fail-closed flow.",
+        "Run fresh-clone verification and local apply sequence.",
+        "Read back GitHub, workspace, test and artifact identities.",
+        "Publish an observed-value comparison and unresolved limitations."
+      ],
+      "integrationPlan": [
+        "Measure verifier success, apply-check success, targeted-test parity, required permissions, GitHub write count, hash/SHA/path rejections and time to locally verifiable repair versus Draft PR.",
+        "Where user testing is available, measure mode selection, permission-dialog abandonment and support incidents; otherwise mark these as not yet observed.",
+        "Bind evidence to exact repository and Capsule identities.",
+        "Block release if any zero-valued security invariant is violated."
+      ],
+      "example": "assert capsule.github_write_count == 0\nassert fresh_clone.head_sha == manifest.baseSha\nassert verifier.ok\nassert git_apply_check.ok\nassert targeted_tests_after_apply == targeted_tests_in_repair_workspace",
+      "acceptance": [
+        "All three supported real cases produce locally verifiable Capsules with zero GitHub writes.",
+        "The unsupported case fails closed and yields no successful Capsule.",
+        "Fresh-clone path/hash/SHA readbacks and real targeted tests are recorded for every supported case.",
+        "Benchmark report contains observed values or explicit `not measured`, never invented numbers.",
+        "Any violated security invariant blocks release."
+      ]
+    }
+  ]
+}
