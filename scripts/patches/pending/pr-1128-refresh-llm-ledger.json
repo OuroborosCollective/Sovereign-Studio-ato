@@ -1,0 +1,28 @@
+{
+  "mode": "run_python_helper",
+  "helper": "scripts/patches/pending/pr_1128_governance_helper.py",
+  "operation": "refresh_llm_boundary_ledger",
+  "source_ref": "patch-1100",
+  "analysis_revision": "add35e6eb9cf60c078cc88511980b4991ba5523f",
+  "ledger_target": "config/architecture/llm-tool-boundary-review-ledger.json",
+  "test_target": "tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py",
+  "commit_message": "chore(governance): review PR 1128 LLM boundary candidates",
+  "candidate_reviews": {
+    "llm-boundary:004797cc6f7b6e3154e4906d": {
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_git_workspace validates caller-supplied Git SHAs, a canonical diff hash, bounded paths and an explicit clean-state boolean to build read-only evidence; it does not infer user intent or authorize effects."
+    },
+    "llm-boundary:c8705fd9731ec686d7149243": {
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_github_ci compares exact GitHub run, check, conclusion and revision identifiers to construct read-only CI evidence; it does not interpret free language or authorize workflow mutations."
+    },
+    "llm-boundary:c964c12fda9cc638c8c34b31": {
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_github_ci compares a fixed conclusion enum and exact workflow and head SHAs to detect stale structured evidence; it does not infer semantic intent or authorize execution."
+    },
+    "llm-boundary:f2f9e19a6dbc146874576101": {
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "collect_provider compares explicit route-health booleans, a revision and a SHA-256 truth-boundary identifier to build read-only provider evidence; it does not interpret free language or select or authorize a provider effect."
+    }
+  }
+}
