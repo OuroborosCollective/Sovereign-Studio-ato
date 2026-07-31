@@ -188,6 +188,15 @@ def main(argv: list[str]) -> None:
         fail("Usage: search_replace_runner.py <patch_file.json>")
     patch = read_patch(argv[1])
     repo = os.environ.get("REPO_FULL_NAME", DEFAULT_REPO)
+    if patch.get("mode") == "run_python_helper":
+        import subprocess
+        helper = str(patch.get("helper") or "").strip()
+        helper_path = (Path.cwd() / helper).resolve()
+        repository_root = Path.cwd().resolve()
+        if not helper or not helper_path.is_file() or repository_root not in helper_path.parents:
+            fail("bounded helper path is invalid")
+        subprocess.run([sys.executable, str(helper_path), argv[1]], check=True, timeout=600)
+        return
     env_base = os.environ.get("BASE_BRANCH", DEFAULT_BASE)
     target = str(patch.get("target") or "").strip()
     if not target:
