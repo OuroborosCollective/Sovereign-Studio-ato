@@ -95,7 +95,17 @@ type Segment =
   | { type: 'codeblock'; language: string; content: string }
   | { type: 'linebreak' };
 
-function pushInlineSegments(line: string, segments: Segment[]): void {
+// Bounded line-level cache to skip redundant O(N) regex tokenization for already parsed lines.
+// Limits memory leak by checking and clearing when size exceeds 1000 lines.
+export const inlineLineCache = new Map<string, Segment[]>();
+
+export function getInlineSegmentsForLine(line: string): Segment[] {
+  let cached = inlineLineCache.get(line);
+  if (cached) {
+    return cached;
+  }
+
+  const segments: Segment[] = [];
   let remaining = line;
 
   while (remaining.length > 0) {
@@ -127,9 +137,38 @@ function pushInlineSegments(line: string, segments: Segment[]): void {
       break;
     }
   }
+
+  if (inlineLineCache.size >= 1000) {
+    inlineLineCache.clear();
+  }
+  inlineLineCache.set(line, segments);
+  return segments;
+}
+
+function pushInlineSegments(line: string, segments: Segment[]): void {
+  const lineSegments = getInlineSegmentsForLine(line);
+  const len = lineSegments.length;
+  for (let idx = 0; idx < len; idx++) {
+    segments.push(lineSegments[idx]);
+  }
+}
+
+// 1-slot caching for full-text tokenization to completely bypass parsing on identical render iterations.
+export let lastTokenizeInput: string | null = null;
+export let lastTokenizeResult: Segment[] = [];
+
+// Helper to manually clear cache for testing purposes.
+export function clearTokenizeCache(): void {
+  lastTokenizeInput = null;
+  lastTokenizeResult = [];
+  inlineLineCache.clear();
 }
 
 function tokenizeContent(input: string): Segment[] {
+  if (input === lastTokenizeInput) {
+    return lastTokenizeResult;
+  }
+
   const segments: Segment[] = [];
   const lines = input.split('\n');
   let i = 0;
@@ -166,6 +205,8 @@ function tokenizeContent(input: string): Segment[] {
     i += 1;
   }
 
+  lastTokenizeInput = input;
+  lastTokenizeResult = segments;
   return segments;
 }
 
