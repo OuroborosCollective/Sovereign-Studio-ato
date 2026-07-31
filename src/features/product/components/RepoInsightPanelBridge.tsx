@@ -79,23 +79,41 @@ type GatedRepoInsightSuggestion = RepoInsightSuggestion & {
   readonly gate?: RepoInsightGateSnapshot;
 };
 
-function hasRepoEvidence(target: string, repoFiles: RepoFile[]): boolean {
+function hasRepoEvidence(
+  target: string,
+  exactPaths: Set<string>,
+  dirPrefixes: Set<string>,
+): boolean {
   const normalized = target.trim().replace(/^\/+/, '');
   if (!normalized) return false;
-  if (normalized.endsWith('/')) return repoFiles.some((file) => file.path.startsWith(normalized));
-  return repoFiles.some((file) => file.path === normalized || file.path.startsWith(`${normalized}/`));
+
+  if (normalized.endsWith('/')) {
+    // Check if any registered directory prefix matches the requested prefix
+    return dirPrefixes.has(normalized);
+  }
+
+  // Exact file path match or checks if the path points to a directory structure we have
+  if (exactPaths.has(normalized)) return true;
+
+  // Also check if any known directory prefix matches 'normalized/'
+  return dirPrefixes.has(`${normalized}/`);
 }
 
-function evidenceForSuggestion(suggestion: RepoInsightSuggestion, repoFiles: RepoFile[]): string[] {
-  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, repoFiles)).slice(0, 5);
+function evidenceForSuggestion(
+  suggestion: RepoInsightSuggestion,
+  exactPaths: Set<string>,
+  dirPrefixes: Set<string>,
+): string[] {
+  return suggestion.affectedFiles.filter((target) => hasRepoEvidence(target, exactPaths, dirPrefixes)).slice(0, 5);
 }
 
 function gateSuggestion(
   suggestion: RepoInsightSuggestion,
   output: RepoInsightEngineOutput,
-  repoFiles: RepoFile[],
+  exactPaths: Set<string>,
+  dirPrefixes: Set<string>,
 ): GatedRepoInsightSuggestion {
-  const evidenceFiles = evidenceForSuggestion(suggestion, repoFiles);
+  const evidenceFiles = evidenceForSuggestion(suggestion, exactPaths, dirPrefixes);
   const hasHardBlocker = output.blockers.some((blocker) =>
     blocker.type === 'critical-finding' || blocker.type === 'ci-failure' || blocker.type === 'auth',
   );
@@ -138,11 +156,29 @@ function gateSuggestion(
 }
 
 function gateOutput(output: RepoInsightEngineOutput, repoFiles: RepoFile[]): RepoInsightEngineOutput {
+  // Bolt ⚡ Optimization: Pre-compute exact paths and directory prefixes in a single O(N) pass.
+  // This turns O(S * F * N) sequential searches into highly efficient O(1) Set lookup checks.
+  const exactPaths = new Set<string>();
+  const dirPrefixes = new Set<string>();
+
+  for (let i = 0; i < repoFiles.length; i++) {
+    const p = repoFiles[i].path;
+    exactPaths.add(p);
+
+    // Collect all directory prefixes (e.g. "src/features/product/" for a path "src/features/product/components/Sidebar.tsx")
+    const parts = p.split('/');
+    let cumulative = '';
+    for (let j = 0; j < parts.length - 1; j++) {
+      cumulative += parts[j] + '/';
+      dirPrefixes.add(cumulative);
+    }
+  }
+
   return {
     ...output,
-    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
-    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
-    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, output, repoFiles)),
+    fixSuggestions: output.fixSuggestions.map((suggestion) => gateSuggestion(suggestion, output, exactPaths, dirPrefixes)),
+    hardeningSuggestions: output.hardeningSuggestions.map((suggestion) => gateSuggestion(suggestion, output, exactPaths, dirPrefixes)),
+    featureSuggestions: output.featureSuggestions.map((suggestion) => gateSuggestion(suggestion, output, exactPaths, dirPrefixes)),
   };
 }
 
