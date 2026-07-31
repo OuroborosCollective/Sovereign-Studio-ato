@@ -1,0 +1,13 @@
+{
+  "target": "scripts/patches/search_replace_runner.py",
+  "source_ref": "patch-1100",
+  "branch_base_ref": "patch-1100",
+  "branch": "patch-1100",
+  "commit_message": "chore: remove temporary governance helper dispatch",
+  "blocks": [
+    {
+      "search": "    patch = read_patch(argv[1])\n    repo = os.environ.get(\"REPO_FULL_NAME\", DEFAULT_REPO)\n    if patch.get(\"mode\") == \"run_python_helper\":\n        import subprocess\n        helper = str(patch.get(\"helper\") or \"\").strip()\n        helper_path = (Path.cwd() / helper).resolve()\n        repository_root = Path.cwd().resolve()\n        if not helper or not helper_path.is_file() or repository_root not in helper_path.parents:\n            fail(\"bounded helper path is invalid\")\n        subprocess.run([sys.executable, str(helper_path), argv[1]], check=True, timeout=600)\n        return\n",
+      "replace": "    patch = read_patch(argv[1])\n    repo = os.environ.get(\"REPO_FULL_NAME\", DEFAULT_REPO)\n"
+    }
+  ]
+}
