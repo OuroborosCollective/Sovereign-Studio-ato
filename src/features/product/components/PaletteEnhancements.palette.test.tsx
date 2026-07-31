@@ -16,6 +16,7 @@ import { AgentEventStream } from './AgentEventStream';
 import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
+import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -536,6 +537,108 @@ describe('Palette Accessibility Enhancements', () => {
       );
       const disabledInlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei: src/App.tsx' });
       expect(disabledInlineBadgeBtn).toHaveAttribute('title', 'src/App.tsx');
+    });
+  });
+
+  describe('WorkflowWatchPanel Enhancements', () => {
+    it('button has dynamic dynamic title and aria-label matching state', () => {
+      const onWatch = vi.fn();
+      const { rerender } = render(
+        <WorkflowWatchPanel
+          report={null}
+          isWatching={false}
+          canWatch={true}
+          onWatch={onWatch}
+        />
+      );
+
+      // Blocked state 1 (default helperText "create a draft pr..." which blocks watch because no report yet)
+      const blockedBtn1 = screen.getByRole('button', { name: 'Workflow Watch blocked: Create a Draft PR first' });
+      expect(blockedBtn1).toBeDisabled();
+      expect(blockedBtn1).toHaveAttribute('title', 'Create a Draft PR first to monitor commit checks');
+      expect(blockedBtn1).toHaveTextContent('Draft PR zuerst erstellen');
+
+      // Blocked state 2 (explicitly canWatch={false})
+      rerender(
+        <WorkflowWatchPanel
+          report={{ status: 'pending', commitSha: 'abc', branch: 'main', checks: [], fixes: [], summary: 'some summary' }}
+          isWatching={false}
+          canWatch={false}
+          onWatch={onWatch}
+        />
+      );
+      const blockedBtn2 = screen.getByRole('button', { name: 'Workflow Watch blocked: Create a Draft PR first' });
+      expect(blockedBtn2).toBeDisabled();
+      expect(blockedBtn2).toHaveAttribute('title', 'Create a Draft PR first to monitor commit checks');
+
+      // Watching state
+      rerender(
+        <WorkflowWatchPanel
+          report={{ status: 'pending', commitSha: 'abc', branch: 'main', checks: [], fixes: [], summary: 'some summary' }}
+          isWatching={true}
+          canWatch={true}
+          onWatch={onWatch}
+        />
+      );
+      const watchingBtn = screen.getByRole('button', { name: 'Workflow Watch active: Monitoring checks' });
+      expect(watchingBtn).toBeDisabled();
+      expect(watchingBtn).toHaveAttribute('title', 'Workflow is already being actively monitored');
+      expect(watchingBtn).toHaveTextContent('Watching...');
+
+      // Ready state
+      rerender(
+        <WorkflowWatchPanel
+          report={{ status: 'pending', commitSha: 'abc', branch: 'main', checks: [], fixes: [], summary: 'some summary' }}
+          isWatching={false}
+          canWatch={true}
+          onWatch={onWatch}
+        />
+      );
+      const readyBtn = screen.getByRole('button', { name: 'Start monitoring commit checks' });
+      expect(readyBtn).not.toBeDisabled();
+      expect(readyBtn).toHaveAttribute('title', 'Monitor GitHub commit checks now');
+      expect(readyBtn).toHaveTextContent('Watch Commit Checks');
+    });
+
+    it('status labels have descriptive tooltip titles', () => {
+      const report = {
+        status: 'green',
+        commitSha: 'sha256',
+        branch: 'main',
+        checks: [
+          { name: 'Build Check', status: 'green', source: 'github', summary: 'Build passed' },
+          { name: 'Lint Check', status: 'red', source: 'github', summary: 'Lint failed' },
+          { name: 'Test Check', status: 'pending', source: 'github', summary: 'Tests running' },
+          { name: 'Unknown Check', status: 'unknown', source: 'github', summary: 'no status' },
+        ],
+        fixes: [],
+        summary: 'all good',
+      };
+
+      render(
+        <WorkflowWatchPanel
+          report={report}
+          isWatching={false}
+          onWatch={vi.fn()}
+        />
+      );
+
+      // Main status
+      const mainStatus = screen.getByText('Status: green');
+      expect(mainStatus).toHaveAttribute('title', 'Successfully completed (green)');
+
+      // Check status items
+      const checkGreen = screen.getByText('green');
+      expect(checkGreen).toHaveAttribute('title', 'Successfully completed (green)');
+
+      const checkRed = screen.getByText('red');
+      expect(checkRed).toHaveAttribute('title', 'Failed (red)');
+
+      const checkPending = screen.getByText('pending');
+      expect(checkPending).toHaveAttribute('title', 'Pending (pending)');
+
+      const checkUnknown = screen.getByText('unknown');
+      expect(checkUnknown).toHaveAttribute('title', 'Unknown');
     });
   });
 });

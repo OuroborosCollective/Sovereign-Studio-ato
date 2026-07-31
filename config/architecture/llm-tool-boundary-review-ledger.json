@@ -2,8 +2,8 @@
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
   "sourceRevision": "aa38e3e1fd53345bf077af5e8095072aaf1de097",
-  "rawCandidateCount": 77,
-  "canonicalCandidateCount": 65,
+  "rawCandidateCount": 81,
+  "canonicalCandidateCount": 67,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_repository_tools.py",
@@ -94,6 +94,36 @@
       "candidateId": "llm-boundary:113caa4cac994ae81e29d6c0",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "_deterministic_changelog scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/repair_capsule.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/repair_capsule.py"
+      ],
+      "symbol": "_changed_files",
+      "line": 173,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "bf872224bfd8c13365d79c9f3c1454109122987b69e098f4279dbc332373d69c",
+      "anchorSha256": "b9e5d7b9dffab05422bf61ec246517701a7c802c6203fca6efac75f595600050",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:f159950381df78b3e595a7d7",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "_changed_files normalizes only a persisted changed-file list through bounded path validation and exact deduplication; it does not interpret free user language or authorize any effect."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/repair_capsule.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/repair_capsule.py"
+      ],
+      "symbol": "build_repair_capsule_manifest",
+      "line": 214,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "bf872224bfd8c13365d79c9f3c1454109122987b69e098f4279dbc332373d69c",
+      "anchorSha256": "cc22ba87ff96d8ba72a9b3811824b44d98d24b3ef7bf8af7968e3a4cfc96a302",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:9e825a3a3c65bdab56cb56c0",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "build_repair_capsule_manifest compares a structured failure-family field only with the fixed supported-family enum; it does not infer semantic intent from free language or authorize execution."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/tool_policy.py",
@@ -875,5 +905,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "40606798b87d2478acf49156a7bdd086a92a5d200f265cefd8689a8a906dc0f4"
+  "ledgerSha256": "418a3593294a14c1b1e4626f21fedc4be16bfa79f54a5ad1ac8e6fe386f4e017"
 }

@@ -108,6 +108,44 @@ It remains incomplete when any of these are missing, when CI is pending or red,
 or when check runs do not refer to the same head SHA. A mock, stale deployment,
 UI-only flag or old runtime cannot satisfy it.
 
+## Zero-Trust Repair Capsule core
+
+The repository contains the pure `sovereign.repair-capsule.v1` construction and
+offline-verification contracts. This core is intentionally separate from the
+Draft-PR publication path and does not yet claim an available download route or
+released user interface.
+
+A ready core result contains exactly four in-memory files:
+
+- `repair.patch`;
+- `manifest.json`;
+- `verify.py`;
+- `README.md`.
+
+The manifest binds the exact base SHA, a hashed canonical repository identity,
+the Outcome Contract hash, the real patch hash, the exact path set derived from
+the patch bytes, bounded test-evidence identity and the hashes of the verifier
+and README. Identical evidence produces an identical Capsule identity; no clock
+or archive timestamp participates in the canonical hash.
+
+The accepted unified-diff subset is deliberately narrow: regular UTF-8 text
+modifications, additions and deletions with exact file headers, index metadata
+and at least one hunk. The core fails closed on absolute or traversing paths,
+`.git/`, whitespace paths, binary patches, renames, copies, submodules,
+symlinks, unsafe mode changes, duplicate paths, unsupported metadata, secret-
+shaped material, more than 12 files or mismatch with persisted changed-file
+evidence.
+
+`verify.py` is self-contained and offline. It independently repeats the strict
+diff checks, validates all hashes, requires the local Git HEAD to equal the
+manifest base SHA and executes only `git apply --check`. It performs no network
+request and never applies the patch. This is hash-bound integrity, not a digital
+signature or proof that customer production is healthy.
+
+The tenant-safe download endpoint and explicit frontend choice remain the
+separate delivery work in Issue #1124. Real zero-write sandbox acceptance and
+observed benchmarks remain Issue #1125.
+
 ## Secrets and tenancy
 
 - GitHub tokens are optional, request-scoped and never persisted by Rescue.

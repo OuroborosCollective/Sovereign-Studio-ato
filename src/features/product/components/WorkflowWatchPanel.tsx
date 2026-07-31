@@ -15,6 +15,13 @@ function statusClass(status: string): string {
   return 'text-slate-300';
 }
 
+function statusTooltip(status: string): string {
+  if (status === 'green') return 'Successfully completed (green)';
+  if (status === 'red') return 'Failed (red)';
+  if (status === 'pending') return 'Pending (pending)';
+  return 'Unknown';
+}
+
 export function WorkflowWatchPanel({
   report,
   isWatching,
@@ -31,6 +38,18 @@ export function WorkflowWatchPanel({
       ? 'Watching...'
       : 'Watch Commit Checks';
 
+  const buttonTitle = isBlocked
+    ? 'Create a Draft PR first to monitor commit checks'
+    : isWatching
+      ? 'Workflow is already being actively monitored'
+      : 'Monitor GitHub commit checks now';
+
+  const buttonAriaLabel = isBlocked
+    ? 'Workflow Watch blocked: Create a Draft PR first'
+    : isWatching
+      ? 'Workflow Watch active: Monitoring checks'
+      : 'Start monitoring commit checks';
+
   return (
     <section className="mt-4 rounded border border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-200">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -40,7 +59,14 @@ export function WorkflowWatchPanel({
             {helperText}
           </p>
         </div>
-        <button onClick={onWatch} disabled={isWatching || isBlocked} type="button">
+        <button
+          onClick={onWatch}
+          disabled={isWatching || isBlocked}
+          type="button"
+          title={buttonTitle}
+          aria-label={buttonAriaLabel}
+          className="rounded px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 active:bg-slate-900 disabled:opacity-50 disabled:pointer-events-none transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        >
           {buttonLabel}
         </button>
       </div>
@@ -48,7 +74,12 @@ export function WorkflowWatchPanel({
       {report ? (
         <div className="mt-4 grid gap-3">
           <div className="rounded border border-slate-800 bg-slate-900/70 p-3">
-            <p className={`font-bold uppercase ${statusClass(report.status)}`}>Status: {report.status}</p>
+            <p
+              className={`font-bold uppercase ${statusClass(report.status)}`}
+              title={statusTooltip(report.status)}
+            >
+              Status: {report.status}
+            </p>
             <p className="mt-1 text-xs text-slate-400">Commit: {report.commitSha ?? 'none'} • Branch: {report.branch ?? 'unknown'}</p>
           </div>
 
@@ -67,7 +98,12 @@ export function WorkflowWatchPanel({
                   {report.checks.map((check) => (
                     <tr key={`${check.source}:${check.name}:${check.url ?? ''}`} className="border-t border-slate-800">
                       <td className="p-2 font-bold text-slate-100">{check.name}</td>
-                      <td className={`p-2 font-bold uppercase ${statusClass(check.status)}`}>{check.status}</td>
+                      <td
+                        className={`p-2 font-bold uppercase ${statusClass(check.status)}`}
+                        title={statusTooltip(check.status)}
+                      >
+                        {check.status}
+                      </td>
                       <td className="p-2 text-slate-400">{check.source}</td>
                       <td className="p-2 text-slate-400">{check.summary}</td>
                     </tr>
