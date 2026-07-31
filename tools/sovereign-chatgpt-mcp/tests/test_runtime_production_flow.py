@@ -372,6 +372,88 @@ def test_workspace_sync_never_accepts_main_or_base_branch(repo_runtime, monkeypa
         )
 
 
+def test_materialize_pr_paths_copies_only_confirmed_changed_files_without_checkout(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, repo = repo_runtime
+    workspace_branch = runtime._read_metadata(workspace_id)["branch"]
+    base_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    remote = repo.parent / "materialize-remote.git"
+
+    subprocess.run(["git", "branch", "-M", workspace_branch], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "provider-source"], cwd=repo, check=True, capture_output=True)
+    target = repo / "backend/agent_runtime/provider_gate.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("PROVIDER_CLASS = 'FREE_KEYLESS'\n", "utf-8")
+    subprocess.run(["git", "add", str(target.relative_to(repo))], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "add provider gate"], cwd=repo, check=True, capture_output=True)
+    pr_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    subprocess.run(["git", "push", "origin", f"{base_sha}:refs/heads/main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "push", "origin", f"{pr_head}:refs/pull/901/head"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", workspace_branch], cwd=repo, check=True, capture_output=True)
+    assert not target.exists()
+
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(
+            200,
+            payload={
+                "number": 901,
+                "state": "open",
+                "head": {
+                    "ref": "provider-source",
+                    "sha": pr_head,
+                    "repo": {"full_name": runtime.config.repository},
+                },
+                "base": {"ref": "main", "sha": base_sha},
+            },
+        ),
+    )
+
+    result = runtime.materialize_pr_paths(
+        workspace_id,
+        pr_number=901,
+        expected_pr_head_sha=pr_head,
+        paths=["backend/agent_runtime/provider_gate.py"],
+    )
+
+    current_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert result["status"] == "PR_PATHS_MATERIALIZED"
+    assert result["pr_head_sha"] == pr_head
+    assert result["foreign_branch_checked_out"] is False
+    assert result["remote_mutation_performed"] is False
+    assert current_branch == workspace_branch
+    assert target.read_text("utf-8") == "PROVIDER_CLASS = 'FREE_KEYLESS'\n"
+
+    with pytest.raises(RuntimeError, match="PR_PATH_NOT_CHANGED"):
+        runtime.materialize_pr_paths(
+            workspace_id,
+            pr_number=901,
+            expected_pr_head_sha=pr_head,
+            paths=["README.md"],
+        )
+
+
 def test_workflow_artifact_import_binds_artifact_to_confirmed_run(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     archive_buffer = io.BytesIO()

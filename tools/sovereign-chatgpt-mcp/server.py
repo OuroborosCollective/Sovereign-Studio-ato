@@ -363,6 +363,22 @@ def repository_sync_workspace_to_pr_head(
     )
 
 
+@mcp.tool(annotations=SAFE_WRITE)
+def repository_materialize_pr_paths(
+    workspace_id: str,
+    pr_number: int,
+    expected_pr_head_sha: str,
+    paths: list[str],
+) -> dict[str, Any]:
+    """Copy selected files from one exact same-repository PR head into an isolated workspace."""
+    return runtime.materialize_pr_paths(
+        workspace_id,
+        pr_number=pr_number,
+        expected_pr_head_sha=expected_pr_head_sha,
+        paths=paths,
+    )
+
+
 @mcp.tool(annotations=EXTERNAL_WRITE)
 def repository_create_draft_pr(
     workspace_id: str,

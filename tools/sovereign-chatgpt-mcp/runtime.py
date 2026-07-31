@@ -670,6 +670,161 @@ class OperatorRuntime:
             "remote_mutation_performed": False,
         }
 
+    def materialize_pr_paths(
+        self,
+        workspace_id: str,
+        *,
+        pr_number: int,
+        expected_pr_head_sha: str,
+        paths: list[str],
+    ) -> dict[str, Any]:
+        """Copy selected UTF-8 files from one exact same-repository PR head into a workspace.
+
+        The workspace branch is preserved. The operation verifies the open PR identity,
+        fetches the exact PR ref, requires every selected path to be changed by that PR,
+        and writes only bounded repository files. It never checks out the foreign branch,
+        updates a remote ref, force-pushes, or mutates main.
+        """
+        number = int(pr_number)
+        expected = str(expected_pr_head_sha or "").strip().lower()
+        if number < 1:
+            raise ValueError("pr_number muss positiv sein")
+        if not re.fullmatch(r"[0-9a-f]{40}", expected):
+            raise ValueError("expected_pr_head_sha muss eine vollständige Commit-SHA sein")
+        if not isinstance(paths, list) or not paths or len(paths) > 50:
+            raise ValueError("paths muss zwischen 1 und 50 Einträge enthalten")
+
+        repo = self._repo(workspace_id)
+        metadata = self._read_metadata(workspace_id)
+        workspace_branch = validate_branch(str(metadata.get("branch") or ""))
+        base_branch = str(metadata.get("base_branch") or "").strip()
+        if workspace_branch in {"main", "master", base_branch}:
+            raise RuntimeError("PROTECTED_BRANCH_MATERIALIZATION_FORBIDDEN")
+
+        selected_paths: list[str] = []
+        for raw_path in paths:
+            text = str(raw_path or "").strip().replace("\\", "/")
+            target = safe_repo_path(repo, text, must_exist=None)
+            relative = str(target.relative_to(repo))
+            if relative not in selected_paths:
+                selected_paths.append(relative)
+        if not selected_paths:
+            raise ValueError("Keine sicheren Pfade ausgewählt")
+
+        headers = {
+            "Authorization": f"Bearer {self.config.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        }
+        response = requests.get(
+            f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+            headers=headers,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"PR konnte nicht geprüft werden: HTTP {response.status_code}")
+        pull = response.json()
+        if not isinstance(pull, dict):
+            raise RuntimeError("GitHub lieferte keinen gültigen PR")
+        head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
+        base = pull.get("base") if isinstance(pull.get("base"), dict) else {}
+        head_repo = head.get("repo") if isinstance(head.get("repo"), dict) else {}
+        actual_head = str(head.get("sha") or "").strip().lower()
+        actual_base = str(base.get("sha") or "").strip().lower()
+        actual_base_ref = str(base.get("ref") or "").strip()
+        actual_repository = str(head_repo.get("full_name") or "").strip()
+        if str(pull.get("state") or "") != "open" or actual_base_ref != base_branch:
+            raise RuntimeError("OPEN_WORKSPACE_BASE_PR_REQUIRED")
+        if actual_repository.lower() != self.config.repository.lower():
+            raise RuntimeError("FORK_PR_MATERIALIZATION_FORBIDDEN")
+        if actual_head != expected:
+            raise RuntimeError("PR_HEAD_CHANGED: erwartete Revision stimmt nicht mehr")
+        if not re.fullmatch(r"[0-9a-f]{40}", actual_base):
+            raise RuntimeError("PR_BASE_REVISION_INVALID")
+
+        remote_ref = f"refs/remotes/origin/pull/{number}/head"
+        askpass_dir, env = self._askpass()
+        try:
+            fetched = self._run(
+                [
+                    "git",
+                    "fetch",
+                    "--no-tags",
+                    "origin",
+                    f"+refs/pull/{number}/head:{remote_ref}",
+                ],
+                cwd=repo,
+                env=env,
+            )
+        finally:
+            shutil.rmtree(askpass_dir, ignore_errors=True)
+        if not fetched["ok"]:
+            raise RuntimeError(f"PR_HEAD_FETCH_FAILED: {fetched['stderr']}")
+        fetched_head = self._run(["git", "rev-parse", remote_ref], cwd=repo)
+        if not fetched_head["ok"] or fetched_head["stdout"].strip().lower() != expected:
+            raise RuntimeError("FETCHED_PR_HEAD_MISMATCH")
+
+        changed_result = self._run(
+            ["git", "diff", "--name-only", f"{actual_base}...{expected}", "--"],
+            cwd=repo,
+        )
+        if not changed_result["ok"]:
+            raise RuntimeError("PR_CHANGED_PATHS_UNAVAILABLE")
+        changed_paths = {line.strip() for line in changed_result["stdout"].splitlines() if line.strip()}
+        outside_diff = sorted(set(selected_paths) - changed_paths)
+        if outside_diff:
+            raise RuntimeError("PR_PATH_NOT_CHANGED: " + ", ".join(outside_diff))
+
+        materialized: list[dict[str, Any]] = []
+        for relative in selected_paths:
+            target = safe_repo_path(repo, relative, must_exist=None)
+            blob = subprocess.run(
+                ["git", "-C", str(repo), "show", f"{expected}:{relative}"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=90,
+            )
+            if blob.returncode != 0:
+                raise RuntimeError(f"PR_FILE_UNAVAILABLE: {relative}")
+            payload = bytes(blob.stdout)
+            if len(payload) > MAX_FILE_BYTES:
+                raise ValueError(f"PR-Datei überschreitet das Größenlimit: {relative}")
+            try:
+                payload.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError(f"PR-Datei ist nicht UTF-8: {relative}") from exc
+            before = target.read_bytes() if target.is_file() else b""
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+            materialized.append(
+                {
+                    "path": relative,
+                    "beforeSha256": sha256_bytes(before) if before else None,
+                    "afterSha256": sha256_bytes(payload),
+                    "bytes": len(payload),
+                }
+            )
+
+        status_after = self._run(["git", "status", "--short"], cwd=repo)
+        if not status_after["ok"]:
+            raise RuntimeError("WORKSPACE_STATUS_READBACK_FAILED")
+        return {
+            "ok": True,
+            "status": "PR_PATHS_MATERIALIZED",
+            "workspace_id": workspace_id,
+            "workspace_branch": workspace_branch,
+            "pr_number": number,
+            "pr_head_sha": expected,
+            "pr_base_sha": actual_base,
+            "materialized": materialized,
+            "worktree_status": status_after["stdout"],
+            "foreign_branch_checked_out": False,
+            "remote_mutation_performed": False,
+            "force_push_used": False,
+            "main_mutated": False,
+        }
+
     def create_draft_pr(self, workspace_id: str, *, title: str, body: str, commit_message: str) -> dict[str, Any]:
         """Create one Draft PR or idempotently update the existing PR for this workspace branch."""
         if not title.strip() or not commit_message.strip():

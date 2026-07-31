@@ -827,7 +827,7 @@
       "symbol": "OperatorRuntime.search_text",
       "line": 200,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "092042eac2a10b30c775b74617b90d440ea0e3bd6fe080d3a46ad068f69753f4",
+      "fileSha256": "90f7eec0cd16145fbc562a3c257d7383df61466821864a94dd40ce42500ec32b",
       "anchorSha256": "cff24d5a7819df9ea6f2f6d8c662b8e340888f32a64efbca867ee5651450b6bb",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:672c8dd5c4599d6db39123cf",
@@ -840,7 +840,7 @@
       "symbol": "OperatorRuntime.import_workflow_artifact",
       "line": 394,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "092042eac2a10b30c775b74617b90d440ea0e3bd6fe080d3a46ad068f69753f4",
+      "fileSha256": "90f7eec0cd16145fbc562a3c257d7383df61466821864a94dd40ce42500ec32b",
       "anchorSha256": "e3f59706bd3805948719abf464988251e1688863b07480dd0d97149b78072749",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:2a485f173296425740ece7d3",
@@ -851,12 +851,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1263,
+      "line": 1279,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "df47c33d72edd2518f8474f9c7f1d37101e7274e00792d06c0d7d84db2b79238",
+      "fileSha256": "5d5ac6a6b29c8b314dc7cf2b5723bc83912ebfa34a0e2c5c4b64ecaae330a7e9",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:2ec9a50ace8115140508ab83",
+      "candidateId": "llm-boundary:23f69b6d68d3362bf1036d30",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -965,5 +965,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "440f1c19c4fbe03ec0d8bfdc154debbd3775270e6ec89140c3ea85b01222aeab"
+  "ledgerSha256": "db4cdd65a8f3f4c66eff2d76733585a859df7b671002ae66fd2d150caec4fced"
 }
