@@ -52,7 +52,7 @@ SEED_ROUTES: tuple[str, ...] = (
     # Truly keyless public endpoints (no API key required)
     "https://deepseek-r1.endpoints.kepler.ai.cloud.ovh.net/api/openai_compat/v1/chat/completions",
     "https://llama-3-3-70b-instruct.endpoints.kepler.ai.cloud.ovh.net/api/openai_compat/v1/chat/completions",
-    "https://text.pollinations.ai/openai",
+    "https://text.pollinations.ai/v1/chat/completions",
     "https://mlvoca.com/v1/chat/completions",
     "https://qwen-qwen2-5-72b-instruct.hf.space/v1/chat/completions",
 )
@@ -81,6 +81,11 @@ _DEFAULT_LEASE_SECONDS = 900
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _EXTRACTION_POLICY = "explicit-completion-endpoint-only"
+
+# Per-host canary model overrides
+_HOST_MODEL_OVERRIDES: dict[str, str] = {
+    "text.pollinations.ai": "openai",
+}
 
 
 def _runtime_identity() -> dict[str, Any]:
@@ -246,8 +251,12 @@ def _canary_content_valid(payload: Any) -> bool:
     first = choices[0] if isinstance(choices[0], dict) else {}
     message = first.get("message") if isinstance(first.get("message"), dict) else {}
     content = str(message.get("content") or "").strip().casefold()
-    content = re.sub(r"[^a-z]+", "", content)[:16]
-    return content.startswith("ping") or content.startswith("ok")
+    alpha = re.sub(r"[^a-z]+", "", content)[:30]
+    # Accept common acknowledgement words at start, or "ping" anywhere in first 30 alpha chars
+    return (
+        alpha.startswith(("ping", "ok", "pong", "sure", "yes", "hi", "ack"))
+        or "ping" in alpha
+    )
 
 
 class RouteManager:
@@ -413,10 +422,11 @@ class RouteManager:
                 session = self._source_session()
                 response = None
                 try:
+                    _canary_model = _HOST_MODEL_OVERRIDES.get(host, "gpt-3.5-turbo")
                     response = session.post(
                         normalized,
                         json={
-                            "model": "gpt-3.5-turbo",
+                            "model": _canary_model,
                             "messages": [
                                 {"role": "user", "content": "Reply only with Ping."}
                             ],
