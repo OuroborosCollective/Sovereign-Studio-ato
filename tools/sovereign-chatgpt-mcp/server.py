@@ -859,6 +859,45 @@ def github_knowledge_live_canary(
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
+def issue_closure_runtime_canary(
+    expected_revision: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{40}$", description="Exact running backend source revision."),
+    ],
+    expected_image_digest: Annotated[
+        str,
+        Field(pattern=r"^sha256:[0-9a-f]{64}$", description="Exact running immutable backend image digest."),
+    ],
+    baseline_revision: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{40}$", description="Revision at which the missing runtime schema was observed."),
+    ],
+    release_evidence_sha256: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{64}$", description="Hash of the exact-head release evidence bundle."),
+    ],
+    patchmon_evidence_sha256: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{64}$", description="Hash of the post-deploy PatchMon evidence bundle."),
+    ],
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Persist and read back the bounded closure evidence for Issues 1111, 1117 and 1120."""
+    return broker.call(
+        "issue_closure_runtime_canary",
+        {
+            "expected_revision": expected_revision,
+            "expected_image_digest": expected_image_digest,
+            "baseline_revision": baseline_revision,
+            "release_evidence_sha256": release_evidence_sha256,
+            "patchmon_evidence_sha256": patchmon_evidence_sha256,
+            "owner_approved": owner_approved,
+        },
+        timeout=360,
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
 def programming_language_catalog_persistent_import(
     expected_revision: Annotated[
         str,
