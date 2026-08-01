@@ -206,6 +206,47 @@ def test_managed_quota_contract_promotes_unreported_cost_without_price_claim() -
     assert by_id["invalid"]["eligibilitySource"] == "provider-pricing-invalid"
 
 
+def test_specialist_only_models_never_enter_general_chat_revolver() -> None:
+    models = normalize_models_payload(
+        {
+            "data": [
+                {"id": "nemotron-3.5-content-safety"},
+                {"id": "vendor/safeguard-20b"},
+                {"id": "text-embedding-3", "capabilities": ["embeddings"]},
+                {"id": "document-reranker", "capabilities": ["rerank"]},
+                {"id": "general-reasoning", "capabilities": ["reasoning", "chat"]},
+                {"id": "code-assistant", "capabilities": ["code", "json"]},
+                {"id": "multimodal-assistant", "capabilities": ["vision", "chat"]},
+            ],
+        },
+        managed_quota_contract=True,
+    )
+    by_id = {model["modelId"]: model for model in models}
+
+    for model_id in (
+        "nemotron-3.5-content-safety",
+        "vendor/safeguard-20b",
+        "text-embedding-3",
+        "document-reranker",
+    ):
+        assert by_id[model_id]["generalChatEligible"] is False
+        assert by_id[model_id]["freeEligible"] is False
+        assert by_id[model_id]["eligibilitySource"] == (
+            "model-not-general-chat-compatible"
+        )
+
+    for model_id in (
+        "general-reasoning",
+        "code-assistant",
+        "multimodal-assistant",
+    ):
+        assert by_id[model_id]["generalChatEligible"] is True
+        assert by_id[model_id]["freeEligible"] is True
+        assert by_id[model_id]["generalChatEligibilitySource"] == (
+            "general-chat-compatible"
+        )
+
+
 def test_database_never_receives_raw_provider_keys() -> None:
     migration = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")
     assert "api_key" not in migration.lower()

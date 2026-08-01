@@ -35,6 +35,44 @@ _MANAGED_INTERNAL_SOURCES = {
     },
 }
 _MANAGED_KEY_FILENAME = "freellmapi_unified_key.txt"
+_GENERAL_CHAT_CAPABILITIES = frozenset({
+    "chat",
+    "completion",
+    "conversational",
+    "code",
+    "reasoning",
+    "text-generation",
+    "vision",
+    "multimodal",
+    "json",
+})
+_NON_CHAT_CAPABILITIES = frozenset({
+    "embedding",
+    "embeddings",
+    "rerank",
+    "reranking",
+    "moderation",
+    "content-safety",
+    "safety-classification",
+    "image-generation",
+    "text-to-speech",
+    "speech-to-text",
+    "automatic-speech-recognition",
+})
+_NON_CHAT_MODEL_MARKERS = (
+    "content-safety",
+    "content_safety",
+    "safety-classifier",
+    "safety_classifier",
+    "moderation",
+    "safeguard",
+    "embedding",
+    "rerank",
+    "re-rank",
+    "text-to-speech",
+    "speech-to-text",
+    "image-generation",
+)
 
 
 class ManagedKeyContractError(ValueError):
@@ -274,6 +312,28 @@ def zero_price_evidence(item: dict[str, Any]) -> tuple[bool, str]:
     return False, "provider-pricing-unreported-or-incomplete"
 
 
+def _general_chat_eligibility(
+    model_id: str,
+    capabilities: list[Any],
+) -> tuple[bool, str]:
+    """Keep specialist-only models out of the general conversation revolver."""
+    normalized_capabilities = {
+        str(value or "").strip().casefold().replace("_", "-")
+        for value in capabilities
+        if str(value or "").strip()
+    }
+    if normalized_capabilities & _NON_CHAT_CAPABILITIES:
+        return False, "explicit-non-chat-capability"
+    normalized_model_id = str(model_id or "").strip().casefold()
+    if any(marker in normalized_model_id for marker in _NON_CHAT_MODEL_MARKERS):
+        return False, "specialist-model-identifier"
+    if normalized_capabilities and not (
+        normalized_capabilities & _GENERAL_CHAT_CAPABILITIES
+    ):
+        return False, "no-general-chat-capability"
+    return True, "general-chat-compatible"
+
+
 def normalize_models_payload(
     payload: Any,
     *,
@@ -316,10 +376,20 @@ def normalize_models_payload(
             free_eligible = True
             eligibility_source = "managed-freellm-quota-contract"
         capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), list) else ["chat"]
+        bounded_capabilities = [str(value)[:60] for value in capabilities[:20]]
+        general_chat_eligible, chat_eligibility_source = _general_chat_eligibility(
+            model_id,
+            bounded_capabilities,
+        )
+        if free_eligible and not general_chat_eligible:
+            free_eligible = False
+            eligibility_source = "model-not-general-chat-compatible"
         normalized.append({
             "modelId": model_id,
             "displayName": display_name or model_id,
-            "capabilities": [str(value)[:60] for value in capabilities[:20]],
+            "capabilities": bounded_capabilities,
+            "generalChatEligible": general_chat_eligible,
+            "generalChatEligibilitySource": chat_eligibility_source,
             "freeEligible": free_eligible,
             "eligibilitySource": eligibility_source,
             "providerCostCatalogState": (
