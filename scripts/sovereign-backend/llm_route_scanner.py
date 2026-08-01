@@ -44,10 +44,17 @@ STRUCTURED_SOURCE_URLS: tuple[str, ...] = tuple(
 )
 
 SEED_ROUTES: tuple[str, ...] = (
+    # Community proxy seeds (may require auth — kept for completeness)
     "https://api.airforce/v1/chat/completions",
     "https://free.churchless.tech/v1/chat/completions",
     "https://api.freetheai.xyz/v1/chat/completions",
     "https://qwen.aikit.club/v1/chat/completions",
+    # Truly keyless public endpoints (no API key required)
+    "https://deepseek-r1.endpoints.kepler.ai.cloud.ovh.net/api/openai_compat/v1/chat/completions",
+    "https://llama-3-3-70b-instruct.endpoints.kepler.ai.cloud.ovh.net/api/openai_compat/v1/chat/completions",
+    "https://text.pollinations.ai/openai",
+    "https://mlvoca.com/v1/chat/completions",
+    "https://qwen-qwen2-5-72b-instruct.hf.space/v1/chat/completions",
 )
 
 _DENIED_HOST_SUFFIXES = (
