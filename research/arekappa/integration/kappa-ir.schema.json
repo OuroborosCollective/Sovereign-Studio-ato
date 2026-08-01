@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ouroboros.invalid/schemas/arekappa/kappa-ir.v0.json",
+  "title": "AREKappa IR v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "programId",
+    "languageVersion",
+    "runtimeVersion",
+    "kappaScale",
+    "layers",
+    "entrypoint",
+    "nodes",
+    "invariants",
+    "evidenceRequirements"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "arekappa.ir.v0" },
+    "programId": { "$ref": "#/$defs/hash256" },
+    "languageVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "runtimeVersion": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "kappaScale": { "const": 1000000 },
+    "layers": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        { "$ref": "#/$defs/stateLayer" },
+        { "$ref": "#/$defs/runtimeLayer" },
+        { "$ref": "#/$defs/advisoryLayer" },
+        { "$ref": "#/$defs/evidenceLayer" },
+        { "$ref": "#/$defs/advisoryLayer" },
+        { "$ref": "#/$defs/validationLayer" }
+      ],
+      "items": false
+    },
+    "entrypoint": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$" },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "invariants": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/invariant" }
+    },
+    "evidenceRequirements": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/evidenceRequirement" }
+    },
+    "sourceMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/sourceSpan" }
+    },
+    "syntaxTriviaHash": { "$ref": "#/$defs/hash256" }
+  },
+  "$defs": {
+    "hash256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "kappaPos": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "kappaSigned": { "type": "integer", "minimum": -1000000, "maximum": 1000000 },
+    "layerBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "name", "domain"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "domain": { "enum": ["deterministic", "advisory"] }
+      }
+    },
+    "stateLayer": {
+      "allOf": [
+        { "$ref": "#/$defs/layerBase" },
+        { "properties": { "index": { "const": 1 }, "name": { "const": "StateField" }, "domain": { "const": "deterministic" } } }
+      ]
+    },
+    "runtimeLayer": {
+      "allOf": [
+        { "$ref": "#/$defs/layerBase" },
+        { "properties": { "index": { "const": 2 }, "name": { "const": "TemporalRuntime" }, "domain": { "const": "deterministic" } } }
+      ]
+    },
+    "advisoryLayer": {
+      "allOf": [
+        { "$ref": "#/$defs/layerBase" },
+        { "properties": { "domain": { "const": "advisory" } } }
+      ]
+    },
+    "evidenceLayer": {
+      "allOf": [
+        { "$ref": "#/$defs/layerBase" },
+        { "properties": { "index": { "const": 4 }, "name": { "const": "EvidenceTensor" }, "domain": { "const": "deterministic" } } }
+      ]
+    },
+    "validationLayer": {
+      "allOf": [
+        { "$ref": "#/$defs/layerBase" },
+        { "properties": { "index": { "const": 6 }, "name": { "const": "ValidationSpace" }, "domain": { "const": "deterministic" } } }
+      ]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputs", "outputType", "effect"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$" },
+        "kind": { "enum": ["constant", "parameter", "pure", "transition", "projection", "validation", "emit", "adapter"] },
+        "inputs": { "type": "array", "maxItems": 128, "items": { "type": "string" } },
+        "outputType": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "effect": { "enum": ["none", "declared"] },
+        "advisoryOnly": { "type": "boolean", "default": false },
+        "rounding": { "enum": ["none", "floor", "ceiling", "toward-zero", "largest-remainder"] },
+        "weight": { "$ref": "#/$defs/kappaPos" }
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "severity", "expressionHash"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "severity": { "enum": ["hard", "warning"] },
+        "expressionHash": { "$ref": "#/$defs/hash256" }
+      }
+    },
+    "evidenceRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim", "channels", "minimumIndependentProducers"],
+      "properties": {
+        "claim": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["SourceCode", "StaticAnalysis", "UnitTest", "IntegrationTest", "RuntimeReadback", "DatabaseReadback", "ContainerHealth", "ExternalReceipt", "HumanApproval", "Prediction"]
+          }
+        },
+        "minimumIndependentProducers": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "predictionMaySubstituteRuntime": { "const": false }
+      }
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceHash", "startByte", "endByte"],
+      "properties": {
+        "sourceHash": { "$ref": "#/$defs/hash256" },
+        "startByte": { "type": "integer", "minimum": 0 },
+        "endByte": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
