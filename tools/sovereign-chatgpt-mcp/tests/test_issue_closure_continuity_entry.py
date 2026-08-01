@@ -155,11 +155,14 @@ def test_exact_issue_closure_continuity_entries_are_mirrored() -> None:
             "spokenName": "NPlusEins",
         },
     }
-    latest = records[-1]
-    assert latest == follow_up
-    assert latest["entryId"] == follow_up_id
-    assert latest["changedPaths"] == follow_up_paths
-    assert latest["privacy"] == {
+    follow_up_record = next(
+        record for record in records if record.get("entryId") == follow_up_id
+    )
+    assert follow_up_record == follow_up
+    assert follow_up_record["entryId"] == follow_up_id
+    assert follow_up_record["changedPaths"] == follow_up_paths
+    assert records.index(original) < records.index(follow_up_record)
+    assert follow_up_record["privacy"] == {
         "rawChatTranscriptStored": False,
         "secretValuesStored": False,
         "redacted": True,
