@@ -80,6 +80,41 @@ def test_failed_deploy_returns_only_bounded_diagnostic_marker(tmp_path, monkeypa
     assert len(result["stderrSha256"]) == 64
 
 
+def test_failed_deploy_returns_early_shell_stage_without_raw_stderr(tmp_path, monkeypatch) -> None:
+    script = tmp_path / "deploy-sovereign-backend"
+    script.write_text("#!/usr/bin/env bash\n", "utf-8")
+    script.chmod(0o750)
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "1")
+    runtime = OperationsRuntime()
+    runtime.deploy_script = script
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda _script, _args: {
+            "ok": False,
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": (
+                "docker and protected environment details\n"
+                "SOVEREIGN_DEPLOY_DIAGNOSTIC:candidate_health:CommandFailure\n"
+            ),
+        },
+    )
+
+    result = runtime.deploy_verified_release(
+        image_digest=DIGEST,
+        expected_revision=REVISION,
+        confirmation_revision=REVISION,
+    )
+
+    assert result["status"] == "FAILED"
+    assert result["diagnosticStage"] == "candidate_health"
+    assert result["diagnosticErrorType"] == "CommandFailure"
+    assert "protected environment" not in str(result)
+    assert "stderr" not in result
+    assert len(result["stderrSha256"]) == 64
+
+
 def test_deploy_requires_structured_admin_and_rollback_readback(tmp_path, monkeypatch) -> None:
     script = tmp_path / "deploy-sovereign-backend"
     script.write_text("#!/usr/bin/env bash\n", "utf-8")
