@@ -18,6 +18,7 @@ from document_pipeline import DocumentPipelineRuntime
 from fleet_maintenance import FleetMaintenanceRuntime
 from github_admin import GitHubAdminRuntime
 from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
+from issue_closure_canary import IssueClosureCanaryRuntime
 from programming_language_catalog_runtime import ProgrammingLanguageCatalogRuntime
 from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
@@ -50,6 +51,7 @@ class BrokerRuntime:
         self.browserless = BrowserlessReplayReader()
         self.document_pipeline = DocumentPipelineRuntime()
         self.github_knowledge = GitHubKnowledgeCanaryRuntime()
+        self.issue_closure = IssueClosureCanaryRuntime()
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
@@ -466,6 +468,14 @@ class BrokerRuntime:
             "github_knowledge_live_canary": lambda values: self.github_knowledge.live_canary(
                 expected_revision=str(values.get("expected_revision") or ""),
                 expected_image_digest=str(values.get("expected_image_digest") or ""),
+            ),
+            "issue_closure_runtime_canary": lambda values: self.issue_closure.live_canary(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
+                baseline_revision=str(values.get("baseline_revision") or ""),
+                release_evidence_sha256=str(values.get("release_evidence_sha256") or ""),
+                patchmon_evidence_sha256=str(values.get("patchmon_evidence_sha256") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
             ),
             "programming_language_catalog_persistent_import": lambda values: self.programming_language_catalog.persistent_import(
                 expected_revision=str(values.get("expected_revision") or ""),
