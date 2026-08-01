@@ -227,7 +227,7 @@ def test_specialist_only_models_never_enter_general_chat_revolver() -> None:
                 {"id": "text-embedding-3", "capabilities": ["embeddings"]},
                 {"id": "document-reranker", "capabilities": ["rerank"]},
                 {"id": "general-reasoning", "capabilities": ["reasoning", "chat"]},
-                {"id": "code-assistant", "capabilities": ["code", "json"]},
+                {"id": "code-assistant", "capabilities": ["code", "chat", "json"]},
                 {"id": "multimodal-assistant", "capabilities": ["vision", "chat"]},
             ],
         },
@@ -235,21 +235,22 @@ def test_specialist_only_models_never_enter_general_chat_revolver() -> None:
     )
     by_id = {model["modelId"]: model for model in models}
 
-    for model_id in (
-        "nemotron-3.5-content-safety",
-        "vendor/safeguard-20b",
-        "whisper-large-v3",
-        "openai/tts-1",
-        "dall-e-3",
-        "black-forest-labs/FLUX.1-dev",
-        "text-embedding-3",
-        "document-reranker",
-    ):
+    expected_block_sources = {
+        "nemotron-3.5-content-safety": "specialist-model-identifier",
+        "vendor/safeguard-20b": "specialist-model-identifier",
+        "whisper-large-v3": "specialist-model-identifier",
+        "openai/tts-1": "specialist-model-identifier",
+        "dall-e-3": "specialist-model-identifier",
+        "black-forest-labs/FLUX.1-dev": "specialist-model-identifier",
+        "text-embedding-3": "explicit-non-chat-capability",
+        "document-reranker": "explicit-non-chat-capability",
+    }
+    for model_id, blocker_source in expected_block_sources.items():
         assert by_id[model_id]["generalChatEligible"] is False
         assert by_id[model_id]["freeEligible"] is False
-        assert by_id[model_id]["eligibilitySource"] == (
-            "model-not-general-chat-compatible"
-        )
+        assert by_id[model_id]["eligibilitySource"] == blocker_source
+        assert by_id[model_id]["generalChatEligibilitySource"] == blocker_source
+        assert by_id[model_id]["generalChatBlockVerified"] is True
 
     for model_id in (
         "general-reasoning",
@@ -259,9 +260,32 @@ def test_specialist_only_models_never_enter_general_chat_revolver() -> None:
         assert by_id[model_id]["generalChatEligible"] is True
         assert by_id[model_id]["freeEligible"] is True
         assert by_id[model_id]["generalChatEligibilitySource"] == (
-            "explicit-general-chat-capability"
+            "explicit-text-chat-capability"
         )
         assert by_id[model_id]["generalChatCanaryRequired"] is False
+
+
+def test_modality_or_format_capability_alone_never_certifies_text_chat() -> None:
+    models = normalize_models_payload(
+        {
+            "data": [
+                {"id": "vision-only", "capabilities": ["vision"]},
+                {"id": "json-only", "capabilities": ["json"]},
+                {"id": "multimodal-only", "capabilities": ["multimodal"]},
+                {"id": "reasoning-only", "capabilities": ["reasoning"]},
+                {"id": "code-only", "capabilities": ["code"]},
+            ],
+        },
+        managed_quota_contract=True,
+    )
+
+    for model in models:
+        assert model["generalChatEligible"] is False
+        assert model["generalChatCanaryRequired"] is False
+        assert model["generalChatBlockVerified"] is True
+        assert model["freeEligible"] is False
+        assert model["eligibilitySource"] == "no-text-chat-capability"
+        assert model["generalChatEligibilitySource"] == "no-text-chat-capability"
 
 
 def test_general_chat_canary_requires_explicit_assistant_text_reply() -> None:
@@ -505,6 +529,14 @@ def test_quota_and_canary_evidence_is_independent_bounded_and_non_circular() -> 
     assert "freellm_model_reconcile_failed" in runtime
     assert '"managedKeyAvailable"' in runtime
     assert '"managedKeyBlocker"' in runtime
+    assert "def _persist_verified_general_chat_blocks(" in runtime
+    assert "_VERIFIED_GENERAL_CHAT_BLOCKERS = frozenset({" in runtime
+    assert "eligibility_verified_at=NOW()" in runtime
+    assert "eligibility_source = ANY(%s)" in runtime
+    assert '"blockedEvidence": _blocked_general_chat_evidence(' in runtime
+    assert '"generalChatBlockVerified": True' in runtime
+    assert "_verified_general_chat_block_source(model.get(\"eligibility_source\"))" in runtime
+    assert "eligibility_source='specialist-model-identifier'" in runtime
     assert '"keyFingerprintMatchesFile"' in runtime
     assert 'source.get("auth_mode") in {"bearer", "x-api-key"}' in runtime
     assert "managed_quota_contract=(" in runtime

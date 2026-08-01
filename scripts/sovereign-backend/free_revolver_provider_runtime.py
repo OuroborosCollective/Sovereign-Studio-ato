@@ -57,6 +57,12 @@ _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"
 _DEFAULT_MIN_READY_ROUTES = 5
 _DEFAULT_RECONCILE_PACE_SECONDS = 0.25
+_VERIFIED_GENERAL_CHAT_BLOCKERS = frozenset({
+    "specialist-model-identifier",
+    "explicit-non-chat-capability",
+    "capability-evidence-too-large",
+    "no-text-chat-capability",
+})
 
 
 def _internal_owner_authorized() -> bool:
@@ -560,6 +566,17 @@ def _source_payload(source: dict[str, Any], models: list[dict[str, Any]]) -> dic
             "freeEligible": bool(model.get("free_eligible")),
             "eligibilitySource": str(model.get("eligibility_source") or "unverified"),
             "eligibilityVerifiedAt": model.get("eligibility_verified_at").isoformat() if model.get("eligibility_verified_at") else None,
+            "generalChatBlocker": (
+                _verified_general_chat_block_source(model.get("eligibility_source"))
+                if str(model.get("status") or "") == "blocked"
+                and model.get("eligibility_verified_at")
+                else None
+            ),
+            "generalChatBlockVerified": bool(
+                str(model.get("status") or "") == "blocked"
+                and model.get("eligibility_verified_at")
+                and _verified_general_chat_block_source(model.get("eligibility_source"))
+            ),
             "status": str(model.get("status") or "discovered"),
             "lastCanaryRequestId": model.get("last_canary_request_id"),
             "lastCanaryAt": model.get("last_canary_at").isoformat() if model.get("last_canary_at") else None,
@@ -632,6 +649,84 @@ def _write_keyless_marker(provider_id: str, enabled: bool) -> None:
         os.chmod(path, 0o600)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _verified_general_chat_block_source(value: Any) -> str | None:
+    source = str(value or "").strip()
+    return source if source in _VERIFIED_GENERAL_CHAT_BLOCKERS else None
+
+
+def _persist_verified_general_chat_blocks(
+    get_connection: Callable[[], Any],
+    *,
+    source_id: str,
+    models: list[dict[str, Any]],
+) -> None:
+    """Persist definitive chat incompatibility as verified blocker evidence."""
+    blocked = [
+        model
+        for model in models
+        if bool(model.get("generalChatBlockVerified"))
+    ]
+    if not blocked:
+        return
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            for model in blocked:
+                blocker = _verified_general_chat_block_source(
+                    model.get("generalChatEligibilitySource")
+                )
+                if blocker is None:
+                    raise RuntimeError("free_revolver_chat_block_reason_invalid")
+                cursor.execute(
+                    """UPDATE llm_revolver_provider_models
+                       SET free_eligible=false, status='blocked', enabled=false,
+                           eligibility_source=%s, eligibility_verified_at=NOW(),
+                           last_error_code=%s, updated_at=NOW()
+                       WHERE source_id=%s::uuid AND upstream_model_id=%s""",
+                    (blocker, blocker, source_id, str(model["modelId"])),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("free_revolver_chat_block_evidence_missing")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def _blocked_general_chat_evidence(
+    query: Callable[..., Any],
+    source_id: str,
+) -> list[dict[str, Any]]:
+    rows = query(
+        """SELECT upstream_model_id, eligibility_source,
+                  eligibility_verified_at, last_error_code
+           FROM llm_revolver_provider_models
+           WHERE source_id=%s::uuid
+             AND status='blocked'
+             AND free_eligible=false
+             AND eligibility_verified_at IS NOT NULL
+             AND eligibility_source = ANY(%s)
+           ORDER BY display_name ASC
+           LIMIT 20""",
+        (source_id, sorted(_VERIFIED_GENERAL_CHAT_BLOCKERS)),
+    ) or []
+    return [{
+        "modelId": str(row.get("upstream_model_id") or ""),
+        "generalChatEligible": False,
+        "generalChatBlockVerified": True,
+        "generalChatEligibilitySource": str(
+            row.get("eligibility_source") or "general-chat-incompatible"
+        ),
+        "eligibilityVerifiedAt": (
+            row["eligibility_verified_at"].isoformat()
+            if row.get("eligibility_verified_at") else None
+        ),
+        "lastErrorCode": str(row.get("last_error_code") or "") or None,
+    } for row in rows]
 
 
 def register_free_revolver_provider_runtime(
@@ -1560,6 +1655,11 @@ def register_free_revolver_provider_runtime(
             finally:
                 connection.close()
 
+            _persist_verified_general_chat_blocks(
+                get_connection,
+                source_id=source_id,
+                models=models,
+            )
             activated = []
             deferred = []
             blocked = []
@@ -1900,6 +2000,11 @@ def register_free_revolver_provider_runtime(
             finally:
                 connection.close()
 
+            _persist_verified_general_chat_blocks(
+                get_connection,
+                source_id=source_id,
+                models=models,
+            )
             bootstrap_stage = "double_canary_activation"
             ready = []
             deferred = []
@@ -2177,6 +2282,10 @@ def register_free_revolver_provider_runtime(
                 "freeEligibleCount": int(source.get("free_eligible_count") or 0),
                 "readyCount": int(source.get("ready_count") or 0),
                 "readyEvidence": ready_evidence,
+                "blockedEvidence": _blocked_general_chat_evidence(
+                    query,
+                    str(source.get("id") or ""),
+                ),
             })
         return jsonify({
             "ok": True,
@@ -2338,10 +2447,12 @@ def register_free_revolver_provider_runtime(
                     query(
                         """UPDATE llm_revolver_provider_models
                            SET free_eligible=false, status='blocked', enabled=false,
-                               eligibility_source='model-not-general-chat-compatible',
-                               last_error_code=%s, updated_at=NOW()
+                               eligibility_source='specialist-model-identifier',
+                               eligibility_verified_at=NOW(),
+                               last_error_code='specialist-model-identifier',
+                               updated_at=NOW()
                            WHERE id=%s::uuid""",
-                        (blocker, stored["id"]),
+                        (stored["id"],),
                         write=True,
                     )
                     if alias:
@@ -2716,10 +2827,12 @@ def register_free_revolver_provider_runtime(
                     query(
                         """UPDATE llm_revolver_provider_models
                            SET free_eligible=false, status='blocked', enabled=false,
-                               eligibility_source='model-not-general-chat-compatible',
-                               last_error_code=%s, updated_at=NOW()
+                               eligibility_source='specialist-model-identifier',
+                               eligibility_verified_at=NOW(),
+                               last_error_code='specialist-model-identifier',
+                               updated_at=NOW()
                            WHERE id=%s::uuid""",
-                        (blocker, model["id"]),
+                        (model["id"],),
                         write=True,
                     )
                     query(

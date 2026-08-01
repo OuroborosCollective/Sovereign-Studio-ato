@@ -38,16 +38,11 @@ _MANAGED_INTERNAL_SOURCES = {
     },
 }
 _MANAGED_KEY_FILENAME = "freellmapi_unified_key.txt"
-_GENERAL_CHAT_CAPABILITIES = frozenset({
+_TEXT_CHAT_CAPABILITIES = frozenset({
     "chat",
     "completion",
     "conversational",
-    "code",
-    "reasoning",
     "text-generation",
-    "vision",
-    "multimodal",
-    "json",
 })
 _NON_CHAT_CAPABILITIES = frozenset({
     "embedding",
@@ -367,10 +362,10 @@ def _general_chat_eligibility(
         return False, "explicit-non-chat-capability", False
     if is_specialist_model_identifier(model_id):
         return False, "specialist-model-identifier", False
-    if normalized_capabilities & _GENERAL_CHAT_CAPABILITIES:
-        return True, "explicit-general-chat-capability", False
+    if normalized_capabilities & _TEXT_CHAT_CAPABILITIES:
+        return True, "explicit-text-chat-capability", False
     if normalized_capabilities:
-        return False, "no-general-chat-capability", False
+        return False, "no-text-chat-capability", False
     return (
         False,
         "general-chat-capability-unreported",
@@ -447,7 +442,7 @@ def normalize_models_payload(
             eligibility_source = (
                 "managed-freellm-chat-canary-required"
                 if general_chat_canary_required
-                else "model-not-general-chat-compatible"
+                else chat_eligibility_source
             )
         normalized.append({
             "modelId": model_id,
@@ -456,6 +451,9 @@ def normalize_models_payload(
             "generalChatEligible": general_chat_eligible,
             "generalChatEligibilitySource": chat_eligibility_source,
             "generalChatCanaryRequired": general_chat_canary_required,
+            "generalChatBlockVerified": (
+                not general_chat_eligible and not general_chat_canary_required
+            ),
             "capabilityEvidenceCount": len(raw_capabilities),
             "capabilitiesTruncated": (
                 len(raw_capabilities) > _MAX_STORED_CAPABILITIES
