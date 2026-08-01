@@ -62,8 +62,20 @@ const RoadmapStep: React.FC<{
     return '#888';
   };
 
+  const getStatusText = () => {
+    if (step.status === 'completed') return 'Abgeschlossen';
+    if (step.status === 'blocked') return 'Blockiert';
+    if (isCurrent) return 'Aktueller Schritt';
+    if (isNext) return 'Nächster Schritt';
+    return 'Ausstehend';
+  };
+
   return (
     <div
+      role="listitem"
+      aria-current={isCurrent ? 'step' : undefined}
+      aria-label={`${getStatusText()}: ${step.title}`}
+      title={`${getStatusText()}: ${step.title}`}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -72,7 +84,10 @@ const RoadmapStep: React.FC<{
         opacity: step.status === 'completed' ? 0.6 : 1,
       }}
     >
-      <span style={{ color: getStatusColor(), fontWeight: isCurrent ? 600 : 400 }}>
+      <span
+        aria-hidden="true"
+        style={{ color: getStatusColor(), fontWeight: isCurrent ? 600 : 400 }}
+      >
         {getStatusIcon()}
       </span>
       <span
@@ -85,7 +100,6 @@ const RoadmapStep: React.FC<{
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}
-        title={step.title}
       >
         {step.title}
       </span>
@@ -125,12 +139,15 @@ export const SovereignSessionRoadmap: React.FC<SovereignSessionRoadmapProps> = (
   if (compact) {
     // Single line compact view
     const healthIcon = health === 'healthy' ? '✓' : health === 'warning' ? '⚠' : '✗';
+    const healthText = health === 'healthy' ? 'Gesund' : health === 'warning' ? 'Warnung' : 'Kritisch';
     const currentStep = plan.steps.find((s) => s.id === progress.currentStepId);
     const currentTitle = currentStep?.title ?? 'N/A';
 
     return (
       <div
         data-testid="roadmap-compact"
+        aria-label={`Session-Roadmap: ${completed} von ${total} Schritten abgeschlossen. Aktueller Schritt: ${currentTitle}${blocked > 0 ? `, ${blocked} blockiert` : ''}`}
+        title={`Session-Roadmap: ${completed} von ${total} abgeschlossen. Aktueller Schritt: ${currentTitle}${blocked > 0 ? `, ${blocked} blockiert` : ''}`}
         style={{
           padding: '4px 12px',
           fontSize: '11px',
@@ -140,11 +157,10 @@ export const SovereignSessionRoadmap: React.FC<SovereignSessionRoadmapProps> = (
           alignItems: 'center',
         }}
       >
-        <span>{healthIcon}</span>
+        <span aria-label={`Status: ${healthText}`} title={`Status: ${healthText}`}>{healthIcon}</span>
         <span>{completed}/{total}</span>
         <span style={{ color: '#888' }}>·</span>
         <span
-          title={currentTitle}
           style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis' }}
         >
           {currentTitle}
@@ -189,7 +205,11 @@ export const SovereignSessionRoadmap: React.FC<SovereignSessionRoadmapProps> = (
       </div>
 
       {/* Steps */}
-      <div style={{ marginBottom: '12px' }}>
+      <div
+        role="list"
+        aria-label="Plan-Schritte"
+        style={{ marginBottom: '12px' }}
+      >
         {plan.steps.map((step) => (
           <RoadmapStep
             key={step.id}
