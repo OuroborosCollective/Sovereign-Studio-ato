@@ -25,7 +25,7 @@ _SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _RECEIPT_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"
+_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v2"
 _RETRY_WINDOWS_SECONDS = {
     "provider_quota_exhausted": 3600,
     "provider_rate_limited": 60,
@@ -99,7 +99,6 @@ def _route_receipt_matches_runtime(route: dict[str, Any]) -> bool:
         and source_revision == current_revision
         and image_digest == current_digest
         and str(receipt.get("schemaVersion") or "") == _RECEIPT_SCHEMA
-        and receipt.get("generalChatEvidenceVerified") is True
         and _RECEIPT_SHA_RE.fullmatch(str(receipt.get("receiptSha256") or "")) is not None
     )
 

@@ -479,8 +479,7 @@ def _verified_free_route(route_id: str, model: str, scope: str) -> dict[str, Any
                 "imageDigestVerified": True,
             },
             "canaryReceipt": {
-                "schemaVersion": "sovereign.freellm-route-receipt.v3",
-                "generalChatEvidenceVerified": True,
+                "schemaVersion": "sovereign.freellm-route-receipt.v2",
                 "receiptSha256": "c" * 64,
             },
         },

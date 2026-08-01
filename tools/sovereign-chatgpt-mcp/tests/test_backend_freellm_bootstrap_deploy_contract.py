@@ -8,7 +8,7 @@ import subprocess
 MCP_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readiness() -> None:
+def test_backend_deploy_bootstraps_revision_bound_v2_receipts_before_readiness() -> None:
     deploy_path = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
     deploy = deploy_path.read_text("utf-8")
 
@@ -40,13 +40,12 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert 'status_code not in {200, 409}' in deploy
     assert 'except urllib.error.HTTPError as exc:' in deploy
 
-    assert 'receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v3"' in deploy
-    assert 'receipt.get("generalChatEvidenceVerified") is True' in deploy
+    assert 'receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v2"' in deploy
     assert 'runtime.get("sourceRevision") == expected_revision' in deploy
     assert 'runtime.get("imageDigest") == expected_digest' in deploy
     assert 'runtime.get("sourceRevisionVerified") is True' in deploy
     assert 'runtime.get("imageDigestVerified") is True' in deploy
-    assert 'raise RuntimeError("no revision-bound FreeLLM v3 chat-evidence receipt became ready")' in deploy
+    assert 'raise RuntimeError("no revision-bound FreeLLM v2 receipt became ready")' in deploy
     assert '"freellmBootstrap": freellm_bootstrap' in deploy
     assert '"protectedValuesReturned": False' in deploy
 

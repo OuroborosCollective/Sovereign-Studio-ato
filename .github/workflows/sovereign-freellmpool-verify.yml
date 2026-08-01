@@ -470,7 +470,6 @@ jobs:
           docker exec -i --user 10001:10001 sovereign-freellmpool-ci python - <<'PY' > .sovereign-evidence/freellmpool-keyless-canaries.json
           import json
           import os
-          import re
           import urllib.error
           import urllib.request
 
@@ -529,21 +528,11 @@ jobs:
                           assert len(raw) <= 2_000_000
                           payload = json.loads(raw)
                           choices = payload.get("choices") if isinstance(payload, dict) else None
-                          first_choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
-                          message = first_choice.get("message") if isinstance(first_choice.get("message"), dict) else {}
-                          content = message.get("content")
-                          normalized_reply = re.sub(r"[^a-z]+", "", str(content or "").strip().casefold()[:80])
-                          textual_chat_verified = bool(
-                              str(message.get("role") or "").strip().casefold() == "assistant"
-                              and isinstance(content, str)
-                              and normalized_reply.startswith("ok")
-                          )
                           used = payload.get("x_freellmpool") if isinstance(payload, dict) else None
                           usage = payload.get("usage") if isinstance(payload, dict) else None
                           usage = usage if isinstance(usage, dict) else {}
                           confirmation.update({
-                              "ok": textual_chat_verified,
-                              "textualChatResponseVerified": textual_chat_verified,
+                              "ok": bool(isinstance(choices, list) and choices),
                               "httpStatus": int(response.status),
                               "provider": str((used or {}).get("provider") or "")[:80],
                               "providerModel": str((used or {}).get("model") or "")[:160],
@@ -581,16 +570,7 @@ jobs:
               })
               receipts.append(receipt)
           print(json.dumps({
-              "schemaVersion": "sovereign.freellm-route-receipt.v3",
-              "generalChatEvidenceVerified": all(
-                  item.get("ok") is True
-                  and all(
-                      confirmation.get("textualChatResponseVerified") is True
-                      for confirmation in item.get("confirmations") or []
-                  )
-                  for item in receipts
-                  if item.get("ok")
-              ),
+              "schemaVersion": "sovereign.freellm-route-receipt.v2",
               "upstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
               "releaseVersion": "0.11.4",
               "providerPricingRequired": False,
@@ -607,19 +587,11 @@ jobs:
           receipt = json.loads(
               Path('.sovereign-evidence/freellmpool-keyless-canaries.json').read_text('utf-8')
           )
-          assert receipt.get('schemaVersion') == 'sovereign.freellm-route-receipt.v3'
-          assert receipt.get('generalChatEvidenceVerified') is True
+          assert receipt.get('schemaVersion') == 'sovereign.freellm-route-receipt.v2'
           assert receipt.get('providerPricingRequired') is False
           successful = [item for item in receipt.get('receipts') or [] if item.get('ok')]
           assert successful, 'no keyless provider double-canary succeeded'
           assert all(int(item.get('confirmationCount') or 0) == 2 for item in successful)
-          assert all(
-              all(
-                  confirmation.get('textualChatResponseVerified') is True
-                  for confirmation in item.get('confirmations') or []
-              )
-              for item in successful
-          )
           assert all(item.get('providerCostState') in {'zero', 'unreported'} for item in successful)
           PY
 

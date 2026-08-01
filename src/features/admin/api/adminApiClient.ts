@@ -181,7 +181,6 @@ export interface FreeRevolverProviderModel {
     schemaVersion?: string;
     receiptId?: string;
     receiptSha256?: string;
-    generalChatEvidenceVerified?: boolean;
   };
   quotaEvidence: Record<string, unknown>;
   retryEvidence: Record<string, unknown>;
@@ -190,8 +189,6 @@ export interface FreeRevolverProviderModel {
   freeEligible: boolean;
   eligibilitySource: string;
   eligibilityVerifiedAt: string | null;
-  generalChatBlocker?: string | null;
-  generalChatBlockVerified?: boolean;
   status: 'discovered' | 'ready' | 'blocked' | 'disabled';
   lastCanaryRequestId: string | null;
   lastCanaryAt: string | null;

@@ -16,9 +16,6 @@ from typing import Any
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,239}$")
 _MAX_DISCOVERED_MODELS = 200
 _MAX_AUTO_ACTIVATE = 100
-_MAX_CLASSIFIED_CAPABILITIES = 100
-_MAX_STORED_CAPABILITIES = 20
-_MAX_CAPABILITY_LENGTH = 60
 _MANAGED_INTERNAL_SOURCES = {
     "freellmapi-direct": {
         "apiBase": "http://freellmapi:3001/v1",
@@ -38,44 +35,6 @@ _MANAGED_INTERNAL_SOURCES = {
     },
 }
 _MANAGED_KEY_FILENAME = "freellmapi_unified_key.txt"
-_TEXT_CHAT_CAPABILITIES = frozenset({
-    "chat",
-    "completion",
-    "conversational",
-    "text-generation",
-})
-_NON_CHAT_CAPABILITIES = frozenset({
-    "embedding",
-    "embeddings",
-    "rerank",
-    "reranking",
-    "moderation",
-    "content-safety",
-    "safety-classification",
-    "image-generation",
-    "text-to-speech",
-    "speech-to-text",
-    "automatic-speech-recognition",
-})
-_NON_CHAT_MODEL_MARKERS = (
-    "content-safety",
-    "content_safety",
-    "safety-classifier",
-    "safety_classifier",
-    "moderation",
-    "safeguard",
-    "embedding",
-    "rerank",
-    "re-rank",
-    "text-to-speech",
-    "speech-to-text",
-    "image-generation",
-    "whisper",
-    "/tts-",
-    "dall-e",
-    "flux.1",
-    "flux-1",
-)
 
 
 class ManagedKeyContractError(ValueError):
@@ -315,64 +274,6 @@ def zero_price_evidence(item: dict[str, Any]) -> tuple[bool, str]:
     return False, "provider-pricing-unreported-or-incomplete"
 
 
-def is_specialist_model_identifier(model_id: Any) -> bool:
-    normalized_model_id = str(model_id or "").strip().casefold()
-    return any(marker in normalized_model_id for marker in _NON_CHAT_MODEL_MARKERS)
-
-
-def general_chat_response_verified(payload: Any) -> bool:
-    """Accept only an explicit assistant text reply to the bounded OK canary."""
-    if not isinstance(payload, dict):
-        return False
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        return False
-    message = choices[0].get("message")
-    if not isinstance(message, dict):
-        return False
-    if str(message.get("role") or "").strip().casefold() != "assistant":
-        return False
-    content = message.get("content")
-    if not isinstance(content, str):
-        return False
-    normalized_reply = re.sub(
-        r"[^a-z]+",
-        "",
-        content.strip().casefold()[:80],
-    )
-    return normalized_reply.startswith("ok")
-
-
-def _general_chat_eligibility(
-    model_id: str,
-    capabilities: list[Any],
-    *,
-    capability_evidence_overflow: bool,
-    allow_managed_chat_canary: bool,
-) -> tuple[bool, str, bool]:
-    """Require affirmative chat evidence before general-conversation routing."""
-    if capability_evidence_overflow:
-        return False, "capability-evidence-too-large", False
-    normalized_capabilities = {
-        str(value or "").strip().casefold().replace("_", "-")
-        for value in capabilities
-        if str(value or "").strip()
-    }
-    if normalized_capabilities & _NON_CHAT_CAPABILITIES:
-        return False, "explicit-non-chat-capability", False
-    if is_specialist_model_identifier(model_id):
-        return False, "specialist-model-identifier", False
-    if normalized_capabilities & _TEXT_CHAT_CAPABILITIES:
-        return True, "explicit-text-chat-capability", False
-    if normalized_capabilities:
-        return False, "no-text-chat-capability", False
-    return (
-        False,
-        "general-chat-capability-unreported",
-        bool(allow_managed_chat_canary),
-    )
-
-
 def normalize_models_payload(
     payload: Any,
     *,
@@ -414,50 +315,11 @@ def normalize_models_payload(
         ):
             free_eligible = True
             eligibility_source = "managed-freellm-quota-contract"
-        raw_capabilities = (
-            item.get("capabilities")
-            if isinstance(item.get("capabilities"), list)
-            else []
-        )
-        capability_evidence_overflow = (
-            len(raw_capabilities) > _MAX_CLASSIFIED_CAPABILITIES
-        )
-        classified_capabilities = [
-            str(value)[:_MAX_CAPABILITY_LENGTH]
-            for value in raw_capabilities[:_MAX_CLASSIFIED_CAPABILITIES]
-        ]
-        bounded_capabilities = classified_capabilities[:_MAX_STORED_CAPABILITIES]
-        (
-            general_chat_eligible,
-            chat_eligibility_source,
-            general_chat_canary_required,
-        ) = _general_chat_eligibility(
-            model_id,
-            classified_capabilities,
-            capability_evidence_overflow=capability_evidence_overflow,
-            allow_managed_chat_canary=(managed_quota_contract and free_eligible),
-        )
-        if free_eligible and not general_chat_eligible:
-            free_eligible = False
-            eligibility_source = (
-                "managed-freellm-chat-canary-required"
-                if general_chat_canary_required
-                else chat_eligibility_source
-            )
+        capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), list) else ["chat"]
         normalized.append({
             "modelId": model_id,
             "displayName": display_name or model_id,
-            "capabilities": bounded_capabilities,
-            "generalChatEligible": general_chat_eligible,
-            "generalChatEligibilitySource": chat_eligibility_source,
-            "generalChatCanaryRequired": general_chat_canary_required,
-            "generalChatBlockVerified": (
-                not general_chat_eligible and not general_chat_canary_required
-            ),
-            "capabilityEvidenceCount": len(raw_capabilities),
-            "capabilitiesTruncated": (
-                len(raw_capabilities) > _MAX_STORED_CAPABILITIES
-            ),
+            "capabilities": [str(value)[:60] for value in capabilities[:20]],
             "freeEligible": free_eligible,
             "eligibilitySource": eligibility_source,
             "providerCostCatalogState": (

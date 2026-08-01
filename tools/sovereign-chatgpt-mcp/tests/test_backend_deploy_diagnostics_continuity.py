@@ -211,11 +211,11 @@ def test_pr1148_terminal_local_validation_is_latest_and_mirrored() -> None:
         },
     }
     records = [json.loads(line) for line in existing.splitlines() if line.strip()]
-    record = next(item for item in records if item.get("entryId") == entry_id)
-    assert record == entry
-    assert record["entryId"] == entry_id
-    assert record["changedPaths"] == changed_paths
-    assert record["privacy"] == {
+    latest = records[-1]
+    assert latest == entry
+    assert latest["entryId"] == entry_id
+    assert latest["changedPaths"] == changed_paths
+    assert latest["privacy"] == {
         "rawChatTranscriptStored": False,
         "secretValuesStored": False,
         "redacted": True,

@@ -58,8 +58,6 @@ function eligibilityEvidenceExpiry(verifiedAt: string | null, ttlHours: number):
 function hasRevisionBoundReceipt(model: FreeRevolverProviderModel): boolean {
   return model.runtimeIdentity.sourceRevisionVerified === true
     && model.runtimeIdentity.imageDigestVerified === true
-    && model.canaryReceipt.schemaVersion === 'sovereign.freellm-route-receipt.v3'
-    && model.canaryReceipt.generalChatEvidenceVerified === true
     && typeof model.canaryReceipt.receiptSha256 === 'string'
     && /^[0-9a-f]{64}$/.test(model.canaryReceipt.receiptSha256);
 }
@@ -262,8 +260,7 @@ export function FreeRevolverControlCenter({
             const deferredModels = provider.models.filter(model => model.status === 'discovered');
             const blockedModels = provider.models.filter(model => model.status === 'blocked');
             const recheckableModels = provider.models.filter(model => (
-              model.freeEligible
-              || model.eligibilitySource === 'managed-freellm-chat-canary-required'
+              model.freeEligible && Boolean(model.routeAlias)
             ));
             const renewalKey = renewalKeys[provider.id] ?? '';
             return (
@@ -332,13 +329,11 @@ export function FreeRevolverControlCenter({
                         </span>
                       </div>
                       <span className={`llm-badge llm-badge--${effectiveReady ? 'ok' : model.status === 'discovered' ? 'warn' : 'danger'}`}>
-                        {model.generalChatBlockVerified
-                          ? model.generalChatBlocker ?? model.eligibilitySource
-                          : !eligibilityFresh
-                            ? 'Eligibility-Evidence abgelaufen'
-                            : !receiptVerified
-                              ? 'Revision, Image-Digest oder v3-Chat-Canary-Receipt fehlt'
-                              : model.status === 'discovered'
+                        {!eligibilityFresh
+                          ? 'Eligibility-Evidence abgelaufen'
+                          : !receiptVerified
+                            ? 'Revision, Image-Digest oder Canary-Receipt fehlt'
+                          : model.status === 'discovered'
                             ? `wartet auf verfügbaren Upstream · ${model.lastErrorCode ?? 'noch nicht erfolgreich geprüft'}`
                             : model.status !== 'ready'
                               ? model.lastErrorCode ?? model.eligibilitySource
