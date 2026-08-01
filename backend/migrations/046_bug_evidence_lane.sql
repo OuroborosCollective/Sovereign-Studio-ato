@@ -12,13 +12,8 @@
 -- - All TEXT fields that represent SHA-256 are exactly 64 hex chars
 -- - schema_version column enables future schema evolution checks
 --
--- Rollback preview (safe for non-production environments):
---   DROP INDEX IF EXISTS idx_bug_evidence_signature_hash;
---   DROP INDEX IF EXISTS idx_bug_evidence_failure_repo;
---   DROP INDEX IF EXISTS idx_bug_evidence_status;
---   DROP INDEX IF EXISTS idx_bug_evidence_head_revision;
---   DROP INDEX IF EXISTS idx_bug_evidence_provenance;
---   DROP TABLE IF EXISTS bug_evidence_cases CASCADE;
+-- Rollback procedures are documented separately so production migration
+-- classification cannot mistake comment-only examples for executable actions.
 
 BEGIN;
 

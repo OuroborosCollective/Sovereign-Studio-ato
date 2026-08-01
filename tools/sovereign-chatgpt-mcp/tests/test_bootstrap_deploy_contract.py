@@ -21,6 +21,21 @@ def test_changed_recovery_shell_assets_parse() -> None:
         assert result.returncode == 0, f"{relative}: {result.stderr}"
 
 
+def test_backend_deploy_emits_bounded_preflight_marker_before_any_host_effect() -> None:
+    deploy = MCP_ROOT / "deploy" / "deploy-sovereign-backend"
+    result = subprocess.run(
+        ["bash", str(deploy), "invalid-digest", "b" * 40],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:preflight:ContractFailure" in result.stderr
+    assert "invalid image digest" in result.stderr
+    assert result.stdout == ""
+
+
 def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     deploy = (MCP_ROOT / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
     rollback = (MCP_ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
@@ -45,6 +60,26 @@ def test_backend_deploy_and_rollback_inject_verified_runtime_identity() -> None:
     assert 'reactRootPresent' in deploy
     assert 'ADMIN_API_KEY' in deploy
     assert 'SOVEREIGN_DEPLOY_DIAGNOSTIC' in deploy
+    assert "trap on_error ERR" in deploy
+    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:%s:CommandFailure" in deploy
+    assert "SOVEREIGN_DEPLOY_DIAGNOSTIC:%s:ContractFailure" in deploy
+    for stage in (
+        "preflight",
+        "image_pull",
+        "image_digest",
+        "image_revision",
+        "network_preflight",
+        "candidate_start",
+        "candidate_network",
+        "candidate_health",
+        "previous_identity",
+        "production_start",
+        "production_health",
+        "admin_canary",
+        "rollback_receipt",
+        "complete",
+    ):
+        assert f'STAGE="{stage}"' in deploy
     assert 'stage = "platform_identity"' in deploy
     assert 'stage = "platform_overview"' in deploy
     assert 'stage = "platform_integrations"' in deploy

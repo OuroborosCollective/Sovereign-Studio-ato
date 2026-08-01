@@ -26,11 +26,21 @@ WORKSPACE_GID="10001"
 BROKER_SOCKET="${SOVEREIGN_MCP_BROKER_SOCKET:-/run/sovereign-chatgpt-broker/operator.sock}"
 BROKER_RUNTIME_DIR="$(dirname "$BROKER_SOCKET")"
 BROKER_GID=""
+STAGE="preflight"
+
+on_error() {
+  local exit_code="$?"
+  printf 'SOVEREIGN_DEPLOY_DIAGNOSTIC:%s:CommandFailure\n' "$STAGE" >&2
+  exit "$exit_code"
+}
 
 fail() {
+  printf 'SOVEREIGN_DEPLOY_DIAGNOSTIC:%s:ContractFailure\n' "$STAGE" >&2
   printf 'deploy blocked: %s\n' "$*" >&2
   exit 1
 }
+
+trap on_error ERR
 
 [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid image digest"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "invalid expected revision"
@@ -83,18 +93,23 @@ BROKER_GID="$(stat -c '%g' "$BROKER_SOCKET")"
 [[ "$BROKER_GID" =~ ^[0-9]+$ ]] || fail "authoritative MCP broker group could not be resolved"
 
 NEW_IMAGE="${IMAGE_REPOSITORY}@${DIGEST}"
+STAGE="image_pull"
 docker pull "$NEW_IMAGE" >/dev/null
 
+STAGE="image_digest"
 ACTUAL_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$NEW_IMAGE" 2>/dev/null || true)"
 [[ "$ACTUAL_DIGEST" == *"@$DIGEST" ]] || fail "pulled image digest does not match"
 
+STAGE="image_revision"
 IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$NEW_IMAGE" 2>/dev/null || true)"
 [[ "$IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "image revision label does not match expected commit"
 
+STAGE="network_preflight"
 for network in supabase_default areloria_arelorian-network sovereign-private; do
   docker network inspect "$network" >/dev/null 2>&1 || fail "required docker network missing: $network"
 done
 
+STAGE="candidate_start"
 docker rm -f "$CANDIDATE" >/dev/null 2>&1 || true
 docker run -d \
   --name "$CANDIDATE" \
@@ -116,6 +131,7 @@ docker run -d \
   --label "org.opencontainers.image.revision=$EXPECTED_REVISION" \
   "$NEW_IMAGE" >/dev/null
 
+STAGE="candidate_network"
 docker network connect areloria_arelorian-network "$CANDIDATE"
 docker network connect sovereign-private "$CANDIDATE"
 
@@ -124,6 +140,7 @@ candidate_cleanup() {
 }
 trap candidate_cleanup EXIT
 
+STAGE="candidate_health"
 HEALTH=""
 for attempt in $(seq 1 12); do
   HEALTH="$(docker exec "$CANDIDATE" python3 -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8787/health", timeout=4).read().decode())' 2>/dev/null || true)"
@@ -137,6 +154,7 @@ printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
   fail "candidate health check failed"
 }
 
+STAGE="previous_identity"
 PREVIOUS_IMAGE="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER" 2>/dev/null || true)"
 if [[ -n "$PREVIOUS_IMAGE" ]]; then
   PREVIOUS_REPO_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$PREVIOUS_IMAGE" 2>/dev/null || true)"
@@ -146,6 +164,7 @@ if [[ -n "$PREVIOUS_IMAGE" ]]; then
   [[ "$PREVIOUS_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "previous backend image has no valid revision label"
 fi
 
+STAGE="production_start"
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 
 start_production() {
@@ -205,6 +224,7 @@ restore_previous() {
   fi
 }
 
+STAGE="production_health"
 HOST_HEALTH="$(wait_for_host_health || true)"
 if ! printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
   docker logs "$CONTAINER" --tail 150 >&2 || true
@@ -212,6 +232,7 @@ if ! printf '%s' "$HOST_HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; t
   fail "production health check failed; previous image restoration attempted"
 fi
 
+STAGE="admin_canary"
 if ! ADMIN_CANARY="$(docker exec -i "$CONTAINER" python3 - "$EXPECTED_REVISION" "$DIGEST" <<'PY'
 import hashlib
 import json
@@ -521,6 +542,7 @@ PY
   fail "enterprise admin live canary failed; previous image restoration attempted"
 fi
 
+STAGE="rollback_receipt"
 ADMIN_CANARY_SHA256="$(printf '%s' "$ADMIN_CANARY" | sha256sum | awk '{print $1}')"
 ROLLBACK_RECEIPT="$(python3 - "$PREVIOUS_DIGEST" "$PREVIOUS_REVISION" "$DIGEST" "$EXPECTED_REVISION" "$ADMIN_CANARY_SHA256" <<'PY'
 import json
@@ -547,6 +569,7 @@ printf '%s\n' "$ROLLBACK_RECEIPT" > "$ROLLBACK_RECEIPT_TMP"
 chmod 0600 "$ROLLBACK_RECEIPT_TMP"
 mv -f "$ROLLBACK_RECEIPT_TMP" "$ROLLBACK_RECEIPT_FILE"
 
+STAGE="complete"
 printf '{"ok":true,"status":"DEPLOYED_ADMIN_VERIFIED","container":"%s","image":"%s","imageDigest":"%s","revision":"%s","health":%s,"adminCanary":%s,"rollback":{"previousImageDigest":"%s","previousRevision":"%s","previewVerified":%s,"receiptSha256":"%s"},"readbackVerified":true,"mutationPerformed":true,"secretValuesReturned":false}\n' \
   "$CONTAINER" "$NEW_IMAGE" "$DIGEST" "$EXPECTED_REVISION" "$HOST_HEALTH" "$ADMIN_CANARY" \
   "$PREVIOUS_DIGEST" "$PREVIOUS_REVISION" "$([[ -n "$PREVIOUS_DIGEST" && -n "$PREVIOUS_REVISION" ]] && printf true || printf false)" "$ROLLBACK_RECEIPT_SHA256"
