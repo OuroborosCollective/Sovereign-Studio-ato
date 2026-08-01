@@ -87,7 +87,8 @@ def route(
                 "imageDigestVerified": True,
             } if free else {},
             "canaryReceipt": {
-                "schemaVersion": "sovereign.freellm-route-receipt.v2",
+                "schemaVersion": "sovereign.freellm-route-receipt.v3",
+                "generalChatEvidenceVerified": True,
                 "receiptSha256": "3" * 64,
             } if free else {},
         },
