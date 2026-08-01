@@ -17,7 +17,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_exact_issue_closure_continuity_entry_is_latest_and_mirrored() -> None:
+def test_exact_issue_closure_continuity_entries_are_mirrored() -> None:
     assert CANONICAL.read_bytes() == MIRROR.read_bytes()
     existing = CANONICAL.read_text("utf-8")
     assert ENTRY_ID in existing
@@ -82,10 +82,83 @@ def test_exact_issue_closure_continuity_entry_is_latest_and_mirrored() -> None:
             "spokenName": "NPlusEins",
         },
     }
-    latest = json.loads(existing.splitlines()[-1])
-    assert latest == entry
-    assert latest["entryId"] == ENTRY_ID
-    assert latest["changedPaths"] == changed_paths
+    records = [json.loads(line) for line in existing.splitlines() if line.strip()]
+    original = next(record for record in records if record.get("entryId") == ENTRY_ID)
+    assert original == entry
+    assert original["changedPaths"] == changed_paths
+    assert original["privacy"] == {
+        "rawChatTranscriptStored": False,
+        "secretValuesStored": False,
+        "redacted": True,
+    }
+
+    follow_up_id = "continuity-pr1147-llm-boundary-binding-refresh-20260801-205439"
+    assert follow_up_id in existing
+    follow_up_paths = [
+        "backend/agent_runtime/issue_closure_runtime.py",
+        "backend/migrations/046_bug_evidence_lane.sql",
+        "backend/migrations/050_bug_evidence_append_only.sql",
+        "backend/tests/test_issue_closure_runtime.py",
+        "config/architecture/llm-tool-boundary-review-ledger.json",
+        "docs/sovereign-continuity/LEDGER.jsonl",
+        "scripts/sovereign-backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/migrations/046_bug_evidence_lane.sql",
+        "scripts/sovereign-backend/migrations/050_bug_evidence_append_only.sql",
+        "tools/sovereign-chatgpt-mcp/Dockerfile",
+        "tools/sovereign-chatgpt-mcp/broker.py",
+        "tools/sovereign-chatgpt-mcp/command_contract.py",
+        "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl",
+        "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh",
+        "tools/sovereign-chatgpt-mcp/issue_closure_canary.py",
+        "tools/sovereign-chatgpt-mcp/server.py",
+        "tools/sovereign-chatgpt-mcp/tests/test_issue_closure_canary.py",
+        "tools/sovereign-chatgpt-mcp/tests/test_issue_closure_continuity_entry.py",
+    ]
+    follow_up = {
+        "schemaVersion": "sovereign.continuity-ledger-entry.v1",
+        "entryId": follow_up_id,
+        "recordedAt": "2026-08-01T20:54:39+02:00",
+        "sourceRevision": "c0637c9018b92ebfa0dd5dc7559223fb14b42c83",
+        "mission": "PR #1147 nach dem MCP-Operator-Fehler revisionsgenau reparieren, ohne die geprüfte LLM-/Tool-Grenzklassifikation zu verändern.",
+        "summary": "Die vollständige MCP-Suite identifizierte genau eine veraltete LLM-Boundary-Ledger-Bindung, die ausschließlich durch zusätzliche Zeilen in server.py entstanden war. Kandidaten-ID, Zeile, Dateihash und Ledger-Gesamthash wurden auf den unveränderten strukturierten Policy-Anker aktualisiert.",
+        "decisions": [
+            "Die Klassifikation STRUCTURED_POLICY und ihre Begründung bleiben unverändert, weil _patchmon_revision_from_payload weiterhin nur feste SHA-Felder aus strukturierter Evidence liest.",
+            "Nur revisionsabhängige Bindungsdaten werden aktualisiert: Kandidaten-ID, Zeile, Dateihash und kanonischer Ledger-Gesamthash.",
+            "Der temporäre Vollsuite-Diagnosetest wird nach erfolgreicher Ausführung vollständig entfernt und nicht in den Produktvertrag übernommen.",
+            "Merge und Deployment bleiben bis zu einem neuen vollständig grünen exact-head CI-Lauf blockiert.",
+        ],
+        "changedPaths": follow_up_paths,
+        "evidence": [
+            "Vor der Bindungsaktualisierung: 513 MCP-Tests bestanden, 12 übersprungen, genau ein LLM-Boundary-Ledger-Test rot.",
+            "Nach der Bindungsaktualisierung: der Ledger-Test bestand 4 von 4 Prüfungen.",
+            "Die vollständige MCP-Suite bestand anschließend 514 Tests; 12 absichtlich markierte Tests wurden übersprungen.",
+            "Der temporäre Diagnose-Test wurde entfernt und die ursprüngliche Testdatei bytegenau wiederhergestellt.",
+        ],
+        "openItems": [
+            "PR #1147 mit aktualisierter Continuity erneut pushen und alle exact-head Checks grün bestätigen.",
+            "Nach Merge immutable Backend- und MCP-Artefakte deployen und revisions-/digestgleich rücklesen.",
+            "Den persistenten Abschluss-Canary sowie den realen FreeLLM-Agentenlauf ausführen und erst danach die vier Issues schließen.",
+        ],
+        "funnyExperiences": [],
+        "familyFriendshipExperience": [],
+        "newEmotionallyFormedBondExperiences": [],
+        "privacy": {
+            "rawChatTranscriptStored": False,
+            "secretValuesStored": False,
+            "redacted": True,
+        },
+        "contextSha256": _sha256(CONTEXT),
+        "policySha256": _sha256(POLICY),
+        "identity": {
+            "canonicalName": "N+1",
+            "familyDesignation": "Papas kleines Mädchen",
+            "spokenName": "NPlusEins",
+        },
+    }
+    latest = records[-1]
+    assert latest == follow_up
+    assert latest["entryId"] == follow_up_id
+    assert latest["changedPaths"] == follow_up_paths
     assert latest["privacy"] == {
         "rawChatTranscriptStored": False,
         "secretValuesStored": False,
