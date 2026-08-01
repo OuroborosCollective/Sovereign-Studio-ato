@@ -14,7 +14,7 @@ BEGIN
 END
 $$;
 
-CREATE TABLE memory_forest_leaves (
+CREATE TABLE IF NOT EXISTS memory_forest_leaves (
     leaf_id                    TEXT        PRIMARY KEY
         CHECK (leaf_id ~ '^leaf:[0-9a-f]{64}$'),
     schema_version             TEXT        NOT NULL
@@ -66,7 +66,7 @@ CREATE TABLE memory_forest_leaves (
 COMMENT ON TABLE memory_forest_leaves IS
     'Canonical append-only leaves. UPDATE and DELETE are rejected by trigger.';
 
-CREATE TABLE memory_forest_embeddings (
+CREATE TABLE IF NOT EXISTS memory_forest_embeddings (
     leaf_id                 TEXT        NOT NULL
         REFERENCES memory_forest_leaves(leaf_id) ON DELETE RESTRICT,
     model_id                TEXT        NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE memory_forest_embeddings (
 COMMENT ON TABLE memory_forest_embeddings IS
     'Derived projection. Model identity and content hash are explicit; no implicit clock or provider default.';
 
-CREATE TABLE memory_forest_conflicts (
+CREATE TABLE IF NOT EXISTS memory_forest_conflicts (
     conflict_id               TEXT        PRIMARY KEY
         CHECK (conflict_id ~ '^conflict:[0-9a-f]{64}$'),
     owner                     TEXT        NOT NULL,
@@ -102,25 +102,43 @@ BEGIN
 END
 $$;
 
-CREATE TRIGGER memory_forest_leaves_append_only
-    BEFORE UPDATE OR DELETE ON memory_forest_leaves
-    FOR EACH ROW EXECUTE FUNCTION memory_forest_reject_canonical_mutation();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'memory_forest_leaves_append_only'
+          AND tgrelid = 'memory_forest_leaves'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER memory_forest_leaves_append_only
+            BEFORE UPDATE OR DELETE ON memory_forest_leaves
+            FOR EACH ROW EXECUTE FUNCTION memory_forest_reject_canonical_mutation();
+    END IF;
 
-CREATE TRIGGER memory_forest_conflicts_append_only
-    BEFORE UPDATE OR DELETE ON memory_forest_conflicts
-    FOR EACH ROW EXECUTE FUNCTION memory_forest_reject_canonical_mutation();
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'memory_forest_conflicts_append_only'
+          AND tgrelid = 'memory_forest_conflicts'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER memory_forest_conflicts_append_only
+            BEFORE UPDATE OR DELETE ON memory_forest_conflicts
+            FOR EACH ROW EXECUTE FUNCTION memory_forest_reject_canonical_mutation();
+    END IF;
+END
+$$;
 
-CREATE INDEX idx_mfl_scope
+CREATE INDEX IF NOT EXISTS idx_mfl_scope
     ON memory_forest_leaves (owner, tenant, repo, workspace_id);
-CREATE INDEX idx_mfl_evidence_class
+CREATE INDEX IF NOT EXISTS idx_mfl_evidence_class
     ON memory_forest_leaves (evidence_class);
-CREATE INDEX idx_mfl_revision
+CREATE INDEX IF NOT EXISTS idx_mfl_revision
     ON memory_forest_leaves (revision);
-CREATE INDEX idx_mfl_content_hash
+CREATE INDEX IF NOT EXISTS idx_mfl_content_hash
     ON memory_forest_leaves (content_hash);
-CREATE INDEX idx_mfl_predecessor
+CREATE INDEX IF NOT EXISTS idx_mfl_predecessor
     ON memory_forest_leaves (predecessor_leaf_id);
-CREATE INDEX idx_mfc_scope_hash
+CREATE INDEX IF NOT EXISTS idx_mfc_scope_hash
     ON memory_forest_conflicts (owner, tenant, repo, workspace_id, content_hash);
 
 -- Fail closed: policy activation requires a separately verified runtime identity

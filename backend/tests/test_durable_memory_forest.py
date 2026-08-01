@@ -598,3 +598,37 @@ class TestNoIO:
         import agent_runtime.durable_memory_forest as mod
         src = inspect.getsource(mod)
         assert "psycopg2" not in src
+
+
+def test_migration_048_is_restart_idempotent_and_mirrored():
+    canonical = (BACKEND / "migrations" / "048_durable_memory_forest.sql").read_text("utf-8")
+    deployment = (
+        ROOT / "scripts" / "sovereign-backend" / "migrations"
+        / "048_durable_memory_forest.sql"
+    ).read_text("utf-8")
+    assert canonical == deployment
+
+    for table in (
+        "memory_forest_leaves",
+        "memory_forest_embeddings",
+        "memory_forest_conflicts",
+    ):
+        assert f"CREATE TABLE IF NOT EXISTS {table} (" in canonical
+
+    for index in (
+        "idx_mfl_scope",
+        "idx_mfl_evidence_class",
+        "idx_mfl_revision",
+        "idx_mfl_content_hash",
+        "idx_mfl_predecessor",
+        "idx_mfc_scope_hash",
+    ):
+        assert f"CREATE INDEX IF NOT EXISTS {index}" in canonical
+
+    for trigger in (
+        "memory_forest_leaves_append_only",
+        "memory_forest_conflicts_append_only",
+    ):
+        assert f"WHERE tgname = '{trigger}'" in canonical
+        assert f"CREATE TRIGGER {trigger}" in canonical
+    assert canonical.count("AND NOT tgisinternal") == 2

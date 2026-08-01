@@ -802,3 +802,45 @@ class TestNoIO:
         import agent_runtime.environment_mcp_execution as mod
         src = inspect.getsource(mod)
         assert "import ipaddress" in src
+
+
+def test_migration_049_is_restart_idempotent_and_mirrored():
+    canonical = (BACKEND / "migrations" / "049_environment_mcp_execution.sql").read_text("utf-8")
+    deployment = (
+        ROOT / "scripts" / "sovereign-backend" / "migrations"
+        / "049_environment_mcp_execution.sql"
+    ).read_text("utf-8")
+    assert canonical == deployment
+
+    for table in (
+        "environment_manifests",
+        "principal_resolution_receipts",
+        "credential_resolution_receipts",
+        "egress_decision_receipts",
+        "mcp_installation_bindings",
+        "execution_identity_receipts",
+    ):
+        assert f"CREATE TABLE IF NOT EXISTS {table} (" in canonical
+
+    for index in (
+        "idx_env_manifest_environment",
+        "idx_principal_environment_run",
+        "idx_credential_environment_owner",
+        "idx_egress_environment_decision",
+        "idx_execution_run_revision",
+        "idx_installation_tool_revision",
+    ):
+        assert f"CREATE INDEX IF NOT EXISTS {index}" in canonical
+
+    for trigger in (
+        "execution_identity_validate_before_insert",
+        "environment_manifests_append_only",
+        "principal_receipts_append_only",
+        "credential_receipts_append_only",
+        "egress_receipts_append_only",
+        "installation_bindings_append_only",
+        "execution_receipts_append_only",
+    ):
+        assert f"WHERE tgname = '{trigger}'" in canonical
+        assert f"CREATE TRIGGER {trigger}" in canonical
+    assert canonical.count("AND NOT tgisinternal") == 7

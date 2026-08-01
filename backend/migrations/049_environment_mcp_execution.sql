@@ -5,7 +5,7 @@
 
 BEGIN;
 
-CREATE TABLE environment_manifests (
+CREATE TABLE IF NOT EXISTS environment_manifests (
     manifest_hash           CHAR(64) PRIMARY KEY
         CHECK (manifest_hash ~ '^[0-9a-f]{64}$'),
     environment_id          TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE environment_manifests (
     CHECK (is_production = (kind = 'production'))
 );
 
-CREATE TABLE principal_resolution_receipts (
+CREATE TABLE IF NOT EXISTS principal_resolution_receipts (
     receipt_id                  TEXT PRIMARY KEY
         CHECK (receipt_id ~ '^principal:[0-9a-f]{64}$'),
     schema_version              TEXT NOT NULL
@@ -50,7 +50,7 @@ CREATE TABLE principal_resolution_receipts (
         CHECK (receipt_hash ~ '^[0-9a-f]{64}$')
 );
 
-CREATE TABLE credential_resolution_receipts (
+CREATE TABLE IF NOT EXISTS credential_resolution_receipts (
     receipt_id                  TEXT PRIMARY KEY
         CHECK (receipt_id ~ '^credential:[0-9a-f]{64}$'),
     schema_version              TEXT NOT NULL
@@ -72,7 +72,7 @@ CREATE TABLE credential_resolution_receipts (
     CHECK (mode <> 'on_behalf_of' OR audience IS NOT NULL)
 );
 
-CREATE TABLE egress_decision_receipts (
+CREATE TABLE IF NOT EXISTS egress_decision_receipts (
     receipt_id          TEXT PRIMARY KEY
         CHECK (receipt_id ~ '^egress:[0-9a-f]{64}$'),
     schema_version      TEXT NOT NULL
@@ -98,7 +98,7 @@ CREATE TABLE egress_decision_receipts (
     )
 );
 
-CREATE TABLE mcp_installation_bindings (
+CREATE TABLE IF NOT EXISTS mcp_installation_bindings (
     binding_id              TEXT PRIMARY KEY
         CHECK (binding_id ~ '^installation:[0-9a-f]{64}$'),
     tool_id                 TEXT NOT NULL,
@@ -112,7 +112,7 @@ CREATE TABLE mcp_installation_bindings (
         CHECK (binding_hash ~ '^[0-9a-f]{64}$')
 );
 
-CREATE TABLE execution_identity_receipts (
+CREATE TABLE IF NOT EXISTS execution_identity_receipts (
     receipt_id                  TEXT PRIMARY KEY
         CHECK (receipt_id ~ '^execution:[0-9a-f]{64}$'),
     schema_version              TEXT NOT NULL
@@ -219,40 +219,98 @@ BEGIN
 END
 $$;
 
-CREATE TRIGGER execution_identity_validate_before_insert
-    BEFORE INSERT ON execution_identity_receipts
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_validate_composite();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'execution_identity_validate_before_insert'
+          AND tgrelid = 'execution_identity_receipts'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER execution_identity_validate_before_insert
+            BEFORE INSERT ON execution_identity_receipts
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_validate_composite();
+    END IF;
 
-CREATE TRIGGER environment_manifests_append_only
-    BEFORE UPDATE OR DELETE ON environment_manifests
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
-CREATE TRIGGER principal_receipts_append_only
-    BEFORE UPDATE OR DELETE ON principal_resolution_receipts
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
-CREATE TRIGGER credential_receipts_append_only
-    BEFORE UPDATE OR DELETE ON credential_resolution_receipts
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
-CREATE TRIGGER egress_receipts_append_only
-    BEFORE UPDATE OR DELETE ON egress_decision_receipts
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
-CREATE TRIGGER installation_bindings_append_only
-    BEFORE UPDATE OR DELETE ON mcp_installation_bindings
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
-CREATE TRIGGER execution_receipts_append_only
-    BEFORE UPDATE OR DELETE ON execution_identity_receipts
-    FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'environment_manifests_append_only'
+          AND tgrelid = 'environment_manifests'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER environment_manifests_append_only
+            BEFORE UPDATE OR DELETE ON environment_manifests
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    END IF;
 
-CREATE INDEX idx_env_manifest_environment
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'principal_receipts_append_only'
+          AND tgrelid = 'principal_resolution_receipts'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER principal_receipts_append_only
+            BEFORE UPDATE OR DELETE ON principal_resolution_receipts
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'credential_receipts_append_only'
+          AND tgrelid = 'credential_resolution_receipts'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER credential_receipts_append_only
+            BEFORE UPDATE OR DELETE ON credential_resolution_receipts
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'egress_receipts_append_only'
+          AND tgrelid = 'egress_decision_receipts'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER egress_receipts_append_only
+            BEFORE UPDATE OR DELETE ON egress_decision_receipts
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'installation_bindings_append_only'
+          AND tgrelid = 'mcp_installation_bindings'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER installation_bindings_append_only
+            BEFORE UPDATE OR DELETE ON mcp_installation_bindings
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'execution_receipts_append_only'
+          AND tgrelid = 'execution_identity_receipts'::regclass
+          AND NOT tgisinternal
+    ) THEN
+        CREATE TRIGGER execution_receipts_append_only
+            BEFORE UPDATE OR DELETE ON execution_identity_receipts
+            FOR EACH ROW EXECUTE FUNCTION environment_execution_reject_mutation();
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_env_manifest_environment
     ON environment_manifests (environment_id, revision);
-CREATE INDEX idx_principal_environment_run
+CREATE INDEX IF NOT EXISTS idx_principal_environment_run
     ON principal_resolution_receipts (environment_id, run_id, revision);
-CREATE INDEX idx_credential_environment_owner
+CREATE INDEX IF NOT EXISTS idx_credential_environment_owner
     ON credential_resolution_receipts (environment_id, owner_id);
-CREATE INDEX idx_egress_environment_decision
+CREATE INDEX IF NOT EXISTS idx_egress_environment_decision
     ON egress_decision_receipts (environment_id, decision);
-CREATE INDEX idx_execution_run_revision
+CREATE INDEX IF NOT EXISTS idx_execution_run_revision
     ON execution_identity_receipts (run_id, revision);
-CREATE INDEX idx_installation_tool_revision
+CREATE INDEX IF NOT EXISTS idx_installation_tool_revision
     ON mcp_installation_bindings (tool_id, verified_at_revision);
 
 -- Fail closed until an independently verified runtime session identity contract
