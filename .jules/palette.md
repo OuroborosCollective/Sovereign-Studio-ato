@@ -37,3 +37,7 @@
 ## 2025-07-25 - [Consistent Language in Accessible Attributes]
 **Learning:** When adding accessibility attributes like `aria-label` and `title` hover tooltips, they must precisely match the primary language used in the surrounding visual components and text. Mixing languages (e.g., German ARIA/tooltips in an English layout or vice-versa) degrades the experience for screen readers and creates confusion for internationalized users.
 **Action:** Always verify the surrounding context language and use matching, consistent localization in all added accessible labels, tooltips, and status descriptions.
+
+## 2025-08-01 - [Collapsible Disclosure and Stateful Toggle Accessibility in Work Timelines]
+**Learning:** Collapsible and interactive history timelines (like the Agent Work Timeline) contain elements with toggle-dependent disclosures (expanding hidden historical events) and key user-facing actions (opening PRs, viewing diffs). For these elements, it is vital to synchronize reactive `aria-expanded` attributes on toggle triggers, provide clear `aria-label` attributes for screen readers, and pair them with native `title` tooltips to explain disclosure and action consequences on hover.
+**Action:** Always ensure disclosure buttons manage the state of `aria-expanded`, specify localized `aria-label` and matching `title` attributes on both expand/collapse buttons and key terminal action triggers (like opening PRs or viewing code diffs).

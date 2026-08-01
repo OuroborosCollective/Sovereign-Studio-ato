@@ -17,6 +17,7 @@ import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
+import { AgentWorkTimeline } from './AgentWorkTimeline';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -537,6 +538,73 @@ describe('Palette Accessibility Enhancements', () => {
       );
       const disabledInlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei: src/App.tsx' });
       expect(disabledInlineBadgeBtn).toHaveAttribute('title', 'src/App.tsx');
+    });
+  });
+
+  describe('AgentWorkTimeline Accessibility Enhancements', () => {
+    it('collapsible timeline buttons have aria-expanded and title tooltips', () => {
+      const mockSnapshot = {
+        id: 'test-work',
+        state: 'failed' as const,
+        branchName: 'main',
+        repoFullName: 'test/repo',
+        events: [
+          { id: 'ev-1', ts: Date.now() - 5000, state: 'intent_detected' as const, label: 'Ereignis 1' },
+          { id: 'ev-2', ts: Date.now() - 4000, state: 'plan_generated' as const, label: 'Ereignis 2' },
+          { id: 'ev-3', ts: Date.now() - 3000, state: 'patch_built' as const, label: 'Ereignis 3' },
+          { id: 'ev-4', ts: Date.now() - 2000, state: 'patch_built' as const, label: 'Ereignis 4' },
+          { id: 'ev-5', ts: Date.now() - 1000, state: 'failed' as const, label: 'Ereignis 5' },
+        ],
+        created: 123,
+        updated: 124,
+      };
+
+      const { rerender } = render(
+        <AgentWorkTimeline snapshot={mockSnapshot} />
+      );
+
+      // We have 5 events, collapse threshold is 4, so we should see "1 ältere Ereignisse" button
+      const showOlderBtn = screen.getByRole('button', { name: '1 ältere Ereignisse anzeigen' });
+      expect(showOlderBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(showOlderBtn).toHaveAttribute('title', '1 ältere Ereignisse anzeigen');
+
+      // Click to expand
+      fireEvent.click(showOlderBtn);
+
+      // Now it should be expanded, and we should see "Weniger anzeigen" button
+      rerender(<AgentWorkTimeline snapshot={{ ...mockSnapshot }} />);
+      const hideOlderBtn = screen.getByRole('button', { name: 'Weniger anzeigen' });
+      expect(hideOlderBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(hideOlderBtn).toHaveAttribute('title', 'Weniger anzeigen');
+    });
+
+    it('PR open and Diff preview buttons have matching aria-label and native title tooltip', () => {
+      const mockSnapshot = {
+        id: 'test-work',
+        state: 'draft_pr_ready' as const,
+        branchName: 'main',
+        repoFullName: 'test/repo',
+        draftPrUrl: 'https://github.com/test/repo/pull/123',
+        events: [],
+        created: 123,
+        updated: 124,
+      };
+
+      render(
+        <AgentWorkTimeline
+          snapshot={mockSnapshot}
+          onOpenPr={vi.fn()}
+          onViewDiff={vi.fn()}
+        />
+      );
+
+      const prBtn = screen.getByRole('button', { name: 'PR öffnen' });
+      expect(prBtn).toHaveAttribute('aria-label', 'PR öffnen');
+      expect(prBtn).toHaveAttribute('title', 'PR öffnen');
+
+      const diffBtn = screen.getByRole('button', { name: 'Diff ansehen' });
+      expect(diffBtn).toHaveAttribute('aria-label', 'Diff ansehen');
+      expect(diffBtn).toHaveAttribute('title', 'Diff ansehen');
     });
   });
 

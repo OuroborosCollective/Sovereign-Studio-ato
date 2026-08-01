@@ -191,7 +191,9 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontSize: 11,
                 textAlign: 'left',
               }}
+              aria-expanded={expanded}
               aria-label={`${hiddenCount} ältere Ereignisse anzeigen`}
+              title={`${hiddenCount} ältere Ereignisse anzeigen`}
             >
               ↑ {hiddenCount} ältere Ereignisse
             </button>
@@ -216,6 +218,9 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 fontSize: 11,
                 textAlign: 'left',
               }}
+              aria-expanded={expanded}
+              aria-label="Weniger anzeigen"
+              title="Weniger anzeigen"
             >
               ↓ Weniger anzeigen
             </button>
@@ -265,6 +270,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 cursor: 'pointer',
               }}
               aria-label="PR öffnen"
+              title="PR öffnen"
             >
               PR öffnen
             </button>
@@ -284,6 +290,7 @@ export const AgentWorkTimeline: React.FC<AgentWorkTimelineProps> = ({
                 cursor: 'pointer',
               }}
               aria-label="Diff ansehen"
+              title="Diff ansehen"
             >
               Diff ansehen
             </button>
