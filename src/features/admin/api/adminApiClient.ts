@@ -181,6 +181,7 @@ export interface FreeRevolverProviderModel {
     schemaVersion?: string;
     receiptId?: string;
     receiptSha256?: string;
+    generalChatEvidenceVerified?: boolean;
   };
   quotaEvidence: Record<string, unknown>;
   retryEvidence: Record<string, unknown>;

@@ -194,7 +194,11 @@ class EnterprisePlatformService:
                          AND COALESCE((config->>'canaryVerified')::boolean, false)=true
                          AND COALESCE((config->>'canaryConfirmationCount')::integer, 0) >= 2
                          AND COALESCE(config->'canaryReceipt'->>'schemaVersion', '')
-                             ='sovereign.freellm-route-receipt.v2'
+                             ='sovereign.freellm-route-receipt.v3'
+                         AND COALESCE(
+                               (config->'canaryReceipt'->>'generalChatEvidenceVerified')::boolean,
+                               false
+                             )=true
                      ) AS freellm_ready,
                      COUNT(*) FILTER (
                        WHERE disabled=false
@@ -235,7 +239,7 @@ class EnterprisePlatformService:
                 "openrouterReadyRoutes": openrouter_ready,
                 "legacyLiteLlmActiveRoutes": litellm_active,
                 "legacyProviderProbePerformed": False,
-                "routingPolicy": "direct-freellm-quota-v2-and-direct-openrouter-priced-only",
+                "routingPolicy": "direct-freellm-quota-v3-chat-evidence-and-direct-openrouter-priced-only",
             },
             blocker=blocker,
             latency_ms=max(0, int((time.monotonic() - started) * 1000)),

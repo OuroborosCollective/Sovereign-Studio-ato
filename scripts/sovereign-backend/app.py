@@ -2401,7 +2401,11 @@ def health_ready():
                      AND COALESCE((config->>'canaryConfirmationCount')::integer, 0) >= 2
                      AND COALESCE(config->>'fundingMode', '')='provider_free_quota'
                      AND COALESCE(config->'canaryReceipt'->>'schemaVersion', '')
-                         ='sovereign.freellm-route-receipt.v2'
+                         ='sovereign.freellm-route-receipt.v3'
+                     AND COALESCE(
+                           (config->'canaryReceipt'->>'generalChatEvidenceVerified')::boolean,
+                           false
+                         )=true
                )::integer AS freellm_ready,
                COUNT(*) FILTER (
                    WHERE disabled=false

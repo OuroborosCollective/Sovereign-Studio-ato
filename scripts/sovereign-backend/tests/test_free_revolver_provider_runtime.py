@@ -16,6 +16,7 @@ from free_revolver_provider_contracts import (
     ManagedKeyContractError,
     assert_provider_target_allowed,
     assert_public_https_host,
+    general_chat_response_verified,
     is_managed_internal_provider_url,
     managed_internal_source_spec,
     models_url_candidates,
@@ -181,7 +182,7 @@ def test_model_names_and_free_flags_never_activate_without_eligibility_evidence(
     assert by_id["verified-free"]["capabilities"] == ["chat", "json"]
 
 
-def test_managed_quota_contract_promotes_unreported_cost_without_price_claim() -> None:
+def test_managed_quota_contract_requires_chat_canary_when_capabilities_are_missing() -> None:
     models = normalize_models_payload(
         {
             "data": [
@@ -194,16 +195,172 @@ def test_managed_quota_contract_promotes_unreported_cost_without_price_claim() -
         managed_quota_contract=True,
     )
     by_id = {model["modelId"]: model for model in models}
-    assert by_id["unreported"]["freeEligible"] is True
-    assert by_id["incomplete"]["freeEligible"] is True
-    assert by_id["unreported"]["eligibilitySource"] == (
-        "managed-freellm-quota-contract"
-    )
+    for model_id in ("unreported", "incomplete"):
+        assert by_id[model_id]["generalChatEligible"] is False
+        assert by_id[model_id]["generalChatCanaryRequired"] is True
+        assert by_id[model_id]["freeEligible"] is False
+        assert by_id[model_id]["eligibilitySource"] == (
+            "managed-freellm-chat-canary-required"
+        )
+        assert by_id[model_id]["generalChatEligibilitySource"] == (
+            "general-chat-capability-unreported"
+        )
     assert by_id["unreported"]["providerCostCatalogState"] == "unreported"
     assert by_id["nonzero"]["freeEligible"] is False
+    assert by_id["nonzero"]["generalChatCanaryRequired"] is False
     assert by_id["nonzero"]["eligibilitySource"] == "provider-pricing-nonzero"
     assert by_id["invalid"]["freeEligible"] is False
+    assert by_id["invalid"]["generalChatCanaryRequired"] is False
     assert by_id["invalid"]["eligibilitySource"] == "provider-pricing-invalid"
+
+
+def test_specialist_only_models_never_enter_general_chat_revolver() -> None:
+    models = normalize_models_payload(
+        {
+            "data": [
+                {"id": "nemotron-3.5-content-safety"},
+                {"id": "vendor/safeguard-20b"},
+                {"id": "whisper-large-v3"},
+                {"id": "openai/tts-1"},
+                {"id": "dall-e-3"},
+                {"id": "black-forest-labs/FLUX.1-dev"},
+                {"id": "text-embedding-3", "capabilities": ["embeddings"]},
+                {"id": "document-reranker", "capabilities": ["rerank"]},
+                {"id": "general-reasoning", "capabilities": ["reasoning", "chat"]},
+                {"id": "code-assistant", "capabilities": ["code", "chat", "json"]},
+                {"id": "multimodal-assistant", "capabilities": ["vision", "chat"]},
+            ],
+        },
+        managed_quota_contract=True,
+    )
+    by_id = {model["modelId"]: model for model in models}
+
+    expected_block_sources = {
+        "nemotron-3.5-content-safety": "specialist-model-identifier",
+        "vendor/safeguard-20b": "specialist-model-identifier",
+        "whisper-large-v3": "specialist-model-identifier",
+        "openai/tts-1": "specialist-model-identifier",
+        "dall-e-3": "specialist-model-identifier",
+        "black-forest-labs/FLUX.1-dev": "specialist-model-identifier",
+        "text-embedding-3": "explicit-non-chat-capability",
+        "document-reranker": "explicit-non-chat-capability",
+    }
+    for model_id, blocker_source in expected_block_sources.items():
+        assert by_id[model_id]["generalChatEligible"] is False
+        assert by_id[model_id]["freeEligible"] is False
+        assert by_id[model_id]["eligibilitySource"] == blocker_source
+        assert by_id[model_id]["generalChatEligibilitySource"] == blocker_source
+        assert by_id[model_id]["generalChatBlockVerified"] is True
+
+    for model_id in (
+        "general-reasoning",
+        "code-assistant",
+        "multimodal-assistant",
+    ):
+        assert by_id[model_id]["generalChatEligible"] is True
+        assert by_id[model_id]["freeEligible"] is True
+        assert by_id[model_id]["generalChatEligibilitySource"] == (
+            "explicit-text-chat-capability"
+        )
+        assert by_id[model_id]["generalChatCanaryRequired"] is False
+
+
+def test_modality_or_format_capability_alone_never_certifies_text_chat() -> None:
+    models = normalize_models_payload(
+        {
+            "data": [
+                {"id": "vision-only", "capabilities": ["vision"]},
+                {"id": "json-only", "capabilities": ["json"]},
+                {"id": "multimodal-only", "capabilities": ["multimodal"]},
+                {"id": "reasoning-only", "capabilities": ["reasoning"]},
+                {"id": "code-only", "capabilities": ["code"]},
+            ],
+        },
+        managed_quota_contract=True,
+    )
+
+    for model in models:
+        assert model["generalChatEligible"] is False
+        assert model["generalChatCanaryRequired"] is False
+        assert model["generalChatBlockVerified"] is True
+        assert model["freeEligible"] is False
+        assert model["eligibilitySource"] == "no-text-chat-capability"
+        assert model["generalChatEligibilitySource"] == "no-text-chat-capability"
+
+
+def test_general_chat_canary_requires_explicit_assistant_text_reply() -> None:
+    assert general_chat_response_verified({
+        "choices": [{"message": {"role": "assistant", "content": "OK."}}],
+    }) is True
+    for payload in (
+        {},
+        {"choices": []},
+        {"choices": [{"message": {"content": "OK"}}]},
+        {"choices": [{"message": {"role": "tool", "content": "OK"}}]},
+        {"choices": [{"message": {"role": "assistant", "content": None}}]},
+        {"choices": [{"message": {"role": "assistant", "content": "SAFE"}}]},
+    ):
+        assert general_chat_response_verified(payload) is False
+
+
+def test_unknown_model_id_is_not_catalog_certified_without_chat_evidence() -> None:
+    model = normalize_models_payload(
+        {"data": [{"id": "vendor/new-model-without-metadata"}]},
+        managed_quota_contract=True,
+    )[0]
+
+    assert model["generalChatEligible"] is False
+    assert model["generalChatCanaryRequired"] is True
+    assert model["freeEligible"] is False
+    assert model["capabilities"] == []
+    assert model["capabilityEvidenceCount"] == 0
+    assert model["generalChatEligibilitySource"] == (
+        "general-chat-capability-unreported"
+    )
+
+
+def test_all_capabilities_are_classified_before_storage_truncation() -> None:
+    capabilities = ["chat"] * 20 + ["moderation"]
+    model = normalize_models_payload(
+        {"data": [{"id": "mixed-capabilities", "capabilities": capabilities}]},
+        managed_quota_contract=True,
+    )[0]
+
+    assert model["capabilities"] == ["chat"] * 20
+    assert model["capabilityEvidenceCount"] == 21
+    assert model["capabilitiesTruncated"] is True
+    assert model["generalChatEligible"] is False
+    assert model["generalChatCanaryRequired"] is False
+    assert model["freeEligible"] is False
+    assert model["generalChatEligibilitySource"] == (
+        "explicit-non-chat-capability"
+    )
+
+
+def test_overlong_capability_evidence_fails_closed() -> None:
+    capabilities = ["chat"] * 101
+    model = normalize_models_payload(
+        {"data": [{"id": "capability-overflow", "capabilities": capabilities}]},
+        managed_quota_contract=True,
+    )[0]
+
+    assert model["capabilityEvidenceCount"] == 101
+    assert model["capabilitiesTruncated"] is True
+    assert model["generalChatEligible"] is False
+    assert model["generalChatCanaryRequired"] is False
+    assert model["freeEligible"] is False
+    assert model["generalChatEligibilitySource"] == "capability-evidence-too-large"
+
+
+def test_freellmpool_workflow_requires_v3_textual_chat_evidence() -> None:
+    workflow = (REPO / ".github" / "workflows" / "sovereign-freellmpool-verify.yml").read_text("utf-8")
+
+    assert "sovereign.freellm-route-receipt.v2" not in workflow
+    assert '"schemaVersion": "sovereign.freellm-route-receipt.v3"' in workflow
+    assert '"generalChatEvidenceVerified"' in workflow
+    assert '"textualChatResponseVerified"' in workflow
+    assert 'str(message.get("role") or "").strip().casefold() == "assistant"' in workflow
+    assert 'normalized_reply.startswith("ok")' in workflow
 
 
 def test_database_never_receives_raw_provider_keys() -> None:
@@ -372,6 +529,14 @@ def test_quota_and_canary_evidence_is_independent_bounded_and_non_circular() -> 
     assert "freellm_model_reconcile_failed" in runtime
     assert '"managedKeyAvailable"' in runtime
     assert '"managedKeyBlocker"' in runtime
+    assert "def _persist_verified_general_chat_blocks(" in runtime
+    assert "_VERIFIED_GENERAL_CHAT_BLOCKERS = frozenset({" in runtime
+    assert "eligibility_verified_at=NOW()" in runtime
+    assert "eligibility_source = ANY(%s)" in runtime
+    assert '"blockedEvidence": _blocked_general_chat_evidence(' in runtime
+    assert '"generalChatBlockVerified": True' in runtime
+    assert "_verified_general_chat_block_source(model.get(\"eligibility_source\"))" in runtime
+    assert "eligibility_source='specialist-model-identifier'" in runtime
     assert '"keyFingerprintMatchesFile"' in runtime
     assert 'source.get("auth_mode") in {"bearer", "x-api-key"}' in runtime
     assert "managed_quota_contract=(" in runtime
@@ -416,7 +581,9 @@ def test_quota_and_canary_evidence_is_independent_bounded_and_non_circular() -> 
     assert 'os.getenv("SOVEREIGN_IMAGE_DIGEST"' in runtime
     assert "def _canonical_sha256" in runtime
     assert '"freellm_revision_bound_receipt_required"' in runtime
-    assert '_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v2"' in runtime
+    assert '_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"' in runtime
+    assert '"generalChatEvidenceVerified": True' in runtime
+    assert '"textualChatResponsesVerified": True' in runtime
     assert '"schemaVersion": _FREELLM_RECEIPT_SCHEMA' in runtime
     assert '"receiptSha256": receipt_sha256' in runtime
     assert '"readyReceipts": [' in runtime
@@ -441,8 +608,38 @@ def test_admin_projection_uses_direct_route_terms_and_revision_receipts() -> Non
     assert "hasRevisionBoundReceipt" in control_center
     assert "model.runtimeIdentity.sourceRevisionVerified === true" in control_center
     assert "model.runtimeIdentity.imageDigestVerified === true" in control_center
+    assert "model.canaryReceipt.schemaVersion === 'sovereign.freellm-route-receipt.v3'" in control_center
+    assert "model.canaryReceipt.generalChatEvidenceVerified === true" in control_center
     assert "model.canaryReceipt.receiptSha256" in control_center
+    assert "generalChatEvidenceVerified?: boolean" in api_client
     assert "model.litellmAlias" not in control_center
+
+
+def test_metadata_free_discovery_preserves_current_v3_certified_routes() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+
+    assert "def _current_certified_model_sources(" in runtime
+    assert runtime.count("certified_model_sources = _current_certified_model_sources(") == 2
+    assert runtime.count("preserved_model_ids = {") == 2
+    assert runtime.count("and str(model[\"modelId\"]) not in preserved_model_ids") == 2
+    assert runtime.count("if str(model[\"modelId\"]) in preserved_model_ids:") == 2
+    assert "route.config->'canaryReceipt'->>'schemaVersion'=%s" in runtime
+    assert "route.config->'canaryReceipt'->>'generalChatEvidenceVerified'='true'" in runtime
+    assert "route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'" in runtime
+    assert "SET free_eligible=true, status='ready', enabled=true" in runtime
+    assert "certified_model_sources[str(model[\"modelId\"])]" in runtime
+    assert "activation_models[:max_models]" in runtime
+
+
+def test_failed_metadata_free_chat_canaries_remain_recheckable() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    control_center = (
+        REPO / "src/features/admin/components/FreeRevolverControlCenter.tsx"
+    ).read_text("utf-8")
+
+    assert "OR eligibility_source='managed-freellm-chat-canary-required'" in runtime
+    assert "model.eligibilitySource === 'managed-freellm-chat-canary-required'" in control_center
+    assert "Boolean(model.routeAlias)" in control_center
 
 
 def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> None:
@@ -470,6 +667,7 @@ def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> No
     assert "SET disabled=NOT (" in runtime
     assert "route.config->'runtimeIdentity'->>'sourceRevision'=%s" in runtime
     assert "route.config->'runtimeIdentity'->>'imageDigest'=%s" in runtime
+    assert "route.config->'canaryReceipt'->>'generalChatEvidenceVerified'='true'" in runtime
     assert "route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'" in runtime
     assert '"canaryLatencyMs"' in runtime
     assert '"certificationState": "certified"' in runtime

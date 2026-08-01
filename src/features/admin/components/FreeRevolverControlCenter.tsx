@@ -58,6 +58,8 @@ function eligibilityEvidenceExpiry(verifiedAt: string | null, ttlHours: number):
 function hasRevisionBoundReceipt(model: FreeRevolverProviderModel): boolean {
   return model.runtimeIdentity.sourceRevisionVerified === true
     && model.runtimeIdentity.imageDigestVerified === true
+    && model.canaryReceipt.schemaVersion === 'sovereign.freellm-route-receipt.v3'
+    && model.canaryReceipt.generalChatEvidenceVerified === true
     && typeof model.canaryReceipt.receiptSha256 === 'string'
     && /^[0-9a-f]{64}$/.test(model.canaryReceipt.receiptSha256);
 }
@@ -260,7 +262,11 @@ export function FreeRevolverControlCenter({
             const deferredModels = provider.models.filter(model => model.status === 'discovered');
             const blockedModels = provider.models.filter(model => model.status === 'blocked');
             const recheckableModels = provider.models.filter(model => (
-              model.freeEligible && Boolean(model.routeAlias)
+              Boolean(model.routeAlias)
+              && (
+                model.freeEligible
+                || model.eligibilitySource === 'managed-freellm-chat-canary-required'
+              )
             ));
             const renewalKey = renewalKeys[provider.id] ?? '';
             return (
