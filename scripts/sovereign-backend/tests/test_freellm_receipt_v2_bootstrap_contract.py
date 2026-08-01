@@ -19,7 +19,9 @@ def test_admin_recheck_reuses_the_canonical_revision_bound_receipt_producer() ->
         1,
     )[0]
 
-    assert '_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v2"' in runtime
+    assert '_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"' in runtime
+    assert '"generalChatEvidenceVerified": True' in runtime
+    assert "textualChatResponseVerified" in runtime
     assert "result = activate_model(" in recheck
     assert '"runtimeIdentity": result.get("runtimeIdentity")' in recheck
     assert '"receiptId": result.get("receiptId")' in recheck
@@ -28,7 +30,7 @@ def test_admin_recheck_reuses_the_canonical_revision_bound_receipt_producer() ->
     assert "eligibility_source" in recheck
 
     # Recheck must not maintain a second, partial receipt writer. The canonical
-    # activate_model path owns canary execution, runtime identity and v2 hashing.
+    # activate_model path owns canary execution, runtime identity and v3 chat-evidence hashing.
     assert "canary = _confirmed_completion_canary(" not in recheck
     assert "jsonb_set(" not in recheck
     assert "SET disabled=false" not in recheck

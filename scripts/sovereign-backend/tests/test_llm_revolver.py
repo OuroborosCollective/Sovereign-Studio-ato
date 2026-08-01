@@ -83,7 +83,8 @@ def route(
                 "imageDigestVerified": True,
             },
             "canaryReceipt": {
-                "schemaVersion": "sovereign.freellm-route-receipt.v2",
+                "schemaVersion": "sovereign.freellm-route-receipt.v3",
+                "generalChatEvidenceVerified": True,
                 "receiptSha256": "3" * 64,
             },
         },
@@ -232,6 +233,17 @@ def test_expired_zero_quota_reenters_lru_order() -> None:
         state_by_scope=states,
         now=now,
     )] == ["expired", "recent"]
+
+
+def test_receipt_without_general_chat_evidence_removes_free_route() -> None:
+    current = route("current", scope="provider:key-current")
+    missing = route("missing", scope="provider:key-missing")
+    missing["config"]["canaryReceipt"].pop("generalChatEvidenceVerified")
+
+    assert [item["id"] for item in build_revolver_candidates(
+        current,
+        [current, missing],
+    )] == ["current"]
 
 
 def test_revision_or_digest_drift_removes_free_route() -> None:
