@@ -150,7 +150,22 @@ for attempt in $(seq 1 12); do
   sleep 5
 done
 printf '%s' "$HEALTH" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || {
-  docker logs "$CANDIDATE" --tail 150 >&2 || true
+  CANDIDATE_STATE="$(docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}' "$CANDIDATE" 2>/dev/null || printf 'unknown|-1|false')"
+  CANDIDATE_LOGS="$(docker logs "$CANDIDATE" --tail 300 2>&1 || true)"
+  CANDIDATE_STATUS="${CANDIDATE_STATE%%|*}"
+  CANDIDATE_REMAINDER="${CANDIDATE_STATE#*|}"
+  CANDIDATE_EXIT="${CANDIDATE_REMAINDER%%|*}"
+  CANDIDATE_OOM="${CANDIDATE_REMAINDER##*|}"
+  [[ "$CANDIDATE_STATUS" =~ ^[a-z]{2,24}$ ]] || CANDIDATE_STATUS="unknown"
+  [[ "$CANDIDATE_EXIT" =~ ^-?[0-9]{1,5}$ ]] || CANDIDATE_EXIT="-1"
+  [[ "$CANDIDATE_OOM" == "true" || "$CANDIDATE_OOM" == "false" ]] || CANDIDATE_OOM="false"
+  CANDIDATE_LAST_MIGRATION="$(printf '%s\n' "$CANDIDATE_LOGS" | sed -n 's/^Applying migration: \([A-Za-z0-9._-]\{1,120\}\)$/\1/p' | tail -n 1)"
+  [[ "$CANDIDATE_LAST_MIGRATION" =~ ^[A-Za-z0-9._-]{1,120}$ ]] || CANDIDATE_LAST_MIGRATION="none"
+  CANDIDATE_LOGS_SHA256="$(printf '%s' "$CANDIDATE_LOGS" | sha256sum | awk '{print $1}')"
+  printf 'SOVEREIGN_DEPLOY_CANDIDATE:status=%s:exit=%s:oom=%s:lastMigration=%s:logsSha256=%s\n' \
+    "$CANDIDATE_STATUS" "$CANDIDATE_EXIT" "$CANDIDATE_OOM" \
+    "$CANDIDATE_LAST_MIGRATION" "$CANDIDATE_LOGS_SHA256" >&2
+  unset CANDIDATE_LOGS CANDIDATE_STATE CANDIDATE_REMAINDER
   fail "candidate health check failed"
 }
 
