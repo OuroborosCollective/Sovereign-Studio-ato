@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "arekappa.reference-vectors.v1",
+  "kappaScale": 1000000,
+  "vectors": [
+    {
+      "id": "wolfram-largest-remainder-six-layer",
+      "source": "WolframLanguageEvaluator",
+      "weights": [17, 11, 23, 19, 13, 29],
+      "normalized": [151786, 98214, 205357, 169643, 116071, 258929],
+      "normalizedSum": 1000000,
+      "tieBreak": "ascending-layer-index",
+      "arithmetic": "exact-integer"
+    },
+    {
+      "id": "ascending-index-tie-break",
+      "source": "contract",
+      "weights": [1, 1, 1],
+      "scale": 2,
+      "normalized": [1, 1, 0],
+      "tieBreak": "ascending-layer-index",
+      "arithmetic": "exact-integer"
+    }
+  ]
+}
