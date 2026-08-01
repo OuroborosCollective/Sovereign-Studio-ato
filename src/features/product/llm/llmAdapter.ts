@@ -97,7 +97,7 @@ export interface LlmAdapter {
 }
 
 export interface LlmRevolverEvent {
-  type: 'provider:trying' | 'provider:success' | 'provider:failed' | 'provider:skipped' | 'revolver:exhausted';
+  type: 'provider:trying' | 'provider:success' | 'provider:failed' | 'provider:skipped' | 'provider:cooling' | 'revolver:exhausted';
   providerId?: LlmProviderId;
   message: string;
   code?: LlmFailureCode;
@@ -111,6 +111,8 @@ export interface LlmRevolverMemory {
     code?: LlmFailureCode;
     at: number;
   }>;
+  /** Cooldown expiry timestamps per provider (Unix ms). Skip provider if Date.now() < coolingUntil[id]. */
+  coolingUntil: Readonly<Record<string, number>>;
 }
 
 export interface LlmRevolverOptions {
@@ -145,5 +147,5 @@ export interface LlmRevolverConsentRequired {
 export type LlmRevolverResult = LlmRevolverSuccess | LlmRevolverFailure | LlmRevolverConsentRequired;
 
 export function createInitialRevolverMemory(): LlmRevolverMemory {
-  return { nextIndex: 0, shots: [] };
+  return { nextIndex: 0, shots: [], coolingUntil: {} };
 }

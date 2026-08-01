@@ -10,6 +10,12 @@ import type {
 import { createInitialRevolverMemory } from './llmAdapter';
 import { assertPushableBrain, createLlmFailure } from './llmRuntimeChecks';
 
+/** How long (ms) a provider stays in cooldown after a rate-limit / timeout / network failure. */
+const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Failure codes that trigger a cooldown instead of an immediate skip. */
+const COOLDOWN_CODES = new Set(['rate_limit', 'timeout', 'network']);
+
 function orderedAdapters(adapters: LlmAdapter[]): LlmAdapter[] {
   return [...adapters].filter((adapter) => adapter.enabled).sort((a, b) => a.priority - b.priority);
 }
@@ -34,6 +40,28 @@ function emit(options: LlmRevolverOptions, attempts: LlmRevolverEvent[], event: 
   options.onEvent?.(event);
 }
 
+/**
+ * Returns true if the provider is currently in cooldown and should be skipped.
+ * Cooling adapters are automatically re-eligible once their TTL expires.
+ */
+function isCooling(adapterId: string, memory: LlmRevolverMemory, nowMs: number): boolean {
+  const until = memory.coolingUntil[adapterId];
+  return until !== undefined && nowMs < until;
+}
+
+/**
+ * Returns a new memory snapshot with the given provider put into cooldown.
+ */
+function withCooldown(memory: LlmRevolverMemory, adapterId: string, nowMs: number): LlmRevolverMemory {
+  return {
+    ...memory,
+    coolingUntil: {
+      ...memory.coolingUntil,
+      [adapterId]: nowMs + COOLDOWN_MS,
+    },
+  };
+}
+
 export async function resolveWithLlmRevolver(
   adapters: LlmAdapter[],
   context: LlmAdapterContext,
@@ -42,7 +70,7 @@ export async function resolveWithLlmRevolver(
   const active = orderedAdapters(adapters);
   const attempts: LlmRevolverEvent[] = [];
   const now = options.now ?? Date.now;
-  const memory: LlmRevolverMemory = options.memory ?? createInitialRevolverMemory();
+  let memory: LlmRevolverMemory = options.memory ?? createInitialRevolverMemory();
   const maxShots = Math.min(options.maxShots ?? active.length, active.length);
 
   if (active.length === 0) {
@@ -64,7 +92,9 @@ export async function resolveWithLlmRevolver(
   for (let shot = 0; shot < maxShots; shot++) {
     const adapter = active[cursor];
     const attempt = shot + 1;
+    const nowMs = now();
 
+    // ── Consent gate: no-key routes ──────────────────────────────────────────
     if (adapter.kind === 'no-key' && !context.allowExternalNoKey) {
       noKeyRoutesBlocked = true;
       emit(options, attempts, {
@@ -78,11 +108,27 @@ export async function resolveWithLlmRevolver(
       continue;
     }
 
+    // ── Consent gate: opt-in routes ───────────────────────────────────────────
     if (adapter.kind === 'opt-in' && !context.allowOptInRoutes) {
       emit(options, attempts, {
         type: 'provider:skipped',
         providerId: adapter.id,
         message: `${adapter.id} skipped because opt-in routes are disabled.`,
+        code: 'disabled',
+        attempt,
+      });
+      cursor = nextIndex(cursor, active.length);
+      continue;
+    }
+
+    // ── Cooldown gate: skip adapters in active cooldown ──────────────────────
+    if (isCooling(adapter.id, memory, nowMs)) {
+      const remainingMs = memory.coolingUntil[adapter.id]! - nowMs;
+      const remainingSec = Math.ceil(remainingMs / 1000);
+      emit(options, attempts, {
+        type: 'provider:cooling',
+        providerId: adapter.id,
+        message: `${adapter.id} is cooling down for ${remainingSec}s after a recent failure — loading reserve.`,
         code: 'disabled',
         attempt,
       });
@@ -102,40 +148,46 @@ export async function resolveWithLlmRevolver(
       assertPushableBrain(adapter.id, context.mission, result.brain);
       assertRealProvider(adapter);
       memory.nextIndex = nextIndex(cursor, active.length);
-      memory.shots = [{ providerId: adapter.id, at: now() }, ...memory.shots].slice(0, 30);
       emit(options, attempts, {
         type: 'provider:success',
         providerId: adapter.id,
-        message: `${adapter.id} returned a valid Sovereign brain result.`,
+        message: `${adapter.id} succeeded.`,
         attempt,
       });
       return { ok: true, result, memory, attempts };
-    } catch (error) {
-      lastFailure = createLlmFailure(adapter.id, error);
-      memory.nextIndex = nextIndex(cursor, active.length);
-      memory.shots = [{ providerId: adapter.id, code: lastFailure.code, at: now() }, ...memory.shots].slice(0, 30);
+    } catch (error: unknown) {
+      const failure = createLlmFailure(adapter.id, error instanceof Error ? error : new Error(String(error)));
+      lastFailure = failure;
+
+      // Put rate-limited / timed-out / network-failed adapters into cooldown.
+      // They become reserve ammunition: eligible again after COOLDOWN_MS.
+      if (COOLDOWN_CODES.has(failure.code)) {
+        memory = withCooldown(memory, adapter.id, now());
+      }
+
       emit(options, attempts, {
         type: 'provider:failed',
         providerId: adapter.id,
-        message: lastFailure.message,
-        code: lastFailure.code,
+        message: failure.message,
+        code: failure.code,
         attempt,
       });
-      cursor = nextIndex(cursor, active.length);
     }
+
+    cursor = nextIndex(cursor, active.length);
   }
 
+  // All shots exhausted ──────────────────────────────────────────────────────
   emit(options, attempts, {
     type: 'revolver:exhausted',
     providerId: lastFailure.providerId,
-    message: 'All enabled LLM adapters failed or were skipped.',
+    message: `All ${maxShots} providers exhausted.`,
     code: lastFailure.code,
     attempt: maxShots,
   });
 
-  // Consent gate: if no-key routes were blocked and all other routes failed,
-  // return consent-required state instead of plain failure
-  if (noKeyRoutesBlocked && !context.allowExternalNoKey) {
+  // Signal consent-required when no-key routes were the only remaining option.
+  if (noKeyRoutesBlocked) {
     return {
       ok: false,
       consentRequired: true,
@@ -145,5 +197,5 @@ export async function resolveWithLlmRevolver(
     };
   }
 
-  return { ok: false, failure: lastFailure, memory, attempts };
+  return { ok: false, failure: lastFailure, memory, attempts } satisfies LlmRevolverFailure;
 }

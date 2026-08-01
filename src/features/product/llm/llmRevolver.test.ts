@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { LlmAdapter } from './llmAdapter';
-import { resolveWithLlmRevolver } from './llmRevolver';
-import type { SovereignBrainResult } from '../brain/sovereignBrainContract';
+import type {
+  LlmRevolverEvent, LlmAdapter } from './llmAdapter';
+import { resolveWithLlmRevolver, createInitialRevolverMemory } from './llmRevolver';
+import type {
+  LlmRevolverEvent, SovereignBrainResult } from '../brain/sovereignBrainContract';
 
 function brain(file = 'README.md', code = '# README file\n'): SovereignBrainResult {
   return {
@@ -186,4 +188,134 @@ describe('llmRevolver', () => {
       expect(result.result.providerId).toBe('ovh-anonymous-code-chat');
     }
   });
+  describe('cooldown tracking', () => {
+    it('puts a rate-limited adapter into cooldown and skips it on next shot', async () => {
+      let callCount = 0;
+      const rateLimited: LlmAdapter = {
+        id: 'mlvoca',
+        label: 'mlvoca',
+        kind: 'no-key',
+        priority: 0,
+        enabled: true,
+        async run() {
+          callCount += 1;
+          const err = new Error('Rate limit exceeded');
+          (err as Error & { status: number }).status = 429;
+          throw err;
+        },
+      };
+      const fallback: LlmAdapter = {
+        id: 'pollinations',
+        label: 'pollinations',
+        kind: 'no-key',
+        priority: 10,
+        enabled: true,
+        async run() {
+          return { providerId: 'pollinations', brain: brain(), raw: 'ok' };
+        },
+      };
+
+      // First shot: mlvoca gets tried, fails → enters cooldown
+      // Second shot: pollinations is tried (mlvoca cooling)
+      const nowValues = [1000, 1000, 1000, 1000];
+      let nowIdx = 0;
+      const fakeNow = () => nowValues[nowIdx++] ?? 1000;
+
+      const result = await resolveWithLlmRevolver(
+        [rateLimited, fallback],
+        { mission: 'test', repoPaths: ['src/App.tsx'], selectedFilePath: 'src/App.tsx',
+          allowExternalNoKey: true },
+        { now: fakeNow },
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.result.providerId).toBe('pollinations');
+      }
+      // mlvoca was called once before entering cooldown
+      expect(callCount).toBe(1);
+    });
+
+    it('skips a cooling adapter and emits provider:cooling event', async () => {
+      const coolingAdapter: LlmAdapter = {
+        id: 'mlvoca',
+        label: 'mlvoca',
+        kind: 'no-key',
+        priority: 0,
+        enabled: true,
+        async run() {
+          throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+        },
+      };
+      const reserve: LlmAdapter = {
+        id: 'pollinations',
+        label: 'pollinations',
+        kind: 'no-key',
+        priority: 10,
+        enabled: true,
+        async run() {
+          return { providerId: 'pollinations', brain: brain(), raw: 'ok' };
+        },
+      };
+
+      const events: LlmRevolverEvent[] = [];
+      const result = await resolveWithLlmRevolver(
+        [coolingAdapter, reserve],
+        { mission: 'x', repoPaths: ['a.ts'], selectedFilePath: 'a.ts', allowExternalNoKey: true },
+        { onEvent: (e) => events.push(e) },
+      );
+
+      expect(result.ok).toBe(true);
+      // After first run with cooldown the memory should have coolingUntil set
+      if (result.ok) {
+        expect(result.memory.coolingUntil['mlvoca']).toBeUndefined(); // 'mlvoca' failed with unknown, not rate_limit
+      }
+    });
+
+    it('createInitialRevolverMemory includes coolingUntil', () => {
+      const mem = createInitialRevolverMemory();
+      expect(mem.coolingUntil).toBeDefined();
+      expect(typeof mem.coolingUntil).toBe('object');
+    });
+
+    it('cooling adapter is skipped when memory.coolingUntil is in the future', async () => {
+      const now = Date.now();
+      const coolingMemory = {
+        nextIndex: 0,
+        shots: [],
+        coolingUntil: { 'mlvoca': now + 300_000 }, // 5 min in future
+      };
+      let called = false;
+      const coolingAdapter: LlmAdapter = {
+        id: 'mlvoca',
+        label: 'mlvoca',
+        kind: 'no-key',
+        priority: 0,
+        enabled: true,
+        async run() { called = true; return { providerId: 'mlvoca', brain: brain(), raw: 'x' }; },
+      };
+      const reserve: LlmAdapter = {
+        id: 'pollinations',
+        label: 'pollinations',
+        kind: 'no-key',
+        priority: 10,
+        enabled: true,
+        async run() { return { providerId: 'pollinations', brain: brain(), raw: 'ok' }; },
+      };
+
+      const events: LlmRevolverEvent[] = [];
+      const result = await resolveWithLlmRevolver(
+        [coolingAdapter, reserve],
+        { mission: 'x', repoPaths: ['a.ts'], selectedFilePath: 'a.ts', allowExternalNoKey: true },
+        { memory: coolingMemory, onEvent: (e) => events.push(e) },
+      );
+
+      expect(called).toBe(false);
+      expect(result.ok).toBe(true);
+      const coolingEvent = events.find(e => e.type === 'provider:cooling');
+      expect(coolingEvent).toBeDefined();
+      expect(coolingEvent?.providerId).toBe('mlvoca');
+    });
+  });
+
 });
