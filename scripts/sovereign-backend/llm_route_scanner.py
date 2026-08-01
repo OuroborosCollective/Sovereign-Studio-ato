@@ -802,14 +802,16 @@ def register_llm_route_scanner(
                 )
                 source_id = str(existing.get("id") or "") if existing else ""
                 if not source_id:
+                    models_url = api_base.rstrip("/") + "/models"
                     created = query(
                         """INSERT INTO llm_revolver_provider_sources
-                               (label, api_base, auth_mode, status, enabled)
-                           VALUES (%s,%s,'none','degraded',false)
+                               (label, api_base, models_url, auth_mode, status, enabled)
+                           VALUES (%s,%s,%s,'none','degraded',true)
                            RETURNING id::text""",
                         (
                             f"Scanner-Kandidat · {urllib.parse.urlsplit(api_base).hostname or 'unknown'}"[:120],
                             api_base,
+                            models_url,
                         ),
                         one=True,
                         write=True,
@@ -818,7 +820,9 @@ def register_llm_route_scanner(
                 if source_id:
                     query(
                         """UPDATE llm_route_scanner_candidates
-                           SET promoted_source_id=%s::uuid, updated_at=NOW()
+                           SET promoted_source_id=%s::uuid,
+                               routing_eligible=true,
+                               updated_at=NOW()
                            WHERE route_url=%s
                              AND status='canary_passed'
                              AND canary_confirmation_count=2
