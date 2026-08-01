@@ -129,7 +129,39 @@ function pushInlineSegments(line: string, segments: Segment[]): void {
   }
 }
 
+// Bounded line-level cache for parsed inline segments (max 1000 items)
+export const inlineLineCache = new Map<string, Segment[]>();
+
+// 1-slot tokenizer cache for whole-text evaluations
+let lastTokenizeInput: string | null = null;
+let lastTokenizeResult: Segment[] | null = null;
+
+// Helper function to clear caches during unit/performance testing
+export function clearChatMarkdownCaches(): void {
+  inlineLineCache.clear();
+  lastTokenizeInput = null;
+  lastTokenizeResult = null;
+}
+
+function getInlineSegments(line: string): Segment[] {
+  const cached = inlineLineCache.get(line);
+  if (cached) return cached;
+
+  const segments: Segment[] = [];
+  pushInlineSegments(line, segments);
+
+  if (inlineLineCache.size >= 1000) {
+    inlineLineCache.clear();
+  }
+  inlineLineCache.set(line, segments);
+  return segments;
+}
+
 function tokenizeContent(input: string): Segment[] {
+  if (input === lastTokenizeInput && lastTokenizeResult) {
+    return lastTokenizeResult;
+  }
+
   const segments: Segment[] = [];
   const lines = input.split('\n');
   let i = 0;
@@ -159,13 +191,15 @@ function tokenizeContent(input: string): Segment[] {
       continue;
     }
 
-    pushInlineSegments(line, segments);
+    segments.push(...getInlineSegments(line));
     if (i < lines.length - 1) {
       segments.push({ type: 'linebreak' });
     }
     i += 1;
   }
 
+  lastTokenizeInput = input;
+  lastTokenizeResult = segments;
   return segments;
 }
 
