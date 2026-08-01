@@ -326,7 +326,7 @@ def internal_json_request(path: str, *, method: str = "GET", payload=None):
     }
 
 
-def revision_bound_v2_receipts(provider_payload: dict):
+def revision_bound_v3_chat_receipts(provider_payload: dict):
     verified = []
     providers = (
         provider_payload.get("providers")
@@ -357,7 +357,8 @@ def revision_bound_v2_receipts(provider_payload: dict):
             )
             receipt_sha = str(receipt.get("receiptSha256") or "").lower()
             if (
-                receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v2"
+                receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v3"
+                and receipt.get("generalChatEvidenceVerified") is True
                 and len(receipt_sha) == 64
                 and all(character in "0123456789abcdef" for character in receipt_sha)
                 and runtime.get("sourceRevision") == expected_revision
@@ -418,7 +419,7 @@ stage = "freellm_bootstrap_recheck_status"
 provider_status_code, provider_status, provider_status_evidence = internal_json_request(
     "/api/internal/llm/freellm/providers"
 )
-verified_receipts = revision_bound_v2_receipts(provider_status)
+verified_receipts = revision_bound_v3_chat_receipts(provider_status)
 if not verified_receipts:
     for provider in providers:
         source_id = str(provider.get("sourceId") or "")
@@ -445,13 +446,13 @@ if not verified_receipts:
     provider_status_code, provider_status, provider_status_evidence = internal_json_request(
         "/api/internal/llm/freellm/providers"
     )
-    verified_receipts = revision_bound_v2_receipts(provider_status)
+    verified_receipts = revision_bound_v3_chat_receipts(provider_status)
 if not verified_receipts:
-    raise RuntimeError("no revision-bound FreeLLM v2 receipt became ready")
+    raise RuntimeError("no revision-bound FreeLLM v3 chat-evidence receipt became ready")
 freellm_bootstrap = {
     "ok": True,
     "providerCount": len(providers),
-    "revisionBoundV2ReadyCount": len(verified_receipts),
+    "revisionBoundV3ChatReadyCount": len(verified_receipts),
     "minimumReadyRoutes": 5,
     "minimumReadySatisfied": len(verified_receipts) >= 5,
     "receipts": verified_receipts[:20],
