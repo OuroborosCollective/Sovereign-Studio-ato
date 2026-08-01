@@ -338,3 +338,13 @@ class TestToolchainSsrfProtection:
 
         assert response.status_code == 400
         assert "Unauthorized worker host" in response.get_json()["error"]
+
+    def test_sandbox_plan_rejects_non_dict_payload(self, mock_app_deps):
+        """Should reject non-dictionary payloads for sandbox planning."""
+        client = app.app.test_client()
+        response = client.post(
+            "/api/toolchain/sandbox-plan",
+            json=["invalid_list_payload"],
+        )
+        assert response.status_code == 400
+        assert response.get_json()["error"] == "Malformed payload; dictionary required"

@@ -5204,6 +5204,8 @@ def tc_apply_patch_worker():
 def tc_sandbox_plan():
     """Plan Playwright/verify/doctor commands for a given goal — read-only."""
     b    = request.get_json(force=True) or {}
+    if not isinstance(b, dict):
+        return jsonify({"error": "Malformed payload; dictionary required"}), 400
     goal = (b.get("goal") or "").strip()
 
     COMMANDS = {
