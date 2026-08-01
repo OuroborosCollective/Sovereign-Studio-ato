@@ -96,6 +96,9 @@ def test_failed_deploy_returns_early_shell_stage_without_raw_stderr(tmp_path, mo
             "stdout": "",
             "stderr": (
                 "docker and protected environment details\n"
+                "SOVEREIGN_DEPLOY_CANDIDATE:status=exited:exit=1:oom=false:"
+                "lastMigration=050_bug_evidence_append_only.sql:"
+                "logsSha256=" + "d" * 64 + "\n"
                 "SOVEREIGN_DEPLOY_DIAGNOSTIC:candidate_health:CommandFailure\n"
             ),
         },
@@ -110,6 +113,11 @@ def test_failed_deploy_returns_early_shell_stage_without_raw_stderr(tmp_path, mo
     assert result["status"] == "FAILED"
     assert result["diagnosticStage"] == "candidate_health"
     assert result["diagnosticErrorType"] == "CommandFailure"
+    assert result["candidateStatus"] == "exited"
+    assert result["candidateExitCode"] == 1
+    assert result["candidateOOMKilled"] is False
+    assert result["candidateLastMigration"] == "050_bug_evidence_append_only.sql"
+    assert result["candidateLogsSha256"] == "d" * 64
     assert "protected environment" not in str(result)
     assert "stderr" not in result
     assert len(result["stderrSha256"]) == 64

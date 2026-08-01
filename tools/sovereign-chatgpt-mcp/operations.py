@@ -19,6 +19,14 @@ SAFE_CONTAINER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 DEPLOY_DIAGNOSTIC_RE = re.compile(
     r"SOVEREIGN_DEPLOY_DIAGNOSTIC:([a-z0-9_-]{1,80}):([A-Za-z][A-Za-z0-9_]{0,79})"
 )
+DEPLOY_CANDIDATE_EVIDENCE_RE = re.compile(
+    r"SOVEREIGN_DEPLOY_CANDIDATE:"
+    r"status=([a-z]{2,24}):"
+    r"exit=(-?[0-9]{1,5}):"
+    r"oom=(true|false):"
+    r"lastMigration=([A-Za-z0-9._-]{1,120}):"
+    r"logsSha256=([0-9a-f]{64})"
+)
 FORBIDDEN_SQL = re.compile(
     r"\b(DROP\s+DATABASE|ALTER\s+SYSTEM|COPY\s+.+\s+PROGRAM|CREATE\s+EXTENSION\s+plpython|TRUNCATE\b|VACUUM\s+FULL|REINDEX\s+SYSTEM)\b",
     re.IGNORECASE | re.DOTALL,
@@ -276,6 +284,8 @@ class OperationsRuntime:
             diagnostic_matches = DEPLOY_DIAGNOSTIC_RE.findall(result["stderr"])
             diagnostic_stage = diagnostic_matches[-1][0] if diagnostic_matches else None
             diagnostic_error_type = diagnostic_matches[-1][1] if diagnostic_matches else None
+            candidate_matches = DEPLOY_CANDIDATE_EVIDENCE_RE.findall(result["stderr"])
+            candidate = candidate_matches[-1] if candidate_matches else None
             return {
                 "ok": False,
                 "status": "FAILED",
@@ -287,6 +297,11 @@ class OperationsRuntime:
                 "readbackVerified": False,
                 "diagnosticStage": diagnostic_stage,
                 "diagnosticErrorType": diagnostic_error_type,
+                "candidateStatus": candidate[0] if candidate else None,
+                "candidateExitCode": int(candidate[1]) if candidate else None,
+                "candidateOOMKilled": candidate[2] == "true" if candidate else None,
+                "candidateLastMigration": candidate[3] if candidate else None,
+                "candidateLogsSha256": candidate[4] if candidate else None,
                 "stderrSha256": hashlib.sha256(result["stderr"].encode("utf-8")).hexdigest(),
                 "secretValuesReturned": False,
             }
