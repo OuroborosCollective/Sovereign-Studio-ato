@@ -170,7 +170,6 @@ jobs:
               },
               { workflow_id: 'sovereign-agent-supplemental.yml', always: true },
               { workflow_id: 'sovereign-validation.yml', always: true },
-              { workflow_id: 'pyrewrinterwurst.yml', always: true },
               { workflow_id: 'codeql.yml', always: true },
               { workflow_id: 'hardcode-scan.yml', always: true },
               { workflow_id: 'sovereign-contract-scan.yml', always: true },

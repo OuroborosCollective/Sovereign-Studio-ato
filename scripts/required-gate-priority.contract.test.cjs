@@ -80,6 +80,29 @@ test('supplemental coordinator script is syntactically valid and revision-bound'
   assert.match(script, /workflow_id: 'android\.yml'/);
   assert.match(script, /workflow_id: 'sovereign-backend-image\.yml'/);
   assert.match(script, /pr_validation: 'true'/);
+  assert.doesNotMatch(script, /pyrewrinterwurst|workflow_id: 'pyre[^']*'/i);
+  assert.equal(
+    fs.existsSync(path.join(WORKFLOWS, 'pyrewrinterwurst.yml')),
+    false,
+    'unused Pyre workflow must stay retired',
+  );
+});
+
+test('locked Google auth plugin cannot restore JCenter resolution', () => {
+  const packageJson = JSON.parse(read('package.json'));
+  const patchPath = 'patches/@codetrix-studio__capacitor-google-auth@3.3.6.patch';
+  assert.equal(
+    packageJson.pnpm?.patchedDependencies?.['@codetrix-studio/capacitor-google-auth@3.3.6'],
+    patchPath,
+  );
+  const packagePatch = read(patchPath);
+  assert.equal((packagePatch.match(/^-\s*jcenter\(\)$/gm) || []).length, 2);
+  assert.doesNotMatch(packagePatch, /^\+\s*jcenter\(\)$/m);
+  assert.match(packagePatch, /^\+\s*mavenCentral\(\)$/m);
+
+  const lockfile = read('pnpm-lock.yaml');
+  assert.match(lockfile, /@codetrix-studio\/capacitor-google-auth@3\.3\.6/);
+  assert.match(lockfile, /patch_hash=3gjc3ddxdsf7zh24aorpnjbxp4/);
 });
 
 test('backend image coordinated PR validation cannot publish', () => {
