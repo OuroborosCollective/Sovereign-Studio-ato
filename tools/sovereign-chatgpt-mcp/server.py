@@ -14,6 +14,7 @@ from pydantic import Field
 from a2a_runtime_client import A2ARuntimeClient
 from android_hardening import AndroidHardeningRuntime
 from broker_client import HostBrokerClient
+import ci_repair_tools
 from database import DatabaseRuntime
 from document_pipeline import DocumentPipelineRuntime
 from github_issue_contracts import (
@@ -62,7 +63,11 @@ def _private_admin_capabilities() -> list[str]:
             "repository_delete_pr_branch",
         ))
     if os.getenv("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL", "0").strip() == "1":
-        capabilities.extend(("repository_workflow_dispatch", "repository_rerun_failed_workflows"))
+        capabilities.extend((
+            "repository_workflow_dispatch",
+            "repository_rerun_failed_workflows",
+            "revision_bound_ci_repair",
+        ))
     if os.getenv("SOVEREIGN_MCP_ENABLE_SELF_UPDATE", "0").strip() == "1":
         capabilities.append("mcp_self_update")
     if os.getenv("SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE", "0").strip() == "1":
@@ -453,6 +458,96 @@ def repository_issue_close(
 def repository_pr_status(pr_number: int) -> dict[str, Any]:
     """Read PR state, exact head SHA, mergeability and all GitHub check evidence."""
     return broker.call("github_pr_status", {"pr_number": pr_number}, timeout=60)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def workflow_failure_evidence_extract(
+    workflow_run_id: int,
+    expected_head_sha: str,
+) -> dict[str, Any]:
+    """Extract the first causal failure from bounded exact-head job and test artifacts."""
+    return broker.call(
+        "github_workflow_failure_evidence_extract",
+        {
+            "run_id": workflow_run_id,
+            "expected_head_sha": expected_head_sha,
+        },
+        timeout=120,
+    )
+
+
+@mcp.tool(annotations=SAFE_WRITE)
+def deterministic_boundary_ledger_reconcile(
+    workspace_id: str,
+    expected_revision: str,
+    owner_decisions: dict[str, dict[str, str]] | None = None,
+    apply_patch: bool = False,
+    append_continuity: bool = False,
+) -> dict[str, Any]:
+    """Preserve reviewed classifications while previewing or applying exact-head boundary drift."""
+    expected = str(expected_revision or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", expected):
+        raise ValueError("expected_revision must be a full Git SHA")
+    repo = runtime._repo(workspace_id)
+    head_result = runtime._run(["git", "rev-parse", "HEAD"], cwd=repo)
+    status_result = runtime._run(["git", "status", "--porcelain"], cwd=repo)
+    head = str(head_result.get("stdout") or "").strip().lower()
+    dirty = str(status_result.get("stdout") or "").splitlines()
+    if not head_result.get("ok") or not status_result.get("ok") or head != expected or dirty:
+        return {
+            "ok": False,
+            "status": "REVISION_CONFLICT",
+            "failureFamily": "REVISION_CONFLICT",
+            "workspaceHeadSha": head,
+            "expectedRevision": expected,
+            "dirtyEntries": dirty,
+            "mutationPerformed": False,
+        }
+    ledger_path = repo / ci_repair_tools.DEFAULT_LEDGER_RELATIVE
+    result = ci_repair_tools.reconcile_ledger(
+        repo,
+        ci_repair_tools.load_ledger(ledger_path),
+        owner_decisions=owner_decisions,
+        write_path=ledger_path if apply_patch else None,
+    )
+    if apply_patch and append_continuity:
+        result = {
+            **result,
+            "continuity": ci_repair_tools.append_boundary_reconciliation_continuity(
+                repo,
+                source_revision=expected,
+                reconciliation=result,
+            ),
+        }
+    return result
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def revision_bound_ci_repair(
+    workspace_id: str,
+    pr_number: int,
+    workflow_run_id: int,
+    expected_pr_head_sha: str,
+    owner_decisions: dict[str, dict[str, str]] | None = None,
+    apply_patch: bool = False,
+    publish_patch: bool = False,
+    rerun_failed: bool = False,
+    owner_approved: bool = False,
+) -> dict[str, Any]:
+    """Bind evidence, specialist repair, continuity, tests, PR update, rerun and head readback."""
+    return ci_repair_tools.revision_bound_ci_repair(
+        runtime=runtime,
+        broker=broker,
+        workspace_id=workspace_id,
+        pr_number=pr_number,
+        workflow_run_id=workflow_run_id,
+        expected_pr_head_sha=expected_pr_head_sha,
+        owner_decisions=owner_decisions,
+        apply_patch=apply_patch,
+        publish_patch=publish_patch,
+        rerun_failed=rerun_failed,
+        owner_approved=owner_approved,
+    )
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)

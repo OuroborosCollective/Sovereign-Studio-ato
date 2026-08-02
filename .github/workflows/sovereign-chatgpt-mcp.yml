@@ -7,6 +7,11 @@ on:
       - 'tools/sovereign-chatgpt-mcp/**'
       - 'scripts/sovereign-backend/openrouter_provider_runtime.py'
       - 'scripts/sovereign-backend/app.py'
+      - 'backend/agent_runtime/**'
+      - 'scripts/sovereign-backend/agent_runtime/**'
+      - 'config/architecture/llm-tool-boundary-review-ledger.json'
+      - 'scripts/reconcile_llm_boundary_ledger.py'
+      - '.github/workflows/boundary-ledger-drift.yml'
       - '.github/workflows/sovereign-chatgpt-mcp.yml'
   workflow_dispatch:
     inputs:
@@ -176,8 +181,19 @@ jobs:
           test "${REMOTE_HEAD_SHA}" = "${UPDATED_HEAD_SHA}"
           printf 'Updated PR branch: %s -> %s at %s\n' "${ACTUAL_HEAD_SHA}" "${UPDATED_HEAD_SHA}" "${TARGET_REF}"
 
+  boundary-ledger-drift:
+    name: Boundary ledger drift preflight
+    if: github.event_name != 'workflow_dispatch' || inputs.update_pr_branch != true
+    uses: ./.github/workflows/boundary-ledger-drift.yml
+    permissions:
+      contents: read
+    with:
+      apply_safe_patch: false
+      expected_head_sha: ${{ github.sha }}
+
   validate:
     name: Validate MCP operator
+    needs: boundary-ledger-drift
     if: github.event_name != 'workflow_dispatch' || inputs.update_pr_branch != true
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -225,7 +241,7 @@ jobs:
           PY
 
       - name: Compile Python runtime
-        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py
+        run: python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py
 
       - name: Validate fixed shell and systemd assets
         run: |
@@ -527,6 +543,9 @@ jobs:
               'postgres_admin_sql',
               'repository_push_main',
               'repository_pr_status',
+              'workflow_failure_evidence_extract',
+              'deterministic_boundary_ledger_reconcile',
+              'revision_bound_ci_repair',
               'repository_sync_workspace_to_pr_head',
               'repository_rerun_failed_workflows',
               'repository_merge_pr',
@@ -652,6 +671,9 @@ jobs:
               'freemium_product_bundle_manifest',
           }.issubset(tool_names)
           assert {
+              'workflow_failure_evidence_extract',
+              'deterministic_boundary_ledger_reconcile',
+              'revision_bound_ci_repair',
               'operational_skill_inventory',
               'mcp_tool_contract_registry',
               'tool_recommend_for_mission',

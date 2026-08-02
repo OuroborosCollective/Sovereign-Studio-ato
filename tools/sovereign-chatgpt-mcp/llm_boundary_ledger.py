@@ -3,7 +3,9 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
+import tempfile
 import subprocess
 from pathlib import Path
 from typing import Any, Final
@@ -273,3 +275,317 @@ def load_ledger(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Ledger root must be a JSON object")
     return payload
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Replace one repository artifact atomically while preserving its file mode."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = (path.stat().st_mode & 0o777) if path.exists() else 0o600
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _semantic_candidate_key(entry: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(entry.get("canonicalPath") or ""),
+        str(entry.get("symbol") or ""),
+        str(entry.get("patternFamily") or ""),
+    )
+
+
+def _anchored_candidate_key(entry: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (*_semantic_candidate_key(entry), str(entry.get("anchorSha256") or ""))
+
+
+def _python_symbol_source(repo: Path, entry: dict[str, Any]) -> str:
+    path = repo / str(entry.get("canonicalPath") or "")
+    text = safe_text(path)
+    if text is None or path.suffix != ".py":
+        return ""
+    symbol = str(entry.get("symbol") or "")
+    matches = [item for item in _python_symbols(text) if item[2] == symbol]
+    if len(matches) != 1:
+        return ""
+    start, end, _ = matches[0]
+    return "\n".join(text.splitlines()[start - 1 : end])
+
+
+def _deterministic_classification_suggestion(
+    repo: Path,
+    entry: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Return a classification only for a narrowly provable, effect-free SHA guard."""
+
+    source = _python_symbol_source(repo, entry)
+    if not source:
+        return None
+    compact = " ".join(source.split())
+    sha_guard = bool(
+        "re.fullmatch" in source
+        and re.search(r"\\?\[0-9a-f\]\\?\{40\\?\}", source)
+        and "raise " in source
+        and "return " in source
+    )
+    forbidden_effect_markers = (
+        "requests.",
+        "httpx.",
+        "subprocess.",
+        "broker.call",
+        "runtime.",
+        ".write_text(",
+        ".write_bytes(",
+        ".unlink(",
+        "dispatch_workflow",
+        "rerun_failed",
+        "merge_pr",
+        "create_draft_pr",
+    )
+    if not sha_guard or any(marker in compact for marker in forbidden_effect_markers):
+        return None
+    return (
+        "STRUCTURED_POLICY",
+        f"{entry.get('symbol')} validates one explicit or environment-provided lowercase Git SHA-40 "
+        "and fails closed before configuration; it does not interpret free language, select a route, "
+        "or authorize an effect.",
+    )
+
+
+def reconcile_ledger(
+    repo: Path,
+    payload: dict[str, Any],
+    *,
+    owner_decisions: dict[str, dict[str, str]] | None = None,
+    write_path: Path | None = None,
+) -> dict[str, Any]:
+    """Reconcile detector drift without reclassifying preserved review decisions.
+
+    Exact candidate IDs are preferred. A unique canonical path/symbol/family/anchor
+    match, followed by a unique canonical path/symbol/family match, is treated as
+    binding drift so its prior classification and rationale survive line, file-hash,
+    or mirror changes. New candidates remain UNREVIEWED unless a narrow deterministic
+    rule or an explicit owner decision classifies them.
+    """
+
+    discovery = discover_review_candidates(repo)
+    prior_entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
+    prior = [entry for entry in prior_entries if isinstance(entry, dict)]
+    prior_by_id = {
+        str(entry.get("candidateId")): entry
+        for entry in prior
+        if str(entry.get("candidateId") or "")
+    }
+    prior_by_semantic: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    prior_by_anchor: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for entry in prior:
+        prior_by_semantic.setdefault(_semantic_candidate_key(entry), []).append(entry)
+        prior_by_anchor.setdefault(_anchored_candidate_key(entry), []).append(entry)
+
+    decisions = owner_decisions or {}
+    used_prior_ids: set[str] = set()
+    reconciled_entries: list[dict[str, Any]] = []
+    new_candidates: list[dict[str, Any]] = []
+    binding_drift: list[dict[str, Any]] = []
+    owner_required: list[str] = []
+    preserved = 0
+    bound_fields = (
+        "canonicalPath",
+        "mirrorPaths",
+        "symbol",
+        "line",
+        "patternFamily",
+        "fileSha256",
+        "anchorSha256",
+        "reopenOnChange",
+    )
+
+    for expected in discovery["entries"]:
+        candidate_id = str(expected["candidateId"])
+        previous = prior_by_id.get(candidate_id)
+        previous_id = candidate_id if previous is not None else ""
+        if previous is None:
+            anchor_matches = [
+                item
+                for item in prior_by_anchor.get(_anchored_candidate_key(expected), [])
+                if str(item.get("candidateId") or "") not in used_prior_ids
+            ]
+            if len(anchor_matches) == 1:
+                previous = anchor_matches[0]
+                previous_id = str(previous.get("candidateId") or "")
+        if previous is None:
+            semantic_matches = [
+                item
+                for item in prior_by_semantic.get(_semantic_candidate_key(expected), [])
+                if str(item.get("candidateId") or "") not in used_prior_ids
+            ]
+            if len(semantic_matches) == 1:
+                previous = semantic_matches[0]
+                previous_id = str(previous.get("candidateId") or "")
+
+        if previous is not None:
+            used_prior_ids.add(previous_id)
+            classification = str(previous.get("classification") or "")
+            rationale = str(previous.get("rationale") or "")
+            reconciled_entries.append(
+                {**expected, "classification": classification, "rationale": rationale}
+            )
+            changed_fields = [
+                field for field in bound_fields if previous.get(field) != expected.get(field)
+            ]
+            if previous_id != candidate_id:
+                changed_fields.insert(0, "candidateId")
+            if changed_fields:
+                binding_drift.append(
+                    {
+                        "previousCandidateId": previous_id,
+                        "candidateId": candidate_id,
+                        "path": expected["canonicalPath"],
+                        "symbol": expected["symbol"],
+                        "changedFields": changed_fields,
+                        "classificationPreserved": classification,
+                    }
+                )
+            preserved += 1
+            continue
+
+        decision = decisions.get(candidate_id)
+        suggested = _deterministic_classification_suggestion(repo, expected)
+        if decision is not None:
+            classification = str(decision.get("classification") or "")
+            rationale = " ".join(str(decision.get("rationale") or "").split())
+            decision_source = "OWNER_DECISION"
+        elif suggested is not None:
+            classification, rationale = suggested
+            decision_source = "DETERMINISTIC_RULE"
+        else:
+            classification, rationale = "UNREVIEWED", ""
+            decision_source = "NONE"
+
+        valid_decision = (
+            classification in ALLOWED_CLASSIFICATIONS
+            and classification != "FORBIDDEN_FREE_LANGUAGE"
+            and len(rationale) >= 24
+        )
+        requires_owner = not valid_decision
+        if requires_owner:
+            owner_required.append(candidate_id)
+        reconciled_entries.append(
+            {**expected, "classification": classification, "rationale": rationale}
+        )
+        new_candidates.append(
+            {
+                "candidateId": candidate_id,
+                "path": expected["canonicalPath"],
+                "mirrorPaths": expected["mirrorPaths"],
+                "symbol": expected["symbol"],
+                "line": expected["line"],
+                "fileSha256": expected["fileSha256"],
+                "anchorSha256": expected["anchorSha256"],
+                "suggestedClassification": classification if valid_decision else None,
+                "suggestionReason": rationale or None,
+                "decisionSource": decision_source,
+                "ownerDecisionRequired": requires_owner,
+            }
+        )
+
+    removed = [
+        {
+            "candidateId": str(entry.get("candidateId") or ""),
+            "path": str(entry.get("canonicalPath") or ""),
+            "symbol": str(entry.get("symbol") or ""),
+            "classification": str(entry.get("classification") or ""),
+        }
+        for entry in prior
+        if str(entry.get("candidateId") or "") not in used_prior_ids
+    ]
+    removed.sort(key=lambda item: (item["path"], item["symbol"], item["candidateId"]))
+
+    reconciled: dict[str, Any] = {
+        "schemaVersion": LEDGER_SCHEMA,
+        "detector": str(
+            payload.get("detector")
+            or "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py"
+        ),
+        "sourceRevision": discovery["sourceRevision"],
+        "rawCandidateCount": discovery["rawCandidateCount"],
+        "canonicalCandidateCount": discovery["canonicalCandidateCount"],
+        "entries": reconciled_entries,
+    }
+    reconciled["ledgerSha256"] = ledger_sha256(reconciled)
+    validation = validate_ledger(repo, reconciled)
+    drift_present = bool(new_candidates or removed or binding_drift)
+    can_apply = not owner_required and bool(validation["ok"])
+    only_new_structured = bool(new_candidates) and not removed and not binding_drift and all(
+        item.get("suggestedClassification") == "STRUCTURED_POLICY"
+        and item.get("ownerDecisionRequired") is False
+        for item in new_candidates
+    )
+    mutation_performed = False
+    if write_path is not None:
+        if not can_apply:
+            raise RuntimeError(
+                "BOUNDARY_LEDGER_OWNER_REVIEW_REQUIRED: " + ", ".join(owner_required)
+            )
+        previous_payload = write_path.read_bytes() if write_path.exists() else None
+        atomic_write_bytes(
+            write_path,
+            (json.dumps(reconciled, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+        )
+        try:
+            readback = load_ledger(write_path)
+            validation = validate_ledger(repo, readback)
+            if not validation["ok"]:
+                raise RuntimeError(
+                    "BOUNDARY_LEDGER_WRITE_READBACK_FAILED: "
+                    + ", ".join(str(item) for item in validation["findings"])
+                )
+        except Exception:
+            if previous_payload is not None:
+                atomic_write_bytes(write_path, previous_payload)
+            else:
+                write_path.unlink(missing_ok=True)
+            raise
+        mutation_performed = True
+
+    if owner_required:
+        status = "RECONCILIATION_REQUIRED"
+    elif mutation_performed:
+        status = "BOUNDARY_LEDGER_RECONCILED"
+    elif drift_present:
+        status = "SAFE_RECONCILIATION_READY"
+    else:
+        status = "BOUNDARY_LEDGER_CURRENT"
+    return {
+        "schemaVersion": "sovereign.boundary-ledger-reconciliation.v1",
+        "ok": bool(validation["ok"]) and not owner_required,
+        "status": status,
+        "sourceRevision": discovery["sourceRevision"],
+        "preservedCandidates": preserved,
+        "newCandidates": new_candidates,
+        "removedCandidates": removed,
+        "bindingDrift": binding_drift,
+        "ownerDecisionCandidateIds": owner_required,
+        "onlyNewStructuredCandidates": only_new_structured,
+        "safeToApply": can_apply,
+        "rawCandidateCount": discovery["rawCandidateCount"],
+        "canonicalCandidateCount": discovery["canonicalCandidateCount"],
+        "previousLedgerSha256": str(payload.get("ledgerSha256") or ""),
+        "ledgerSha256": reconciled["ledgerSha256"],
+        "ledgerPath": str(write_path.relative_to(repo)) if write_path is not None else None,
+        "validation": validation,
+        "mutationPerformed": mutation_performed,
+        "secretValuesReturned": False,
+        "truthNotice": (
+            "This reconciliation preserves reviewed classifications and updates static bindings only; "
+            "it does not prove runtime language understanding, workflow success, or deployment."
+        ),
+    }

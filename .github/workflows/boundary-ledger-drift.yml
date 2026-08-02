@@ -1,0 +1,203 @@
+name: Boundary Ledger Drift
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/runtime/**'
+      - 'src/features/product/runtime/**'
+      - 'backend/agent_runtime/**'
+      - 'scripts/sovereign-backend/agent_runtime/**'
+      - 'tools/sovereign-chatgpt-mcp/**'
+      - 'config/architecture/llm-tool-boundary-review-ledger.json'
+      - 'scripts/reconcile_llm_boundary_ledger.py'
+      - '.github/workflows/boundary-ledger-drift.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/runtime/**'
+      - 'src/features/product/runtime/**'
+      - 'backend/agent_runtime/**'
+      - 'scripts/sovereign-backend/agent_runtime/**'
+      - 'tools/sovereign-chatgpt-mcp/**'
+      - 'config/architecture/llm-tool-boundary-review-ledger.json'
+      - 'scripts/reconcile_llm_boundary_ledger.py'
+      - '.github/workflows/boundary-ledger-drift.yml'
+  workflow_call:
+    inputs:
+      apply_safe_patch:
+        description: Apply only a fully deterministic reconciliation on the current non-protected branch
+        required: false
+        default: false
+        type: boolean
+      expected_head_sha:
+        description: Exact branch head required when applying a patch
+        required: false
+        default: ''
+        type: string
+  workflow_dispatch:
+    inputs:
+      apply_safe_patch:
+        description: Commit a safe reconciliation to the selected PR branch without force-push
+        required: false
+        default: false
+        type: boolean
+      expected_head_sha:
+        description: Exact current PR-branch head; required when apply_safe_patch is true
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: boundary-ledger-drift-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Candidate discovery and ledger comparison
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    outputs:
+      exit_code: ${{ steps.reconcile.outputs.exit_code }}
+      source_revision: ${{ steps.reconcile.outputs.source_revision }}
+      only_new_structured: ${{ steps.reconcile.outputs.only_new_structured }}
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: Discover candidates and compare the review ledger
+        id: reconcile
+        shell: bash
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set +e
+          mkdir -p .sovereign-evidence
+          python scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "${SOURCE_REVISION}" \
+            --report .sovereign-evidence/boundary-ledger-drift.json
+          status=$?
+          only_new_structured="$(python -c 'import json; print(str(bool(json.load(open(".sovereign-evidence/boundary-ledger-drift.json", encoding="utf-8")).get("onlyNewStructuredCandidates"))).lower())')"
+          printf 'exit_code=%s\n' "${status}" >> "${GITHUB_OUTPUT}"
+          printf 'source_revision=%s\n' "${SOURCE_REVISION}" >> "${GITHUB_OUTPUT}"
+          printf 'only_new_structured=%s\n' "${only_new_structured}" >> "${GITHUB_OUTPUT}"
+          {
+            echo '## Boundary ledger drift'
+            echo
+            echo "Exact source revision: \`${SOURCE_REVISION}\`"
+            echo "Reconciliation exit code: \`${status}\`"
+            echo
+            echo 'The attached artifact contains bounded candidate IDs, hashes, classifications, and owner-decision flags.'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit 0
+
+      - name: Upload bounded drift evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boundary-ledger-drift-${{ github.run_id }}
+          path: .sovereign-evidence/boundary-ledger-drift.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail closed before the MCP full suite
+        if: steps.reconcile.outputs.exit_code != '0' && inputs.apply_safe_patch != true
+        env:
+          RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
+        run: |
+          echo "Boundary ledger reconciliation is required (exit ${RECONCILE_EXIT})." >&2
+          exit 1
+
+      - name: Reject an ineligible automatic patch
+        if: inputs.apply_safe_patch == true && steps.reconcile.outputs.exit_code != '0' && steps.reconcile.outputs.only_new_structured != 'true'
+        run: |
+          echo 'Automatic reconciliation is limited to exclusively new deterministic STRUCTURED_POLICY candidates.' >&2
+          exit 1
+
+  apply-safe-patch:
+    name: Apply deterministic same-branch patch
+    needs: analyze
+    if: inputs.apply_safe_patch == true && needs.analyze.outputs.exit_code != '0' && needs.analyze.outputs.only_new_structured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact selected branch head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify non-protected exact branch identity
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          TARGET_REF: ${{ github.ref_name }}
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${EXPECTED_HEAD_SHA}" = "${SOURCE_REVISION}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD_SHA}"
+          [[ "${TARGET_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]
+          [[ "${TARGET_REF}" != *".."* ]]
+          test "${TARGET_REF}" != main
+          test "${TARGET_REF}" != master
+
+      - name: Reconcile, append continuity, and validate
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-evidence
+          python scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "${EXPECTED_HEAD_SHA}" \
+            --write \
+            --append-continuity \
+            --report .sovereign-evidence/boundary-ledger-reconciled.json
+          python scripts/verify_llm_boundary_ledger.py
+          python -m pytest tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py -q
+          git diff --check
+          git diff --name-only | while IFS= read -r path; do
+            case "${path}" in
+              config/architecture/llm-tool-boundary-review-ledger.json|docs/sovereign-continuity/LEDGER.jsonl|tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl) ;;
+              *) echo "Unexpected safe-patch path: ${path}" >&2; exit 1 ;;
+            esac
+          done
+          cmp -s docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+
+      - name: Commit and push without force
+        shell: bash
+        env:
+          TARGET_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add \
+            config/architecture/llm-tool-boundary-review-ledger.json \
+            docs/sovereign-continuity/LEDGER.jsonl \
+            tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          git commit -m 'chore(ci): reconcile revision-bound boundary ledger'
+          new_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:${TARGET_REF}"
+          remote_head="$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')"
+          test "${remote_head}" = "${new_head}"
+          printf 'Updated exact PR branch head: %s\n' "${new_head}"
+
+      - name: Upload reconciliation receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boundary-ledger-reconciled-${{ github.run_id }}
+          path: .sovereign-evidence/boundary-ledger-reconciled.json
+          if-no-files-found: error
+          retention-days: 7
