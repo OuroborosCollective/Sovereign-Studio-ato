@@ -125,6 +125,27 @@ def test_reconciler_safely_classifies_exact_sha_guard() -> None:
     assert candidate["ownerDecisionRequired"] is False
 
 
+def test_reconciler_safely_classifies_exact_archive_duplicate_guard() -> None:
+    payload = copy.deepcopy(load_ledger(LEDGER))
+    payload["entries"] = [
+        entry
+        for entry in payload["entries"]
+        if entry["symbol"] != "bounded_text_sources_from_archive"
+    ]
+    payload["ledgerSha256"] = ledger_sha256(payload)
+
+    result = reconcile_ledger(ROOT, payload)
+
+    candidate = next(
+        item
+        for item in result["newCandidates"]
+        if item["symbol"] == "bounded_text_sources_from_archive"
+    )
+    assert candidate["suggestedClassification"] == "STRUCTURED_POLICY"
+    assert candidate["decisionSource"] == "DETERMINISTIC_RULE"
+    assert candidate["ownerDecisionRequired"] is False
+
+
 def test_reconciler_does_not_write_unreviewed_candidate(tmp_path: Path, monkeypatch) -> None:
     candidate = {
         "candidateId": "llm-boundary:" + "1" * 24,

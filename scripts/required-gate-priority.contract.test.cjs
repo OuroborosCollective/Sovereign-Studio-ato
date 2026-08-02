@@ -38,17 +38,21 @@ function extractGithubScript(workflowText) {
 
 test('only required workflows receive direct pull_request runners', () => {
   assert.deepEqual(directPullRequestWorkflowFiles(), [
+    'boundary-ledger-drift.yml',
     'release-verification.yml',
     'sovereign-agent-backend.yml',
     'sovereign-continuity-gate.yml',
   ]);
   const releaseWorkflow = read('.github/workflows/release-verification.yml');
+  const boundaryWorkflow = read('.github/workflows/boundary-ledger-drift.yml');
   const continuityWorkflow = read('.github/workflows/sovereign-continuity-gate.yml');
   assert.match(releaseWorkflow, /types: \[opened, synchronize, reopened\]/);
   assert.doesNotMatch(releaseWorkflow, /ready_for_review|converted_to_draft/);
   assert.match(continuityWorkflow, /name: continuity-ledger/);
   assert.match(continuityWorkflow, /ready_for_review/);
   assert.match(continuityWorkflow, /validate_continuity\.py/);
+  assert.match(boundaryWorkflow, /Fail closed before the MCP full suite/);
+  assert.match(boundaryWorkflow, /Upload bounded drift evidence/);
 });
 
 test('Agent Runtime Tests is the only direct backend PR job', () => {

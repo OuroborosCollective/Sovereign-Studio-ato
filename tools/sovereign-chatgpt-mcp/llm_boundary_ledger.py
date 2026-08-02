@@ -324,12 +324,32 @@ def _deterministic_classification_suggestion(
     repo: Path,
     entry: dict[str, Any],
 ) -> tuple[str, str] | None:
-    """Return a classification only for a narrowly provable, effect-free SHA guard."""
+    """Return a classification only for narrowly provable structured guards."""
 
     source = _python_symbol_source(repo, entry)
     if not source:
         return None
     compact = " ".join(source.split())
+    archive_duplicate_guard = all(
+        marker in source
+        for marker in (
+            "member = PurePosixPath(info.filename)",
+            "name = member.as_posix()",
+            "if name in seen:",
+            "seen.add(name)",
+            "Workflow artifact contains duplicate paths",
+        )
+    )
+    if (
+        entry.get("canonicalPath") == "tools/sovereign-chatgpt-mcp/ci_repair_tools.py"
+        and entry.get("symbol") == "bounded_text_sources_from_archive"
+        and archive_duplicate_guard
+    ):
+        return (
+            "STRUCTURED_POLICY",
+            "bounded_text_sources_from_archive compares normalized archive member paths as exact set keys "
+            "to reject duplicates; it does not interpret free language, select a repair, or authorize an effect.",
+        )
     sha_guard = bool(
         "re.fullmatch" in source
         and re.search(r"\\?\[0-9a-f\]\\?\{40\\?\}", source)
