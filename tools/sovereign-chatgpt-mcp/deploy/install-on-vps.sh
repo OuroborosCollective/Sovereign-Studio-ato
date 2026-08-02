@@ -54,6 +54,7 @@ EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_CROSS_RUNTIME_PARITY="true"
 MCP_IMAGE_PULL_ATTEMPTS="${SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS:-36}"
 MCP_IMAGE_PULL_DELAY_SECONDS="${SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS:-10}"
+BROKER_READY_ATTEMPTS="${SOVEREIGN_MCP_BROKER_READY_ATTEMPTS:-90}"
 REQUIRE_TUNNEL="${SOVEREIGN_MCP_REQUIRE_TUNNEL:-0}"
 TUNNEL_MODE="${SOVEREIGN_MCP_TUNNEL_MODE:-auto}"
 INSTALL_STAGE="initializing"
@@ -428,7 +429,7 @@ PY
 }
 
 wait_for_broker_ready() {
-  for attempt in $(seq 1 30); do
+  for attempt in $(seq 1 "$BROKER_READY_ATTEMPTS"); do
     if [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && broker_rpc_ready >/dev/null 2>&1; then
       return 0
     fi
@@ -446,6 +447,8 @@ INSTALL_STAGE="preflight"
   || fail "SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS must be between 1 and 120"
 [[ "$MCP_IMAGE_PULL_DELAY_SECONDS" =~ ^[0-9]+$ ]] && (( MCP_IMAGE_PULL_DELAY_SECONDS >= 1 && MCP_IMAGE_PULL_DELAY_SECONDS <= 60 )) \
   || fail "SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS must be between 1 and 60"
+[[ "$BROKER_READY_ATTEMPTS" =~ ^[0-9]+$ ]] && (( BROKER_READY_ATTEMPTS >= 30 && BROKER_READY_ATTEMPTS <= 180 )) \
+  || fail "SOVEREIGN_MCP_BROKER_READY_ATTEMPTS must be between 30 and 180"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
 for command in docker systemctl python3 git ss openssl sha256sum; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
@@ -837,7 +840,7 @@ systemctl enable --now sovereign-chatgpt-broker.service
 systemctl restart sovereign-chatgpt-broker.service
 wait_for_broker_ready || {
   systemctl status sovereign-chatgpt-broker.service --no-pager >&2 || true
-  fail "host broker socket exists but the broker RPC did not become ready"
+  fail "host broker socket exists but the broker RPC did not become ready after ${BROKER_READY_ATTEMPTS}s"
 }
 
 # The image is built and dependency-resolved in GitHub Actions. The VPS only

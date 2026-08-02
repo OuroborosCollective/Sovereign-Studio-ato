@@ -22,6 +22,21 @@ def test_installer_and_updater_have_valid_bash_syntax() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
+def test_broker_readiness_window_covers_observed_control_plane_restart_latency() -> None:
+    installer = INSTALLER.read_text("utf-8")
+    updater = UPDATER.read_text("utf-8")
+
+    for script in (installer, updater):
+        wait_block = script.split("wait_for_broker_ready() {", 1)[1].split("\n}", 1)[0]
+        assert 'BROKER_READY_ATTEMPTS="${SOVEREIGN_MCP_BROKER_READY_ATTEMPTS:-90}"' in script
+        assert 'for attempt in $(seq 1 "$BROKER_READY_ATTEMPTS")' in wait_block
+        assert "BROKER_READY_ATTEMPTS >= 30" in script
+        assert "BROKER_READY_ATTEMPTS <= 180" in script
+        assert "seq 1 30" not in wait_block
+
+    assert "did not become ready after ${BROKER_READY_ATTEMPTS}s" in installer
+
+
 def test_private_mode_preflight_accepts_protected_secure_file(tmp_path, monkeypatch) -> None:
     script = INSTALLER.read_text("utf-8")
     marker = 'ensure_private_file_mode() {\n  local file="$1"\n  python3 - "$file" <<\'PY\'\n'
