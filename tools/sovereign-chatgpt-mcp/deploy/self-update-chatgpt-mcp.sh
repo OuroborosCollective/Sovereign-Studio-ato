@@ -10,6 +10,7 @@ INSTALLER="$SOURCE_DIR/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
 BROKER_ENV="/opt/sovereign-chatgpt-tools/broker.env"
 GHCR_ENV="${SOVEREIGN_MCP_GHCR_ENV:-/opt/sovereign-chatgpt-tools/.ghcr.env}"
 SELF_UPDATE_TUNNEL_MODE="${SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE:-disabled}"
+BROKER_READY_ATTEMPTS="${SOVEREIGN_MCP_BROKER_READY_ATTEMPTS:-90}"
 
 mkdir -p "$STATE_DIR"
 chmod 0750 "$STATE_DIR"
@@ -65,7 +66,7 @@ PY
 }
 
 wait_for_broker_ready() {
-  for attempt in $(seq 1 30); do
+  for attempt in $(seq 1 "$BROKER_READY_ATTEMPTS"); do
     if [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] && broker_rpc_ready >/dev/null 2>&1; then
       return 0
     fi
@@ -108,6 +109,10 @@ trap on_error ERR
 [[ -f "$BROKER_ENV" ]] || { write_status FAILED "" "broker environment missing"; exit 1; }
 [[ "$SELF_UPDATE_TUNNEL_MODE" =~ ^(disabled|required)$ ]] || {
   write_status FAILED "" "SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE must be disabled or required"
+  exit 1
+}
+[[ "$BROKER_READY_ATTEMPTS" =~ ^[0-9]+$ ]] && (( BROKER_READY_ATTEMPTS >= 30 && BROKER_READY_ATTEMPTS <= 180 )) || {
+  write_status FAILED "" "SOVEREIGN_MCP_BROKER_READY_ATTEMPTS must be between 30 and 180"
   exit 1
 }
 
