@@ -1327,6 +1327,9 @@ def start_cognitive_swarm_run(
                     evidence_payload={
                         "executionResolution": execution_resolution.safe_payload(),
                         "intent": mission_intent.model_dump() if mission_intent else {},
+                        "intentContractReceipt": (
+                            mission_intent.contract_receipt() if mission_intent else {}
+                        ),
                         "resultMode": str(single_payload.get("mode") or ""),
                         "repositoryExecutionPerformed": bool(
                             repository_requested and workspace_evidence_ready
@@ -1355,6 +1358,9 @@ def start_cognitive_swarm_run(
                 "receivedEvidenceId": received_state["evidenceId"],
                 "executionResolution": execution_resolution.safe_payload(),
                 "intent": mission_intent.model_dump() if mission_intent else {},
+                "intentContractReceipt": (
+                    mission_intent.contract_receipt() if mission_intent else {}
+                ),
                 "resolvedModelId": resolved_model,
                 "jobId": implementation_job.job_id if implementation_job else None,
                 "workspaceId": (
@@ -1789,6 +1795,7 @@ def start_cognitive_swarm_run(
             "resumed": False,
             "receivedEvidenceId": received_state["evidenceId"],
             "intent": mission_intent.model_dump(),
+            "intentContractReceipt": mission_intent.contract_receipt(),
             "jobId": implementation_job.job_id if implementation_job else None,
             "workspaceId": implementation_job.result.workspace_id if implementation_job else None,
             "learningState": "PENDING_EVIDENCE" if implementation_job else "NOT_REQUESTED",

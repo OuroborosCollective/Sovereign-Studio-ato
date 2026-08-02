@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from typing import Any, Final
@@ -103,9 +104,44 @@ def route_is_direct_freellm(route: dict[str, Any]) -> bool:
     )
 
 
+def _snapshot_canonical(value: Any) -> Any:
+    """Normalize route snapshots without floats or implicit object ordering."""
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (float, Decimal)):
+        try:
+            decimal_value = Decimal(str(value)).normalize()
+        except InvalidOperation as exc:
+            raise ValueError("route snapshot contains an invalid decimal") from exc
+        return format(decimal_value, "f")
+    if isinstance(value, dict):
+        return {
+            str(key): _snapshot_canonical(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_snapshot_canonical(item) for item in value]
+    raise ValueError(f"unsupported route snapshot value: {type(value).__name__}")
+
+
+def _price_decimal(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise ValueError("price snapshot values must be numeric or null")
+    try:
+        return format(Decimal(str(value)).normalize(), "f")
+    except InvalidOperation as exc:
+        raise ValueError("price snapshot contains an invalid decimal") from exc
+
+
 def route_snapshot_hashes(route: dict[str, Any]) -> tuple[str, str]:
     config = route_config(route)
+    provider_policy = config.get("providerPolicy")
     route_snapshot = {
+        "schemaVersion": "sovereign.llm-route-snapshot.v2",
         "routeId": str(route.get("id") or ""),
         "transport": route_transport(route),
         "providerModel": route_provider_model(route),
@@ -115,19 +151,38 @@ def route_snapshot_hashes(route: dict[str, Any]) -> tuple[str, str]:
             config.get("billingCategory") or config.get("billingClass") or ""
         ).strip(),
         "fundingMode": str(config.get("fundingMode") or "").strip(),
+        "direct": config.get("direct") is True,
+        "catalogVerified": config.get("catalogVerified") is True,
+        "transportCanaryVerified": config.get("transportCanaryVerified") is True,
+        "selectable": config.get("selectable") is True,
+        "supportedExecutionRoles": sorted(route_supported_roles(route)),
+        "providerPolicy": (
+            {
+                "require_parameters": provider_policy.get("require_parameters"),
+                "allow_fallbacks": provider_policy.get("allow_fallbacks"),
+                "data_collection": provider_policy.get("data_collection"),
+                "zdr": provider_policy.get("zdr"),
+            }
+            if isinstance(provider_policy, dict)
+            else {}
+        ),
+        "freeEligible": config.get("freeEligible") is True,
+        "quotaContractVerified": config.get("quotaContractVerified") is True,
     }
     price_snapshot = {
-        "inputUsdPerMillion": config.get("inputUsdPerMillion"),
-        "cachedInputUsdPerMillion": config.get("cachedInputUsdPerMillion"),
-        "outputUsdPerMillion": config.get("outputUsdPerMillion"),
-        "markupMultiplier": config.get("markupMultiplier"),
+        "schemaVersion": "sovereign.llm-price-snapshot.v2",
+        "numericEncoding": "canonical-decimal-string-v1",
+        "inputUsdPerMillion": _price_decimal(config.get("inputUsdPerMillion")),
+        "cachedInputUsdPerMillion": _price_decimal(config.get("cachedInputUsdPerMillion")),
+        "outputUsdPerMillion": _price_decimal(config.get("outputUsdPerMillion")),
+        "markupMultiplier": _price_decimal(config.get("markupMultiplier")),
         "pricingSource": config.get("pricingSource"),
         "pricingVerified": bool(config.get("pricingVerified")),
     }
 
     def digest(value: dict[str, Any]) -> str:
         encoded = json.dumps(
-            value,
+            _snapshot_canonical(value),
             ensure_ascii=True,
             separators=(",", ":"),
             sort_keys=True,

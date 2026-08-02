@@ -10,6 +10,7 @@ PRODUCTION_BACKEND = BACKEND.parent / "scripts" / "sovereign-backend"
 sys.path.insert(0, str(BACKEND))
 
 import agent_runtime.cognitive_swarm_agents as swarm_module
+from agent_runtime.llm_contract import LlmRouteBinding
 from agent_runtime.cognitive_swarm_agents import (
     ALLOWED_LITELLM_MODEL_ALIASES,
     CognitiveSwarm,
@@ -29,6 +30,18 @@ from agent_runtime.cognitive_swarm_agents import (
     run_cognitive_swarm,
     run_free_single_agent,
 )
+
+
+def _route_binding(transport: str) -> LlmRouteBinding:
+    return LlmRouteBinding(
+        source_revision="a" * 40,
+        route_id=f"{transport}-route",
+        transport=transport,
+        route_class="OPENROUTER_PAID" if transport == "openrouter" else "FREELLM_FREE",
+        provider_model="openai/gpt-5.4-mini" if transport == "openrouter" else "free-model",
+        route_snapshot_sha256="b" * 64,
+        price_snapshot_sha256="c" * 64 if transport == "openrouter" else "0" * 64,
+    )
 
 
 def test_default_model_has_no_legacy_litellm_alias() -> None:
@@ -293,6 +306,7 @@ def test_freellm_intent_router_uses_plain_text_without_output_schema(monkeypatch
             model="auto",
             transport="freellm",
             run_config=object(),
+            route_binding=_route_binding("freellm"),
         ),
     )
 
@@ -306,6 +320,12 @@ def test_freellm_intent_router_uses_plain_text_without_output_schema(monkeypatch
     assert intent.normalized_goal == "Inspect the persisted route evidence."
     assert "output_type" not in captured
     assert "MODE=<conversation|read_only_analysis|repository_execution>" in str(captured["instructions"])
+    receipt = intent.contract_receipt()
+    assert receipt["verdict"] == "VERIFIED"
+    assert receipt["verificationScope"] == "SCHEMA_ONLY"
+    assert receipt["sourceRevision"] == "a" * 40
+    assert len(receipt["requestSha256"]) == 64
+    assert len(receipt["receiptSha256"]) == 64
 
 
 def test_paid_intent_router_keeps_structured_output_contract(monkeypatch) -> None:
@@ -337,6 +357,7 @@ def test_paid_intent_router_keeps_structured_output_contract(monkeypatch) -> Non
             model="openai/gpt-5.4-mini",
             transport="openrouter",
             run_config=object(),
+            route_binding=_route_binding("openrouter"),
         ),
     )
 
@@ -348,6 +369,11 @@ def test_paid_intent_router_keeps_structured_output_contract(monkeypatch) -> Non
 
     assert intent is expected
     assert captured["output_type"] is MissionIntent
+    receipt = intent.contract_receipt()
+    assert receipt["verdict"] == "VERIFIED"
+    assert receipt["verificationScope"] == "SCHEMA_ONLY"
+    assert receipt["sourceRevision"] == "a" * 40
+    assert len(receipt["routeBindingSha256"]) == 64
 
 
 def test_free_single_agent_normalizes_plain_text_without_structured_output(monkeypatch) -> None:

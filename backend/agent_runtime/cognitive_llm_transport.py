@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -18,6 +19,8 @@ from llm_transport import (
     route_provider_model,
     route_transport,
 )
+
+from .llm_contract import LlmRouteBinding, build_route_binding
 
 _KEY_MAX_BYTES: Final[int] = 8192
 _SAFE_KEY_MIN_BYTES: Final[int] = 16
@@ -42,6 +45,7 @@ class RouteRunConfig:
     model: str
     transport: str
     run_config: Any
+    route_binding: LlmRouteBinding
 
 
 def _key_spec(transport: str, api_base: str) -> tuple[str, str]:
@@ -144,10 +148,24 @@ def _openrouter_policy(route: dict[str, Any]) -> dict[str, Any]:
     return dict(required)
 
 
+def _runtime_revision(explicit_revision: str | None = None) -> str:
+    revision = str(
+        explicit_revision
+        or os.getenv("SOVEREIGN_SOURCE_REVISION", "")
+    ).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RouteRuntimeError(
+            "LLM_RUNTIME_REVISION_UNVERIFIED",
+            "DEPLOY_WITH_EXACT_SOVEREIGN_SOURCE_REVISION",
+        )
+    return revision
+
+
 def build_route_run_config(
     route: dict[str, Any],
     *,
     output_token_limit: int,
+    source_revision: str | None = None,
 ) -> RouteRunConfig:
     """Return one request-local SDK config for an exact persisted route."""
 
@@ -181,6 +199,16 @@ def build_route_run_config(
             f"VERIFY_{transport.upper()}_PROVIDER_MODEL",
         )
     api_base = route_api_base(route)
+    try:
+        route_binding = build_route_binding(
+            route,
+            source_revision=_runtime_revision(source_revision),
+        )
+    except ValueError as exc:
+        raise RouteRuntimeError(
+            "LLM_ROUTE_BINDING_REJECTED",
+            "VERIFY_ROUTE_REVISION_AND_SNAPSHOT_CONTRACT",
+        ) from exc
     api_key = _read_protected_key(transport, api_base)
     try:
         provider_module = importlib.import_module("agents.models.openai_provider")
@@ -224,4 +252,5 @@ def build_route_run_config(
         model=model,
         transport=transport,
         run_config=run_config,
+        route_binding=route_binding,
     )

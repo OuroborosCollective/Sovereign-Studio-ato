@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import sys
 import types
 from pathlib import Path
@@ -113,6 +114,53 @@ def test_route_and_price_snapshots_change_independently() -> None:
     assert price_hash != changed_price_hash
 
 
+def test_route_snapshot_binds_routing_policy_but_not_price_changes() -> None:
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+    route_hash, price_hash = route_snapshot_hashes(paid)
+    changed_policy = {
+        **paid,
+        "config": {
+            **paid["config"],
+            "providerPolicy": {
+                **paid["config"]["providerPolicy"],
+                "zdr": False,
+            },
+        },
+    }
+    changed_route_hash, same_price_hash = route_snapshot_hashes(changed_policy)
+
+    assert changed_route_hash != route_hash
+    assert same_price_hash == price_hash
+
+
+def test_price_snapshot_uses_canonical_decimal_strings() -> None:
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+    _, float_price_hash = route_snapshot_hashes(paid)
+    decimal_prices = {
+        **paid,
+        "config": {
+            **paid["config"],
+            "inputUsdPerMillion": Decimal("0.75"),
+            "cachedInputUsdPerMillion": Decimal("0.075"),
+            "outputUsdPerMillion": Decimal("4.5"),
+            "markupMultiplier": Decimal("4.0"),
+        },
+    }
+    _, decimal_price_hash = route_snapshot_hashes(decimal_prices)
+
+    assert decimal_price_hash == float_price_hash
+
+
 def test_pinned_agents_sdk_route_config_keeps_transports_and_policy_disjoint(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -148,6 +196,7 @@ def test_pinned_agents_sdk_route_config_keeps_transports_and_policy_disjoint(
         lambda name: modules[name],
     )
     monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "a" * 40)
     openrouter_key = tmp_path / "openrouter_api_key.txt"
     freellm_key = tmp_path / "freellmapi_unified_key.txt"
     openrouter_key.write_text("sk-or-v1-bounded-test-value", encoding="utf-8")
@@ -164,6 +213,9 @@ def test_pinned_agents_sdk_route_config_keeps_transports_and_policy_disjoint(
     paid_runtime = runtime.build_route_run_config(paid, output_token_limit=512)
 
     assert paid_runtime.transport == "openrouter"
+    assert paid_runtime.route_binding.source_revision == "a" * 40
+    assert paid_runtime.route_binding.route_class == "OPENROUTER_PAID"
+    assert paid_runtime.route_binding.price_snapshot_sha256 != "0" * 64
     assert captured["provider"][0]["base_url"] == OPENROUTER_BASE_URL
     assert captured["provider"][0]["use_responses"] is False
     assert captured["settings"][0]["max_tokens"] == 512
@@ -188,12 +240,35 @@ def test_pinned_agents_sdk_route_config_keeps_transports_and_policy_disjoint(
     free_runtime = runtime.build_route_run_config(free, output_token_limit=256)
 
     assert free_runtime.transport == "freellm"
+    assert free_runtime.route_binding.source_revision == "a" * 40
+    assert free_runtime.route_binding.route_class == "FREELLM_FREE"
+    assert free_runtime.route_binding.price_snapshot_sha256 == "0" * 64
     assert captured["provider"][1]["base_url"] == FREELLM_BASE_URL
     assert captured["provider"][1]["use_responses"] is False
     assert captured["settings"][1] == {
         "max_tokens": 256,
         "include_usage": True,
     }
+
+
+def test_route_config_rejects_unverified_runtime_revision_before_key_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.delenv("SOVEREIGN_SOURCE_REVISION", raising=False)
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+
+    with pytest.raises(runtime.RouteRuntimeError) as captured:
+        runtime.build_route_run_config(paid, output_token_limit=128)
+
+    assert captured.value.family == "LLM_RUNTIME_REVISION_UNVERIFIED"
+    assert captured.value.next_action == "DEPLOY_WITH_EXACT_SOVEREIGN_SOURCE_REVISION"
 
 
 def test_transport_migration_is_additive_and_fail_closed() -> None:
