@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from typing import Any
+import zipfile
 
 import pytest
 
@@ -13,9 +15,12 @@ class FakeResponse:
     status_code: int
     payload: Any = None
     text: str = ""
+    body: bytes | None = None
 
     @property
     def content(self) -> bytes:
+        if self.body is not None:
+            return self.body
         if self.status_code == 204 or self.payload is None:
             return b""
         return b"json"
@@ -102,6 +107,79 @@ def _runtime(monkeypatch, routes):
     return GitHubAdminRuntime(update, session=session), update, session
 
 
+def _zip_log(name: str, text: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(name, text)
+    return buffer.getvalue()
+
+
+def test_workflow_failure_evidence_uses_exact_head_artifact_content(monkeypatch) -> None:
+    head = "a" * 40
+    run_id = 123
+    artifact_id = 456
+    log = "\n".join(
+        (
+            "FAILED tests/test_llm_boundary_ledger.py::test_current_review_ledger_is_complete_and_fresh",
+            "MISSING_CANDIDATE:llm-boundary:96acea8d186b6cf800854b8f",
+            "1 failed, 531 passed, 12 skipped in 41.23s",
+        )
+    )
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/{run_id}"): [
+                FakeResponse(200, {"id": run_id, "name": "Sovereign MCP", "head_sha": head, "conclusion": "failure"})
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/{run_id}/jobs"): [
+                FakeResponse(
+                    200,
+                    {
+                        "jobs": [
+                            {
+                                "id": 77,
+                                "name": "Validate MCP operator",
+                                "conclusion": "failure",
+                                "steps": [{"name": "Run tests", "conclusion": "failure"}],
+                            }
+                        ]
+                    },
+                )
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/actions/runs/{run_id}/artifacts"): [
+                FakeResponse(
+                    200,
+                    {
+                        "artifacts": [
+                            {
+                                "id": artifact_id,
+                                "name": "mcp-pytest-123",
+                                "size_in_bytes": 1200,
+                                "expired": False,
+                                "updated_at": "2026-08-02T02:05:48Z",
+                            }
+                        ]
+                    },
+                )
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/actions/artifacts/{artifact_id}/zip"): [
+                FakeResponse(200, body=_zip_log("mcp-pytest.log", log))
+            ],
+        },
+    )
+
+    result = runtime.workflow_failure_evidence_extract(run_id=run_id, expected_head_sha=head)
+
+    assert result["failureFamily"] == "LLM_BOUNDARY_LEDGER_DRIFT"
+    assert result["causalCandidate"] == "llm-boundary:96acea8d186b6cf800854b8f"
+    assert result["failedTests"] == 1
+    assert result["passedTests"] == 531
+    assert result["skippedTests"] == 12
+    assert result["repairSurface"] == "config/architecture/llm-tool-boundary-review-ledger.json"
+    assert result["rawLogsReturned"] is False
+    assert "text" not in result
+
+
 def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
     head = "a" * 40
     runtime, _update, _session = _runtime(
@@ -115,6 +193,7 @@ def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
 
     result = runtime.pr_status(pr_number=7)
 
+    assert result["head_ref"] == "sovereign/change"
     assert result["checks"]["ok"] is False
     assert result["checks"]["has_check_evidence"] is False
     assert "no_check_evidence_reported" in result["checks"]["pending"]

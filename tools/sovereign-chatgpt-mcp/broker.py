@@ -517,6 +517,10 @@ class BrokerRuntime:
             "github_workflow_run_status": lambda values: self.github.workflow_run_status(
                 run_id=int(values.get("run_id") or 0),
             ),
+            "github_workflow_failure_evidence_extract": lambda values: self.github.workflow_failure_evidence_extract(
+                run_id=int(values.get("run_id") or 0),
+                expected_head_sha=str(values.get("expected_head_sha") or ""),
+            ),
             "github_merge_pr": lambda values: self.github.merge_pr(
                 pr_number=int(values.get("pr_number") or 0),
                 expected_head_sha=str(values.get("expected_head_sha") or ""),

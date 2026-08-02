@@ -7,6 +7,11 @@ from urllib.parse import quote
 
 import requests
 
+from ci_repair_tools import (
+    MAX_ARCHIVE_BYTES,
+    bounded_text_sources_from_archive,
+    extract_workflow_failure_evidence,
+)
 from self_update import SelfUpdateRuntime
 
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -109,6 +114,31 @@ class GitHubAdminRuntime:
         if response.status_code == 204 or not response.content:
             return {}
         return response.json()
+
+    def _request_bytes(
+        self,
+        path: str,
+        *,
+        max_bytes: int = MAX_ARCHIVE_BYTES,
+        timeout: int = 60,
+    ) -> bytes:
+        try:
+            response = self.session.request(
+                "GET",
+                f"{self.api_root}{path}",
+                headers=self._headers(),
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(f"GitHub artifact API is not reachable: {exc}") from exc
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"GitHub artifact read failed: HTTP {response.status_code}"
+            )
+        payload = bytes(response.content)
+        if len(payload) > max_bytes:
+            raise RuntimeError("GitHub artifact exceeds the bounded evidence limit")
+        return payload
 
     @staticmethod
     def _pr_number(value: int) -> int:
@@ -443,6 +473,7 @@ class GitHubAdminRuntime:
             "mergeable": pull.get("mergeable"),
             "mergeable_state": str(pull.get("mergeable_state") or "unknown"),
             "head_sha": head_sha,
+            "head_ref": str(head.get("ref") or ""),
             "base_ref": str((pull.get("base") or {}).get("ref") or ""),
             "checks": checks,
             "url": str(pull.get("html_url") or ""),
@@ -603,6 +634,122 @@ class GitHubAdminRuntime:
                 if passed and artifacts
                 else ("recheck_workflow_run_status" if not completed else "analyze_failed_workflow_steps")
             ),
+        }
+
+    def workflow_failure_evidence_extract(
+        self,
+        *,
+        run_id: int,
+        expected_head_sha: str,
+    ) -> dict[str, Any]:
+        selected = self._run_id(run_id)
+        expected = str(expected_head_sha or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(expected):
+            raise ValueError("expected_head_sha must be a full commit SHA")
+        run = self._request("GET", f"/repos/{self.repository}/actions/runs/{selected}")
+        if not isinstance(run, dict):
+            raise RuntimeError("GitHub workflow run response is invalid")
+        actual_head = str(run.get("head_sha") or "").strip().lower()
+        if actual_head != expected:
+            return {
+                "ok": False,
+                "status": "WORKFLOW_HEAD_MISMATCH",
+                "failureFamily": "REVISION_CONFLICT",
+                "workflowRunId": selected,
+                "expectedHeadSha": expected,
+                "actualHeadSha": actual_head,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }
+        jobs: list[dict[str, Any]] = []
+        for page in range(1, 11):
+            jobs_payload = self._request(
+                "GET",
+                f"/repos/{self.repository}/actions/runs/{selected}/jobs",
+                params={"per_page": 100, "page": page},
+            )
+            page_jobs = jobs_payload.get("jobs", []) if isinstance(jobs_payload, dict) else []
+            jobs.extend(item for item in page_jobs if isinstance(item, dict))
+            if len(page_jobs) < 100:
+                break
+        failed_jobs = [
+            item
+            for item in jobs
+            if str(item.get("conclusion") or "").casefold()
+            not in {"", "success", "skipped"}
+        ]
+        artifacts: list[dict[str, Any]] = []
+        for page in range(1, 11):
+            artifacts_payload = self._request(
+                "GET",
+                f"/repos/{self.repository}/actions/runs/{selected}/artifacts",
+                params={"per_page": 100, "page": page},
+            )
+            page_artifacts = (
+                artifacts_payload.get("artifacts", [])
+                if isinstance(artifacts_payload, dict)
+                else []
+            )
+            artifacts.extend(item for item in page_artifacts if isinstance(item, dict))
+            if len(page_artifacts) < 100:
+                break
+        selected_by_name: dict[str, dict[str, Any]] = {}
+        for artifact in sorted(
+            artifacts,
+            key=lambda item: (str(item.get("updated_at") or ""), int(item.get("id") or 0)),
+            reverse=True,
+        ):
+            name = str(artifact.get("name") or "")
+            if name in selected_by_name:
+                continue
+            if artifact.get("expired") is True or int(artifact.get("size_in_bytes") or 0) > MAX_ARCHIVE_BYTES:
+                continue
+            if not re.search(r"(?:pytest|junit|test[-_ ]?(?:result|evidence|report))", name, re.I):
+                continue
+            selected_by_name[name] = artifact
+            if len(selected_by_name) >= 3:
+                break
+
+        sources: list[dict[str, str]] = []
+        receipts: list[dict[str, Any]] = []
+        for artifact in selected_by_name.values():
+            artifact_id = int(artifact.get("id") or 0)
+            if artifact_id < 1:
+                continue
+            payload = self._request_bytes(
+                f"/repos/{self.repository}/actions/artifacts/{artifact_id}/zip"
+            )
+            extracted, receipt = bounded_text_sources_from_archive(
+                payload,
+                artifact_name=str(artifact.get("name") or f"artifact-{artifact_id}"),
+            )
+            sources.extend(extracted)
+            receipts.append({"artifactId": artifact_id, **receipt})
+
+        for failed_job in failed_jobs[:3] if not sources else []:
+            job_id = int(failed_job.get("id") or 0)
+            if job_id > 0:
+                payload = self._request_bytes(
+                    f"/repos/{self.repository}/actions/jobs/{job_id}/logs"
+                )
+                extracted, receipt = bounded_text_sources_from_archive(
+                    payload,
+                    artifact_name=f"job-{job_id}.log",
+                )
+                sources.extend(extracted)
+                receipts.append({"jobId": job_id, **receipt})
+
+        result = extract_workflow_failure_evidence(
+            workflow_run=run,
+            jobs=jobs,
+            sources=sources,
+            artifact_receipts=receipts,
+        )
+        return {
+            **result,
+            "repository": self.repository,
+            "expectedHeadSha": expected,
+            "readbackVerified": actual_head == expected,
         }
 
     def _main_revision_relation(self, head_sha: str) -> dict[str, Any]:

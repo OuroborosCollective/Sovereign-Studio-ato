@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from .cognitive_swarm_manifest import (
     AGENTS,
@@ -30,6 +30,12 @@ from .cognitive_llm_transport import (
     build_route_run_config,
 )
 from .cognitive_usage_billing import AgentStageBilling
+from .llm_contract import (
+    LlmOutputContract,
+    build_request_envelope,
+    compile_contract_prompt,
+    verify_llm_response,
+)
 
 
 DEFAULT_MODEL: Final[str] = ""
@@ -349,6 +355,37 @@ def _require_agents_sdk() -> tuple[Any, Any]:
     return _AGENT_CLASS, _RUNNER_CLASS
 
 
+MISSION_INTENT_OUTPUT_CONTRACT: Final[LlmOutputContract] = LlmOutputContract(
+    contract_id="mission.intent",
+    version=1,
+    json_schema={
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["conversation", "read_only_analysis", "repository_execution"],
+            },
+            "normalizedGoal": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "requiresOnlineTools": {"type": "boolean"},
+            "requiresRepositoryWorkspace": {"type": "boolean"},
+            "learningScope": {
+                "type": "array",
+                "maxItems": 12,
+                "items": {"type": "string", "maxLength": 160},
+            },
+        },
+        "required": [
+            "mode",
+            "normalizedGoal",
+            "requiresOnlineTools",
+            "requiresRepositoryWorkspace",
+            "learningScope",
+        ],
+        "additionalProperties": False,
+    },
+)
+
+
 class MissionIntent(BaseModel):
     mode: Literal["conversation", "read_only_analysis", "repository_execution"]
     normalized_goal: str = Field(min_length=1, max_length=2000)
@@ -356,6 +393,20 @@ class MissionIntent(BaseModel):
     requires_repository_workspace: bool
     learning_scope: list[str] = Field(default_factory=list, max_length=12)
     confidence: float = Field(ge=0.0, le=1.0)
+    _contract_receipt: dict[str, Any] = PrivateAttr(default_factory=dict)
+
+    def contract_receipt(self) -> dict[str, Any]:
+        return dict(self._contract_receipt)
+
+
+def _mission_intent_contract_payload(intent: MissionIntent) -> dict[str, Any]:
+    return {
+        "mode": intent.mode,
+        "normalizedGoal": intent.normalized_goal,
+        "requiresOnlineTools": intent.requires_online_tools,
+        "requiresRepositoryWorkspace": intent.requires_repository_workspace,
+        "learningScope": list(intent.learning_scope),
+    }
 
 
 _FREELLM_INTENT_MODES: Final[frozenset[str]] = frozenset({
@@ -500,10 +551,32 @@ async def classify_mission_intent(
     if not freellm_text_contract:
         router_kwargs["output_type"] = MissionIntent
     router = agent_class(**router_kwargs)
+    raw_prompt = f"User mission:\n{normalized_mission}"
+    try:
+        request_envelope = build_request_envelope(
+            operation_identity="intent.router",
+            route_binding=route_runtime.route_binding,
+            prompt=raw_prompt,
+            contract=MISSION_INTENT_OUTPUT_CONTRACT,
+            context={"stage": "intent-router"},
+        )
+        routed_prompt = compile_contract_prompt(
+            envelope=request_envelope,
+            contract=MISSION_INTENT_OUTPUT_CONTRACT,
+            prompt=raw_prompt,
+        )
+    except ValueError as exc:
+        raise SwarmExecutionError(
+            stage="intent-router-contract",
+            family="LLM_REQUEST_CONTRACT_REJECTED",
+            error_type=type(exc).__name__,
+            next_action="VERIFY_ROUTE_REVISION_AND_OUTPUT_CONTRACT",
+            retryable=False,
+        ) from exc
     result = await _run_billed_stage(
         runner_class,
         router,
-        f"User mission:\n{normalized_mission}",
+        routed_prompt,
         stage="intent-router",
         stage_billing=stage_billing,
         run_config=route_runtime.run_config,
@@ -528,6 +601,20 @@ async def classify_mission_intent(
     elif intent.mode == "conversation":
         intent.requires_online_tools = False
         intent.requires_repository_workspace = False
+    verification = verify_llm_response(
+        envelope=request_envelope,
+        contract=MISSION_INTENT_OUTPUT_CONTRACT,
+        response=_mission_intent_contract_payload(intent),
+    )
+    if not verification.accepted:
+        raise SwarmExecutionError(
+            stage="intent-router-output-contract",
+            family="LLM_OUTPUT_CONTRACT_REJECTED",
+            error_type="LlmContractVerification",
+            next_action="RETRY_WITH_REVISION_BOUND_JSON_SCHEMA_CONTRACT",
+            retryable=True,
+        )
+    intent._contract_receipt = verification.receipt.to_dict()
     return intent
 
 
