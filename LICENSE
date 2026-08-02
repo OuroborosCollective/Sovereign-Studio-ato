@@ -1,0 +1,65 @@
+SOVEREIGN STUDIO ATO PROPRIETARY LICENSE
+
+Copyright (c) 2026 OuroborosCollective and Thomas Markgraf.
+All rights reserved.
+
+1. Proprietary status
+
+Sovereign-Studio-ato, including its original source code, object code,
+architecture, documentation, configuration, workflows, user interfaces,
+prompts, tests, and other original project materials (the "Software"), is
+proprietary. The availability of the Software's source code does not make the
+Software open source and does not grant a license.
+
+2. No permission without express written authorization
+
+Except where mandatory law expressly permits otherwise, no person or entity
+may use, execute, copy, reproduce, modify, adapt, translate, encode, program
+against, create derivative works from, reverse engineer, train or evaluate a
+model on, deploy, host, publish, distribute, sublicense, sell, commercialize,
+or otherwise exploit any part of the Software without prior express written
+permission issued by Thomas Markgraf for himself and OuroborosCollective.
+
+Permission must identify the authorized person or entity, the permitted
+purpose and scope, and any applicable duration or conditions. Silence, source
+availability, access to a repository, an issue, a pull request, or receipt of a
+copy does not constitute permission.
+
+3. Public-repository platform rights
+
+Nothing in this notice limits rights that a hosting platform must receive
+under its binding terms solely to display, store, or provide platform-level
+viewing and forking functionality. Such platform rights do not grant a right
+to use, execute, modify, deploy, distribute, or commercialize the Software.
+
+4. Third-party materials
+
+Third-party components and materials remain governed by their respective
+licenses and notices. This license applies only to rights held by
+OuroborosCollective and Thomas Markgraf and does not replace or restrict a
+third party's license.
+
+5. Earlier releases and existing grants
+
+This license applies to repository revisions that carry this notice. It does
+not revoke rights already validly granted for an earlier revision under the
+license that accompanied that revision, including any earlier MIT-licensed
+revision. No new MIT license or other permission is granted for revisions
+carrying this notice.
+
+6. Contributions
+
+No contribution may be incorporated unless its contributor has granted the
+rights required by the project owners in a separate written agreement or
+another expressly accepted contribution policy. Submitting material does not
+grant the submitter a license to the Software.
+
+7. Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, TO THE
+MAXIMUM EXTENT PERMITTED BY LAW. THE RIGHTS HOLDERS ARE NOT LIABLE FOR ANY
+CLAIM, DAMAGE, OR OTHER LIABILITY ARISING FROM ACCESS TO OR USE OF THE
+SOFTWARE.
+
+For permission requests, contact Thomas Markgraf through an official,
+verifiable OuroborosCollective communication channel.
