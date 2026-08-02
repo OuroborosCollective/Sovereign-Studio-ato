@@ -1387,6 +1387,48 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.getByText(/kein Auto-Merge/i)).toBeDefined();
   });
 
+  it("ignores a direct duplicate Agent start while the first start is still in flight", async () => {
+    let resolveStart: (() => void) | null = null;
+    const onStartAgent = vi.fn(
+      () => new Promise<void>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const props = { ...baseProps(), agentReady: true, onStartAgent };
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
+      jsonResponse({ login: "octo" }),
+      jsonResponse({ permissions: { push: true } }),
+    );
+
+    renderWithProviders(<BuilderContainer {...props} mission="" repoReady={false} />);
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    fireEvent.change(chatField(), {
+      target: { value: "Implementiere den mobilen Chat-Fix als Draft PR mit Regressionstest." },
+    });
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Executor" }));
+    await waitFor(() => expect(onStartAgent).toHaveBeenCalledOnce());
+
+    try {
+      const launcherOpenButton = screen.queryByLabelText("Tool Launcher öffnen");
+      if (launcherOpenButton) fireEvent.click(launcherOpenButton);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Executor" }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(onStartAgent).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        resolveStart?.();
+        await Promise.resolve();
+      });
+    }
+  });
+
   it("reports a failed Sovereign Agent start as terminal runtime state", async () => {
     const props = {
       ...baseProps(),
