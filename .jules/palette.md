@@ -37,3 +37,7 @@
 ## 2025-07-25 - [Consistent Language in Accessible Attributes]
 **Learning:** When adding accessibility attributes like `aria-label` and `title` hover tooltips, they must precisely match the primary language used in the surrounding visual components and text. Mixing languages (e.g., German ARIA/tooltips in an English layout or vice-versa) degrades the experience for screen readers and creates confusion for internationalized users.
 **Action:** Always verify the surrounding context language and use matching, consistent localization in all added accessible labels, tooltips, and status descriptions.
+
+## 2025-08-01 - [Accessible Roadmap Step Lists and Summaries]
+**Learning:** For interactive or descriptive workflow step/roadmap lists, screen readers struggle to parse visual symbols (like checkmarks, warning icons, triangles) or truncated names without appropriate list roles and state-dependent text fallbacks.
+**Action:** Always wrap lists of workflow steps in elements with `role="list"`, assign `role="listitem"` and proper `aria-current="step"` on active items, and pair them with localized description titles (e.g., `Abgeschlossen: Schritt`, `Aktueller Schritt: Schritt`) as well as native hover `title` tooltips for truncated visuals.
