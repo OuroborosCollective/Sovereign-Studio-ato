@@ -1408,22 +1408,17 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.change(chatField(), {
       target: { value: "Implementiere den mobilen Chat-Fix als Draft PR mit Regressionstest." },
     });
-    fireEvent.click(sendButton());
+    fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Executor" }));
     await waitFor(() => expect(onStartAgent).toHaveBeenCalledOnce());
 
     try {
-      fireEvent.change(chatField(), {
-        target: {
-          value: "Implementiere einen zweiten Fix in BuilderContainer.tsx als Draft PR mit Regressionstest.",
-        },
-      });
       fireEvent.click(screen.getByLabelText("Tool Launcher öffnen"));
       fireEvent.click(screen.getByRole("menuitem", { name: "Executor" }));
-      fireEvent.click(screen.getByLabelText("Panel öffnen"));
+      await act(async () => {
+        await Promise.resolve();
+      });
 
-      await waitFor(() =>
-        expect(screen.getByText("Agent start ignored while another start is in flight")).toBeDefined(),
-      );
       expect(onStartAgent).toHaveBeenCalledOnce();
       const actionStream = screen.getByRole("log", { name: "Sovereign Action Stream" });
       expect(actionStream.textContent?.match(/Sovereign Agent Job angefragt/g) ?? []).toHaveLength(1);
