@@ -129,12 +129,20 @@ def _snapshot_canonical(value: Any) -> Any:
 def _price_decimal(value: Any) -> str | None:
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
+        raise ValueError("price snapshot values must be numeric or null")
+    normalized = value.strip() if isinstance(value, str) else str(value)
+    if not normalized:
         raise ValueError("price snapshot values must be numeric or null")
     try:
-        return format(Decimal(str(value)).normalize(), "f")
-    except InvalidOperation as exc:
-        raise ValueError("price snapshot contains an invalid decimal") from exc
+        decimal_value = Decimal(normalized).normalize()
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("price snapshot values must be numeric or null") from exc
+    if not decimal_value.is_finite():
+        raise ValueError("price snapshot values must be numeric or null")
+    if decimal_value == 0:
+        decimal_value = Decimal(0)
+    return format(decimal_value, "f")
 
 
 def route_snapshot_hashes(route: dict[str, Any]) -> tuple[str, str]:

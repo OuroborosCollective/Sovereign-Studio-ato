@@ -741,6 +741,11 @@ def _persist_execution_resolution_blocker(
         _close_connection(conn)
 
 
+def _validate_execution_resolution_snapshot(execution_resolution: Any) -> None:
+    """Fail closed before provider execution when route or pricing evidence is invalid."""
+    execution_resolution.safe_payload()
+
+
 def _record_route_success(
     get_connection: ConnectionFactory,
     *,
@@ -1114,6 +1119,34 @@ def start_cognitive_swarm_run(
                 "reason": state["reason"],
                 "nextAction": state["nextAction"],
             }, 503
+    try:
+        _validate_execution_resolution_snapshot(execution_resolution)
+    except (TypeError, ValueError) as exc:
+        state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=resolved_run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="INVALID_ROUTE_PRICING_SNAPSHOT",
+            reason="The selected execution route has an invalid route or pricing snapshot.",
+            next_action="VERIFY_ROUTE_REVISION_AND_SNAPSHOT_CONTRACT",
+            error_type=type(exc).__name__,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": resolved_run_id,
+            "traceId": resolved_trace_id,
+            "status": state["status"],
+            "source": state["source"],
+            "evidenceId": state["evidenceId"],
+            "receivedEvidenceId": received_state["evidenceId"],
+            "blocker": "INVALID_ROUTE_PRICING_SNAPSHOT",
+            "reason": state["reason"],
+            "nextAction": state["nextAction"],
+            "errorType": type(exc).__name__,
+        }, 503
     resolved_model = route_provider_model(execution_resolution.primary_route)
     resolved_agent_model = route_provider_model(execution_resolution.agent_route)
     if not resolved_model or not resolved_agent_model:
@@ -2117,6 +2150,37 @@ def resume_cognitive_swarm_run(
             "nextAction": blocked_state["nextAction"],
             "requestedMode": normalized_mode,
         }, 409
+    try:
+        _validate_execution_resolution_snapshot(execution_resolution)
+    except (TypeError, ValueError) as exc:
+        blocked_state = _persist_execution_resolution_blocker(
+            get_connection,
+            user_id=user_id,
+            run_id=claim.run.run_id,
+            trace_id=resolved_trace_id,
+            status="BLOCKED",
+            blocker="INVALID_ROUTE_PRICING_SNAPSHOT",
+            reason="The selected execution route has an invalid route or pricing snapshot.",
+            next_action="VERIFY_ROUTE_REVISION_AND_SNAPSHOT_CONTRACT",
+            error_type=type(exc).__name__,
+            task_id=claim.task_id,
+            expected_lease_token=claim.lease_token,
+        )
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "traceId": resolved_trace_id,
+            "status": blocked_state["status"],
+            "source": blocked_state["source"],
+            "evidenceId": blocked_state["evidenceId"],
+            "resumeClaimEvidenceId": claim.evidence_id,
+            "resumed": True,
+            "blocker": "INVALID_ROUTE_PRICING_SNAPSHOT",
+            "reason": blocked_state["reason"],
+            "nextAction": blocked_state["nextAction"],
+            "errorType": type(exc).__name__,
+        }, 503
     resolved_model = route_provider_model(execution_resolution.primary_route)
     resolved_agent_model = route_provider_model(execution_resolution.agent_route)
     try:
