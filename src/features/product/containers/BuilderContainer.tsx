@@ -2761,6 +2761,7 @@ export function BuilderContainer({
     readonly intent: 'code_execution' | 'draft_pr';
   } | null>(null);
   const submitInFlightRef = useRef(false);
+  const startAgentInFlightRef = useRef(false);
   const pendingResumeRetryRef = useRef(false);
   const [pendingResumeRetrySequence, setPendingResumeRetrySequence] = useState(0);
   const currentRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
@@ -3747,6 +3748,12 @@ export function BuilderContainer({
       return false;
     }
 
+    if (startAgentInFlightRef.current) {
+      addLog('info', 'Agent start ignored while another start is in flight', 'router');
+      return false;
+    }
+    startAgentInFlightRef.current = true;
+
     clearPatchEvidence();
     appendActionEvent({
       kind: 'agent_job_requested',
@@ -3777,6 +3784,8 @@ Grund: ${message}
 Es wurde kein Job gestartet und keine Datei geändert.`);
       addLog('error', `Sovereign Agent start failed: ${message}`, 'router');
       return false;
+    } finally {
+      startAgentInFlightRef.current = false;
     }
   };
 
