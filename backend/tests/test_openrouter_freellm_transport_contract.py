@@ -156,9 +156,35 @@ def test_price_snapshot_uses_canonical_decimal_strings() -> None:
             "markupMultiplier": Decimal("4.0"),
         },
     }
+    string_prices = {
+        **paid,
+        "config": {
+            **paid["config"],
+            "inputUsdPerMillion": " 0.750 ",
+            "cachedInputUsdPerMillion": "0.0750",
+            "outputUsdPerMillion": "4.50",
+            "markupMultiplier": "4.000",
+        },
+    }
     _, decimal_price_hash = route_snapshot_hashes(decimal_prices)
+    _, string_price_hash = route_snapshot_hashes(string_prices)
 
     assert decimal_price_hash == float_price_hash
+    assert string_price_hash == float_price_hash
+
+
+@pytest.mark.parametrize("invalid_price", ["", "not-a-number", "NaN", "Infinity", True, []])
+def test_price_snapshot_rejects_non_finite_or_non_numeric_values(invalid_price) -> None:
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+    paid["config"]["inputUsdPerMillion"] = invalid_price
+
+    with pytest.raises(ValueError, match="price snapshot values must be numeric or null"):
+        route_snapshot_hashes(paid)
 
 
 def test_pinned_agents_sdk_route_config_keeps_transports_and_policy_disjoint(
