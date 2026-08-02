@@ -32,6 +32,9 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
 
     assert 'install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"' in script
     assert 'install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/ci_repair_tools.py" "$BROKER_DIR/ci_repair_tools.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/llm_boundary_ledger.py" "$BROKER_DIR/llm_boundary_ledger.py"' in script
+    assert 'install -m 0640 "$SOURCE_DIR/llm_boundary_contract.py" "$BROKER_DIR/llm_boundary_contract.py"' in script
     assert "SOVEREIGN_MCP_ENABLE_ADMIN_SQL" in script
     assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
