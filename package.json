@@ -118,6 +118,11 @@
       "test/global-test-setup.ts"
     ]
   },
+  "pnpm": {
+    "patchedDependencies": {
+      "@codetrix-studio/capacitor-google-auth@3.3.6": "patches/@codetrix-studio__capacitor-google-auth@3.3.6.patch"
+    }
+  },
   "overrides": {
     "@codetrix-studio/capacitor-google-auth": {
       "@capacitor/core": "^6.0.0"

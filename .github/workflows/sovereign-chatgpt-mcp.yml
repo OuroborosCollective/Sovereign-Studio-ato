@@ -184,12 +184,29 @@ jobs:
   boundary-ledger-drift:
     name: Boundary ledger drift preflight
     if: github.event_name != 'workflow_dispatch' || inputs.update_pr_branch != true
-    uses: ./.github/workflows/boundary-ledger-drift.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     permissions:
       contents: read
-    with:
-      apply_safe_patch: false
-      expected_head_sha: ${{ github.sha }}
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+
+      - name: Discover candidates and compare the review ledger
+        run: |
+          mkdir -p .sovereign-evidence
+          python scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "${GITHUB_SHA}" \
+            --report .sovereign-evidence/boundary-ledger-drift.json
+
+      - name: Upload bounded drift evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-boundary-ledger-drift-${{ github.run_id }}
+          path: .sovereign-evidence/boundary-ledger-drift.json
+          if-no-files-found: error
+          retention-days: 7
 
   validate:
     name: Validate MCP operator

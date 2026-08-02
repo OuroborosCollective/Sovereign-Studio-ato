@@ -28,7 +28,8 @@ def test_mcp_full_suite_requires_boundary_preflight() -> None:
     workflow = MCP_WORKFLOW.read_text("utf-8")
 
     assert "boundary-ledger-drift:" in workflow
-    assert "uses: ./.github/workflows/boundary-ledger-drift.yml" in workflow
+    assert "python scripts/reconcile_llm_boundary_ledger.py" in workflow
+    assert "mcp-boundary-ledger-drift-${{ github.run_id }}" in workflow
     validate = workflow.index("  validate:")
     pytest = workflow.index("python -m pytest -q", validate)
     needs = workflow.index("needs: boundary-ledger-drift", validate)
