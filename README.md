@@ -7,6 +7,15 @@
 
 Sovereign Studio ATO is an Android-first NoCode/AI service tool for working on real GitHub repositories through a calm chat surface.
 
+> [!IMPORTANT]
+> **Proprietary software — all rights reserved.** Sovereign-Studio-ato is not
+> open source. Use, execution, copying, modification, coding, adaptation,
+> derivative works, model training, deployment, hosting, distribution, or
+> commercialization require prior express written permission issued by
+> Thomas Markgraf for himself and OuroborosCollective. Earlier revisions remain
+> governed by the license that accompanied them, and third-party components
+> retain their own licenses. See [LICENSE](LICENSE).
+
 A beginner should be able to enter a repository, describe a task, provide secure GitHub access when needed, and let Sovereign route the work through real runtime steps. The maximum automated write outcome is a reviewable Draft PR. The app must never auto-merge.
 
 ## Product truth
