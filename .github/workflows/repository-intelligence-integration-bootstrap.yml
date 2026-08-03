@@ -66,9 +66,13 @@ jobs:
           python -m pip install --requirement tools/sovereign-chatgpt-mcp/requirements.txt
           python -m py_compile tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
           python -m pytest -q tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
+          git add --intent-to-add docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
           git diff --check
           cmp docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
-          test "$(git diff --name-only 5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9 | sort | tr '\n' ' ')" = '.github/workflows/sovereign-chatgpt-mcp.yml docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/Dockerfile tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py '
+          ACTUAL_PATHS="$(git diff --name-only 5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9 | sort | tr '\n' ' ')"
+          EXPECTED_PATHS='.github/workflows/sovereign-chatgpt-mcp.yml docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/Dockerfile tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py '
+          printf 'actual_paths=%s\n' "$ACTUAL_PATHS"
+          test "$ACTUAL_PATHS" = "$EXPECTED_PATHS"
 
       - name: Commit validated integration
         env:
