@@ -362,8 +362,25 @@ class McpFleetEvidenceResult:
 def evaluate_mcp_fleet_evidence(
     envelope: McpFleetEvidenceEnvelope,
     observations: Sequence[McpFleetObservation],
+    *,
+    expected_current_revision: str = "",
 ) -> McpFleetEvidenceResult:
     """Evaluate fail-closed evidence for a fleet/deployment operation.
+
+    Parameters
+    ----------
+    envelope
+        The evidence envelope claiming the operation outcome.
+    observations
+        The observations supplied as evidence.
+    expected_current_revision
+        Optional SHA-40 of the repository's *current* ``main`` HEAD. When
+        supplied (non-empty), the envelope's ``base_revision`` MUST equal it
+        exactly. A mismatch produces a BLOCKED verdict with
+        ``envelope_revision_stale_against_current_main`` so a stale envelope
+        cannot masquerade as evidence for the live revision (Issue #1101 /
+        PR #1184). Default empty string disables the check for callers that
+        legitimately want to evaluate a historical envelope.
 
     Verdict rules
     -------------
@@ -394,6 +411,29 @@ def evaluate_mcp_fleet_evidence(
       field (liveness-only bypass guard).
     """
     required = _FAMILY_REQUIREMENTS.get(envelope.operation_family, ())
+
+    # Revision-freshness gate: when the caller supplies the live main HEAD,
+    # the envelope MUST claim that exact revision. This blocks stale
+    # envelopes from being mistaken for evidence about the running fleet.
+    expected_rev = str(expected_current_revision or "").strip().lower()
+    if expected_rev:
+        if not _SHA40.fullmatch(expected_rev):
+            raise ValueError("expected_current_revision must be a full Git SHA-40 or empty string")
+        if envelope.base_revision != expected_rev:
+            return McpFleetEvidenceResult(
+                verdict=VERDICT_BLOCKED,
+                operation_family=envelope.operation_family,
+                envelope_sha256=envelope.envelope_sha256,
+                satisfied=(),
+                missing=(),
+                contradicted=(),
+                finding_codes=(
+                    "envelope_revision_stale_against_current_main",
+                    "expected_current_revision_mismatch",
+                ),
+                auto_merge_allowed=False,
+            )
+
     obs_by_req: dict[str, list[McpFleetObservation]] = {}
     for obs in observations:
         obs_by_req.setdefault(obs.requirement_id, []).append(obs)
@@ -525,16 +565,22 @@ def audit_patchmon_health_count(
 ) -> PatchmonHealthAudit:
     """Verify that a PatchMon health-count claim is accompanied by required bindings.
 
-    A health-count such as "4/4 workers healthy" is only accepted when:
-    - bound_revision is a valid SHA-40 OR bound_digest is a valid SHA-256, AND
+    A health-count such as "4/4 workers healthy" is only accepted when ALL of:
+    - bound_revision is a valid SHA-40 (revision binding), AND
+    - bound_digest is a valid SHA-256 (digest binding), AND
     - has_capability_canary is True (a tool-canary was executed, not just a ping).
+
+    Revision-only or digest-only is no longer sufficient: Issue #1101 / PR #1184
+    require both the revision AND the digest to be bound so that a healthy
+    fleet on a stale revision with an unknown image (or vice versa) cannot
+    masquerade as VERIFIED.
 
     If the fleet is partially reachable (healthy_count < total_count) the claim
     is rejected with a dedicated blocker code — a partial fleet is never VERIFIED.
     """
     rev_ok = _SHA40.fullmatch(str(bound_revision or "").strip().lower()) is not None
     digest_ok = _SHA64.fullmatch(_normalize_digest(str(bound_digest or ""))) if bound_digest else False
-    has_binding = rev_ok or bool(digest_ok)
+    has_binding = rev_ok and bool(digest_ok)
 
     if healthy_count < total_count:
         return PatchmonHealthAudit(
@@ -548,13 +594,23 @@ def audit_patchmon_health_count(
         )
 
     if not has_binding:
+        # Either revision OR digest is missing. The blocker code distinguishes
+        # the two cases so callers can tell which binding was absent, while
+        # preserving the original "lacks_revision_and_digest_binding" code
+        # for the fully-empty case.
+        if not rev_ok and not digest_ok:
+            blocker = "patchmon_health_count_lacks_revision_and_digest_binding"
+        elif not rev_ok:
+            blocker = "patchmon_health_count_lacks_revision_binding"
+        else:
+            blocker = "patchmon_health_count_lacks_digest_binding"
         return PatchmonHealthAudit(
             accepted=False,
-            blocker="patchmon_health_count_lacks_revision_and_digest_binding",
+            blocker=blocker,
             healthy_count=healthy_count,
             total_count=total_count,
-            has_revision_binding=False,
-            has_digest_binding=False,
+            has_revision_binding=rev_ok,
+            has_digest_binding=bool(digest_ok),
             has_capability_canary=has_capability_canary,
         )
 
