@@ -2,7 +2,7 @@ name: Repository Intelligence Integration Bootstrap
 
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
     branches: [main]
 
 permissions:
@@ -41,6 +41,15 @@ jobs:
           cat .sovereign-bootstrap-assets/test_repository_intelligence_tools.py.part.* > tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
           cat .sovereign-bootstrap-assets/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md.part.* > docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md
           cat .sovereign-bootstrap-assets/integrate_repository_intelligence.py.part.* > /tmp/integrate_repository_intelligence.py
+          python - <<'PY'
+          from pathlib import Path
+          target = Path('/tmp/integrate_repository_intelligence.py')
+          text = target.read_text('utf-8')
+          needle = "replace_once(\n    '.github/workflows/sovereign-chatgpt-mcp.yml',\n    '          import repository_skill_tools"
+          start = text.index(needle)
+          end = text.index('canonical = Path', start)
+          target.write_text(text[:start] + text[end:], 'utf-8')
+          PY
           python /tmp/integrate_repository_intelligence.py
           rm -rf .sovereign-bootstrap-assets
           rm .github/workflows/repository-intelligence-integration-bootstrap.yml
