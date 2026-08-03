@@ -1,79 +1,174 @@
 # Sovereign Product Truth
 
-This document is the product contract that future agents must preserve. If a proposed UI, runtime or agent change conflicts with this file, the change is wrong unless this document is deliberately updated first.
+This document defines the non-negotiable product and evidence contract for Sovereign Studio ATO.
 
-## Non-negotiable rules
+**Reconciled:** 2026-08-03  
+**Dated orientation:** [`CURRENT_STATE_2026-08-03.md`](CURRENT_STATE_2026-08-03.md)
 
-| Rule | Reason |
+## Prime directive
+
+```text
+Runtime creates truth.
+UI displays bounded projections of that truth.
+Evidence and target-system readback decide completion.
+```
+
+A proposed UI, runtime, agent, MCP, provider or deployment change that conflicts with this contract is wrong unless this document is deliberately revised with evidence and owner approval.
+
+## Product rules
+
+| Rule | Meaning |
 | --- | --- |
-| **Default surface is Chat.** | The user converses; Sovereign acts behind the curtain. |
-| Only chat timeline, text input, small thinking/status cues and compact lamps are **visible by default**. | Keeps first-time UX calm and focused. |
-| Repo, Files, Diff, Workflow, Runtime, Telemetry, Health, Coverage, Memory and Inspector are **inspection surfaces** — opened explicitly, never forced on the user. | Prevents overwhelming dashboards. |
-| Repo setup may start from a chat instruction. | Preserves the chat-first paradigm. |
-| The UI must **not** become a dashboard, monitor or second control shell. | Truth is produced by runtime, not by UI. |
-| Every action must produce a result. | Avoids invisible work and fake progress. |
-| Every result must produce state. | State is what allows the next decision to be audited. |
-| Every state must allow or block the next action. | Prevents endless “working” loops. |
-| No hard percent progress unless it is a real measured runtime metric. | Prevents artificial confidence. |
-| No mock, stub or facade in the live path. | Keeps release behavior real. |
-| No Plan-only Draft PR. | A Draft PR must contain actionable, reviewable changes. |
-| No auto-merge. | The human decides final merge. |
-| Secrets and access values must never appear in chat, logs, telemetry, action events, docs, PR bodies or generated files. | Protects users and recordings. |
+| Chat is the default surface. | The user converses; Sovereign coordinates the control room behind the curtain. |
+| Inspection surfaces are explicit. | Repo, files, diff, workflow, runtime, telemetry, health, memory and inspector views do not become a second default dashboard. |
+| Every action produces a result. | No invisible or decorative work. |
+| Every result creates or updates bound state. | State must identify owner/scope/revision where applicable. |
+| State allows, blocks or approval-gates the next action. | No blind continuation loops. |
+| Progress must be measured. | No hard percentages or fixed step counts without real runtime measurement. |
+| Live paths are real. | No mocks, stubs, facades, fake snapshots or hardcoded green states. |
+| Secrets never enter user-visible or tracked surfaces. | No credentials in chat, logs, docs, PRs, Issues, telemetry, tests or ledgers. |
+| Repository state is not deployment state. | Code at `main` does not prove a running image or registry contains it. |
+| Tool success is not target success. | Exit code, `ok: true`, model text or event completion is at most unverified execution evidence. |
+| Draft PR is the default review boundary. | Agent-authored work is reviewed before merge. |
+| Merge is owner-scoped and evidence-bound. | Exact head, mergeability, required checks and explicit owner approval are mandatory. |
+| Deployment is immutable and revision-bound. | No direct running-container hotpatch as release method. |
 
-## Current route truth
+## Truth classes
 
-Sovereign should feel like one assistant, but internally it routes by capability:
-
-```text
-Chat input
-→ intent/status/write detection
-→ repo gate
-→ GitHub access gate for writes
-→ capability router
-→ worker/model route OR direct patch OR workspace executor OR Draft PR runtime
-```
-
-Sovereign Agent is an optional workspace/code executor. It is not the same thing as an LLM/provider route. It may use an LLM, but it works by operating in a repo workspace. It must not become the only path for small file changes.
-
-## GitHub access truth
-
-A format-valid token is not write access. Write access is ready only after real GitHub API validation against the loaded repo.
-
-Valid states must be displayed honestly:
+Sovereign must distinguish:
 
 ```text
-missing/requested → user action needed
-validating → wait for API result
-ready → GitHub write access is confirmed
-invalid/failed → block with reason
+PLANNED
+IMPLEMENTED_IN_REPOSITORY
+TESTED_AT_REVISION
+CI_VERIFIED
+ARTIFACT_VERIFIED
+DEPLOYED_UNVERIFIED
+RUNTIME_VERIFIED
+BLOCKED
+CONTRADICTED
 ```
 
-GitHub-ready must stay ready even if Sovereign Agent is missing. Missing executor capability is a separate blocker.
+These states must not be collapsed into one generic success badge.
+
+## Route truth
+
+```text
+user input
+→ model/structured intent candidate
+→ runtime validation
+→ capability and permission decision
+→ read-only answer, repository operation, isolated workspace, MCP or operator route
+→ execution receipt
+→ independent target-system readback
+→ stored state and UI projection
+```
+
+The model may understand language and propose structured actions. It cannot create permission, capability availability, repository state, passing tests, a PR, a deployment or runtime health.
 
 ## Capability truth
 
-Future implementation should follow this split:
+Sovereign is one assistant at the product surface but many bounded capabilities internally.
 
-| Capability | Use case | Requires |
-| --- | --- | --- |
-| `free_chat` | explanation, advice, summaries | model route only |
-| `local-runtime-answer` | “bist du fertig?”, “warum?”, “andere Route?” | existing runtime state |
-| `direct_github_patch` | small README/docs edits | repo + validated GitHub access |
-| `workspace-executor` / `sovereign-agent` | multi-file code work, tests, build repair | isolated workspace capability |
-| `draft-pr-runtime` | publish reviewable changes | validated GitHub access + reviewed diff |
+Examples include:
+
+- chat and explanation;
+- repository read/search/intelligence;
+- hash-bound repository patching;
+- isolated workspace execution and tests;
+- GitHub Issue/PR/workflow operations;
+- MCP and control-plane operations;
+- provider routing;
+- evidence, continuity and learning;
+- immutable deployment and PatchMon readback.
+
+No executor, including OpenHands or an internal agent runtime, is the universal mandatory path. The runtime selects only staged and permitted capabilities.
+
+## GitHub and write truth
+
+- Repository identity and access are resolved against the real target.
+- A token-looking value is not proof of access.
+- Read and write capabilities remain separate.
+- Draft PR creation requires a real diff and guarded publication path.
+- Plan-only output is not an actionable PR.
+- Merge requires explicit owner approval for that exact PR head.
+- A previous owner approval does not authorize a later mutation.
+
+## Provider truth
+
+- Paid routing is direct through OpenRouter.
+- Free routing uses direct FreeLLM/Revolver surfaces.
+- LiteLLM is historical/deactivated evidence and is not an active product transport or rollback path.
+- Provider/model configuration in Git does not prove current selectability, price validity, credits or health.
+- External numeric/null snapshots are normalized at the boundary and fail with structured errors when invalid.
+
+## Repository Intelligence truth
+
+Repository Intelligence is a discovery and controlled-editing side channel. It may provide:
+
+- lexical/local projection search;
+- Git-blob and content-hash identities;
+- capability scopes;
+- hash-bound replace/restore;
+- schema and toolchain diagnostics;
+- deployment/context drift observations.
+
+It does not replace the tracked file, Git revision, permission receipts, CI, artifact or runtime evidence.
+
+## Evidence truth
+
+Evidence must be bound to the relevant identity:
+
+- owner/tenant/organization;
+- repository and workspace;
+- run/workflow/step;
+- source and target revision;
+- tool/capability/schema/payload hashes;
+- artifact or image digest;
+- target-system readback source.
+
+Telemetry and traces help observation but are not canonical receipts. Liveness proves only liveness.
+
+## Continuity truth
+
+- Continuity context and policy are mandatory before mutating MCP work.
+- Ledgers are append-only.
+- Historical records are not current runtime state.
+- Owner-asserted personal provenance and technical evidence remain distinct.
+- Raw chat and secrets are not persisted.
+
+## Deployment truth
+
+```text
+reviewed exact head
+→ exact-head CI
+→ merge
+→ resolve new main revision
+→ immutable image and digest
+→ controlled deploy/self-update
+→ registry/protocol/container/revision/digest/PatchMon readback
+```
+
+A deployment or rollback is blocked when the expected revision/digest or prior rollback reference is absent or contradictory.
+
+## Planned work
+
+Issue #1182 describes planned Skill A/B benchmarks, per-mutation checkpoints and deterministic context-pack receipts. This document does not classify them as implemented.
 
 ## Drift prevention
 
-Future agents must not:
+Do not:
 
-- create another main shell;
-- move truth into UI widgets;
-- treat Sovereign Agent as the only write path;
-- treat a worker answer as a completed code change;
-- use telemetry as proof of release readiness;
-- claim CI green when workflow runs or combined statuses are empty;
-- close issues for planned work without a committed implementation.
+- create another main shell or parallel control plane;
+- use UI text, telemetry or liveness as truth;
+- make a single executor the only write path;
+- reintroduce LiteLLM;
+- install packages or copy files into running production containers as release practice;
+- trust unknown plugins, skills or URL prefixes;
+- expose secrets or secret-shaped fixtures;
+- present old SHAs, image digests, ports or issue lists as current;
+- claim CI green when checks are empty, stale or pending;
+- claim runtime verification from repository code alone;
+- rewrite append-only continuity records.
 
-Related guide: [`docs/SOVEREIGN_CAPABILITY_ROUTING.md`](SOVEREIGN_CAPABILITY_ROUTING.md).
-
-*Breaking these rules should fail tests, product-template invariant checks or review.*
+Breaking these rules should fail tests, contract gates, review or runtime policy.
