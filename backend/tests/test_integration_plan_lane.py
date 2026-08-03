@@ -530,12 +530,12 @@ class TestRedactionFilter:
 # ===========================================================================
 class TestNoIOInModule:
     def test_module_has_no_open_calls(self) -> None:
-        import backend.agent_runtime.integration_plan_lane as mod
+        import agent_runtime.integration_plan_lane as mod
         src = inspect.getsource(mod)
         assert "open(" not in src
 
     def test_module_has_no_socket_or_requests(self) -> None:
-        import backend.agent_runtime.integration_plan_lane as mod
+        import agent_runtime.integration_plan_lane as mod
         src = inspect.getsource(mod)
         assert "import socket" not in src
         assert "import requests" not in src
@@ -543,13 +543,13 @@ class TestNoIOInModule:
         assert "import aiohttp" not in src
 
     def test_module_has_no_time_or_datetime(self) -> None:
-        import backend.agent_runtime.integration_plan_lane as mod
+        import agent_runtime.integration_plan_lane as mod
         src = inspect.getsource(mod)
         assert "import time" not in src
         assert "import datetime" not in src
 
     def test_module_has_no_psycopg2(self) -> None:
-        import backend.agent_runtime.integration_plan_lane as mod
+        import agent_runtime.integration_plan_lane as mod
         src = inspect.getsource(mod)
         assert "psycopg2" not in src
 

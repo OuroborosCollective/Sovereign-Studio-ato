@@ -141,7 +141,7 @@ receipt = IntegrationPlanLane.create_receipt(
     phases=(phase,), next_step='ok',
     recorded_at_iso='2026-08-03T22:00:00+00:00',
 )
-store.write_receipt('ci-smoke', receipt)
+store.write_receipt(receipt)
 store.write_attestation('ci-smoke', receipt.attestation_sha256)
 store.write_active_revision('ci-smoke', 'a'*40)
 print('Round-trip OK at', store.plan_directory('ci-smoke'))

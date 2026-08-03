@@ -506,18 +506,18 @@ class TestResumeSession:
 # ===========================================================================
 class TestNoIOInModule:
     def test_helpers_have_no_open_calls(self) -> None:
-        import backend.agent_runtime.integration_plan_helpers as mod
+        import agent_runtime.integration_plan_helpers as mod
         src = inspect.getsource(mod)
         assert "open(" not in src
 
     def test_helpers_have_no_socket_or_requests(self) -> None:
-        import backend.agent_runtime.integration_plan_helpers as mod
+        import agent_runtime.integration_plan_helpers as mod
         src = inspect.getsource(mod)
         assert "import socket" not in src
         assert "import requests" not in src
 
     def test_helpers_have_no_psycopg2(self) -> None:
-        import backend.agent_runtime.integration_plan_helpers as mod
+        import agent_runtime.integration_plan_helpers as mod
         src = inspect.getsource(mod)
         assert "psycopg2" not in src
 
