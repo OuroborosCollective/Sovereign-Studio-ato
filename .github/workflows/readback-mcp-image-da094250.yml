@@ -1,0 +1,113 @@
+name: Readback exact MCP image da094250
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify-exact-image:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'evidence/mcp-image-da094250'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EXPECTED_REVISION: da094250f9817254417a6fe92ff53e7f8b5d5a23
+      IMAGE_REPOSITORY: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp
+      IMAGE_TAG: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp:da094250f9817254417a6fe92ff53e7f8b5d5a23
+      EXPECTED_KAPPA_POS: '1000000'
+      EXPECTED_PARITY: 'true'
+    steps:
+      - name: Bind exact evidence branch and main revision
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const { data: mainRef } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
+            const mainSha = String(mainRef.object.sha || '').toLowerCase();
+            if (mainSha !== process.env.EXPECTED_REVISION) {
+              core.setFailed(`MAIN_REVISION_DRIFT: expected ${process.env.EXPECTED_REVISION}, actual ${mainSha}`);
+              return;
+            }
+            const pull = context.payload.pull_request;
+            if (!pull || pull.head.ref !== 'evidence/mcp-image-da094250') {
+              core.setFailed('EVIDENCE_BRANCH_IDENTITY_MISMATCH');
+              return;
+            }
+            core.info(JSON.stringify({
+              status: 'EXACT_MAIN_REVISION_BOUND',
+              mainSha,
+              evidenceBranch: pull.head.ref,
+              mutationPerformed: false,
+              secretValuesReturned: false,
+            }));
+
+      - name: Log in to GHCR with ephemeral Actions token
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and verify exact immutable image
+        shell: bash
+        run: |
+          set -euo pipefail
+          pulled=0
+          for attempt in $(seq 1 72); do
+            if docker pull "${IMAGE_TAG}" >/tmp/pull.log 2>&1; then
+              pulled=1
+              break
+            fi
+            sleep 10
+          done
+          if [ "$pulled" != 1 ]; then
+            echo 'EXACT_IMAGE_NOT_PUBLISHED_WITHIN_BOUND' >&2
+            sed -E 's/(Bearer|token|password)[^ ]*/\1 <redacted>/Ig' /tmp/pull.log >&2 || true
+            exit 1
+          fi
+
+          REPO_DIGEST="$(docker image inspect "${IMAGE_TAG}" --format '{{index .RepoDigests 0}}')"
+          IMAGE_ID="$(docker image inspect "${IMAGE_TAG}" --format '{{.Id}}')"
+          REVISION_LABEL="$(docker image inspect "${IMAGE_TAG}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          SOURCE_LABEL="$(docker image inspect "${IMAGE_TAG}" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')"
+          KAPPA_LABEL="$(docker image inspect "${IMAGE_TAG}" --format '{{index .Config.Labels "io.ouroboros.sovereign.kappa-pos"}}')"
+          PARITY_LABEL="$(docker image inspect "${IMAGE_TAG}" --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}')"
+          USER_VALUE="$(docker image inspect "${IMAGE_TAG}" --format '{{.Config.User}}')"
+
+          [[ "$REPO_DIGEST" =~ ^ghcr\.io/ouroboroscollective/sovereign-chatgpt-mcp@sha256:[0-9a-f]{64}$ ]]
+          [[ "$IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$REVISION_LABEL" = "$EXPECTED_REVISION"
+          test "$SOURCE_LABEL" = 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'
+          test "$KAPPA_LABEL" = "$EXPECTED_KAPPA_POS"
+          test "$PARITY_LABEL" = "$EXPECTED_PARITY"
+          test -n "$USER_VALUE"
+          test "$USER_VALUE" != '0'
+          test "$USER_VALUE" != 'root'
+
+          python - "$REPO_DIGEST" "$IMAGE_ID" "$REVISION_LABEL" "$KAPPA_LABEL" "$PARITY_LABEL" "$USER_VALUE" <<'PY'
+          import json
+          import sys
+          print(json.dumps({
+              'status': 'EXACT_IMMUTABLE_MCP_IMAGE_VERIFIED',
+              'repoDigest': sys.argv[1],
+              'imageId': sys.argv[2],
+              'revision': sys.argv[3],
+              'kappaPos': sys.argv[4],
+              'crossRuntimeParity': sys.argv[5],
+              'containerUser': sys.argv[6],
+              'runtimeInstalled': False,
+              'mutationPerformed': False,
+              'secretValuesReturned': False,
+          }, sort_keys=True, separators=(',', ':')))
+          PY
