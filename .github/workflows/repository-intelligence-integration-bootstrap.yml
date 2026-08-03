@@ -52,7 +52,7 @@ jobs:
           PY
           python /tmp/integrate_repository_intelligence.py
           rm -rf .sovereign-bootstrap-assets
-          rm .github/workflows/repository-intelligence-integration-bootstrap.yml
+          git checkout -- .github/workflows/sovereign-chatgpt-mcp.yml
 
       - uses: actions/setup-python@v5
         with:
@@ -60,7 +60,7 @@ jobs:
           cache: pip
           cache-dependency-path: tools/sovereign-chatgpt-mcp/requirements.txt
 
-      - name: Validate exact integration
+      - name: Validate exact non-workflow integration
         run: |
           set -euo pipefail
           python -m pip install --requirement tools/sovereign-chatgpt-mcp/requirements.txt
@@ -70,11 +70,11 @@ jobs:
           git diff --check
           cmp docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
           ACTUAL_PATHS="$(git diff --name-only 5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9 | sort | tr '\n' ' ')"
-          EXPECTED_PATHS='.github/workflows/sovereign-chatgpt-mcp.yml docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/Dockerfile tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py '
+          EXPECTED_PATHS='.github/workflows/repository-intelligence-integration-bootstrap.yml docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/Dockerfile tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py '
           printf 'actual_paths=%s\n' "$ACTUAL_PATHS"
           test "$ACTUAL_PATHS" = "$EXPECTED_PATHS"
 
-      - name: Commit validated integration
+      - name: Commit validated non-workflow integration
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
