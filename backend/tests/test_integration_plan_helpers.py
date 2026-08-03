@@ -360,6 +360,7 @@ class TestArchitectureSnapshot:
                 "bug-evidence-tests": True,
                 "plan-lane-canonical": True,
                 "plan-lane-store": True,
+                "plan-lane-helpers": True,
                 "plan-lane-tests": True,
                 "plan-store-tests": True,
             },
@@ -377,6 +378,7 @@ class TestArchitectureSnapshot:
                 "bug-evidence-tests": True,
                 "plan-lane-canonical": False,  # missing
                 "plan-lane-store": True,
+                "plan-lane-helpers": True,
                 "plan-lane-tests": True,
                 "plan-store-tests": True,
             },
@@ -397,6 +399,7 @@ class TestArchitectureSnapshot:
                 "bug-evidence-tests",
                 "plan-lane-canonical",
                 "plan-lane-store",
+                "plan-lane-helpers",
                 "plan-lane-tests",
                 "plan-store-tests",
             )

@@ -87,6 +87,11 @@ See [`architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md`](architecture/RE
 - Bounded helpers (canonical Markdown templates, context injection,
   gated completion evaluator, architecture snapshot + drift report,
   resume readback) at `backend/agent_runtime/integration_plan_helpers.py`.
+- Stdlib-only inventory runner at
+  `backend/agent_runtime/integration_plan_inventory.py` producing
+  `docs/architecture/INTEGRATION_PLAN_LANE_INVENTORY.json` with 30
+  surfaces, truth-class annotations and a drift report (currently
+  zero drift).
 - Persists the per-integration `.planning/<integration-id>/` tree
   (`task_plan.md`, `findings.md`, `progress.md`, `plan.receipt.json`,
   `evidence-index.json`, `ledger-actions.jsonl`, `.mode`,

@@ -563,6 +563,7 @@ _REQUIRED_SURFACES: Final[Tuple[Tuple[str, str], ...]] = (
     ("bug-evidence-tests", "backend/tests/test_bug_evidence_lane.py"),
     ("plan-lane-canonical", "backend/agent_runtime/integration_plan_lane.py"),
     ("plan-lane-store", "backend/agent_runtime/integration_plan_store.py"),
+    ("plan-lane-helpers", "backend/agent_runtime/integration_plan_helpers.py"),
     ("plan-lane-tests", "backend/tests/test_integration_plan_lane.py"),
     ("plan-store-tests", "backend/tests/test_integration_plan_store.py"),
 )

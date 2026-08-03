@@ -1,0 +1,234 @@
+{
+  "drift": [],
+  "generatedBy": "backend/agent_runtime/integration_plan_inventory.py",
+  "invariantStatements": [
+    "Plan status is a projection, not truth.",
+    "Runtime / CI / deployment / database state remain canonical and cannot be replaced by the plan lane.",
+    "Continuity ledgers remain append-only and byte-equal across canonical and mirror.",
+    "No second agent runtime, queue, memory store or MCP registry may exist alongside canonical surfaces.",
+    "LiteLLM is not a supported plan lane runtime or fallback path."
+  ],
+  "openSourceFolders": [
+    "backend/agent_runtime/",
+    "backend/tests/",
+    "tools/sovereign-chatgpt-mcp/",
+    "scripts/sovereign-backend/",
+    "docs/architecture/",
+    "docs/sovereign-continuity/"
+  ],
+  "repositoryRootLabel": "Sovereign-Studio-ato",
+  "schemaVersion": "sovereign.integration-plan-architecture-snapshot.v1",
+  "snapshotSha256": "67545c321c685d020b197986ae153a226014c089fb9bd411cb39524a1a3fb9e1",
+  "surfaces": [
+    {
+      "label": "canonical-continuity-context",
+      "present": true,
+      "relativePath": "docs/sovereign-continuity/CONTEXT.md",
+      "sha256": "76dfe66cd4d835331cd591c3e2294fc796e768c62741b973e744947d290318e3",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "canonical-continuity-ledger",
+      "present": true,
+      "relativePath": "docs/sovereign-continuity/LEDGER.jsonl",
+      "sha256": "95ad314d6625457091366ad43d737e1b31d9fc58173daefe753e8cf1ccdf6574",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "continuity-mirror",
+      "present": true,
+      "relativePath": "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl",
+      "sha256": "95ad314d6625457091366ad43d737e1b31d9fc58173daefe753e8cf1ccdf6574",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "continuity-policy",
+      "present": true,
+      "relativePath": "tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json",
+      "sha256": "42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "continuity-validator",
+      "present": true,
+      "relativePath": "tools/sovereign-chatgpt-mcp/continuity.py",
+      "sha256": "2b81d04645c773e14f0df00f32e6d81141d7b8fc0fac47e43c4e4effa338c488",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "continuity-tests",
+      "present": true,
+      "relativePath": "tools/sovereign-chatgpt-mcp/tests/test_continuity.py",
+      "sha256": "15e1191c8eecbff05b32331d0d886f1b69f78b8a8baae15931fad72eaac2be41",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "bug-evidence-lane",
+      "present": true,
+      "relativePath": "backend/agent_runtime/bug_evidence_lane.py",
+      "sha256": "38dd2b8024ad0103e4b93c449de918d942a725284a772ca7bd15d5a6d051d93e",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "bug-evidence-tests",
+      "present": true,
+      "relativePath": "backend/tests/test_bug_evidence_lane.py",
+      "sha256": "fc22ad5099bf4bc4f6f7a9e3ee63e092f5471f6f81426630c29f86b4a5f7f652",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "evidence-gate",
+      "present": true,
+      "relativePath": "backend/agent_runtime/evidence_gate.py",
+      "sha256": "23a1367c9a215e91b06b7125a20e86c64b91ceace92cb8df457d0b07f285e075",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "mutation-evidence-layer",
+      "present": true,
+      "relativePath": "backend/agent_runtime/mutation_evidence_layer.py",
+      "sha256": "9d8bfc0afda3dd1e7976712cbcd360d5cd375d41ab97b1fcbdfca798af6a1891",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "evidence-collectors",
+      "present": true,
+      "relativePath": "backend/agent_runtime/evidence_collectors.py",
+      "sha256": "180d3d52163d73b3171e7a4461551166fb61e3e723b9059c2b0252bcffef1d95",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provider-routing-evidence-gate",
+      "present": true,
+      "relativePath": "backend/agent_runtime/provider_routing_evidence_gate.py",
+      "sha256": "b110c51a2703773746d04bc69ea28886d3b2a084d10c1eecc317f1784ec50b66",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "rescue-evidence-gate",
+      "present": true,
+      "relativePath": "backend/agent_runtime/rescue_evidence_gate.py",
+      "sha256": "e0244c0763f39f30faa1e0e6b2d65d1e54ee6e8940a21e031744ed6635d146dd",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "deployment-evidence-gate",
+      "present": true,
+      "relativePath": "backend/agent_runtime/mcp_fleet_deployment_evidence_gate.py",
+      "sha256": "de7dd07dca956f91ff261b04c0129d1d6789542f8b0e1eacd446ec6aac310cb5",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "pgvector-evidence-gate",
+      "present": true,
+      "relativePath": "backend/agent_runtime/postgres_pgvector_evidence_gate.py",
+      "sha256": "d40b6815b5cd69459daa05d57139ce7b3232e77b07569a4a1080959ac3b9c494",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "github-write-evidence-gate",
+      "present": true,
+      "relativePath": "backend/agent_runtime/github_write_evidence_gate.py",
+      "sha256": "1f50940d4842604610e385711afca34fd93c739b791b8a4be64bb92c2593899e",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "plan-lane-canonical",
+      "present": true,
+      "relativePath": "backend/agent_runtime/integration_plan_lane.py",
+      "sha256": "c22adb6a38c9019184b8fb04fc4d7c4104c09753fc3ce61c56ea1fb00116ea5c",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-lane-store",
+      "present": true,
+      "relativePath": "backend/agent_runtime/integration_plan_store.py",
+      "sha256": "ede1a7757ed93f353768ec32a8becbe8c02d8a12830e4ae0f4f9976743b53161",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-lane-helpers",
+      "present": true,
+      "relativePath": "backend/agent_runtime/integration_plan_helpers.py",
+      "sha256": "288f2e4ea3016c74117b83f839e1926558c2455fda92ffa27076436cdbda9104",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-lane-tests",
+      "present": true,
+      "relativePath": "backend/tests/test_integration_plan_lane.py",
+      "sha256": "a8972a55c83c1ddc8c21427d9e31adbf8f7313ba9b949f7ac08f9f606e48fd42",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-store-tests",
+      "present": true,
+      "relativePath": "backend/tests/test_integration_plan_store.py",
+      "sha256": "dab62e29fc4df3f57d279ef0c539e932f4baa1a0423d3291be1b6e13271db759",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-helpers-tests",
+      "present": true,
+      "relativePath": "backend/tests/test_integration_plan_helpers.py",
+      "sha256": "c5508ffc40967c9485d5c76d43d4131127baf3a3985ecd546cb8be69334e3dec",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-lane-inventory-runner",
+      "present": true,
+      "relativePath": "backend/agent_runtime/integration_plan_inventory.py",
+      "sha256": "26492784e27f2ba63dd0cb5f740be7636cb50bcb5b8cd3236ac59bc512a2cf20",
+      "truthClass": "projection"
+    },
+    {
+      "label": "plan-lane-canonical-mirror",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/integration_plan_lane.py",
+      "sha256": "c22adb6a38c9019184b8fb04fc4d7c4104c09753fc3ce61c56ea1fb00116ea5c",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "plan-lane-store-mirror",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/integration_plan_store.py",
+      "sha256": "ede1a7757ed93f353768ec32a8becbe8c02d8a12830e4ae0f4f9976743b53161",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "plan-lane-helpers-mirror",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/integration_plan_helpers.py",
+      "sha256": "c1e205c97667cd5e42bb46708478d4c70586405f80c6290ffb132657e20bef11",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "plan-lane-architecture-doc",
+      "present": true,
+      "relativePath": "docs/architecture/INTEGRATION_PLAN_LANE.v1.md",
+      "sha256": "f587d08c17f36162c283e2c521a61e283f4396c830268ce30d676e9bbb4b6825",
+      "truthClass": "documentation"
+    },
+    {
+      "label": "current-state-doc",
+      "present": true,
+      "relativePath": "docs/CURRENT_STATE_2026-08-03.md",
+      "sha256": "1df5172406af5640543a5d110c1be9e85996f57c960507eee614e085f9a45e06",
+      "truthClass": "documentation"
+    },
+    {
+      "label": "agents-md",
+      "present": true,
+      "relativePath": "AGENTS.md",
+      "sha256": "8b5fa510ccf4c82515eeb6a13ea70a534b7dfbc4f605a0084b11365c30d9dc90",
+      "truthClass": "documentation"
+    },
+    {
+      "label": "agents-memory",
+      "present": true,
+      "relativePath": ".agents/memory/MEMORY.md",
+      "sha256": "561d5dc06d6f1ca133084b409dc903d59bf3dab0f2bc0d2807abfc0e13661618",
+      "truthClass": "canonical-truth"
+    }
+  ]
+}
