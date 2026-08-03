@@ -1,0 +1,124 @@
+name: Boundary Owner Reconciliation Bootstrap
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: boundary-owner-reconciliation-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ato/repository-intelligence-evidence-lane-20260803'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact branch and base
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$EXPECTED_BASE_SHA" = '5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9'
+          test "$EXPECTED_HEAD_REF" = 'ato/repository-intelligence-evidence-lane-20260803'
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+
+      - name: Reconcile exact owner-reviewed candidates
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-evidence
+          cat > .sovereign-evidence/owner-decisions.json <<'JSON'
+          {
+            "llm-boundary:a59ea007d92cf56941dbf2af": {
+              "classification": "STRUCTURED_POLICY",
+              "rationale": "_diagnose_schemas parses bounded YAML and JSON documents and emits deterministic contract findings from explicit schema structure; it does not interpret free user language, choose a model route, or authorize an effect."
+            },
+            "llm-boundary:6bc7fb749d27674ad8e43e34": {
+              "classification": "STRUCTURED_POLICY",
+              "rationale": "repository_intelligence_index_build validates an exact repository revision, capability scope, file and byte limits, then constructs a deterministic Git-private index; it does not infer user intent, select a provider, or authorize unrelated effects."
+            },
+            "llm-boundary:4a44ddfa0052bfb186cef018": {
+              "classification": "STRUCTURED_POLICY",
+              "rationale": "sovereign_resource_explorer maps bounded tracked-file metadata and optional explicit Docker readbacks into a resource graph; it does not interpret free language, decide operational intent, or authorize a mutation."
+            }
+          }
+          JSON
+          set +e
+          python scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "$EXPECTED_HEAD_SHA" \
+            --owner-decisions .sovereign-evidence/owner-decisions.json \
+            --report .sovereign-evidence/preview.json
+          preview_status=$?
+          set -e
+          test "$preview_status" = '2'
+          python - <<'PY'
+          import json
+          expected = {
+              'llm-boundary:a59ea007d92cf56941dbf2af',
+              'llm-boundary:6bc7fb749d27674ad8e43e34',
+              'llm-boundary:4a44ddfa0052bfb186cef018',
+          }
+          report = json.load(open('.sovereign-evidence/preview.json', encoding='utf-8'))
+          actual = {item['candidateId'] for item in report['newCandidates']}
+          assert actual == expected, (actual, expected)
+          assert report['ownerDecisionCandidateIds'] == []
+          assert report['safeToApply'] is True
+          assert all(item['decisionSource'] == 'OWNER_DECISION' for item in report['newCandidates'])
+          assert all(item['suggestedClassification'] == 'STRUCTURED_POLICY' for item in report['newCandidates'])
+          PY
+          python scripts/reconcile_llm_boundary_ledger.py \
+            --expected-head "$EXPECTED_HEAD_SHA" \
+            --owner-decisions .sovereign-evidence/owner-decisions.json \
+            --write \
+            --append-continuity \
+            --report .sovereign-evidence/reconciled.json
+          python scripts/verify_llm_boundary_ledger.py
+          python -m pytest tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py -q
+          git diff --check
+          cmp -s docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          ACTUAL_PATHS="$(git diff --name-only | sort | tr '\n' ' ')"
+          EXPECTED_PATHS='config/architecture/llm-tool-boundary-review-ledger.json docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl '
+          printf 'actual_paths=%s\n' "$ACTUAL_PATHS"
+          test "$ACTUAL_PATHS" = "$EXPECTED_PATHS"
+
+      - name: Commit validated reconciliation
+        env:
+          TARGET_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git config user.name 'Sovereign Boundary Reconciler'
+          git config user.email 'nocodehelper@arelogic.space'
+          git add \
+            config/architecture/llm-tool-boundary-review-ledger.json \
+            docs/sovereign-continuity/LEDGER.jsonl \
+            tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          if git diff --cached --quiet; then
+            echo 'Ledger is already current; no commit required.'
+            exit 0
+          fi
+          git commit -m 'chore(ci): record owner-reviewed boundary classifications'
+          FINAL_SHA="$(git rev-parse HEAD)"
+          git push origin "HEAD:${TARGET_REF}"
+          test "$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')" = "$FINAL_SHA"
+          echo "reconciled_head_sha=$FINAL_SHA"
