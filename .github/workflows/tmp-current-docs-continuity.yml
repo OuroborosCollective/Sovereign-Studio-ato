@@ -1,9 +1,11 @@
 name: Temporary Current Docs Continuity Append
 
 on:
-  push:
+  pull_request:
     branches:
-      - docs/current-truth-2026-08-03
+      - main
+    types:
+      - synchronize
     paths:
       - .github/workflows/tmp-current-docs-continuity.yml
 
@@ -13,6 +15,7 @@ permissions:
 
 jobs:
   append-mirrored-ledgers:
+    if: github.head_ref == 'docs/current-truth-2026-08-03'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
