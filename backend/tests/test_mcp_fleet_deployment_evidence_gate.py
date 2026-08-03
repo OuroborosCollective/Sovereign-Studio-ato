@@ -386,6 +386,35 @@ class TestEvaluateBlocked:
         assert "pre_rollback_digest" in result.missing
         assert "rollback_reference_lacks_revision_or_digest_binding" in result.finding_codes
 
+    @pytest.mark.parametrize(
+        "requirement_id",
+        ("post_published_immutable_digest", "post_actual_running_digest"),
+    )
+    def test_image_readback_without_digest_binding_blocked(
+        self,
+        requirement_id: str,
+    ) -> None:
+        env = _envelope(family="mcp_self_update")
+        observations = [
+            McpFleetObservation(
+                requirement_id=o.requirement_id,
+                value_hash=o.value_hash,
+                source=o.source,
+                assertion=o.assertion,
+                bound_revision=o.bound_revision,
+                bound_digest="",
+            )
+            if o.requirement_id == requirement_id
+            else o
+            for o in _full_observations("mcp_self_update")
+        ]
+
+        result = evaluate_mcp_fleet_evidence(env, observations)
+
+        assert result.verdict == VERDICT_BLOCKED
+        assert requirement_id in result.missing
+        assert "image_readback_lacks_digest_binding" in result.finding_codes
+
     def test_rollback_observation_bound_only_by_revision_satisfies(self) -> None:
         # pre_rollback_digest bound to base_revision only → no mismatch, satisfies.
         env = _envelope(family="mcp_self_update")

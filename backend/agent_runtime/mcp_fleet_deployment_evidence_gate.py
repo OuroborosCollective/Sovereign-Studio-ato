@@ -401,11 +401,12 @@ def evaluate_mcp_fleet_evidence(
     Additional invariants enforced here
     ------------------------------------
     - For families that require ``post_published_immutable_digest``, an
-      observation for that requirement whose ``bound_digest`` does not match
-      ``envelope.expected_image_digest`` is CONTRADICTED.
-    - For ``post_actual_running_digest``, a ``bound_digest`` mismatch with
-      ``envelope.expected_image_digest`` is CONTRADICTED (the wrong image
-      is running).
+      observation for that requirement without a bound digest is BLOCKED, and
+      one whose ``bound_digest`` does not match ``envelope.expected_image_digest``
+      is CONTRADICTED.
+    - For ``post_actual_running_digest``, a missing ``bound_digest`` is BLOCKED;
+      a mismatch with ``envelope.expected_image_digest`` is CONTRADICTED (the
+      wrong image is running).
     - A PatchMon fleet readback observation that carries no bound_digest and
       no bound_revision is treated as UNAVAILABLE regardless of its assertion
       field (liveness-only bypass guard).
@@ -488,6 +489,18 @@ def evaluate_mcp_fleet_evidence(
             if obs.bound_revision and obs.bound_revision != envelope.base_revision:
                 req_contradicted = True
                 findings.add("observation_bound_to_stale_revision")
+                continue
+
+            # Required image readbacks must carry the immutable digest they
+            # claim to verify; a revision-only observation cannot prove image
+            # identity.
+            if (
+                req_id in _DIGEST_BOUND_REQUIREMENTS
+                and envelope.expected_image_digest
+                and not obs.bound_digest
+                and obs.assertion == "OBSERVED"
+            ):
+                findings.add("image_readback_lacks_digest_binding")
                 continue
 
             # Digest binding check for post-mutation image requirements
