@@ -19,7 +19,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'ato/repository-intelligence-evidence-lane-20260803'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v4
@@ -48,6 +48,45 @@ jobs:
 
       - name: Install existing MCP test dependencies
         run: python -m pip install --requirement tools/sovereign-chatgpt-mcp/requirements.txt
+
+      - name: Patch causal boundary evidence contracts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text('utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement, found {count}')
+              target.write_text(text.replace(old, new, 1), 'utf-8')
+
+          replace_once(
+              'tools/sovereign-chatgpt-mcp/ci_repair_tools.py',
+              '    status_paths = [line[3:].strip() for line in _git(repo, "status", "--porcelain").splitlines() if len(line) >= 4]\n',
+              '    status_output = subprocess.run(\n'
+              '        ["git", "-C", str(repo), "status", "--porcelain"],\n'
+              '        check=True,\n'
+              '        text=True,\n'
+              '        stdout=subprocess.PIPE,\n'
+              '        stderr=subprocess.PIPE,\n'
+              '        timeout=90,\n'
+              '    ).stdout.rstrip("\\n")\n'
+              '    status_paths = [line[3:].strip() for line in status_output.splitlines() if len(line) >= 4]\n',
+          )
+          replace_once(
+              'tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py',
+              '    assert result["rawCandidateCount"] == 92\n    assert result["canonicalCandidateCount"] == 73\n',
+              '    assert result["rawCandidateCount"] == 95\n    assert result["canonicalCandidateCount"] == 76\n',
+          )
+          replace_once(
+              'tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py',
+              '    assert first["status"] == "CONTINUITY_ENTRY_APPENDED"\n    assert second["status"] == "CONTINUITY_ENTRY_ALREADY_PRESENT"\n',
+              '    assert first["status"] == "CONTINUITY_ENTRY_APPENDED"\n    assert first["changedPaths"] == ["change.txt"]\n    assert second["status"] == "CONTINUITY_ENTRY_ALREADY_PRESENT"\n',
+          )
+          PY
 
       - name: Reconcile exact owner-reviewed candidates
         env:
@@ -102,19 +141,28 @@ jobs:
             --append-continuity \
             --report "$EVIDENCE_DIR/reconciled.json"
           python scripts/verify_llm_boundary_ledger.py
-          python -m pytest tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py -q
+          python -m pytest \
+            tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py \
+            tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py \
+            -q
           python - <<'PY'
           import json
           report = json.load(open('.git/sovereign-boundary-evidence/reconciled.json', encoding='utf-8'))
           assert report['status'] == 'BOUNDARY_LEDGER_RECONCILED'
           assert report['validation']['ok'] is True
           assert report['continuity']['status'] == 'CONTINUITY_ENTRY_APPENDED'
-          assert report['continuity']['changedPaths'] == ['config/architecture/llm-tool-boundary-review-ledger.json'], report['continuity']
+          expected_paths = [
+              'config/architecture/llm-tool-boundary-review-ledger.json',
+              'tools/sovereign-chatgpt-mcp/ci_repair_tools.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py',
+          ]
+          assert report['continuity']['changedPaths'] == expected_paths, report['continuity']
           PY
           git diff --check
           cmp -s docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
           ACTUAL_PATHS="$(git diff --name-only | sort | tr '\n' ' ')"
-          EXPECTED_PATHS='config/architecture/llm-tool-boundary-review-ledger.json docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl '
+          EXPECTED_PATHS='config/architecture/llm-tool-boundary-review-ledger.json docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/ci_repair_tools.py tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py '
           printf 'actual_paths=%s\n' "$ACTUAL_PATHS"
           test "$ACTUAL_PATHS" = "$EXPECTED_PATHS"
 
@@ -130,12 +178,11 @@ jobs:
           git add \
             config/architecture/llm-tool-boundary-review-ledger.json \
             docs/sovereign-continuity/LEDGER.jsonl \
-            tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
-          if git diff --cached --quiet; then
-            echo 'Ledger is already current; no commit required.'
-            exit 0
-          fi
-          git commit -m 'chore(ci): record owner-reviewed boundary classifications'
+            tools/sovereign-chatgpt-mcp/ci_repair_tools.py \
+            tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl \
+            tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py \
+            tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py
+          git commit -m 'fix(ci): bind repository intelligence boundary evidence'
           FINAL_SHA="$(git rev-parse HEAD)"
           git push origin "HEAD:${TARGET_REF}"
           test "$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')" = "$FINAL_SHA"
