@@ -97,6 +97,15 @@ tools/sovereign-chatgpt-mcp/
 
 Repository implementation does not prove deployed registry parity. Verify the running MCP revision and registry after an immutable deployment.
 
+The revision-bound Integration Plan Lane lives under:
+
+```text
+backend/agent_runtime/integration_plan_lane.py
+backend/agent_runtime/integration_plan_store.py
+```
+
+The lane persists the per-integration ``.planning/<integration-id>/`` tree (task_plan, findings, progress, evidence-index, plan.receipt, ledger-actions, .mode, .attestation, .active_revision). Plan status is always a **projection** derived from machine-checkable evidence. It is never a truth source for repository, CI, artifact, image, deployment, database or runtime state. The lane never replaces the canonical continuity ledger.
+
 ## Change rules
 
 - Prefer bounded search/replace with exact match count and stale-SHA protection.
