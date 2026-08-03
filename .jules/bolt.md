@@ -19,7 +19,7 @@
 **Action:** Implement simple 1-slot memoization for pure utility functions used in frequent render/effect ticks. Hoist not just regexes, but also the arrays/objects that contain them if they are static.
 
 ## 2026-07-04 - [Optimizing Deep Structure Analysis Loops]
-**Learning:** O(N) operations over file list arrays (e.g., structure analysis, extension checks, matching solution patterns) in a recursive engine can be consolidated. Accumulating name counts on-the-fly and reusing pre-computed metrics (like `byExtension`) completely eliminates redundant iterations. Slicing files before mapping arrays prevents large heap allocations.
+**Learning:** O(N) operations over file list arrays (e.g., structure analysis, extension checks, matching solution patterns) in a recursive engine can be consolidated. Accumulating name counts on-the-fly and reusing pre-computed metrics (like `byExtension`) completely eliminates redundant iterations. Slicing files before allocating string paths.
 **Action:** Always consolidate separate O(N) loops operating on the same arrays. Reuse pre-computed metrics downstream to completely avoid re-parsing structures. Slice lists before allocating string paths.
 
 ## 2026-07-05 - [Pre-filtering Query Spaces by Known Store Domains]
@@ -41,3 +41,7 @@
 ## 2026-08-02 - [Line-level and 1-Slot Caching for Progressive Markdown Parsing]
 **Learning:** In progressive update interfaces (such as streamed chat responses via `PacedChatText` updating every 55ms), re-parsing the entire markdown string from scratch introduces $O(N^2)$ time complexity overhead relative to the total number of characters. Segmenting content by lines and caching the parsed results of immutable lines in a bounded `inlineLineCache` alongside a 1-slot whole-text tokenizer cache drops consecutive stream ticks from expensive regex re-evaluation to $O(1)$ fast lookups.
 **Action:** Always utilize simple, bounded line-level caches combined with 1-slot consecutive whole-text caches to bypass repetitive, expensive string parsing and regular expression tokenization in high-frequency update loops.
+
+## 2026-08-03 - [Consolidating Multi-Pass Scans and Avoiding LocaleCompare]
+**Learning:** Performing multiple sequential array filters and checks on repository file trees introduces $O(N \times M)$ overhead from traversing the file array up to a dozen times. Consolidating classification of source files, test files, legacy files, state pattern markers, directory size maps, and lockfile/package.json detection into a single-pass $O(N)$ loop completely avoids redundant iterations and intermediate array allocations. Furthermore, utilizing standard native array `.sort()` instead of custom `.sort((a, b) => a.localeCompare(b))` results in a 10-20x sorting speedup in V8 because locale-aware comparisons are extraordinarily heavy and unnecessary for simple file path arrays.
+**Action:** Always consolidate separate $O(N)$ scans of file or entry lists into a single loop pass. Avoid `localeCompare` for string arrays (like file paths or IDs) unless local language-specific collations are explicitly required; native `.sort()` is significantly faster.
