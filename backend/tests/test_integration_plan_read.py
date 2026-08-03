@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
+TEST_ROOT = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[2]
-BACKEND = ROOT / "backend"
-if str(BACKEND) not in sys.path:
-    sys.path.insert(0, str(BACKEND))
+if str(TEST_ROOT) not in sys.path:
+    sys.path.insert(0, str(TEST_ROOT))
 
 from agent_runtime.integration_plan_read import (  # noqa: E402
     CANONICAL_FILES,
