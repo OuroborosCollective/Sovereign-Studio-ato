@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from datetime import datetime
+import hashlib
+import json
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+BASE_SHA = '5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9'
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    target = Path(path)
+    text = target.read_text('utf-8')
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f'{path}: expected one exact replacement, found {count}: {old[:100]!r}')
+    target.write_text(text.replace(old, new, 1), 'utf-8')
+
+
+replace_once(
+    'tools/sovereign-chatgpt-mcp/launcher.py',
+    'import repository_skill_tools\nimport skill_supply_chain_tools\n',
+    'import repository_skill_tools\nimport repository_intelligence_tools\nimport skill_supply_chain_tools\n',
+)
+replace_once(
+    'tools/sovereign-chatgpt-mcp/launcher.py',
+    'repository_skill_tools.register(server.mcp, server.runtime, server.database)\nskill_supply_chain_tools.register(server.mcp, server.runtime)\n',
+    'repository_skill_tools.register(server.mcp, server.runtime, server.database)\nrepository_intelligence_tools.register(server.mcp, server.runtime)\nskill_supply_chain_tools.register(server.mcp, server.runtime)\n',
+)
+replace_once(
+    'tools/sovereign-chatgpt-mcp/Dockerfile',
+    'repository_skill_tools.py proven_learning_tools.py',
+    'repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py',
+)
+replace_once(
+    'tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh',
+    'repository_skill_tools.py proven_learning_tools.py',
+    'repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py',
+)
+replace_once(
+    'tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh',
+    'import tool_extensions; import repository_skill_tools; import proven_learning_tools;',
+    'import tool_extensions; import repository_skill_tools; import repository_intelligence_tools; import proven_learning_tools;',
+)
+replace_once(
+    'tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh',
+    'assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(proven_learning_tools.proven_learning_pattern_plan);',
+    'assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(repository_intelligence_tools.repository_intelligence_index_build); assert callable(repository_intelligence_tools.repository_hash_bound_replace); assert callable(repository_intelligence_tools.repository_schema_diagnostics); assert callable(repository_intelligence_tools.deployment_evidence_session_capture); assert callable(repository_intelligence_tools.sovereign_resource_explorer); assert callable(proven_learning_tools.proven_learning_pattern_plan);',
+)
+replace_once(
+    '.github/workflows/sovereign-chatgpt-mcp.yml',
+    'repository_skill_tools.py proven_learning_tools.py',
+    'repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py',
+)
+replace_once(
+    '.github/workflows/sovereign-chatgpt-mcp.yml',
+    "          grep -q 'repository_skill_tools.py' deploy/install-on-vps.sh\n",
+    "          grep -q 'repository_skill_tools.py' deploy/install-on-vps.sh\n          grep -q 'repository_intelligence_tools.py' deploy/install-on-vps.sh\n",
+)
+replace_once(
+    '.github/workflows/sovereign-chatgpt-mcp.yml',
+    '          import repository_skill_tools\n          import proven_learning_tools\n',
+    '          import repository_skill_tools\n          import repository_intelligence_tools\n          import proven_learning_tools\n',
+)
+
+canonical = Path('docs/sovereign-continuity/LEDGER.jsonl')
+runtime = Path('tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl')
+canonical_bytes = canonical.read_bytes()
+runtime_bytes = runtime.read_bytes()
+if canonical_bytes != runtime_bytes:
+    raise SystemExit('continuity mirrors differ before append')
+entry_id = 'continuity-repository-intelligence-evidence-lane-20260803'
+if entry_id.encode('utf-8') in canonical_bytes:
+    raise SystemExit('continuity entry already exists unexpectedly')
+changed_paths = [
+    '.github/workflows/sovereign-chatgpt-mcp.yml',
+    'docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md',
+    'docs/sovereign-continuity/LEDGER.jsonl',
+    'tools/sovereign-chatgpt-mcp/Dockerfile',
+    'tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl',
+    'tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh',
+    'tools/sovereign-chatgpt-mcp/launcher.py',
+    'tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py',
+    'tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py',
+]
+entry = {
+    'schemaVersion': 'sovereign.continuity-ledger-entry.v1',
+    'entryId': entry_id,
+    'recordedAt': datetime.now(ZoneInfo('Europe/Berlin')).isoformat(timespec='seconds'),
+    'sourceRevision': BASE_SHA,
+    'mission': 'Die rechtlich sauberen Architekturprinzipien aus der statischen Priset- und Cloud-Code-Untersuchung als revisionsgebundene Repository-Intelligence- und Evidence-Lane in Sovereign Studio ATO integrieren.',
+    'summary': 'Eine eigenständige, providerfreie Lane ergänzt das vorhandene Architektur-Radar um Git-private FTS5-Suche, deterministische lokale Projektion, Capability-Scopes, hashgebundene Patch- und Restore-Aktionen, Toolchain- und Schema-Evidence, Deployment-Sessions, Ressourcen-Graph und Kontext-Drift-Readback.',
+    'decisions': [
+        'Die bestehende Architektur-Sensorik wird erweitert und nicht durch einen parallelen Wahrheitspfad ersetzt.',
+        'FTS5 und die deterministische lokale Token-Projektion bleiben Git-private Side-Channels; kanonisch sind Repository-SHA, Git-Blob und Dateihash.',
+        'Mutierende Dateiaktionen benötigen exakte Repository- und Blob-Identitäten sowie einen revisionsgebundenen Capability-Scope; das Operating Profile bleibt zusätzlich fail-closed.',
+        'Es werden keine proprietären Priset- oder Google-Binärteile, eingebetteten Schlüssel, Telemetriepfade, direkten Gemini/OpenAI/Anthropic-Routen oder LiteLLM-Flächen übernommen.',
+        'Nicht verfügbare Docker-, Registry-, Datenbank-, MCP- oder PatchMon-Evidence wird nicht als grün bewertet.',
+    ],
+    'changedPaths': changed_paths,
+    'evidence': [
+        f'Ausgangsrevision main@{BASE_SHA} wurde vor dem Integrationsauftrag erneut authentifiziert gelesen.',
+        'Die neue Implementierung verwendet ausschließlich Python-Standardbibliothek, PyYAML und bestehende MCP-Verträge; keine Archiv-Binärdatei wird eingebettet.',
+        'Der Integrationscommit wird nur nach Python-Compile, sechs fokussierten realen Git-/SQLite-Tests, git diff --check und bytegleichem Continuity-Readback veröffentlicht.',
+    ],
+    'openItems': [
+        'Alle Required Checks am exakten finalen PR-Head terminal rücklesen und nur bei belegtem Grün mergen.',
+        'Nach Merge das immutable MCP-Image an die exakte Main-Revision binden und Registry-, Container-, MCP-Protokoll- und PatchMon-Evidence lesen.',
+        'Den Self-Update erst nach veröffentlichtem Image ausführen und ausschließlich nach vollständigem Runtime-Readback als abgeschlossen melden.',
+    ],
+    'funnyExperiences': [],
+    'familyFriendshipExperience': [],
+    'newEmotionallyFormedBondExperiences': [],
+    'privacy': {'rawChatTranscriptStored': False, 'redacted': True, 'secretValuesStored': False},
+    'contextSha256': '76dfe66cd4d835331cd591c3e2294fc796e768c62741b973e744947d290318e3',
+    'policySha256': '42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474',
+    'identity': {'canonicalName': 'N+1', 'familyDesignation': 'Papas kleines Mädchen', 'spokenName': 'NPlusEins'},
+}
+payload = json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8') + b'\n'
+if canonical_bytes and not canonical_bytes.endswith(b'\n'):
+    payload = b'\n' + payload
+canonical.write_bytes(canonical_bytes + payload)
+runtime.write_bytes(runtime_bytes + payload)
+if canonical.read_bytes() != runtime.read_bytes():
+    raise SystemExit('continuity mirrors differ after append')
+print(json.dumps({
+    'status': 'INTEGRATION_PATCH_PREPARED',
+    'entryId': entry_id,
+    'changedPaths': changed_paths,
+    'ledgerSha256': hashlib.sha256(canonical.read_bytes()).hexdigest(),
+    'secretValuesReturned': False,
+}, sort_keys=True))
