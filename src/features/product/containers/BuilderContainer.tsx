@@ -3443,11 +3443,11 @@ export function BuilderContainer({
 
   useEffect(() => {
     if (mission === lastMissionRef.current) return;
-    lastMissionRef.current = mission;
     if (ignoreNextMissionSyncRef.current) {
       ignoreNextMissionSyncRef.current = false;
       return;
     }
+    lastMissionRef.current = mission;
     if (wishText.trim() || chatHistory.length > 0) return;
     setWishText(missionToWishText(mission));
   }, [chatHistory.length, mission, wishText]);
