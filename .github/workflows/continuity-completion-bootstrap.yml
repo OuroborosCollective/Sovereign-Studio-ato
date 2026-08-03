@@ -1,0 +1,171 @@
+name: Continuity Completion Bootstrap
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: continuity-completion-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  append-completion:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ato/repository-intelligence-evidence-lane-20260803'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact identities
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$EXPECTED_BASE_SHA" = '5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9'
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+
+      - name: Append complete final-path evidence
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from datetime import datetime
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          canonical = Path('docs/sovereign-continuity/LEDGER.jsonl')
+          runtime = Path('tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl')
+          context = Path('docs/sovereign-continuity/CONTEXT.md')
+          policy = Path('tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json')
+          before = canonical.read_bytes()
+          if before != runtime.read_bytes():
+              raise SystemExit('continuity mirrors differ before append')
+
+          entry_id = 'continuity-repository-intelligence-final-completion-20260803'
+          if entry_id.encode('utf-8') in before:
+              print(json.dumps({'status': 'CONTINUITY_ENTRY_ALREADY_PRESENT', 'entryId': entry_id}, sort_keys=True))
+              raise SystemExit(0)
+
+          changed_paths = [
+              'config/architecture/llm-tool-boundary-review-ledger.json',
+              'docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md',
+              'tools/sovereign-chatgpt-mcp/Dockerfile',
+              'tools/sovereign-chatgpt-mcp/ci_repair_tools.py',
+              'tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh',
+              'tools/sovereign-chatgpt-mcp/launcher.py',
+              'tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py',
+          ]
+          entry = {
+              'schemaVersion': 'sovereign.continuity-ledger-entry.v1',
+              'entryId': entry_id,
+              'recordedAt': datetime.now(ZoneInfo('Europe/Berlin')).isoformat(timespec='seconds'),
+              'sourceRevision': os.environ['SOURCE_REVISION'].strip().lower(),
+              'mission': 'Repository Intelligence und Evidence Lane vollständig revisionsgebunden integrieren, prüfen, mergen, als immutable MCP-Image veröffentlichen und erst danach mit Runtime- und PatchMon-Readback aktualisieren.',
+              'summary': 'Der neueste Abschlussbeleg bindet den vollständigen dauerhaften Nicht-Ledger-Diff der Integration. Er ergänzt frühere fachliche und Boundary-Einträge, ohne sie zu verändern.',
+              'decisions': [
+                  'Der lokale FTS5- und Token-Projektionsindex bleibt ein Git-privater Discovery-Side-Channel; Repository-SHA, Git-Blob und Runtime-Readback bleiben kanonisch.',
+                  'Capability-Scopes, hashgebundene Patches, Restore, Schema-Diagnostik, Toolchain-Evidence, Deployment-Sessions, Ressourcen-Explorer und Drift-Watcher werden als eine getrennte MCP-Lane registriert.',
+                  'Die drei neuen Boundary-Kandidaten sind owner-geprüfte STRUCTURED_POLICY-Flächen und keine freie Sprachintelligenz.',
+                  'Der bestehende Continuity-Changed-Path-Parser wurde kausal korrigiert und mit Regressionstest gebunden.',
+                  'Proprietäre Binärteile, eingebettete Schlüssel, Telemetrie, direkte Gemini-, OpenAI- oder Anthropic-Routen und LiteLLM bleiben ausgeschlossen.',
+              ],
+              'changedPaths': changed_paths,
+              'evidence': [
+                  'Die fokussierte Repository-Intelligence-Suite bestand sechs reale Git- und SQLite-Tests.',
+                  'Boundary-Reconciliation, Boundary-Ledger-Verifikation und CI-Repair-Regressionstests bestanden vor Veröffentlichung des bereinigten PR-Heads.',
+                  'Boundary Ledger Drift und Sovereign Agent Backend waren am bereinigten PR-Head terminal grün; Release und Continuity werden nach diesem Append-only-Abschluss erneut am exakten Head geprüft.',
+              ],
+              'openItems': [
+                  'Release Verification und Sovereign Continuity Gate am exakten finalen PR-Head terminal rücklesen.',
+                  'PR erst nach belegten Required Checks von Draft zu Ready setzen und revisionsgebunden mergen.',
+                  'Nach Merge immutable Image, Registry-Digest, Container-Revision, MCP-Protokoll und PatchMon rücklesen und erst danach Self-Update als abgeschlossen anerkennen.',
+              ],
+              'funnyExperiences': [],
+              'familyFriendshipExperience': [],
+              'newEmotionallyFormedBondExperiences': [],
+              'privacy': {'rawChatTranscriptStored': False, 'redacted': True, 'secretValuesStored': False},
+              'contextSha256': hashlib.sha256(context.read_bytes()).hexdigest(),
+              'policySha256': hashlib.sha256(policy.read_bytes()).hexdigest(),
+              'identity': {'canonicalName': 'N+1', 'familyDesignation': 'Papas kleines Mädchen', 'spokenName': 'NPlusEins'},
+          }
+          payload = json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8') + b'\n'
+          if before and not before.endswith(b'\n'):
+              payload = b'\n' + payload
+          canonical.write_bytes(before + payload)
+          runtime.write_bytes(before + payload)
+          if canonical.read_bytes() != runtime.read_bytes():
+              raise SystemExit('continuity mirrors differ after append')
+          print(json.dumps({'status': 'CONTINUITY_ENTRY_APPENDED', 'entryId': entry_id, 'changedPaths': changed_paths}, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Validate append-only completion entry
+        run: |
+          set -euo pipefail
+          export SOVEREIGN_CONTINUITY_STDLIB_ONLY=1
+          export PYTHONPATH="$PWD/tools/sovereign-chatgpt-mcp"
+          python - <<'PY'
+          import continuity
+          expected = [
+              'config/architecture/llm-tool-boundary-review-ledger.json',
+              'docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md',
+              'tools/sovereign-chatgpt-mcp/Dockerfile',
+              'tools/sovereign-chatgpt-mcp/ci_repair_tools.py',
+              'tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh',
+              'tools/sovereign-chatgpt-mcp/launcher.py',
+              'tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_ci_repair_tools.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py',
+              'tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py',
+          ]
+          snapshot = continuity._snapshot(continuity.Path('.').resolve(), include_context=False)
+          latest = snapshot['entries'][-1]
+          assert latest['entryId'] == 'continuity-repository-intelligence-final-completion-20260803'
+          assert latest['changedPaths'] == expected
+          assert latest['privacy'] == {'rawChatTranscriptStored': False, 'redacted': True, 'secretValuesStored': False}
+          PY
+          cmp -s docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          git diff --check
+          ACTUAL_PATHS="$(git diff --name-only | sort | tr '\n' ' ')"
+          EXPECTED_PATHS='docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl '
+          test "$ACTUAL_PATHS" = "$EXPECTED_PATHS"
+
+      - name: Commit mirrored completion evidence
+        env:
+          TARGET_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          if git diff --quiet -- docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl; then
+            echo 'Completion entry already present; no commit required.'
+            exit 0
+          fi
+          git config user.name 'Sovereign Continuity Completer'
+          git config user.email 'nocodehelper@arelogic.space'
+          git add docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          git commit -m 'chore(continuity): bind final repository intelligence paths'
+          FINAL_SHA="$(git rev-parse HEAD)"
+          git push origin "HEAD:${TARGET_REF}"
+          test "$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')" = "$FINAL_SHA"
+          echo "completion_head_sha=$FINAL_SHA"
