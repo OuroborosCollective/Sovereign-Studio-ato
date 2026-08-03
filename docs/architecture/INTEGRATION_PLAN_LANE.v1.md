@@ -69,18 +69,24 @@ remain human-readable and are not interpreted by the lane.
 | `backend/agent_runtime/integration_plan_store.py` | Path-safe filesystem adapter: `IntegrationPlanStore`, `init_plan`, `write_receipt`, `append_evidence`, `append_ledger_action`, `write_active_revision`, `write_mode`, `write_attestation`, `write_text`. |
 | `backend/agent_runtime/integration_plan_helpers.py` | Bounded helpers: canonical `task_plan.md` / `findings.md` / `progress.md` renderers, size-bounded redacted `render_context_injection`, `evaluate_gated_completion` (block ceiling + progress check + recursion guard), `snapshot_plan_lane_surfaces` (architecture snapshot + drift report), `resume_session` (Plan / Ledger / Git-Diff / Workspace- / Remote-Revision readback). |
 | `backend/agent_runtime/integration_plan_inventory.py` | CLI inventory runner (stdlib only, no mutation). Executes implementation step 1 and produces `docs/architecture/INTEGRATION_PLAN_LANE_INVENTORY.json` + a drift report. Truth-class annotations per surface (`canonical-truth` / `mirror` / `projection` / `documentation`). |
+| `backend/agent_runtime/integration_plan_read.py` | Read-only plan reader CLI. Reads every canonical file from a `.planning/<integration-id>` directory and produces a JSON snapshot of file hashes, evidence counts, per-phase evaluations, and invariants. Accepts both `records` (store schema) and `evidence` (lane schema). `--strict` exits non-zero on any invariant violation. |
+| `.github/workflows/integration-plan-lane-gate.yml` | CI gate: Python tests, canonical+mirror ledger byte-equal, 8-way mirror parity, inventory strict-zero-drift, lane structural purity (no requests/socket/psycopg2/open imports), schema-version pin, round-trip smoke test. |
+| `.planning/example-llm-boundary-binding/` | Worked example with all 9 canonical files (task_plan.md, findings.md, progress.md, plan.receipt.json, evidence-index.json, ledger-actions.jsonl, .mode, .attestation, .active_revision) plus a README documenting the contract. Demonstrates Owner binding, schema-versioned attestation, per-phase evidence records, and the truth-notice. |
 | `backend/tests/test_integration_plan_lane.py` | Live-path tests for the state machine: schema, attestation, append-only, evidence evaluator, secret redaction, no-I/O structural check. |
 | `backend/tests/test_integration_plan_store.py` | Live-path tests for the store: path traversal, absolute paths, Windows drive letters, MSYS, NUL bytes, symlinked ancestors, symlinked plan dirs, cross-workspace isolation, attestation round-trip, text writers. |
 | `backend/tests/test_integration_plan_helpers.py` | Live-path tests for the helpers: canonical Markdown templates, context-injection size + redaction, gated completion evaluator (block ceiling + progress check + recursion guard), architecture snapshot drift detection, resume drift detection. |
 | `backend/tests/test_integration_plan_inventory.py` | Live-path tests for the inventory runner: surface catalogue, truth class coverage, mirror paths, drift reporting, CLI entry point, strict mode exit code. |
+| `backend/tests/test_integration_plan_read.py` | Live-path tests for the reader CLI: committed example, synthetic plans, attestation tamper detection, strict mode, missing-dir refusal. |
 | `scripts/sovereign-backend/agent_runtime/integration_plan_lane.py` | Byte-equivalent mirror of the canonical lane. |
 | `scripts/sovereign-backend/agent_runtime/integration_plan_store.py` | Byte-equivalent mirror of the canonical store. |
 | `scripts/sovereign-backend/agent_runtime/integration_plan_helpers.py` | Byte-equivalent mirror of the canonical helpers. |
 | `scripts/sovereign-backend/agent_runtime/integration_plan_inventory.py` | Byte-equivalent mirror of the canonical inventory runner. |
+| `scripts/sovereign-backend/agent_runtime/integration_plan_read.py` | Byte-equivalent mirror of the canonical reader CLI. |
 | `scripts/sovereign-backend/tests/test_integration_plan_lane.py` | Byte-equivalent mirror of the lane tests. |
 | `scripts/sovereign-backend/tests/test_integration_plan_store.py` | Byte-equivalent mirror of the store tests. |
 | `scripts/sovereign-backend/tests/test_integration_plan_helpers.py` | Byte-equivalent mirror of the helpers tests. |
 | `scripts/sovereign-backend/tests/test_integration_plan_inventory.py` | Byte-equivalent mirror of the inventory tests. |
+| `scripts/sovereign-backend/tests/test_integration_plan_read.py` | Byte-equivalent mirror of the reader tests. |
 
 Mirror parity is enforced by `diff` in the CI workflow and is a hard
 invariant of the agent-runtime ownership contract.
@@ -189,7 +195,7 @@ completion state.
 
 ## Tests
 
-The lane, store, helpers and inventory runner ship with **122 live-path
+The lane, store, helpers, inventory runner and reader ship with **133 live-path
 unit tests** that import and exercise the real implementation. They cover:
 
 - schema and identifier boundaries;
