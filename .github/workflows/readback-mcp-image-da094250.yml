@@ -6,8 +6,13 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
   packages: read
+
+concurrency:
+  group: exact-mcp-image-readback-da094250
+  cancel-in-progress: true
 
 jobs:
   verify-exact-image:
@@ -15,7 +20,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'evidence/mcp-image-da094250'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
     env:
       EXPECTED_REVISION: da094250f9817254417a6fe92ff53e7f8b5d5a23
       IMAGE_REPOSITORY: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp
@@ -52,6 +57,61 @@ jobs:
               secretValuesReturned: false,
             }));
 
+      - name: Wait for exact main image workflow and require success
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            let selected = null;
+            for (let attempt = 1; attempt <= 180; attempt += 1) {
+              const response = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head_sha: process.env.EXPECTED_REVISION,
+                event: 'push',
+                per_page: 100,
+              });
+              const runs = response.data.workflow_runs || [];
+              selected = runs.find(run => run.name === 'Sovereign ChatGPT MCP') || null;
+              if (selected && selected.status === 'completed') break;
+              if (attempt % 6 === 0) {
+                core.info(JSON.stringify({
+                  status: selected ? 'MAIN_IMAGE_WORKFLOW_IN_PROGRESS' : 'MAIN_IMAGE_WORKFLOW_NOT_VISIBLE_YET',
+                  attempt,
+                  runId: selected?.id || null,
+                  workflowStatus: selected?.status || null,
+                  secretValuesReturned: false,
+                }));
+              }
+              await sleep(10000);
+            }
+            if (!selected) {
+              core.setFailed('EXACT_MAIN_IMAGE_WORKFLOW_NOT_FOUND');
+              return;
+            }
+            core.info(JSON.stringify({
+              status: selected.status === 'completed' && selected.conclusion === 'success'
+                ? 'EXACT_MAIN_IMAGE_WORKFLOW_SUCCEEDED'
+                : 'EXACT_MAIN_IMAGE_WORKFLOW_NOT_SUCCESSFUL',
+              runId: selected.id,
+              runNumber: selected.run_number,
+              headSha: selected.head_sha,
+              event: selected.event,
+              workflowStatus: selected.status,
+              workflowConclusion: selected.conclusion,
+              mutationPerformed: false,
+              secretValuesReturned: false,
+            }));
+            if (selected.head_sha !== process.env.EXPECTED_REVISION || selected.event !== 'push') {
+              core.setFailed('MAIN_IMAGE_WORKFLOW_IDENTITY_MISMATCH');
+              return;
+            }
+            if (selected.status !== 'completed' || selected.conclusion !== 'success') {
+              core.setFailed(`MAIN_IMAGE_WORKFLOW_FAILED: ${selected.conclusion || selected.status}`);
+            }
+
       - name: Log in to GHCR with ephemeral Actions token
         uses: docker/login-action@v3
         with:
@@ -64,15 +124,15 @@ jobs:
         run: |
           set -euo pipefail
           pulled=0
-          for attempt in $(seq 1 72); do
+          for attempt in $(seq 1 24); do
             if docker pull "${IMAGE_TAG}" >/tmp/pull.log 2>&1; then
               pulled=1
               break
             fi
-            sleep 10
+            sleep 5
           done
           if [ "$pulled" != 1 ]; then
-            echo 'EXACT_IMAGE_NOT_PUBLISHED_WITHIN_BOUND' >&2
+            echo 'EXACT_IMAGE_NOT_AVAILABLE_AFTER_SUCCESSFUL_PUBLISH_WORKFLOW' >&2
             sed -E 's/(Bearer|token|password)[^ ]*/\1 <redacted>/Ig' /tmp/pull.log >&2 || true
             exit 1
           fi
