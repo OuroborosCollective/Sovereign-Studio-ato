@@ -1,257 +1,231 @@
-# Sovereign Reader: Runtime, Routing & Agent Handoff
+# Sovereign Reader — Current Contributor Map
 
-This reader is the practical orientation layer for Sovereign Studio ATO. It explains what the current tool actually does, which modules are trusted, and which guardrails must stay intact while future agents add features.
+**Reconciled:** 2026-08-03  
+**Repository baseline:** `63ddbdf4ed8cd6fa895147e6b09dc39bb2330483`
 
-## Current product baseline
+This is the practical orientation layer for contributors. It explains where current responsibilities live, how to classify evidence and which older route assumptions are obsolete.
 
-Sovereign Studio is an Android-first NoCode/AI service tool with a chat-first workbench.
+Read first:
+
+1. [`../AGENTS.md`](../AGENTS.md)
+2. [`CURRENT_STATE_2026-08-03.md`](CURRENT_STATE_2026-08-03.md)
+3. [`SOVEREIGN_PRODUCT_TRUTH.md`](SOVEREIGN_PRODUCT_TRUTH.md)
+4. [`sovereign-continuity/CONTEXT.md`](sovereign-continuity/CONTEXT.md)
+5. current Continuity Policy and ledger head
+
+## Product shape
+
+Sovereign Studio ATO is Android-first and chat-first.
 
 ```text
 User talks to Sovereign.
-Sovereign operates the control room behind the curtain.
-Runtime creates truth.
-UI displays truth.
+Runtime resolves capability, permission and evidence boundaries.
+Tools operate only inside staged scopes.
+Target systems provide readback.
+UI displays the bounded result and next allowed action.
 ```
 
-The live product path is:
+Chat remains the default room. Repository, files, diff, workflow, runtime, health, memory and inspector surfaces are opened for inspection; they do not become a separate truth-producing dashboard.
 
-```text
-src/App.tsx
-→ src/features/product/containers/BuilderContainer.tsx
-→ src/features/product/runtime/**
-```
+## Current repository map
 
-`BuilderContainer.tsx` is the central visible work surface: chat timeline, input, thinking/status cues, compact lamps, action stream and tool launcher. Runtime decisions must stay in `src/features/product/runtime/**`.
-
-## Current functional chain
-
-```txt
-Chat input / repo setup
-↓
-Intent + local status detection
-↓
-Real repository snapshot gate
-↓
-GitHub access validation gate for write intents
-↓
-Capability route decision
-↓
-Worker/model answer OR Direct GitHub Patch OR Workspace/OpenHands Executor OR Draft PR Runtime
-↓
-Action Stream + active blocker state
-↓
-Diff / review / Draft PR / workflow watch
-```
-
-The important rule: no visible action should pretend that a repository has been analyzed, changed or published until a real runtime result exists.
-
-## Core reader map
-
-| Area | Entry point | Purpose |
+| Area | Entry point | Responsibility |
 | --- | --- | --- |
-| Main work surface | `src/features/product/containers/BuilderContainer.tsx` | Central chat workbench and runtime-state display. |
-| Chat helpers | `src/features/product/runtime/builderChatHelpers.ts` | Builds chat lines and local status answers. |
-| Intent split | `src/features/product/runtime/workerIntentDetector.ts` | Distinguishes worker chat, code/executor/write intents. |
-| Action stream | `src/features/product/runtime/sovereignActionStreamRuntime.ts` | Records input, route selection, access checks, blocker and result events. |
-| GitHub access state | `src/features/product/runtime/githubAccessRuntime.ts` | Validates GitHub access through format + real API checks. |
-| GitHub access UI | `src/features/product/components/GitHubAccessCard.tsx` | Secure access input and status display. |
-| Repo loading | `src/features/github/hooks/useGithubRepo.ts` | Loads real GitHub tree entries and handles snapshot restore. |
-| GitHub auth utilities | `src/features/github/githubAuthSession.ts` | Builds headers and strips access values from user-visible errors. |
-| Draft PR publisher | `src/features/github/githubPackagePublisher.ts` | Creates branch, tree, commit and Draft PR. |
-| Generated file review | `src/features/product/runtime/generatedFileReview.ts` | Reviews generated files before publish. |
-| Functional guards | `src/features/product/runtime/sovereignFunctionalGuards.ts` | Blocks empty snapshots, forbidden paths and incomplete outputs. |
-| Workflow watch | `src/features/product/runtime/workflowWatch.ts` | Reads GitHub commit status/check-runs after Draft PR creation. |
-| Product truth | `docs/SOVEREIGN_PRODUCT_TRUTH.md` | Product invariants that prevent dashboard and fake-state drift. |
-| Capability routing | `docs/SOVEREIGN_CAPABILITY_ROUTING.md` | Route model for chat, Direct Patch, workspace and Draft PR. |
+| App shell | `src/App.tsx` | frontend shell and navigation |
+| Product surfaces | `src/features/product/` | chat workbench, runtime projections and guarded user actions |
+| Product runtime | `src/features/product/runtime/` and related runtime modules | state transitions, route decisions and frontend contracts |
+| GitHub integration | `src/features/github/` | repository access and frontend GitHub surfaces |
+| Backend agent runtime | `backend/agent_runtime/` | canonical jobs, tasks, tools, permissions, evidence and recovery |
+| Backend deployment mirror | `scripts/sovereign-backend/agent_runtime/` | mirror requiring parity where the ownership contract applies |
+| Backend tests | `backend/tests/` | real-path and contract tests |
+| MCP control plane | `tools/sovereign-chatgpt-mcp/` | repository, CI, continuity, deployment and runtime operations |
+| Migrations | `backend/migrations/` plus governed mirror | database contracts; not proof of production application |
+| Architecture | `docs/architecture/` | focused subsystem contracts |
+| Continuity | `docs/sovereign-continuity/` plus MCP mirror | context, policy and append-only handoff evidence |
 
-## Practical capabilities
-
-### 1. Chat-first repo work
-
-The user can load a repo and issue tasks through the chat. The UI must stay calm: chat timeline, input, small state cues and compact lamps by default.
-
-Best practice:
-
-- Keep Repo, Files, Diff, Workflow, Runtime, Telemetry, Health, Coverage, Memory and Inspector as explicit inspection surfaces.
-- Do not create a second main shell or busy dashboard.
-- Do not move runtime truth into UI-only state.
-
-### 2. Real repo perception
-
-The app can load a repository tree and build a local snapshot from it. The first pass is path/tree based and intentionally cheap.
-
-Best practice:
-
-- Use tree paths for architecture detection first.
-- Fetch file contents only when a later step truly needs them.
-- Mark restored snapshots as restored/last-known, not fresh truth.
-
-### 3. GitHub access validation
-
-A format-valid access value is not write access. Write access is ready only after GitHub API validation against the loaded repo.
-
-Best practice:
-
-- Use `GitHubAccessCard` for access input.
-- Store only masked access state in runtime.
-- Never write raw access values to chat, telemetry, action events, docs or generated files.
-- If an access value may have been visible in a recording or clipboard history, recommend rotation.
-
-### 4. Capability routing
-
-Sovereign should feel like one assistant, but internally it should route by capability:
+## Current functional model
 
 ```text
-free_chat
-repo_read
-code_patch_plan
-direct_github_patch
-isolated_workspace
-test_runner
-draft_pr
-workflow_watch
-memory_search
+natural-language request
+↓
+model response and structured action candidate
+↓
+runtime validation and exact identity resolution
+↓
+capability snapshot and permission decision
+↓
+read-only response, GitHub operation, isolated workspace, MCP or operator tool
+↓
+execution result/receipt
+↓
+independent repository, CI, artifact, registry, DB, container or PatchMon readback
+↓
+classified state and next action
 ```
 
-Best practice:
+The model interprets language. It does not decide that a capability exists, a mutation is allowed or a target effect occurred.
 
-- Normal questions go to worker/model route.
-- Status questions after a blocker are answered locally from runtime state.
-- README/docs mini-patches should not require OpenHands.
-- Multi-file code work and tests require workspace/OpenHands or a future executor.
+## Capability boundaries
 
-### 5. Direct GitHub Patch
+Sovereign composes bounded capabilities rather than routing everything through one executor.
 
-The intended Direct Patch route is for small docs changes first:
+Examples:
+
+- local/runtime answer;
+- model/provider answer;
+- repository read and Repository Intelligence;
+- hash-bound repository patch/restore;
+- GitHub Issue, PR and workflow operations;
+- isolated workspace and test execution;
+- backend/MCP evidence tools;
+- deployment and self-update operations;
+- continuity, memory and learning projections.
+
+OpenHands may be used as an optional workspace executor. It is not the product's only write path and is not a provider route.
+
+## Repository Intelligence & Evidence Lane
+
+The clean-room lane under `tools/sovereign-chatgpt-mcp/` provides revision-bound repository discovery and controlled operations.
+
+Important rules:
+
+- Index/search results are side channels.
+- Read the exact tracked file and Git blob before mutation.
+- Capability scope, repository SHA and blob SHA must match.
+- Replace/restore affects only the isolated working tree until a separate commit/PR/merge path succeeds.
+- Schema and toolchain diagnostics are findings, not runtime proof.
+- Deployment/context drift observations require target readback.
+
+See [`architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md`](architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md).
+
+## Backend and mirror ownership
+
+Before changing backend agent code:
+
+1. identify the canonical module under `backend/agent_runtime/`;
+2. identify any governed deployment mirror under `scripts/sovereign-backend/agent_runtime/`;
+3. change both where required;
+4. run real-path tests and parity checks;
+5. list both paths in continuity and PR evidence.
+
+A running-container copy is never the canonical fix.
+
+## GitHub workflow
 
 ```text
-README.md
-README.*
-docs/**/*.md
+resolve current main
+→ isolated branch/workspace
+→ bounded edit
+→ targeted checks
+→ continuity handoff
+→ Draft PR
+→ read exact PR head and checks
+→ explicit owner approval
+→ merge exact head
+→ resolve new main
 ```
 
-Best practice:
+Draft PR is the default review boundary, not a claim that every PR must remain draft forever. The private owner-scoped merge path is valid only when exact-head, approval and gate contracts are satisfied.
 
-- Direct Patch v1 should not touch `src/**`, `android/**`, workflows or package manifests.
-- Generate a diff/preview before Draft PR.
-- Validate target path, non-empty patch, no secrets and scope.
+## Provider routing
 
-### 6. Workspace / OpenHands executor
+- Direct OpenRouter for paid routes.
+- Direct FreeLLM/Revolver surfaces for free routes.
+- No LiteLLM product or rollback route.
+- Provider configuration must be refreshed and validated; Git configuration alone does not prove availability or health.
 
-OpenHands is not a normal LLM route. It is a workspace/code executor that can use a model while working with files and commands.
+## Evidence classes
 
-Best practice:
+Use:
 
-- Treat OpenHands as one optional executor.
-- Do not block every small file change just because OpenHands is missing.
-- Start a workspace only for tasks that need file/test/build execution.
-- Every workspace job must be isolated.
+- `IMPLEMENTED_IN_REPOSITORY`
+- `TESTED_AT_REVISION`
+- `CI_VERIFIED`
+- `ARTIFACT_VERIFIED`
+- `DEPLOYED_UNVERIFIED`
+- `RUNTIME_VERIFIED`
+- `BLOCKED`
+- `CONTRADICTED`
+- `PLANNED`
 
-### 7. Local runtime answers
+Examples:
 
-Questions like these should not be blindly sent to a broken worker:
+- merged code without deployment readback: `IMPLEMENTED_IN_REPOSITORY`;
+- green exact-head checks: `CI_VERIFIED`;
+- running container with unknown digest: `DEPLOYED_UNVERIFIED`;
+- liveness but revision mismatch: `CONTRADICTED`;
+- Issue #1182 before implementation: `PLANNED`.
 
-```text
-Bist du fertig?
-Warum passiert nichts?
-Wo ist der Patch?
-Nutzen wir eine andere Route und nicht OpenHands?
-```
+## Verification commands
 
-Best practice:
-
-- Answer from last known runtime state.
-- Say what is ready, what is blocked and what next action is allowed.
-- Never claim a patch or Draft PR exists unless it does.
-
-### 8. Active blockers
-
-Repeated identical blockers must not inflate error counts.
-
-Best practice:
-
-- Track active blockers by route + kind + normalized detail.
-- Show occurrences if repeated.
-- Keep Errors, Warnings and Active Blockers distinct.
-- Next action must match the actual state.
-
-### 9. Generated file review and Draft PR
-
-Draft PR publishing intentionally does not auto-merge.
-
-Best practice:
-
-- Draft PR first, review second, merge later.
-- No Plan-only Draft PRs.
-- A worker answer is not a file change.
-- A generated package is not release-ready until guards and checks pass.
-
-### 10. Workflow watch
-
-Workflow Watch reads GitHub commit statuses/check-runs for produced commits.
-
-Best practice:
-
-- Pending checks are wait state, not failure.
-- Empty workflow/combined status from the connector is not green.
-- Failed check names should become focused repair guidance.
-
-## Open architecture issues
-
-The current architecture is captured in these issues:
-
-```text
-#500 Route write intents after GitHub ready without OpenHands lock-in
-#501 Direct GitHub Patch route for README/docs changes
-#502 Sovereign Capability Router
-#503 Agent-neutral Workspace Runtime
-#504 Active blocker dedupe and honest status
-#505 Credential handling and Android clipboard guidance
-```
-
-Future agents should use these as the route map instead of inventing another surface.
-
-## Verification gates
-
-Recommended checks before merge:
+Common local checks from `package.json`:
 
 ```bash
 pnpm run type-check
 pnpm run test:unit
+pnpm run test:integration
+pnpm run test:release-gate
 pnpm run build:web
 pnpm run audit:sovereign
-```
-
-If present in the current repo state:
-
-```bash
-pnpm run verify
-pnpm run test:e2e
 pnpm run audit:all
 ```
 
-Never claim CI green when GitHub workflow runs or combined statuses are empty.
+Full verification:
 
-## Large file rule
-
-For large files such as:
-
-```text
-src/App.tsx
-src/features/product/containers/BuilderContainer.tsx
+```bash
+pnpm run verify
 ```
 
-prefer small runtime modules and targeted SEARCH/REPLACE patches. Do not do blind full-file replacement.
+Use focused `pytest` commands for affected backend/MCP tests. Run dependency-heavy aggregate gates through GitHub Actions when the local environment is not prepared.
 
-## Drift prevention summary
+## Deployment reader
 
-Future agents must not:
+The only valid release sequence is immutable and revision-bound:
 
-- build a new main shell;
-- turn inspection panels into the default room;
-- make OpenHands the only write path;
-- send local status questions to a broken worker;
-- treat token format as GitHub write access;
-- count the same active blocker as many new errors;
-- close issues for planned work without committed code and checks;
-- claim release-ready without real build/test/device evidence.
+```text
+reviewed revision
+→ exact-head CI
+→ merge revision
+→ immutable image digest
+→ controlled deployment/self-update
+→ registry/protocol/container/revision/digest/PatchMon readback
+```
+
+Do not use direct container file copies, in-container dependency installs or mutable images as release evidence.
+
+## Current planned quality integration
+
+Issue #1182 plans:
+
+- Skill A/B and trigger-quality benchmarks;
+- checkpoints before mutating tool calls;
+- deterministic context-pack receipts;
+- optional UI projections for bounded permission profiles and asynchronous tasks.
+
+These are not active capabilities until separately implemented and verified.
+
+## Obsolete route guidance
+
+The following no longer defines the current architecture:
+
+- issues #500–#505 as the active route roadmap;
+- small docs changes being inherently tied to a special old Direct Patch v1 route;
+- OpenHands as a required executor;
+- fixed VPS IP/port and OAuth application details in contributor docs;
+- manual production hotpatch instructions;
+- permanently accepted pre-existing test failures.
+
+Use the current repository, current open Issues/PRs and exact evidence instead.
+
+## Before declaring success
+
+Report:
+
+- source and final revisions;
+- changed paths;
+- checks actually run;
+- exact-head GitHub status;
+- artifact/image digest where applicable;
+- deployment/runtime readbacks where applicable;
+- unavailable evidence and blockers;
+- final truth class.

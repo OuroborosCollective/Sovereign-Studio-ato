@@ -1,73 +1,78 @@
-# Sovereign Studio Copilot Instructions
+# Sovereign Studio ATO — Copilot Instructions
 
-Before changing code, read `AGENTS.md` at the repository root.
+Before changing anything, read:
 
-This project is `NOCODESTUDIO Sovereign Tool / Sovereign-Studio-ato`.
-Do not mix it with Areloria, WASD, MMORPG, ARE logic, or unrelated game paths unless explicitly requested.
+1. `AGENTS.md`
+2. `docs/CURRENT_STATE_2026-08-03.md`
+3. `docs/SOVEREIGN_PRODUCT_TRUTH.md`
+4. the focused subsystem document and current Issue/PR
 
-## Non-negotiable project rules
-
-1. Runtime creates truth. UI only displays it.
-2. Every action must produce a result.
-3. Every result must create or update state.
-4. Every next action must be allowed, blocked, or routed by that state.
-5. Do not use DOM text, visual UI state, static percentage progress, or hardcoded progress maps as truth.
-6. Do not use a fixed maximum step count. Step totals must come from the planned runtime flow.
-7. Do not let placeholder missions enter package-build as-is.
-8. No mocks, stubs, facades, fake snapshots, fake success states, or hardcoded green states in the live path.
-9. Draft PRs require real execution patches and must not be plan-only.
-10. Every new runtime path needs validation and useful tests.
-
-## Required implementation shape
-
-For workflow logic, use this causal chain:
+## Core contract
 
 ```text
-action -> result -> state -> next allowed action -> next result -> next state
+Runtime creates truth.
+UI displays bounded projections.
+Evidence and target-system readback decide completion.
 ```
 
-For progress display, use this shape:
+## Required behavior
 
-```text
-currentStep / plannedRuntimeSteps - current runtime action
+- Resolve the exact current revision before editing.
+- Work in an isolated branch/workspace.
+- Read canonical and deployment-mirror ownership.
+- Prefer small bounded edits with stale-SHA protection.
+- Keep model reasoning, permission, tool execution, evidence and readback separate.
+- Use structured failure states; do not parse success from prose.
+- Import and test the real implementation.
+- Preserve cross-owner, cross-tenant, cross-repository, cross-workspace and cross-revision isolation.
+- Keep continuity ledgers append-only.
+- Draft PR is the default review boundary.
+- Merge requires explicit owner approval for the exact PR head and relevant green checks.
+
+## Forbidden behavior
+
+- No mock/stub/facade or hardcoded green state in live code.
+- No UI/DOM text, telemetry, liveness, model output or tool exit code as target-system truth.
+- No secrets or secret-shaped credential values in code, tests, docs, chat, logs, Issues, PRs or ledgers.
+- No direct production container hotpatching.
+- No package installation inside running containers.
+- No `curl | bash`, `wget | sh` or unknown plugin/skill execution.
+- No reintroduction of LiteLLM.
+- No new parallel agent, queue, memory, MCP, approval or evidence truth layer without an approved architecture contract.
+- No copied production logic inside tests.
+- No stale SHAs, image digests, ports or old issue lists presented as current.
+
+## Repository map
+
+- Frontend: `src/`
+- Product runtime: `src/features/product/runtime/` and related runtime modules
+- Canonical backend agent runtime: `backend/agent_runtime/`
+- Governed backend mirror: `scripts/sovereign-backend/agent_runtime/`
+- MCP control plane: `tools/sovereign-chatgpt-mcp/`
+- Architecture docs: `docs/architecture/`
+- Continuity: `docs/sovereign-continuity/` and governed MCP mirror
+
+## Common checks
+
+```bash
+pnpm run type-check
+pnpm run test:unit
+pnpm run test:integration
+pnpm run test:release-gate
+pnpm run build:web
+pnpm run audit:sovereign
+pnpm run audit:all
 ```
 
-The UI must receive or derive this from runtime events/state. It must not invent it.
+Use focused real-path Python tests for affected backend/MCP modules. Report unavailable checks honestly and rely on exact-head GitHub Actions for required aggregate gates.
 
-## Placeholder handling
+## Completion report
 
-These examples must be normalized into a concrete repo-derived mission or stopped safely before package-build:
+Always state:
 
-- `README + Update History`
-- `Mach weiter`
-- `Fehler`
-- `Ideen`
-- `Plan`
-- `Workflow Fehleranalyse + Runtime Check + Test Plan`
-
-## Draft PR guard
-
-Allowed actionable output may touch:
-
-- `src/`
-- `tests/`
-- `android/`
-- `scripts/`
-- `.github/workflows/`
-- config files
-- `README.md`
-- real `docs/`
-
-`docs/SOVEREIGN_PLAN.md` is plan-only and must not count as actionable output.
-
-## Before claiming success
-
-Verify or report blockers for:
-
-- live-path integration
-- runtime checks
-- validation
-- tests
-- no plan-only Draft PR path
-- no mock/stub/facade in production code
-- understandable UX for non-developers
+- source/final revision;
+- changed paths;
+- checks actually run;
+- exact-head CI state;
+- artifact/deployment/runtime evidence where applicable;
+- blockers and final truth class.
