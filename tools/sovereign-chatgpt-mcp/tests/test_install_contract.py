@@ -444,19 +444,17 @@ def test_automatic_main_push_never_uses_public_runner_ssh_deployment() -> None:
     assert "key:" not in deploy
 
 
-def test_documented_paramiko_fallback_uses_password_not_client_key() -> None:
+def test_documented_password_paramiko_fallback_is_retired() -> None:
     knowledge = (ROOT.parents[1] / "AGENTS_KNOWLEDGE.md").read_text("utf-8")
 
-    marker = "#### VPS Connection Pattern (direct operator fallback via Paramiko)"
-    start = knowledge.index(marker)
-    end = knowledge.index("\n#### Fetching Python Files from Container", start)
-    fallback = knowledge[start:end]
-
-    assert "password=os.environ['VPS_PASSWORD']" in fallback
-    assert "look_for_keys=False" in fallback
-    assert "allow_agent=False" in fallback
-    assert "VPS_SSH_KEY_FILE" not in fallback
-    assert "paramiko.RejectPolicy()" in fallback
+    assert "#### VPS Connection Pattern (direct operator fallback via Paramiko)" not in knowledge
+    assert "password=os.environ['VPS_PASSWORD']" not in knowledge
+    assert "paramiko.AutoAddPolicy()" not in knowledge
+    assert "password-based SSH examples and unknown-host acceptance;" in knowledge
+    assert (
+        "Contributor docs must not contain infrastructure addresses, credentials, "
+        "OAuth application IDs or mutable production commands."
+    ) in knowledge
 
 
 def test_main_workflow_runs_real_memory_collection_post_install_canary() -> None:
