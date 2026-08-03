@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "sovereign.integration-plan-lane.v1",
+  "planSchemaVersion": "1",
+  "planId": "example-llm-boundary-binding",
+  "owner": "thomas",
+  "repoOwner": "OuroborosCollective",
+  "repoName": "Sovereign-Studio-ato",
+  "workspaceId": "ws-llm-boundary-2026-08-04",
+  "baseRevision": "061919f3a34846eadeebcdee50358b15252e580f",
+  "issueReference": "1112",
+  "acceptanceCriteria": [
+    "Direct OpenRouter paid and direct FreeLLM/Revolver free LLMs remain on their own paths; LiteLLM is not introduced.",
+    "llm_execution_resolver enforces no-key / user-key / paid-key boundaries for every direct route."
+  ],
+  "allowedMutationSurfaces": [
+    "backend/agent_runtime/llm_execution_resolver.py",
+    "backend/agent_runtime/llm_cost_policy.py",
+    "backend/tests/test_llm_execution_resolver.py"
+  ],
+  "phases": [
+    {
+      "phaseId": "phase-introspect",
+      "title": "Trust boundary inventory",
+      "description": "Snapshot every credential-loading call path and verify no key is requested through LiteLLM-style reflection.",
+      "acceptanceCriteria": [
+        "Every credential loader is documented and unit-tested.",
+        "No LiteLLM usage in production code."
+      ],
+      "requiredEvidenceKinds": [
+        "repo_revision",
+        "ci_workflow"
+      ],
+      "status": "verified"
+    },
+    {
+      "phaseId": "phase-prepaid-paid-route",
+      "title": "Direct OpenRouter paid flow",
+      "description": "Wire SOVEREIGN_API_KEY to OpenRouter direct, refusal-on-missing-key semantics.",
+      "acceptanceCriteria": [
+        "Only stored credential or explicit user key.",
+        "No reflective env lookup."
+      ],
+      "requiredEvidenceKinds": [
+        "repo_revision",
+        "runtime_readback"
+      ],
+      "status": "verified"
+    },
+    {
+      "phaseId": "phase-free-route",
+      "title": "Direct FreeLLM/Revolver free flow",
+      "description": "Free LLM on its own resolver path; not a paid-route fallback.",
+      "acceptanceCriteria": [
+        "FreeLLM path is direct, not via OpenRouter."
+      ],
+      "requiredEvidenceKinds": [
+        "repo_revision",
+        "runtime_readback"
+      ],
+      "status": "in_progress"
+    },
+    {
+      "phaseId": "phase-boundary-test",
+      "title": "Negative tests for each boundary",
+      "description": "Tests that paid and free routes cannot accidentally share a credential path.",
+      "acceptanceCriteria": [
+        "Test asserts no LiteLLM import in shipped runtime."
+      ],
+      "requiredEvidenceKinds": [
+        "ci_workflow"
+      ],
+      "status": "pending"
+    }
+  ],
+  "nextStep": "Complete the negative tests for phases phase-free-route and phase-boundary-test.",
+  "recordedAtIso": "2026-08-04T01:00:00+00:00",
+  "amendmentReason": "initial plan attestation",
+  "predecessorAttestationSha256": null,
+  "attestationSha256": "66f08aef113858974ccbb6919447bf5c9ae3fd406730572fd0f2eb1a87d7094b",
+  "planContentSha256": "ecc4b5f49a53375354425514416c2a7ccd039deecb7cee5080814ad43d505dc5",
+  "schemaVersions": [
+    "sovereign.integration-plan-lane.v1"
+  ],
+  "evidenceSchemaVersion": "sovereign.integration-plan-evidence.v1",
+  "mutationPerformed": false,
+  "runtimeVerified": false,
+  "secretValuesReturned": false
+}
