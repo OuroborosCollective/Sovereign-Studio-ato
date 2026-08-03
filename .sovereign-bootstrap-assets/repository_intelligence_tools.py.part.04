@@ -1,0 +1,328 @@
+    target = _safe_file(repo, normalized_path, must_exist=True)
+    expected_blob = _validate_sha(expected_blob_sha, field="expected_blob_sha")
+    before_blob = _file_blob_sha(repo, normalized_path)
+    if before_blob != expected_blob:
+        raise ValueError(f"blob mismatch: expected {expected_blob}, actual {before_blob}")
+    if not search_text or len(search_text) > 200_000 or len(replacement_text) > 400_000:
+        raise ValueError("search_text and replacement_text exceed bounded patch limits")
+    if _SECRET_MARKER.search(search_text) or _SECRET_MARKER.search(replacement_text):
+        raise ValueError("patch arguments contain a secret-like marker")
+    before = target.read_text("utf-8")
+    occurrences = before.count(search_text)
+    required = max(1, min(int(expected_occurrences), 100))
+    if occurrences != required:
+        raise ValueError(f"search occurrence mismatch: expected {required}, actual {occurrences}")
+    after = before.replace(search_text, replacement_text, required)
+    mode = stat.S_IMODE(target.stat().st_mode)
+    _atomic_write(target, after.encode("utf-8"), mode=mode)
+    after_blob = _file_blob_sha(repo, normalized_path)
+    return {
+        "ok": True,
+        "status": "HASH_BOUND_REPLACE_APPLIED",
+        "repoSha": head,
+        "path": normalized_path,
+        "scopeId": scope["scopeId"],
+        "subject": scope["subject"],
+        "beforeBlobSha": before_blob,
+        "afterBlobSha": after_blob,
+        "beforeSha256": hashlib.sha256(before.encode("utf-8")).hexdigest(),
+        "afterSha256": hashlib.sha256(after.encode("utf-8")).hexdigest(),
+        "occurrencesReplaced": required,
+        "diff": _bounded_diff(normalized_path, before, after),
+        "repositoryWritten": True,
+        "committed": False,
+        "truthNotice": "The working-tree write is proven by post-write hashing; commit, CI, deployment and runtime success remain separate gates.",
+    }
+
+
+def repository_hash_bound_restore(
+    workspace_id: str,
+    path: str,
+    expected_repo_sha: str,
+    expected_current_blob_sha: str,
+    source_ref: str,
+    expected_source_blob_sha: str,
+    capability_scope_id: str,
+) -> dict[str, Any]:
+    """Restore one file from an exact Git ref only when current and source blob identities are both confirmed."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    normalized_path = _normalize_relative_path(path)
+    scope = _load_scope(
+        repo,
+        capability_scope_id,
+        tool="repository_hash_bound_restore",
+        effect="workspace-write",
+        path=normalized_path,
+        current_head=head,
+    )
+    target = _safe_file(repo, normalized_path, must_exist=True)
+    current_expected = _validate_sha(expected_current_blob_sha, field="expected_current_blob_sha")
+    current_blob = _file_blob_sha(repo, normalized_path)
+    if current_blob != current_expected:
+        raise ValueError(f"current blob mismatch: expected {current_expected}, actual {current_blob}")
+    ref = _validate_ref(source_ref)
+    source_expected = _validate_sha(expected_source_blob_sha, field="expected_source_blob_sha")
+    source_blob = _git(repo, "rev-parse", f"{ref}:{normalized_path}").lower()
+    if source_blob != source_expected:
+        raise ValueError(f"source blob mismatch: expected {source_expected}, actual {source_blob}")
+    before = target.read_text("utf-8")
+    source_bytes = _git_bytes(repo, "show", f"{ref}:{normalized_path}")
+    source_text = source_bytes.decode("utf-8")
+    mode = stat.S_IMODE(target.stat().st_mode)
+    _atomic_write(target, source_bytes, mode=mode)
+    restored_blob = _file_blob_sha(repo, normalized_path)
+    if restored_blob != source_blob:
+        raise RuntimeError("post-restore blob readback does not match the source blob")
+    return {
+        "ok": True,
+        "status": "HASH_BOUND_RESTORE_APPLIED",
+        "repoSha": head,
+        "path": normalized_path,
+        "sourceRef": ref,
+        "scopeId": scope["scopeId"],
+        "subject": scope["subject"],
+        "beforeBlobSha": current_blob,
+        "restoredBlobSha": restored_blob,
+        "diff": _bounded_diff(normalized_path, before, source_text),
+        "repositoryWritten": True,
+        "committed": False,
+        "truthNotice": "The restored working-tree blob matches the confirmed source blob; later repository and runtime gates are not implied.",
+    }
+
+
+def managed_toolchain_verify(
+    workspace_id: str,
+    expected_repo_sha: str,
+    tools: list[str] | None = None,
+) -> dict[str, Any]:
+    """Verify allowlisted local tool executables, versions and bounded executable digests."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    snapshot = _toolchain_snapshot(tools)
+    return {
+        "ok": snapshot["status"] == "TOOLCHAIN_VERIFIED",
+        "status": snapshot["status"],
+        "repoSha": head,
+        "tools": snapshot["tools"],
+        "installationPerformed": False,
+        "networkAccessPerformed": False,
+        "secretValuesReturned": False,
+        "truthNotice": "Executable presence and version output do not prove a daemon, account, registry or deployment is healthy.",
+    }
+
+
+def repository_schema_diagnostics(
+    workspace_id: str,
+    expected_repo_sha: str,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Parse bounded YAML/JSON surfaces and report duplicate-key, OpenAPI, workflow and Compose contract findings."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    result = _diagnose_schemas(repo, paths)
+    return {"ok": not result["findings"], "repoSha": head, **result}
+
+
+def deployment_evidence_session_capture(
+    workspace_id: str,
+    expected_repo_sha: str,
+    capability_scope_id: str,
+    expected_image_digest: str = "",
+    include_docker: bool = True,
+    session_label: str = "",
+) -> dict[str, Any]:
+    """Capture one revision-bound deployment evidence session into the workspace Git-private evidence area."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    scope = _load_scope(
+        repo,
+        capability_scope_id,
+        tool="deployment_evidence_session_capture",
+        effect="workspace-write",
+        path="@git/sovereign-evidence/deployment/session.json",
+        current_head=head,
+    )
+    expected_digest = str(expected_image_digest or "").strip().lower()
+    if expected_digest and not _IMAGE_DIGEST.search(expected_digest):
+        raise ValueError("expected_image_digest must contain an immutable sha256 digest")
+    label = " ".join(str(session_label or "").split())[:120]
+    status_lines = [line for line in _git(repo, "status", "--short").splitlines() if line]
+    schema = _diagnose_schemas(repo)
+    docker = _docker_snapshot() if include_docker else {
+        "status": "DOCKER_READBACK_NOT_REQUESTED", "context": None, "containers": [],
+        "composeProjects": [], "mcpRepoDigests": [], "secretValuesReturned": False,
+    }
+    digest_match = None
+    if expected_digest:
+        digest_match = expected_digest in docker.get("mcpRepoDigests", [])
+    evidence = {
+        "schemaVersion": "sovereign.deployment-evidence-session.v1",
+        "capturedAt": datetime.now(timezone.utc).isoformat(),
+        "label": label,
+        "repoSha": head,
+        "branch": _git(repo, "branch", "--show-current"),
+        "workingTreeDirty": bool(status_lines),
+        "changedPathCount": len(status_lines),
+        "changedPaths": [line[3:] if len(line) > 3 else line for line in status_lines[:200]],
+        "expectedImageDigest": expected_digest or None,
+        "imageDigestMatch": digest_match,
+        "toolchain": _toolchain_snapshot(["git", "python", "node", "pnpm", "docker", "docker-compose"]),
+        "schemaDiagnostics": {
+            "status": schema["status"],
+            "filesInspected": schema["filesInspected"],
+            "findingCount": len(schema["findings"]),
+            "truncated": schema["truncated"],
+        },
+        "docker": docker,
+        "scopeId": scope["scopeId"],
+        "subject": scope["subject"],
+        "secretValuesReturned": False,
+    }
+    canonical = _canonical_json(evidence)
+    session_id = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    payload = {**evidence, "sessionId": session_id}
+    target = _evidence_root(repo) / f"{session_id.removeprefix('sha256:')}.json"
+    _atomic_write(target, (_canonical_json(payload) + "\n").encode("utf-8"), mode=0o600)
+    return {
+        "ok": digest_match is not False,
+        "status": "DEPLOYMENT_EVIDENCE_SESSION_CAPTURED" if digest_match is not False else "DEPLOYMENT_EVIDENCE_DIGEST_MISMATCH",
+        "sessionId": session_id,
+        "repoSha": head,
+        "scopeId": scope["scopeId"],
+        "evidence": payload,
+        "evidenceSha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        "repositoryWritten": False,
+        "gitPrivateSideChannelWritten": True,
+        "truthNotice": "This session records observed evidence and mismatches. It does not convert unavailable probes into success.",
+    }
+
+
+def sovereign_resource_explorer(
+    workspace_id: str,
+    expected_repo_sha: str,
+    include_docker: bool = True,
+) -> dict[str, Any]:
+    """Build a bounded repository-to-runtime resource graph from current files and optional Docker readbacks."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    tracked = _tracked_files(repo)
+    workflows = sorted(path for path in tracked if path.startswith(".github/workflows/") and PurePosixPath(path).suffix in {".yml", ".yaml"})
+    migrations = sorted(path for path in tracked if "/migrations/" in path and PurePosixPath(path).suffix.casefold() == ".sql")
+    compose_files = sorted(path for path in tracked if PurePosixPath(path).name.casefold() in {"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"})
+    docker = _docker_snapshot() if include_docker else {
+        "status": "DOCKER_READBACK_NOT_REQUESTED", "context": None, "containers": [],
+        "composeProjects": [], "mcpRepoDigests": [], "secretValuesReturned": False,
+    }
+    nodes: list[dict[str, Any]] = [
+        {"id": "repo", "kind": "repository", "status": "READ", "evidence": {"headSha": head, "trackedFileCount": len(tracked)}},
+        {"id": "ci", "kind": "ci-workflows", "status": "DISCOVERED", "evidence": {"count": len(workflows), "paths": workflows[:80]}},
+        {"id": "compose", "kind": "compose-definitions", "status": "DISCOVERED", "evidence": {"count": len(compose_files), "paths": compose_files[:80]}},
+        {"id": "database", "kind": "database-contract", "status": "DISCOVERED_NOT_QUERIED", "evidence": {"migrationCount": len(migrations), "paths": migrations[:80]}},
+        {"id": "mcp", "kind": "mcp-runtime", "status": "DISCOVERED", "evidence": {"sourcePresent": "tools/sovereign-chatgpt-mcp/launcher.py" in tracked, "repoDigests": docker.get("mcpRepoDigests", [])}},
+        {"id": "patchmon", "kind": "patchmon", "status": "DISCOVERED", "evidence": {"sourcePaths": [path for path in tracked if "patchmon" in path.casefold()][:80]}},
+        {"id": "docker", "kind": "container-runtime", "status": docker["status"], "evidence": {"context": docker.get("context"), "containerCount": len(docker.get("containers", [])), "composeProjectCount": len(docker.get("composeProjects", []))}},
+    ]
+    for container in docker.get("containers", [])[:80]:
+        nodes.append({"id": f"container:{container['name']}", "kind": "container", "status": container["status"], "evidence": {"image": container["image"], "id": container["id"]}})
+    edges = [
+        {"from": "repo", "to": "ci", "relation": "defines"},
+        {"from": "repo", "to": "compose", "relation": "defines"},
+        {"from": "repo", "to": "database", "relation": "declares-migrations"},
+        {"from": "repo", "to": "mcp", "relation": "defines"},
+        {"from": "repo", "to": "patchmon", "relation": "defines"},
+        {"from": "compose", "to": "docker", "relation": "projects-onto"},
+    ]
+    for container in docker.get("containers", [])[:80]:
+        edges.append({"from": "docker", "to": f"container:{container['name']}", "relation": "runs"})
+        if container["name"] == "sovereign-chatgpt-mcp":
+            edges.append({"from": "mcp", "to": f"container:{container['name']}", "relation": "runtime-instance"})
+        if "patchmon" in container["name"].casefold():
+            edges.append({"from": "patchmon", "to": f"container:{container['name']}", "relation": "runtime-instance"})
+    return {
+        "ok": True,
+        "status": "RESOURCE_EXPLORER_READY",
+        "repoSha": head,
+        "nodes": nodes[:180],
+        "edges": edges[:240],
+        "dockerReadback": docker,
+        "databaseRowsRead": False,
+        "secretValuesReturned": False,
+        "truthNotice": "DISCOVERED means a surface exists. Only nodes carrying fresh runtime evidence may be treated as live.",
+    }
+
+
+def repository_context_drift_watch(
+    workspace_id: str,
+    expected_repo_sha: str,
+    expected_branch: str = "",
+    expected_docker_context: str = "",
+    expected_compose_projects: list[str] | None = None,
+    expected_image_digest: str = "",
+) -> dict[str, Any]:
+    """Compare expected Git, Docker context, Compose projects and immutable MCP digest with fresh local readbacks."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    branch = _git(repo, "branch", "--show-current")
+    docker_expectation = bool(expected_docker_context or expected_compose_projects or expected_image_digest)
+    docker = _docker_snapshot() if docker_expectation else {
+        "status": "DOCKER_READBACK_NOT_REQUIRED", "context": None, "containers": [],
+        "composeProjects": [], "mcpRepoDigests": [], "secretValuesReturned": False,
+    }
+    checks: list[dict[str, Any]] = [
+        {"name": "repoSha", "expected": head, "actual": head, "status": "MATCH"},
+    ]
+    if expected_branch:
+        checks.append({"name": "branch", "expected": expected_branch, "actual": branch, "status": "MATCH" if branch == expected_branch else "DRIFT"})
+    if expected_docker_context:
+        actual_context = docker.get("context")
+        checks.append({"name": "dockerContext", "expected": expected_docker_context, "actual": actual_context, "status": "MATCH" if actual_context == expected_docker_context else "DRIFT_OR_UNAVAILABLE"})
+    if expected_compose_projects is not None:
+        expected_projects = sorted(set(str(item) for item in expected_compose_projects))
+        actual_projects = sorted({item["name"] for item in docker.get("composeProjects", []) if item.get("name")})
+        checks.append({"name": "composeProjects", "expected": expected_projects, "actual": actual_projects, "status": "MATCH" if actual_projects == expected_projects else "DRIFT_OR_UNAVAILABLE"})
+    digest = str(expected_image_digest or "").strip().lower()
+    if digest:
+        if not _IMAGE_DIGEST.search(digest):
+            raise ValueError("expected_image_digest must contain an immutable sha256 digest")
+        actual_digests = docker.get("mcpRepoDigests", [])
+        checks.append({"name": "mcpImageDigest", "expected": digest, "actual": actual_digests, "status": "MATCH" if digest in actual_digests else "DRIFT_OR_UNAVAILABLE"})
+    drift = any(item["status"] != "MATCH" for item in checks)
+    return {
+        "ok": not drift,
+        "status": "CONTEXT_DRIFT_DETECTED" if drift else "CONTEXT_READBACK_MATCH",
+        "repoSha": head,
+        "checks": checks,
+        "dockerStatus": docker["status"],
+        "mutationPerformed": False,
+        "secretValuesReturned": False,
+        "truthNotice": "Unavailable evidence is never converted to MATCH when an expectation was supplied.",
+    }
+
+
+def register(mcp: Any, runtime: Any) -> None:
+    global _RUNTIME, _REGISTERED
+    _RUNTIME = runtime
+    if _REGISTERED:
+        return
+    for tool in (
+        repository_intelligence_tool_inventory,
+        repository_intelligence_search,
+        managed_toolchain_verify,
+        repository_schema_diagnostics,
+        sovereign_resource_explorer,
+        repository_context_drift_watch,
+    ):
+        mcp.tool(annotations=READ_ONLY)(tool)
+    for tool in (
+        repository_capability_scope_create,
+        repository_intelligence_index_build,
+        deployment_evidence_session_capture,
+    ):
+        mcp.tool(annotations=WORKSPACE_WRITE)(tool)
+    for tool in (
+        repository_hash_bound_replace,
+        repository_hash_bound_restore,
+    ):
+        mcp.tool(annotations=TRACKED_WRITE)(tool)
+    _REGISTERED = True
