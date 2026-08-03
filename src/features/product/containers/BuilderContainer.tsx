@@ -3441,17 +3441,13 @@ export function BuilderContainer({
     return () => window.clearInterval(h);
   }, [runtimeThinkingActive]);
 
-  // Mission sync effect. Order matters: the ignore flag must be consumed BEFORE
-  // lastMissionRef.current is synced to the prop, otherwise an internal
-  // emitMissionChange can be followed by a stale reset of the ref that breaks the
-  // dedup gate in startAgentFromText.
   useEffect(() => {
     if (mission === lastMissionRef.current) return;
+    lastMissionRef.current = mission;
     if (ignoreNextMissionSyncRef.current) {
       ignoreNextMissionSyncRef.current = false;
       return;
     }
-    lastMissionRef.current = mission;
     if (wishText.trim() || chatHistory.length > 0) return;
     setWishText(missionToWishText(mission));
   }, [chatHistory.length, mission, wishText]);
