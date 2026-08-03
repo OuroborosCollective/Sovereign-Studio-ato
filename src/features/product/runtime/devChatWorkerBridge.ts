@@ -380,6 +380,10 @@ function readWorkerContent(payload: unknown): string | undefined {
   return undefined;
 }
 
+
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value);
+}
 function readOptionalStringField(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const field = (value as Record<string, unknown>)[key];
@@ -1136,11 +1140,11 @@ export async function* streamDevChatWorkerReply(
 
           // OpenAI-compatible SSE format: { choices: [{ delta: { content: "..." } }] }
           const choices = payload.choices;
-          if (Array.isArray(choices) && choices.length > 0) {
-            const delta = (choices[0] as Record<string, unknown>)?.delta;
+          if (isUnknownArray(choices) && choices.length > 0) {
+            const delta = choices[0];
             if (delta && typeof delta === 'object') {
-              const content = (delta as Record<string, unknown>)?.content;
-              if (typeof content === 'string' && content.length > 0) {
+              const content = readOptionalStringField(delta, 'content');
+              if (content) {
                 yield content;
               }
             }
