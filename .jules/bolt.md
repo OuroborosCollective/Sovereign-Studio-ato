@@ -1,3 +1,7 @@
+## 2026-08-04 - [String Relational Sorts and Hoisting Map Allocations]
+**Learning:** Standard javascript `.localeCompare` has high initialization and collation overhead. For non-localized string fields (e.g., node types, IDs, paths, scopes), relational operators (`<` and `>`) yield a massive speedup. Furthermore, declaring record maps (e.g., `riskOrder`) inside the sorting callback creates immense memory and GC thrashing.
+**Action:** Always use `<` and `>` instead of `.localeCompare` for ASCII/technical strings. Always hoist lookup/record maps to module-level constants to avoid allocation inside loops or sorting callbacks.
+
 ## 2025-05-28 - [Refactoring ProductMagicApp.tsx]
 **Learning:** Large React components (200+ lines) with mixed state and UI benefit significantly from custom hooks and component decomposition.
 **Action:** Always look for logical units of state and UI blocks to extract. Use custom hooks for complex state management and isolated components for logical UI sections.
