@@ -37,10 +37,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p tools/sovereign-chatgpt-mcp/tests docs/architecture
-          cat .sovereign-bootstrap-assets/repository_intelligence_tools.py.b64.* | base64 --decode > tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py
-          cat .sovereign-bootstrap-assets/test_repository_intelligence_tools.py.b64.* | base64 --decode > tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
-          cat .sovereign-bootstrap-assets/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md.b64.* | base64 --decode > docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md
-          cat .sovereign-bootstrap-assets/integrate_repository_intelligence.py.b64.* | base64 --decode > /tmp/integrate_repository_intelligence.py
+          cat .sovereign-bootstrap-assets/repository_intelligence_tools.py.part.* > tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py
+          cat .sovereign-bootstrap-assets/test_repository_intelligence_tools.py.part.* > tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
+          cat .sovereign-bootstrap-assets/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md.part.* > docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md
+          cat .sovereign-bootstrap-assets/integrate_repository_intelligence.py.part.* > /tmp/integrate_repository_intelligence.py
           python /tmp/integrate_repository_intelligence.py
           rm -rf .sovereign-bootstrap-assets
           rm .github/workflows/repository-intelligence-integration-bootstrap.yml
