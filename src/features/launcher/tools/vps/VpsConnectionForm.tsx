@@ -99,10 +99,11 @@ export function VpsConnectionForm({ connecting, error, onConnect }: Props) {
         {/* Host + Port */}
         <div style={{ display: 'flex', gap: 8 }}>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
+            <label htmlFor="vps-host" style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
               HOST / IP
             </label>
             <input
+              id="vps-host"
               style={input}
               type="text"
               placeholder="192.168.1.1 oder server.example.com"
@@ -113,10 +114,11 @@ export function VpsConnectionForm({ connecting, error, onConnect }: Props) {
             />
           </div>
           <div style={{ width: 70 }}>
-            <label style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
+            <label htmlFor="vps-port" style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
               PORT
             </label>
             <input
+              id="vps-port"
               style={input}
               type="number"
               min={1}
@@ -130,10 +132,11 @@ export function VpsConnectionForm({ connecting, error, onConnect }: Props) {
 
         {/* Username */}
         <div>
-          <label style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
+          <label htmlFor="vps-username" style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
             BENUTZERNAME
           </label>
           <input
+            id="vps-username"
             style={input}
             type="text"
             placeholder="root oder ubuntu"
@@ -146,37 +149,44 @@ export function VpsConnectionForm({ connecting, error, onConnect }: Props) {
 
         {/* Auth Method */}
         <div>
-          <label style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
+          <span style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>
             AUTHENTIFIZIERUNG
-          </label>
+          </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {(['password', 'key'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setAuthMethod(m)}
-                style={{
-                  flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 600,
-                  border: `1px solid ${authMethod === m ? C.accent : C.border}`,
-                  background: authMethod === m ? `${C.accent}15` : 'transparent',
-                  color: authMethod === m ? C.accent : C.textSub,
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}
-                disabled={connecting}
-              >
-                {m === 'password' ? 'Passwort' : 'SSH-Key'}
-              </button>
-            ))}
+            {(['password', 'key'] as const).map((m) => {
+              const isActive = authMethod === m;
+              const label = m === 'password' ? 'Passwort' : 'SSH-Key';
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setAuthMethod(m)}
+                  aria-pressed={isActive}
+                  title={`Authentifizierungsmethode ${label} auswählen`}
+                  style={{
+                    flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                    border: `1px solid ${isActive ? C.accent : C.border}`,
+                    background: isActive ? `${C.accent}15` : 'transparent',
+                    color: isActive ? C.accent : C.textSub,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                  disabled={connecting}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Auth Input */}
         {authMethod === 'password' ? (
           <div>
-            <label style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
+            <label htmlFor="vps-password" style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
               PASSWORT
             </label>
             <input
+              id="vps-password"
               style={input}
               type="password"
               placeholder="••••••••"
@@ -188,10 +198,11 @@ export function VpsConnectionForm({ connecting, error, onConnect }: Props) {
           </div>
         ) : (
           <div>
-            <label style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
+            <label htmlFor="vps-privateKey" style={{ fontSize: 10, color: C.textSub, fontWeight: 600, letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>
               PRIVATE KEY (PEM)
             </label>
             <textarea
+              id="vps-privateKey"
               style={{ ...input, minHeight: 100, resize: 'vertical', fontFamily: 'monospace', fontSize: 10 }}
               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
               value={privateKey}

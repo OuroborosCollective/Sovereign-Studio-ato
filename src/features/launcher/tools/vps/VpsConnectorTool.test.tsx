@@ -34,9 +34,23 @@ describe('VpsConnectorTool', () => {
 });
 
 describe('VpsConnectionForm', () => {
-  it('zeigt alle Pflichtfelder', () => {
+  it('zeigt alle Pflichtfelder und korrekte Accessibility-Verknüpfungen', () => {
     render(<VpsConnectorTool onClose={noop} onMinimize={noop} />);
-    expect(screen.getByPlaceholderText(/192\.168/i)).toBeTruthy();
-    expect(screen.getByPlaceholderText(/root oder ubuntu/i)).toBeTruthy();
+
+    // Test labels and input association
+    expect(screen.getByLabelText(/HOST \/ IP/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/PORT/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/BENUTZERNAME/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/PASSWORT/i)).toBeInTheDocument();
+
+    // Test password button has correct attributes
+    const pwdBtn = screen.getByRole('button', { name: 'Passwort' });
+    expect(pwdBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(pwdBtn).toHaveAttribute('title', 'Authentifizierungsmethode Passwort auswählen');
+
+    // Test SSH-Key button has correct attributes
+    const keyBtn = screen.getByRole('button', { name: 'SSH-Key' });
+    expect(keyBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(keyBtn).toHaveAttribute('title', 'Authentifizierungsmethode SSH-Key auswählen');
   });
 });
