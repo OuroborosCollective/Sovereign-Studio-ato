@@ -53,7 +53,7 @@ def repository(tmp_path: Path, monkeypatch) -> Path:
     (repo / "config").mkdir()
     (repo / ".github" / "workflows").mkdir(parents=True)
     (repo / "src" / "engine.py").write_text(
-        "API_KEY = 'sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx'\n"
+        "API_KEY = 'sk-proj-" + "x" * 24 + "'\n"
         "def repository_intelligence():\n"
         "    return 'deterministic evidence lane'\n",
         "utf-8",
