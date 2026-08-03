@@ -3441,6 +3441,10 @@ export function BuilderContainer({
     return () => window.clearInterval(h);
   }, [runtimeThinkingActive]);
 
+  // Mission sync effect. Order matters: the ignore flag must be consumed BEFORE
+  // lastMissionRef.current is synced to the prop, otherwise an internal
+  // emitMissionChange can be followed by a stale reset of the ref that breaks the
+  // dedup gate in startAgentFromText.
   useEffect(() => {
     if (mission === lastMissionRef.current) return;
     if (ignoreNextMissionSyncRef.current) {
