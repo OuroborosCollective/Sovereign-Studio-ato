@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+from collections import Counter
+from datetime import datetime, timezone
+import difflib
+import fnmatch
+import hashlib
+import json
+import math
+import os
+from pathlib import Path, PurePosixPath
+import re
+import shutil
+import sqlite3
+import stat
+import subprocess
+import time
+from typing import Any, Final
+
+import yaml
+from mcp.types import ToolAnnotations
+
+
+READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+WORKSPACE_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+TRACKED_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
+
+_RUNTIME: Any = None
+_REGISTERED = False
+
+_MAX_TRACKED_FILES: Final[int] = 30_000
+_MAX_INDEX_FILES: Final[int] = 12_000
+_MAX_TEXT_BYTES: Final[int] = 800_000
+_MAX_RESULT_ITEMS: Final[int] = 50
+_VECTOR_DIMENSIONS: Final[int] = 64
+_SHA = re.compile(r"^[0-9a-f]{40,64}$")
+_IMAGE_DIGEST = re.compile(r"(?:^|@)sha256:[0-9a-f]{64}$")
+_ALLOWED_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,159}$")
+_ALLOWED_SUBJECT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/ -]{0,127}$")
+_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:/-]{1,127}")
+_SECRET_MARKER = re.compile(
+    r"(?:sk-(?:proj-)?[A-Za-z0-9_-]{12,}|github_pat_[A-Za-z0-9_]+|"
+    r"gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|"
+    r"Authorization\s*:\s*(?:Bearer\s+)?\S+|(?:api[_-]?key|token|password|secret)\s*[:=]\s*['\"]?[^\s'\"]{12,})",
+    re.IGNORECASE,
+)
+_TEXT_SUFFIXES: Final[frozenset[str]] = frozenset({
+    ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".java", ".kt", ".kts", ".go", ".rs", ".cs", ".c", ".h",
+    ".cpp", ".hpp", ".rb", ".php", ".scala", ".swift", ".sql",
+    ".graphql", ".sh", ".yml", ".yaml", ".json", ".toml", ".xml",
+    ".md", ".css", ".scss", ".txt",
+})
+_SKIP_PREFIXES: Final[tuple[str, ...]] = (
+    ".git/", "node_modules/", "vendor/", "dist/", "build/", "coverage/",
+    "target/", ".gradle/", ".next/", ".venv/", "venv/", "__pycache__/",
+    "playwright-report/", "test-results/", "android/app/build/", "android/.gradle/",
+)
+_TOOLCHAIN_COMMANDS: Final[dict[str, tuple[str, ...]]] = {
+    "git": ("git", "--version"),
+    "python": ("python", "--version"),
+    "node": ("node", "--version"),
+    "pnpm": ("pnpm", "--version"),
+    "docker": ("docker", "--version"),
+    "docker-compose": ("docker", "compose", "version", "--short"),
+    "psql": ("psql", "--version"),
+}
+_SCOPABLE_TOOLS: Final[frozenset[str]] = frozenset({
+    "repository_intelligence_index_build",
+    "repository_hash_bound_replace",
+    "repository_hash_bound_restore",
+    "deployment_evidence_session_capture",
+})
+
+
+class _DuplicateKeyError(ValueError):
+    pass
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(loader: _UniqueKeyLoader, node: yaml.nodes.MappingNode, deep: bool = False) -> dict[Any, Any]:
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise _DuplicateKeyError(f"duplicate key: {key!r}")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
+def _git(repo: Path, *args: str, timeout: int = 90) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    return completed.stdout.strip()
+
+
+def _git_bytes(repo: Path, *args: str, timeout: int = 90) -> bytes:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    return completed.stdout
+
+
+def _repo(workspace_id: str) -> Path:
+    if _RUNTIME is None:
+        raise RuntimeError("Repository intelligence tools are not registered")
+    return Path(_RUNTIME._repo(workspace_id)).resolve()
+
+
+def _git_dir(repo: Path) -> Path:
+    raw = _git(repo, "rev-parse", "--git-dir")
+    path = Path(raw)
+    if not path.is_absolute():
+        path = repo / path
+    return path.resolve()
+
+
+def _validate_sha(value: str, *, field: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if not _SHA.fullmatch(normalized):
+        raise ValueError(f"{field} must be a full hexadecimal Git object id")
+    return normalized
+
+
+def _require_head(repo: Path, expected_repo_sha: str) -> str:
+    expected = _validate_sha(expected_repo_sha, field="expected_repo_sha")
+    actual = _git(repo, "rev-parse", "HEAD").lower()
+    if actual != expected:
+        raise ValueError(f"repository head mismatch: expected {expected}, actual {actual}")
+    return actual
+
+
+def _validate_ref(value: str) -> str:
+    ref = str(value or "").strip()
+    if not _ALLOWED_REF.fullmatch(ref) or ".." in ref or ref.startswith("/"):
+        raise ValueError("source_ref is invalid")
+    return ref
+
+
+def _normalize_relative_path(value: str, *, allow_git_namespace: bool = False) -> str:
+    raw = str(value or "").strip().replace("\\", "/")
+    if allow_git_namespace and raw.startswith("@git/"):
+        tail = raw.removeprefix("@git/")
+        if not tail or ".." in PurePosixPath(tail).parts:
+            raise ValueError("capability path is invalid")
+        return "@git/" + str(PurePosixPath(tail))
+    pure = PurePosixPath(raw)
+    if not raw or pure.is_absolute() or ".." in pure.parts or raw.startswith(".git/"):
+        raise ValueError("repository path must be relative, remain inside the repository, and not target .git")
+    return str(pure)
+
+
+def _safe_file(repo: Path, relative: str, *, must_exist: bool = True) -> Path:
+    normalized = _normalize_relative_path(relative)
+    candidate = (repo / normalized).resolve(strict=False)
+    try:
+        candidate.relative_to(repo)
+    except ValueError as exc:
+        raise ValueError("repository path escapes the workspace") from exc
+    if must_exist and not candidate.is_file():
+        raise ValueError("repository path is not an existing regular file")
+    if candidate.exists() and candidate.is_symlink():
+        raise ValueError("symbolic-link targets are not allowed")
+    return candidate
+
+
+def _tracked_files(repo: Path) -> list[str]:
+    files = [line for line in _git(repo, "ls-files").splitlines() if line]
+    if len(files) > _MAX_TRACKED_FILES:
+        raise ValueError("repository exceeds the bounded tracked-file limit")
+    return files
+
+
+def _language(path: str) -> str:
+    suffix = PurePosixPath(path).suffix.casefold()
+    return {
+        ".py": "python", ".pyi": "python", ".ts": "typescript", ".tsx": "typescript-react",
+        ".js": "javascript", ".jsx": "javascript-react", ".mjs": "javascript", ".cjs": "javascript",
+        ".java": "java", ".kt": "kotlin", ".kts": "kotlin", ".go": "go", ".rs": "rust",
+        ".cs": "csharp", ".c": "c", ".h": "c", ".cpp": "cpp", ".hpp": "cpp",
+        ".sql": "sql", ".yml": "yaml", ".yaml": "yaml", ".json": "json", ".md": "markdown",
+        ".sh": "shell", ".toml": "toml", ".xml": "xml",
+    }.get(suffix, suffix.removeprefix(".") or "text")
+
+
+def _redact_text(text: str) -> tuple[str, int]:
+    output: list[str] = []
+    redactions = 0
+    for line in text.splitlines():
+        if _SECRET_MARKER.search(line):
+            output.append("<redacted-secret-line>")
+            redactions += 1
+        else:
+            output.append(line)
+    return "\n".join(output), redactions
+
+
+def _tokens(text: str) -> list[str]:
+    return [match.group(0).casefold() for match in _TOKEN.finditer(text)][:20_000]
+
+
+def _local_embedding(text: str) -> list[float]:
+    counts: Counter[int] = Counter()
+    for token in _tokens(text):
+        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=9, person=b"sov-ri-v1").digest()
+        index = int.from_bytes(digest[:8], "big") % _VECTOR_DIMENSIONS
+        sign = 1 if digest[8] & 1 else -1
+        counts[index] += sign
+    vector = [float(counts.get(index, 0)) for index in range(_VECTOR_DIMENSIONS)]
+    norm = math.sqrt(sum(item * item for item in vector))
+    if norm:
+        vector = [item / norm for item in vector]
+    return vector
+
+
+def _cosine(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right):
+        return 0.0
+    return sum(a * b for a, b in zip(left, right))
+
+
+def _index_path(repo: Path) -> Path:
+    return _git_dir(repo) / "sovereign-repository-intelligence" / "index.sqlite3"
+
+
+def _scope_root(repo: Path) -> Path:
+    return _git_dir(repo) / "sovereign-capability-scopes"
+
+
+def _evidence_root(repo: Path) -> Path:
+    return _git_dir(repo) / "sovereign-evidence" / "deployment"
+
+
+def _canonical_json(value: Any) -> str:
