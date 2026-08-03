@@ -1,0 +1,222 @@
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _scope_body(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in manifest.items() if key != "scopeId"}
+
+
+def _load_scope(
+    repo: Path,
+    scope_id: str,
+    *,
+    tool: str,
+    effect: str,
+    path: str,
+    current_head: str,
+) -> dict[str, Any]:
+    normalized_id = str(scope_id or "").strip().lower()
+    if not normalized_id.startswith("sha256:") or not re.fullmatch(r"sha256:[0-9a-f]{64}", normalized_id):
+        raise ValueError("capability_scope_id must be a sha256 scope id")
+    scope_path = _scope_root(repo) / f"{normalized_id.removeprefix('sha256:')}.json"
+    if not scope_path.is_file():
+        raise ValueError("capability scope does not exist in this workspace")
+    manifest = json.loads(scope_path.read_text("utf-8"))
+    canonical = _canonical_json(_scope_body(manifest))
+    actual_id = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if actual_id != normalized_id or manifest.get("scopeId") != normalized_id:
+        raise ValueError("capability scope integrity check failed")
+    if manifest.get("boundRepoSha") != current_head:
+        raise ValueError("capability scope is bound to a different repository revision")
+    expires = int(manifest.get("expiresAtEpoch") or 0)
+    if expires and int(time.time()) > expires:
+        raise ValueError("capability scope has expired")
+    if tool not in manifest.get("allowedTools", []):
+        raise ValueError("capability scope does not allow this tool")
+    if effect not in manifest.get("allowedEffects", []):
+        raise ValueError("capability scope does not allow this effect")
+    allowed_paths = manifest.get("allowedPaths", [])
+    if not any(fnmatch.fnmatchcase(path, pattern) for pattern in allowed_paths):
+        raise ValueError("capability scope does not allow the target path")
+    return manifest
+
+
+def _file_blob_sha(repo: Path, path: str) -> str:
+    return _git(repo, "hash-object", "--", path).lower()
+
+
+def _atomic_write(path: Path, data: bytes, *, mode: int | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_bytes(data)
+    if mode is not None:
+        os.chmod(temporary, mode)
+    os.replace(temporary, path)
+
+
+def _bounded_diff(path: str, before: str, after: str) -> str:
+    lines = list(difflib.unified_diff(
+        before.splitlines(),
+        after.splitlines(),
+        fromfile=f"a/{path}",
+        tofile=f"b/{path}",
+        lineterm="",
+        n=3,
+    ))
+    rendered = "\n".join(lines[:240])
+    if len(lines) > 240:
+        rendered += "\n... <diff truncated>"
+    return rendered[:40_000]
+
+
+def _run_local(command: list[str], *, timeout: int = 15) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return {"ok": False, "status": "UNAVAILABLE", "error": type(exc).__name__}
+    output = (completed.stdout or completed.stderr or "").strip().splitlines()
+    return {
+        "ok": completed.returncode == 0,
+        "status": "VERIFIED" if completed.returncode == 0 else "COMMAND_FAILED",
+        "exitCode": completed.returncode,
+        "output": output[0][:300] if output else "",
+    }
+
+
+def _toolchain_snapshot(names: list[str] | None = None) -> dict[str, Any]:
+    selected = names or list(_TOOLCHAIN_COMMANDS)
+    invalid = sorted(set(selected) - set(_TOOLCHAIN_COMMANDS))
+    if invalid:
+        raise ValueError(f"unsupported toolchain names: {', '.join(invalid)}")
+    tools: list[dict[str, Any]] = []
+    for name in selected:
+        command = list(_TOOLCHAIN_COMMANDS[name])
+        executable_name = command[0]
+        executable = shutil.which(executable_name)
+        result = _run_local(command)
+        executable_sha256 = None
+        if executable:
+            candidate = Path(executable)
+            try:
+                if candidate.is_file() and candidate.stat().st_size <= 100_000_000:
+                    executable_sha256 = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            except OSError:
+                executable_sha256 = None
+        tools.append({
+            "name": name,
+            "command": command,
+            "available": executable is not None,
+            "executable": executable,
+            "executableSha256": executable_sha256,
+            "versionStatus": result["status"],
+            "version": result.get("output", ""),
+            "exitCode": result.get("exitCode"),
+        })
+    return {
+        "status": "TOOLCHAIN_VERIFIED" if all(item["available"] and item["versionStatus"] == "VERIFIED" for item in tools) else "TOOLCHAIN_PARTIAL",
+        "tools": tools,
+        "secretValuesReturned": False,
+    }
+
+
+def _docker_snapshot() -> dict[str, Any]:
+    if shutil.which("docker") is None:
+        return {
+            "status": "DOCKER_UNAVAILABLE",
+            "context": None,
+            "containers": [],
+            "composeProjects": [],
+            "mcpRepoDigests": [],
+            "secretValuesReturned": False,
+        }
+    context_result = _run_local(["docker", "context", "show"])
+    version_result = _run_local(["docker", "version", "--format", "{{.Server.Version}}"])
+    ps_result = _run_local(["docker", "ps", "--format", "{{json .}}"], timeout=25)
+    containers: list[dict[str, Any]] = []
+    if ps_result.get("ok"):
+        completed = subprocess.run(
+            ["docker", "ps", "--format", "{{json .}}"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=25,
+            check=False,
+        )
+        for line in completed.stdout.splitlines()[:80]:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            containers.append({
+                "id": str(row.get("ID") or "")[:24],
+                "name": str(row.get("Names") or "")[:160],
+                "image": str(row.get("Image") or "")[:300],
+                "status": str(row.get("Status") or "")[:300],
+            })
+    compose_projects: list[dict[str, Any]] = []
+    compose = _run_local(["docker", "compose", "ls", "--format", "json"], timeout=25)
+    if compose.get("ok"):
+        completed = subprocess.run(
+            ["docker", "compose", "ls", "--format", "json"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=25,
+            check=False,
+        )
+        try:
+            rows = json.loads(completed.stdout or "[]")
+        except json.JSONDecodeError:
+            rows = []
+        if isinstance(rows, list):
+            for row in rows[:50]:
+                if isinstance(row, dict):
+                    compose_projects.append({
+                        "name": str(row.get("Name") or row.get("name") or "")[:160],
+                        "status": str(row.get("Status") or row.get("status") or "")[:300],
+                        "configFiles": str(row.get("ConfigFiles") or row.get("configFiles") or "")[:500],
+                    })
+    mcp_digests: list[str] = []
+    mcp_container = next((item for item in containers if item["name"] == "sovereign-chatgpt-mcp"), None)
+    if mcp_container:
+        image_ref = mcp_container["image"]
+        completed = subprocess.run(
+            ["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image_ref],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20,
+            check=False,
+        )
+        if completed.returncode == 0:
+            try:
+                values = json.loads(completed.stdout or "[]")
+            except json.JSONDecodeError:
+                values = []
+            if isinstance(values, list):
+                mcp_digests = sorted({str(item) for item in values if isinstance(item, str) and _IMAGE_DIGEST.search(item)})
+    return {
+        "status": "DOCKER_READBACK_READY" if version_result.get("ok") else "DOCKER_DAEMON_UNAVAILABLE",
+        "context": context_result.get("output") if context_result.get("ok") else None,
+        "serverVersion": version_result.get("output") if version_result.get("ok") else None,
+        "containers": containers,
+        "composeProjects": compose_projects,
+        "mcpRepoDigests": mcp_digests,
+        "secretValuesReturned": False,
+    }
+
+
+def _json_load_unique(text: str) -> Any:
+    def hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise _DuplicateKeyError(f"duplicate key: {key!r}")
+            result[key] = value
+        return result
