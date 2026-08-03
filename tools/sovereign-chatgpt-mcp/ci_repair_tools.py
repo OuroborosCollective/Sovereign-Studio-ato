@@ -271,7 +271,15 @@ def append_boundary_reconciliation_continuity(
     ledger_paths = [repo / str(paths["ledger"]), repo / str(paths["runtimeLedger"])]
     if ledger_paths[0].read_bytes() != ledger_paths[1].read_bytes():
         raise RuntimeError("CONTINUITY_LEDGER_MIRROR_DRIFT")
-    status_paths = [line[3:].strip() for line in _git(repo, "status", "--porcelain").splitlines() if len(line) >= 4]
+    status_output = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=90,
+    ).stdout.rstrip("\n")
+    status_paths = [line[3:].strip() for line in status_output.splitlines() if len(line) >= 4]
     changed_paths = sorted(
         {
             path.split(" -> ", 1)[-1]

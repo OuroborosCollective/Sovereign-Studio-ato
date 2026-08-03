@@ -43,8 +43,8 @@ def test_current_review_ledger_is_complete_and_fresh() -> None:
         sort_keys=True,
     )
     assert result["status"] == "LLM_BOUNDARY_LEDGER_VERIFIED"
-    assert result["rawCandidateCount"] == 92
-    assert result["canonicalCandidateCount"] == 73
+    assert result["rawCandidateCount"] == 95
+    assert result["canonicalCandidateCount"] == 76
     assert result["findings"] == []
 
 

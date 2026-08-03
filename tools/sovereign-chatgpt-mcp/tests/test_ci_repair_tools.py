@@ -246,6 +246,7 @@ def test_continuity_append_is_mirrored_and_idempotent(tmp_path: Path) -> None:
     )
 
     assert first["status"] == "CONTINUITY_ENTRY_APPENDED"
+    assert first["changedPaths"] == ["change.txt"]
     assert second["status"] == "CONTINUITY_ENTRY_ALREADY_PRESENT"
     assert canonical.read_bytes() == runtime.read_bytes()
     assert len(canonical.read_text("utf-8").splitlines()) == 1

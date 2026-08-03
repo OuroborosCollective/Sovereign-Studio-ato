@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "3151e818478c304dc2053c9cdbf8082b4e0d0ada",
-  "rawCandidateCount": 92,
-  "canonicalCandidateCount": 73,
+  "sourceRevision": "ec1b1920a9c84b8d9d3f94acfa590b6984264b1c",
+  "rawCandidateCount": 95,
+  "canonicalCandidateCount": 76,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -465,7 +465,7 @@
       "symbol": "bounded_text_sources_from_archive",
       "line": 85,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "756e7bc961328c26b67407d8dc92d61323cac551367056495b58adab0d083cbd",
+      "fileSha256": "0e650d68a1c1f09f8ca3bfe7483f190e3635970f9e6555b8aa6067cef90adfa1",
       "anchorSha256": "7201d430c527a3989c76147d952c6afd22ccfd67386a0522d38d4eccc7bd34e8",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:26cb6b27896a7187eb791c7d",
@@ -850,6 +850,45 @@
       "rationale": "repository_learning_logbook_update evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
     {
+      "canonicalPath": "tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py",
+      "mirrorPaths": [],
+      "symbol": "_diagnose_schemas",
+      "line": 522,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "ed679ca45db26b28d300262b8e232d896db74525fb65a35ba6921923cae45f86",
+      "anchorSha256": "11c3191bfd5d6c326ad8392ac18fb7dcf6d791b5494638924619b98ef88ff1aa",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:a59ea007d92cf56941dbf2af",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "_diagnose_schemas parses bounded YAML and JSON documents and emits deterministic contract findings from explicit schema structure; it does not interpret free user language, choose a model route, or authorize an effect."
+    },
+    {
+      "canonicalPath": "tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py",
+      "mirrorPaths": [],
+      "symbol": "repository_intelligence_index_build",
+      "line": 675,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "ed679ca45db26b28d300262b8e232d896db74525fb65a35ba6921923cae45f86",
+      "anchorSha256": "29e3adf918f87afb7cac3f17e6d79ff603e62b83cad04e085cd221e6a51a62f6",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:6bc7fb749d27674ad8e43e34",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "repository_intelligence_index_build validates an exact repository revision, capability scope, file and byte limits, then constructs a deterministic Git-private index; it does not infer user intent, select a provider, or authorize unrelated effects."
+    },
+    {
+      "canonicalPath": "tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py",
+      "mirrorPaths": [],
+      "symbol": "sovereign_resource_explorer",
+      "line": 1063,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "ed679ca45db26b28d300262b8e232d896db74525fb65a35ba6921923cae45f86",
+      "anchorSha256": "519df9ab151a5da11b5e17a01aaf4a1e9b11d54ca812a238f4fc478b7f09dcff",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:4a44ddfa0052bfb186cef018",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "sovereign_resource_explorer maps bounded tracked-file metadata and optional explicit Docker readbacks into a resource graph; it does not interpret free language, decide operational intent, or authorize a mutation."
+    },
+    {
       "canonicalPath": "tools/sovereign-chatgpt-mcp/runtime.py",
       "mirrorPaths": [],
       "symbol": "OperatorRuntime.search_text",
@@ -993,5 +1032,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "0b7d594184bc8f9f7103c90fb8d696e4917a39792da244bcdcb593279426fe20"
+  "ledgerSha256": "c9a94da7bbf95d1afbec7e32c1d40ea621f48f68bb6972b8280b63f556fe09e6"
 }

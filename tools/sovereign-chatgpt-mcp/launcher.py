@@ -13,6 +13,7 @@ import output_contracts
 import operational_governance_tools
 import proven_learning_tools
 import repository_skill_tools
+import repository_intelligence_tools
 import skill_supply_chain_tools
 import toolchain_composition
 import server
@@ -26,6 +27,7 @@ enterprise_backend_tools.register(server.mcp, server.runtime, server.broker)
 freemium_product_architect_tools.register(server.mcp)
 tool_extensions.register(server.mcp, server.broker)
 repository_skill_tools.register(server.mcp, server.runtime, server.database)
+repository_intelligence_tools.register(server.mcp, server.runtime)
 skill_supply_chain_tools.register(server.mcp, server.runtime)
 openai_project_access_tools.register(server.mcp, server.broker, server.controller_runtime)
 operational_governance_tools.register(server.mcp, server.runtime, server.database, server.broker)
