@@ -8,7 +8,7 @@ on:
       - .github/workflows/tmp-verify-mcp-doc-contract.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   focused-contract:
@@ -23,6 +23,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import importlib.util
+          import json
           from pathlib import Path
 
           path = Path('tools/sovereign-chatgpt-mcp/tests/test_install_contract.py').resolve()
@@ -31,5 +32,20 @@ jobs:
           assert spec.loader is not None
           spec.loader.exec_module(module)
           module.test_documented_password_paramiko_fallback_is_retired()
-          print('FOCUSED_MCP_DOCUMENTATION_CONTRACT_VERIFIED')
+          marker = {
+              'status': 'FOCUSED_MCP_DOCUMENTATION_CONTRACT_VERIFIED',
+              'testedFunction': 'test_documented_password_paramiko_fallback_is_retired',
+              'testedHead': '${{ github.sha }}',
+          }
+          Path('.tmp-mcp-doc-contract-verification.json').write_text(
+              json.dumps(marker, sort_keys=True, separators=(',', ':')) + '\n',
+              encoding='utf-8',
+          )
           PY
+      - name: Commit success marker
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .tmp-mcp-doc-contract-verification.json
+          git commit -m 'chore: record focused MCP contract verification'
+          git push origin HEAD:fix/mcp-doc-contract-drift-2026-08-03
