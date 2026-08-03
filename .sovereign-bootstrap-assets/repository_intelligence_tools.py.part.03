@@ -1,0 +1,198 @@
+    """Build a secret-redacted SQLite FTS5 and deterministic local-embedding index beside Git metadata."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    index_path = _index_path(repo)
+    scope = _load_scope(
+        repo,
+        capability_scope_id,
+        tool="repository_intelligence_index_build",
+        effect="workspace-write",
+        path="@git/sovereign-repository-intelligence/index.sqlite3",
+        current_head=head,
+    )
+    mode = str(local_embedding_mode or "").strip()
+    if mode not in {"none", "deterministic-token-hash-v1"}:
+        raise ValueError("local_embedding_mode must be none or deterministic-token-hash-v1")
+    file_limit = max(1, min(int(max_files), _MAX_INDEX_FILES))
+    byte_limit = max(1_000, min(int(max_bytes_per_file), _MAX_TEXT_BYTES))
+    tracked = _tracked_files(repo)
+    candidates = [
+        path for path in tracked
+        if PurePosixPath(path).suffix.casefold() in _TEXT_SUFFIXES
+        and not path.startswith(_SKIP_PREFIXES)
+    ]
+    truncated = len(candidates) > file_limit
+    candidates = candidates[:file_limit]
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = index_path.with_suffix(".tmp.sqlite3")
+    temporary.unlink(missing_ok=True)
+    connection = sqlite3.connect(temporary)
+    indexed = 0
+    skipped = 0
+    redactions = 0
+    total_bytes = 0
+    try:
+        connection.execute("PRAGMA journal_mode=DELETE")
+        connection.execute("PRAGMA synchronous=FULL")
+        connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.execute(
+            "CREATE TABLE documents (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, git_blob_sha TEXT NOT NULL, "
+            "content_sha256 TEXT NOT NULL, language TEXT NOT NULL, vector_json TEXT NOT NULL)"
+        )
+        connection.execute("CREATE VIRTUAL TABLE documents_fts USING fts5(path UNINDEXED, content, tokenize='unicode61')")
+        for path in candidates:
+            candidate = _safe_file(repo, path, must_exist=True)
+            try:
+                size = candidate.stat().st_size
+                if size > byte_limit:
+                    skipped += 1
+                    continue
+                text = candidate.read_text("utf-8")
+            except (OSError, UnicodeDecodeError, ValueError):
+                skipped += 1
+                continue
+            redacted, count = _redact_text(text)
+            redactions += count
+            blob_sha = _file_blob_sha(repo, path)
+            content_sha = hashlib.sha256(redacted.encode("utf-8")).hexdigest()
+            vector = _local_embedding(redacted) if mode != "none" else []
+            cursor = connection.execute(
+                "INSERT INTO documents(path, git_blob_sha, content_sha256, language, vector_json) VALUES (?, ?, ?, ?, ?)",
+                (path, blob_sha, content_sha, _language(path), _canonical_json(vector)),
+            )
+            connection.execute(
+                "INSERT INTO documents_fts(rowid, path, content) VALUES (?, ?, ?)",
+                (cursor.lastrowid, path, redacted),
+            )
+            indexed += 1
+            total_bytes += len(redacted.encode("utf-8"))
+        metadata = {
+            "schemaVersion": "sovereign.repository-intelligence-index.v1",
+            "repoSha": head,
+            "fileCount": str(indexed),
+            "redactionCount": str(redactions),
+            "localEmbeddingMode": mode,
+            "vectorDimensions": str(_VECTOR_DIMENSIONS if mode != "none" else 0),
+        }
+        connection.executemany("INSERT INTO metadata(key, value) VALUES (?, ?)", sorted(metadata.items()))
+        connection.commit()
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()
+        if not integrity or integrity[0] != "ok":
+            raise RuntimeError("SQLite integrity check failed")
+    finally:
+        connection.close()
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, index_path)
+    index_sha = hashlib.sha256(index_path.read_bytes()).hexdigest()
+    return {
+        "ok": True,
+        "status": "REPOSITORY_INTELLIGENCE_INDEX_READY",
+        "repoSha": head,
+        "scopeId": scope["scopeId"],
+        "subject": scope["subject"],
+        "indexedFiles": indexed,
+        "skippedFiles": skipped,
+        "candidateFiles": len(candidates),
+        "truncated": truncated,
+        "indexedBytes": total_bytes,
+        "secretLinesRedacted": redactions,
+        "fts": "sqlite-fts5",
+        "localEmbeddingMode": mode,
+        "localEmbeddingDimensions": _VECTOR_DIMENSIONS if mode != "none" else 0,
+        "neuralModelUsed": False,
+        "indexSha256": index_sha,
+        "repositoryWritten": False,
+        "gitPrivateSideChannelWritten": True,
+        "truthNotice": "Search acceleration is not canonical repository or runtime truth; every result remains bound to a Git blob and exact repository revision.",
+    }
+
+
+def repository_intelligence_search(
+    workspace_id: str,
+    query: str,
+    expected_repo_sha: str,
+    limit: int = 20,
+    use_local_embedding: bool = True,
+) -> dict[str, Any]:
+    """Search the current revision-bound local FTS5 index and rank with deterministic local embeddings."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    terms = _tokens(str(query or ""))[:24]
+    if not terms:
+        raise ValueError("query must contain at least one searchable token")
+    index_path = _index_path(repo)
+    if not index_path.is_file():
+        raise ValueError("repository intelligence index is missing")
+    connection = sqlite3.connect(f"file:{index_path}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        metadata = {row["key"]: row["value"] for row in connection.execute("SELECT key, value FROM metadata")}
+        if metadata.get("repoSha") != head:
+            raise ValueError("repository intelligence index is stale for the current revision")
+        expression = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+        rows = list(connection.execute(
+            "SELECT d.path, d.git_blob_sha, d.content_sha256, d.language, d.vector_json, "
+            "bm25(documents_fts) AS lexical_rank, snippet(documents_fts, 1, '[', ']', ' … ', 18) AS snippet "
+            "FROM documents_fts JOIN documents d ON d.id = documents_fts.rowid "
+            "WHERE documents_fts MATCH ? ORDER BY lexical_rank LIMIT ?",
+            (expression, min(max(int(limit) * 4, 20), 200)),
+        ))
+        query_vector = _local_embedding(" ".join(terms)) if use_local_embedding else []
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            lexical_rank = float(row["lexical_rank"] or 0.0)
+            lexical_score = 1.0 / (1.0 + max(0.0, lexical_rank))
+            vector = json.loads(row["vector_json"] or "[]")
+            semantic_score = max(0.0, _cosine(query_vector, vector)) if query_vector and vector else 0.0
+            score = lexical_score * (0.7 if query_vector else 1.0) + semantic_score * (0.3 if query_vector else 0.0)
+            results.append({
+                "path": row["path"],
+                "gitBlobSha": row["git_blob_sha"],
+                "contentSha256": row["content_sha256"],
+                "language": row["language"],
+                "lexicalScore": round(lexical_score, 8),
+                "localEmbeddingScore": round(semantic_score, 8),
+                "combinedScore": round(score, 8),
+                "snippet": str(row["snippet"] or "")[:800],
+            })
+        results.sort(key=lambda item: (-item["combinedScore"], item["path"]))
+        bounded = results[:max(1, min(int(limit), _MAX_RESULT_ITEMS))]
+    finally:
+        connection.close()
+    return {
+        "ok": True,
+        "status": "REPOSITORY_INTELLIGENCE_SEARCH_READY",
+        "repoSha": head,
+        "queryTokens": terms,
+        "resultCount": len(bounded),
+        "results": bounded,
+        "indexSha256": hashlib.sha256(index_path.read_bytes()).hexdigest(),
+        "neuralModelUsed": False,
+        "repositoryWritten": False,
+        "secretValuesReturned": False,
+        "truthNotice": "Results are discovery candidates. Read the returned blob at the bound revision before treating a match as evidence.",
+    }
+
+
+def repository_hash_bound_replace(
+    workspace_id: str,
+    path: str,
+    expected_repo_sha: str,
+    expected_blob_sha: str,
+    search_text: str,
+    replacement_text: str,
+    capability_scope_id: str,
+    expected_occurrences: int = 1,
+) -> dict[str, Any]:
+    """Apply one exact search/replace only when repository, blob, scope and occurrence counts all match."""
+    repo = _repo(workspace_id)
+    head = _require_head(repo, expected_repo_sha)
+    normalized_path = _normalize_relative_path(path)
+    scope = _load_scope(
+        repo,
+        capability_scope_id,
+        tool="repository_hash_bound_replace",
+        effect="workspace-write",
+        path=normalized_path,
+        current_head=head,
+    )
