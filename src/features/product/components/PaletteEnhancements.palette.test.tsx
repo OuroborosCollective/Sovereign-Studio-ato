@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import React from 'react';
 import { BuilderContainer } from '../containers/BuilderContainer';
@@ -17,6 +17,7 @@ import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
+import { MissionValidatorCard } from './MissionValidatorCard';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -38,6 +39,52 @@ describe('Palette Accessibility Enhancements', () => {
     onGenerateErrorWorkflow: vi.fn(),
     onPublishDraftPr: vi.fn(),
   };
+
+  describe('MissionValidatorCard Enhancements', () => {
+    it('renders with correct accessibility titles, labels, and list semantics', () => {
+      const result = {
+        score: 85,
+        status: 'ready' as const,
+        resolvedTransport: 'ModelRoute',
+        modelUsed: 'gpt-4',
+        questions: ['Question A', 'Question B'],
+      };
+      const onContinue = vi.fn();
+      const onEdit = vi.fn();
+
+      render(
+        <MissionValidatorCard
+          result={result}
+          onContinue={onContinue}
+          onEdit={onEdit}
+        />
+      );
+
+      // Check validation score badge attributes
+      const scoreBadge = screen.getByText('85/100');
+      expect(scoreBadge).toHaveAttribute('title', 'Validierungs-Score: 85 von 100');
+      expect(scoreBadge).toHaveAttribute('aria-label', 'Validierungs-Score: 85 von 100');
+
+      // Check suggestions list semantics
+      const list = screen.getByRole('list', { name: 'Vorschläge zur Ergänzung' });
+      expect(list).toBeInTheDocument();
+
+      const items = within(list).getAllByRole('listitem');
+      expect(items).toHaveLength(2);
+      expect(items[0]).toHaveTextContent('Question A');
+      expect(items[1]).toHaveTextContent('Question B');
+
+      // Check "Mission ergänzen" button attributes
+      const editBtn = screen.getByRole('button', { name: 'Mission mit weiteren Details ergänzen' });
+      expect(editBtn).toHaveAttribute('title', 'Mission mit weiteren Details ergänzen');
+      expect(editBtn).toHaveTextContent('Mission ergänzen');
+
+      // Check "Trotzdem starten" button attributes
+      const continueBtn = screen.getByRole('button', { name: 'Mission trotz Warnungen starten' });
+      expect(continueBtn).toHaveAttribute('title', 'Mission trotz Warnungen starten');
+      expect(continueBtn).toHaveTextContent('Trotzdem starten');
+    });
+  });
 
   describe('BuilderContainer Enhancements', () => {
     it('Menu button has title and aria-label', () => {

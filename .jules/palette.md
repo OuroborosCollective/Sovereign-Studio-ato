@@ -41,3 +41,7 @@
 ## 2025-08-01 - [Accessible Roadmap Step Lists and Summaries]
 **Learning:** For interactive or descriptive workflow step/roadmap lists, screen readers struggle to parse visual symbols (like checkmarks, warning icons, triangles) or truncated names without appropriate list roles and state-dependent text fallbacks.
 **Action:** Always wrap lists of workflow steps in elements with `role="list"`, assign `role="listitem"` and proper `aria-current="step"` on active items, and pair them with localized description titles (e.g., `Abgeschlossen: Schritt`, `Aktueller Schritt: Schritt`) as well as native hover `title` tooltips for truncated visuals.
+
+## 2025-08-02 - [Accessible Pre-flight Validation Prompt Semantic List and Action Tooltips]
+**Learning:** In wizard-like pre-flight validation cards, users face critical warnings and instructions. It is vital to clearly convey suggestions and action choices to screen readers and keyboard users by pairing buttons with dynamic/action-oriented native hover tooltips and `aria-label` attributes in the main layout language, while wrapping advice items in explicit list semantics (`role="list"` / `role="listitem"`).
+**Action:** Always wrap list suggestions inside validation prompt cards in elements with `role="list"`, mark each suggestion with `role="listitem"`, and add matching `aria-label` and `title` attributes in the UI's primary language to all action buttons and technical scores to ensure accessible discoverability.
