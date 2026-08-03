@@ -233,6 +233,17 @@ class TestPathSafety:
         with pytest.raises(IntegrationPlanStoreError):
             store.init_plan("plan-\u2024escape")
 
+    def test_case_folding_does_not_match_other_id(self, tmp_path: Path) -> None:
+        """Upper-case integration ids are not silently case-folded into a
+        different lowercase id; the strict lowercase regex rejects them.
+        """
+        store = IntegrationPlanStore(tmp_path)
+        with pytest.raises(IntegrationPlanStoreError):
+            store.init_plan("Issue-1112")
+        # Same store cannot claim to have written an uppercase variant.
+        with pytest.raises(IntegrationPlanStoreError):
+            store.init_plan("ISSUE-1112")
+
 
 # ===========================================================================
 # Evidence persistence
@@ -376,6 +387,56 @@ class TestMarkers:
         store.init_plan("issue-1112")
         with pytest.raises(IntegrationPlanStoreError, match="mode"):
             store.write_mode("issue-1112", "weird")
+
+
+# ===========================================================================
+# Attestation + text writers
+# ===========================================================================
+class TestAttestationAndTextWriters:
+    def test_attestation_round_trip(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        sha = "d" * 64
+        store.write_attestation("issue-1112", sha)
+        assert store.read_attestation("issue-1112") == sha
+
+    def test_attestation_rejects_bad_sha_on_write(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        with pytest.raises(IntegrationPlanStoreError, match="64-character"):
+            store.write_attestation("issue-1112", "not-a-sha")
+
+    def test_attestation_rejects_bad_sha_on_read(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        (store.plan_directory("issue-1112") / ".attestation").write_text("bad\n")
+        with pytest.raises(IntegrationPlanStoreError, match="64-character"):
+            store.read_attestation("issue-1112")
+
+    def test_write_text_supports_markdown(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        path = store.write_text("issue-1112", "task_plan.md", "# Plan\n")
+        assert path.exists()
+        assert store.read_text("issue-1112", "task_plan.md") == "# Plan\n"
+
+    def test_write_text_rejects_non_text_extension(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        with pytest.raises(IntegrationPlanStoreError, match=".md"):
+            store.write_text("issue-1112", "plan.json", "{}")
+
+    def test_write_text_rejects_oversize(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        with pytest.raises(IntegrationPlanStoreError, match="exceeds"):
+            store.write_text("issue-1112", "task_plan.md", "x" * 2_000_000)
+
+    def test_write_text_path_traversal_rejected(self, tmp_path: Path) -> None:
+        store = IntegrationPlanStore(tmp_path)
+        store.init_plan("issue-1112")
+        with pytest.raises(IntegrationPlanStoreError):
+            store.write_text("issue-1112", "../escape.md", "x")
 
 
 # ===========================================================================

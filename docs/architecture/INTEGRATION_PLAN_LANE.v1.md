@@ -66,13 +66,17 @@ remain human-readable and are not interpreted by the lane.
 | Path | Role |
 | --- | --- |
 | `backend/agent_runtime/integration_plan_lane.py` | Pure state machine: `PlanReceipt`, `Phase`, `EvidenceRecord`, `PhaseStatus`, `IntegrationPlanLane.evaluate_phase`, `amend_receipt`, `verify_receipt_attestation`. No I/O. |
-| `backend/agent_runtime/integration_plan_store.py` | Path-safe filesystem adapter: `IntegrationPlanStore`, `init_plan`, `write_receipt`, `append_evidence`, `append_ledger_action`, `write_active_revision`, `write_mode`. |
+| `backend/agent_runtime/integration_plan_store.py` | Path-safe filesystem adapter: `IntegrationPlanStore`, `init_plan`, `write_receipt`, `append_evidence`, `append_ledger_action`, `write_active_revision`, `write_mode`, `write_attestation`, `write_text`. |
+| `backend/agent_runtime/integration_plan_helpers.py` | Bounded helpers: canonical `task_plan.md` / `findings.md` / `progress.md` renderers, size-bounded redacted `render_context_injection`, `evaluate_gated_completion` (block ceiling + progress check + recursion guard), `snapshot_plan_lane_surfaces` (architecture snapshot + drift report), `resume_session` (Plan / Ledger / Git-Diff / Workspace- / Remote-Revision readback). |
 | `backend/tests/test_integration_plan_lane.py` | Live-path tests for the state machine: schema, attestation, append-only, evidence evaluator, secret redaction, no-I/O structural check. |
-| `backend/tests/test_integration_plan_store.py` | Live-path tests for the store: path traversal, absolute paths, Windows drive letters, MSYS, NUL bytes, symlinked ancestors, symlinked plan dirs, cross-workspace isolation. |
+| `backend/tests/test_integration_plan_store.py` | Live-path tests for the store: path traversal, absolute paths, Windows drive letters, MSYS, NUL bytes, symlinked ancestors, symlinked plan dirs, cross-workspace isolation, attestation round-trip, text writers. |
+| `backend/tests/test_integration_plan_helpers.py` | Live-path tests for the helpers: canonical Markdown templates, context-injection size + redaction, gated completion evaluator (block ceiling + progress check + recursion guard), architecture snapshot drift detection, resume drift detection. |
 | `scripts/sovereign-backend/agent_runtime/integration_plan_lane.py` | Byte-equivalent mirror of the canonical lane. |
 | `scripts/sovereign-backend/agent_runtime/integration_plan_store.py` | Byte-equivalent mirror of the canonical store. |
+| `scripts/sovereign-backend/agent_runtime/integration_plan_helpers.py` | Byte-equivalent mirror of the canonical helpers. |
 | `scripts/sovereign-backend/tests/test_integration_plan_lane.py` | Byte-equivalent mirror of the lane tests. |
 | `scripts/sovereign-backend/tests/test_integration_plan_store.py` | Byte-equivalent mirror of the store tests. |
+| `scripts/sovereign-backend/tests/test_integration_plan_helpers.py` | Byte-equivalent mirror of the helpers tests. |
 
 Mirror parity is enforced by `diff` in the CI workflow and is a hard
 invariant of the agent-runtime ownership contract.
@@ -181,8 +185,8 @@ completion state.
 
 ## Tests
 
-The lane and store ship with **72 live-path unit tests** that import and
-exercise the real implementation. They cover:
+The lane, store and helpers ship with **113 live-path unit tests** that
+import and exercise the real implementation. They cover:
 
 - schema and identifier boundaries;
 - attestation hash recomputation and tamper detection;

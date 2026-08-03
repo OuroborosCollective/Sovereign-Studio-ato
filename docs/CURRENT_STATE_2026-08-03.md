@@ -84,9 +84,13 @@ See [`architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md`](architecture/RE
   `backend/agent_runtime/integration_plan_lane.py` (canonical) with
   byte-equivalent mirror at `scripts/sovereign-backend/agent_runtime/`.
 - Path-safe filesystem adapter at `backend/agent_runtime/integration_plan_store.py`.
+- Bounded helpers (canonical Markdown templates, context injection,
+  gated completion evaluator, architecture snapshot + drift report,
+  resume readback) at `backend/agent_runtime/integration_plan_helpers.py`.
 - Persists the per-integration `.planning/<integration-id>/` tree
-  (`plan.receipt.json`, `evidence-index.json`, `ledger-actions.jsonl`,
-  `.mode`, `.attestation`, `.active_revision`).
+  (`task_plan.md`, `findings.md`, `progress.md`, `plan.receipt.json`,
+  `evidence-index.json`, `ledger-actions.jsonl`, `.mode`,
+  `.attestation`, `.active_revision`).
 - Phase status is **never** set by Markdown alone; it is derived from
   machine-checkable `EvidenceRecord` entries whose kind matches the
   phase's declared required evidence kinds.

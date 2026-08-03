@@ -397,6 +397,58 @@ class IntegrationPlanStore:
             )
         return content
 
+    def write_attestation(
+        self, integration_id: str, attestation_sha256: str
+    ) -> Path:
+        """Persist the active attestation SHA-256 in ``.attestation``.
+
+        The file carries a single SHA-256 line so a recovering agent can
+        confirm that the on-disk plan still matches the lane's last
+        attestation without having to recompute the full provenance.
+        """
+        if not re.fullmatch(r"[0-9a-f]{64}", attestation_sha256):
+            raise IntegrationPlanStoreError(
+                "attestation_sha256 must be a 64-character lowercase hex SHA-256"
+            )
+        plan_dir = self.init_plan(integration_id)
+        target = _safe_path_within(plan_dir, ".attestation")
+        _atomic_write_bytes(target, (attestation_sha256 + "\n").encode("utf-8"))
+        return target
+
+    def read_attestation(self, integration_id: str) -> Optional[str]:
+        plan_dir = self.plan_directory(integration_id)
+        target = _safe_path_within(plan_dir, ".attestation")
+        if not target.exists():
+            return None
+        content = _read_bounded(target).decode("utf-8").strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", content):
+            raise IntegrationPlanStoreError(
+                ".attestation must be a 64-character lowercase hex SHA-256"
+            )
+        return content
+
+    def write_text(self, integration_id: str, relative: str, content: str) -> Path:
+        """Persist a bounded human-readable file (``task_plan.md`` etc.)."""
+        plan_dir = self.init_plan(integration_id)
+        target = _safe_path_within(plan_dir, relative)
+        if not relative.endswith((".md", ".txt")):
+            raise IntegrationPlanStoreError(
+                "write_text only accepts .md or .txt files"
+            )
+        if len(content.encode("utf-8")) > _MAX_FILE_BYTES:
+            raise IntegrationPlanStoreError(
+                f"{relative} exceeds {_MAX_FILE_BYTES}-byte limit"
+            )
+        _atomic_write_bytes(target, content.encode("utf-8"))
+        return target
+
+    def read_text(self, integration_id: str, relative: str) -> Optional[str]:
+        plan_dir = self.plan_directory(integration_id)
+        target = _safe_path_within(plan_dir, relative)
+        if not target.exists():
+            return None
+        return _read_bounded(target).decode("utf-8")
+
 
 # ---------------------------------------------------------------------------
 # De-serialisation

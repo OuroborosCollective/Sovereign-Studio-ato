@@ -102,6 +102,7 @@ The revision-bound Integration Plan Lane lives under:
 ```text
 backend/agent_runtime/integration_plan_lane.py
 backend/agent_runtime/integration_plan_store.py
+backend/agent_runtime/integration_plan_helpers.py
 ```
 
 The lane persists the per-integration ``.planning/<integration-id>/`` tree (task_plan, findings, progress, evidence-index, plan.receipt, ledger-actions, .mode, .attestation, .active_revision). Plan status is always a **projection** derived from machine-checkable evidence. It is never a truth source for repository, CI, artifact, image, deployment, database or runtime state. The lane never replaces the canonical continuity ledger.
