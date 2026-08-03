@@ -588,7 +588,23 @@ class TestFamilyRequirements:
 # ---------------------------------------------------------------------------
 
 class TestAuditPatchmonHealthCount:
-    def test_accepted_full_fleet_with_revision(self) -> None:
+    def test_accepted_full_fleet_with_revision_and_digest(self) -> None:
+        # Issue #1101 / PR #1184 — both bindings required for VERIFIED.
+        audit = audit_patchmon_health_count(
+            healthy_count=4,
+            total_count=4,
+            bound_revision=_SHA40_A,
+            bound_digest=f"sha256:{_SHA64_A}",
+            has_capability_canary=True,
+        )
+        assert audit.accepted is True
+        assert audit.blocker is None
+        assert audit.has_revision_binding is True
+        assert audit.has_digest_binding is True
+        assert audit.has_capability_canary is True
+
+    def test_revision_only_blocked_for_missing_digest(self) -> None:
+        # Revision-only is no longer sufficient (Issue #1101 / PR #1184).
         audit = audit_patchmon_health_count(
             healthy_count=4,
             total_count=4,
@@ -596,10 +612,13 @@ class TestAuditPatchmonHealthCount:
             bound_digest="",
             has_capability_canary=True,
         )
-        assert audit.accepted is True
-        assert audit.blocker is None
+        assert audit.accepted is False
+        assert audit.blocker == "patchmon_health_count_lacks_digest_binding"
+        assert audit.has_revision_binding is True
+        assert audit.has_digest_binding is False
 
-    def test_accepted_full_fleet_with_digest(self) -> None:
+    def test_digest_only_blocked_for_missing_revision(self) -> None:
+        # Digest-only is no longer sufficient (Issue #1101 / PR #1184).
         audit = audit_patchmon_health_count(
             healthy_count=3,
             total_count=3,
@@ -607,14 +626,17 @@ class TestAuditPatchmonHealthCount:
             bound_digest=f"sha256:{_SHA64_A}",
             has_capability_canary=True,
         )
-        assert audit.accepted is True
+        assert audit.accepted is False
+        assert audit.blocker == "patchmon_health_count_lacks_revision_binding"
+        assert audit.has_revision_binding is False
+        assert audit.has_digest_binding is True
 
     def test_partial_fleet_blocked(self) -> None:
         audit = audit_patchmon_health_count(
             healthy_count=3,
             total_count=4,
             bound_revision=_SHA40_A,
-            bound_digest="",
+            bound_digest=f"sha256:{_SHA64_A}",
             has_capability_canary=True,
         )
         assert audit.accepted is False
@@ -632,11 +654,12 @@ class TestAuditPatchmonHealthCount:
         assert audit.blocker == "patchmon_health_count_lacks_revision_and_digest_binding"
 
     def test_missing_capability_canary_blocked(self) -> None:
+        # Both bindings present so we reach the canary check.
         audit = audit_patchmon_health_count(
             healthy_count=4,
             total_count=4,
             bound_revision=_SHA40_A,
-            bound_digest="",
+            bound_digest=f"sha256:{_SHA64_A}",
             has_capability_canary=False,
         )
         assert audit.accepted is False
@@ -648,6 +671,17 @@ class TestAuditPatchmonHealthCount:
             healthy_count=2,
             total_count=4,
             bound_revision=_SHA40_A,
+            bound_digest=f"sha256:{_SHA64_A}",
+            has_capability_canary=False,
+        )
+        assert audit.blocker == "partial_fleet_reachable_not_verified"
+
+    def test_partial_fleet_takes_priority_over_missing_binding(self) -> None:
+        # Partial fleet is checked first even when bindings are absent.
+        audit = audit_patchmon_health_count(
+            healthy_count=2,
+            total_count=4,
+            bound_revision="",
             bound_digest="",
             has_capability_canary=False,
         )
@@ -658,13 +692,13 @@ class TestAuditPatchmonHealthCount:
             healthy_count=4,
             total_count=4,
             bound_revision=_SHA40_A,
-            bound_digest="",
+            bound_digest=f"sha256:{_SHA64_A}",
             has_capability_canary=True,
         )
         assert audit.healthy_count == 4
         assert audit.total_count == 4
         assert audit.has_revision_binding is True
-        assert audit.has_digest_binding is False
+        assert audit.has_digest_binding is True
         assert audit.has_capability_canary is True
 
     def test_audit_result_is_immutable(self) -> None:
@@ -672,8 +706,107 @@ class TestAuditPatchmonHealthCount:
             healthy_count=4,
             total_count=4,
             bound_revision=_SHA40_A,
-            bound_digest="",
+            bound_digest=f"sha256:{_SHA64_A}",
             has_capability_canary=True,
         )
         with pytest.raises((AttributeError, TypeError)):
             audit.accepted = False  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# evaluate_mcp_fleet_evidence — expected_current_revision freshness gate
+# ---------------------------------------------------------------------------
+
+class TestCurrentRevisionGate:
+    """Issue #1101 / PR #1184 — fail-closed envelope revision freshness.
+
+    When the caller passes ``expected_current_revision`` (the live main HEAD),
+    the envelope's ``base_revision`` MUST match it. A stale envelope cannot
+    masquerade as evidence for the running fleet.
+    """
+
+    def test_matching_current_revision_keeps_verified(self) -> None:
+        for family in OPERATION_FAMILIES:
+            env = _envelope(family=family)
+            result = evaluate_mcp_fleet_evidence(
+                env,
+                _full_observations(family),
+                expected_current_revision=env.base_revision,
+            )
+            assert result.verdict == VERDICT_VERIFIED, family
+
+    def test_stale_envelope_revision_blocked(self) -> None:
+        env = _envelope(family="mcp_self_update")
+        # A SHA-40 that is NOT the envelope's base_revision.
+        stale_sha = "f" * 40
+        result = evaluate_mcp_fleet_evidence(
+            env,
+            _full_observations("mcp_self_update"),
+            expected_current_revision=stale_sha,
+        )
+        assert result.verdict == VERDICT_BLOCKED
+        assert "envelope_revision_stale_against_current_main" in result.finding_codes
+        assert "expected_current_revision_mismatch" in result.finding_codes
+        assert result.auto_merge_allowed is False
+
+    def test_stale_envelope_blocked_even_for_blocked_family(self) -> None:
+        # If the family itself has missing observations, the freshness gate
+        # still takes priority — a stale envelope is BLOCKED before we ever
+        # look at evidence.
+        env = _envelope(family="mcp_self_update")
+        stale_sha = "0" * 40
+        result = evaluate_mcp_fleet_evidence(
+            env,
+            [],  # no observations at all
+            expected_current_revision=stale_sha,
+        )
+        assert result.verdict == VERDICT_BLOCKED
+        assert "envelope_revision_stale_against_current_main" in result.finding_codes
+
+    def test_empty_expected_current_revision_disables_check(self) -> None:
+        # Default behaviour: no caller-supplied current revision → no extra
+        # check beyond the per-requirement evaluation.
+        env = _envelope(family="mcp_self_update")
+        result = evaluate_mcp_fleet_evidence(
+            env,
+            _full_observations("mcp_self_update"),
+            expected_current_revision="",
+        )
+        assert result.verdict == VERDICT_VERIFIED
+
+    def test_invalid_expected_current_revision_raises(self) -> None:
+        env = _envelope(family="mcp_self_update")
+        with pytest.raises(ValueError):
+            evaluate_mcp_fleet_evidence(
+                env,
+                _full_observations("mcp_self_update"),
+                expected_current_revision="not-a-sha-40",
+            )
+
+    def test_short_sha40_expected_current_revision_raises(self) -> None:
+        env = _envelope(family="mcp_self_update")
+        with pytest.raises(ValueError):
+            evaluate_mcp_fleet_evidence(
+                env,
+                _full_observations("mcp_self_update"),
+                expected_current_revision="a" * 39,
+            )
+
+    def test_matching_is_case_insensitive_on_hex(self) -> None:
+        env = _envelope(family="mcp_self_update")
+        # Envelope stores base_revision lowercased; uppercase hex must match.
+        result = evaluate_mcp_fleet_evidence(
+            env,
+            _full_observations("mcp_self_update"),
+            expected_current_revision=env.base_revision.upper(),
+        )
+        assert result.verdict == VERDICT_VERIFIED
+
+    def test_default_kwarg_does_not_break_existing_callers(self) -> None:
+        # Backwards compatibility: callers that do not pass the kwarg still
+        # get exactly the same verdict they got before.
+        env = _envelope(family="mcp_self_update")
+        result_new = evaluate_mcp_fleet_evidence(env, _full_observations("mcp_self_update"))
+        # No kwargs → expected_current_revision defaults to "" → no check.
+        assert result_new.verdict == VERDICT_VERIFIED
+        assert "envelope_revision_stale_against_current_main" not in result_new.finding_codes
