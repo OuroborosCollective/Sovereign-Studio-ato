@@ -1,0 +1,78 @@
+name: Repository Intelligence Integration Bootstrap
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  integrate:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ato/repository-intelligence-evidence-lane-20260803'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact identities
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$EXPECTED_BASE_SHA" = '5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9'
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+
+      - name: Materialize reviewed assets and integrate contracts
+        run: |
+          set -euo pipefail
+          mkdir -p tools/sovereign-chatgpt-mcp/tests docs/architecture
+          cat .sovereign-bootstrap-assets/repository_intelligence_tools.py.b64.* | base64 --decode > tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py
+          cat .sovereign-bootstrap-assets/test_repository_intelligence_tools.py.b64.* | base64 --decode > tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
+          cat .sovereign-bootstrap-assets/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md.b64.* | base64 --decode > docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md
+          cat .sovereign-bootstrap-assets/integrate_repository_intelligence.py.b64.* | base64 --decode > /tmp/integrate_repository_intelligence.py
+          python /tmp/integrate_repository_intelligence.py
+          rm -rf .sovereign-bootstrap-assets
+          rm .github/workflows/repository-intelligence-integration-bootstrap.yml
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/sovereign-chatgpt-mcp/requirements.txt
+
+      - name: Validate exact integration
+        run: |
+          set -euo pipefail
+          python -m pip install --requirement tools/sovereign-chatgpt-mcp/requirements.txt
+          python -m py_compile tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
+          python -m pytest -q tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py
+          git diff --check
+          cmp docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          test "$(git diff --name-only 5fa448182e4b2f9f1dbdf9aeb97379e3f47c3ef9 | sort | tr '\n' ' ')" = '.github/workflows/sovereign-chatgpt-mcp.yml docs/architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/Dockerfile tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh tools/sovereign-chatgpt-mcp/launcher.py tools/sovereign-chatgpt-mcp/repository_intelligence_tools.py tools/sovereign-chatgpt-mcp/tests/test_repository_intelligence_tools.py '
+
+      - name: Commit validated integration
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git config user.name 'Sovereign Integration Bot'
+          git config user.email 'nocodehelper@arelogic.space'
+          git add --all
+          git commit -m 'feat(mcp): add repository intelligence evidence lane'
+          FINAL_SHA="$(git rev-parse HEAD)"
+          git push origin "HEAD:${HEAD_REF}"
+          test "$(git ls-remote origin "refs/heads/${HEAD_REF}" | awk '{print $1}')" = "$FINAL_SHA"
+          echo "validated_integration_sha=$FINAL_SHA"
