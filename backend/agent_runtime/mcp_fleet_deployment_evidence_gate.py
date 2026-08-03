@@ -19,8 +19,10 @@ Fail-closed invariants
   Collectors that observe only liveness must submit their observation as ``UNAVAILABLE``.
 - Expected revision/digest and real readback must match exactly; a mismatch → CONTRADICTED.
 - PatchMon provides evidence but does not itself decide VERIFIED.
-- Rollback must reference a real, revision-bound existing digest; an empty rollback_digest
-  requirement → BLOCKED.
+- Rollback must reference a real, revision-bound existing digest. A pre_rollback_digest
+  observation with neither a ``bound_revision`` nor a ``bound_digest`` cannot satisfy
+  the requirement and yields ``BLOCKED_BY_MISSING_EVIDENCE`` with finding code
+  ``rollback_reference_lacks_revision_or_digest_binding``.
 - A partially reachable fleet is BLOCKED, never VERIFIED.
 - ``auto_merge_allowed`` is always ``False``; the literal is immutable in the result dataclass.
 - No raw prompt, repository content, token, or credential may appear in any evidence field.
@@ -428,6 +430,18 @@ def evaluate_mcp_fleet_evidence(
                 and obs.assertion == "OBSERVED"
             ):
                 findings.add("patchmon_readback_lacks_revision_or_digest_binding")
+                continue
+
+            # Empty-binding bypass guard: a rollback observation that references
+            # neither a revision nor a digest cannot point to a real prior
+            # image, so it cannot satisfy the rollback requirement either.
+            if (
+                req_id == "pre_rollback_digest"
+                and not obs.bound_revision
+                and not obs.bound_digest
+                and obs.assertion == "OBSERVED"
+            ):
+                findings.add("rollback_reference_lacks_revision_or_digest_binding")
                 continue
 
             # Revision binding check

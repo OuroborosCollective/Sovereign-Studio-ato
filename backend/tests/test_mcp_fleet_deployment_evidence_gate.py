@@ -365,6 +365,67 @@ class TestEvaluateBlocked:
         assert result.verdict == VERDICT_BLOCKED
         assert "pre_rollback_digest" in result.missing
 
+    def test_empty_bound_rollback_observation_blocked(self) -> None:
+        # pre_rollback_digest present but bound_revision="" AND bound_digest=""
+        # → no real prior image referenced → requirement remains unsatisfied.
+        env = _envelope(family="mcp_self_update")
+        obs = [
+            o if o.requirement_id != "pre_rollback_digest"
+            else McpFleetObservation(
+                requirement_id="pre_rollback_digest",
+                value_hash=_SHA64_C,
+                source="IMAGE_READBACK",
+                assertion="OBSERVED",
+                bound_revision="",   # no revision binding
+                bound_digest="",     # no digest binding
+            )
+            for o in _full_observations("mcp_self_update")
+        ]
+        result = evaluate_mcp_fleet_evidence(env, obs)
+        assert result.verdict == VERDICT_BLOCKED
+        assert "pre_rollback_digest" in result.missing
+        assert "rollback_reference_lacks_revision_or_digest_binding" in result.finding_codes
+
+    def test_rollback_observation_bound_only_by_revision_satisfies(self) -> None:
+        # pre_rollback_digest bound to base_revision only → no mismatch, satisfies.
+        env = _envelope(family="mcp_self_update")
+        obs = [
+            o if o.requirement_id != "pre_rollback_digest"
+            else McpFleetObservation(
+                requirement_id="pre_rollback_digest",
+                value_hash=_SHA64_C,
+                source="IMAGE_READBACK",
+                assertion="OBSERVED",
+                bound_revision=_SHA40_A,
+                bound_digest="",
+            )
+            for o in _full_observations("mcp_self_update")
+        ]
+        result = evaluate_mcp_fleet_evidence(env, obs)
+        assert result.verdict == VERDICT_VERIFIED
+        assert "pre_rollback_digest" in result.satisfied
+        assert "rollback_reference_lacks_revision_or_digest_binding" not in result.finding_codes
+
+    def test_rollback_observation_bound_only_by_digest_satisfies(self) -> None:
+        # pre_rollback_digest bound by digest only → no mismatch, satisfies.
+        env = _envelope(family="mcp_self_update")
+        obs = [
+            o if o.requirement_id != "pre_rollback_digest"
+            else McpFleetObservation(
+                requirement_id="pre_rollback_digest",
+                value_hash=_SHA64_C,
+                source="IMAGE_READBACK",
+                assertion="OBSERVED",
+                bound_revision="",
+                bound_digest=_SHA64_A,
+            )
+            for o in _full_observations("mcp_self_update")
+        ]
+        result = evaluate_mcp_fleet_evidence(env, obs)
+        assert result.verdict == VERDICT_VERIFIED
+        assert "pre_rollback_digest" in result.satisfied
+        assert "rollback_reference_lacks_revision_or_digest_binding" not in result.finding_codes
+
 
 # ---------------------------------------------------------------------------
 # evaluate_mcp_fleet_evidence — CONTRADICTED paths
