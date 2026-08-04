@@ -1418,6 +1418,25 @@ def _patchmon_revision_from_payload(payload: Any) -> str:
     return _patchmon_revision_from_payload(nested) if nested else ""
 
 
+def _patchmon_revision_binding(
+    expected_revision: str,
+    pr_evidence: Any,
+    workflow_runs: list[Any],
+) -> tuple[str, bool, str]:
+    expected = str(expected_revision or "").strip().lower()
+    if workflow_runs:
+        revisions = [_patchmon_revision_from_payload(item) for item in workflow_runs]
+        observed = next((item for item in revisions if item), "")
+        bound = bool(
+            expected
+            and len(revisions) == len(workflow_runs)
+            and all(item == expected for item in revisions)
+        )
+        return observed, bound, "workflow_runs"
+    observed = _patchmon_revision_from_payload(pr_evidence)
+    return observed, bool(expected and observed == expected), "pull_request"
+
+
 @mcp.tool(annotations=NETWORK_READ)
 def patchmon_fleet_orchestrator_status(
     expected_revision: str = "",
@@ -1445,8 +1464,11 @@ def patchmon_fleet_orchestrator_status(
         runs.append(broker.call("github_workflow_run_status", {"run_id": int(run_id)}, timeout=60))
     workflow_evidence = [item for item in ([pr_evidence] if pr_evidence else []) + runs if isinstance(item, dict)]
     workflow_green = bool(workflow_evidence) and all(_patchmon_workflow_green(item) for item in workflow_evidence)
-    observed_revision = _patchmon_revision_from_payload(pr_evidence or {})
-    revision_bound = bool(revision and observed_revision and revision == observed_revision)
+    observed_revision, revision_bound, revision_source = _patchmon_revision_binding(
+        revision,
+        pr_evidence or {},
+        runs,
+    )
     rollout_ready = host_lane_ready and workflow_green and revision_bound
     return {
         "ok": rollout_ready,
@@ -1462,6 +1484,8 @@ def patchmon_fleet_orchestrator_status(
             "patchMonMutatesContainerRevision": False,
             "expectedRevision": revision or None,
             "observedRepositoryRevision": observed_revision or None,
+            "revisionEvidenceSource": revision_source,
+            "prHeadRevision": _patchmon_revision_from_payload(pr_evidence or {}) or None,
             "revisionBound": revision_bound,
             "workflowGreen": workflow_green,
             "prEvidence": pr_evidence,
