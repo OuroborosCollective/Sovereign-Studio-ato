@@ -165,6 +165,11 @@ jobs:
         shell: bash
         run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs
 
+      - name: Neuro Architecture Graph Node Test Suite
+        id: neuro_architecture_graph_node_tests
+        shell: bash
+        run: node --test scripts/neuro-architecture-graph.test.mjs
+
       - name: Type Check
         id: type_check
         run: pnpm run type-check
@@ -224,6 +229,7 @@ jobs:
             echo "| Canary Matrix Contract | ${{ steps.runtime_canary_contract.outcome }} |"
             echo "| Canary Matrix Tests | ${{ steps.runtime_canary_tests.outcome }} |"
             echo "| Required Gate Priority Contract | ${{ steps.required_gate_priority.outcome }} |"
+            echo "| Neuro Architecture Graph Node Tests | ${{ steps.neuro_architecture_graph_node_tests.outcome }} |"
             echo "| Canary Release Evidence | ${{ steps.runtime_canary_release.outcome }} |"
             echo "| Type Check | ${{ steps.type_check.outcome }} |"
             echo "| Runtime Unit Tests | ${{ steps.unit_tests.outcome }} |"
