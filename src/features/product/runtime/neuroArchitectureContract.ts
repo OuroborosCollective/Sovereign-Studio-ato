@@ -20,7 +20,7 @@ export interface NeuroAliasBinding {
   readonly alias: string;
   readonly canonicalComponent: string;
   readonly evidenceClass: EvidenceClass;
-  readonly softwareScope: "sovereign-studio-ato" | "areloria-wasd-side-channel";
+  readonly softwareScope: "sovereign-studio-ato" | "arelorian-wasd-side-channel";
   readonly scientificClaim: string;
   readonly limitations: readonly string[];
 }
@@ -92,7 +92,7 @@ export function validateNeuroAliasBinding(binding: NeuroAliasBinding): Validatio
   if (!binding.scientificClaim.trim()) errors.push("EMPTY_SCIENTIFIC_CLAIM");
   if (
     binding.softwareScope !== "sovereign-studio-ato" &&
-    binding.softwareScope !== "areloria-wasd-side-channel"
+    binding.softwareScope !== "arelorian-wasd-side-channel"
   ) {
     errors.push("PROJECT_ISOLATION_VIOLATION");
   }
