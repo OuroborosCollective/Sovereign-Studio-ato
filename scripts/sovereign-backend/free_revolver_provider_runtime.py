@@ -2480,7 +2480,8 @@ def register_free_revolver_provider_runtime(
                           model.display_name, model.litellm_alias,
                           model.discovery_payload_sha256, model.free_eligible,
                           model.eligibility_source, model.status, model.enabled,
-                          model.last_error_code, model.last_canary_at,
+                          model.last_error_code, model.last_canary_request_id,
+                          model.last_canary_at, model.canary_cost_state,
                           COALESCE(
                               route.config->'runtimeIdentity'->>'sourceRevision'=%s
                               AND route.config->'runtimeIdentity'->>'imageDigest'=%s
@@ -2514,13 +2515,21 @@ def register_free_revolver_provider_runtime(
                ORDER BY
                    CASE
                        WHEN status='ready' AND enabled=true AND receipt_current=false THEN 0
-                       WHEN status<>'ready' AND last_error_code IS NULL THEN 1
+                       WHEN last_canary_request_id IS NOT NULL
+                            AND canary_cost_state='zero'
+                            AND receipt_current=false THEN 1
+                       WHEN status<>'ready' AND last_error_code IS NULL THEN 2
                        WHEN status<>'ready' AND last_error_code IN (
                            'freellm_rate_limited','freellm_timeout','freellm_upstream_unavailable'
-                       ) THEN 2
-                       WHEN receipt_current=true THEN 4
-                       ELSE 3
+                       ) THEN 3
+                       WHEN receipt_current=true THEN 5
+                       ELSE 4
                    END,
+                   CASE
+                       WHEN last_canary_request_id IS NOT NULL
+                            AND canary_cost_state='zero'
+                       THEN last_canary_at
+                   END DESC NULLS LAST,
                    last_canary_at ASC NULLS FIRST,
                    display_name ASC
                LIMIT %s""",
