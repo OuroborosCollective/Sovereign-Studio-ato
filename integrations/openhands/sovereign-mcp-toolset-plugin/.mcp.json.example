@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sovereign-mcp": {
+      "url": "https://REPLACE-WITH-OWNER-APPROVED-MCP-ENDPOINT/mcp",
+      "auth": "oauth"
+    }
+  }
+}
