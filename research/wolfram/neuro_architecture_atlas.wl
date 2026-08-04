@@ -4,34 +4,49 @@
   It does not activate a runtime or establish a biological equivalence claim.
 *)
 
-ClearAll[plainValue, safeEntity, regionNames, regions, regionProperties, regionData,
-  cerebellum, cerebellarNeurons, softwareGraph, softwareMetrics, result];
+ClearAll[plainValue, regions, regionProperties, regionData, cerebellum,
+  cerebellarNeurons, softwareGraph, softwareMetrics, result];
 
 plainValue[value_] := Which[
   Head[value] === Entity, CommonName[value],
   Head[value] === EntityProperty, CanonicalName[value],
-  AssociationQ[value], AssociationMap[plainValue, value],
+  AssociationQ[value], Association @ KeyValueMap[(#1 -> plainValue[#2]) &, value],
   ListQ[value], plainValue /@ value,
   MissingQ[value], ToString[value, InputForm],
   True, value
 ];
 
-safeEntity[name_, type_] := Quiet @ Check[
-  \[FreeformPrompt][name, type],
-  Missing["UnresolvedEntity", name]
-];
-
-regionNames = {
-  "thalamus",
-  "hypothalamus",
-  "hippocampus",
-  "amygdala",
-  "cerebellum",
-  "brainstem",
-  "basal ganglia"
-};
-
-regions = AssociationMap[safeEntity[#, "AnatomicalStructure"] &, regionNames];
+(* FreeformPrompt is intentionally used with literal natural-language input. *)
+regions = <|
+  "thalamus" -> Quiet @ Check[
+    \[FreeformPrompt]["thalamus", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "thalamus"]
+  ],
+  "hypothalamus" -> Quiet @ Check[
+    \[FreeformPrompt]["hypothalamus", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "hypothalamus"]
+  ],
+  "hippocampus" -> Quiet @ Check[
+    \[FreeformPrompt]["hippocampus", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "hippocampus"]
+  ],
+  "amygdala" -> Quiet @ Check[
+    \[FreeformPrompt]["amygdala", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "amygdala"]
+  ],
+  "cerebellum" -> Quiet @ Check[
+    \[FreeformPrompt]["cerebellum", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "cerebellum"]
+  ],
+  "brainstem" -> Quiet @ Check[
+    \[FreeformPrompt]["brainstem", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "brainstem"]
+  ],
+  "basal ganglia" -> Quiet @ Check[
+    \[FreeformPrompt]["basal ganglia", "AnatomicalStructure"],
+    Missing["UnresolvedEntity", "basal ganglia"]
+  ]
+|>;
 
 regionProperties = {
   "CommonName",
@@ -40,20 +55,20 @@ regionProperties = {
   "Neurons"
 };
 
-regionData = AssociationMap[
-  Function[entity,
-    If[MissingQ[entity],
+regionData = Association @ KeyValueMap[
+  Function[{name, entity},
+    name -> If[MissingQ[entity],
       entity,
       Quiet @ Check[
         EntityValue[entity, regionProperties, "PropertyAssociation"],
-        Missing["EntityValueUnavailable", ToString[entity, InputForm]]
+        Missing["EntityValueUnavailable", name]
       ]
     ]
   ],
   regions
 ];
 
-cerebellum = safeEntity["cerebellum", "AnatomicalStructure"];
+cerebellum = regions["cerebellum"];
 cerebellarNeurons = If[MissingQ[cerebellum],
   {},
   Quiet @ Check[EntityValue[cerebellum, "Neurons"], {}]
@@ -106,6 +121,7 @@ result = <|
     "ArelorianTruthPathModified" -> False,
     "RuntimeActivated" -> False
   |>,
+  "ResolvedRegions" -> plainValue[regions],
   "RegionData" -> plainValue[regionData],
   "CerebellarNeuronCount" -> Length[cerebellarNeurons],
   "CerebellarNeurons" -> plainValue[cerebellarNeurons],
