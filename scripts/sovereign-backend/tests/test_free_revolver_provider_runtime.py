@@ -635,6 +635,25 @@ def test_discovery_preserves_current_v3_routes_and_rechecks_canary_candidates() 
     assert 'alias = str(model.get("litellm_alias") or "")' in runtime
 
 
+def test_reconcile_prioritizes_previous_zero_cost_canary_before_retry_failures() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+
+    proven_zero_cost = """WHEN last_canary_request_id IS NOT NULL
+                            AND canary_cost_state='zero'
+                            AND receipt_current=false THEN 1"""
+    retry_failure = """WHEN status<>'ready' AND last_error_code IN (
+                           'freellm_rate_limited','freellm_timeout','freellm_upstream_unavailable'
+                       ) THEN 3"""
+
+    assert "model.last_canary_request_id" in runtime
+    assert "model.canary_cost_state" in runtime
+    assert proven_zero_cost in runtime
+    assert retry_failure in runtime
+    assert runtime.index(proven_zero_cost) < runtime.index(retry_failure)
+    assert "THEN last_canary_at" in runtime
+    assert "END DESC NULLS LAST" in runtime
+
+
 def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> None:
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
 
