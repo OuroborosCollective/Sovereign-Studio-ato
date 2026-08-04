@@ -25,6 +25,12 @@ Fail-closed invariants
   ``rollback_reference_lacks_revision_or_digest_binding``.
 - A partially reachable fleet is BLOCKED, never VERIFIED.
 - ``auto_merge_allowed`` is always ``False``; the literal is immutable in the result dataclass.
+- A ``post_patchmon_fleet_readback`` observation that is bound only to a revision
+  or only to a digest cannot satisfy the requirement; the evaluator must agree
+  with ``audit_patchmon_health_count``, which requires both bindings (and a
+  capability canary) for the audit to accept. Finding code
+  ``patchmon_readback_lacks_revision_and_digest_binding`` is recorded so a
+  caller can see which one-sided binding was missing.
 - No raw prompt, repository content, token, or credential may appear in any evidence field.
 
 This module contains no network, database, filesystem, clock, or random access.
@@ -306,6 +312,9 @@ class McpFleetObservation:
     assertion: str          # "OBSERVED" | "CONTRADICTED" | "UNAVAILABLE"
     bound_revision: str     # git SHA-40; must match envelope.base_revision when non-empty
     bound_digest: str       # bare SHA-256; must match envelope.expected_image_digest when non-empty
+    healthy_count: int = 0
+    total_count: int = 0
+    has_capability_canary: bool = False
 
     def __post_init__(self) -> None:
         assertion = str(self.assertion or "").strip().upper()
@@ -325,14 +334,26 @@ class McpFleetObservation:
         digest = _normalize_digest(str(self.bound_digest or ""))
         object.__setattr__(self, "bound_digest", digest)
 
+        if type(self.healthy_count) is not int or self.healthy_count < 0:
+            raise ValueError("healthy_count must be a non-negative integer")
+        if type(self.total_count) is not int or self.total_count < 0:
+            raise ValueError("total_count must be a non-negative integer")
+        if self.healthy_count > self.total_count:
+            raise ValueError("healthy_count must not exceed total_count")
+        if type(self.has_capability_canary) is not bool:
+            raise ValueError("has_capability_canary must be a boolean")
+
     @property
     def observation_sha256(self) -> str:
         return _canonical_sha256({
             "assertion": self.assertion,
             "bound_digest": self.bound_digest,
             "bound_revision": self.bound_revision,
+            "has_capability_canary": self.has_capability_canary,
+            "healthy_count": self.healthy_count,
             "requirement_id": self.requirement_id,
             "source": self.source,
+            "total_count": self.total_count,
             "value_hash": self.value_hash,
         })
 
@@ -406,9 +427,9 @@ def evaluate_mcp_fleet_evidence(
     - For ``post_actual_running_digest``, a ``bound_digest`` mismatch with
       ``envelope.expected_image_digest`` is CONTRADICTED (the wrong image
       is running).
-    - A PatchMon fleet readback observation that carries no bound_digest and
-      no bound_revision is treated as UNAVAILABLE regardless of its assertion
-      field (liveness-only bypass guard).
+    - A PatchMon fleet readback observation is accepted only when its revision
+      and digest bindings are valid, every declared fleet member is reachable,
+      and a capability canary was executed.
     """
     required = _FAMILY_REQUIREMENTS.get(envelope.operation_family, ())
 
@@ -447,6 +468,7 @@ def evaluate_mcp_fleet_evidence(
     _DIGEST_BOUND_REQUIREMENTS: frozenset[str] = frozenset({
         "post_published_immutable_digest",
         "post_actual_running_digest",
+        "post_patchmon_fleet_readback",
     })
 
     for req_id in required:
@@ -460,17 +482,17 @@ def evaluate_mcp_fleet_evidence(
         req_contradicted = False
 
         for obs in candidates:
-            # Liveness-only bypass guard: a PatchMon fleet readback that carries
-            # neither a revision nor a digest provides no revision binding and
-            # cannot satisfy the requirement.
-            if (
-                req_id == "post_patchmon_fleet_readback"
-                and not obs.bound_revision
-                and not obs.bound_digest
-                and obs.assertion == "OBSERVED"
-            ):
-                findings.add("patchmon_readback_lacks_revision_or_digest_binding")
-                continue
+            if req_id == "post_patchmon_fleet_readback" and obs.assertion == "OBSERVED":
+                audit = audit_patchmon_health_count(
+                    healthy_count=obs.healthy_count,
+                    total_count=obs.total_count,
+                    bound_revision=obs.bound_revision,
+                    bound_digest=obs.bound_digest,
+                    has_capability_canary=obs.has_capability_canary,
+                )
+                if not audit.accepted:
+                    findings.add(audit.blocker or "patchmon_fleet_readback_unverified")
+                    continue
 
             # Empty-binding bypass guard: a rollback observation that references
             # neither a revision nor a digest cannot point to a real prior

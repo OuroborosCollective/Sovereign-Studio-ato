@@ -119,14 +119,18 @@ def _full_observations(family: str) -> list[McpFleetObservation]:
 
     observations = []
     for req_id in _FAMILY_REQUIREMENTS[family]:
-        # post_patchmon_fleet_readback needs at least a revision binding
+        # post_patchmon_fleet_readback needs BOTH a revision and a digest
+        # binding to match the audit_patchmon_health_count contract enforced
+        # by evaluate_mcp_fleet_evidence. A one-sided binding is no longer
+        # sufficient (Issue #1101 / PR #1184).
         bound_rev = _SHA40_A
-        # post_published_immutable_digest and post_actual_running_digest need digest binding
         bound_digest = ""
-        if req_id in ("post_published_immutable_digest", "post_actual_running_digest"):
+        if req_id in (
+            "post_published_immutable_digest",
+            "post_actual_running_digest",
+            "post_patchmon_fleet_readback",
+        ):
             bound_digest = _SHA64_A  # matches envelope expected_image_digest
-        if req_id == "post_patchmon_fleet_readback":
-            bound_rev = _SHA40_A  # revision binding present
         observations.append(
             McpFleetObservation(
                 requirement_id=req_id,
@@ -135,6 +139,9 @@ def _full_observations(family: str) -> list[McpFleetObservation]:
                 assertion="OBSERVED",
                 bound_revision=bound_rev,
                 bound_digest=bound_digest,
+                healthy_count=4 if req_id == "post_patchmon_fleet_readback" else 0,
+                total_count=4 if req_id == "post_patchmon_fleet_readback" else 0,
+                has_capability_canary=req_id == "post_patchmon_fleet_readback",
             )
         )
     return observations
@@ -355,7 +362,115 @@ class TestEvaluateBlocked:
         result = evaluate_mcp_fleet_evidence(env, replaced)
         assert result.verdict == VERDICT_BLOCKED
         assert "post_patchmon_fleet_readback" in result.missing
-        assert "patchmon_readback_lacks_revision_or_digest_binding" in result.finding_codes
+        assert "patchmon_health_count_lacks_revision_and_digest_binding" in result.finding_codes
+
+    def test_patchmon_readback_revision_only_does_not_satisfy(self) -> None:
+        # Issue #1101 / PR #1184 — audit_patchmon_health_count already requires
+        # both revision and digest; the evaluator must agree, not return VERIFIED
+        # for a one-sided binding. This test pins that contract.
+        env = _envelope(family="patchmon_fleet_revision")
+        obs = _full_observations("patchmon_fleet_revision")
+        replaced = [
+            McpFleetObservation(
+                requirement_id="post_patchmon_fleet_readback",
+                value_hash=_SHA64_C,
+                source="PATCHMON_READBACK",
+                assertion="OBSERVED",
+                bound_revision=_SHA40_A,  # revision only
+                bound_digest="",          # no digest
+            )
+            if o.requirement_id == "post_patchmon_fleet_readback"
+            else o
+            for o in obs
+        ]
+        result = evaluate_mcp_fleet_evidence(env, replaced)
+        assert result.verdict == VERDICT_BLOCKED
+        assert "post_patchmon_fleet_readback" in result.missing
+        assert "patchmon_health_count_lacks_digest_binding" in result.finding_codes
+        # The empty-binding finding must NOT mask the stronger both-binding
+        # reason: the audit requires revision AND digest together.
+        assert "patchmon_health_count_lacks_revision_and_digest_binding" not in result.finding_codes
+
+    def test_patchmon_readback_digest_only_does_not_satisfy(self) -> None:
+        # Symmetric case: a digest-only PatchMon readback must also be BLOCKED.
+        env = _envelope(family="patchmon_fleet_revision")
+        obs = _full_observations("patchmon_fleet_revision")
+        replaced = [
+            McpFleetObservation(
+                requirement_id="post_patchmon_fleet_readback",
+                value_hash=_SHA64_C,
+                source="PATCHMON_READBACK",
+                assertion="OBSERVED",
+                bound_revision="",                # no revision
+                bound_digest=f"sha256:{_SHA64_A}",  # digest only
+            )
+            if o.requirement_id == "post_patchmon_fleet_readback"
+            else o
+            for o in obs
+        ]
+        result = evaluate_mcp_fleet_evidence(env, replaced)
+        assert result.verdict == VERDICT_BLOCKED
+        assert "post_patchmon_fleet_readback" in result.missing
+        assert "patchmon_health_count_lacks_revision_binding" in result.finding_codes
+
+    def test_patchmon_readback_full_binding_satisfies(self) -> None:
+        env = _envelope(family="patchmon_fleet_revision")
+        result = evaluate_mcp_fleet_evidence(
+            env, _full_observations("patchmon_fleet_revision")
+        )
+        assert result.verdict == VERDICT_VERIFIED
+        assert "post_patchmon_fleet_readback" not in result.missing
+        assert "patchmon_health_count_lacks_digest_binding" not in result.finding_codes
+        assert "patchmon_health_count_lacks_revision_binding" not in result.finding_codes
+
+
+    def test_patchmon_readback_without_capability_canary_does_not_satisfy(self) -> None:
+        env = _envelope(family="patchmon_fleet_revision")
+        obs = _full_observations("patchmon_fleet_revision")
+        replaced = [
+            McpFleetObservation(
+                requirement_id=o.requirement_id,
+                value_hash=o.value_hash,
+                source=o.source,
+                assertion=o.assertion,
+                bound_revision=o.bound_revision,
+                bound_digest=o.bound_digest,
+                healthy_count=o.healthy_count,
+                total_count=o.total_count,
+                has_capability_canary=False,
+            )
+            if o.requirement_id == "post_patchmon_fleet_readback"
+            else o
+            for o in obs
+        ]
+        result = evaluate_mcp_fleet_evidence(env, replaced)
+        assert result.verdict == VERDICT_BLOCKED
+        assert "post_patchmon_fleet_readback" in result.missing
+        assert "patchmon_health_count_lacks_capability_canary" in result.finding_codes
+
+    def test_patchmon_readback_partial_fleet_does_not_satisfy(self) -> None:
+        env = _envelope(family="patchmon_fleet_revision")
+        obs = _full_observations("patchmon_fleet_revision")
+        replaced = [
+            McpFleetObservation(
+                requirement_id=o.requirement_id,
+                value_hash=o.value_hash,
+                source=o.source,
+                assertion=o.assertion,
+                bound_revision=o.bound_revision,
+                bound_digest=o.bound_digest,
+                healthy_count=3,
+                total_count=4,
+                has_capability_canary=True,
+            )
+            if o.requirement_id == "post_patchmon_fleet_readback"
+            else o
+            for o in obs
+        ]
+        result = evaluate_mcp_fleet_evidence(env, replaced)
+        assert result.verdict == VERDICT_BLOCKED
+        assert "post_patchmon_fleet_readback" in result.missing
+        assert "partial_fleet_reachable_not_verified" in result.finding_codes
 
     def test_missing_rollback_digest_blocked(self) -> None:
         # pre_rollback_digest is required for mcp_self_update; omitting it → BLOCKED
