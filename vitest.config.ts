@@ -13,6 +13,7 @@ export default defineConfig({
       'sovereign-studio-rn/e2e/ki-coach/real-smoke.spec.ts',
       'tests/e2e/**',
       'backend/tests/e2e/**',
+      'scripts/neuro-architecture-graph.test.mjs',
     ],
   },
 });
