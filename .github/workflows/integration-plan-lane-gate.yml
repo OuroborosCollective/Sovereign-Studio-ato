@@ -109,17 +109,18 @@ jobs:
 
       - name: Schema-version smoke check
         run: |
-          python -c "from backend.agent_runtime.integration_plan_lane import SCHEMA_VERSION; assert SCHEMA_VERSION == 'sovereign.integration-plan-lane.v1', SCHEMA_VERSION; print('Schema OK:', SCHEMA_VERSION)"
-          python -c "from backend.agent_runtime.integration_plan_lane import EVIDENCE_SCHEMA_VERSION; assert EVIDENCE_SCHEMA_VERSION == 'sovereign.integration-plan-evidence.v1', EVIDENCE_SCHEMA_VERSION; print('Evidence schema OK:', EVIDENCE_SCHEMA_VERSION)"
+          PYTHONPATH="$GITHUB_WORKSPACE/backend" python -c "from agent_runtime.integration_plan_lane import SCHEMA_VERSION; assert SCHEMA_VERSION == 'sovereign.integration-plan-lane.v1', SCHEMA_VERSION; print('Schema OK:', SCHEMA_VERSION)"
+          PYTHONPATH="$GITHUB_WORKSPACE/backend" python -c "from agent_runtime.integration_plan_lane import EVIDENCE_SCHEMA_VERSION; assert EVIDENCE_SCHEMA_VERSION == 'sovereign.integration-plan-evidence.v1', EVIDENCE_SCHEMA_VERSION; print('Evidence schema OK:', EVIDENCE_SCHEMA_VERSION)"
 
       - name: Plan reader CLI smoke check
         run: |
           cd /tmp && rm -rf iplan-smoke && mkdir iplan-smoke && cd iplan-smoke
           python - <<'PY'
+          import os
           import sys
           import pathlib
 
-          sys.path.insert(0, '/__w/Sovereign-Studio-ato/Sovereign-Studio-ato/backend')
+          sys.path.insert(0, str(pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'backend'))
           from agent_runtime.integration_plan_lane import (
               IntegrationPlanLane,
               Phase,
