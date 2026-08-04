@@ -4,6 +4,8 @@
 
 This document defines an **inactive architecture foundation**. It does not activate a runtime, replace an existing tool path, modify Docker, deploy to the VPS, authorize effects, or prove production health.
 
+Merging this foundation into the repository only publishes contracts, tests, research evidence, and documentation. Runtime activation remains a separate, feature-flagged and evidence-bound implementation phase.
+
 The biological names in this document are explanatory aliases. Canonical software ownership remains technical and explicit.
 
 ## Non-negotiable project isolation
