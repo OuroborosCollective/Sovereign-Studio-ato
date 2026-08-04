@@ -484,6 +484,19 @@ def evaluate_mcp_fleet_evidence(
                 findings.add("rollback_reference_lacks_revision_or_digest_binding")
                 continue
 
+            # Empty-binding bypass guard: a post-restart/rollback readback that
+            # carries neither a bound revision nor a bound digest cannot
+            # identify a real prior or current image, so it cannot satisfy
+            # the post-mutation fleet observation requirement either.
+            if (
+                req_id == "post_restart_rollback_readback"
+                and not obs.bound_revision
+                and not obs.bound_digest
+                and obs.assertion == "OBSERVED"
+            ):
+                findings.add("post_restart_rollback_readback_lacks_revision_or_digest_binding")
+                continue
+
             # Revision binding check
             if obs.bound_revision and obs.bound_revision != envelope.base_revision:
                 req_contradicted = True
