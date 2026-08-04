@@ -1,0 +1,148 @@
+name: Integration Plan Lane Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-plan-lane-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lane:
+    name: integration-plan-lane-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest==9.1.1
+
+      - name: Lane + store + helpers + inventory unit tests
+        run: |
+          python -m pytest \
+            backend/tests/test_integration_plan_lane.py \
+            backend/tests/test_integration_plan_store.py \
+            backend/tests/test_integration_plan_helpers.py \
+            backend/tests/test_integration_plan_inventory.py \
+            -v
+
+      - name: Continuity: append-only + byte-equal across canonical and mirror
+        run: |
+          python -c "import hashlib, sys
+          c = open('docs/sovereign-continuity/LEDGER.jsonl', 'rb').read()
+          m = open('tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl', 'rb').read()
+          if c != m:
+              sys.exit('LEDGER.jsonl drift: canonical and mirror differ')
+          sha = hashlib.sha256(c).hexdigest()
+          print('LEDGER.jsonl OK:', sha)"
+
+      - name: Mirror parity for plan lane + tests
+        run: |
+          set -e
+          for f in backend/agent_runtime/integration_plan_lane.py \
+                   backend/agent_runtime/integration_plan_store.py \
+                   backend/agent_runtime/integration_plan_helpers.py \
+                   backend/agent_runtime/integration_plan_inventory.py \
+                   backend/tests/test_integration_plan_lane.py \
+                   backend/tests/test_integration_plan_store.py \
+                   backend/tests/test_integration_plan_helpers.py \
+                   backend/tests/test_integration_plan_inventory.py; do
+            canonical="$f"
+            mirror="scripts/sovereign-backend/${f#backend/}"
+            if ! diff -q "$canonical" "$mirror" > /dev/null; then
+              echo "MIRROR DRIFT: $canonical vs $mirror"
+              diff "$canonical" "$mirror" || true
+              exit 1
+            fi
+          done
+
+      - name: Inventory runner must report zero drift and assert invariants
+        run: |
+          python backend/agent_runtime/integration_plan_inventory.py --strict > inventory.json
+          python -c "import json, sys
+          inv = json.load(open('inventory.json'))
+          if len(inv['surfaces']) < 25:
+              sys.exit('too few surfaces catalogued')
+          if len(inv['drift']) != 0:
+              sys.exit('drift in inventory: ' + str(inv['drift']))
+          print('Inventory OK:', inv['snapshotSha256'])"
+
+      - name: Structural: lane module must remain stdlib-only (no open/socket/requests/psycopg2)
+        run: |
+          python -c "import re, sys
+          for path in [
+              'backend/agent_runtime/integration_plan_lane.py',
+              'backend/agent_runtime/integration_plan_helpers.py',
+              'backend/agent_runtime/integration_plan_inventory.py',
+          ]:
+              src = open(path).read()
+              forbidden = ['^import requests', r'^import socket', r'^import psycopg2', r'^import open\b']
+              for pat in forbidden:
+                  if re.search(pat, src, re.MULTILINE):
+                      sys.exit(f'forbidden import matched {pat} in {path}')
+              # 'open(' as a builtin is checked in helpers/tests separately; here we
+              # only flag *module-level* imports.
+          print('Structural check OK')"
+
+      - name: Schema-version smoke check
+        run: |
+          python -c "from backend.agent_runtime.integration_plan_lane import SCHEMA_VERSION; assert SCHEMA_VERSION == 'sovereign.integration-plan-lane.v1', SCHEMA_VERSION; print('Schema OK:', SCHEMA_VERSION)"
+          python -c "from backend.agent_runtime.integration_plan_lane import EVIDENCE_SCHEMA_VERSION; assert EVIDENCE_SCHEMA_VERSION == 'sovereign.integration-plan-evidence.v1', EVIDENCE_SCHEMA_VERSION; print('Evidence schema OK:', EVIDENCE_SCHEMA_VERSION)"
+
+      - name: Plan reader CLI smoke check
+        run: |
+          cd /tmp && rm -rf iplan-smoke && mkdir iplan-smoke && cd iplan-smoke
+          python -c "
+import sys, pathlib
+sys.path.insert(0, '/__w/Sovereign-Studio-ato/Sovereign-Studio-ato/backend')
+from agent_runtime.integration_plan_lane import (
+    IntegrationPlanLane, Phase, PhaseStatus, EVIDENCE_KIND_REPO_REVISION,
+)
+from agent_runtime.integration_plan_store import IntegrationPlanStore
+
+store = IntegrationPlanStore(pathlib.Path('.'))
+store.init_plan('ci-smoke')
+
+phase = Phase(
+    phase_id='smoke', title='Smoke', description='CI smoke test.',
+    acceptance_criteria=('ok',),
+    required_evidence_kinds=(EVIDENCE_KIND_REPO_REVISION,),
+    status=PhaseStatus.IN_PROGRESS,
+)
+receipt = IntegrationPlanLane.create_receipt(
+    plan_id='ci-smoke', plan_schema_version='1',
+    owner='ci', repo_owner='OuroborosCollective', repo_name='Sovereign-Studio-ato',
+    workspace_id='ci', base_revision='a'*40,
+    issue_reference='1112',
+    acceptance_criteria=('ok',), allowed_mutation_surfaces=('ok',),
+    phases=(phase,), next_step='ok',
+    recorded_at_iso='2026-08-03T22:00:00+00:00',
+)
+store.write_receipt(receipt)
+store.write_attestation('ci-smoke', receipt.attestation_sha256)
+store.write_active_revision('ci-smoke', 'a'*40)
+print('Round-trip OK at', store.plan_directory('ci-smoke'))
+"

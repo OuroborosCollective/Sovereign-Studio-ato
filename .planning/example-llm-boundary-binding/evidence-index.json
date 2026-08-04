@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "sovereign.integration-plan-evidence.v1",
+  "planId": "example-llm-boundary-binding",
+  "records": [
+    {
+      "evidenceId": "ev-introspect-repo-revision",
+      "phaseId": "phase-introspect",
+      "kind": "repo_revision",
+      "source": "061919f3a34846eadeebcdee50358b15252e580f",
+      "contentSha256": "d54bf53a97eb2e110c60433ee677cf4d2ac1597d88ab4ebebe6fd32fd2b75cea",
+      "receivedAtIso": "2026-08-04T01:03:30+00:00",
+      "isVerified": true,
+      "redacted": true,
+      "verificationNotes": "Matches base_revision per `git rev-parse HEAD`"
+    },
+    {
+      "evidenceId": "ev-introspect-ci-workflow",
+      "phaseId": "phase-introspect",
+      "kind": "ci_workflow",
+      "source": ".github/workflows/integration-plan-lane-gate.yml",
+      "contentSha256": "2be63d53d58df2dde4937321425baf142b018cb2492caba8d2cd00cd378de512",
+      "receivedAtIso": "2026-08-04T01:03:31+00:00",
+      "isVerified": true,
+      "redacted": true,
+      "verificationNotes": "New lane-gate workflow checked into the canonical tree"
+    },
+    {
+      "evidenceId": "ev-prepaid-repo-revision",
+      "phaseId": "phase-prepaid-paid-route",
+      "kind": "repo_revision",
+      "source": "061919f3a34846eadeebcdee50358b15252e580f",
+      "contentSha256": "2069422ab6bb5c4b7c7fc37ef50289d9afc44fdfc1e0251abd297628535c320e",
+      "receivedAtIso": "2026-08-04T01:09:55+00:00",
+      "isVerified": true,
+      "redacted": true,
+      "verificationNotes": "Repository head unchanged from base"
+    },
+    {
+      "evidenceId": "ev-prepaid-runtime-readback",
+      "phaseId": "phase-prepaid-paid-route",
+      "kind": "runtime_readback",
+      "source": "vps-01.sovereign-studio-ato.prod",
+      "contentSha256": "ec9bac9f1ab238db4830dee62917582fdd4df0af70e8ffc3cb4500f14ac70631",
+      "receivedAtIso": "2026-08-04T01:18:00+00:00",
+      "isVerified": true,
+      "redacted": true,
+      "verificationNotes": "VPS /api/llm/runtime/paid/probe returned 200 with billing identity"
+    }
+  ]
+}

@@ -78,6 +78,32 @@ See [`architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md`](architecture/RE
 - Liveness alone cannot prove revision parity, successful deployment or rollback readiness.
 - A missing or unbound rollback reference fails closed.
 
+### Integration Plan Lane (Issue #1112, added after the 2026-08-03 baseline)
+
+- Revision-bound, owner-bound Integration Plan Lane implemented under
+  `backend/agent_runtime/integration_plan_lane.py` (canonical) with
+  byte-equivalent mirror at `scripts/sovereign-backend/agent_runtime/`.
+- Path-safe filesystem adapter at `backend/agent_runtime/integration_plan_store.py`.
+- Bounded helpers (canonical Markdown templates, context injection,
+  gated completion evaluator, architecture snapshot + drift report,
+  resume readback) at `backend/agent_runtime/integration_plan_helpers.py`.
+- Stdlib-only inventory runner at
+  `backend/agent_runtime/integration_plan_inventory.py` producing
+  `docs/architecture/INTEGRATION_PLAN_LANE_INVENTORY.json` with 30
+  surfaces, truth-class annotations and a drift report (currently
+  zero drift).
+- Persists the per-integration `.planning/<integration-id>/` tree
+  (`task_plan.md`, `findings.md`, `progress.md`, `plan.receipt.json`,
+  `evidence-index.json`, `ledger-actions.jsonl`, `.mode`,
+  `.attestation`, `.active_revision`).
+- Phase status is **never** set by Markdown alone; it is derived from
+  machine-checkable `EvidenceRecord` entries whose kind matches the
+  phase's declared required evidence kinds.
+- The lane is a projection; runtime, CI, deployment and database truth
+  remain canonical and are not replaced by the lane.
+- See [`architecture/INTEGRATION_PLAN_LANE.v1.md`](architecture/INTEGRATION_PLAN_LANE.v1.md)
+  for the full contract, schema versions and acceptance criteria.
+
 ### Provider routing
 
 - Paid model routing is direct through OpenRouter.
