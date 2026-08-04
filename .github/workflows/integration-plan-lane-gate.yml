@@ -49,7 +49,7 @@ jobs:
             backend/tests/test_integration_plan_inventory.py \
             -v
 
-      - name: Continuity: append-only + byte-equal across canonical and mirror
+      - name: "Continuity: append-only + byte-equal across canonical and mirror"
         run: |
           python -c "import hashlib, sys
           c = open('docs/sovereign-continuity/LEDGER.jsonl', 'rb').read()
@@ -90,7 +90,7 @@ jobs:
               sys.exit('drift in inventory: ' + str(inv['drift']))
           print('Inventory OK:', inv['snapshotSha256'])"
 
-      - name: Structural: lane module must remain stdlib-only (no open/socket/requests/psycopg2)
+      - name: "Structural: lane module must remain stdlib-only (no open/socket/requests/psycopg2)"
         run: |
           python -c "import re, sys
           for path in [
@@ -115,34 +115,47 @@ jobs:
       - name: Plan reader CLI smoke check
         run: |
           cd /tmp && rm -rf iplan-smoke && mkdir iplan-smoke && cd iplan-smoke
-          python -c "
-import sys, pathlib
-sys.path.insert(0, '/__w/Sovereign-Studio-ato/Sovereign-Studio-ato/backend')
-from agent_runtime.integration_plan_lane import (
-    IntegrationPlanLane, Phase, PhaseStatus, EVIDENCE_KIND_REPO_REVISION,
-)
-from agent_runtime.integration_plan_store import IntegrationPlanStore
+          python - <<'PY'
+          import sys
+          import pathlib
 
-store = IntegrationPlanStore(pathlib.Path('.'))
-store.init_plan('ci-smoke')
+          sys.path.insert(0, '/__w/Sovereign-Studio-ato/Sovereign-Studio-ato/backend')
+          from agent_runtime.integration_plan_lane import (
+              IntegrationPlanLane,
+              Phase,
+              PhaseStatus,
+              EVIDENCE_KIND_REPO_REVISION,
+          )
+          from agent_runtime.integration_plan_store import IntegrationPlanStore
 
-phase = Phase(
-    phase_id='smoke', title='Smoke', description='CI smoke test.',
-    acceptance_criteria=('ok',),
-    required_evidence_kinds=(EVIDENCE_KIND_REPO_REVISION,),
-    status=PhaseStatus.IN_PROGRESS,
-)
-receipt = IntegrationPlanLane.create_receipt(
-    plan_id='ci-smoke', plan_schema_version='1',
-    owner='ci', repo_owner='OuroborosCollective', repo_name='Sovereign-Studio-ato',
-    workspace_id='ci', base_revision='a'*40,
-    issue_reference='1112',
-    acceptance_criteria=('ok',), allowed_mutation_surfaces=('ok',),
-    phases=(phase,), next_step='ok',
-    recorded_at_iso='2026-08-03T22:00:00+00:00',
-)
-store.write_receipt(receipt)
-store.write_attestation('ci-smoke', receipt.attestation_sha256)
-store.write_active_revision('ci-smoke', 'a'*40)
-print('Round-trip OK at', store.plan_directory('ci-smoke'))
-"
+          store = IntegrationPlanStore(pathlib.Path('.'))
+          store.init_plan('ci-smoke')
+
+          phase = Phase(
+              phase_id='smoke',
+              title='Smoke',
+              description='CI smoke test.',
+              acceptance_criteria=('ok',),
+              required_evidence_kinds=(EVIDENCE_KIND_REPO_REVISION,),
+              status=PhaseStatus.IN_PROGRESS,
+          )
+          receipt = IntegrationPlanLane.create_receipt(
+              plan_id='ci-smoke',
+              plan_schema_version='1',
+              owner='ci',
+              repo_owner='OuroborosCollective',
+              repo_name='Sovereign-Studio-ato',
+              workspace_id='ci',
+              base_revision='a' * 40,
+              issue_reference='1112',
+              acceptance_criteria=('ok',),
+              allowed_mutation_surfaces=('ok',),
+              phases=(phase,),
+              next_step='ok',
+              recorded_at_iso='2026-08-03T22:00:00+00:00',
+          )
+          store.write_receipt(receipt)
+          store.write_attestation('ci-smoke', receipt.attestation_sha256)
+          store.write_active_revision('ci-smoke', 'a' * 40)
+          print('Round-trip OK at', store.plan_directory('ci-smoke'))
+          PY
