@@ -83,6 +83,7 @@ test("reports single-point failure candidates for the effect path", () => {
   const candidates = singlePointFailureCandidates(graph);
   assert.deepEqual(candidates, [
     { node: "deterministic-verification", disconnectedSinks: ["motor-authorization"] },
+    { node: "sensory-intake", disconnectedSinks: ["motor-authorization"] },
     { node: "thalamic-routing", disconnectedSinks: ["motor-authorization"] },
   ]);
 });
