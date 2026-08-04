@@ -162,7 +162,7 @@ export function reachableNodes(graph, startId) {
  *   inDegree: number,
  *   outDegree: number,
  *   total: number
- * }>}
+ * }>} 
  */
 export function degreeCentrality(graph) {
   assertValidGraph(graph);
