@@ -1,0 +1,323 @@
+{
+  "schemaVersion": "sovereign.neuroanatomy-claim-ledger.v1",
+  "asOf": "2026-08-04",
+  "sourceBaseRevision": "2d7397fa4301901f3acfc02f179ced18eba671de",
+  "truthBoundary": {
+    "runtimeEvidence": false,
+    "completeHumanConnectome": false,
+    "biologicalEquivalenceClaimed": false,
+    "softwareAliasesCanonical": false,
+    "areloriaWasdModified": false,
+    "note": "Wolfram entity relationships and cited neuroscience references are research evidence. They do not prove a complete human connectome or authorize software effects."
+  },
+  "evidenceClasses": {
+    "E0": "pure metaphor",
+    "E1": "plausible functional analogy",
+    "E2": "broad functional evidence",
+    "E3": "documented anatomical or circuit relationship",
+    "E4": "reproducible formal or measured property"
+  },
+  "sources": [
+    {
+      "id": "wolfram-anatomical-structure-entities",
+      "kind": "structured-entity-data",
+      "reference": "https://reference.wolfram.com/language/ref/entity/AnatomicalStructure"
+    },
+    {
+      "id": "nimh-human-connectome-project",
+      "kind": "official-research-program",
+      "reference": "https://www.nimh.nih.gov/research/research-funded-by-nimh/research-initiatives/human-connectome-project-hcp"
+    },
+    {
+      "id": "ncbi-thalamus",
+      "kind": "review",
+      "reference": "https://www.ncbi.nlm.nih.gov/books/NBK542184/"
+    },
+    {
+      "id": "ncbi-hypothalamus",
+      "kind": "review",
+      "reference": "https://www.ncbi.nlm.nih.gov/books/NBK525993/"
+    },
+    {
+      "id": "ncbi-amygdala",
+      "kind": "review",
+      "reference": "https://www.ncbi.nlm.nih.gov/books/NBK537102/"
+    },
+    {
+      "id": "ncbi-hippocampus",
+      "kind": "review",
+      "reference": "https://www.ncbi.nlm.nih.gov/books/NBK482171/"
+    },
+    {
+      "id": "ncbi-basal-ganglia",
+      "kind": "review",
+      "reference": "https://www.ncbi.nlm.nih.gov/books/NBK537141/"
+    },
+    {
+      "id": "ncbi-cerebellum",
+      "kind": "review",
+      "reference": "https://www.ncbi.nlm.nih.gov/books/NBK538167/"
+    }
+  ],
+  "regions": [
+    {
+      "id": "thalamus",
+      "wolframEntity": "AnatomicalStructure:Thalamus",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 7,
+      "sampleNeuronalInputs": [
+        "inferior colliculus",
+        "optic chiasm",
+        "retina",
+        "spinal cord",
+        "dentate nucleus",
+        "lateral mammillary nucleus",
+        "neocortex",
+        "medial mammillary nucleus",
+        "medial parabrachial nucleus",
+        "emboliform nucleus",
+        "globose nucleus",
+        "fastigial nucleus",
+        "peduncular nucleus of pons",
+        "medial globus pallidus",
+        "ventral pallidum",
+        "primary motor cortex",
+        "postsubiculum"
+      ],
+      "sampleNeuronalOutputs": [
+        "caudate nucleus",
+        "putamen",
+        "telencephalon",
+        "subthalamic nucleus",
+        "central amygdaloid nucleus",
+        "dorsal nucleus of lateral geniculate body",
+        "fastigial nucleus",
+        "parafascicular nucleus",
+        "peduncular nucleus of pons",
+        "postsubiculum",
+        "primary visual cortex"
+      ],
+      "softwareAlias": "neuro.thalamic-router",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "The thalamus is a heterogeneous collection of nuclei, not one gateway.",
+        "The listed relationships are ontology data, not a complete subject-specific connectome."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities", "ncbi-thalamus"]
+    },
+    {
+      "id": "hypothalamus",
+      "wolframEntity": "AnatomicalStructure:Hypothalamus",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 7,
+      "sampleNeuronalInputs": [
+        "hippocampus",
+        "nucleus accumbens",
+        "cortical amygdaloid nucleus",
+        "central amygdaloid nucleus",
+        "ventral tegmental area",
+        "solitary tract nuclear complex",
+        "retrochiasmatic area",
+        "postsubiculum"
+      ],
+      "sampleNeuronalOutputs": [
+        "mammillary body",
+        "lateral mammillary nucleus",
+        "anterior amygdaloid area",
+        "basal amygdaloid nucleus",
+        "medial mammillary nucleus",
+        "dorsal raphe nucleus",
+        "solitary tract nuclear complex",
+        "superior central nucleus",
+        "dorsal nucleus of vagus nerve",
+        "paracommissural nucleus of solitary tract",
+        "postsubiculum"
+      ],
+      "softwareAlias": "neuro.homeostasis-controller",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "Resource regulation is only a software analogy for biological homeostasis.",
+        "No endocrine equivalence is claimed."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities", "ncbi-hypothalamus"]
+    },
+    {
+      "id": "hippocampus",
+      "wolframEntity": "AnatomicalStructure:Hippocampus",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 26,
+      "sampleNeuronalInputs": [
+        "ventral tegmental area",
+        "anterodorsal nucleus",
+        "anteromedial nucleus"
+      ],
+      "sampleNeuronalOutputs": [
+        "hypothalamus",
+        "nucleus accumbens",
+        "medial mammillary nucleus",
+        "ventral tegmental area",
+        "ventral striatum",
+        "postsubiculum"
+      ],
+      "softwareAlias": "neuro.evidence-consolidation",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "An evidence store is not equivalent to episodic memory.",
+        "Vector similarity remains non-canonical."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities", "ncbi-hippocampus"]
+    },
+    {
+      "id": "amygdala",
+      "wolframEntity": "AnatomicalStructure:Amygdala",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 6,
+      "sampleNeuronalInputs": [
+        "subiculum",
+        "prefrontal cortex",
+        "ventral tegmental area",
+        "substantia nigra pars compacta",
+        "lateral parabrachial nucleus",
+        "medial parabrachial nucleus",
+        "solitary tract nuclear complex",
+        "orbital cortex"
+      ],
+      "sampleNeuronalOutputs": [
+        "lateral hypothalamic region",
+        "locus ceruleus",
+        "prefrontal cortex",
+        "central amygdaloid nucleus",
+        "medial preoptic nucleus",
+        "ventral tegmental area",
+        "nucleus subceruleus",
+        "lateral parabrachial nucleus",
+        "medial parabrachial nucleus",
+        "solitary tract nuclear complex",
+        "premotor cortex",
+        "central gray substance of midbrain",
+        "dorsal nucleus of vagus nerve",
+        "orbital cortex",
+        "primary motor cortex"
+      ],
+      "softwareAlias": "neuro.reversible-safety-reflex",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "The amygdala is not a binary fear switch.",
+        "The software lane may trigger only bounded reversible protection."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities", "ncbi-amygdala"]
+    },
+    {
+      "id": "cerebellum",
+      "wolframEntity": "AnatomicalStructure:Cerebellum",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 10,
+      "sampleNeuronalInputs": [
+        "lateral vestibular nucleus",
+        "locus ceruleus",
+        "pons",
+        "medial vestibular nucleus",
+        "spinal nucleus of trigeminal nerve",
+        "accessory cuneate nucleus",
+        "dorsal raphe nucleus",
+        "pontine raphe nucleus",
+        "reticulotegmental nucleus",
+        "inferior vestibular nucleus",
+        "lateral reticular nucleus",
+        "solitary tract nuclear complex",
+        "posterior spinocerebellar tract",
+        "premotor cortex",
+        "pontine nuclear group",
+        "anterior spinocerebellar tract",
+        "inferior olivary complex"
+      ],
+      "sampleNeuronalOutputs": [
+        "dorsomedial nucleus of hypothalamus",
+        "red nucleus",
+        "magnocellular part of red nucleus",
+        "posterior nucleus of hypothalamus"
+      ],
+      "softwareAlias": "neuro.execution-correction",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "The software lane performs planned-versus-observed comparison only.",
+        "It does not initiate domain effects."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities", "ncbi-cerebellum"]
+    },
+    {
+      "id": "brainstem",
+      "wolframEntity": "AnatomicalStructure:Brainstem",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 7,
+      "sampleNeuronalInputs": [
+        "caudate nucleus",
+        "mammillary body",
+        "nucleus accumbens",
+        "putamen",
+        "subthalamic nucleus",
+        "lateral mammillary nucleus",
+        "nucleus prepositus",
+        "medial mammillary nucleus",
+        "emboliform nucleus",
+        "lateral paragigantocellular nucleus",
+        "ventral striatum",
+        "ventral pallidum"
+      ],
+      "sampleNeuronalOutputs": [
+        "mammillary body",
+        "dentate nucleus",
+        "subthalamic nucleus",
+        "lateral mammillary nucleus",
+        "nucleus prepositus",
+        "medial mammillary nucleus",
+        "ventral tegmental area",
+        "fastigial nucleus",
+        "parafascicular nucleus",
+        "peduncular nucleus of pons",
+        "ventral pallidum",
+        "postsubiculum"
+      ],
+      "softwareAlias": "neuro.runtime-survival-control",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "Container orchestration is not a biological brainstem implementation.",
+        "Health claims require live runtime readback."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities"]
+    },
+    {
+      "id": "basal-ganglia",
+      "wolframEntity": "AnatomicalStructure:SetOfBasalGanglia",
+      "evidenceClass": "E3",
+      "neuronTypeCountInWolframEntity": 18,
+      "sampleNeuronalInputs": [
+        "caudate nucleus",
+        "putamen",
+        "subthalamic nucleus",
+        "striatum",
+        "neocortex",
+        "ventral tegmental area",
+        "parafascicular nucleus",
+        "ventral striatum",
+        "ventral pallidum"
+      ],
+      "sampleNeuronalOutputs": [
+        "subthalamic nucleus",
+        "central amygdaloid nucleus",
+        "ventral tegmental area",
+        "parafascicular nucleus",
+        "medial globus pallidus",
+        "ventral pallidum",
+        "postsubiculum"
+      ],
+      "softwareAlias": "neuro.procedure-selection",
+      "softwareEvidenceClass": "E1",
+      "limitations": [
+        "Procedure ranking cannot bypass policy, evidence, or motor authorization.",
+        "Repeated success does not make a procedure canonically true."
+      ],
+      "sourceIds": ["wolfram-anatomical-structure-entities", "ncbi-basal-ganglia"]
+    }
+  ]
+}
