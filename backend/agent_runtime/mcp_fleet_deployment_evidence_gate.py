@@ -23,6 +23,11 @@ Fail-closed invariants
   observation with neither a ``bound_revision`` nor a ``bound_digest`` cannot satisfy
   the requirement and yields ``BLOCKED_BY_MISSING_EVIDENCE`` with finding code
   ``rollback_reference_lacks_revision_or_digest_binding``.
+- A post-mutation restart/rollback readback must also bind to a real revision or
+  digest. A post_restart_rollback_readback observation with neither a
+  ``bound_revision`` nor a ``bound_digest`` cannot satisfy the requirement and
+  yields ``BLOCKED_BY_MISSING_EVIDENCE`` with finding code
+  ``post_restart_rollback_readback_lacks_revision_or_digest_binding``.
 - A partially reachable fleet is BLOCKED, never VERIFIED.
 - ``auto_merge_allowed`` is always ``False``; the literal is immutable in the result dataclass.
 - No raw prompt, repository content, token, or credential may appear in any evidence field.
@@ -482,6 +487,19 @@ def evaluate_mcp_fleet_evidence(
                 and obs.assertion == "OBSERVED"
             ):
                 findings.add("rollback_reference_lacks_revision_or_digest_binding")
+                continue
+
+            # Post-mutation readback guard: a post_restart_rollback_readback
+            # observation that carries neither a revision nor a digest provides
+            # no evidence the restart/rollback actually landed on a known
+            # image, so it cannot satisfy the post-mutation requirement.
+            if (
+                req_id == "post_restart_rollback_readback"
+                and not obs.bound_revision
+                and not obs.bound_digest
+                and obs.assertion == "OBSERVED"
+            ):
+                findings.add("post_restart_rollback_readback_lacks_revision_or_digest_binding")
                 continue
 
             # Revision binding check
