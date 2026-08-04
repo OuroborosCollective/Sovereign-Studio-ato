@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovereign.studio/schemas/config-snapshot.v1.schema.json",
+  "title": "Agent Configuration Snapshot",
+  "description": "Canonical snapshot of agent configuration for fingerprinting and change detection",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "agent_id",
+    "owner_id",
+    "environment_id",
+    "model_route",
+    "capability_manifest_hash",
+    "policy_set_hash",
+    "prompt_layer_hashes",
+    "tool_contracts",
+    "limits_hash",
+    "snapshot_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "sovereign.agent-config-snapshot.v1",
+      "description": "Schema version identifier"
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Unique identifier of the agent"
+    },
+    "owner_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Owner of the agent"
+    },
+    "repository_id": {
+      "type": ["string", "null"],
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Optional repository scope"
+    },
+    "environment_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Environment identifier"
+    },
+    "model_route": {
+      "type": "object",
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Model provider name"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model identifier"
+        },
+        "route_revision": {
+          "type": "string",
+          "description": "Revision of the route configuration"
+        }
+      },
+      "additionalProperties": true,
+      "description": "Model route configuration"
+    },
+    "credential_identity": {
+      "type": ["object", "null"],
+      "required": ["credential_id", "provider"],
+      "properties": {
+        "credential_id": {
+          "type": "string",
+          "description": "Redacted credential identifier"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Credential provider"
+        },
+        "secret_hash": {
+          "type": "string",
+          "description": "MUST NOT be present - secrets are never included"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Redacted credential identity (no secret material)"
+    },
+    "capability_manifest_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the capability manifest"
+    },
+    "policy_set_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the policy set"
+    },
+    "prompt_layer_hashes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "description": "SHA-256 hashes of prompt layer configurations"
+    },
+    "tool_contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool_id", "registry_revision"],
+        "properties": {
+          "tool_id": {
+            "type": "string",
+            "description": "Tool identifier"
+          },
+          "registry_revision": {
+            "type": "string",
+            "description": "Revision of the tool in the registry"
+          },
+          "input_schema_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 hash of input schema"
+          },
+          "output_schema_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 hash of output schema"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Tool contracts with registry revisions"
+    },
+    "limits_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of resource limits configuration"
+    },
+    "snapshot_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Canonical SHA-256 hash of this snapshot"
+    }
+  },
+  "additionalProperties": false
+}

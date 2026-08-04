@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovereign.studio/schemas/base-state-receipt.v1.schema.json",
+  "title": "Base State Receipt",
+  "description": "Receipt binding a mutation to a specific base state for CAS verification",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "idempotency_key",
+    "resource_type",
+    "resource_id",
+    "owner_id",
+    "base_version",
+    "base_content_hash",
+    "payload_hash",
+    "permission_receipt_hash",
+    "created_at_revision",
+    "receipt_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "sovereign.base-state-receipt.v1",
+      "description": "Schema version identifier"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,120}$",
+      "description": "Unique identifier for this receipt"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,240}$",
+      "description": "Client-provided idempotency key to prevent duplicate mutations"
+    },
+    "resource_type": {
+      "type": "string",
+      "enum": [
+        "agent_config",
+        "capability_manifest",
+        "tool_assignment",
+        "policy_set",
+        "integration_plan_state",
+        "github_issue",
+        "github_pr_metadata",
+        "repository_branch",
+        "appdeploy_snapshot",
+        "deployment_target",
+        "database_migration_ownership"
+      ],
+      "description": "Type of resource being mutated"
+    },
+    "resource_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Unique identifier of the resource"
+    },
+    "owner_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Owner of the resource"
+    },
+    "organization_id": {
+      "type": ["string", "null"],
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Optional organization scope"
+    },
+    "repository_id": {
+      "type": ["string", "null"],
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Optional repository scope"
+    },
+    "workspace_id": {
+      "type": ["string", "null"],
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Optional workspace scope"
+    },
+    "environment_id": {
+      "type": ["string", "null"],
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Optional environment scope"
+    },
+    "base_version": {
+      "type": "string",
+      "pattern": "^[^\\s]{1,120}$",
+      "description": "Version of the resource that was read as base"
+    },
+    "base_content_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the base state content"
+    },
+    "payload_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the canonical mutation payload"
+    },
+    "permission_receipt_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hash of the authorizing permission receipt"
+    },
+    "capability_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "ID of the capability authorizing this mutation"
+    },
+    "created_at_revision": {
+      "type": "string",
+      "pattern": "^[^\\s]{1,120}$",
+      "description": "Repository revision at receipt creation time"
+    },
+    "previous_receipt_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hash of the previous receipt in the chain"
+    },
+    "receipt_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Canonical SHA-256 hash of this receipt"
+    }
+  },
+  "additionalProperties": false
+}

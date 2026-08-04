@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovereign.studio/schemas/resource-lock.v1.schema.json",
+  "title": "Resource Lock",
+  "description": "Owner- and scope-bound lock preventing mutations without blocking reads",
+  "type": "object",
+  "required": [
+    "resource_type",
+    "resource_id",
+    "lock_mode",
+    "reason_code",
+    "required_unlock_capability",
+    "required_readbacks",
+    "owner_id",
+    "created_by_receipt",
+    "created_at_revision",
+    "lock_hash"
+  ],
+  "properties": {
+    "resource_type": {
+      "type": "string",
+      "enum": [
+        "agent_config",
+        "capability_manifest",
+        "tool_assignment",
+        "policy_set",
+        "integration_plan_state",
+        "github_issue",
+        "github_pr_metadata",
+        "repository_branch",
+        "appdeploy_snapshot",
+        "deployment_target",
+        "database_migration_ownership"
+      ],
+      "description": "Type of resource being locked"
+    },
+    "resource_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Unique identifier of the resource"
+    },
+    "lock_mode": {
+      "type": "string",
+      "enum": [
+        "mutation_locked",
+        "owner_locked",
+        "deployment_freeze",
+        "incident_freeze",
+        "migration_freeze",
+        "read_only_maintenance"
+      ],
+      "description": "Mode of the lock determining what it blocks"
+    },
+    "reason_code": {
+      "type": "string",
+      "pattern": "^[^\\s]{1,80}$",
+      "description": "Machine-readable reason for the lock"
+    },
+    "required_unlock_capability": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Capability ID required to release this lock"
+    },
+    "required_readbacks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^\\s]{1,80}$"
+      },
+      "description": "Required readback verifications to release lock"
+    },
+    "owner_id": {
+      "type": "string",
+      "pattern": "^[^\\s/]{1,120}$",
+      "description": "Owner who created this lock"
+    },
+    "created_by_receipt": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hash of the receipt that created this lock"
+    },
+    "created_at_revision": {
+      "type": "string",
+      "pattern": "^[^\\s]{1,120}$",
+      "description": "Repository revision at lock creation time"
+    },
+    "predecessor_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hash of the previous lock (for lock chain)"
+    },
+    "expires_at_version": {
+      "type": ["string", "null"],
+      "pattern": "^[^\\s]{1,120}$",
+      "description": "Version at which this lock expires (optional)"
+    },
+    "lock_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Canonical SHA-256 hash of this lock"
+    }
+  },
+  "additionalProperties": false
+}
