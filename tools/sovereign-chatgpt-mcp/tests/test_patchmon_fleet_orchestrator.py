@@ -107,3 +107,34 @@ def test_patchmon_workflow_green_keeps_flat_workflow_contract() -> None:
     }
 
     assert server._patchmon_workflow_green(payload) is True
+
+
+def test_patchmon_revision_binding_prefers_exact_main_workflow_after_merge() -> None:
+    expected = "a" * 40
+    pr_evidence = {"head_sha": "b" * 40}
+    workflow_runs = [{"head_sha": expected}]
+
+    observed, bound, source = server._patchmon_revision_binding(
+        expected,
+        pr_evidence,
+        workflow_runs,
+    )
+
+    assert observed == expected
+    assert bound is True
+    assert source == "workflow_runs"
+
+
+def test_patchmon_revision_binding_fails_closed_when_one_run_has_no_revision() -> None:
+    expected = "a" * 40
+    workflow_runs = [{"head_sha": expected}, {"status": "PASS"}]
+
+    observed, bound, source = server._patchmon_revision_binding(
+        expected,
+        {"head_sha": "b" * 40},
+        workflow_runs,
+    )
+
+    assert observed == expected
+    assert bound is False
+    assert source == "workflow_runs"

@@ -80,6 +80,43 @@ def test_failed_deploy_returns_only_bounded_diagnostic_marker(tmp_path, monkeypa
     assert len(result["stderrSha256"]) == 64
 
 
+def test_failed_deploy_preserves_causal_and_terminal_diagnostic_markers(tmp_path, monkeypatch) -> None:
+    script = tmp_path / "deploy-sovereign-backend"
+    script.write_text("#!/usr/bin/env bash\n", "utf-8")
+    script.chmod(0o750)
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_DEPLOY", "1")
+    runtime = OperationsRuntime()
+    runtime.deploy_script = script
+    monkeypatch.setattr(
+        runtime,
+        "_run",
+        lambda _script, _args: {
+            "ok": False,
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": (
+                "SOVEREIGN_DEPLOY_DIAGNOSTIC:freellm_bootstrap_final_status:RuntimeError\n"
+                "SOVEREIGN_DEPLOY_DIAGNOSTIC:admin_canary:ContractFailure\n"
+            ),
+        },
+    )
+
+    result = runtime.deploy_verified_release(
+        image_digest=DIGEST,
+        expected_revision=REVISION,
+        confirmation_revision=REVISION,
+    )
+
+    assert result["diagnosticStage"] == "freellm_bootstrap_final_status"
+    assert result["diagnosticErrorType"] == "RuntimeError"
+    assert result["terminalDiagnosticStage"] == "admin_canary"
+    assert result["terminalDiagnosticErrorType"] == "ContractFailure"
+    assert result["diagnosticTrace"] == [
+        {"stage": "freellm_bootstrap_final_status", "errorType": "RuntimeError"},
+        {"stage": "admin_canary", "errorType": "ContractFailure"},
+    ]
+
+
 def test_failed_deploy_returns_early_shell_stage_without_raw_stderr(tmp_path, monkeypatch) -> None:
     script = tmp_path / "deploy-sovereign-backend"
     script.write_text("#!/usr/bin/env bash\n", "utf-8")

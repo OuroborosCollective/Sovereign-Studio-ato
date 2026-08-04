@@ -282,8 +282,14 @@ class OperationsRuntime:
         result = self._run(self.deploy_script, [image_digest, expected_revision])
         if not result["ok"]:
             diagnostic_matches = DEPLOY_DIAGNOSTIC_RE.findall(result["stderr"])
-            diagnostic_stage = diagnostic_matches[-1][0] if diagnostic_matches else None
-            diagnostic_error_type = diagnostic_matches[-1][1] if diagnostic_matches else None
+            diagnostic_trace = [
+                {"stage": stage, "errorType": error_type}
+                for stage, error_type in diagnostic_matches[:8]
+            ]
+            causal_diagnostic = diagnostic_matches[0] if diagnostic_matches else None
+            terminal_diagnostic = diagnostic_matches[-1] if diagnostic_matches else None
+            diagnostic_stage = causal_diagnostic[0] if causal_diagnostic else None
+            diagnostic_error_type = causal_diagnostic[1] if causal_diagnostic else None
             candidate_matches = DEPLOY_CANDIDATE_EVIDENCE_RE.findall(result["stderr"])
             candidate = candidate_matches[-1] if candidate_matches else None
             return {
@@ -297,6 +303,9 @@ class OperationsRuntime:
                 "readbackVerified": False,
                 "diagnosticStage": diagnostic_stage,
                 "diagnosticErrorType": diagnostic_error_type,
+                "diagnosticTrace": diagnostic_trace,
+                "terminalDiagnosticStage": terminal_diagnostic[0] if terminal_diagnostic else None,
+                "terminalDiagnosticErrorType": terminal_diagnostic[1] if terminal_diagnostic else None,
                 "candidateStatus": candidate[0] if candidate else None,
                 "candidateExitCode": int(candidate[1]) if candidate else None,
                 "candidateOOMKilled": candidate[2] == "true" if candidate else None,
