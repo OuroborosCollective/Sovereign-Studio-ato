@@ -484,6 +484,23 @@ def evaluate_mcp_fleet_evidence(
                 findings.add("rollback_reference_lacks_revision_or_digest_binding")
                 continue
 
+            # Empty-binding bypass guard: a pre-mutation "running image"
+            # readback that carries neither a bound revision nor a bound
+            # digest cannot identify the image revision the rest of the
+            # evidence is being compared against, so it cannot satisfy the
+            # requirement either. Without this guard an OBSERVED observation
+            # with both bindings empty would silently satisfy the requirement
+            # and let a runner declare a pre-mutation image readback complete
+            # without ever pointing at a real revision or digest.
+            if (
+                req_id == "pre_running_image_digest"
+                and not obs.bound_revision
+                and not obs.bound_digest
+                and obs.assertion == "OBSERVED"
+            ):
+                findings.add("pre_running_image_digest_lacks_revision_or_digest_binding")
+                continue
+
             # Revision binding check
             if obs.bound_revision and obs.bound_revision != envelope.base_revision:
                 req_contradicted = True

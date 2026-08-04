@@ -426,6 +426,76 @@ class TestEvaluateBlocked:
         assert "pre_rollback_digest" in result.satisfied
         assert "rollback_reference_lacks_revision_or_digest_binding" not in result.finding_codes
 
+    def test_empty_bound_pre_running_image_digest_blocked(self) -> None:
+        # pre_running_image_digest present but bound_revision="" AND bound_digest=""
+        # → no real prior or current image referenced → requirement remains unsatisfied.
+        env = _envelope(family="mcp_self_update")
+        obs = [
+            o if o.requirement_id != "pre_running_image_digest"
+            else McpFleetObservation(
+                requirement_id="pre_running_image_digest",
+                value_hash=_SHA64_C,
+                source="IMAGE_READBACK",
+                assertion="OBSERVED",
+                bound_revision="",   # no revision binding
+                bound_digest="",     # no digest binding
+            )
+            for o in _full_observations("mcp_self_update")
+        ]
+        result = evaluate_mcp_fleet_evidence(env, obs)
+        assert result.verdict == VERDICT_BLOCKED
+        assert "pre_running_image_digest" in result.missing
+        assert (
+            "pre_running_image_digest_lacks_revision_or_digest_binding"
+            in result.finding_codes
+        )
+
+    def test_pre_running_image_digest_bound_only_by_revision_satisfies(self) -> None:
+        # pre_running_image_digest bound to base_revision only → no mismatch, satisfies.
+        env = _envelope(family="mcp_self_update")
+        obs = [
+            o if o.requirement_id != "pre_running_image_digest"
+            else McpFleetObservation(
+                requirement_id="pre_running_image_digest",
+                value_hash=_SHA64_C,
+                source="IMAGE_READBACK",
+                assertion="OBSERVED",
+                bound_revision=_SHA40_A,
+                bound_digest="",
+            )
+            for o in _full_observations("mcp_self_update")
+        ]
+        result = evaluate_mcp_fleet_evidence(env, obs)
+        assert result.verdict == VERDICT_VERIFIED
+        assert "pre_running_image_digest" in result.satisfied
+        assert (
+            "pre_running_image_digest_lacks_revision_or_digest_binding"
+            not in result.finding_codes
+        )
+
+    def test_pre_running_image_digest_bound_only_by_digest_satisfies(self) -> None:
+        # pre_running_image_digest bound by digest only → no mismatch, satisfies.
+        env = _envelope(family="mcp_self_update")
+        obs = [
+            o if o.requirement_id != "pre_running_image_digest"
+            else McpFleetObservation(
+                requirement_id="pre_running_image_digest",
+                value_hash=_SHA64_C,
+                source="IMAGE_READBACK",
+                assertion="OBSERVED",
+                bound_revision="",
+                bound_digest=_SHA64_A,
+            )
+            for o in _full_observations("mcp_self_update")
+        ]
+        result = evaluate_mcp_fleet_evidence(env, obs)
+        assert result.verdict == VERDICT_VERIFIED
+        assert "pre_running_image_digest" in result.satisfied
+        assert (
+            "pre_running_image_digest_lacks_revision_or_digest_binding"
+            not in result.finding_codes
+        )
+
 
 # ---------------------------------------------------------------------------
 # evaluate_mcp_fleet_evidence — CONTRADICTED paths
