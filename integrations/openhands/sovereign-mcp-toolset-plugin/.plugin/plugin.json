@@ -1,0 +1,17 @@
+{
+  "name": "sovereign-mcp-toolset-preview",
+  "version": "0.1.0",
+  "description": "Repository-only OpenHands plugin adapter for the Sovereign MCP tool registry. Inactive by default and isolated from production runtime paths.",
+  "author": {
+    "name": "OuroborosCollective"
+  },
+  "license": "UNLICENSED",
+  "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+  "keywords": [
+    "openhands",
+    "mcp",
+    "skills",
+    "repository-only",
+    "inactive-preview"
+  ]
+}
