@@ -23,6 +23,13 @@ Fail-closed invariants
   observation with neither a ``bound_revision`` nor a ``bound_digest`` cannot satisfy
   the requirement and yields ``BLOCKED_BY_MISSING_EVIDENCE`` with finding code
   ``rollback_reference_lacks_revision_or_digest_binding``.
+- A post-restart rollback readback must also point at a real prior or current image.
+  A ``post_restart_rollback_readback`` observation with neither a ``bound_revision``
+  nor a ``bound_digest`` cannot satisfy the requirement and yields
+  ``BLOCKED_BY_MISSING_EVIDENCE`` with finding code
+  ``post_restart_rollback_readback_lacks_revision_or_digest_binding``. This mirrors
+  the sibling ``pre_rollback_digest`` and ``post_patchmon_fleet_readback`` guards
+  (Issue #1101).
 - A partially reachable fleet is BLOCKED, never VERIFIED.
 - ``auto_merge_allowed`` is always ``False``; the literal is immutable in the result dataclass.
 - A ``post_patchmon_fleet_readback`` observation that is bound only to a revision
@@ -504,6 +511,21 @@ def evaluate_mcp_fleet_evidence(
                 and obs.assertion == "OBSERVED"
             ):
                 findings.add("rollback_reference_lacks_revision_or_digest_binding")
+                continue
+
+            # Sibling empty-binding guard for the post-restart/rollback readback.
+            # The same fail-closed contract that applies to pre_rollback_digest
+            # and post_patchmon_fleet_readback must apply here: a post-restart
+            # rollback readback that references neither a revision nor a digest
+            # cannot point to any real image and therefore cannot satisfy the
+            # requirement (Issue #1101).
+            if (
+                req_id == "post_restart_rollback_readback"
+                and not obs.bound_revision
+                and not obs.bound_digest
+                and obs.assertion == "OBSERVED"
+            ):
+                findings.add("post_restart_rollback_readback_lacks_revision_or_digest_binding")
                 continue
 
             # Revision binding check
