@@ -1,35 +1,34 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toolchainApi } from '../../toolchain/toolchainApi';
 import { createDurableRepoSnapshot, saveDurableRepoSnapshot } from '../repoSnapshotPersistence';
 import { useGithubRepo } from './useGithubRepo';
 
-function jsonResponse(body: unknown, ok = true, status = 200): Response {
-  return {
-    ok,
-    status,
-    json: async () => body,
-  } as Response;
-}
+vi.mock('../../toolchain/toolchainApi', () => ({
+  toolchainApi: {
+    listBranches: vi.fn(),
+    listDirectory: vi.fn(),
+  },
+}));
+
+const listBranchesMock = vi.mocked(toolchainApi.listBranches);
+const listDirectoryMock = vi.mocked(toolchainApi.listDirectory);
 
 describe('useGithubRepo', () => {
-  const originalFetch = globalThis.fetch;
-
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
     window.localStorage.clear();
+    listBranchesMock.mockResolvedValue({ branches: [{ name: 'main' }] });
+    listDirectoryMock.mockResolvedValue({
+      items: [{ name: 'README.md', path: 'README.md', type: 'file', size: 10 }],
+    });
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     window.localStorage.clear();
   });
 
   it('loads a repo using explicit setup values before React state catches up', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ default_branch: 'main' }))
-      .mockResolvedValueOnce(jsonResponse({ tree: [{ path: 'README.md', type: 'blob', size: 10 }] }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
     const { result } = renderHook(() => useGithubRepo());
 
     await act(async () => {
@@ -39,34 +38,38 @@ describe('useGithubRepo', () => {
     await waitFor(() => expect(result.current.repoFiles).toHaveLength(1));
     expect(result.current.repoUrl).toBe('https://github.com/owner/repo');
     expect(result.current.repoBranch).toBe('main');
-    expect(result.current.repoStatus).toContain('1 echte Repo-Einträge geladen');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.repoStatus).toContain('1 echte Repo-Einträge über den Sovereign-Gateway geladen');
+    expect(listBranchesMock).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo' });
+    expect(listDirectoryMock).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      path: '',
+      ref: 'main',
+    });
   });
 
   it('publishes dependency telemetry through the shared publisher after repo load', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ default_branch: 'main' }))
-      .mockResolvedValueOnce(jsonResponse({ tree: [{ path: 'README.md', type: 'blob', size: 10 }] }));
     const dependencyTelemetryListener = vi.fn();
     const dependencyStateListener = vi.fn();
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
     window.addEventListener('sovereign:dependency-telemetry-event', dependencyTelemetryListener);
     window.addEventListener('sovereign:dependency-lifecycle-state', dependencyStateListener);
 
-    const { result } = renderHook(() => useGithubRepo());
+    try {
+      const { result } = renderHook(() => useGithubRepo());
 
-    await act(async () => {
-      await result.current.loadRepoTree({ repoUrl: 'https://github.com/owner/repo' });
-    });
+      await act(async () => {
+        await result.current.loadRepoTree({ repoUrl: 'https://github.com/owner/repo' });
+      });
 
-    await waitFor(() => expect(result.current.repoFiles).toHaveLength(1));
-    expect(dependencyStateListener).toHaveBeenCalled();
-    expect(dependencyTelemetryListener).toHaveBeenCalled();
-    const telemetryEvents = dependencyTelemetryListener.mock.calls.map((call) => (call[0] as CustomEvent).detail);
-    expect(telemetryEvents.some((event) => event.label === 'dependency:github:ready')).toBe(true);
-
-    window.removeEventListener('sovereign:dependency-telemetry-event', dependencyTelemetryListener);
-    window.removeEventListener('sovereign:dependency-lifecycle-state', dependencyStateListener);
+      await waitFor(() => expect(result.current.repoFiles).toHaveLength(1));
+      expect(dependencyStateListener).toHaveBeenCalled();
+      expect(dependencyTelemetryListener).toHaveBeenCalled();
+      const telemetryEvents = dependencyTelemetryListener.mock.calls.map((call) => (call[0] as CustomEvent).detail);
+      expect(telemetryEvents.some((event) => event.label === 'dependency:github:ready')).toBe(true);
+    } finally {
+      window.removeEventListener('sovereign:dependency-telemetry-event', dependencyTelemetryListener);
+      window.removeEventListener('sovereign:dependency-lifecycle-state', dependencyStateListener);
+    }
   });
 
   it('restores durable repo snapshot on a new hook session', () => {
