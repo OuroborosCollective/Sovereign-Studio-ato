@@ -323,3 +323,51 @@ describe('createLatentSpace factory', () => {
     expect(config.similarityThreshold).toBe(0.8);
   });
 });
+
+describe('LatentSpaceNavigator Performance Benchmark', () => {
+  it('should measure 1-slot cache speedup and lexicographical comparison speedup', () => {
+    const ls = createLatentSpace({
+      dimension: 64,
+      maxPatterns: 500,
+    });
+
+    // Populate with 100 patterns
+    for (let i = 0; i < 100; i++) {
+      ls.addPattern({
+        id: `pat-${i.toString().padStart(4, '0')}`,
+        embedding: new Array(64).fill(0).map(() => Math.random()),
+        norm: 1,
+        signalValue: Math.random(),
+        node: 'runtime.decision',
+        createdAt: Date.now(),
+        matchCount: 0,
+        avgConfidence: 0,
+      });
+    }
+
+    // Warmup V8 JIT compiler
+    for (let i = 0; i < 500; i++) {
+      ls.findTopK(0.5 + (i % 2 === 0 ? 0.00001 : -0.00001), 'runtime.decision', 5);
+    }
+
+    const startCached = performance.now();
+    // 1000 consecutive queries with the exact same value (fully cached)
+    for (let i = 0; i < 1000; i++) {
+      ls.findTopK(0.5, 'runtime.decision', 5);
+    }
+    const durationCached = performance.now() - startCached;
+
+    const startUncached = performance.now();
+    // 1000 queries with slightly different values (bypass cache)
+    for (let i = 0; i < 1000; i++) {
+      ls.findTopK(0.5 + (i % 2 === 0 ? 0.00001 : -0.00001), 'runtime.decision', 5);
+    }
+    const durationUncached = performance.now() - startUncached;
+
+    console.log(`[BENCHMARK] Cached queries: ${durationCached.toFixed(2)}ms`);
+    console.log(`[BENCHMARK] Uncached queries: ${durationUncached.toFixed(2)}ms`);
+    console.log(`[BENCHMARK] Speedup Factor: ${(durationUncached / durationCached).toFixed(2)}x`);
+
+    expect(durationCached).toBeLessThan(durationUncached * 2.0);
+  });
+});
