@@ -52,33 +52,33 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const STABLE_ID = /^[a-z0-9][a-z0-9._:-]{1,159}$/;
 const UINT = /^(0|[1-9][0-9]*)$/;
 
-export const canonicalTruthLanes: ReadonlySet<NeuroLane> = new Set([
+export const canonicalTruthLanes: ReadonlySet<NeuroLane> = new Set<NeuroLane>([
   "deterministic-verification",
   "evidence",
   "motor-authorization",
-]);
+] as const);
 
-export const nonCanonicalLanes: ReadonlySet<NeuroLane> = new Set([
+export const nonCanonicalLanes: ReadonlySet<NeuroLane> = new Set<NeuroLane>([
   "cognitive-side-channel",
-]);
+] as const);
 
 const allowedTransitions: Readonly<Record<NeuroLane, ReadonlySet<NeuroLane>>> = {
-  "sensory-intake": new Set(["thalamic-routing", "quarantine"]),
-  "thalamic-routing": new Set([
+  "sensory-intake": new Set<NeuroLane>(["thalamic-routing", "quarantine"] as const),
+  "thalamic-routing": new Set<NeuroLane>([
     "reflex-safety",
     "deterministic-verification",
     "cognitive-side-channel",
     "quarantine",
-  ]),
-  "reflex-safety": new Set(["evidence", "motor-authorization", "quarantine"]),
-  "deterministic-verification": new Set(["evidence", "motor-authorization", "quarantine"]),
-  "cognitive-side-channel": new Set(["evidence"]),
-  evidence: new Set(["persistence", "cerebellar-correction"]),
-  persistence: new Set(["cerebellar-correction"]),
-  "cerebellar-correction": new Set(["evidence", "quarantine"]),
-  "motor-authorization": new Set(["evidence", "cerebellar-correction"]),
-  homeostasis: new Set(["thalamic-routing", "quarantine"]),
-  quarantine: new Set(["evidence"]),
+  ] as const),
+  "reflex-safety": new Set<NeuroLane>(["evidence", "motor-authorization", "quarantine"] as const),
+  "deterministic-verification": new Set<NeuroLane>(["evidence", "motor-authorization", "quarantine"] as const),
+  "cognitive-side-channel": new Set<NeuroLane>(["evidence"] as const),
+  evidence: new Set<NeuroLane>(["persistence", "cerebellar-correction"] as const),
+  persistence: new Set<NeuroLane>(["cerebellar-correction"] as const),
+  "cerebellar-correction": new Set<NeuroLane>(["evidence", "quarantine"] as const),
+  "motor-authorization": new Set<NeuroLane>(["evidence", "cerebellar-correction"] as const),
+  homeostasis: new Set<NeuroLane>(["thalamic-routing", "quarantine"] as const),
+  quarantine: new Set<NeuroLane>(["evidence"] as const),
 };
 
 export function verifyLaneTransition(source: NeuroLane, target: NeuroLane): boolean {
