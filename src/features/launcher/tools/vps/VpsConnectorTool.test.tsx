@@ -40,3 +40,24 @@ describe('VpsConnectionForm', () => {
     expect(screen.getByPlaceholderText(/root oder ubuntu/i)).toBeTruthy();
   });
 });
+
+describe('VpsFileTree Accessibility', () => {
+  it('renders directory and file nodes with correct aria-label, title, and aria-expanded attributes', async () => {
+    const { VpsFileTree } = await import('./VpsFileTree');
+    const mockGetTree = vi.fn().mockResolvedValue([
+      { name: 'src', type: 'directory' },
+      { name: 'README.md', type: 'file' },
+    ]);
+    const mockOnSelect = vi.fn();
+
+    render(<VpsFileTree getTree={mockGetTree} onSelectFile={mockOnSelect} />);
+
+    const dirButton = await screen.findByRole('button', { name: 'Verzeichnis öffnen: src' });
+    expect(dirButton).toHaveAttribute('aria-expanded', 'false');
+    expect(dirButton).toHaveAttribute('title', 'Verzeichnis öffnen: /src');
+
+    const fileButton = await screen.findByRole('button', { name: 'Datei öffnen: README.md' });
+    expect(fileButton).not.toHaveAttribute('aria-expanded');
+    expect(fileButton).toHaveAttribute('title', 'Datei öffnen: /README.md');
+  });
+});

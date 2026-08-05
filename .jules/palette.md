@@ -41,3 +41,7 @@
 ## 2025-08-01 - [Accessible Roadmap Step Lists and Summaries]
 **Learning:** For interactive or descriptive workflow step/roadmap lists, screen readers struggle to parse visual symbols (like checkmarks, warning icons, triangles) or truncated names without appropriate list roles and state-dependent text fallbacks.
 **Action:** Always wrap lists of workflow steps in elements with `role="list"`, assign `role="listitem"` and proper `aria-current="step"` on active items, and pair them with localized description titles (e.g., `Abgeschlossen: Schritt`, `Aktueller Schritt: Schritt`) as well as native hover `title` tooltips for truncated visuals.
+
+## 2025-08-02 - [Lazy-Loaded File Tree Accessibility]
+**Learning:** For dynamic, lazy-loading directory trees (such as remote file lists in a VPS Connector), interactive nodes need clear distinction between files and folders. Folders must expose their state via `aria-expanded` and stateful toggle actions to help screen readers understand current layout status.
+**Action:** Always assign dynamic, state-dependent `aria-label` and matching native `title` tooltips for folder trees, and explicitly manage `aria-expanded` attributes on directories.
