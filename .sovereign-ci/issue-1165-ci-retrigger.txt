@@ -1,0 +1,3 @@
+Temporary exact-head CI retrigger marker for Issue #1165.
+This file is removed by the immediately following owner-authenticated commit.
+No product, runtime, deployment, or continuity truth is encoded here.
