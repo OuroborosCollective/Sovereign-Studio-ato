@@ -183,15 +183,7 @@ jobs:
         env:
           CI: true
 
-      - name: Validate append-only continuity contract
-        shell: bash
-        env:
-          BASE_SHA: ${{ steps.bind.outputs.base_sha }}
-        run: |
-          set -euo pipefail
-          SOVEREIGN_CONTINUITY_STDLIB_ONLY=1 python3 tools/sovereign-chatgpt-mcp/validate_continuity.py --base "$BASE_SHA" --head HEAD
-
-      - name: Commit and push exact repair
+      - name: Commit exact repair locally
         shell: bash
         run: |
           set -euo pipefail
@@ -199,6 +191,20 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           git add -A
           git commit -m 'test(issue-1165): finish token-free frontend contracts'
+
+      - name: Validate append-only continuity contract on committed head
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.bind.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" != "$TRIGGER_SHA"
+          SOVEREIGN_CONTINUITY_STDLIB_ONLY=1 python3 tools/sovereign-chatgpt-mcp/validate_continuity.py --base "$BASE_SHA" --head HEAD
+
+      - name: Push exact repair with compare-and-swap
+        shell: bash
+        run: |
+          set -euo pipefail
           REMOTE_SHA="$(git ls-remote origin "refs/heads/$BRANCH_NAME" | awk '{print $1}')"
           test "$REMOTE_SHA" = "$TRIGGER_SHA"
           git push origin "HEAD:refs/heads/$BRANCH_NAME"
