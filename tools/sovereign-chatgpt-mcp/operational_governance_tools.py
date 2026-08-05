@@ -438,6 +438,11 @@ _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
         "tools": ["skill_regression_benchmark"],
         "purpose": "Compare expected tool calls, effects and evidence across MCP updates.",
     },
+    "sovereign-skill-trigger-quality-benchmark": {
+        "priority": "P0",
+        "tools": ["skill_trigger_quality_benchmark"],
+        "purpose": "Benchmark skill trigger precision, recall and selection across MCP or skill updates.",
+    },
     "sovereign-tool-idempotency-verifier": {
         "priority": "P0",
         "tools": ["tool_idempotency_verify"],

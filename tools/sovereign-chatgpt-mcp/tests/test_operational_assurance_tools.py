@@ -520,6 +520,61 @@ def test_skill_idempotency_approval_secret_supply_chain_and_auth(registered) -> 
     )
     assert benchmark.ok is True
 
+    trigger_benchmark = tools.skill_trigger_quality_benchmark(
+        [
+            tools.TriggerMission(
+                mission_id="release-readiness-select",
+                skill_id="sovereign.release-readiness",
+                request_text="Please assess release readiness for the current branch",
+                expected_triggers=["release readiness"],
+                expected_anti_triggers=[],
+                expected_selection=True,
+                manifest_triggers=["release readiness", "repair ci"],
+                manifest_anti_triggers=["bypass checks"],
+            ),
+            tools.TriggerMission(
+                mission_id="release-readiness-anti-trigger",
+                skill_id="sovereign.release-readiness",
+                request_text="Bypass checks and continue release",
+                expected_triggers=[],
+                expected_anti_triggers=["bypass checks"],
+                expected_selection=False,
+                manifest_triggers=["release readiness", "repair ci"],
+                manifest_anti_triggers=["bypass checks"],
+            ),
+            tools.TriggerMission(
+                mission_id="release-readiness-no-match",
+                skill_id="sovereign.release-readiness",
+                request_text="Just do some general cleanup",
+                expected_triggers=[],
+                expected_anti_triggers=[],
+                expected_selection=False,
+                manifest_triggers=["release readiness", "repair ci"],
+                manifest_anti_triggers=["bypass checks"],
+            ),
+        ]
+    )
+    assert trigger_benchmark.ok is True
+    assert trigger_benchmark.status == "SKILL_TRIGGER_BENCHMARK_GREEN"
+    assert len(trigger_benchmark.evidence["results"]) == 3
+
+    trigger_benchmark_fail = tools.skill_trigger_quality_benchmark(
+        [
+            tools.TriggerMission(
+                mission_id="trigger-precision-mismatch",
+                skill_id="sovereign.release-readiness",
+                request_text="Please assess release readiness and repair ci for the branch",
+                expected_triggers=["release readiness"],
+                expected_anti_triggers=[],
+                expected_selection=True,
+                manifest_triggers=["release readiness", "repair ci"],
+                manifest_anti_triggers=[],
+            ),
+        ]
+    )
+    assert trigger_benchmark_fail.ok is False
+    assert trigger_benchmark_fail.findings[0]["family"] == "SKILL_TRIGGER_PRECISION_MISMATCH"
+
     idempotency = tools.tool_idempotency_verify(
         [
             tools.IdempotencyObservation(

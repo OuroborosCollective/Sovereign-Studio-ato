@@ -51,6 +51,7 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
         "skill_capability_coverage_map",
         "skill_lifecycle_deprecation_preview",
         "skill_regression_benchmark",
+        "skill_trigger_quality_benchmark",
         "tool_idempotency_verify",
         "owner_approval_policy_evaluate",
         "secret_lifecycle_rotation_assess",
