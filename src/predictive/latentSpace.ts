@@ -45,6 +45,11 @@ export class LatentSpaceNavigator {
   private nodeIndex: Map<string, Set<string>> = new Map();
   private insertionOrder: string[] = [];
 
+  // 1-slot cache for the query embedding and its norm to avoid redundant Math.sin computations, norm computations, and array allocations
+  private lastQueryValue: number | null = null;
+  private lastQueryEmbedding: number[] = [];
+  private lastQueryNorm: number = 0;
+
   constructor(config: Partial<LatentSpaceConfig> = {}) {
     this.dimension = config.dimension ?? DEFAULT_DIMENSION;
     this.maxPatterns = config.maxPatterns ?? DEFAULT_MAX_PATTERNS;
@@ -106,8 +111,7 @@ export class LatentSpaceNavigator {
   ): SimilarityMatch | null {
     const k = options.k ?? this.kNeighbors;
     const threshold = options.threshold ?? this.similarityThreshold;
-    const queryEmbedding = this.createQueryEmbedding(value);
-    const queryNorm = this.computeNorm(queryEmbedding);
+    const { embedding: queryEmbedding, norm: queryNorm } = this.getQueryEmbeddingAndNorm(value);
     const candidates = this.getCandidates(node, options.nodeFilter);
     if (candidates.length === 0) return null;
 
@@ -128,7 +132,8 @@ export class LatentSpaceNavigator {
     }
 
     if (similarities.length === 0) return null;
-    similarities.sort((a, b) => b.score - a.score || a.patternId.localeCompare(b.patternId));
+    // Fast native lexicographical string comparison replacing slow localeCompare
+    similarities.sort((a, b) => b.score - a.score || (a.patternId < b.patternId ? -1 : a.patternId > b.patternId ? 1 : 0));
 
     for (const match of similarities.slice(0, k)) {
       const pattern = this.patterns.get(match.patternId);
@@ -147,8 +152,7 @@ export class LatentSpaceNavigator {
     options: LatentSpaceSearchOptions = {},
   ): SimilarityMatch[] {
     const threshold = options.threshold ?? -1;
-    const queryEmbedding = this.createQueryEmbedding(value);
-    const queryNorm = this.computeNorm(queryEmbedding);
+    const { embedding: queryEmbedding, norm: queryNorm } = this.getQueryEmbeddingAndNorm(value);
     const candidates = this.getCandidates(node, options.nodeFilter);
     const similarities: SimilarityMatch[] = [];
 
@@ -167,7 +171,8 @@ export class LatentSpaceNavigator {
       }
     }
 
-    similarities.sort((a, b) => b.score - a.score || a.patternId.localeCompare(b.patternId));
+    // Fast native lexicographical string comparison replacing slow localeCompare
+    similarities.sort((a, b) => b.score - a.score || (a.patternId < b.patternId ? -1 : a.patternId > b.patternId ? 1 : 0));
     return similarities.slice(0, k);
   }
 
@@ -207,13 +212,24 @@ export class LatentSpaceNavigator {
     return Math.sqrt(sum);
   }
 
-  private createQueryEmbedding(value: number): number[] {
+  private getQueryEmbeddingAndNorm(value: number): { embedding: number[]; norm: number } {
+    // Return cached query embedding and norm if value is identical
+    if (this.lastQueryValue === value) {
+      return { embedding: this.lastQueryEmbedding, norm: this.lastQueryNorm };
+    }
     const embedding: number[] = [];
+    let sum = 0;
     for (let index = 0; index < this.dimension; index += 1) {
       const s = value * (index + 1) * 7919;
-      embedding.push((Math.sin(s) + 1) / 2);
+      const v = (Math.sin(s) + 1) / 2;
+      embedding.push(v);
+      sum += v * v;
     }
-    return embedding;
+    const norm = Math.sqrt(sum);
+    this.lastQueryValue = value;
+    this.lastQueryEmbedding = embedding;
+    this.lastQueryNorm = norm;
+    return { embedding, norm };
   }
 
   private getCandidates(node: string, nodeFilter?: string): PatternEmbedding[] {
@@ -249,6 +265,10 @@ export class LatentSpaceNavigator {
     this.patterns.clear();
     this.nodeIndex.clear();
     this.insertionOrder = [];
+    // Reset 1-slot query cache
+    this.lastQueryValue = null;
+    this.lastQueryEmbedding = [];
+    this.lastQueryNorm = 0;
   }
 
   estimateMemoryUsage(): number {
