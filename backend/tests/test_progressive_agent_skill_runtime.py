@@ -413,6 +413,12 @@ def test_wolfram_adapter_is_supplemental_read_only_and_never_truth():
     assert "cannot verify repository" in result["truthNotice"]
 
 
+def test_deployment_app_uses_container_safe_progressive_skill_root():
+    source = (MIRROR_ROOT / "app.py").read_text(encoding="utf-8")
+    assert "repository_root=Path(__file__).resolve().parent," in source
+    assert "repository_root=Path(__file__).resolve().parents[2]," not in source
+
+
 def test_canonical_and_deployment_mirrors_are_byte_equal_and_firebase_free():
     relative_paths = (
         "agent_runtime/skills/__init__.py",
