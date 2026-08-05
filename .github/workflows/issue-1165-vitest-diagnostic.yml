@@ -48,6 +48,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Remove diagnostic-only files from tested tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/issue-1165-vitest-diagnostic.yml
+          rm -f .sovereign-ci/issue-1165-vitest-diagnostic-trigger.txt
+
       - name: Run and summarize Vitest failures
         shell: bash
         run: |
@@ -56,8 +63,9 @@ jobs:
           npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json
           status=$?
           set -e
-          python3 - <<'PY'
+          VITEST_EXIT_CODE="$status" python3 - <<'PY'
           import json
+          import os
           import pathlib
           import re
 
@@ -96,15 +104,18 @@ jobs:
               '\n'.join(json.dumps(record, ensure_ascii=False, separators=(',', ':')) for record in records) + '\n',
               encoding='utf-8',
           )
-          pathlib.Path('.sovereign-ci/issue-1165-vitest-exit-code.txt').write_text(f'{status}\n', encoding='utf-8')
+          pathlib.Path('.sovereign-ci/issue-1165-vitest-exit-code.txt').write_text(
+              os.environ['VITEST_EXIT_CODE'] + '\n',
+              encoding='utf-8',
+          )
           PY
 
       - name: Commit diagnostic and self-remove
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/issue-1165-vitest-diagnostic.yml
-          rm -f .sovereign-ci/issue-1165-vitest-diagnostic-trigger.txt
+          test ! -e .github/workflows/issue-1165-vitest-diagnostic.yml
+          test ! -e .sovereign-ci/issue-1165-vitest-diagnostic-trigger.txt
           git config user.name 'Sovereign CI Diagnostic'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
