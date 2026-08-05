@@ -202,6 +202,7 @@ Anfrage: ${text}`;
             color: C.text, fontSize: 12, outline: 'none',
           }}
           placeholder="Beschreibe was du tun möchtest…"
+          aria-label="Aktionsbeschreibung"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSubmit(); } }}
@@ -209,6 +210,14 @@ Anfrage: ${text}`;
         />
         <button
           type="button"
+          aria-label="Anfrage senden"
+          title={
+            thinking
+              ? 'Wird verarbeitet…'
+              : !input.trim()
+                ? 'Bitte beschreiben Sie zuerst eine Aktion'
+                : 'Befehl generieren und senden'
+          }
           onClick={() => void handleSubmit()}
           disabled={!input.trim() || thinking}
           style={{
@@ -310,6 +319,7 @@ function MessageBubble({ msg, onExecute, onCancel }: {
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
+              title={msg.isDestructive ? 'Destruktiven Befehl trotzdem ausführen' : 'Befehl jetzt auf dem Server ausführen'}
               onClick={() => onExecute(msg.id, msg.command!)}
               style={{
                 flex: 1, padding: '6px 0', borderRadius: 7, border: 'none',
@@ -322,6 +332,7 @@ function MessageBubble({ msg, onExecute, onCancel }: {
             </button>
             <button
               type="button"
+              title="Vorgeschlagenen Befehl verwerfen"
               onClick={() => onCancel(msg.id)}
               style={{
                 padding: '6px 14px', borderRadius: 7,
