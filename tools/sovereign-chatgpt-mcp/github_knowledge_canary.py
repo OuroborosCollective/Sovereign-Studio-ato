@@ -337,6 +337,7 @@ finally:
                         (block_ids,),
                     )
                 cur.execute("DELETE FROM knowledge_sources WHERE id=%s::uuid", (source_id,))
+                cur.execute("DELETE FROM knowledge_learning_candidates WHERE source_id=%s::uuid", (source_id,))
                 if block_ids:
                     cur.execute(
                         """DELETE FROM knowledge_blocks block
