@@ -108,6 +108,9 @@ function TreeNodeRow({
       <button
         type="button"
         onClick={() => isDir ? onToggle(node) : onSelectFile(node.path)}
+        aria-expanded={isDir ? (node.expanded ? 'true' : 'false') : undefined}
+        aria-label={isDir ? (node.expanded ? `Verzeichnis schließen: ${node.entry.name}` : `Verzeichnis öffnen: ${node.entry.name}`) : `Datei öffnen: ${node.entry.name}`}
+        title={isDir ? (node.expanded ? `Verzeichnis schließen: ${node.path}` : `Verzeichnis öffnen: ${node.path}`) : `Datei öffnen: ${node.path}`}
         style={{
           display: 'flex', alignItems: 'center', gap: 5,
           width: '100%', padding: `4px 10px 4px ${10 + depth * 14}px`,
