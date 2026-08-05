@@ -1634,7 +1634,7 @@ def require_session(f):
 register_progressive_skill_routes(
     app,
     require_session=require_session,
-    repository_root=Path(__file__).resolve().parents[2],
+    repository_root=Path(__file__).resolve().parent,
 )
 
 register_sovereign_agent_routes(
