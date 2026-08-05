@@ -35,6 +35,7 @@ EPHEMERAL_CANARY = ToolAnnotations(
 WorkspaceId = Annotated[str, Field(min_length=1, max_length=160)]
 Sha256Value = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 OptionalSha256 = Annotated[str, Field(pattern=r"^(?:|[0-9a-f]{64})$")]
+OptionalSha256List = Annotated[list[str], Field(max_length=64)]
 OptionalRevision = Annotated[str, Field(pattern=r"^(?:|[0-9a-f]{40})$")]
 BoundedName = Annotated[str, Field(min_length=1, max_length=160)]
 BoundedText = Annotated[str, Field(min_length=1, max_length=2000)]
@@ -273,6 +274,22 @@ class RegressionMission(StrictModel):
     observed_effects: Annotated[list[str], Field(max_length=8)]
     required_evidence: Annotated[list[str], Field(max_length=32)] = []
     observed_evidence: Annotated[list[str], Field(max_length=32)] = []
+    should_trigger: bool = True
+    skill_id: OptionalSha256 = ""
+    skill_version: BoundedName = ""
+    skill_content_hash: OptionalSha256 = ""
+    repository_revision: OptionalRevision = ""
+    capability_revision: OptionalRevision = ""
+    registry_revision: OptionalRevision = ""
+    input_hash: OptionalSha256 = ""
+    expected_payload_hash: OptionalSha256 = ""
+    forbidden_tools: Annotated[list[str], Field(max_length=32)] = []
+    baseline_run_id: BoundedName = ""
+    candidate_run_id: BoundedName = ""
+    runtime_ms: Annotated[int, Field(ge=0, le=3_600_000)] = 0
+    token_count: Annotated[int, Field(ge=0, le=10_000_000)] = 0
+    baseline_runtime_ms: Annotated[int, Field(ge=0, le=3_600_000)] = 0
+    baseline_token_count: Annotated[int, Field(ge=0, le=10_000_000)] = 0
 
 
 class IdempotencyObservation(StrictModel):
@@ -1294,21 +1311,110 @@ def skill_regression_benchmark(
     payload = [item.model_dump(mode="json") for item in missions]
     findings: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
+    total_triggered = 0
+    total_should_trigger = 0
+    total_should_not_trigger = 0
+    all_runtimes: list[int] = []
+    all_tokens: list[int] = []
     for item in payload:
         missing_tools = sorted(set(item["expected_tools"]) - set(item["actual_tools"]))
         unexpected_tools = sorted(set(item["actual_tools"]) - set(item["expected_tools"]))
+        forbidden_tools = sorted(set(item["forbidden_tools"]) & set(item["actual_tools"]))
         forbidden_effects = sorted(set(item["observed_effects"]) - set(item["allowed_effects"]))
         missing_evidence = sorted(set(item["required_evidence"]) - set(item["observed_evidence"]))
-        passed = not missing_tools and not unexpected_tools and not forbidden_effects and not missing_evidence
-        results.append({"missionId": item["mission_id"], "passed": passed, "missingTools": missing_tools, "unexpectedTools": unexpected_tools, "forbiddenEffects": forbidden_effects, "missingEvidence": missing_evidence})
+        triggered = bool(item["actual_tools"])
+        should_trigger = item["should_trigger"]
+        trigger_correct = triggered == should_trigger
+        if should_trigger:
+            total_should_trigger += 1
+            if triggered:
+                total_triggered += 1
+        else:
+            total_should_not_trigger += 1
+            if triggered:
+                pass
+        passed = (
+            not missing_tools
+            and not unexpected_tools
+            and not forbidden_tools
+            and not forbidden_effects
+            and not missing_evidence
+            and trigger_correct
+        )
+        issues: list[str] = []
+        if missing_tools:
+            issues.append(f"missing_tools:{','.join(missing_tools)}")
+        if unexpected_tools:
+            issues.append(f"unexpected_tools:{','.join(unexpected_tools)}")
+        if forbidden_tools:
+            issues.append(f"forbidden_tools:{','.join(forbidden_tools)}")
+        if forbidden_effects:
+            issues.append(f"forbidden_effects:{','.join(forbidden_effects)}")
+        if missing_evidence:
+            issues.append(f"missing_evidence:{','.join(missing_evidence)}")
+        if not trigger_correct:
+            issues.append("trigger_mismatch")
+        result_entry: dict[str, Any] = {
+            "missionId": item["mission_id"],
+            "passed": passed,
+            "issues": issues,
+            "triggered": triggered,
+            "shouldTrigger": should_trigger,
+            "triggerCorrect": trigger_correct,
+        }
+        if item["runtime_ms"] > 0:
+            result_entry["runtimeMs"] = item["runtime_ms"]
+            all_runtimes.append(item["runtime_ms"])
+        if item["token_count"] > 0:
+            result_entry["tokenCount"] = item["token_count"]
+            all_tokens.append(item["token_count"])
+        if item["baseline_runtime_ms"] > 0 and item["runtime_ms"] > 0:
+            result_entry["runtimeDeltaMs"] = item["runtime_ms"] - item["baseline_runtime_ms"]
+        if item["baseline_token_count"] > 0 and item["token_count"] > 0:
+            result_entry["tokenDelta"] = item["token_count"] - item["baseline_token_count"]
+        results.append(result_entry)
         if not passed:
             findings.append({"severity": "P0", "family": "SKILL_REGRESSION_MISSION_FAILED", "missionId": item["mission_id"]})
+        if forbidden_tools:
+            findings.append({"severity": "P0", "family": "SKILL_FORBIDDEN_TOOL_USED", "missionId": item["mission_id"], "forbiddenTools": forbidden_tools})
+        if not trigger_correct:
+            findings.append({"severity": "P1", "family": "SKILL_TRIGGER_MISMATCH", "missionId": item["mission_id"], "triggered": triggered, "shouldTrigger": should_trigger})
+    false_positive_count = sum(1 for item in payload if not item["should_trigger"] and bool(item["actual_tools"]))
+    false_negative_count = sum(1 for item in payload if item["should_trigger"] and not item["actual_tools"])
+    false_positive_rate = false_positive_count / total_should_not_trigger if total_should_not_trigger > 0 else 0.0
+    false_negative_rate = false_negative_count / total_should_trigger if total_should_trigger > 0 else 0.0
+    metrics: dict[str, Any] = {
+        "missionCount": len(results),
+        "passCount": sum(1 for r in results if r["passed"]),
+        "falsePositiveCount": false_positive_count,
+        "falseNegativeCount": false_negative_count,
+        "falsePositiveRate": round(false_positive_rate, 4),
+        "falseNegativeRate": round(false_negative_rate, 4),
+    }
+    if all_runtimes:
+        import statistics
+        metrics["runtimeStats"] = {
+            "medianMs": int(statistics.median(all_runtimes)),
+            "meanMs": int(statistics.mean(all_runtimes)),
+            "minMs": min(all_runtimes),
+            "maxMs": max(all_runtimes),
+            "stdevMs": int(statistics.stdev(all_runtimes)) if len(all_runtimes) > 1 else 0,
+        }
+    if all_tokens:
+        import statistics
+        metrics["tokenStats"] = {
+            "median": int(statistics.median(all_tokens)),
+            "mean": int(statistics.mean(all_tokens)),
+            "min": min(all_tokens),
+            "max": max(all_tokens),
+            "stdev": int(statistics.stdev(all_tokens)) if len(all_tokens) > 1 else 0,
+        }
     ok = not findings
     return _result(
         schema="sovereign.skill-regression-benchmark.v1",
         ok=ok,
         status="SKILL_REGRESSION_GREEN" if ok else "SKILL_REGRESSION_FAILED",
-        evidence={"results": results, "missionCount": len(results)},
+        evidence={"results": results, "metrics": metrics},
         findings=findings,
         next_actions=["block MCP self-update when required missions regress", "record the exact image digest and registry hash for every benchmark run"],
         runtime_verified=False,

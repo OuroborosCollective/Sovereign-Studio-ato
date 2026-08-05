@@ -485,6 +485,86 @@ def test_mcp_governance_permission_and_static_containment(registered) -> None:
     assert all(item["literalReturned"] is False for item in triage.findings)
 
 
+def test_skill_regression_benchmark_extended_fields(registered) -> None:
+    benchmark = tools.skill_regression_benchmark(
+        [
+            # Positive case: skill should trigger, did trigger, with runtime metrics
+            tools.RegressionMission(
+                mission_id="positive-trigger",
+                expected_tools=["vps_capacity_resource_pressure_assess"],
+                actual_tools=["vps_capacity_resource_pressure_assess"],
+                allowed_effects=["read"],
+                observed_effects=["read"],
+                required_evidence=["capacity"],
+                observed_evidence=["capacity"],
+                should_trigger=True,
+                runtime_ms=150,
+                token_count=500,
+                baseline_runtime_ms=200,
+                baseline_token_count=600,
+                skill_id="a" * 64,
+                skill_version="v1.0.0",
+                repository_revision="b" * 40,
+            ),
+            # Positive case with runtime improvement
+            tools.RegressionMission(
+                mission_id="positive-trigger-improved",
+                expected_tools=["runtime_dependency_health_matrix"],
+                actual_tools=["runtime_dependency_health_matrix"],
+                allowed_effects=["read"],
+                observed_effects=["read"],
+                should_trigger=True,
+                runtime_ms=80,
+            ),
+            # Negative case: should NOT trigger but did
+            tools.RegressionMission(
+                mission_id="false-positive-trigger",
+                expected_tools=[],
+                actual_tools=["some_tool"],
+                allowed_effects=["read"],
+                observed_effects=["read"],
+                should_trigger=False,
+            ),
+            # Negative case: should trigger but did not
+            tools.RegressionMission(
+                mission_id="false-negative-no-trigger",
+                expected_tools=["required_tool"],
+                actual_tools=[],
+                allowed_effects=["read"],
+                observed_effects=[],
+                should_trigger=True,
+            ),
+            # Forbidden tool case
+            tools.RegressionMission(
+                mission_id="forbidden-tool-used",
+                expected_tools=["allowed_tool"],
+                actual_tools=["allowed_tool", "dangerous_tool"],
+                allowed_effects=["read"],
+                observed_effects=["read"],
+                should_trigger=True,
+                forbidden_tools=["dangerous_tool"],
+            ),
+        ]
+    )
+    assert benchmark.ok is False
+    metrics = benchmark.evidence["metrics"]
+    assert metrics["missionCount"] == 5
+    assert metrics["passCount"] == 2
+    assert metrics["falsePositiveCount"] == 1
+    assert metrics["falseNegativeCount"] == 1
+    assert metrics["falsePositiveRate"] == 1.0
+    assert metrics["falseNegativeRate"] == 0.5
+    # Check runtime stats exist
+    assert "runtimeStats" in metrics
+    assert metrics["runtimeStats"]["medianMs"] == 150
+    assert metrics["runtimeStats"]["meanMs"] == 115
+    # Check finding families
+    finding_families = {f["family"] for f in benchmark.findings}
+    assert "SKILL_REGRESSION_MISSION_FAILED" in finding_families
+    assert "SKILL_FORBIDDEN_TOOL_USED" in finding_families
+    assert "SKILL_TRIGGER_MISMATCH" in finding_families
+
+
 def test_skill_idempotency_approval_secret_supply_chain_and_auth(registered) -> None:
     coverage = tools.skill_capability_coverage_map(
         [tools.CapabilityRequirement(task_id="capacity", required_capabilities=["capacity", "resource", "pressure"])]
