@@ -36,8 +36,6 @@ interface RefactorContextValue {
   groqKey: string;
   setGeminiKey: (key: string) => void;
   setGroqKey: (key: string) => void;
-  githubToken: string;
-  setGithubToken: (token: string) => void;
   
   // Core operations
   analyze: (repoUrl: string, files: RefactorFile[]) => Promise<RefactorPlan>;
@@ -68,7 +66,6 @@ const STORAGE_KEYS = {
   gemini: 'sovereign_gemini_api_key',
   groq: 'sovereign_groq_api_key',
   repo: 'sovereign_repo_url',
-  github: 'sovereign_github_pat',
 } as const;
 
 function loadFromStorage(key: string, fallback = ''): string {
@@ -103,7 +100,6 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
   // Keys
   const [geminiKey, setGeminiKeyState] = useState(() => loadFromStorage(STORAGE_KEYS.gemini));
   const [groqKey, setGroqKeyState] = useState(() => loadFromStorage(STORAGE_KEYS.groq));
-  const [githubToken, setGithubTokenState] = useState(() => loadFromStorage(STORAGE_KEYS.github));
 
   // Project state
   const [repoUrl, setRepoUrlState] = useState(() => loadFromStorage(STORAGE_KEYS.repo, 'https://github.com/OuroborosCollective/Sovereign-Studio-ato'));
@@ -140,11 +136,6 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
   const setRepoUrl = useCallback((url: string) => {
     setRepoUrlState(url);
     saveToStorage(STORAGE_KEYS.repo, url);
-  }, []);
-
-  const setGithubToken = useCallback((token: string) => {
-    setGithubTokenState(token);
-    saveToStorage(STORAGE_KEYS.github, token);
   }, []);
 
   // Core operations
@@ -233,8 +224,8 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await refactorEngine.applyFileChange(owner, repo, path, content, sha, branch, githubToken);
-      setLastResult('File applied successfully');
+      const result = await refactorEngine.applyFileChange(owner, repo, path, content, sha, branch);
+      setLastResult('Revision-bound Draft PR created');
       return result;
     } catch (err: any) {
       const msg = maskSecrets(err?.message || 'Apply failed');
@@ -243,7 +234,7 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [githubToken]);
+  }, []);
 
   const value: RefactorContextValue = {
     isInitialized: true,
@@ -262,8 +253,6 @@ export function RefactorProvider({ children }: RefactorProviderProps) {
     explain,
     generateFeature,
     applyFileChange,
-    githubToken,
-    setGithubToken,
     history,
     currentPlan,
     setCurrentPlan,

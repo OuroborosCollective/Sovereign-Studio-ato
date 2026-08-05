@@ -1,18 +1,17 @@
-import { fetchFileFromGitHub } from "../services/githubService";
-import { askRefactorLLM } from "../services/llmService";
-import { verifyCodeInAPK } from "../services/sandboxService";
+import { fetchFileFromGitHub } from '../services/githubService';
+import { askRefactorLLM } from '../services/llmService';
+import { verifyCodeInAPK } from '../services/sandboxService';
 
 export interface LogItem {
   id: string;
   time: string;
-  type: "info" | "success" | "warn" | "error";
+  type: 'info' | 'success' | 'warn' | 'error';
   text: string;
 }
 
-type LogFn = (text: string, type?: LogItem["type"]) => void;
+type LogFn = (text: string, type?: LogItem['type']) => void;
 
 export interface RefactorParams {
-  patToken: string;
   owner: string;
   repo: string;
   branch: string;
@@ -20,69 +19,71 @@ export interface RefactorParams {
   instruction: string;
 }
 
-// Verbindet alle Schritte zu einer vollautomatischen Pipeline mit Live-Logging für das User-Interface.
+export interface RefactorReview {
+  originalCode: string;
+  updatedCode: string;
+  sourceSha: string;
+}
+
+/**
+ * Erstellt ausschließlich einen revisionsgebundenen Änderungskandidaten.
+ * Diese Funktion schreibt weder in GitHub noch beweist sie Build-, CI- oder
+ * Runtime-Erfolg. Die nachgelagerte UI darf nur einen Draft-PR anfordern.
+ */
 export async function runRefactorPipeline(
   params: RefactorParams,
   onLog: LogFn,
-  maxFixAttempts = 3
-): Promise<string | null> {
+  maxFixAttempts = 3,
+): Promise<RefactorReview | null> {
   try {
-    // Schritt 1: Code downloaden
-    onLog("📥 Verbinde mit GitHub-API... Lade Datei herunter.", "info");
-    const { content: originalCode } = await fetchFileFromGitHub(params);
-    onLog("✅ Originaler Quellcode erfolgreich geladen.", "success");
+    onLog('📥 Lade die Datei über den sessiongeschützten Sovereign-Gateway.', 'info');
+    const { content: originalCode, sha: sourceSha } = await fetchFileFromGitHub(params);
+    onLog(`✅ Ausgangsfassung revisionsgebunden geladen (${sourceSha.slice(0, 12)}…).`, 'success');
 
-    // Schritt 2: LLM Inferenz starten
-    onLog("🤖 Übermittle Code an Free-LLM für das Refactoring...", "info");
-    const systemPrompt =
-      "Du bist ein präziser TypeScript-Refactoring-Agent. Ändere bestehenden Code exakt nach Anweisung ab. Entferne keine bestehende Kernlogik, es sei denn, es wird verlangt.";
-    let updatedCode = await askRefactorLLM(
-      originalCode,
-      params.instruction,
-      systemPrompt
-    );
+    onLog('🤖 Erzeuge einen Refactoring-Kandidaten über die konfigurierte LLM-Route.', 'info');
+    const systemPrompt = [
+      'Du bist ein präziser TypeScript-Refactoring-Agent.',
+      'Ändere bestehenden Code exakt nach Anweisung.',
+      'Entferne keine bestehende Kernlogik, außer dies wird ausdrücklich verlangt.',
+      'Behaupte niemals Build-, Test-, CI-, Deployment- oder Runtime-Erfolg.',
+    ].join(' ');
+    let updatedCode = await askRefactorLLM(originalCode, params.instruction, systemPrompt);
 
     let attempts = 0;
-    let codeIsValid = false;
-
-    // Schritt 3: Lokaler Validierungs- und Fix-Loop innerhalb der APK
-    while (attempts < maxFixAttempts && !codeIsValid) {
+    let candidatePassedBoundedCheck = false;
+    while (attempts < maxFixAttempts && !candidatePassedBoundedCheck) {
       onLog(
-        `🧪 [Testlauf ${attempts + 1}/${maxFixAttempts}] Überprüfe Code-Syntax in der APK-Sandbox...`,
-        "info"
+        `🧪 [Prüfung ${attempts + 1}/${maxFixAttempts}] Führe den begrenzten lokalen Syntax-Kandidatencheck aus.`,
+        'info',
       );
       const validation = verifyCodeInAPK(updatedCode);
 
       if (validation.success) {
-        codeIsValid = true;
+        candidatePassedBoundedCheck = true;
         onLog(
-          "🎉 Code-Überarbeitung erfolgreich validiert! Keine Syntaxfehler.",
-          "success"
+          '✅ Der Kandidat bestand den begrenzten lokalen Check; vollständige Build- und CI-Evidence steht noch aus.',
+          'success',
         );
       } else {
-        attempts++;
-        onLog(
-          `⚠️ Sandbox-Fehler erkannt: "${validation.errorLog}"`,
-          "warn"
-        );
-
+        attempts += 1;
+        onLog(`⚠️ Begrenzter Check meldet: "${validation.errorLog}"`, 'warn');
         if (attempts < maxFixAttempts) {
-          onLog(
-            "🔄 Starte autonomen Auto-Fix-Loop mit dem Fehlerprotokoll...",
-            "warn"
-          );
+          onLog('🔄 Erzeuge anhand dieses Befunds einen neuen Kandidaten.', 'warn');
           updatedCode = await askRefactorLLM(
             updatedCode,
-            `Der Code hat folgenden Syntaxfehler erzeugt: ${validation.errorLog}. Bitte korrigiere diesen Fehler im Code.`,
-            systemPrompt
+            `Der begrenzte lokale Check meldet: ${validation.errorLog}. Korrigiere ausschließlich diesen Befund.`,
+            systemPrompt,
           );
         }
       }
     }
 
-    return codeIsValid ? updatedCode : null;
-  } catch (err: any) {
-    onLog(`🚨 Kritischer Pipeline-Fehler: ${err.message}`, "error");
+    return candidatePassedBoundedCheck
+      ? Object.freeze({ originalCode, updatedCode, sourceSha })
+      : null;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unbekannter Pipeline-Fehler';
+    onLog(`🚨 Pipeline abgebrochen: ${message}`, 'error');
     return null;
   }
 }

@@ -1,4 +1,7 @@
-import { Octokit } from "@octokit/rest";
+import {
+  createSovereignGitHubRuntime,
+  type SovereignGitHubEvidenceContext,
+} from '../github/sovereign-github-runtime';
 
 interface PullRequestOptions {
   owner: string;
@@ -9,133 +12,104 @@ interface PullRequestOptions {
   body?: string;
   labels?: string[];
   reviewers?: string[];
+  evidence: SovereignGitHubEvidenceContext;
 }
 
 /**
- * Erstellt einen hochgradig standardisierten Pull Request innerhalb der Sovereign Studio V3 Architektur.
- * Integriert Compliance-Checks für Mobile-First Deployments und Capacitor 6 Kompatibilität.
- * 
- * RESOLVES: TS2307 durch Sicherstellung der korrekten Octokit-Typisierung und 
- * DEP0169 durch strikte WHATWG URL API Implementierung.
+ * Erstellt ausschließlich einen Draft-PR über die kanonische serverseitige
+ * Octokit/REST-Grenze. Ein Transporterfolg wird durch einen unabhängigen
+ * Pull-Readback bestätigt, bevor diese Funktion eine PR-Nummer zurückgibt.
  */
 export async function createPullRequest(options: PullRequestOptions): Promise<number> {
-  // GITHUB_TOKEN Extraktion mit Hybrid-Support für Node.js und Vite Umgebungen (Sovereign Core)
-  let token: string | undefined;
-
-  if (typeof process !== 'undefined' && process.env && process.env.GITHUB_TOKEN) {
-    token = process.env.GITHUB_TOKEN;
-  } else if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_GITHUB_TOKEN) {
-    token = (import.meta as any).env.VITE_GITHUB_TOKEN;
-  }
-  
-  if (!token) {
-    throw new Error("[Sovereign Studio] GITHUB_TOKEN ist nicht definiert. Erforderlich für PR-Automation.");
-  }
-
-  // Initialisierung von Octokit mit moderner Konfiguration und WHATWG URL Standard
-  const octokit = new Octokit({
-    auth: token,
-    baseUrl: new URL("https://api.github.com").origin,
-  });
-
-  const { 
-    owner, 
-    repo, 
-    title, 
-    head, 
-    base, 
-    labels = ["automated", "sovereign-v3", "mobile-optimized"], 
-    reviewers = [] 
+  const {
+    owner,
+    repo,
+    title,
+    head,
+    base,
+    labels = ['automated', 'sovereign-v3'],
+    reviewers = [],
+    evidence,
   } = options;
 
-  const prTemplate = `
-## 🚀 Sovereign Studio V3 - Automated PR
-
-### Beschreibung
-${options.body || "Automatisierte Code-Generierung und Architektur-Update durch Sovereign Studio Design-Coder."}
-
-### Architektur-Checklist (Sovereign V3 Standards)
-- [x] **Mobile-First**: UI-Komponenten auf Capacitor 6 & native Viewports optimiert.
-- [x] **Typensicherheit**: Vollständige TypeScript-Abdeckung (TS2307 resolved).
-- [x] **Gemini API**: LLM-gesteuerte Workflows wurden im Kontext validiert.
-- [x] **Regex Compliance**: Verbotene Muster wie \`replace(//g)\` wurden strikt vermieden.
-- [x] **CI/CD**: Automatisierte Deployment-Pipeline konsistent mit Capacitor-Interoperabilität.
-
-### System-Kontext
-- **Core**: Vite + TypeScript Hybrid Core
-- **Native**: Capacitor 6 Bridge integriert
-- **Compliance**: WHATWG URL API standardisiert
-
----
-*Erstellt durch Sovereign Studio V3 Assistant - LLM-driven platform infrastructure.*
-  `.trim();
+  const prTemplate = [
+    '## Sovereign Studio – revisionsgebundener Draft-PR',
+    '',
+    '### Beschreibung',
+    options.body || 'Revisionsgebundene Änderung über die Sovereign GitHub Evidence-Grenze.',
+    '',
+    '### Truth Boundary',
+    '- Dieser PR wird als Draft angelegt.',
+    '- API-Erfolg allein beweist keine Wirkung.',
+    '- Head, Base, Draft-Status und Head-SHA werden separat rückgelesen.',
+    '- CI-, Merge-, Deployment- und Runtime-Erfolg werden hier nicht behauptet.',
+  ].join('\n');
 
   try {
-    // PR Erstellung
-    const { data: pr } = await octokit.rest.pulls.create({
+    const runtime = createSovereignGitHubRuntime();
+    const verified = await runtime.createDraftPullRequest({
       owner,
-      repo,
+      repository: repo,
       title,
       head,
       base,
       body: prTemplate,
-      maintainer_can_modify: true,
+      evidence,
     });
 
-    // Labels hinzufügen über Issues API
     if (labels.length > 0) {
-      await octokit.rest.issues.addLabels({
+      const labelReceipt = await runtime.addLabels({
         owner,
-        repo,
-        issue_number: pr.number,
+        repository: repo,
+        issueNumber: verified.number,
         labels,
+        evidence,
       });
+      if (labelReceipt.verdict !== 'VERIFIED') {
+        throw new Error('GitHub label readback contradicted the requested labels');
+      }
     }
 
-    // Reviewer Zuweisung
     if (reviewers.length > 0) {
-      await octokit.rest.pulls.requestReviewers({
+      const reviewerReceipt = await runtime.requestReviewers({
         owner,
-        repo,
-        pull_number: pr.number,
+        repository: repo,
+        pullNumber: verified.number,
         reviewers,
+        evidence,
       });
+      if (reviewerReceipt.verdict !== 'VERIFIED') {
+        throw new Error('GitHub reviewer readback contradicted the requested reviewers');
+      }
     }
 
-    return pr.number;
+    return verified.number;
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unbekannter API-Fehler";
-    console.error(`[Sovereign Studio] Fehler bei der PR-Erstellung: ${message}`);
+    const message = error instanceof Error ? error.message : 'Unbekannter API-Fehler';
+    console.error(`[Sovereign Studio] GitHub-Operation fehlgeschlagen: ${message}`);
     throw error;
   }
 }
 
-/**
- * Generiert einen konformen Branch-Namen ohne die Nutzung von verbotenen Regex-Mustern.
- * Nutzt funktionale Transformationen zur Einhaltung der Sovereign Code-Policies.
- */
-export function generateBranchName(feature: string): string {
-  // Vermeidung von replace(//g) durch Nutzung von split/join Ketten zur Einhaltung der Policy
+export function generateBranchName(feature: string, identitySuffix: string): string {
   const sanitized = feature
     .toLowerCase()
-    .split(" ").join("-")
-    .split("/").join("-")
-    .split("_").join("-")
-    .split(".").join("-")
-    .split(":").join("-")
-    .split("@").join("-")
-    .split("--").join("-"); // Doppelte Bindestriche bereinigen
-    
-  return `sovereign/feature/${sanitized}-${Date.now()}`;
+    .split(' ').join('-')
+    .split('/').join('-')
+    .split('_').join('-')
+    .split('.').join('-')
+    .split(':').join('-')
+    .split('@').join('-')
+    .split('--').join('-');
+  const suffix = identitySuffix.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20);
+  if (!sanitized || !suffix) throw new Error('Branch-Name benötigt Feature und deterministische Identität.');
+  return `sovereign/feature/${sanitized}-${suffix}`;
 }
 
-/**
- * Validiert eine URL unter Nutzung der modernen WHATWG URL API (DEP0169 Fix).
- */
 export function validateRepositoryUrl(url: string): boolean {
   try {
     const validatedUrl = new URL(url);
-    return validatedUrl.protocol === "https:";
+    return validatedUrl.protocol === 'https:' && validatedUrl.hostname === 'github.com';
   } catch {
     return false;
   }

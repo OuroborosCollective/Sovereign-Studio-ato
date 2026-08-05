@@ -5,8 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { store } from './store';
 
-const TEST_GITHUB_ACCESS = 'fixture-only';
-
 const agent = vi.hoisted(() => ({
   listJobs: vi.fn(),
   startJob: vi.fn(),
@@ -60,7 +58,6 @@ vi.mock('./features/product/containers/BuilderContainer', () => ({
             mission: 'Update README',
             changes: [],
             confirmed: true,
-            githubAccessToken: TEST_GITHUB_ACCESS,
           }).catch(() => undefined);
         }}
       >Publish existing</button>
@@ -73,7 +70,6 @@ vi.mock('./features/product/containers/BuilderContainer', () => ({
             mission: 'Update README',
             changes: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
             confirmed: true,
-            githubAccessToken: TEST_GITHUB_ACCESS,
           }).catch(() => undefined);
         }}
       >Publish staged</button>
@@ -189,15 +185,11 @@ describe('App Draft-PR runtime flow', () => {
     await waitFor(() => expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1'));
     fireEvent.click(screen.getByRole('button', { name: 'Publish existing' }));
 
-    // wait for the UI to update and assert the visible PR path
     await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/10'));
 
     expect(agent.startJob).not.toHaveBeenCalled();
     expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-1');
-
-    expect(agent.createDraftPr).toHaveBeenCalled();
-    expect(agent.createDraftPr.mock.calls[0]).toEqual(['job-1', TEST_GITHUB_ACCESS]);
-
+    expect(agent.createDraftPr).toHaveBeenCalledWith('job-1');
     expect(agent.getJob).toHaveBeenCalledWith('job-1');
   });
 
@@ -229,9 +221,6 @@ describe('App Draft-PR runtime flow', () => {
     render(<Provider store={store}><App /></Provider>);
     fireEvent.click(screen.getByRole('button', { name: 'Publish staged' }));
 
-    // The reusable-memory lookup adds one fail-soft async boundary before
-    // staging. Wait for the observable outcome rather than only for the
-    // already-mounted element to exist.
     await waitFor(() => expect(screen.getByTestId('flow-pr-url')).toHaveTextContent('/pull/11'));
 
     expect(memory.searchReusableMemory).toHaveBeenCalledWith('Update README', 6);
@@ -242,13 +231,9 @@ describe('App Draft-PR runtime flow', () => {
       cloneRepo: true,
       provisionWorkspace: true,
       stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
-      githubAccessToken: TEST_GITHUB_ACCESS,
     }));
     expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-staged');
-
-    expect(agent.createDraftPr).toHaveBeenCalled();
-    expect(agent.createDraftPr.mock.calls[0]).toEqual(['job-staged', TEST_GITHUB_ACCESS]);
-
+    expect(agent.createDraftPr).toHaveBeenCalledWith('job-staged');
     expect(agent.getJob).toHaveBeenCalledWith('job-staged');
   });
 });

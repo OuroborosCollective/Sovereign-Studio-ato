@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Colors, Spacing, BorderRadius, FontSize } from '../../utils/theme';
 import { useAppStore } from '../../store/appStore';
 import { providerManager } from '../../features/ai/providerManager';
+import { listRepositoryTree } from '../services/githubService';
 import type { RepoFile } from '../../types';
 
 interface HomeScreenProps {
@@ -68,39 +69,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     addLog(`📁 Lade Repository: ${parsed.owner}/${parsed.repo}`);
 
     try {
-      const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
-      const githubToken = useAppStore.getState().githubToken;
-      if (githubToken.trim()) {
-        headers.Authorization = `Bearer ${githubToken.trim()}`;
-      }
-
-      const response = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/main?recursive=1`,
-        { headers }
-      );
-
-      if (!response.ok) {
-        throw new Error(`GitHub API ${response.status}`);
-      }
-
-      const data = await response.json();
-      const treeData: any[] = data.tree ?? [];
-      const files: RepoFile[] = [];
-
-      for (const f of treeData) {
-        if (f.type === 'blob' || f.type === 'tree') {
-          files.push({ path: f.path, type: f.type, size: f.size });
-          if (files.length >= 250) break;
-        }
-      }
+      const tree = await listRepositoryTree({
+        owner: parsed.owner,
+        repo: parsed.repo,
+        branch: 'main',
+        maxEntries: 250,
+      });
+      const files: RepoFile[] = tree.map((entry) => ({
+        path: entry.path,
+        type: entry.type,
+        size: entry.size,
+      }));
 
       setRepoFiles(files);
       setRepoLoaded(true);
-      setRepoStatus(`${files.length} Dateien geladen`);
-      addLog(`✅ ${files.length} Dateien geladen`);
-    } catch (err: any) {
-      setRepoStatus(`❌ Fehler: ${err.message}`);
-      addLog(`❌ Fehler beim Laden: ${err.message}`);
+      setRepoStatus(`${files.length} Einträge über den Sovereign-Gateway geladen`);
+      addLog(`✅ ${files.length} revisionsgebundene Repository-Einträge geladen`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unbekannter Gateway-Fehler';
+      setRepoStatus(`❌ Fehler: ${message}`);
+      addLog(`❌ Fehler beim Laden: ${message}`);
     } finally {
       setIsRepoBusy(false);
     }

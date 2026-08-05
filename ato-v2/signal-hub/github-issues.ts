@@ -1,77 +1,61 @@
-import { Octokit } from 'octokit';
+import {
+  SovereignGitHubRuntime,
+  type SovereignGitHubEvidenceContext,
+} from '../github/sovereign-github-runtime';
 
 export interface GitHubIssueSignal {
   id: number;
   title: string;
   body: string | null;
   number: number;
-  labels: string[];
+  labels: readonly string[];
   url: string;
   state: string;
   createdAt: string;
   updatedAt: string;
+  responseHash: string;
 }
 
 export interface SignalFilterOptions {
-  labels?: string[];
+  labels?: readonly string[];
   state?: 'open' | 'closed' | 'all';
   since?: string;
 }
 
+export interface SignalAcknowledgement {
+  statusLabel: 'processed' | 'failed' | 'in-progress';
+  occurredAt: string;
+  evidence: SovereignGitHubEvidenceContext;
+}
+
 export class GitHubIssueHub {
-  private octokit: Octokit;
+  private readonly runtime: SovereignGitHubRuntime;
 
   constructor(token: string) {
-    this.octokit = new Octokit({
-      auth: token,
-    });
+    this.runtime = new SovereignGitHubRuntime(token);
   }
 
   async fetchAutonomousSignals(
     owner: string,
     repo: string,
-    options: SignalFilterOptions = {}
-  ): Promise<GitHubIssueSignal[]> {
+    options: SignalFilterOptions = {},
+  ): Promise<readonly GitHubIssueSignal[]> {
     try {
-      const response = await this.octokit.rest.issues.listForRepo({
+      return await this.runtime.listIssueSignals({
         owner,
-        repo,
-        state: options.state || 'open',
-        labels: options.labels?.join(',') || 'autonomous-task',
+        repository: repo,
+        state: options.state,
+        labels: options.labels,
         since: options.since,
-        sort: 'updated',
-        direction: 'desc',
-        per_page: 100,
       });
-
-      return response.data
-        .filter((issue) => !('pull_request' in issue))
-        .map((issue) => ({
-          id: issue.id,
-          title: issue.title,
-          body: issue.body ?? '',
-          number: issue.number,
-          labels: (issue.labels || []).map((label) =>
-            typeof label === 'string'
-              ? label
-              : label?.name ?? ''
-          ).filter(Boolean),
-          url: issue.html_url,
-          state: issue.state,
-          createdAt: issue.created_at,
-          updatedAt: issue.updated_at,
-        }));
-
-    } catch (error: any) {
-      console.error('[GitHubIssueHub] fetch error:', error?.message);
-
-      if (error?.status === 403) {
-        throw new Error('GitHub API rate limit hit');
-      }
-
-      throw new Error(
-        `Failed to sync GitHub signals: ${error?.message || 'unknown error'}`
-      );
+    } catch (error: unknown) {
+      const status = typeof error === 'object' && error !== null && 'status' in error
+        ? Number((error as { status?: unknown }).status)
+        : 0;
+      const message = error instanceof Error ? error.message : 'unknown error';
+      console.error(`[GitHubIssueHub] fetch error: ${message}`);
+      if (status === 403) throw new Error('GitHub API rate limit hit');
+      throw new Error(`Failed to sync GitHub signals: ${message}`);
     }
   }
 
@@ -79,51 +63,49 @@ export class GitHubIssueHub {
     owner: string,
     repo: string,
     issueNumber: number,
-    statusLabel: 'processed' | 'failed' | 'in-progress'
+    acknowledgement: SignalAcknowledgement,
   ): Promise<void> {
     try {
-      const timestamp = new Date().toISOString();
-
-      await this.octokit.rest.issues.createComment({
+      const commentReceipt = await this.runtime.createIssueComment({
         owner,
-        repo,
-        issue_number: issueNumber,
+        repository: repo,
+        issueNumber,
         body: [
-          '### 🤖 Sovereign Studio Autonomous Update',
-          `Status: **${statusLabel}**`,
-          `Time: ${timestamp}`,
+          '### Sovereign Studio Autonomous Update',
+          `Status: **${acknowledgement.statusLabel}**`,
+          `Time: ${acknowledgement.occurredAt}`,
+          '',
+          'GitHub transport and independent comment readback are recorded separately.',
         ].join('\n'),
+        evidence: acknowledgement.evidence,
       });
+      if (commentReceipt.verdict !== 'VERIFIED') throw new Error('comment readback contradicted the requested effect');
 
-      await this.octokit.rest.issues.addLabels({
+      const labelReceipt = await this.runtime.addLabels({
         owner,
-        repo,
-        issue_number: issueNumber,
-        labels: [statusLabel],
+        repository: repo,
+        issueNumber,
+        labels: [acknowledgement.statusLabel],
+        evidence: acknowledgement.evidence,
       });
+      if (labelReceipt.verdict !== 'VERIFIED') throw new Error('label readback contradicted the requested effect');
 
-      if (statusLabel === 'processed') {
-        try {
-          await this.octokit.rest.issues.removeLabel({
-            owner,
-            repo,
-            issue_number: issueNumber,
-            name: 'autonomous-task',
-          });
-        } catch {
-          // silent: label may not exist
-        }
+      if (acknowledgement.statusLabel === 'processed') {
+        const removalReceipt = await this.runtime.removeLabel({
+          owner,
+          repository: repo,
+          issueNumber,
+          label: 'autonomous-task',
+          evidence: acknowledgement.evidence,
+        });
+        if (removalReceipt.verdict !== 'VERIFIED') throw new Error('label removal readback contradicted the requested effect');
       }
-
-    } catch (error: any) {
-      console.error('[GitHubIssueHub] acknowledge error:', error?.message);
-
-      throw new Error(
-        `Failed to update signal status: ${error?.message || 'unknown error'}`
-      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      console.error(`[GitHubIssueHub] acknowledge error: ${message}`);
+      throw new Error(`Failed to update signal status: ${message}`);
     }
   }
 }
 
-export const createGitHubSignalHub = (token: string): GitHubIssueHub =>
-  new GitHubIssueHub(token);
+export const createGitHubSignalHub = (token: string): GitHubIssueHub => new GitHubIssueHub(token);

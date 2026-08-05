@@ -202,12 +202,13 @@ describe('RescuePanel', () => {
     await screen.findByText('Docker Compose oder Container');
     fireEvent.click(screen.getByRole('button', { name: 'Repair Pack starten' }));
     await waitFor(() => expect(onJobReady).toHaveBeenCalledWith('agent-1'));
-    fireEvent.change(screen.getByLabelText(/GitHub-Zugang für private Repositories/), {
-      target: { value: 'github_pat_ephemeral_private_token' },
-    });
+    expect(screen.getByText(
+      /GitHub-Zugriffe laufen ausschließlich über die authentifizierte Sovereign-Backend-Session/,
+    )).toBeInTheDocument();
+    expect(screen.queryByLabelText(/GitHub-Zugang für private Repositories/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Draft PR aus geprüfter Evidence erstellen' }));
-    await waitFor(() => expect(onPublishDraftPr).toHaveBeenCalledWith('github_pat_ephemeral_private_token'));
-    expect(screen.getByLabelText(/GitHub-Zugang für private Repositories/)).toHaveValue('');
+    await waitFor(() => expect(onPublishDraftPr).toHaveBeenCalledTimes(1));
+    expect(onPublishDraftPr.mock.calls[0]).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: 'ProofPack prüfen' }));
     await screen.findByText(/ci_not_green/);
     expect(screen.getByText(/Unvollständig/)).toBeInTheDocument();

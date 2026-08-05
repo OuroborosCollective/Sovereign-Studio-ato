@@ -253,7 +253,6 @@ export interface SovereignDraftPrPublishInput {
   readonly mission: string;
   readonly changes: readonly SovereignStagedChange[];
   readonly confirmed: boolean;
-  readonly githubAccessToken?: string;
 }
 
 export interface BuilderContainerProps {
@@ -275,7 +274,7 @@ export interface BuilderContainerProps {
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
-  onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string; readonly githubAccessToken?: string }) => void | Promise<void>;
+  onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string }) => void | Promise<void>;
   onCancelAgent?: () => void;
   /**
    * Traditional publish path — set by the parent to the PR URL returned by
@@ -3771,7 +3770,6 @@ export function BuilderContainer({
       await onStartAgent(clean, {
         repoUrl: chatRepoSnapshot.repoUrl,
         branch: chatRepoSnapshot.branch,
-        githubAccessToken: githubTokenRef.current || undefined,
       });
       return true;
     } catch (error) {
@@ -3882,7 +3880,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         mission: lastMissionRef.current.trim() || mission.trim() || 'Create a reviewed Draft PR.',
         changes: stagedChanges,
         confirmed: !hasStagedChanges || patchConfirmed,
-        githubAccessToken: githubTokenRef.current || undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

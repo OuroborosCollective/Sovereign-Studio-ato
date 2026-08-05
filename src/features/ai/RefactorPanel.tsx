@@ -18,13 +18,14 @@ import {
   Trash2,
   Zap,
   GitBranch,
-  KeyRound,
+  ShieldCheck,
   History,
   Eye,
   Send,
 } from 'lucide-react';
 import { useRefactor, useProviderStatus, useAnalyze, useGenerate } from './RefactorContext';
 import { type RefactorPlan, type RefactorTask } from './RefactorEngine';
+import { toolchainApi } from '../toolchain/toolchainApi';
 
 // ============================================================
 // Parse GitHub URL
@@ -75,7 +76,7 @@ interface RepoInputProps {
 }
 
 function RepoInput({ onLoad, branch, onBranchChange }: RepoInputProps) {
-  const { repoUrl, setRepoUrl, githubToken, setGithubToken } = useRefactor();
+  const { repoUrl, setRepoUrl } = useRefactor();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -90,33 +91,36 @@ function RepoInput({ onLoad, branch, onBranchChange }: RepoInputProps) {
     setStatus(`Loading ${parsed.owner}/${parsed.repo}...`);
 
     try {
-      const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
-      if (githubToken?.trim()) headers.Authorization = `Bearer ${githubToken.trim()}`;
-
-      const response = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`,
-        { headers }
-      );
-
-      if (!response.ok) {
-        throw new Error(`GitHub API: ${response.status}`);
+      const queue = [''];
+      const visited = new Set<string>();
+      const files: Array<{ path: string; type: 'blob' | 'tree'; size?: number }> = [];
+      while (queue.length > 0 && files.length < 250) {
+        const directory = queue.shift() ?? '';
+        if (visited.has(directory)) continue;
+        visited.add(directory);
+        const response = await toolchainApi.listDirectory({
+          owner: parsed.owner,
+          repo: parsed.repo,
+          path: directory,
+          ref: branch,
+        });
+        for (const entry of [...response.items].sort((left, right) => left.path.localeCompare(right.path))) {
+          if (files.length >= 250) break;
+          const type = entry.type === 'file' ? 'blob' : 'tree';
+          files.push({ path: entry.path, type, size: entry.size ?? undefined });
+          if (type === 'tree' && !visited.has(entry.path)) queue.push(entry.path);
+        }
       }
 
-      const data = await response.json();
-      const treeData: any[] = data.tree ?? [];
-      const files = treeData
-        .filter(f => f.type === 'blob' || f.type === 'tree')
-        .map(f => ({ path: f.path, type: f.type, size: f.size, sha: f.sha }))
-        .slice(0, 250);
-
-      setStatus(`✓ ${files.length} files loaded`);
+      setStatus(`✓ ${files.length} files loaded through Sovereign Gateway`);
       onLoad(repoUrl, files);
-    } catch (err: any) {
-      setStatus(`❌ Error: ${err?.message || 'Failed to load'}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load';
+      setStatus(`❌ Error: ${message}`);
     } finally {
       setLoading(false);
     }
-  }, [repoUrl, branch, githubToken, onLoad]);
+  }, [repoUrl, branch, onLoad]);
 
   return (
     <div className="space-y-2">
@@ -142,17 +146,11 @@ function RepoInput({ onLoad, branch, onBranchChange }: RepoInputProps) {
                      px-3 py-2 rounded-lg font-mono text-sm focus:outline-none focus:border-amber-500"
         />
       </div>
-      <div className="relative">
-        <KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500" />
-        <input
-          type="password"
-          value={githubToken}
-          onChange={e => setGithubToken(e.target.value)}
-          placeholder="GitHub Personal Access Token (PAT) - required to apply changes"
-          className="w-full bg-stone-800 border border-stone-700 text-stone-200 placeholder-stone-500
-                     px-4 py-2 pl-10 rounded-lg font-mono text-sm focus:outline-none
-                     focus:border-amber-500 focus:shadow-[0_0_10px_rgba(245,158,11,0.2)]"
-        />
+      <div className="flex items-start gap-2 rounded-lg border border-emerald-700/50 bg-emerald-950/30 px-3 py-2">
+        <ShieldCheck size={16} className="mt-0.5 text-emerald-400" />
+        <p className="text-xs text-emerald-200">
+          GitHub access uses the authenticated Sovereign backend session. No PAT is accepted or stored in the browser; writes create Draft PRs only.
+        </p>
       </div>
       <button
         onClick={loadRepo}
@@ -412,10 +410,11 @@ export function RefactorPanel() {
         fileObj?.sha,
         branch
       );
-      alert('✅ Code successfully applied to GitHub!');
-    } catch (err: any) {
-      console.error('Apply failed:', err);
-      alert('❌ Failed to apply code: ' + err.message);
+      alert('✅ Revision-bound Draft PR created. CI and merge remain open.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown Draft PR error';
+      console.error('Draft PR creation failed:', err);
+      alert('❌ Failed to create Draft PR: ' + message);
     }
   }, [selectedTask, repoUrl, files, branch, applyFileChange]);
 

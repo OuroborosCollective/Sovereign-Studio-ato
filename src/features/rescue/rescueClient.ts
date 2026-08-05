@@ -72,7 +72,6 @@ interface RequestInput {
   readonly baseBranch: string;
   readonly evidenceText: string;
   readonly failureFamily?: RescueFailureFamily;
-  readonly githubAccessToken?: string;
 }
 
 function endpoint(baseUrl: string, path: string): string {
@@ -178,7 +177,7 @@ export class SovereignRescueClient {
     return body.repair as unknown as RescueRepair;
   }
 
-  async proofPack(repairId: string, githubAccessToken?: string): Promise<RescueProofPack> {
+  async proofPack(repairId: string): Promise<RescueProofPack> {
     if (!this.csrfToken) {
       throw new Error('Sovereign Rescue requires fresh CSRF evidence before ProofPack verification.');
     }
@@ -191,7 +190,7 @@ export class SovereignRescueClient {
           origin: this.requestOrigin,
           csrfToken: this.csrfToken,
         }),
-        body: JSON.stringify(githubAccessToken ? { githubAccessToken } : {}),
+        body: JSON.stringify({}),
       },
     );
     const body = await responseObject(response);

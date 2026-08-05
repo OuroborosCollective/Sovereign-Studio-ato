@@ -905,7 +905,6 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onStartAgent.mock.calls[0][1]).toEqual({
       repoUrl: TEST_REPO_URL,
       branch: "main",
-      githubAccessToken: fakeGitHubPat(),
     });
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });

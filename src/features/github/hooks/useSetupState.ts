@@ -1,13 +1,12 @@
 /**
  * Unified Setup State Hook
  * 
- * Central source for all Repo/PAT setup detection.
+ * Central source for repository and backend-session setup detection.
  * Used by: Gear, Direct UI, Coach, GitHub-Hook, Automation Mode.
  */
 
 import { useMemo, useState } from 'react';
 import { useGithubRepo } from './useGithubRepo';
-import { hasGitHubToken, createGitHubAuthSession } from '../githubAuthSession';
 import { getRepoSnapshotStatus } from '../../product/runtime/sovereignFunctionalGuards';
 import { defaultSettings } from '../../product/constants';
 import type { ProjectSettings } from '../../product/types';
@@ -23,13 +22,11 @@ export interface SetupStateInput {
   setRepoUrl: (url: string) => void;
   repoBranch: string;
   setRepoBranch: (branch: string) => void;
-  githubToken: string;
-  setGithubToken: (token: string) => void;
   repoFiles: RepoFile[];
   repoStatus: string;
   isRepoBusy: boolean;
   githubDependencyLifecycle: SovereignDependencyLifecycleState;
-  loadRepoTree: (options?: { repoUrl?: string; repoBranch?: string; githubToken?: string }) => Promise<void>;
+  loadRepoTree: (options?: { repoUrl?: string; repoBranch?: string }) => Promise<void>;
   restoreRepoSnapshot: (snapshot: { repoUrl: string; repoBranch: string; repoStatus: string; repoFiles: RepoFile[] }) => void;
   clearRepoSnapshot: () => void;
 }
@@ -70,8 +67,6 @@ export function useSetupState(existingGithubState?: SetupStateInput): SetupState
     setRepoUrl,
     repoBranch,
     setRepoBranch,
-    githubToken,
-    setGithubToken,
     repoFiles,
     repoStatus,
     isRepoBusy,
@@ -81,13 +76,11 @@ export function useSetupState(existingGithubState?: SetupStateInput): SetupState
     clearRepoSnapshot,
   } = githubState;
 
-  const hasToken = useMemo(() => hasGitHubToken(githubToken), [githubToken]);
-  const tokenStatus = useMemo<TokenStatus>(() => {
-    if (!githubToken.trim()) return 'none';
-    if (!hasToken) return 'missing';
-    return 'valid';
-  }, [githubToken, hasToken]);
-  const redactedToken = useMemo(() => createGitHubAuthSession(githubToken).redactedToken, [githubToken]);
+  // Compatibility projection: these legacy status fields now describe the
+  // cookie-authenticated backend session and never contain a GitHub credential.
+  const hasToken = true;
+  const tokenStatus: TokenStatus = 'valid';
+  const redactedToken = '<backend-session>';
   const repoSnapshotStatus = useMemo(() => getRepoSnapshotStatus(repoFiles), [repoFiles]);
   const setupPhase = useMemo(
     () => deriveSetupPhase({ isRepoBusy, ready: repoSnapshotStatus.ready, repoStatus, repoUrl }),
@@ -104,8 +97,6 @@ export function useSetupState(existingGithubState?: SetupStateInput): SetupState
     setRepoUrl,
     repoBranch,
     setRepoBranch,
-    githubToken,
-    setGithubToken,
     hasToken,
     tokenStatus,
     redactedToken,

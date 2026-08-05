@@ -16,8 +16,6 @@ import { PROVIDER_INFO } from '../../features/ai/providerManager';
 interface SettingsScreenProps {
   geminiKey: string;
   onGeminiKeyChange: (key: string) => void;
-  githubToken: string;
-  onGithubTokenChange: (key: string) => void;
   groqKey: string;
   onGroqKeyChange: (key: string) => void;
   hfKey: string;
@@ -33,8 +31,6 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   geminiKey,
   onGeminiKeyChange,
-  githubToken,
-  onGithubTokenChange,
   groqKey,
   onGroqKeyChange,
   hfKey,
@@ -143,18 +139,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </View>
       </View>
 
-      {/* GitHub Token Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Ionicons name="logo-github" size={16} color={Colors.textSecondary} />
           <Text style={styles.sectionTitle}>GITHUB ACCESS</Text>
         </View>
-        
-        {renderApiKeyInput('GitHub Token (PAT)', 'gemini', githubToken, onGithubTokenChange, false)}
-        
-        <Text style={styles.helperText}>
-          GitHub Personal Access Token für Repository-Zugriff. Benötigt repo Scope.
-        </Text>
+        <View style={styles.githubGatewayNote}>
+          <Ionicons name="shield-checkmark" size={22} color={Colors.primary} />
+          <View style={styles.githubGatewayText}>
+            <Text style={styles.githubGatewayTitle}>Sovereign Backend Session</Text>
+            <Text style={styles.githubGatewayDescription}>
+              Repository-Lesezugriffe und Draft-PR-Erstellung laufen ausschließlich über den kanonischen Backend-Gateway. Die App nimmt keinen GitHub-PAT entgegen und speichert keinen GitHub-Schlüssel auf dem Gerät.
+            </Text>
+          </View>
+        </View>
       </View>
 
       {/* Project Settings Section */}
@@ -420,11 +418,29 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     lineHeight: 18,
   },
-  helperText: {
-    color: Colors.textMuted,
+  githubGatewayNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    padding: Spacing.md,
+  },
+  githubGatewayText: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  githubGatewayTitle: {
+    color: Colors.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    marginBottom: Spacing.xs,
+  },
+  githubGatewayDescription: {
+    color: Colors.textSecondary,
     fontSize: FontSize.xs,
-    marginTop: Spacing.xs,
-    fontStyle: 'italic',
+    lineHeight: 18,
   },
   settingRow: {
     marginBottom: Spacing.md,

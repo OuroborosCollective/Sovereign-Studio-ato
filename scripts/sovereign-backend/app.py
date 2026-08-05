@@ -17,6 +17,7 @@ import time
 import urllib.parse
 import uuid
 from functools import wraps
+from pathlib import Path
 
 # Import OAuth Security Module
 from security_oauth import (
@@ -80,6 +81,7 @@ from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.routes import register_sovereign_agent_routes
+from agent_runtime.skills.routes import register_progressive_skill_routes
 from are_inference import register_are_inference_routes
 from knowledge_library import register_admin_knowledge_routes, register_knowledge_routes
 from security_runtime import consume_step_up_approval, register_security_routes
@@ -1628,6 +1630,12 @@ def require_session(f):
         return f(*args, **kwargs)
     return decorated
 
+
+register_progressive_skill_routes(
+    app,
+    require_session=require_session,
+    repository_root=Path(__file__).resolve().parents[2],
+)
 
 register_sovereign_agent_routes(
     app,
