@@ -17,6 +17,7 @@ import time
 import urllib.parse
 import uuid
 from functools import wraps
+from pathlib import Path
 
 # Import OAuth Security Module
 from security_oauth import (
