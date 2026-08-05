@@ -1,5 +1,6 @@
 import { callMlvoCa, callGroq, callHuggingFace, callTogether, callOpenRouter, callPollinations, type ProviderType } from './providerManager';
 import { geminiService } from './geminiService';
+import { toolchainApi, type DraftPrResponse } from '../toolchain/toolchainApi';
 
 export interface RefactorContext {
   projectName: string;
@@ -325,34 +326,28 @@ Generiere den verbesserten Code. Antworte NUR mit dem Code, keine Erklärung.`;
     content: string,
     sha: string | undefined,
     branch: string,
-    token: string
-  ): Promise<GitHubFileChangeResponse> {
-    if (!token) throw new Error('GitHub PAT is required to apply changes.');
-
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    const body = {
-      message: `AI Refactor: ${path}`,
-      content: btoa(unescape(encodeURIComponent(content))),
-      sha,
-      branch,
-    };
-
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `GitHub API error: ${response.status}`);
+  ): Promise<DraftPrResponse> {
+    const original = await toolchainApi.readGithubFile({ owner, repo, path, ref: branch });
+    const expectedSha = sha ?? original.sha;
+    if (original.sha !== expectedSha) {
+      throw new Error('The GitHub file changed after review; Draft PR creation was blocked.');
     }
+    if (original.content === content) throw new Error('No file change is available for a Draft PR.');
 
-    return await response.json();
+    const blocks = [{ search: original.content, replace: content }];
+    await toolchainApi.previewPatch({ owner, repo, path, ref: branch, blocks });
+    return toolchainApi.createDraftPr({
+      owner,
+      repo,
+      path,
+      message: `AI Refactor: ${path}`,
+      blocks,
+      confirm: true,
+      branch_name: `sovereign/refactor/${expectedSha.slice(0, 12)}`,
+      title: `Draft: revision-bound refactor for ${path}`,
+      body: `Source SHA: ${expectedSha}\n\nThis Draft PR does not claim CI, merge, deployment or runtime success.`,
+      base_branch: branch,
+    });
   }
 
   async explainCode(code: string): Promise<string> {

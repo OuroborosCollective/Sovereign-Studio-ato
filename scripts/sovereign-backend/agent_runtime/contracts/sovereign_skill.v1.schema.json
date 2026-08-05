@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovereign-studio.local/contracts/sovereign_skill.v1.schema.json",
+  "title": "SovereignSkillManifestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "skillId",
+    "version",
+    "sourceKind",
+    "description",
+    "triggers",
+    "antiTriggers",
+    "modes",
+    "requiredCapabilities",
+    "forbiddenCapabilities",
+    "requiredEvidence",
+    "references",
+    "scripts",
+    "ownerPolicyHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "sovereign-skill.v1" },
+    "skillId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,119}$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$" },
+    "sourceKind": { "enum": ["sovereign", "adapted_reference", "external_adapter"] },
+    "sourceRevision": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64}|sha256:[0-9a-f]{64})$" },
+    "description": { "type": "string", "minLength": 1 },
+    "triggers": { "$ref": "#/$defs/uniqueStrings" },
+    "antiTriggers": { "$ref": "#/$defs/uniqueStringsAllowEmpty" },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["ASSESS", "PROPOSE", "APPLY", "OPERATE"] }
+    },
+    "requiredCapabilities": { "$ref": "#/$defs/uniqueStringsAllowEmpty" },
+    "forbiddenCapabilities": { "$ref": "#/$defs/uniqueStringsAllowEmpty" },
+    "requiredEvidence": { "$ref": "#/$defs/uniqueStringsAllowEmpty" },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "blobHash", "loadPolicy"],
+        "properties": {
+          "path": { "$ref": "#/$defs/repositoryPath" },
+          "blobHash": { "$ref": "#/$defs/boundHash" },
+          "loadPolicy": { "enum": ["on_match", "on_step", "explicit_only"] }
+        }
+      }
+    },
+    "scripts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "blobHash", "effectClass"],
+        "properties": {
+          "path": { "$ref": "#/$defs/repositoryPath" },
+          "blobHash": { "$ref": "#/$defs/boundHash" },
+          "effectClass": { "enum": ["read_only", "workspace_mutation", "external_mutation"] }
+        }
+      }
+    },
+    "ownerPolicyHash": { "$ref": "#/$defs/boundHash" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "sourceKind": { "enum": ["adapted_reference", "external_adapter"] } } },
+      "then": { "required": ["sourceRevision"] }
+    }
+  ],
+  "$defs": {
+    "uniqueStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "uniqueStringsAllowEmpty": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "boundHash": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64}|sha256:[0-9a-f]{64})$"
+    },
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000]+$"
+    }
+  }
+}

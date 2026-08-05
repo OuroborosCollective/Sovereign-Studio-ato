@@ -12,15 +12,30 @@ import {
   Platform,
   Linking,
 } from "react-native";
-import { runRefactorPipeline, LogItem } from "../agents/orchestrator";
-import { pushUpdatedCodeToGitHub } from "../services/githubService";
-import { Colors, FontSize, Spacing, BorderRadius } from "../utils/theme";
+import {
+  runRefactorPipeline,
+  type LogItem,
+  type RefactorReview,
+} from '../agents/orchestrator';
+import { createDraftPatch } from '../services/githubService';
+import { Colors, FontSize, Spacing, BorderRadius } from '../utils/theme';
 
-const GROQ_API_URL = "https://console.groq.com/keys";
+function buildDraftBranchName(path: string, sourceSha: string): string {
+  const normalizedPath = path
+    .toLowerCase()
+    .replace(/[^a-z0-9/_-]+/g, '-')
+    .replace(/[/_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  if (!normalizedPath || !/^[0-9a-f]{40}$/.test(sourceSha)) {
+    throw new Error('Dateipfad oder GitHub-SHA ist nicht revisionsfähig.');
+  }
+  return `sovereign/mobile-refactor/${normalizedPath}-${sourceSha.slice(0, 12)}`;
+}
 
 export function CodeRefactorScreen() {
   // Config States
-  const [patToken, setPatToken] = useState("");
   const [owner, setOwner] = useState("");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("main");
@@ -30,21 +45,20 @@ export function CodeRefactorScreen() {
   // App-State
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [finalCode, setFinalCode] = useState("");
+  const [finalCode, setFinalCode] = useState('');
+  const [review, setReview] = useState<RefactorReview | null>(null);
   const [inReview, setInReview] = useState(false);
+  const [draftPrUrl, setDraftPrUrl] = useState('');
 
   const termScroll = useRef<ScrollView>(null);
+  const logSequence = useRef(0);
 
-  // Open Groq API Key registration page
-  const openGroqConsole = () => {
-    Linking.openURL(GROQ_API_URL);
-  };
-
-  const addLog = (text: string, type: LogItem["type"] = "info") => {
+  const addLog = (text: string, type: LogItem['type'] = 'info') => {
+    logSequence.current += 1;
     setLogs((prev) => [
       ...prev,
       {
-        id: Math.random().toString(),
+        id: `mobile-refactor-log-${logSequence.current}`,
         time: new Date().toLocaleTimeString(),
         type,
         text,
@@ -52,51 +66,65 @@ export function CodeRefactorScreen() {
     ]);
   };
 
-  // Workflow Trigger
   const triggerRefactor = async () => {
-    if (!patToken || !owner || !repo || !path || !instruction) {
-      addLog("⚠️ Bitte alle Konfigurationsfelder ausfüllen!", "warn");
+    if (!owner || !repo || !branch || !path || !instruction) {
+      addLog('⚠️ Bitte Repository, Branch, Dateipfad und Änderungsauftrag vollständig angeben.', 'warn');
       return;
     }
     setLoading(true);
     setInReview(false);
+    setReview(null);
+    setDraftPrUrl('');
     setLogs([]);
 
-    const processedCode = await runRefactorPipeline(
-      { patToken, owner, repo, branch, path, instruction },
-      addLog
+    const candidate = await runRefactorPipeline(
+      { owner, repo, branch, path, instruction },
+      addLog,
     );
 
-    if (processedCode) {
-      setFinalCode(processedCode);
+    if (candidate) {
+      setReview(candidate);
+      setFinalCode(candidate.updatedCode);
       setInReview(true);
     } else {
-      addLog(
-        "❌ Pipeline fehlgeschlagen. Überarbeiteter Code instabil.",
-        "error"
-      );
+      addLog('❌ Es wurde kein revisionsfähiger Änderungskandidat erzeugt.', 'error');
     }
     setLoading(false);
   };
 
-  // Push Trigger
-  const executePush = async () => {
+  const executeDraftPr = async () => {
+    if (!review) {
+      addLog('❌ Die revisionsgebundene Ausgangsfassung fehlt.', 'error');
+      return;
+    }
     setLoading(true);
     try {
-      addLog("📤 Übermittle modifizierten Code an GitHub...", "info");
-      await pushUpdatedCodeToGitHub({
-        patToken,
+      const branchName = buildDraftBranchName(path, review.sourceSha);
+      addLog('📤 Fordere über den Sovereign-Gateway einen CAS-gebundenen Draft-PR an.', 'info');
+      const result = await createDraftPatch({
         owner,
         repo,
         branch,
         path,
-        code: finalCode,
-        commitMessage: "🤖 Refactor: Code-Überarbeitung via APK Mobile Agent",
+        originalContent: review.originalCode,
+        updatedContent: finalCode,
+        expectedFileSha: review.sourceSha,
+        commitMessage: `Refactor: revisionsgebundene Änderung an ${path}`,
+        branchName,
+        title: `Draft: revisionsgebundener Mobile-Refactor für ${path}`,
+        body: [
+          'Dieser Draft-PR wurde über die sessiongeschützte Sovereign-Backend-Grenze erzeugt.',
+          `Ausgangs-SHA: ${review.sourceSha}`,
+          'Die lokale Kandidatenprüfung beweist weder Build noch CI, Merge, Deployment oder Runtime-Erfolg.',
+        ].join('\n\n'),
+        baseBranch: branch,
       });
-      addLog("🚀 Datei erfolgreich auf GitHub aktualisiert!", "success");
+      setDraftPrUrl(result.prUrl);
+      addLog(`✅ Draft-PR #${result.prNumber} erstellt; Merge und CI bleiben ausdrücklich offen.`, 'success');
       setInReview(false);
-    } catch (e: any) {
-      addLog(`❌ Push fehlgeschlagen: ${e.message}`, "error");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unbekannter Draft-PR-Fehler';
+      addLog(`❌ Draft-PR-Erstellung fehlgeschlagen: ${message}`, 'error');
     }
     setLoading(false);
   };
@@ -114,25 +142,12 @@ export function CodeRefactorScreen() {
             style={styles.form}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Groq API Key Section */}
-            <View style={styles.apiKeySection}>
-              <TextInput
-                style={styles.input}
-                placeholder="Groq API Key (für AI Refactoring)"
-                secureTextEntry
-                value={patToken}
-                onChangeText={setPatToken}
-                placeholderTextColor="#666"
-              />
-              <TouchableOpacity
-                style={styles.helpBtn}
-                onPress={openGroqConsole}
-              >
-                <Text style={styles.helpBtnText}>🔑 Kostenlosen Key holen</Text>
-              </TouchableOpacity>
-              <Text style={styles.helpHint}>
-                Kostenloser Key: 30 Anfragen/Min, keine Kreditkarte nötig.
-                {"\n"}Tippe auf "Kostenlosen Key holen" für die Anleitung.
+            <View style={styles.gatewaySection}>
+              <Text style={styles.gatewayTitle}>🔐 Sessiongebundener GitHub-Gateway</Text>
+              <Text style={styles.gatewayHint}>
+                GitHub-Zugriff erfolgt ausschließlich über deine aktive Sovereign-Backend-Session.
+                {'\n'}Kein PAT oder Provider-Schlüssel wird im Gerät abgefragt oder gespeichert.
+                {'\n'}Änderungen werden nur als CAS-gebundener Draft-PR angelegt.
               </Text>
             </View>
 
@@ -192,6 +207,15 @@ export function CodeRefactorScreen() {
           </ScrollView>
         )}
 
+        {draftPrUrl ? (
+          <TouchableOpacity
+            style={styles.prLink}
+            onPress={() => Linking.openURL(draftPrUrl)}
+          >
+            <Text style={styles.prLinkText}>Erstellten Draft-PR öffnen</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Live Terminal */}
         <Text style={styles.sectionLabel}>Terminal-Protokoll:</Text>
         <View style={[styles.terminal, inReview && { flex: 0.25 }]}>
@@ -238,9 +262,10 @@ export function CodeRefactorScreen() {
                   styles.btn,
                   { flex: 0.55, backgroundColor: "#10B981" },
                 ]}
-                onPress={executePush}
+                onPress={executeDraftPr}
+                disabled={loading || !review}
               >
-                <Text style={styles.btnTxt}>Änderung pushen</Text>
+                <Text style={styles.btnTxt}>Draft-PR erstellen</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -266,7 +291,7 @@ const styles = StyleSheet.create({
   form: {
     flex: 1,
   },
-  apiKeySection: {
+  gatewaySection: {
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
@@ -274,29 +299,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.primary,
   },
+  gatewayTitle: {
+    color: Colors.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    marginBottom: Spacing.xs,
+  },
+  gatewayHint: {
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    lineHeight: 18,
+  },
   sectionTitle: {
     color: Colors.primary,
     fontSize: FontSize.sm,
     fontWeight: "600",
     marginBottom: Spacing.sm,
   },
-  helpBtn: {
-    backgroundColor: Colors.primary,
-    padding: Spacing.sm,
+  prLink: {
+    backgroundColor: Colors.surface,
+    borderColor: Colors.primary,
+    borderWidth: 1,
     borderRadius: BorderRadius.sm,
-    alignItems: "center",
-    marginTop: Spacing.xs,
+    padding: Spacing.sm,
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
   },
-  helpBtnText: {
-    color: Colors.background,
-    fontWeight: "bold",
+  prLinkText: {
+    color: Colors.primary,
     fontSize: FontSize.sm,
-  },
-  helpHint: {
-    color: Colors.textMuted,
-    fontSize: FontSize.xs,
-    marginTop: Spacing.xs,
-    textAlign: "center",
+    fontWeight: '700',
   },
   row: {
     flexDirection: "row",

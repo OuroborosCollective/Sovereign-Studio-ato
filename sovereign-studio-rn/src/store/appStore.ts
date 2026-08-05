@@ -45,7 +45,6 @@ const starterCards = (): Card[] => [
 interface AppState {
   // API Keys
   geminiKey: string;
-  githubToken: string;
   groqKey: string;
   hfKey: string;
   togetherKey: string;
@@ -86,7 +85,6 @@ interface AppState {
 
   // Actions
   setGeminiKey: (key: string) => void;
-  setGithubToken: (key: string) => void;
   setGroqKey: (key: string) => void;
   setHfKey: (key: string) => void;
   setTogetherKey: (key: string) => void;
@@ -129,7 +127,6 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   // Initial API Keys
   geminiKey: '',
-  githubToken: '',
   groqKey: '',
   hfKey: '',
   togetherKey: '',
@@ -153,7 +150,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedFile: demoFiles[0],
   built: false,
   chatInput: 'Setze diesen Workflow als echtes Produkt um.',
-  logs: ['🚀 Sovereign Studio geladen. Keys eintragen und Repo laden.'],
+  logs: ['🚀 Sovereign Studio geladen. GitHub-Zugriff nutzt ausschließlich die Backend-Session.'],
   workView: 'editor',
   pipelineState: 'idle',
   fixLoops: 0,
@@ -170,7 +167,6 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Actions - API Keys
   setGeminiKey: (key) => set({ geminiKey: key }),
-  setGithubToken: (key) => set({ githubToken: key }),
   setGroqKey: (key) => set({ groqKey: key }),
   setHfKey: (key) => set({ hfKey: key }),
   setTogetherKey: (key) => set({ togetherKey: key }),

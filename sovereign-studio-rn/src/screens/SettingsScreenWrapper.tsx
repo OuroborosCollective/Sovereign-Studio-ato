@@ -16,8 +16,6 @@ export const SettingsScreenWrapper: React.FC<SettingsScreenWrapperProps> = ({ na
   const {
     geminiKey,
     setGeminiKey,
-    githubToken,
-    setGithubToken,
     groqKey,
     setGroqKey,
     hfKey,
@@ -35,8 +33,6 @@ export const SettingsScreenWrapper: React.FC<SettingsScreenWrapperProps> = ({ na
       <SettingsScreen
         geminiKey={geminiKey}
         onGeminiKeyChange={setGeminiKey}
-        githubToken={githubToken}
-        onGithubTokenChange={setGithubToken}
         groqKey={groqKey}
         onGroqKeyChange={setGroqKey}
         hfKey={hfKey}

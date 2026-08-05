@@ -6,7 +6,7 @@ import {
   saveDurableRepoSnapshot,
   type DurableRepoSnapshot,
 } from '../repoSnapshotPersistence';
-import { buildGitHubHeaders, stripTokenFromText } from '../githubAuthSession';
+import { toolchainApi } from '../../toolchain/toolchainApi';
 import { RepoFile } from '../types';
 import { parseGithubRepoUrl } from '../utils';
 import {
@@ -22,7 +22,6 @@ import { publishSovereignDependencyCoachSignal } from '../../product/runtime/sov
 export interface LoadRepoTreeOptions {
   repoUrl?: string;
   repoBranch?: string;
-  githubToken?: string;
 }
 
 const GITHUB_REPO_DEPENDENCY_KEY = 'github-repo-tree';
@@ -53,7 +52,6 @@ export const useGithubRepo = () => {
   const [initialSnapshot] = useState(readInitialSnapshot);
   const [repoUrl, setRepoUrl] = useState(initialSnapshot?.repoUrl ?? '');
   const [repoBranch, setRepoBranch] = useState(initialSnapshot?.repoBranch ?? '');
-  const [githubToken, setGithubToken] = useState('');
   const [repoFiles, setRepoFiles] = useState<RepoFile[]>(initialSnapshot?.repoFiles ?? []);
   const [repoStatus, setRepoStatus] = useState(initialSnapshot ? `${initialSnapshot.repoStatus} [durable restored]` : 'Noch kein echtes Repo geladen.');
   const [isRepoBusy, setIsRepoBusy] = useState(false);
@@ -91,11 +89,9 @@ export const useGithubRepo = () => {
   const loadRepoTree = async (options: LoadRepoTreeOptions = {}) => {
     const nextRepoUrl = (options.repoUrl ?? repoUrl).trim();
     const nextRepoBranch = (options.repoBranch ?? repoBranch).trim();
-    const nextGithubToken = options.githubToken ?? githubToken;
 
     if (options.repoUrl !== undefined) setRepoUrl(nextRepoUrl);
     if (options.repoBranch !== undefined) setRepoBranch(nextRepoBranch);
-    if (options.githubToken !== undefined) setGithubToken(nextGithubToken);
 
     const parsed = parseGithubRepoUrl(nextRepoUrl);
 
@@ -124,65 +120,39 @@ export const useGithubRepo = () => {
     setRepoStatus(`Lade ${parsed.owner}/${parsed.repo}...`);
 
     try {
-      const headers = buildGitHubHeaders({ token: nextGithubToken });
-
-      const repoResponse = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`,
-        { headers }
-      );
-
-      if (!repoResponse.ok) {
-        if (repoResponse.status === 401 || repoResponse.status === 403) {
-          throw new Error('GitHub Token fehlt, ist abgelaufen oder hat keine Repo-Berechtigung.');
-        }
-        if (repoResponse.status === 404) {
-          throw new Error('Repository nicht gefunden oder für diesen Token nicht sichtbar.');
-        }
-        throw new Error(`GitHub Repo-Info Fehler: ${repoResponse.status}`);
+      const branches = await toolchainApi.listBranches({ owner: parsed.owner, repo: parsed.repo });
+      const availableBranches = branches.branches
+        .map((item) => item.name.trim())
+        .filter(Boolean);
+      const branchToLoad = nextRepoBranch || (availableBranches.includes('main') ? 'main' : availableBranches[0]);
+      if (!branchToLoad) throw new Error('Der Sovereign-Gateway lieferte keinen verfügbaren Branch.');
+      if (nextRepoBranch && !availableBranches.includes(nextRepoBranch)) {
+        throw new Error(`Branch '${nextRepoBranch}' ist über den Sovereign-Gateway nicht verfügbar.`);
       }
 
-      const repoData = await repoResponse.json();
-      const defaultBranch = typeof repoData.default_branch === 'string' && repoData.default_branch.trim()
-        ? repoData.default_branch.trim()
-        : 'main';
-      const branchToLoad = nextRepoBranch || defaultBranch;
-
-      let response = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(branchToLoad)}?recursive=1`,
-        { headers }
-      );
-
-      if (!response.ok && response.status === 404 && branchToLoad !== defaultBranch) {
-        setRepoStatus(`Branch '${branchToLoad}' nicht gefunden. Nutze Default-Branch '${defaultBranch}'...`);
-        response = await fetch(
-          `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`,
-          { headers }
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(`GitHub Tree Fehler: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const treeData = Array.isArray(data.tree) ? data.tree : [];
+      const queue = [''];
+      const visited = new Set<string>();
       const files: RepoFile[] = [];
-
-      for (let i = 0; i < treeData.length; i++) {
-        const f = treeData[i];
-        if (f.type === 'blob' || f.type === 'tree') {
-          files.push({
-            path: f.path,
-            type: f.type,
-            size: f.size,
-          });
-          if (files.length === 500) {
-            break;
-          }
+      while (queue.length > 0 && files.length < 500) {
+        const directory = queue.shift() ?? '';
+        if (visited.has(directory)) continue;
+        visited.add(directory);
+        const response = await toolchainApi.listDirectory({
+          owner: parsed.owner,
+          repo: parsed.repo,
+          path: directory,
+          ref: branchToLoad,
+        });
+        const entries = [...response.items].sort((left, right) => left.path.localeCompare(right.path));
+        for (const entry of entries) {
+          if (files.length >= 500) break;
+          const type = entry.type === 'file' ? 'blob' : 'tree';
+          files.push({ path: entry.path, type, size: entry.size ?? undefined });
+          if (type === 'tree' && !visited.has(entry.path)) queue.push(entry.path);
         }
       }
 
-      const nextStatus = `${files.length} echte Repo-Einträge geladen (${branchToLoad})`;
+      const nextStatus = `${files.length} echte Repo-Einträge über den Sovereign-Gateway geladen (${branchToLoad})`;
       setRepoFiles(files);
       setRepoBranch(branchToLoad);
       setRepoStatus(nextStatus);
@@ -194,8 +164,7 @@ export const useGithubRepo = () => {
     } catch (err) {
       console.error(err);
       setRepoFiles([]);
-      const message = err instanceof Error ? err.message : 'Fehler beim Laden des Repos';
-      const safeMessage = stripTokenFromText(message, nextGithubToken);
+      const safeMessage = err instanceof Error ? err.message : 'Fehler beim Laden des Repos';
       const nextState = recordSovereignDependencyFailure(dependencyState, {}, safeMessage).state;
       setGithubDependencyLifecycle(nextState);
       publishDependencySignal(nextState);
@@ -210,8 +179,6 @@ export const useGithubRepo = () => {
     setRepoUrl,
     repoBranch,
     setRepoBranch,
-    githubToken,
-    setGithubToken,
     repoFiles,
     repoStatus,
     isRepoBusy,
