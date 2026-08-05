@@ -1,0 +1,105 @@
+name: Issue 1165 Vitest Diagnostic
+
+on:
+  push:
+    branches:
+      - sovereign/chatgpt/1785945825-issue-1165-progressive-skill-runtime-4f96ef
+
+permissions:
+  contents: write
+
+concurrency:
+  group: issue-1165-vitest-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact diagnostic trigger
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Verify exact branch binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run and summarize Vitest failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          npx vitest run --reporter=json --outputFile=/tmp/vitest-results.json
+          status=$?
+          set -e
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          source = pathlib.Path('/tmp/vitest-results.json')
+          if not source.exists():
+              raise SystemExit('VITEST_JSON_RESULT_MISSING')
+          data = json.loads(source.read_text(encoding='utf-8'))
+          records = [{
+              'schemaVersion': 'sovereign.vitest-diagnostic.v1',
+              'numFailedTestSuites': data.get('numFailedTestSuites'),
+              'numFailedTests': data.get('numFailedTests'),
+              'numPassedTests': data.get('numPassedTests'),
+              'numTotalTests': data.get('numTotalTests'),
+              'success': data.get('success'),
+          }]
+          ansi = re.compile(r'\x1b\[[0-9;]*m')
+          for suite in data.get('testResults', []):
+              failed = [item for item in suite.get('assertionResults', []) if item.get('status') == 'failed']
+              if not failed:
+                  continue
+              record = {'file': suite.get('name'), 'tests': []}
+              for assertion in failed:
+                  messages = []
+                  for message in assertion.get('failureMessages', []):
+                      clean = ansi.sub('', str(message))
+                      messages.append(clean[:4000])
+                  record['tests'].append({
+                      'fullName': assertion.get('fullName'),
+                      'title': assertion.get('title'),
+                      'failureMessages': messages,
+                  })
+              records.append(record)
+          output = pathlib.Path('.sovereign-ci/issue-1165-vitest-failures.jsonl')
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text(
+              '\n'.join(json.dumps(record, ensure_ascii=False, separators=(',', ':')) for record in records) + '\n',
+              encoding='utf-8',
+          )
+          pathlib.Path('.sovereign-ci/issue-1165-vitest-exit-code.txt').write_text(f'{status}\n', encoding='utf-8')
+          PY
+
+      - name: Commit diagnostic and remove workflow
+        shell: bash
+        env:
+          BRANCH_NAME: sovereign/chatgpt/1785945825-issue-1165-progressive-skill-runtime-4f96ef
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/issue-1165-vitest-diagnostic.yml
+          git config user.name 'Sovereign CI Diagnostic'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'test(issue-1165): capture remaining vitest failures'
+          REMOTE_SHA="$(git ls-remote origin "refs/heads/$BRANCH_NAME" | awk '{print $1}')"
+          test "$REMOTE_SHA" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$BRANCH_NAME"
