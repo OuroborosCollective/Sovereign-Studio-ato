@@ -1,9 +1,13 @@
 name: Issue 1165 Vitest Diagnostic
 
 on:
-  push:
+  pull_request:
     branches:
-      - sovereign/chatgpt/1785945825-issue-1165-progressive-skill-runtime-4f96ef
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
@@ -14,14 +18,18 @@ concurrency:
 
 jobs:
   diagnose:
+    if: github.event.pull_request.head.ref == 'sovereign/chatgpt/1785945825-issue-1165-progressive-skill-runtime-4f96ef'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      TRIGGER_SHA: ${{ github.event.pull_request.head.sha }}
+      BRANCH_NAME: sovereign/chatgpt/1785945825-issue-1165-progressive-skill-runtime-4f96ef
     steps:
-      - name: Checkout exact diagnostic trigger
+      - name: Checkout exact PR head
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.sha }}
+          ref: ${{ env.TRIGGER_SHA }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -33,7 +41,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$TRIGGER_SHA"
+          REMOTE_SHA="$(git ls-remote origin "refs/heads/$BRANCH_NAME" | awk '{print $1}')"
+          test "$REMOTE_SHA" = "$TRIGGER_SHA"
 
       - name: Install dependencies
         run: npm ci
@@ -89,17 +99,16 @@ jobs:
           pathlib.Path('.sovereign-ci/issue-1165-vitest-exit-code.txt').write_text(f'{status}\n', encoding='utf-8')
           PY
 
-      - name: Commit diagnostic and remove workflow
+      - name: Commit diagnostic and self-remove
         shell: bash
-        env:
-          BRANCH_NAME: sovereign/chatgpt/1785945825-issue-1165-progressive-skill-runtime-4f96ef
         run: |
           set -euo pipefail
           rm -f .github/workflows/issue-1165-vitest-diagnostic.yml
+          rm -f .sovereign-ci/issue-1165-vitest-diagnostic-trigger.txt
           git config user.name 'Sovereign CI Diagnostic'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
           git commit -m 'test(issue-1165): capture remaining vitest failures'
           REMOTE_SHA="$(git ls-remote origin "refs/heads/$BRANCH_NAME" | awk '{print $1}')"
-          test "$REMOTE_SHA" = "$GITHUB_SHA"
+          test "$REMOTE_SHA" = "$TRIGGER_SHA"
           git push origin "HEAD:refs/heads/$BRANCH_NAME"
