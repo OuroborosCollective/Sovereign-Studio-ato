@@ -13,8 +13,6 @@ describe('useSetupState', () => {
     setRepoUrl: vi.fn(),
     repoBranch: '',
     setRepoBranch: vi.fn(),
-    githubToken: '',
-    setGithubToken: vi.fn(),
     repoFiles: [],
     repoStatus: 'Noch kein echtes Repo geladen.',
     isRepoBusy: false,
@@ -31,31 +29,27 @@ describe('useSetupState', () => {
     mockedUseGithubRepo.mockReturnValue(mockUseGithubRepoReturn);
   });
 
-  it('returns no-token state when token is empty', () => {
-    mockedUseGithubRepo.mockReturnValue({
-      ...mockUseGithubRepoReturn,
-      githubToken: '',
-    });
-
+  it('projects the authenticated backend session without exposing a GitHub token', () => {
     const { result } = renderHook(() => useSetupState());
-    
-    expect(result.current.hasToken).toBe(false);
-    expect(result.current.tokenStatus).toBe('none');
-    expect(result.current.redactedToken).toBe('<no-token>');
-  });
 
-  it('returns valid token state when token is set', () => {
-    mockedUseGithubRepo.mockReturnValue({
-      ...mockUseGithubRepoReturn,
-      githubToken: 'ghp_test1234567890abcdef',
-    });
-
-    const { result } = renderHook(() => useSetupState());
-    
     expect(result.current.hasToken).toBe(true);
     expect(result.current.tokenStatus).toBe('valid');
-    // redactGitHubToken returns first 4 + ... + last 4 chars
-    expect(result.current.redactedToken).toBe('ghp_…cdef');
+    expect(result.current.redactedToken).toBe('<backend-session>');
+  });
+
+  it('keeps the session projection independent of repository setup state', () => {
+    mockedUseGithubRepo.mockReturnValue({
+      ...mockUseGithubRepoReturn,
+      repoUrl: 'https://github.com/owner/repo',
+      repoBranch: 'main',
+    });
+
+    const { result } = renderHook(() => useSetupState());
+
+    expect(result.current.hasToken).toBe(true);
+    expect(result.current.tokenStatus).toBe('valid');
+    expect(result.current.redactedToken).toBe('<backend-session>');
+    expect(result.current.redactedToken).not.toMatch(/gh[opsu]_/i);
   });
 
   it('returns no-repo phase when no URL entered', () => {
@@ -66,7 +60,7 @@ describe('useSetupState', () => {
     });
 
     const { result } = renderHook(() => useSetupState());
-    
+
     expect(result.current.setupPhase).toBe('no-repo');
   });
 
@@ -78,7 +72,7 @@ describe('useSetupState', () => {
     });
 
     const { result } = renderHook(() => useSetupState());
-    
+
     expect(result.current.setupPhase).toBe('repo-loading');
   });
 
@@ -91,7 +85,7 @@ describe('useSetupState', () => {
     });
 
     const { result } = renderHook(() => useSetupState());
-    
+
     expect(result.current.setupPhase).toBe('repo-loaded');
     expect(result.current.repoSnapshotStatus.ready).toBe(true);
   });
@@ -100,11 +94,11 @@ describe('useSetupState', () => {
     mockedUseGithubRepo.mockReturnValue({
       ...mockUseGithubRepoReturn,
       repoUrl: 'https://github.com/owner/repo',
-      repoStatus: 'Repository nicht gefunden oder für diesen Token nicht sichtbar.',
+      repoStatus: 'Repository nicht gefunden oder über den Sovereign-Gateway nicht sichtbar.',
     });
 
     const { result } = renderHook(() => useSetupState());
-    
+
     expect(result.current.setupPhase).toBe('repo-error');
   });
 
@@ -115,7 +109,7 @@ describe('useSetupState', () => {
     });
 
     const { result } = renderHook(() => useSetupState());
-    
+
     expect(result.current.dependencyHealthy).toBe(true);
   });
 
@@ -126,7 +120,7 @@ describe('useSetupState', () => {
     });
 
     const { result } = renderHook(() => useSetupState());
-    
+
     expect(result.current.dependencyHealthy).toBe(false);
   });
 });
