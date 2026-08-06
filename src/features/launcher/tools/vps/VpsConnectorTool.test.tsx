@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { VpsConnectorTool } from './VpsConnectorTool';
 
@@ -59,5 +59,50 @@ describe('VpsFileTree Accessibility', () => {
     const fileButton = await screen.findByRole('button', { name: 'Datei öffnen: README.md' });
     expect(fileButton).not.toHaveAttribute('aria-expanded');
     expect(fileButton).toHaveAttribute('title', 'Datei öffnen: /README.md');
+  });
+});
+
+describe('VpsWorkspace & VpsChat Palette Accessibility Enhancements', () => {
+  beforeAll(() => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  it('renders VpsWorkspace disconnect button with correct title', async () => {
+    const { VpsWorkspace } = await import('./VpsWorkspace');
+    const getTree = vi.fn().mockResolvedValue([]);
+    const execCommand = vi.fn();
+    const onDisconnect = vi.fn();
+
+    render(
+      <VpsWorkspace
+        host="test.host.com"
+        username="root"
+        getTree={getTree}
+        execCommand={execCommand}
+        onDisconnect={onDisconnect}
+      />
+    );
+
+    const disconnectBtn = screen.getByRole('button', { name: /Trennen/i });
+    expect(disconnectBtn).toHaveAttribute('title', 'SSH-Verbindung trennen');
+  });
+
+  it('renders VpsChat input and send button with correct accessible and hover attributes', async () => {
+    const { VpsChat } = await import('./VpsChat');
+    const execCommand = vi.fn();
+
+    render(
+      <VpsChat
+        host="test.host.com"
+        username="root"
+        execCommand={execCommand}
+      />
+    );
+
+    const input = screen.getByLabelText('Aktionsbeschreibung');
+    expect(input).toHaveAttribute('placeholder', 'Beschreibe was du tun möchtest…');
+
+    const sendBtn = screen.getByRole('button', { name: 'Anfrage senden' });
+    expect(sendBtn).toHaveAttribute('title', 'Bitte beschreiben Sie zuerst eine Aktion');
   });
 });

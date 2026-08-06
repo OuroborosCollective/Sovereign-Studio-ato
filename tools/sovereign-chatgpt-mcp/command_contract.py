@@ -10,6 +10,7 @@ MUTATING_ACTIONS = frozenset(
         "github_rerun_failed_workflows",
         "github_workflow_dispatch",
         "github_merge_pr",
+        "github_merge_pr_series",
         "github_main_ruleset_apply",
         "github_issue_close",
         "github_update_pr",

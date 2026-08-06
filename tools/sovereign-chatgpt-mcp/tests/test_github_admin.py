@@ -347,6 +347,169 @@ def test_merge_blocks_when_head_does_not_contain_current_main(monkeypatch) -> No
     assert not any(call["path"].endswith("/merge") for call in session.calls)
 
 
+def test_merge_pr_series_orders_oldest_first_and_revalidates_after_each_main_advance(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime, _update, _session = _runtime(monkeypatch, {})
+
+    head_newer = "7" * 40
+    head_older = "8" * 40
+    synced_newer = "9" * 40
+    main_state = {"sha": "a" * 40}
+    pulls = {
+        7: {
+            **_pull(head_newer, head_ref="sovereign/newer"),
+            "number": 7,
+            "created_at": "2026-08-06T02:00:00Z",
+        },
+        8: {
+            **_pull(head_older, head_ref="sovereign/older"),
+            "number": 8,
+            "created_at": "2026-08-06T01:00:00Z",
+        },
+    }
+    merge_calls: list[tuple[int, str]] = []
+    update_calls: list[int] = []
+
+    monkeypatch.setattr(runtime, "_pull", lambda number: pulls[number])
+
+    def relation(head_sha: str) -> dict[str, Any]:
+        contains = head_sha in {head_older, synced_newer}
+        return {
+            "main_sha": main_state["sha"],
+            "head_sha": head_sha,
+            "relation": "ahead" if contains else "diverged",
+            "merge_base_sha": main_state["sha"] if contains else "0" * 40,
+            "contains_current_main": contains,
+        }
+
+    monkeypatch.setattr(runtime, "_main_revision_relation", relation)
+    monkeypatch.setattr(runtime, "_verify_update_branch_commit", lambda **kwargs: {"ok": True})
+    monkeypatch.setattr(runtime, "_changed_files", lambda number: [f"backend/pr-{number}.py"])
+    monkeypatch.setattr(
+        runtime,
+        "_wait_for_series_checks",
+        lambda **kwargs: {"ok": True, "status": "CHECKS_GREEN", "ignored_pending_checks": []},
+    )
+
+    def fake_request(method, path, **kwargs):
+        if method == "PUT" and path.endswith("/pulls/7/update-branch"):
+            update_calls.append(7)
+            pulls[7] = {**pulls[7], "head": {**pulls[7]["head"], "sha": synced_newer}}
+            return {"message": "Updating pull request branch."}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(runtime, "_request", fake_request)
+
+    def fake_merge_pr(*, pr_number: int, expected_head_sha: str, **kwargs):
+        merge_calls.append((pr_number, expected_head_sha))
+        merge_sha = ("b" if pr_number == 8 else "c") * 40
+        main_state["sha"] = merge_sha
+        return {
+            "ok": True,
+            "status": "MERGED",
+            "merge_commit_sha": merge_sha,
+            "changed_files": [f"backend/pr-{pr_number}.py"],
+        }
+
+    monkeypatch.setattr(runtime, "merge_pr", fake_merge_pr)
+    monkeypatch.setattr(runtime, "_main_head_sha", lambda: main_state["sha"])
+
+    result = runtime.merge_pr_series(
+        pull_requests=[
+            {"pr_number": 7, "expected_head_sha": head_newer},
+            {"pr_number": 8, "expected_head_sha": head_older},
+        ],
+        owner_approved=True,
+        poll_seconds=2,
+        wait_seconds_per_pr=30,
+    )
+
+    assert result["status"] == "PR_SERIES_MERGED"
+    assert result["ordered_pr_numbers"] == [8, 7]
+    assert merge_calls == [(8, head_older), (7, synced_newer)]
+    assert update_calls == [7]
+    assert result["final_main_sha"] == "c" * 40
+    assert result["blind_merge_performed"] is False
+    assert result["skipped"] == []
+    assert result["all_merged"] is True
+    assert result["candidate_failures_are_quarantined"] is True
+
+
+def test_merge_pr_series_quarantines_bad_middle_pr_and_continues(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime, _update, _session = _runtime(monkeypatch, {})
+    first_head = "1" * 40
+    second_head = "2" * 40
+    changed_second_head = "3" * 40
+    third_head = "4" * 40
+    calls = {7: 0, 8: 0, 9: 0}
+    main_state = {"sha": "a" * 40}
+    merge_calls: list[int] = []
+
+    def fake_pull(number: int) -> dict[str, Any]:
+        calls[number] += 1
+        heads = {7: first_head, 8: second_head, 9: third_head}
+        head = heads[number]
+        if number == 8 and calls[number] > 1:
+            head = changed_second_head
+        return {
+            **_pull(head, head_ref=f"sovereign/pr-{number}"),
+            "number": number,
+            "created_at": f"2026-08-06T0{number - 6}:00:00Z",
+        }
+
+    monkeypatch.setattr(runtime, "_pull", fake_pull)
+    monkeypatch.setattr(
+        runtime,
+        "_main_revision_relation",
+        lambda head: {
+            "main_sha": main_state["sha"],
+            "head_sha": head,
+            "relation": "ahead",
+            "merge_base_sha": main_state["sha"],
+            "contains_current_main": True,
+        },
+    )
+    monkeypatch.setattr(runtime, "_changed_files", lambda number: [f"backend/pr-{number}.py"])
+    monkeypatch.setattr(runtime, "_wait_for_series_checks", lambda **kwargs: {"ok": True, "status": "CHECKS_GREEN"})
+
+    def fake_merge_pr(*, pr_number: int, **kwargs):
+        merge_calls.append(pr_number)
+        main_state["sha"] = ("b" if pr_number == 7 else "c") * 40
+        return {
+            "ok": True,
+            "status": "MERGED",
+            "merge_commit_sha": main_state["sha"],
+            "changed_files": [f"backend/pr-{pr_number}.py"],
+        }
+
+    monkeypatch.setattr(runtime, "merge_pr", fake_merge_pr)
+    monkeypatch.setattr(runtime, "_main_head_sha", lambda: main_state["sha"])
+
+    result = runtime.merge_pr_series(
+        pull_requests=[
+            {"pr_number": 7, "expected_head_sha": first_head},
+            {"pr_number": 8, "expected_head_sha": second_head},
+            {"pr_number": 9, "expected_head_sha": third_head},
+        ],
+        owner_approved=True,
+        poll_seconds=2,
+        wait_seconds_per_pr=30,
+    )
+
+    assert result["status"] == "PR_SERIES_COMPLETED_WITH_SKIPS"
+    assert merge_calls == [7, 9]
+    assert [item["pr_number"] for item in result["completed"]] == [7, 9]
+    assert result["skipped_count"] == 1
+    assert result["skipped"][0]["pr_number"] == 8
+    assert result["skipped"][0]["failure_family"] == "PR_SERIES_HEAD_CHANGED_BEFORE_TURN"
+    assert result["skipped"][0]["quarantined"] is True
+    assert result["final_main_sha"] == "c" * 40
+    assert result["already_merged_prs_are_never_rolled_back"] is True
+
+
 def test_close_pr_requires_exact_head_owner_approval_and_verifies_readback(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
