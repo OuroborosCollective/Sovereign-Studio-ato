@@ -193,6 +193,7 @@ export function buildChatLines(args: {
   readonly chatRepoSnapshot: DevChatRepoSnapshot | null;
   readonly chatRepoError: string | null;
   readonly chatHistory: readonly ChatLine[];
+  readonly restoredSessionAge?: string | null;
 }): ChatLine[] {
   const lines: ChatLine[] = [];
   const firstFile = splitFilePath(
@@ -207,6 +208,14 @@ export function buildChatLines(args: {
       ? `Repo verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : "echte Runtime-Gates aktiv"}`
       : `Repo fehlt · ${args.repoReason}`,
   });
+
+  if (args.restoredSessionAge) {
+    lines.push({
+      id: "system:restore-age",
+      role: "system",
+      text: `Session wiederhergestellt (Alter: ${args.restoredSessionAge})`,
+    });
+  }
 
   if (args.chatRepoError)
     lines.push({

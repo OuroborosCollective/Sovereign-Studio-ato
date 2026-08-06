@@ -3,6 +3,7 @@ import {
   isWriteIntent,
   isLocalCompletionStatusQuestion,
   buildLocalStatusAnswer,
+  buildChatLines,
 } from './builderChatHelpers';
 
 describe('isWriteIntent', () => {
@@ -111,5 +112,35 @@ describe('buildLocalStatusAnswer', () => {
 
   it('reports nothing started when runtime is fully idle', () => {
     expect(buildLocalStatusAnswer(base)).toMatch(/kein Auftrag gestartet/);
+  });
+});
+
+describe('buildChatLines', () => {
+  const baseArgs = {
+    repoReady: true,
+    repoReason: 'Repo is ready',
+    runtimeThinkingActive: false,
+    cuteThinkingLabel: '',
+    sovereignSummary: '',
+    chatRepoSnapshot: null,
+    chatRepoError: null,
+    chatHistory: [],
+  };
+
+  it('includes restoredSessionAge system line when provided', () => {
+    const lines = buildChatLines({
+      ...baseArgs,
+      restoredSessionAge: '2m',
+    });
+    const restoreLine = lines.find((l) => l.id === 'system:restore-age');
+    expect(restoreLine).toBeDefined();
+    expect(restoreLine?.role).toBe('system');
+    expect(restoreLine?.text).toBe('Session wiederhergestellt (Alter: 2m)');
+  });
+
+  it('does not include restoredSessionAge system line when not provided', () => {
+    const lines = buildChatLines(baseArgs);
+    const restoreLine = lines.find((l) => l.id === 'system:restore-age');
+    expect(restoreLine).toBeUndefined();
   });
 });
