@@ -60,8 +60,20 @@ function StatusChip({
   count: number;
   color: string;
 }) {
+  let tooltip = '';
+  if (label === 'Blocker') {
+    tooltip = count === 0 ? 'Keine aktiven Blocker' : count === 1 ? '1 aktiver Blocker' : `${count} aktive Blocker`;
+  } else if (label === 'Warnungen') {
+    tooltip = count === 0 ? 'Keine Warnungen' : count === 1 ? '1 Warnung' : `${count} Warnungen`;
+  } else if (label === 'Fehler') {
+    tooltip = count === 0 ? 'Keine Fehler' : count === 1 ? '1 Fehler' : `${count} Fehler`;
+  } else {
+    tooltip = `${count} ${label}`;
+  }
+
   return (
     <span
+      title={tooltip}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -100,8 +112,22 @@ function SubStatus({
   ready: boolean;
 }) {
   const color = ready ? C.green : C.rose;
+  let tooltip = '';
+  if (label === 'Repo bereit') {
+    tooltip = ready ? 'Repository ist bereit' : 'Repository ist nicht bereit';
+  } else if (label === 'GitHub bereit') {
+    tooltip = ready ? 'GitHub-Verbindung ist bereit' : 'GitHub-Verbindung ist nicht bereit';
+  } else if (label === 'Patch-Route') {
+    tooltip = ready ? 'Patch-Route ist bereit' : 'Patch-Route ist nicht bereit';
+  } else if (label === 'Draft PR') {
+    tooltip = ready ? 'Draft PR ist vorhanden und bereit' : 'Draft PR fehlt oder ist nicht bereit';
+  } else {
+    tooltip = `${label}: ${ready ? 'bereit' : 'nicht bereit'}`;
+  }
+
   return (
     <span
+      title={tooltip}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -233,6 +259,7 @@ export function SovereignStatusPanel({
 
       {/* Next action */}
       <div
+        title={`Nächste empfohlene Aktion: ${nextAction}`}
         style={{
           padding: '6px 10px',
           background: `${mainColor}08`,
