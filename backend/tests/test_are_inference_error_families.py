@@ -13,6 +13,7 @@ sys.path.insert(0, str(BACKEND))
 
 flask_stub = ModuleType("flask")
 flask_stub.jsonify = lambda value=None, **kwargs: value if value is not None else kwargs
+flask_stub.make_response = lambda value=None, *args, **kwargs: value
 flask_stub.request = SimpleNamespace()
 sys.modules.setdefault("flask", flask_stub)
 psycopg2_stub = ModuleType("psycopg2")
