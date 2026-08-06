@@ -70,7 +70,12 @@ export function mergeQuietInspectorSignals(signals: QuietInspectorSignal[]): Qui
   const normalized = signals
     .map(normalizeSignal)
     .filter((signal): signal is QuietInspectorSignal => Boolean(signal))
-    .sort((a, b) => lampWeight(b.lamp) - lampWeight(a.lamp) || signalPriority(b) - signalPriority(a) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id))
+    .sort((a, b) =>
+      lampWeight(b.lamp) - lampWeight(a.lamp) ||
+      signalPriority(b) - signalPriority(a) ||
+      (b.updatedAt ?? 0) - (a.updatedAt ?? 0) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    )
     .slice(0, MAX_SIGNALS);
 
   const topLamp = normalized[0]?.lamp ?? 'green';

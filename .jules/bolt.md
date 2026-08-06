@@ -39,7 +39,7 @@
 **Action:** Always hoist Set-allocations and mapping logic out of hot loops. Use `WeakMap` keyed on immutable object references to securely cache parsed/computed sub-properties without introducing stale data or memory leaks.
 
 ## 2026-08-02 - [Line-level and 1-Slot Caching for Progressive Markdown Parsing]
-**Learning:** In progressive update interfaces (such as streamed chat responses via `PacedChatText` updating every 55ms), re-parsing the entire markdown string from scratch introduces $O(N^2)$ time complexity overhead relative to the total number of characters. Segmenting content by lines and caching the parsed results of immutable lines in a bounded `inlineLineCache` alongside a 1-slot whole-text tokenizer cache drops consecutive stream ticks from expensive regex re-evaluation to $O(1)$ fast lookups.
+**Learning:** In progressive update interfaces (such as streamed chat responses via `PacedChatText` updating every 55ms) re-parsing the entire markdown string from scratch introduces $O(N^2)$ time complexity overhead relative to the total number of characters. Segmenting content by lines and caching the parsed results of immutable lines in a bounded `inlineLineCache` alongside a 1-slot whole-text tokenizer cache drops consecutive stream ticks from expensive regex re-evaluation to $O(1)$ fast lookups.
 **Action:** Always utilize simple, bounded line-level caches combined with 1-slot consecutive whole-text caches to bypass repetitive, expensive string parsing and regular expression tokenization in high-frequency update loops.
 
 ## 2026-08-03 - [Consolidating Multi-Pass Scans and Avoiding LocaleCompare]
@@ -49,3 +49,7 @@
 ## 2026-08-04 - [1-Slot Cache with Norm Loop Consolidation for Deterministic Vector Store]
 **Learning:** In a high-frequency vector store search, generating query embeddings and computing their mathematical norms in separate O(N) loops invokes costly JIT array allocations and Math.sin computations. Consolidating the embedding generation and norm accumulation into a single-pass method, and caching the result via a 1-slot cache keyed on the query value, completely eliminates all trigonometry and loop operations for consecutive duplicate queries. In addition, replacing localeCompare with native lexicographical string comparison in tie-breaker sorting removes unnecessary localization collation overhead.
 **Action:** When working on mathematical vector/embedding utilities with invariant space configurations, consolidate multi-pass loops into single-pass operations and cache query vectors together with their norms to maximize performance.
+
+## 2026-08-05 - [Avoiding LocaleCompare for String Tie-breakers in Policy Sorting]
+**Learning:** Using `localeCompare` for sorting tie-breakers on unique identifiers in policy merging paths generates significant internationalization and collation overhead. Replacing standard string comparisons inside sorting callbacks with efficient native lexicographical operators (`<` and `>`) drops CPU latency dramatically.
+**Action:** Always replace `localeCompare` with native lexicographical operators (`<` and `>`) for sorting non-localized string IDs inside policy or logging components.
