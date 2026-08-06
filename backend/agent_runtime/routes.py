@@ -44,6 +44,7 @@ from .reusable_memory import search_reusable_memory
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
+from .repair_capsule import build_repair_capsule
 from .rescue import (
     REPAIR_PACK_CREDITS,
     RESCUE_CSRF_TTL_SECONDS,
@@ -811,6 +812,62 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "proofPack": pack,
                 "verified": verify_proof_pack(pack),
             }), 200 if pack["ready"] else 409
+        finally:
+            _close(conn)
+
+    @app.route(
+        "/api/user/agent/rescue/repairs/<repair_id>/capsule",
+        methods=["POST"],
+    )
+    @require_session
+    def user_get_sovereign_rescue_capsule(repair_id: str):
+        """Deliver a zero-trust repair capsule manifest with embedded verifier and README.
+
+        The capsule is built from the repair contract, job evidence, and the raw diff patch.
+        No network or write effects occur in this endpoint.
+        """
+        user_id = _current_session_user_id()
+        csrf_error = _rescue_csrf_request_error(user_id)
+        if csrf_error:
+            return csrf_error
+        parsed_body = request.get_json(silent=True)
+        if not isinstance(parsed_body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        body: dict[str, Any] = parsed_body
+        token, token_error = _rescue_token(body)
+        if token_error:
+            return token_error
+        try:
+            repair_uuid = str(uuid.UUID(repair_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid repair id"}), 400
+        conn = _connection()
+        try:
+            repair = _read_owned_rescue(conn, user_id, repair_uuid)
+            if not repair:
+                return jsonify({"error": "Repair not found"}), 404
+            job = _read_owned_job(conn, user_id, str(repair.get("job_id") or ""))
+            if not job:
+                return jsonify({"error": "Repair job not found"}), 404
+            patch_value = body.get("patch") or body.get("patchText") or ""
+            if not patch_value:
+                return jsonify({"error": "patch is required"}), 400
+            capsule = build_repair_capsule(
+                repair=dict(repair),
+                job={
+                    "changed_files": list(job.changed_files),
+                    "test_summary": job.test_summary,
+                    "draft_pr_url": job.draft_pr_url,
+                },
+                patch_value=patch_value,
+            )
+            manifest = capsule.get("manifest", {})
+            return jsonify({
+                "ok": bool(capsule.get("ready")),
+                "runtime": "sovereign-rescue",
+                "capsule": manifest,
+                "ready": capsule.get("ready", False),
+            }), 200 if capsule.get("ready") else 409
         finally:
             _close(conn)
 

@@ -67,6 +67,28 @@ export interface RescueProofPack {
   readonly blockers: string[];
 }
 
+export interface RescueCapsuleManifest {
+  readonly schemaVersion: string;
+  readonly product: string;
+  readonly repairId: string;
+  readonly repositoryIdentitySha256: string;
+  readonly baseSha: string;
+  readonly failureFamily: string;
+  readonly outcomeContractSha256: string;
+  readonly changedFiles: readonly string[];
+  readonly patchSha256: string;
+  readonly patchByteCount: number;
+  readonly testEvidenceSha256: string;
+  readonly verifierSha256: string;
+  readonly readmeSha256: string;
+  readonly maxChangedFiles: number;
+  readonly productionMutationIncluded: boolean;
+  readonly blockers: readonly string[];
+  readonly ready: boolean;
+  readonly secretValuesReturned: boolean;
+  readonly capsuleSha256: string;
+}
+
 interface RequestInput {
   readonly repository: string;
   readonly baseBranch: string;
@@ -195,6 +217,26 @@ export class SovereignRescueClient {
     );
     const body = await responseObject(response);
     return body.proofPack as unknown as RescueProofPack;
+  }
+
+  async capsule(repairId: string, patch: string): Promise<RescueCapsuleManifest> {
+    if (!this.csrfToken) {
+      throw new Error('Sovereign Rescue requires fresh CSRF evidence before Capsule delivery.');
+    }
+    const response = await this.fetcher(
+      endpoint(this.baseUrl, `/api/user/agent/rescue/repairs/${encodeURIComponent(repairId)}/capsule`),
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: headers({
+          origin: this.requestOrigin,
+          csrfToken: this.csrfToken,
+        }),
+        body: JSON.stringify({ patch }),
+      },
+    );
+    const body = await responseObject(response);
+    return body.capsule as unknown as RescueCapsuleManifest;
   }
 }
 

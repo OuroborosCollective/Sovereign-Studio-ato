@@ -83,6 +83,13 @@ class FakeCursor:
         elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS"):
             user_id = params[0]
             self.last_result = [row for row in self.conn.jobs.values() if row["user_id"] == user_id]
+        elif normalized.startswith("SELECT * FROM SOVEREIGN_RESCUE_REPAIRS") and "REPAIR_ID" in normalized:
+            repair_id, user_id = params[:2]
+            row = self.conn.rescues.get(repair_id)
+            self.last_result = row if row and row.get("user_id") == user_id else None
+        elif normalized.startswith("SELECT * FROM SOVEREIGN_RESCUE_REPAIRS"):
+            user_id = params[0]
+            self.last_result = [row for row in self.conn.rescues.values() if row.get("user_id") == user_id]
 
     def fetchone(self):
         return self.last_result if isinstance(self.last_result, dict) else None
@@ -102,6 +109,7 @@ class FakeConnection:
         self.executed = []
         self.jobs = {}
         self.events = []
+        self.rescues = {}
         self.commits = 0
         self.closed = False
 
@@ -574,3 +582,163 @@ def test_rescue_duplicate_repair_returns_persisted_running_job_without_second_ex
     assert payload["repair"]["state"] == "running"
     assert captured["state"] == "running"
     assert captured["job_id"] == job_id
+
+
+def seed_rescue(conn: FakeConnection, user_id: str, repair_id: str, job_id: str, status: str = "draft_pr_ready"):
+    conn.rescues[repair_id] = {
+        "user_id": user_id,
+        "repair_id": repair_id,
+        "job_id": job_id,
+        "state": status,
+        "failure_family": "github_actions_ci",
+        "base_sha": "d" * 40,
+        "repository": "https://github.com/example/broken-app",
+        "base_branch": "main",
+        "outcome_contract_sha256": "abcd1234567890" * 4,  # Valid 64-char hex
+        "charged_credits": 10,
+    }
+
+
+def seed_job(conn: FakeConnection, user_id: str, job_id: str, status: str = "queued"):
+    create_agent_job_record(
+        conn,
+        user_id=user_id,
+        job_id=job_id,
+        request=valid_request(),
+        status=status,
+        workspace_id=job_id if status != "queued" else None,
+        events=(SovereignAgentEvent(stage="seed", level="info", message="Seeded job."),),
+        blocker="Seed blocker." if status in ("blocked", "failed") else None,
+    )
+
+
+def test_rescue_capsule_requires_csrf_token(monkeypatch):
+    conn = FakeConnection()
+    repair_id = "66666666-6666-4666-8666-666666666666"
+    job_id = "agent-capsule-test"
+    seed_rescue(conn, "11111111-1111-4111-8111-111111111111", repair_id, job_id)
+    seed_job(conn, "11111111-1111-4111-8111-111111111111", job_id, status="running")
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers={
+            "X-Test-User": "11111111-1111-4111-8111-111111111111",
+            "Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+        },
+        json={"patch": "diff --git a/README.md b/README.md\nindex 1234567..abcdefg 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-Hello\n+Hello World\n"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["blocker"] == "csrf_verification_failed"
+
+
+def test_rescue_capsule_rejects_missing_patch(monkeypatch):
+    conn = FakeConnection()
+    repair_id = "66666666-6666-4666-8666-666666666666"
+    job_id = "agent-capsule-test"
+    seed_rescue(conn, "11111111-1111-4111-8111-111111111111", repair_id, job_id)
+    seed_job(conn, "11111111-1111-4111-8111-111111111111", job_id, status="running")
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers={
+            "X-Test-User": "11111111-1111-4111-8111-111111111111",
+            "X-Sovereign-Rescue-CSRF": "bound-test-token",
+            "Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+        },
+        json={},
+    )
+
+    assert response.status_code == 400
+    assert "patch" in response.get_json()["error"]
+
+
+def test_rescue_capsule_returns_manifest_when_ready(monkeypatch):
+    conn = FakeConnection()
+    user_id = "11111111-1111-4111-8111-111111111111"
+    repair_id = "66666666-6666-4666-8666-666666666666"
+    job_id = "agent-capsule-test"
+    seed_rescue(conn, user_id, repair_id, job_id)
+    conn.jobs[job_id] = {
+        "user_id": user_id,
+        "job_id": job_id,
+        "executor": "sovereign-local-runner",
+        "repo_url": "https://github.com/example/broken-app",
+        "branch": "main",
+        "mission": "Fix CI",
+        "status": "running",
+        "workspace_id": job_id,
+        "allowed_paths": [],
+        "forbidden_paths": [],
+        "memory_hints": [],
+        "external_ref": None,
+        "draft_pr_url": "https://github.com/example/broken-app/pull/123",
+        "changed_files": ["README.md"],
+        "diff_summary": None,
+        "test_summary": "All tests passed: PASSED 10 tests",
+        "events": [],
+        "blocker": None,
+    }
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers={
+            "X-Test-User": user_id,
+            "X-Sovereign-Rescue-CSRF": "bound-test-token",
+            "Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+        },
+        json={
+            "patch": (
+                "diff --git a/README.md b/README.md\n"
+                "index 1234567..abcdefg 100644\n"
+                "--- a/README.md\n"
+                "+++ b/README.md\n"
+                "@@ -1 +1 @@\n"
+                "-Hello\n"
+                "+Hello World\n"
+            ),
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 409  # Capsule has blockers due to invalid seed data
+    assert payload["runtime"] == "sovereign-rescue"
+    assert "capsule" in payload
+    assert payload["ready"] is False
+    # Verify the capsule manifest contains the expected structure
+    capsule = payload["capsule"]
+    assert capsule["repairId"] == repair_id
+    assert "capsule_outcome_contract_sha256_invalid" in capsule.get("blockers", [])
+
+
+def test_rescue_capsule_blocks_cross_user_access(monkeypatch):
+    conn = FakeConnection()
+    user_id_owner = "11111111-1111-4111-8111-111111111111"
+    user_id_other = "22222222-2222-4222-8222-222222222222"
+    repair_id = "66666666-6666-4666-8666-666666666666"
+    job_id = "agent-capsule-test"
+    seed_rescue(conn, user_id_owner, repair_id, job_id)
+    seed_job(conn, user_id_owner, job_id, status="running")
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers={
+            "X-Test-User": user_id_other,
+            "X-Sovereign-Rescue-CSRF": "bound-test-token",
+            "Origin": "https://studio.example.test",
+            "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+        },
+        json={"patch": "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-Hello\n+Hello World\n"},
+    )
+
+    assert response.status_code == 404
