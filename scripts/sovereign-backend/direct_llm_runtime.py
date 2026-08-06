@@ -1,8 +1,9 @@
 """Bounded direct OpenAI-compatible HTTP transport for persisted LLM routes.
 
-Paid traffic goes directly to OpenRouter and free traffic goes directly to the
-managed FreeLLM API. Protected service keys are read only from allowlisted 0600
-owner files and are never returned, logged, or persisted by this module.
+Paid traffic and the isolated OpenRouter-Free lane go directly to OpenRouter;
+remaining free traffic goes directly to the managed FreeLLM API. Protected
+service keys are read only from distinct allowlisted 0600 owner files and are
+never returned, logged, or persisted by this module.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from llm_transport import (
     route_api_base,
     route_config,
     route_is_direct_freellm,
+    route_is_openrouter_free,
     route_is_openrouter_paid,
     route_provider_model,
     route_transport,
@@ -73,8 +75,18 @@ def _owner_root() -> Path:
     return Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", str(_OWNER_ROOT))).resolve()
 
 
-def _key_contract(transport: str, api_base: str) -> tuple[str, str]:
+def _key_contract(
+    transport: str,
+    api_base: str,
+    *,
+    openrouter_free: bool = False,
+) -> tuple[str, str]:
     if transport == OPENROUTER_TRANSPORT:
+        if openrouter_free:
+            return (
+                "SOVEREIGN_OPENROUTER_FREE_API_KEY_FILE",
+                "openrouter_free_api_key.txt",
+            )
         return "SOVEREIGN_OPENROUTER_API_KEY_FILE", "openrouter_api_key.txt"
     if transport == FREELLM_TRANSPORT:
         normalized = str(api_base or "").strip().rstrip("/")
@@ -86,8 +98,17 @@ def _key_contract(transport: str, api_base: str) -> tuple[str, str]:
 
 
 @contextmanager
-def _protected_key(transport: str, api_base: str) -> Iterator[str]:
-    env_name, filename = _key_contract(transport, api_base)
+def _protected_key(
+    transport: str,
+    api_base: str,
+    *,
+    openrouter_free: bool = False,
+) -> Iterator[str]:
+    env_name, filename = _key_contract(
+        transport,
+        api_base,
+        openrouter_free=openrouter_free,
+    )
     root = _owner_root()
     candidate = Path(os.getenv(env_name, str(root / filename))).resolve()
     protected = bytearray()
@@ -119,12 +140,22 @@ def _protected_key(transport: str, api_base: str) -> Iterator[str]:
 
 def _openrouter_policy(route: dict[str, Any]) -> dict[str, Any]:
     policy = route_config(route).get("providerPolicy")
-    required = {
-        "require_parameters": True,
-        "allow_fallbacks": False,
-        "data_collection": "deny",
-    }
-    if not isinstance(policy, dict) or any(policy.get(key) != value for key, value in required.items()):
+    required = (
+        {
+            "require_parameters": False,
+            "allow_fallbacks": True,
+            "data_collection": "deny",
+        }
+        if route_is_openrouter_free(route)
+        else {
+            "require_parameters": True,
+            "allow_fallbacks": False,
+            "data_collection": "deny",
+        }
+    )
+    if not isinstance(policy, dict) or any(
+        policy.get(key) != value for key, value in required.items()
+    ):
         raise DirectLlmRuntimeError("openrouter_provider_policy_rejected")
     return required
 
@@ -150,8 +181,11 @@ def fetch_direct_llm(
 
     transport = route_transport(route)
     if transport == OPENROUTER_TRANSPORT:
-        if not route_is_openrouter_paid(route):
-            return None, "openrouter_paid_route_rejected"
+        if not (
+            route_is_openrouter_paid(route)
+            or route_is_openrouter_free(route)
+        ):
+            return None, "openrouter_route_rejected"
     elif transport == FREELLM_TRANSPORT:
         if not route_is_direct_freellm(route):
             return None, "freellm_direct_route_rejected"
@@ -172,7 +206,11 @@ def fetch_direct_llm(
             return None, exc.family
 
     try:
-        with _protected_key(transport, api_base) as key:
+        with _protected_key(
+            transport,
+            api_base,
+            openrouter_free=route_is_openrouter_free(route),
+        ) as key:
             headers = {
                 "Authorization": f"Bearer {key}",
                 "Accept": "application/json",

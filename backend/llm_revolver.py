@@ -17,7 +17,9 @@ from llm_cost_policy import BillingPolicyError, FREE_CATEGORY, route_billing_pol
 from llm_transport import (
     FREELLM_TRANSPORT,
     LEGACY_LITELLM_TRANSPORT,
+    OPENROUTER_TRANSPORT,
     route_is_direct_freellm,
+    route_is_openrouter_free,
     route_transport,
 )
 
@@ -25,7 +27,8 @@ _SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
 _SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _RECEIPT_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
-_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"
+_FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"
+_OPENROUTER_FREE_RECEIPT_SCHEMA = "sovereign.openrouter-free-route-receipt.v1"
 _RETRY_WINDOWS_SECONDS = {
     "provider_quota_exhausted": 3600,
     "provider_rate_limited": 60,
@@ -91,23 +94,41 @@ def _route_receipt_matches_runtime(route: dict[str, Any]) -> bool:
     image_digest = str(identity.get("imageDigest") or "").strip().lower()
     current_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
     current_digest = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().lower()
+    expected_schema = (
+        _OPENROUTER_FREE_RECEIPT_SCHEMA
+        if route_is_openrouter_free(route)
+        else _FREELLM_RECEIPT_SCHEMA
+        if route_is_direct_freellm(route)
+        else ""
+    )
     return (
-        identity.get("sourceRevisionVerified") is True
+        bool(expected_schema)
+        and identity.get("sourceRevisionVerified") is True
         and identity.get("imageDigestVerified") is True
         and _SOURCE_REVISION_RE.fullmatch(source_revision) is not None
         and _IMAGE_DIGEST_RE.fullmatch(image_digest) is not None
         and source_revision == current_revision
         and image_digest == current_digest
-        and str(receipt.get("schemaVersion") or "") == _RECEIPT_SCHEMA
+        and str(receipt.get("schemaVersion") or "") == expected_schema
         and receipt.get("generalChatEvidenceVerified") is True
+        and (
+            route_transport(route) != OPENROUTER_TRANSPORT
+            or receipt.get("zeroCostEvidenceVerified") is True
+        )
         and _RECEIPT_SHA_RE.fullmatch(str(receipt.get("receiptSha256") or "")) is not None
     )
 
 
 def route_is_verified_free(route: dict[str, Any]) -> bool:
-    if not route_is_direct_freellm(route):
-        return False
-    if route_transport(route) != FREELLM_TRANSPORT:
+    direct_freellm = (
+        route_is_direct_freellm(route)
+        and route_transport(route) == FREELLM_TRANSPORT
+    )
+    openrouter_free = (
+        route_is_openrouter_free(route)
+        and route_transport(route) == OPENROUTER_TRANSPORT
+    )
+    if not (direct_freellm or openrouter_free):
         return False
     if not _route_receipt_matches_runtime(route):
         return False
