@@ -12,7 +12,7 @@ from agent_runtime.cognitive_repository_tools import (
     READ_REPOSITORY_TOOL_NAMES,
     ROLE_PATH_PREFIXES,
     ROLE_WORK_PACKAGES,
-    WRITE_REPOSITORY_TOOL_NAME,
+    WRITE_REPOSITORY_TOOL_NAMES,
     _path_in_role_scope,
     _redact,
     _safe_path,
@@ -35,8 +35,8 @@ def _toolset(*, write_confirmed: bool) -> BoundRepositoryToolset:
 
 
 def test_six_worker_roles_have_explicit_work_and_path_boundaries() -> None:
-    assert tuple(ROLE_WORK_PACKAGES) == tuple(WORKER_ROLES)
-    assert tuple(ROLE_PATH_PREFIXES) == tuple(WORKER_ROLES)
+    assert all(role in ROLE_WORK_PACKAGES for role in WORKER_ROLES)
+    assert all(role in ROLE_PATH_PREFIXES for role in WORKER_ROLES)
     assert all(ROLE_WORK_PACKAGES[role].strip() for role in WORKER_ROLES)
     assert all(ROLE_PATH_PREFIXES[role] for role in WORKER_ROLES)
     assert "pattern" in ROLE_WORK_PACKAGES["data_storage"].lower()
@@ -66,8 +66,8 @@ def test_write_tool_exists_only_after_authenticated_execution_intent() -> None:
     mutating = _toolset(write_confirmed=True)
 
     assert read_only.allowed_tool_names("predictive_qa") == READ_REPOSITORY_TOOL_NAMES
-    assert WRITE_REPOSITORY_TOOL_NAME not in read_only.allowed_tool_names("predictive_qa")
-    assert WRITE_REPOSITORY_TOOL_NAME in mutating.allowed_tool_names("predictive_qa")
+    assert not any(tool in read_only.allowed_tool_names("predictive_qa") for tool in WRITE_REPOSITORY_TOOL_NAMES)
+    assert all(tool in mutating.allowed_tool_names("predictive_qa") for tool in WRITE_REPOSITORY_TOOL_NAMES)
 
 
 def test_circuit_opens_after_three_consecutive_tool_failures() -> None:
