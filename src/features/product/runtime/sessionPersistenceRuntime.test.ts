@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { appendMessage, buildShareUrl, deleteSession, exportSessionAsMarkdown, extractSessionIdFromUrl, getOrCreateCurrentSession, listSessions, loadSession, saveSession } from './sessionPersistenceRuntime';
+import { appendMessage, buildShareUrl, deleteSession, exportSessionAsMarkdown, extractSessionIdFromUrl, formatPersistedSessionAge, getOrCreateCurrentSession, listSessions, loadSession, saveSession } from './sessionPersistenceRuntime';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -28,4 +28,16 @@ describe('sessionPersistenceRuntime', () => {
   it('exports markdown with roles and repository', () => { const session = appendMessage(getOrCreateCurrentSession(storage, 'repo', 'main'), { role: 'assistant', content: 'done' }); const markdown = exportSessionAsMarkdown(session); expect(markdown).toContain('**Sovereign**'); expect(markdown).toContain('repo'); });
   it('redacts a generated GitHub credential pattern in export', () => { const credential = ['github', 'pat', 'x'.repeat(40)].join('_'); const session = appendMessage(getOrCreateCurrentSession(storage, 'repo', 'main'), { role: 'user', content: credential }); const markdown = exportSessionAsMarkdown(session); expect(markdown).not.toContain(credential); expect(markdown).toContain('[REDACTED]'); });
   it('redacts a generated bearer credential in export', () => { const credential = ['Bear', 'er ', 'a'.repeat(32)].join(''); const session = appendMessage(getOrCreateCurrentSession(storage, 'repo', 'main'), { role: 'user', content: credential }); expect(exportSessionAsMarkdown(session)).toContain('[REDACTED]'); });
+});
+
+describe('formatPersistedSessionAge', () => {
+  const now = 1700000000000;
+  const makeSession = (updatedAt: number) => ({ version: 2 as const, sessionId: 'test', repoUrl: 'r', repoBranch: 'b', messages: [], createdAt: updatedAt - 1000, updatedAt, messageCount: 0 });
+  it('returns wenige Sekunden for very recent', () => { const result = formatPersistedSessionAge(makeSession(now - 30000), now); expect(result.text).toBe('wenige Sekunden'); expect(result.isStale).toBe(false); });
+  it('returns 5 Minuten for 5 minutes', () => { const result = formatPersistedSessionAge(makeSession(now - 5 * 60 * 1000), now); expect(result.text).toBe('5 Minuten'); expect(result.isStale).toBe(false); });
+  it('returns 1 Stunde for 1 hour', () => { const result = formatPersistedSessionAge(makeSession(now - 60 * 60 * 1000), now); expect(result.text).toBe('1 Stunde'); expect(result.isStale).toBe(false); });
+  it('returns 3 Stunden for 3 hours', () => { const result = formatPersistedSessionAge(makeSession(now - 3 * 60 * 60 * 1000), now); expect(result.text).toBe('3 Stunden'); expect(result.isStale).toBe(false); });
+  it('returns 1 Tag for 1 day', () => { const result = formatPersistedSessionAge(makeSession(now - 24 * 60 * 60 * 1000), now); expect(result.text).toBe('1 Tag'); expect(result.isStale).toBe(false); });
+  it('returns 2 Tagen for 2 days', () => { const result = formatPersistedSessionAge(makeSession(now - 2 * 24 * 60 * 60 * 1000), now); expect(result.text).toBe('2 Tagen'); expect(result.isStale).toBe(false); });
+  it('marks sessions older than 3 days as stale', () => { const result = formatPersistedSessionAge(makeSession(now - 4 * 24 * 60 * 60 * 1000), now); expect(result.isStale).toBe(true); });
 });

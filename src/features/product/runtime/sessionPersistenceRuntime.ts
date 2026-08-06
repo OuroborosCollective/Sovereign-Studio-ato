@@ -34,3 +34,27 @@ export function buildShareUrl(sessionId: string): string { if (typeof window ===
 export function extractSessionIdFromUrl(hash: string): string | null { return hash.match(/[#&]?session=([a-z0-9-]+)/i)?.[1] ?? null; }
 export function exportSessionAsMarkdown(session: PersistedSession): string { const lines = ['# Sovereign Studio — Chat-Export', '', `**Session:** \`${session.sessionId}\`  `, `**Repository:** ${session.repoUrl || '–'}  `, `**Branch:** ${session.repoBranch || '–'}  `, `**Nachrichten:** ${session.messages.length}`, '', '---', '']; for (const message of session.messages) { const role = message.role === 'user' ? '**Du**' : message.role === 'assistant' ? '**Sovereign**' : '**System**'; lines.push(`${role}:`, '', stripSecrets(message.content), message.fileRef ? `\n> 📎 ${message.fileRef}` : '', '', '---', ''); } return lines.filter((line) => line !== undefined).join('\n'); }
 export function downloadSessionMarkdown(session: PersistedSession): 'downloaded' | 'failed' { if (typeof document === 'undefined') return 'failed'; try { const url = URL.createObjectURL(new Blob([exportSessionAsMarkdown(session)], { type: 'text/markdown;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `sovereign-export-${session.sessionId}.md`; anchor.rel = 'noopener'; anchor.click(); URL.revokeObjectURL(url); return 'downloaded'; } catch { return 'failed'; } }
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+const THREE_DAYS_MS = 3 * ONE_DAY_MS;
+const SEVEN_DAYS_MS = 7 * ONE_DAY_MS;
+
+export function formatPersistedSessionAge(session: PersistedSession, now = Date.now()): { text: string; isStale: boolean } {
+  const ageMs = Math.max(0, now - session.updatedAt);
+  let text: string;
+  if (ageMs < ONE_HOUR_MS) {
+    const minutes = Math.round(ageMs / 60000);
+    text = minutes <= 1 ? 'wenige Sekunden' : `${minutes} Minute${minutes !== 1 ? 'n' : ''}`;
+  } else if (ageMs < ONE_DAY_MS) {
+    const hours = Math.round(ageMs / ONE_HOUR_MS);
+    text = `${hours} Stunde${hours !== 1 ? 'n' : ''}`;
+  } else if (ageMs < THREE_DAYS_MS) {
+    const days = Math.round(ageMs / ONE_DAY_MS);
+    text = `${days} Tag${days !== 1 ? 'en' : ''}`;
+  } else {
+    const days = Math.round(ageMs / ONE_DAY_MS);
+    text = `${days} Tagen`;
+  }
+  return { text, isStale: ageMs > THREE_DAYS_MS };
+}

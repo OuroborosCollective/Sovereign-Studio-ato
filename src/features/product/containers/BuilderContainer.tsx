@@ -106,6 +106,7 @@ import {
 } from "../runtime/sovereignPresetActionRuntime";
 import {
   downloadSessionMarkdown,
+  formatPersistedSessionAge,
   getOrCreateCurrentSession,
   saveSession,
   type PersistedSession,
@@ -3173,20 +3174,10 @@ export function BuilderContainer({
     nowRef.current = restored[restored.length - 1]?.createdAt ?? Date.now();
     setChatHistory(restored);
 
-    const ageSeconds = Math.max(0, Math.round((Date.now() - session.updatedAt) / 1000));
-    let formattedAge = '';
-    if (ageSeconds < 60) {
-      formattedAge = `${ageSeconds}s`;
-    } else if (ageSeconds < 3600) {
-      formattedAge = `${Math.round(ageSeconds / 60)}m`;
-    } else if (ageSeconds < 86400) {
-      formattedAge = `${Math.round(ageSeconds / 3600)}h`;
-    } else {
-      formattedAge = `${Math.round(ageSeconds / 86400)}d`;
-    }
-    setRestoredSessionAge(formattedAge);
+    const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
+    setRestoredSessionAge(formattedAge + (isStale ? '|stale' : ''));
 
-    addLog('info', 'Chat session restored with ' + restored.length + ' messages (Age: ' + formattedAge + ')', 'sys');
+    addLog('info', 'Chat session restored with ' + restored.length + ' messages (Age: ' + formattedAge + (isStale ? ', bitte Status prüfen' : '') + ')', 'sys');
   }, [addLog, chatHistory.length, chatRepoSnapshot, currentRepoScopeKey]);
 
   useEffect(() => {
