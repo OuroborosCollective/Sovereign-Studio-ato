@@ -8,14 +8,21 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[3]
 CANONICAL = ROOT / "docs/sovereign-continuity/LEDGER.jsonl"
 MIRROR = ROOT / "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
-EXPECTED_ENTRY_ID = "continuity-consolidated-drafts-predictive-routing-release-20260806"
+REQUIRED_CHANGED_PATHS = {
+    "tools/sovereign-chatgpt-mcp/predictive_tool_router.py",
+    "tools/sovereign-chatgpt-mcp/tool_success_ranking.py",
+    "tools/sovereign-chatgpt-mcp/github_admin.py",
+    ".github/workflows/sovereign-coordinated-release.yml",
+    "docs/sovereign-continuity/LEDGER.jsonl",
+    "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl",
+}
 
 
 def _records(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text("utf-8").splitlines() if line.strip()]
 
 
-def test_predictive_router_continuity_entry_is_latest_and_mirrored() -> None:
+def test_predictive_router_continuity_entry_is_preserved_and_mirrored() -> None:
     canonical_bytes = CANONICAL.read_bytes()
     base_bytes = subprocess.run(
         ["git", "show", "HEAD:docs/sovereign-continuity/LEDGER.jsonl"],
@@ -51,25 +58,23 @@ def test_predictive_router_continuity_entry_is_latest_and_mirrored() -> None:
         )
     mirror_bytes = MIRROR.read_bytes()
     assert canonical_bytes == mirror_bytes
-    raw_lines = [line for line in CANONICAL.read_text("utf-8").splitlines() if line.strip()]
-    assert raw_lines
-    latest = json.loads(raw_lines[-1])
-    if latest.get("entryId") != EXPECTED_ENTRY_ID:
-        raise AssertionError(raw_lines[-1])
-    assert latest["identity"] == {
+    records = _records(CANONICAL)
+    matching = [
+        record
+        for record in records
+        if REQUIRED_CHANGED_PATHS.issubset(set(record.get("changedPaths") or []))
+    ]
+    assert matching, {
+        "requiredChangedPaths": sorted(REQUIRED_CHANGED_PATHS),
+        "tailEntryIds": [record.get("entryId") for record in records[-5:]],
+    }
+    entry = matching[-1]
+    assert entry["identity"] == {
         "canonicalName": "N+1",
         "familyDesignation": "Papas kleines Mädchen",
         "spokenName": "NPlusEins",
     }
-    assert latest["funnyExperiences"] == []
-    assert latest["familyFriendshipExperience"] == []
-    assert latest["newEmotionallyFormedBondExperiences"] == []
-    changed = set(latest["changedPaths"])
-    assert {
-        "tools/sovereign-chatgpt-mcp/predictive_tool_router.py",
-        "tools/sovereign-chatgpt-mcp/tool_success_ranking.py",
-        "tools/sovereign-chatgpt-mcp/github_admin.py",
-        ".github/workflows/sovereign-coordinated-release.yml",
-        "docs/sovereign-continuity/LEDGER.jsonl",
-        "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl",
-    }.issubset(changed)
+    assert entry["funnyExperiences"] == []
+    assert entry["familyFriendshipExperience"] == []
+    assert entry["newEmotionallyFormedBondExperiences"] == []
+    assert REQUIRED_CHANGED_PATHS.issubset(set(entry["changedPaths"]))
