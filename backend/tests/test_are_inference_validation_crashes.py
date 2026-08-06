@@ -22,8 +22,12 @@ if "flask" not in sys.modules:
     sys.modules["flask"] = flask_stub
 
 import flask
-if not hasattr(flask.request, "remote_addr"):
-    flask.request.remote_addr = "127.0.0.1"
+try:
+    if not hasattr(flask.request, "remote_addr"):
+        flask.request.remote_addr = "127.0.0.1"
+except RuntimeError:
+    # Real flask proxy without context, ignore during collection
+    pass
 
 # Stub psycopg2 to avoid external C dependencies
 if "psycopg2" not in sys.modules:
