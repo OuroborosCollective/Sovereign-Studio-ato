@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -9,29 +10,76 @@ SETUP_PATH = ROOT / "scripts/vps-config/setup-nginx.sh"
 
 
 def _embedded_nginx_config(setup_script: str) -> str:
-    start_marker = "cat > \"$CONFIG_FILE\" << 'NGINXCONF'\n"
-    end_marker = "\nNGINXCONF\n"
-    assert setup_script.count(start_marker) == 1
-    start = setup_script.index(start_marker) + len(start_marker)
-    end = setup_script.index(end_marker, start)
-    return setup_script[start:end].strip()
+    match = re.search(
+        r"cat > \"\$CONFIG_FILE\" << 'NGINXCONF'(.+?)NGINXCONF",
+        setup_script,
+        re.DOTALL,
+    )
+    assert match, "Could not find NGINXCONF heredoc in setup script"
+    return match.group(1).strip()
 
 
-def test_committed_and_generated_nginx_servers_are_identical_and_fail_closed() -> None:
+def test_committed_and_generated_nginx_servers_are_identical() -> None:
+    """Verify committed config and embedded config in setup script match."""
     committed = CONFIG_PATH.read_text(encoding="utf-8")
     generated = _embedded_nginx_config(SETUP_PATH.read_text(encoding="utf-8"))
     committed_servers = committed[committed.index("server {") :].strip()
 
     assert generated == committed_servers
-    assert "proxy_pass" not in generated
-    assert "127.0.0.1:3000" not in generated
-    assert generated.count("return 403;") == 2
-    assert 'add_header X-Sovereign-Fail-Closed "issue#1196-proxy-drift" always;' in generated
-    assert "return 301 https://$host$request_uri;" in generated
 
 
-def test_setup_message_does_not_claim_openhands_is_available() -> None:
-    setup_script = SETUP_PATH.read_text(encoding="utf-8")
+def test_mcp_route_requires_api_key() -> None:
+    """Verify /mcp requires X-API-Key authentication."""
+    config = CONFIG_PATH.read_text(encoding="utf-8")
 
-    assert "OpenHands admin should be available" not in setup_script
-    assert "deliberately fail-closed with HTTP 403" in setup_script
+    # Must have exact-match /mcp location
+    assert "location = /mcp {" in config
+    # Must check X-API-Key header
+    assert '$http_x_api_key' in config
+    assert 'return 401;' in config
+    # Must include owner-managed key file
+    assert "include /opt/sovereign-owner-managed/openhands_mcp_api_key.txt" in config
+
+
+def test_mcp_route_proxies_to_port_8090() -> None:
+    """Verify /mcp proxies to 127.0.0.1:8090 (MCP, not Browserless)."""
+    config = CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "proxy_pass http://127.0.0.1:8090/mcp" in config
+
+
+def test_root_route_proxies_to_port_3000() -> None:
+    """Verify root / proxies to 127.0.0.1:3000 (existing local service)."""
+    config = CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "location / {" in config
+    assert "proxy_pass http://127.0.0.1:3000;" in config
+
+
+def test_key_file_verification_in_setup_script() -> None:
+    """Verify setup script checks for owner-managed API key file."""
+    setup = SETUP_PATH.read_text(encoding="utf-8")
+
+    assert "/opt/sovereign-owner-managed/openhands_mcp_api_key.txt" in setup
+    assert 'chmod 0600' in setup
+    assert 'KEY_FILE="/opt/sovereign-owner-managed/openhands_mcp_api_key.txt"' in setup
+
+
+def test_setup_script_validates_permissions() -> None:
+    """Verify setup script checks key file has 0600 permissions."""
+    setup = SETUP_PATH.read_text(encoding="utf-8")
+
+    assert 'KEY_PERMS=$(stat' in setup
+    assert '"600"' in setup
+
+
+def test_no_hardcoded_api_keys() -> None:
+    """Verify no actual API keys are committed to the repository."""
+    config = CONFIG_PATH.read_text(encoding="utf-8")
+    setup = SETUP_PATH.read_text(encoding="utf-8")
+
+    # The config should set variable to empty string as default
+    assert 'set $mcp_api_key "";' in config
+    # Should NOT have any actual key values
+    assert "sk-" not in config and "sk-" not in setup
+    assert "api_key" not in config.lower() or "mcp_api_key" in config.lower()

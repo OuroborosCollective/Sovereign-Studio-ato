@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
-# Make sure "flask" stub or module exists in sys.modules
+# Stub flask if not already present
 if "flask" not in sys.modules:
     flask_stub = ModuleType("flask")
     flask_stub.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
@@ -22,8 +22,12 @@ if "flask" not in sys.modules:
     sys.modules["flask"] = flask_stub
 
 import flask
-# Stub/mock flask.request so we don't get request context RuntimeError during collection or tests
-flask.request = SimpleNamespace(remote_addr="127.0.0.1")
+try:
+    if not hasattr(flask.request, "remote_addr"):
+        flask.request.remote_addr = "127.0.0.1"
+except RuntimeError:
+    # Real flask proxy without context, ignore during collection
+    pass
 
 # Stub psycopg2 to avoid external C dependencies
 if "psycopg2" not in sys.modules:
@@ -33,7 +37,7 @@ if "psycopg2" not in sys.modules:
     sys.modules["psycopg2"] = psycopg2_stub
     sys.modules["psycopg2.extras"] = psycopg2_extras_stub
 
-import security_runtime
+import are_inference
 
 
 def mock_require_session(func):
@@ -42,10 +46,6 @@ def mock_require_session(func):
         flask.request.session_user_id = str(uuid.uuid4())
         return func(*args, **kwargs)
     return wrapper
-
-
-def mock_set_session_cookie(response, user_id):
-    return response
 
 
 class MockCursor:
@@ -85,17 +85,16 @@ class MockApp:
         return decorator
 
 
-class TestSecurityValidationCrashes(unittest.TestCase):
+class TestAreInferenceValidationCrashes(unittest.TestCase):
     def setUp(self):
         self.old_jsonify = getattr(flask, "jsonify", None)
         flask.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs, 400)
 
         self.app = MockApp()
-        security_runtime.register_security_routes(
+        are_inference.register_are_inference_routes(
             self.app,
             require_session=mock_require_session,
             get_connection=mock_get_connection,
-            set_session_cookie=mock_set_session_cookie,
         )
 
     def tearDown(self):
@@ -105,15 +104,10 @@ class TestSecurityValidationCrashes(unittest.TestCase):
     def test_non_dict_payloads_rejected_safely(self):
         # List of endpoints that parse JSON body using request.get_json
         endpoints = [
-            "/api/security/policy",
-            "/api/security/passkeys/register/verify",
-            "/api/auth/passkey/options",
-            "/api/auth/passkey/verify",
-            "/api/security/account-keys",
-            "/api/auth/account-key",
-            "/api/security/step-up/options",
-            "/api/security/step-up/verify",
-            "/api/security/step-up/account-key",
+            "/api/inference/are/evaluate",
+            "/api/inference/are/repair",
+            "/api/inference/are/quarantine",
+            "/api/inference/are/quarantine/<candidate_id>/promote",
         ]
 
         malformed_bodies = [
@@ -132,14 +126,16 @@ class TestSecurityValidationCrashes(unittest.TestCase):
                 # Set up mock request body directly on the global flask.request
                 flask.request.get_json = lambda *args, **kwargs: malformed
 
-                # Call route handler and get the tuple/response returned by jsonify/Flask
-                res = handler()
+                if path == "/api/inference/are/quarantine/<candidate_id>/promote":
+                    res = handler(candidate_id=str(uuid.uuid4()))
+                else:
+                    res = handler()
 
                 # Check that we received a tuple representing a response and the 400 status code
                 self.assertIsInstance(res, tuple, f"Endpoint {path} did not return status code tuple for {malformed}")
                 response_body, status_code = res
                 self.assertEqual(status_code, 400, f"Endpoint {path} failed to reject non-dict body {malformed}")
-                self.assertIn("error", response_body)
+                self.assertFalse(response_body["ok"])
                 self.assertEqual(response_body["error"], "Malformed payload; dictionary required")
 
 

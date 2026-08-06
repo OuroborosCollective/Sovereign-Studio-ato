@@ -1,0 +1,191 @@
+name: Sovereign Coordinated Release Gate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+concurrency:
+  group: sovereign-coordinated-release-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  BACKEND_IMAGE: ghcr.io/ouroboroscollective/sovereign-backend
+  MCP_IMAGE: ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp
+  EXPECTED_REVISION: ${{ github.sha }}
+
+jobs:
+  coordinated-release:
+    name: Verify coordinated immutable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_REVISION }}
+          fetch-depth: 1
+
+      - name: Wait for exact-revision image workflows
+        id: workflows
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const expected = String(process.env.EXPECTED_REVISION || '').toLowerCase();
+            if (!/^[0-9a-f]{40}$/.test(expected)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            const required = [
+              'sovereign-backend-image.yml',
+              'sovereign-chatgpt-mcp.yml',
+            ];
+            const evidence = {};
+            const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+            for (let attempt = 1; attempt <= 240; attempt += 1) {
+              let waiting = false;
+              for (const workflow of required) {
+                const response = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflow,
+                  branch: 'main',
+                  event: 'push',
+                  head_sha: expected,
+                  per_page: 20,
+                });
+                const runs = response.data.workflow_runs
+                  .filter((run) => String(run.head_sha || '').toLowerCase() === expected)
+                  .sort((left, right) => (
+                    Number(right.run_attempt || 0) - Number(left.run_attempt || 0)
+                    || Number(right.id || 0) - Number(left.id || 0)
+                  ));
+                const run = runs[0];
+                if (!run) {
+                  waiting = true;
+                  continue;
+                }
+                evidence[workflow] = {
+                  runId: Number(run.id),
+                  runAttempt: Number(run.run_attempt || 0),
+                  status: String(run.status || ''),
+                  conclusion: run.conclusion ? String(run.conclusion) : null,
+                  headSha: String(run.head_sha || '').toLowerCase(),
+                  url: String(run.html_url || ''),
+                };
+                if (run.status === 'completed' && run.conclusion !== 'success') {
+                  core.setFailed(`${workflow}:EXACT_REVISION_WORKFLOW_FAILED:${run.conclusion}`);
+                  return;
+                }
+                if (run.status !== 'completed') {
+                  waiting = true;
+                }
+              }
+              if (!waiting && Object.keys(evidence).length === required.length) {
+                core.setOutput('evidence', JSON.stringify(evidence));
+                core.info(JSON.stringify({
+                  status: 'EXACT_REVISION_IMAGE_WORKFLOWS_VERIFIED',
+                  revision: expected,
+                  workflows: evidence,
+                  secretValuesReturned: false,
+                }));
+                return;
+              }
+              await sleep(10000);
+            }
+            core.setFailed('EXACT_REVISION_IMAGE_WORKFLOWS_TIMEOUT');
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and verify both immutable images
+        id: images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BACKEND_TAG="${BACKEND_IMAGE}:${EXPECTED_REVISION}"
+          MCP_TAG="${MCP_IMAGE}:${EXPECTED_REVISION}"
+          docker pull "$BACKEND_TAG"
+          docker pull "$MCP_TAG"
+
+          backend_revision="$(docker image inspect "$BACKEND_TAG" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          mcp_revision="$(docker image inspect "$MCP_TAG" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          test "$backend_revision" = "$EXPECTED_REVISION"
+          test "$mcp_revision" = "$EXPECTED_REVISION"
+
+          backend_reference="$(docker image inspect "$BACKEND_TAG" --format '{{json .RepoDigests}}' | python3 -c 'import json,sys; prefix=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((value for value in values if isinstance(value,str) and value.startswith(prefix)), ""))' "$BACKEND_IMAGE")"
+          mcp_reference="$(docker image inspect "$MCP_TAG" --format '{{json .RepoDigests}}' | python3 -c 'import json,sys; prefix=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((value for value in values if isinstance(value,str) and value.startswith(prefix)), ""))' "$MCP_IMAGE")"
+          backend_digest="${backend_reference##*@}"
+          mcp_digest="${mcp_reference##*@}"
+          [[ "$backend_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$mcp_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
+          echo "mcp_digest=$mcp_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Create bounded coordinated release manifest
+        env:
+          WORKFLOW_EVIDENCE: ${{ steps.workflows.outputs.evidence }}
+          BACKEND_DIGEST: ${{ steps.images.outputs.backend_digest }}
+          MCP_DIGEST: ${{ steps.images.outputs.mcp_digest }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .sovereign-evidence
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+          import re
+
+          revision = os.environ['EXPECTED_REVISION'].lower()
+          backend_digest = os.environ['BACKEND_DIGEST'].lower()
+          mcp_digest = os.environ['MCP_DIGEST'].lower()
+          workflows = json.loads(os.environ['WORKFLOW_EVIDENCE'])
+          assert re.fullmatch(r'[0-9a-f]{40}', revision)
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', backend_digest)
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', mcp_digest)
+          assert set(workflows) == {'sovereign-backend-image.yml', 'sovereign-chatgpt-mcp.yml'}
+          assert all(item.get('headSha') == revision for item in workflows.values())
+          assert all(item.get('status') == 'completed' and item.get('conclusion') == 'success' for item in workflows.values())
+          payload = {
+              'schemaVersion': 'sovereign.coordinated-release-manifest.v1',
+              'revision': revision,
+              'backend': {
+                  'repository': os.environ['BACKEND_IMAGE'],
+                  'digest': backend_digest,
+              },
+              'mcp': {
+                  'repository': os.environ['MCP_IMAGE'],
+                  'digest': mcp_digest,
+              },
+              'workflows': workflows,
+              'deploymentPerformed': False,
+              'secretValuesReturned': False,
+          }
+          canonical = json.dumps(payload, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          payload['evidenceSha256'] = hashlib.sha256(canonical).hexdigest()
+          Path('.sovereign-evidence/coordinated-release.json').write_text(
+              json.dumps(payload, sort_keys=True, separators=(',', ':')) + '\n',
+              'utf-8',
+          )
+          PY
+
+      - name: Upload coordinated release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-coordinated-release-${{ env.EXPECTED_REVISION }}
+          path: .sovereign-evidence/coordinated-release.json
+          if-no-files-found: error
+          retention-days: 30

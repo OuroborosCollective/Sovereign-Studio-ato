@@ -60,6 +60,7 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
         </div>
         <button
           type="button"
+          title="SSH-Verbindung trennen"
           onClick={onDisconnect}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,

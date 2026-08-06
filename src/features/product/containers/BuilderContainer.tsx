@@ -2622,6 +2622,7 @@ export function BuilderContainer({
   );
   const [chatRepoError, setChatRepoError] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
+  const [restoredSessionAge, setRestoredSessionAge] = useState<string | null>(null);
   const [chatResponseBusy, setChatResponseBusy] = useState(false);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
@@ -3147,6 +3148,7 @@ export function BuilderContainer({
     if (!chatRepoSnapshot || !currentRepoScopeKey) {
       persistedSessionRef.current = null;
       hydratedSessionScopeRef.current = null;
+      setRestoredSessionAge(null);
       return;
     }
     if (hydratedSessionScopeRef.current === currentRepoScopeKey) return;
@@ -3157,10 +3159,10 @@ export function BuilderContainer({
     );
     persistedSessionRef.current = session;
     hydratedSessionScopeRef.current = currentRepoScopeKey;
-    const activeUserMessages = chatHistory.filter(
-      (m) => m.role !== 'system' && !parseDevChatGithubUrl(m.text)
-    );
-    if (session.messages.length === 0 || activeUserMessages.length > 0) return;
+    if (session.messages.length === 0 || chatHistory.length > 0) {
+      setRestoredSessionAge(null);
+      return;
+    }
     const restored = session.messages.map((message, index) => ({
       id: message.id || createChatLineId(message.role, index + 1),
       role: message.role,
@@ -3195,8 +3197,22 @@ export function BuilderContainer({
     chatLineIndexRef.current = restored.length;
     nowRef.current = restored[restored.length - 1]?.createdAt ?? Date.now();
     setChatHistory(restored);
-    addLog('info', 'Chat session restored with ' + restored.length + ' messages', 'sys');
-  }, [addLog, chatHistory, chatRepoSnapshot, currentRepoScopeKey]);
+
+    const ageSeconds = Math.max(0, Math.round((Date.now() - session.updatedAt) / 1000));
+    let formattedAge = '';
+    if (ageSeconds < 60) {
+      formattedAge = `${ageSeconds}s`;
+    } else if (ageSeconds < 3600) {
+      formattedAge = `${Math.round(ageSeconds / 60)}m`;
+    } else if (ageSeconds < 86400) {
+      formattedAge = `${Math.round(ageSeconds / 3600)}h`;
+    } else {
+      formattedAge = `${Math.round(ageSeconds / 86400)}d`;
+    }
+    setRestoredSessionAge(formattedAge);
+
+    addLog('info', 'Chat session restored with ' + restored.length + ' messages (Age: ' + formattedAge + ')', 'sys');
+  }, [addLog, chatHistory.length, chatRepoSnapshot, currentRepoScopeKey]);
 
   useEffect(() => {
     if (
@@ -3436,6 +3452,7 @@ export function BuilderContainer({
         chatRepoSnapshot,
         chatRepoError,
         chatHistory,
+        restoredSessionAge,
       }),
     [
       chatHistory,
@@ -3448,6 +3465,7 @@ export function BuilderContainer({
       runtimeThinkingActive,
       sovereignSummary,
       state.disabledReason,
+      restoredSessionAge,
     ],
   );
 
