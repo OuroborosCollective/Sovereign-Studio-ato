@@ -19,7 +19,8 @@ function activePatterns(store: SolutionPatternStore): SolutionPattern[] {
   const patterns = Array.isArray(store.patterns) ? store.patterns : [];
   return patterns
     .filter((pattern) => pattern.status === 'active')
-    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    // Performance Optimization: replace slow localeCompare with native lexicographical comparisons
+    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 function patternLine(pattern: SolutionPattern): string {
@@ -29,15 +30,20 @@ function patternLine(pattern: SolutionPattern): string {
   return `- ${category} ${extension}: ${summary}`;
 }
 
-export function formatSolutionPatternHints(store: SolutionPatternStore, limit = 5): string {
-  const selected = activePatterns(store).slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
+// Performance Optimization: allow passing pre-sorted/pre-filtered patterns directly to avoid redundant calculations
+export function formatSolutionPatternHints(storeOrPatterns: SolutionPatternStore | SolutionPattern[], limit = 5): string {
+  const patterns = Array.isArray(storeOrPatterns) ? storeOrPatterns : activePatterns(storeOrPatterns);
+  const selected = patterns.slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
   if (selected.length === 0) return '';
   return ['Remote Aha Memory:', ...selected.map(patternLine)].join('\n');
 }
 
 export function buildSolutionPatternHint(store: SolutionPatternStore, limit = 5): SolutionPatternHint {
-  const selected = activePatterns(store).slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
-  const activeCount = activePatterns(store).length;
+  // Performance Optimization: call activePatterns once and reuse results to prevent duplicate sorting, filtering, and mapping
+  const active = activePatterns(store);
+  const activeCount = active.length;
+  const selected = active.slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
+
   if (selected.length === 0) {
     return {
       visible: false,
@@ -53,7 +59,7 @@ export function buildSolutionPatternHint(store: SolutionPatternStore, limit = 5)
     visible: true,
     title: 'Remote Memory',
     message: `Remote Memory: ${activeCount} aktive Pattern${activeCount === 1 ? '' : 's'} verfügbar.`,
-    detail: formatSolutionPatternHints(store, limit),
+    detail: formatSolutionPatternHints(selected, limit),
     activeCount,
     selectedPatternIds: selected.map((pattern) => pattern.id),
   };

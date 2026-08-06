@@ -458,7 +458,8 @@ export class Synaptogenesis {
       if (correlation >= this.config.correlationThreshold) candidates.push({ node: targetNode, correlation });
     }
 
-    candidates.sort((a, b) => b.correlation - a.correlation || a.node.localeCompare(b.node));
+    // Performance Optimization: replace slow localeCompare with native lexicographical comparisons
+    candidates.sort((a, b) => b.correlation - a.correlation || (a.node < b.node ? -1 : a.node > b.node ? 1 : 0));
     return candidates.slice(0, this.config.maxConnectionsPerNode);
   }
 

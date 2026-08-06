@@ -119,10 +119,14 @@ export function analyzeRepoFileIntegrity(file: RepoFile): RepoFileIntegrityResul
   };
 }
 
+const INTEGRITY_RISK_ORDER: Record<IntegrityRiskLevel, number> = { high: 0, medium: 1, low: 2 };
+
 export function analyzeRepoFileIntegrityList(files: RepoFile[]): RepoFileIntegrityResult[] {
   return files.map(analyzeRepoFileIntegrity).sort((a, b) => {
-    const riskOrder: Record<IntegrityRiskLevel, number> = { high: 0, medium: 1, low: 2 };
-    return riskOrder[a.riskLevel] - riskOrder[b.riskLevel] || a.path.localeCompare(b.path);
+    // Performance Optimization: replace slow localeCompare with native lexicographical comparisons,
+    // and use hoisted INTEGRITY_RISK_ORDER to prevent garbage collection pressure
+    return INTEGRITY_RISK_ORDER[a.riskLevel] - INTEGRITY_RISK_ORDER[b.riskLevel] ||
+      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   });
 }
 
