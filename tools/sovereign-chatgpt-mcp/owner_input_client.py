@@ -35,6 +35,7 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
+    "github_pat": "GitHub Personal Access Token für MCP und Broker",
     "openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle",
     "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
     "openrouter_management_api_key": "OpenRouter Management API Key",
