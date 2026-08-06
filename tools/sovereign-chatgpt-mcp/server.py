@@ -8,6 +8,7 @@ from typing import Annotated, Any
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -36,6 +37,27 @@ def _host() -> str:
     if configured not in {"127.0.0.1", "localhost", "::1"} and os.getenv("SOVEREIGN_MCP_ALLOW_PUBLIC", "0") != "1":
         raise RuntimeError("Nicht-lokales Binding benötigt SOVEREIGN_MCP_ALLOW_PUBLIC=1 und einen vorgeschalteten Auth-/TLS-Layer")
     return configured
+
+
+def _transport_security() -> TransportSecuritySettings | None:
+    """Create TransportSecuritySettings from ALLOWED_HOSTS env var.
+    
+    Format: comma-separated list of allowed hosts, e.g.:
+        ALLOWED_HOSTS=arelogic.space,localhost,127.0.0.1
+    
+    If not set or empty, returns None (uses SDK defaults).
+    """
+    allowed_hosts_str = os.getenv("ALLOWED_HOSTS", "").strip()
+    if not allowed_hosts_str:
+        return None
+    allowed_hosts = [h.strip() for h in allowed_hosts_str.split(",") if h.strip()]
+    if not allowed_hosts:
+        return None
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=[],
+    )
 
 
 def _private_admin_capabilities() -> list[str]:
@@ -1667,4 +1689,4 @@ register_sovereign_cognitive_widget(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="streamable-http", transport_security=_transport_security())
