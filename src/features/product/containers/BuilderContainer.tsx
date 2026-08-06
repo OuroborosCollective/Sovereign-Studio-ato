@@ -3157,18 +3157,46 @@ export function BuilderContainer({
     );
     persistedSessionRef.current = session;
     hydratedSessionScopeRef.current = currentRepoScopeKey;
-    if (session.messages.length === 0 || chatHistory.length > 0) return;
+    const activeUserMessages = chatHistory.filter(
+      (m) => m.role !== 'system' && !parseDevChatGithubUrl(m.text)
+    );
+    if (session.messages.length === 0 || activeUserMessages.length > 0) return;
     const restored = session.messages.map((message, index) => ({
       id: message.id || createChatLineId(message.role, index + 1),
       role: message.role,
       text: message.content,
       createdAt: message.timestamp,
     })) as ChatLine[];
+
+    const ageMs = Date.now() - session.updatedAt;
+    const ageMinutes = Math.floor(ageMs / 60000);
+    let ageString = '';
+    if (ageMinutes < 1) {
+      ageString = 'weniger als einer Minute';
+    } else if (ageMinutes < 60) {
+      ageString = `${ageMinutes} Minute${ageMinutes === 1 ? '' : 'n'}`;
+    } else {
+      const ageHours = Math.floor(ageMinutes / 60);
+      if (ageHours < 24) {
+        ageString = `${ageHours} Stunde${ageHours === 1 ? '' : 'n'}`;
+      } else {
+        const ageDays = Math.floor(ageHours / 24);
+        ageString = `${ageDays} Tag${ageDays === 1 ? '' : 'n'}`;
+      }
+    }
+
+    restored.push({
+      id: `system-restore-${session.sessionId}-${Date.now()}`,
+      role: 'system',
+      text: `Sitzung wiederhergestellt (letzte Aktivität vor ${ageString})`,
+      createdAt: Date.now(),
+    });
+
     chatLineIndexRef.current = restored.length;
     nowRef.current = restored[restored.length - 1]?.createdAt ?? Date.now();
     setChatHistory(restored);
     addLog('info', 'Chat session restored with ' + restored.length + ' messages', 'sys');
-  }, [addLog, chatHistory.length, chatRepoSnapshot, currentRepoScopeKey]);
+  }, [addLog, chatHistory, chatRepoSnapshot, currentRepoScopeKey]);
 
   useEffect(() => {
     if (
@@ -3186,6 +3214,10 @@ export function BuilderContainer({
         content: line.text,
         timestamp: line.createdAt ?? Date.now(),
       }));
+
+    // Prevent overwriting a richer saved session with a transition/empty state
+    if (current && current.messages.length > messages.length) return;
+
     persistedSessionRef.current = saveSession(localStorage, {
       sessionId: current.sessionId,
       repoUrl: chatRepoSnapshot.repoUrl,

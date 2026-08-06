@@ -1908,4 +1908,61 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText(/Route gewählt: Patch\/Draft-PR Runtime/i)).toBeNull();
     expect(screen.queryByTestId('integration-intent-draft-card')).toBeNull();
     expect(nonAuthFetchCalls(fetchMock).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("restores an existing session from localStorage and displays the calculated session age", async () => {
+    const sessionId = "test-session-123";
+    const updatedAt = Date.now() - 5 * 60000; // 5 minutes ago
+    const persistedSession = {
+      version: 2,
+      sessionId,
+      repoUrl: TEST_REPO_URL,
+      repoBranch: "main",
+      messages: [
+        {
+          id: "msg-1",
+          role: "user",
+          content: "Hello Sovereign",
+          timestamp: Date.now() - 10 * 60000,
+        },
+        {
+          id: "msg-2",
+          role: "assistant",
+          content: "Hello human Contributor",
+          timestamp: Date.now() - 9 * 60000,
+        }
+      ],
+      createdAt: Date.now() - 10 * 60000,
+      updatedAt,
+      messageCount: 2,
+    };
+
+    window.localStorage.setItem(
+      `sovereign-studio.chat-session.v1:${sessionId}`,
+      JSON.stringify(persistedSession)
+    );
+    window.localStorage.setItem(
+      "sovereign-studio.session-index.v1",
+      JSON.stringify({
+        version: 1,
+        sessions: [sessionId],
+        updatedAt: Date.now(),
+      })
+    );
+
+    mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+
+    // Load the repository, which triggers the session hydration since the scope becomes ready
+    await loadRepoFromChat();
+
+    // Verify that the restored messages are displayed
+    await waitFor(() => expect(screen.getByText("Hello Sovereign")).toBeDefined());
+    expect(screen.getByText("Hello human Contributor")).toBeDefined();
+
+    // Verify that the restored session notice with its calculated age is displayed
+    expect(screen.getByText(/Sitzung wiederhergestellt \(letzte Aktivität vor 5 Minuten\)/i)).toBeDefined();
   });});
