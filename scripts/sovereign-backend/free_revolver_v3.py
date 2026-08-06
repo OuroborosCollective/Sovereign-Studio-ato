@@ -1,7 +1,7 @@
 """Sovereign integration of the Revolver v3 free-route core.
 
 Provider credentials, billing, authentication and route truth remain owned by
-the Sovereign/PostgreSQL direct-FreeLLM contract. This module only plans and
+the Sovereign/PostgreSQL direct-provider contracts. This module only plans and
 executes quota-eligible, canary-verified free route magazines supplied by the caller.
 """
 from __future__ import annotations
@@ -107,7 +107,7 @@ def eligible_free_routes(routes: Iterable[Mapping[str, Any]], capabilities: Iter
             or route.get("provider")
             or ""
         ).strip().lower()
-        if route.get("disabled") or transport != "freellm":
+        if route.get("disabled") or transport not in {"freellm", "openrouter"}:
             continue
         if str(config.get("billingCategory") or config.get("billingClass") or "") != "free":
             continue

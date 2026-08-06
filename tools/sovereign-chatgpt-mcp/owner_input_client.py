@@ -35,7 +35,9 @@ OPERATOR_SECRET_MARKERS = (
 )
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
-    "openrouter_api_key": "OpenRouter API-Key",
+    "openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle",
+    "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
+    "openrouter_management_api_key": "OpenRouter Management API Key",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 
@@ -297,6 +299,53 @@ class ProviderRuntimeClient(OwnerInputClient):
             **payload,
             "routeId": str(payload.get("routeId") or selected),
             "transport": "openrouter",
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def openrouter_free_status(self) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            "/api/internal/llm/openrouter/free/status",
+            timeout=30,
+        )
+        return {
+            **payload,
+            "transport": "openrouter",
+            "providerModel": "openrouter/free",
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def openrouter_free_activate(self) -> dict[str, Any]:
+        payload = self._request(
+            "POST",
+            "/api/internal/llm/openrouter/free/activate",
+            json_body={},
+            expected=(200, 400, 401, 402, 403, 409, 429, 500, 502, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "transport": "openrouter",
+            "providerModel": "openrouter/free",
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def openrouter_free_key_rotate(self) -> dict[str, Any]:
+        payload = self._request(
+            "POST",
+            "/api/internal/llm/openrouter/management/rotate-free-key",
+            json_body={},
+            expected=(200, 207, 400, 401, 402, 403, 409, 429, 500, 502, 503),
+            timeout=1200,
+        )
+        return {
+            **payload,
+            "transport": "openrouter",
+            "providerModel": "openrouter/free",
+            "managementOperation": "rotate-free-execution-key",
             "protected_values_returned": False,
             "secret_argument_accepted": False,
         }

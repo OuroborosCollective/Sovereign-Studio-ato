@@ -108,9 +108,57 @@ def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatc
 
     call = session.calls[0]
     assert call["json"]["targetId"] == "openrouter_api_key"
-    assert call["json"]["fieldLabel"] == "OpenRouter API-Key"
+    assert call["json"]["fieldLabel"] == "OpenRouter API-Key für bezahlte Modelle"
     assert "protectedValue" not in call["json"]
     assert result["llm_can_receive_protected_value"] is False
+
+
+def test_create_request_separates_openrouter_free_and_management_targets(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": "66666666-6666-4666-8666-666666666666",
+                "targetId": "openrouter_free_api_key",
+                "status": "pending",
+            },
+        }),
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": "77777777-7777-4777-8777-777777777777",
+                "targetId": "openrouter_management_api_key",
+                "status": "pending",
+            },
+        }),
+    ])
+    client = OwnerInputClient(session=session)
+
+    free_request = client.create_request(
+        target_id="openrouter_free_api_key",
+        title="OpenRouter Free-Ausführung",
+        reason="Nur kostenlose Modellanfragen.",
+    )
+    management_request = client.create_request(
+        target_id="openrouter_management_api_key",
+        title="OpenRouter Keyverwaltung",
+        reason="Nur Erstellen, Rotieren und Sperren von Ausführungsschlüsseln.",
+    )
+
+    assert session.calls[0]["json"]["targetId"] == "openrouter_free_api_key"
+    assert session.calls[0]["json"]["fieldLabel"] == (
+        "OpenRouter API-Key nur für kostenlose Modelle"
+    )
+    assert session.calls[1]["json"]["targetId"] == (
+        "openrouter_management_api_key"
+    )
+    assert session.calls[1]["json"]["fieldLabel"] == (
+        "OpenRouter Management API Key"
+    )
+    assert free_request["llm_can_receive_protected_value"] is False
+    assert management_request["llm_can_receive_protected_value"] is False
 
 
 def test_generic_provider_activation_is_retired_without_network(monkeypatch) -> None:
@@ -456,6 +504,51 @@ def test_openrouter_status_is_read_without_protected_values(monkeypatch) -> None
     assert result["transport"] == "openrouter"
     assert result["routeId"] == "openrouter-paid-gpt-5-4-mini"
     assert result["protected_values_returned"] is False
+
+
+def test_openrouter_free_status_activate_and_rotate_accept_no_secret(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "OPENROUTER_FREE_RUNTIME_STATUS",
+            "secretValuesReturned": False,
+        }),
+        FakeResponse(200, {
+            "ok": True,
+            "status": "OPENROUTER_FREE_ROUTE_ACTIVATED",
+            "providerModel": "openrouter/free",
+            "secretValuesReturned": False,
+        }),
+        FakeResponse(200, {
+            "ok": True,
+            "status": "OPENROUTER_FREE_KEY_ROTATED",
+            "providerModel": "openrouter/free",
+            "secretValuesReturned": False,
+        }),
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    status = client.openrouter_free_status()
+    activated = client.openrouter_free_activate()
+    rotated = client.openrouter_free_key_rotate()
+
+    assert session.calls[0]["url"] == (
+        "http://backend:8787/api/internal/llm/openrouter/free/status"
+    )
+    assert session.calls[1]["url"] == (
+        "http://backend:8787/api/internal/llm/openrouter/free/activate"
+    )
+    assert session.calls[1]["json"] == {}
+    assert session.calls[2]["url"] == (
+        "http://backend:8787/api/internal/llm/openrouter/management/rotate-free-key"
+    )
+    assert session.calls[2]["json"] == {}
+    assert status["secret_argument_accepted"] is False
+    assert activated["secret_argument_accepted"] is False
+    assert rotated["secret_argument_accepted"] is False
+    assert rotated["managementOperation"] == "rotate-free-execution-key"
 
 
 def test_freellm_status_discover_and_reconcile_are_secret_free(monkeypatch) -> None:

@@ -266,7 +266,7 @@ mcp = FastMCP(
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, darf der Merge keinen direkten Self-Update-Installer starten. "
         "Ausschließlich der Main-Workflow sovereign-chatgpt-mcp.yml darf nach Validator, immutablem Image-Publish und Digest-Prüfung die bestätigte Merge-Revision auf dem VPS installieren. Wenn privates Admin-SQL aktiviert ist, darf postgres_admin_sql vollständiges PostgreSQL-SQL auf der eigenen Serverdatenbank ausführen. "
-        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bezahlte Provider-Routen verwende ausschließlich openrouter_provider_status und openrouter_provider_activate; OpenRouter-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Der Aktivierungsaufruf akzeptiert ausschließlich eine route_id, niemals einen Key; Fingerprint, direkte Completion-Canary, Preisprüfung und Löschung des Einmalwerts bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_keyless_activate, freellm_provider_discover und freellm_provider_recheck. freellm_provider_keyless_activate darf ausschließlich die aktuell allowlisteten Kilo-/OVH-Marker konfigurieren und behauptet noch keine Route als bereit; erst Discovery oder Recheck dürfen nach frischem Katalog und direkter Nullkosten-Doppel-Canary ein Modell aktivieren. Diese Werkzeuge akzeptieren keinen Key. "
+        "Wenn für einen Auftrag ein geschützter Serverwert fehlt, verwende owner_approval_request_create. Fordere oder empfange den Wert niemals im Chat oder in MCP-Argumenten. Der Wert darf nur in der authentifizierten Owner-Oberfläche eingegeben werden; MCP liest anschließend ausschließlich den Metadatenstatus. Rohe Zahlungskartennummern sind nicht zulässig. Für bezahlte Provider-Routen verwende ausschließlich openrouter_provider_status und openrouter_provider_activate; Paid-Secrets werden ausschließlich über owner_approval_request_create mit target_id openrouter_api_key eingegeben. Für OpenRouter-Free verwende openrouter_free_status, openrouter_free_activate und openrouter_free_key_rotate. Ein Free-Ausführungsschlüssel wird ausschließlich über target_id openrouter_free_api_key eingegeben; ein Management-Key ausschließlich über target_id openrouter_management_api_key. Der Management-Key darf nur Schlüssel verwalten und niemals Modellanfragen ausführen. Alle Aktivierungs- und Rotationswerkzeuge akzeptieren keinen Key als Argument; Zero-Cost-Doppel-Canary, Fingerprints, atomare Dateispeicherung und exakte Upstream-Key-Hashes bleiben im Backend. Für den getrennten direkten FreeLLM-Pfad verwende freellm_provider_status, freellm_provider_keyless_activate, freellm_provider_discover und freellm_provider_recheck. freellm_provider_keyless_activate darf ausschließlich die aktuell allowlisteten Kilo-/OVH-Marker konfigurieren und behauptet noch keine Route als bereit; erst Discovery oder Recheck dürfen nach frischem Katalog und direkter Nullkosten-Doppel-Canary ein Modell aktivieren. Diese Werkzeuge akzeptieren keinen Key. "
         "Für persistierte Controller-Runs des konfigurierten Owners verwende controller_run_start, controller_run_list, controller_run_status und controller_run_resume. Nutze controller_run_external_event nur für exakt identifizierte externe GitHub-, Broker-, MCP-, Dokument- oder Datenbank-Evidence; das Tool darf weder Run-/Task-Status noch aktive Blocker verändern. Diese Brücke darf keine Browser-Cookies, Admin-Keys oder geschützten Werte annehmen und darf WAITING_FOR_OWNER niemals umgehen. "
         "Für öffentliche Manus-Share-Replays verwende manus_public_replay_read. Dieser read-only Pfad akzeptiert ausschließlich HTTPS-Links unter manus.im/share, rendert über den lokal gebundenen Browserless-Content-Endpunkt und gibt begrenzten sichtbaren Text plus Hash-Evidence zurück. "
         "Für die Dokument-Service-Kette verwende document_pipeline_live_canary. Der Canary erzeugt ein echtes flüchtiges DOCX, konvertiert es über Gotenbergs LibreOffice-Pfad zu PDF, extrahiert den Marker anschließend über Tika und gibt ausschließlich Status-, Größen- und Hash-Evidence zurück; Dokumentinhalt wird weder persistiert noch ausgegeben. "
@@ -1150,8 +1150,26 @@ def openrouter_provider_status() -> dict[str, Any]:
 def openrouter_provider_activate(
     route_id: str = "openrouter-paid-gpt-5-4-mini",
 ) -> dict[str, Any]:
-    """Activate the direct OpenRouter route through the protected owner bridge; no secret argument is accepted."""
+    """Activate the direct paid OpenRouter route; no secret argument is accepted."""
     return provider_runtime.openrouter_activate(route_id)
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def openrouter_free_status() -> dict[str, Any]:
+    """Read secret-free OpenRouter-Free route, key-state and quota-contract evidence."""
+    return provider_runtime.openrouter_free_status()
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def openrouter_free_activate() -> dict[str, Any]:
+    """Activate openrouter/free only after two zero-cost generation receipts; no secret argument is accepted."""
+    return provider_runtime.openrouter_free_activate()
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def openrouter_free_key_rotate() -> dict[str, Any]:
+    """Create and verify one zero-limit Free execution key with the protected management key, then retire old exact hashes."""
+    return provider_runtime.openrouter_free_key_rotate()
 
 
 def _retired_litellm_tool(replacement: str) -> dict[str, Any]:
