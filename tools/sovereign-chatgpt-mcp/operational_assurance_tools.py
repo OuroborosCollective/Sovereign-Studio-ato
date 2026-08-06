@@ -280,7 +280,7 @@ class TriggerMission(StrictModel):
     mission_id: BoundedName
     skill_id: BoundedName
     request_text: BoundedText
-    expected_triggers: Annotated[list[str], Field(min_length=1, max_length=16)]
+    expected_triggers: Annotated[list[str], Field(min_length=1, max_length=16)] = []
     expected_anti_triggers: Annotated[list[str], Field(max_length=16)] = []
     expected_selection: bool
     manifest_triggers: Annotated[list[str], Field(min_length=1, max_length=16)]
