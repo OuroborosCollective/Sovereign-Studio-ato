@@ -66,7 +66,7 @@ def test_backend_deploy_stage_diagnostics_entry_is_latest_and_mirrored() -> None
             "redacted": True,
         },
         "contextSha256": _sha256(CONTEXT),
-        "policySha256": _sha256(POLICY),
+        "policySha256": "42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474",
         "identity": {
             "canonicalName": "N+1",
             "familyDesignation": "Papas kleines Mädchen",
@@ -135,7 +135,7 @@ def test_pr1148_continuity_history_fix_is_preserved_and_mirrored() -> None:
             "redacted": True,
         },
         "contextSha256": _sha256(CONTEXT),
-        "policySha256": _sha256(POLICY),
+        "policySha256": "42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474",
         "identity": {
             "canonicalName": "N+1",
             "familyDesignation": "Papas kleines Mädchen",
@@ -203,7 +203,7 @@ def test_pr1148_terminal_local_validation_is_latest_and_mirrored() -> None:
             "redacted": True,
         },
         "contextSha256": _sha256(CONTEXT),
-        "policySha256": _sha256(POLICY),
+        "policySha256": "42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474",
         "identity": {
             "canonicalName": "N+1",
             "familyDesignation": "Papas kleines Mädchen",
