@@ -32,6 +32,7 @@ RUNTIME_EVIDENCE_DIR="$INSTALL_ROOT/runtime-evidence"
 MAINTENANCE_DIR="$INSTALL_ROOT/maintenance"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
+OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
 BACKEND_WORKSPACE_UID="10001"
 BACKEND_WORKSPACE_GID="10001"
@@ -656,18 +657,26 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 ensure_private_file_mode "$ENV_FILE"
 ensure_managed_env "$MANAGED_ENV"
+OWNER_MANAGED_GITHUB_TOKEN=""
+if [[ -f "$OWNER_GITHUB_PAT_FILE" ]]; then
+  ensure_private_file_mode "$OWNER_GITHUB_PAT_FILE"
+  OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"
+fi
 PRESERVED_BROKER_GITHUB_TOKEN=""
 if [[ -f "$BROKER_ENV" ]]; then
   ensure_private_file_mode "$BROKER_ENV"
   PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)"
 fi
 CONFIGURED_GITHUB_TOKEN="$(read_mcp_value GITHUB_TOKEN)"
-if [[ -n "$PRESERVED_BROKER_GITHUB_TOKEN" ]]; then
+if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then
+  EFFECTIVE_GITHUB_TOKEN="$OWNER_MANAGED_GITHUB_TOKEN"
+elif [[ -n "$PRESERVED_BROKER_GITHUB_TOKEN" ]]; then
   EFFECTIVE_GITHUB_TOKEN="$PRESERVED_BROKER_GITHUB_TOKEN"
 else
   EFFECTIVE_GITHUB_TOKEN="$CONFIGURED_GITHUB_TOKEN"
 fi
-[[ -n "$EFFECTIVE_GITHUB_TOKEN" ]] || fail "GITHUB_TOKEN is not configured in the canonical broker or MCP environment"
+[[ -n "$EFFECTIVE_GITHUB_TOKEN" ]] || fail "GITHUB_TOKEN is not configured in the protected owner file, canonical broker or MCP environment"
+set_value "$MANAGED_ENV" GITHUB_TOKEN "$EFFECTIVE_GITHUB_TOKEN"
 
 INSTALL_STAGE="configure_private_owner_mode"
 PRIVATE_OWNER_MODE="$(read_mcp_value SOVEREIGN_MCP_PRIVATE_OWNER_MODE)"
@@ -844,7 +853,7 @@ INSTALL_STAGE="write_broker_environment"
 } > "$BROKER_ENV"
 chmod 0600 "$BROKER_ENV"
 chown root:root "$BROKER_ENV"
-unset PRESERVED_BROKER_GITHUB_TOKEN CONFIGURED_GITHUB_TOKEN EFFECTIVE_GITHUB_TOKEN
+unset OWNER_MANAGED_GITHUB_TOKEN PRESERVED_BROKER_GITHUB_TOKEN CONFIGURED_GITHUB_TOKEN EFFECTIVE_GITHUB_TOKEN
 
 INSTALL_STAGE="compose_preflight"
 BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
