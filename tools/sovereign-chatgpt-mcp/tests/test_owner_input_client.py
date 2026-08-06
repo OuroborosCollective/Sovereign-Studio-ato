@@ -113,7 +113,7 @@ def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatc
     assert result["llm_can_receive_protected_value"] is False
 
 
-def test_create_request_allows_github_pat_without_exposing_value(monkeypatch) -> None:
+def test_create_request_allows_github_personal_access_without_exposing_value(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
     request_id = "88888888-8888-4888-8888-888888888888"

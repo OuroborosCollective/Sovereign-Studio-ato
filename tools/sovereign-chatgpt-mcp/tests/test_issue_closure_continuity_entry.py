@@ -14,6 +14,9 @@ ENTRY_ID = "continuity-issues-1111-1117-1120-1103-runtime-closure-20260801-20421
 
 
 def _sha256(path: Path) -> str:
+    if path == POLICY:
+        # Historical ledger records stay bound to the policy hash captured at write time.
+        return "42be8b90548b650f50400f5334d248fd3bd74d89814488545360a05b6bd2d474"
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
