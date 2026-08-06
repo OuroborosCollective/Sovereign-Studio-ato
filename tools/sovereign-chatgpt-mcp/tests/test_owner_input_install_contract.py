@@ -29,6 +29,9 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_approval_widget_open" in workflow
     assert "openrouter_provider_status" in workflow
     assert "openrouter_provider_activate" in workflow
+    assert "openrouter_free_status" in workflow
+    assert "openrouter_free_activate" in workflow
+    assert "openrouter_free_key_rotate" in workflow
     assert "freellm_provider_status" in workflow
     assert "freellm_provider_keyless_activate" in workflow
     assert "freellm_provider_discover" in workflow
@@ -128,7 +131,9 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "secret" not in open_signature.lower()
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
-    assert '"openrouter_api_key": "OpenRouter API-Key"' in client
+    assert '"openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle"' in client
+    assert '"openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle"' in client
+    assert '"openrouter_management_api_key": "OpenRouter Management API Key"' in client
     assert '"litellm_provider_key": "LiteLLM Provider API-Key"' not in client
     assert '"proven_learning_confirmation": "Exakter Learning-Plan-Hash"' in client
     assert "def activate_provider_route(" in client
@@ -142,8 +147,14 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "owner_input.create_request(" in server
     assert server.count("def openrouter_provider_status(") == 1
     assert server.count("def openrouter_provider_activate(") == 1
+    assert server.count("def openrouter_free_status(") == 1
+    assert server.count("def openrouter_free_activate(") == 1
+    assert server.count("def openrouter_free_key_rotate(") == 1
     assert "provider_runtime.openrouter_status()" in server
     assert "provider_runtime.openrouter_activate(route_id)" in server
+    assert "provider_runtime.openrouter_free_status()" in server
+    assert "provider_runtime.openrouter_free_activate()" in server
+    assert "provider_runtime.openrouter_free_key_rotate()" in server
     assert server.count("def litellm_provider_route_activate(") == 1
     assert "legacy_litellm_runtime_retired" in server
     assert server.count("def freellm_provider_status(") == 1
@@ -155,6 +166,9 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert server.count("provider_runtime.freellm_discover(") == 1
     assert server.count("provider_runtime.freellm_reconcile(") == 1
     assert 'FREELLM_KEYLESS_PROVIDER_IDS = frozenset({"kilo", "ovh"})' in client
+    assert "def openrouter_free_status(" in client
+    assert "def openrouter_free_activate(" in client
+    assert "def openrouter_free_key_rotate(" in client
     assert "def freellm_status(" in client
     assert "def freellm_keyless_activate(" in client
     assert "provider_id ist nicht als aktueller keyless Provider allowlistet" in client
