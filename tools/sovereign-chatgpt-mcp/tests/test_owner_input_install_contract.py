@@ -140,6 +140,12 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
     assert '"github_pat": "GitHub Personal Access Token für MCP und Broker"' in client
+    assert '"github_admin_pat": "GitHub Admin PAT für MCP und Broker"' in client
+    assert 'if selected_target == "github_admin_pat"' in client
+    assert 'selected_target = "github_pat"' in client
+    assert '"openai_api_key": {' in backend_owner_input
+    assert '"path": "/opt/sovereign-owner-managed/openai_api_key.txt"' in backend_owner_input
+    assert 'targets["openai_api_key"]["path"] = str(_root() / "openai_api_key.txt")' in backend_owner_input
     assert '"github_pat": {' in backend_owner_input
     assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' in backend_owner_input
     assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' in backend_owner_input

@@ -36,6 +36,7 @@ OPERATOR_SECRET_MARKERS = (
 ALLOWED_TARGETS = {
     "openai_api_key": "OpenAI API-Key",
     "github_pat": "GitHub Personal Access Token für MCP und Broker",
+    "github_admin_pat": "GitHub Admin PAT für MCP und Broker",
     "openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle",
     "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
     "openrouter_management_api_key": "OpenRouter Management API Key",
@@ -131,6 +132,8 @@ class OwnerInputClient:
         expires_in_seconds: int = 900,
     ) -> dict[str, Any]:
         selected_target = str(target_id or "").strip()
+        if selected_target == "github_admin_pat":
+            selected_target = "github_pat"
         if selected_target not in ALLOWED_TARGETS:
             raise ValueError("Owner-Ziel ist nicht allowlistet")
         clean_title = str(title or "").strip()[:160]

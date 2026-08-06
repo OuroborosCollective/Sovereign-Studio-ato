@@ -145,6 +145,36 @@ def test_create_request_allows_github_pat_without_exposing_value(monkeypatch) ->
     assert result["owner_url"].endswith(f"request_id={request_id}")
 
 
+def test_create_request_normalizes_github_admin_pat_alias(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "99999999-9999-4999-8999-999999999999"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "github_pat",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="github_admin_pat",
+        title="GitHub Admin PAT sicher hinterlegen",
+        reason="Der Alias darf keinen separaten Zielpfad erzeugen.",
+        field_label="GitHub Admin PAT",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "github_pat"
+    assert call["json"]["fieldLabel"] == "GitHub Admin PAT"
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+
+
 def test_create_request_separates_openrouter_free_and_management_targets(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
