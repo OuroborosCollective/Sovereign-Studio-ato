@@ -55,6 +55,7 @@ def _private_admin_capabilities() -> list[str]:
     if os.getenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "0").strip() == "1":
         capabilities.extend((
             "repository_merge_pr",
+            "repository_merge_pr_series",
             "repository_main_ruleset_apply",
             "repository_issue_close",
             "repository_update_pr",
@@ -261,7 +262,7 @@ mcp = FastMCP(
         "Für Android-Produktionsarbeit beginne mit android_project_inventory, android_failure_family_scan und vorhandener Runtime-Evidence. Korrigiere zuerst die kausale Fehlerfamilie, "
         "füge Regressionstests hinzu, fahre denselben Check erneut und erweitere danach auf benachbarte Familien. android_run_validation_suite bietet fast, standard und release. "
         "Eine Release-Bereitschaft erfordert keine kritischen oder hohen Blocker, grüne relevante Tests und geprüfte APK/AAB-Evidence. "
-        "Draft-PR bleibt verfügbar. Derselbe Workspace-Branch wird idempotent weitergeführt; parallele Draft-PRs werden vor Git-Mutationen blockiert. Wenn Workspace- und PR-Head auseinanderlaufen, verwende repository_sync_workspace_to_pr_head mit der exakt bestätigten PR-Revision; das Tool darf weder remote schreiben noch force-pushen oder main verändern. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
+        "Draft-PR bleibt verfügbar. Derselbe Workspace-Branch wird idempotent weitergeführt; unabhängige parallele Draft-PRs bleiben erlaubt und werden als Evidence gemeldet, nicht pauschal blockiert. repository_merge_pr_series darf mehrere ausdrücklich bestätigte same-repository Drafts älteste zuerst integrieren, muss aber jeden PR nach jedem Main-Advance revisionsgebunden synchronisieren, dessen neue Head-SHA und Update-Commit-Eltern verifizieren und frische terminale Checks abwarten. Ein PR-lokaler Drift, Konflikt oder Checkfehler quarantänisiert ausschließlich diesen Kandidaten und die Serie fährt mit dem nächsten fort; nur ein systemischer Main-Readback- oder Mutationsintegritätsbruch stoppt die Serie. Bereits bestätigte Merges werden niemals zurückgerollt. Wenn Workspace- und PR-Head auseinanderlaufen, verwende repository_sync_workspace_to_pr_head mit der exakt bestätigten PR-Revision; das Tool darf weder remote schreiben noch force-pushen oder main verändern. Bei aktivem privaten Broker-Modus darf repository_push_main direkt nach main pushen und repository_merge_pr einen offenen, "
         "mergefähigen PR mit exakt bestätigtem Head-SHA mergen. repository_close_pr darf ausschließlich mit privatem Owner-Modus, ausdrücklicher Owner-Freigabe, exaktem Head-SHA und einem begrenzten Redundanzgrund schließen; es führt niemals einen Merge aus. Standardmäßig müssen alle Checks grün und der PR bereits bereit sein. Nur bei expliziter Owner-Freigabe darf "
         "repository_merge_pr einen Draft über GitHubs Ready-for-Review-Mutation freigeben und ausschließlich die bekannten Android-Pending-Gates ignorieren, wenn der PR keine Android-Flächen berührt und kein Check fehlgeschlagen ist. Prüfe vorher repository_pr_status. Bei fehlgeschlagenen CI-Läufen darf "
         "repository_rerun_failed_workflows die betroffenen GitHub-Actions-Läufe erneut starten. Berührt ein gemergter PR den privaten MCP-Code, darf der Merge keinen direkten Self-Update-Installer starten. "
@@ -583,6 +584,32 @@ def repository_merge_pr(
 
 
 @mcp.tool(annotations=EXTERNAL_WRITE)
+def repository_merge_pr_series(
+    pull_requests: list[dict[str, Any]],
+    merge_method: str = "squash",
+    owner_approved: bool = False,
+    mark_ready_if_draft: bool = True,
+    allow_unrelated_android_pending: bool = False,
+    wait_seconds_per_pr: int = 1800,
+    poll_seconds: int = 15,
+) -> dict[str, Any]:
+    """Merge owner-confirmed PRs oldest-first; quarantine candidate-local failures and continue safely."""
+    return broker.call(
+        "github_merge_pr_series",
+        {
+            "pull_requests": pull_requests,
+            "merge_method": merge_method,
+            "owner_approved": owner_approved,
+            "mark_ready_if_draft": mark_ready_if_draft,
+            "allow_unrelated_android_pending": allow_unrelated_android_pending,
+            "wait_seconds_per_pr": wait_seconds_per_pr,
+            "poll_seconds": poll_seconds,
+        },
+        timeout=max(300, min(len(pull_requests) * int(wait_seconds_per_pr) + 300, 86_400)),
+    )
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
 def repository_main_ruleset_apply(owner_approved: bool = False) -> dict[str, Any]:
     """Create or reconcile the active main ruleset and verify exact GitHub readback."""
     return broker.call(
@@ -744,7 +771,7 @@ def runtime_failure_diagnose(evidence: str) -> dict[str, Any]:
         active = _private_admin_capabilities()
         if "postgres_admin_sql" in active:
             blocked = [item for item in blocked if item != "generic_sql"]
-        if "repository_push_main" in active or "repository_merge_pr" in active:
+        if "repository_push_main" in active or "repository_merge_pr" in active or "repository_merge_pr_series" in active:
             blocked = [item for item in blocked if item != "direct_main_write"]
         policy["blocked_capabilities"] = blocked
         policy["active_private_admin_capabilities"] = active

@@ -63,10 +63,10 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
     assert required.issubset(names), sorted(required - names)
 
     inventory = governance.operational_skill_inventory()
-    assert inventory.skillCount == 44
-    assert inventory.toolCount == 50
+    assert inventory.skillCount == 45
+    assert inventory.toolCount == 52
     assurance_inventory = assurance.operational_assurance_skill_inventory()
-    assert assurance_inventory.evidence["newTools"] == 27
+    assert assurance_inventory.evidence["newTools"] == 28
     assert assurance_inventory.evidence["existingReusedTools"] == ["mcp_tool_contract_registry"]
 
     registry = governance.mcp_tool_contract_registry(include_schemas=True)

@@ -240,6 +240,11 @@ def registered(repository, monkeypatch):
         """Use this when repository and CI revision evidence must be read before work."""
         return {"ok": True, "workspace_id": workspace_id}
 
+    @mcp.tool(annotations=tools.LOCAL_READ_ONLY)
+    def repository_run_check_probe(workspace_id: str) -> dict:
+        """Use this when repository CI checks must be verified after revision resolution."""
+        return {"ok": True, "workspace_id": workspace_id}
+
     tools.register(
         mcp,
         FakeRuntime(repo),
@@ -249,13 +254,14 @@ def registered(repository, monkeypatch):
     return mcp, repo, revision
 
 
-def test_registers_sixteen_read_only_operational_tools_with_fastmcp_contracts(registered) -> None:
+def test_registers_seventeen_read_only_operational_tools_with_fastmcp_contracts(registered) -> None:
     mcp, _, _ = registered
     registered_tools = {tool.name: tool for tool in mcp._tool_manager.list_tools()}
     expected = {
         "operational_skill_inventory",
         "mcp_tool_contract_registry",
         "tool_recommend_for_mission",
+        "tool_success_ranking",
         "mcp_registry_snapshot_verify",
         "evidence_graph_build",
         "schema_migration_reconcile",
@@ -271,7 +277,7 @@ def test_registers_sixteen_read_only_operational_tools_with_fastmcp_contracts(re
         "compliance_evidence_export",
     }
     assert expected.issubset(registered_tools)
-    assert len(expected) == 16
+    assert len(expected) == 17
     for name in expected:
         tool = registered_tools[name]
         assert tool.annotations.readOnlyHint is True
@@ -295,8 +301,8 @@ def test_inventory_and_router_use_live_registry_without_executing_tools(register
     _, _, _ = registered
     inventory = tools.operational_skill_inventory()
     assert inventory.status == "OPERATIONAL_SKILL_SUITE_READY"
-    assert inventory.skillCount == 44
-    assert inventory.toolCount == 50
+    assert inventory.skillCount == 45
+    assert inventory.toolCount == 52
     assert inventory.boundaries["naturalLanguageInterpretation"] == "model_only"
     assert inventory.boundaries["autoMerge"] is False
 
@@ -308,7 +314,13 @@ def test_inventory_and_router_use_live_registry_without_executing_tools(register
         max_tools=4,
     )
     selected = [item["name"] for item in result.evidence["selectedTools"]]
-    assert result.status == "TOOL_ROUTE_READY"
+    assert result.status == "TOOL_ROUTE_READY", (
+        result.evidence["missingCapabilities"],
+        result.evidence["missingFunctionalActions"],
+        result.evidence["missingFunctionalObjects"],
+        result.evidence["missingFunctionalStages"],
+        selected,
+    )
     assert "repository_revision_probe" in selected
     assert result.mutationPerformed is False
     assert result.runtimeVerified is True

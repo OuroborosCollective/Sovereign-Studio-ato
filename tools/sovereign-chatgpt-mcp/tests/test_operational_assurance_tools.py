@@ -145,6 +145,7 @@ def test_registers_all_assurance_tools_with_bounded_annotations(registered) -> N
         "skill_capability_coverage_map",
         "skill_lifecycle_deprecation_preview",
         "skill_regression_benchmark",
+        "skill_trigger_quality_benchmark",
         "tool_idempotency_verify",
         "owner_approval_policy_evaluate",
         "secret_lifecycle_rotation_assess",
@@ -154,7 +155,7 @@ def test_registers_all_assurance_tools_with_bounded_annotations(registered) -> N
         "authentication_chaos_negative_test_assess",
     }
     assert set(actual) == expected
-    assert len(expected) == 28
+    assert len(expected) == 29
     for name, tool in actual.items():
         assert tool.annotations.destructiveHint is False
         assert tool.annotations.idempotentHint is True
@@ -171,8 +172,8 @@ def test_registers_all_assurance_tools_with_bounded_annotations(registered) -> N
 def test_inventory_reuses_existing_registry_and_capacity_reads_live_snapshot(registered) -> None:
     inventory = tools.operational_assurance_skill_inventory()
     assert inventory.status == "OPERATIONAL_ASSURANCE_SKILLS_READY"
-    assert inventory.evidence["numberedSlots"] == 28
-    assert inventory.evidence["newTools"] == 27
+    assert inventory.evidence["numberedSlots"] == 29
+    assert inventory.evidence["newTools"] == 28
     assert inventory.evidence["existingReusedTools"] == ["mcp_tool_contract_registry"]
 
     capacity = tools.vps_capacity_resource_pressure_assess()
@@ -490,7 +491,7 @@ def test_skill_idempotency_approval_secret_supply_chain_and_auth(registered) -> 
         [tools.CapabilityRequirement(task_id="capacity", required_capabilities=["capacity", "resource", "pressure"])]
     )
     assert coverage.runtimeVerified is True
-    assert coverage.evidence["registeredToolCount"] == 28
+    assert coverage.evidence["registeredToolCount"] == 29
 
     lifecycle = tools.skill_lifecycle_deprecation_preview(
         records=[

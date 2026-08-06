@@ -71,6 +71,11 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
+    assert 'OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"' in installer
+    assert 'OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"' in installer
+    assert 'if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then' in installer
+    assert 'set_value "$MANAGED_ENV" GITHUB_TOKEN "$EFFECTIVE_GITHUB_TOKEN"' in installer
+    assert 'printf \'GITHUB_TOKEN=%s\\n\' "$EFFECTIVE_GITHUB_TOKEN"' in installer
     assert '/opt/secure/owner-managed' not in installer
 
 
@@ -119,6 +124,9 @@ def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
 def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     server = (ROOT / "server.py").read_text("utf-8")
     client = (ROOT / "owner_input_client.py").read_text("utf-8")
+    backend_owner_input = (
+        REPOSITORY_ROOT / "scripts" / "sovereign-backend" / "owner_input_runtime.py"
+    ).read_text("utf-8")
     ast.parse(server)
     ast.parse(client)
 
@@ -131,6 +139,10 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "secret" not in open_signature.lower()
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
+    assert '"github_pat": "GitHub Personal Access Token für MCP und Broker"' in client
+    assert '"github_pat": {' in backend_owner_input
+    assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' in backend_owner_input
+    assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' in backend_owner_input
     assert '"openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle"' in client
     assert '"openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle"' in client
     assert '"openrouter_management_api_key": "OpenRouter Management API Key"' in client

@@ -12,6 +12,9 @@ from typing import Annotated, Any, Final, Literal
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
+from predictive_tool_router import predict_tool_route
+from tool_success_ranking import historical_bonus_map, ranking_snapshot, record_recommendations
+
 
 LOCAL_READ_ONLY = ToolAnnotations(
     readOnlyHint=True,
@@ -260,8 +263,8 @@ _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
     },
     "sovereign-tool-capability-router": {
         "priority": "P0",
-        "tools": ["tool_recommend_for_mission", "operational_skill_inventory"],
-        "purpose": "Deterministically rank the smallest eligible Sovottt tool set from structured capabilities and effect boundaries.",
+        "tools": ["tool_recommend_for_mission", "tool_success_ranking", "operational_skill_inventory"],
+        "purpose": "Perceive functional mission nodes and rank the smallest eligible Sovottt tool set with bounded historical success evidence.",
     },
     "sovereign-mcp-toolchain-composer": {
         "priority": "P0",
@@ -847,69 +850,56 @@ def tool_recommend_for_mission(
     excluded_tools: Annotated[list[str], Field(max_length=64)] = [],
     max_tools: Annotated[int, Field(ge=1, le=20)] = 8,
 ) -> GenericResult:
-    """Use this when the model has mapped a user mission to structured capabilities and needs the smallest eligible Sovottt tool set."""
-    catalog, truncated = _tool_catalog(max_tools=1000, include_schemas=False)
+    """Use this when functional mission stages need a complete, effect-bounded recommendation from the live tool registry."""
+    catalog, truncated = _tool_catalog(max_tools=1000, include_schemas=True)
     required = set(required_capabilities)
     allowed = set(allowed_effects)
-    excluded = set(excluded_tools)
-    evidence_tokens = set(_TOKEN_RE.findall(" ".join(required_evidence).casefold()))
-    scored: list[dict[str, Any]] = []
-    for item in catalog:
-        if item["name"] in excluded or item["name"] == "tool_recommend_for_mission":
-            continue
-        if item["effect"] not in allowed:
-            continue
-        capabilities = set(item["capabilities"])
-        matched = sorted(required & capabilities)
-        if not matched:
-            continue
-        prefix_capabilities = {
-            capability
-            for prefix, values in _PREFIX_CAPABILITIES
-            if item["name"].startswith(prefix)
-            for capability in values
-        }
-        prefix_matches = sorted(required & prefix_capabilities)
-        description_tokens = set(_TOKEN_RE.findall(f"{item['name']} {item['description']}".casefold()))
-        evidence_matches = sorted(evidence_tokens & description_tokens)
-        score = len(matched) * 100 + len(prefix_matches) * 30 + len(evidence_matches) * 10
-        if item["effect"] == "read":
-            score += 8
-        if item["annotations"]["idempotentHint"]:
-            score += 3
-        if item["annotations"]["destructiveHint"]:
-            score -= 50
-        scored.append(
-            {
-                "name": item["name"],
-                "score": score,
-                "matchedCapabilities": matched,
-                "prefixMatchedCapabilities": prefix_matches,
-                "matchedEvidenceTerms": evidence_matches,
-                "effect": item["effect"],
-                "contractSha256": item["contractSha256"],
-                "reason": f"matches {', '.join(matched)} within allowed effect {item['effect']}",
-            }
-        )
-    scored.sort(key=lambda item: (-int(item["score"]), str(item["name"])))
-    selected: list[dict[str, Any]] = []
-    covered: set[str] = set()
-    for candidate in scored:
-        new_coverage = set(candidate["matchedCapabilities"]) - covered
-        if new_coverage or len(selected) < min(2, max_tools):
-            selected.append(candidate)
-            covered.update(candidate["matchedCapabilities"])
-        if len(selected) >= max_tools or covered >= required:
-            break
-    missing = sorted(required - covered)
-    findings = []
-    if missing:
+    prediction = predict_tool_route(
+        catalog=catalog,
+        mission_summary=mission_summary,
+        required_capabilities=required,
+        allowed_effects=allowed,
+        required_evidence=list(required_evidence),
+        excluded_tools=set(excluded_tools),
+        max_tools=max_tools,
+        historical_bonuses=historical_bonus_map(),
+    )
+    record_recommendations(
+        [str(item.get("name") or "") for item in prediction["selectedTools"] if isinstance(item, dict)],
+        mission_summary,
+    )
+    missing_capabilities = list(prediction["missingCapabilities"])
+    missing_actions = list(prediction["missingFunctionalActions"])
+    missing_objects = list(prediction["missingFunctionalObjects"])
+    missing_stages = list(prediction["missingFunctionalStages"])
+    findings: list[dict[str, Any]] = []
+    if missing_capabilities:
         findings.append(
             {
                 "severity": "P1",
                 "family": "TOOL_CAPABILITY_COVERAGE_GAP",
                 "status": "RUNTIME_REGISTRY_EVIDENCE",
-                "missingCapabilities": missing,
+                "missingCapabilities": missing_capabilities,
+            }
+        )
+    if missing_actions or missing_objects or missing_stages:
+        findings.append(
+            {
+                "severity": "P0",
+                "family": "TOOL_FUNCTIONAL_ROUTE_INCOMPLETE",
+                "status": "PREDICTIVE_ADVISORY_REJECTED_BY_DETERMINISTIC_GATE",
+                "missingFunctionalActions": missing_actions,
+                "missingFunctionalObjects": missing_objects,
+                "missingFunctionalStages": missing_stages,
+            }
+        )
+    if prediction["confidence"] == "low":
+        findings.append(
+            {
+                "severity": "P1",
+                "family": "TOOL_ROUTE_LOW_CONFIDENCE",
+                "status": "REQUIRES_EXPLICIT_TOOL_CONTRACT_REVIEW",
+                "confidenceMargin": prediction["confidenceMargin"],
             }
         )
     if truncated:
@@ -920,29 +910,36 @@ def tool_recommend_for_mission(
                 "status": "RUNTIME_REGISTRY_EVIDENCE",
             }
         )
+    route_ready = bool(prediction["routeComplete"] and not truncated)
     evidence = {
         "missionSummary": _bounded(mission_summary, 800),
         "requiredCapabilities": sorted(required),
         "allowedEffects": sorted(allowed),
-        "selectedTools": selected,
-        "coveredCapabilities": sorted(covered),
-        "missingCapabilities": missing,
+        **prediction,
         "registryToolCount": len(catalog),
     }
     return _generic_result(
-        schema_version="sovereign.tool-capability-routing.v1",
-        ok=not missing and not truncated,
-        status="TOOL_ROUTE_READY" if not missing and not truncated else "TOOL_ROUTE_INCOMPLETE",
+        schema_version="sovereign.predictive-tool-routing.v2",
+        ok=route_ready,
+        status="TOOL_ROUTE_READY" if route_ready else "TOOL_ROUTE_INCOMPLETE",
         evidence=evidence,
         findings=findings,
         next_actions=[
             "load full contracts only for selected tool names",
+            "reject low-confidence or functionally incomplete routes before mutation",
             "verify exact revision and owner policy before any mutation",
             "record selected tool identities and resulting evidence",
         ],
         runtime_verified=True,
-        truth_notice="The model interprets language and supplies structured capabilities. The runtime ranks only currently registered tools and never executes a recommendation automatically.",
+        truth_notice="Predictive perception and historical success ranking are advisory. Capability, effect, functional-stage, revision, evidence and safety gates remain authoritative.",
     )
+
+
+def tool_success_ranking(
+    limit: Annotated[int, Field(ge=1, le=500)] = 50,
+) -> dict[str, Any]:
+    """Use this when secret-free real usage, reliability, positive outcomes and recency need a live tool ranking."""
+    return ranking_snapshot(limit=limit)
 
 
 def mcp_registry_snapshot_verify(
@@ -2315,6 +2312,7 @@ def register(mcp: Any, runtime: Any, database: Any, broker: Any) -> None:
         operational_skill_inventory,
         mcp_tool_contract_registry,
         tool_recommend_for_mission,
+        tool_success_ranking,
         mcp_registry_snapshot_verify,
         evidence_graph_build,
         agent_run_liveness_assess,

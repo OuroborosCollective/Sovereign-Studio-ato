@@ -200,16 +200,18 @@ def test_existing_workspace_pr_is_updated_instead_of_duplicated(repo_runtime, mo
     assert any(call[:2] == ["git", "push"] for call in calls)
 
 
-def test_other_open_draft_blocks_before_git_mutation(repo_runtime, monkeypatch) -> None:
+def test_other_open_draft_is_preserved_and_does_not_block_independent_work(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     monkeypatch.setattr(runtime, "validate_continuity_completion", lambda _workspace_id: continuity_completion_receipt())
-    (repo / "README.md").write_text("blocked\n", "utf-8")
+    (repo / "README.md").write_text("parallel useful work\n", "utf-8")
     original_run = runtime._run
     mutation_calls: list[list[str]] = []
 
     def guarded_run(argv, *, cwd, timeout=None, env=None):
         if argv[:2] in (["git", "add"], ["git", "commit"], ["git", "push"]):
             mutation_calls.append(list(argv))
+        if argv[:2] == ["git", "push"]:
+            return command_result(list(argv))
         return original_run(argv, cwd=cwd, timeout=timeout, env=env)
 
     monkeypatch.setattr(runtime, "_run", guarded_run)
@@ -220,26 +222,43 @@ def test_other_open_draft_blocks_before_git_mutation(repo_runtime, monkeypatch) 
             200,
             payload=[{
                 "number": 900,
+                "title": "Useful parallel draft",
                 "draft": True,
                 "head": {"ref": "sovereign/other"},
                 "base": {"ref": "main"},
             }],
         ),
     )
+    monkeypatch.setattr(
+        runtime_module.requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(
+            201,
+            payload={
+                "number": 901,
+                "draft": True,
+                "html_url": "https://github.test/example/pull/901",
+                "head": {"sha": "d" * 40},
+            },
+        ),
+    )
 
-    try:
-        runtime.create_draft_pr(
-            workspace_id,
-            title="Must block",
-            body="Must block.",
-            commit_message="Must block",
-        )
-    except RuntimeError as exc:
-        assert "OPEN_DRAFT_PR_EXISTS" in str(exc)
-    else:
-        raise AssertionError("parallel Draft PR must be blocked")
+    result = runtime.create_draft_pr(
+        workspace_id,
+        title="Preserve parallel work",
+        body="Independent useful changes remain reviewable.",
+        commit_message="Preserve parallel work",
+    )
 
-    assert mutation_calls == []
+    assert result["status"] == "DRAFT_PR_CREATED"
+    assert result["parallel_drafts_blocking"] is False
+    assert result["parallel_drafts_observed"] == [{
+        "number": 900,
+        "head_ref": "sovereign/other",
+        "title": "Useful parallel draft",
+    }]
+    assert any(call[:2] == ["git", "commit"] for call in mutation_calls)
+    assert any(call[:2] == ["git", "push"] for call in mutation_calls)
 
 
 def test_workspace_sync_fast_forwards_exact_pr_head_and_restores_local_changes(repo_runtime, monkeypatch) -> None:

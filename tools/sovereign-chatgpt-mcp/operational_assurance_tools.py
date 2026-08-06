@@ -280,7 +280,7 @@ class TriggerMission(StrictModel):
     mission_id: BoundedName
     skill_id: BoundedName
     request_text: BoundedText
-    expected_triggers: Annotated[list[str], Field(min_length=1, max_length=16)]
+    expected_triggers: Annotated[list[str], Field(max_length=16)]
     expected_anti_triggers: Annotated[list[str], Field(max_length=16)] = []
     expected_selection: bool
     manifest_triggers: Annotated[list[str], Field(min_length=1, max_length=16)]
@@ -487,8 +487,8 @@ def operational_assurance_skill_inventory() -> AssuranceResult:
         ("43", "sovereign-authentication-chaos-negative-test", "authentication_chaos_negative_test_assess"),
     ]
     evidence = {
-        "numberedSlots": 28,
-        "newTools": 27,
+        "numberedSlots": 29,
+        "newTools": 28,
         "existingReusedTools": ["mcp_tool_contract_registry"],
         "uniqueNewSkillFamilies": 27,
         "skills": [
@@ -1344,7 +1344,7 @@ def skill_trigger_quality_benchmark(
     missions: Annotated[list[TriggerMission], Field(min_length=1, max_length=500)],
 ) -> AssuranceResult:
     """Use this when skill trigger precision, recall and selection must survive an MCP or skill update.
-    
+
     Runs deterministic trigger matching against supplied mission traces to benchmark
     whether skill candidates are selected correctly based on their declared triggers.
     """
