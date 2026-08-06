@@ -59,6 +59,31 @@ def test_only_direct_quota_and_double_canary_verified_freellm_routes_are_eligibl
     assert [item["id"] for item in eligible] == ["verified"]
 
 
+def test_openrouter_free_precedes_freellm_by_persisted_priority() -> None:
+    openrouter = route("openrouter-free", priority=5)
+    openrouter.update({
+        "provider": "openrouter",
+        "runtime_kind": "openrouter",
+    })
+    openrouter["config"] = {
+        **openrouter["config"],
+        "transport": "openrouter",
+        "providerModel": "openrouter/free",
+    }
+    freellm = route("freellm-fallback", priority=50)
+
+    planned = plan_routes(
+        [freellm, openrouter],
+        RevolverProfile(required_capabilities=("chat",)),
+        "44444444-4444-4444-8444-444444444444",
+    )
+
+    assert [item["id"] for item in planned] == [
+        "openrouter-free",
+        "freellm-fallback",
+    ]
+
+
 def test_weighted_plan_is_deterministic_for_same_request_and_revision() -> None:
     routes = [route("a"), route("b"), route("c")]
     profile = RevolverProfile(

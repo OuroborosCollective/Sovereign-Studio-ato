@@ -88,6 +88,7 @@ from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
 from proven_learning_runtime import register_proven_learning_routes
 from n_plus_one import register_n_plus_one_routes
+from openrouter_free_runtime import register_openrouter_free_runtime
 from openrouter_provider_runtime import register_openrouter_provider_runtime
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
@@ -1121,10 +1122,12 @@ def admin_llm_routes():
             "freeProfile": FREE_SINGLE_AGENT_PROFILE,
             "paidProfile": PAID_SWARM_PROFILE,
             "providersHardcoded": False,
-            "routingOwner": "postgresql-openrouter-paid-and-direct-freellm",
+            "routingOwner": (
+                "postgresql-openrouter-free-first-direct-freellm-and-openrouter-paid"
+            ),
         },
         "revolverV3": {
-            "runtime": "postgresql-direct-freellm-evidence",
+            "runtime": "postgresql-openrouter-free-and-direct-freellm-evidence",
             "profile": dict(revolver_v3_profile),
             "structuredOutput24h": {
                 "checks": int(structured_stats.get("checks") or 0),
@@ -1182,11 +1185,16 @@ def admin_update_llm_route(rid):
         }), 409
 
     config = dict(route.get("config") or {})
-    if str(config.get("routingOwner") or "") == "free-revolver-v3":
+    routing_owner = str(config.get("routingOwner") or "")
+    managed_endpoint = {
+        "free-revolver-v3": "/api/admin/llm/revolver-v3/providers",
+        "openrouter-free-revolver": "/api/admin/llm/openrouter/free/status",
+    }.get(routing_owner)
+    if managed_endpoint:
         return jsonify({
-            "error": "Free-Revolver-Routen werden ausschließlich im getrennten Providerbereich verwaltet.",
+            "error": "Diese Free-Revolver-Route wird ausschließlich über ihren getrennten Providervertrag verwaltet.",
             "blocker": "free_revolver_managed_route",
-            "requiredEndpoint": "/api/admin/llm/revolver-v3/providers",
+            "requiredEndpoint": managed_endpoint,
         }), 409
     try:
         category = normalize_billing_category(
@@ -2052,46 +2060,99 @@ def admin_llm_route_healthcheck(rid):
             },
         }
     elif transport == "openrouter":
-        deployment = query(
-            """SELECT status, last_canary_request_id, last_canary_at,
-                      last_error_code, key_fingerprint IS NOT NULL AS key_present
-               FROM llm_provider_deployments
-               WHERE route_id='openrouter-paid-gpt-5-4-mini'
-               LIMIT 1""",
-            one=True,
-        ) or {}
-        verified = bool(
-            deployment.get("status") == "ready"
-            and deployment.get("key_present")
-            and deployment.get("last_canary_at")
-            and config.get("pricingVerified") is True
-            and config.get("catalogVerified") is True
-            and config.get("canaryVerified") is True
-            and config.get("transportCanaryVerified") is True
-        )
-        result = {
-            "ok": verified,
-            "health": "ready" if verified else "blocked",
-            "blocker": None if verified else str(
-                deployment.get("last_error_code")
-                or "openrouter_activation_evidence_missing"
-            ),
-            "error": None if verified else "OpenRouter-Key, Katalog, Preis- oder Completion-Evidence ist nicht vollständig.",
-            "httpStatus": 200 if verified else None,
-            "responseTimeMs": None,
-            "readinessVerified": verified,
-            "completionVerified": verified,
-            "evidence": {
-                "transport": "openrouter",
-                "canaryRequestId": deployment.get("last_canary_request_id"),
-                "lastCanaryAt": (
-                    deployment.get("last_canary_at").isoformat()
-                    if deployment.get("last_canary_at")
-                    else None
+        if str(config.get("routingOwner") or "") == "openrouter-free-revolver":
+            receipt = (
+                config.get("canaryReceipt")
+                if isinstance(config.get("canaryReceipt"), dict)
+                else {}
+            )
+            runtime_identity = (
+                config.get("runtimeIdentity")
+                if isinstance(config.get("runtimeIdentity"), dict)
+                else {}
+            )
+            verified = bool(
+                not route.get("disabled")
+                and config.get("providerModel") == "openrouter/free"
+                and config.get("freeEligible") is True
+                and config.get("quotaContractVerified") is True
+                and config.get("pricingVerified") is False
+                and config.get("canaryVerified") is True
+                and int(config.get("canaryConfirmationCount") or 0) >= 2
+                and receipt.get("schemaVersion")
+                    == "sovereign.openrouter-free-route-receipt.v1"
+                and receipt.get("generalChatEvidenceVerified") is True
+                and receipt.get("zeroCostEvidenceVerified") is True
+                and runtime_identity.get("sourceRevisionVerified") is True
+                and runtime_identity.get("imageDigestVerified") is True
+            )
+            result = {
+                "ok": verified,
+                "health": "ready" if verified else "blocked",
+                "blocker": (
+                    None
+                    if verified
+                    else "openrouter_free_activation_evidence_missing"
                 ),
-                "rawSecretReturned": False,
-            },
-        }
+                "error": (
+                    None
+                    if verified
+                    else "OpenRouter-Free benötigt eine revisionsgebundene Zero-Cost-Doppel-Canary."
+                ),
+                "httpStatus": 200 if verified else None,
+                "responseTimeMs": config.get("canaryLatencyMs"),
+                "readinessVerified": verified,
+                "completionVerified": verified,
+                "evidence": {
+                    "transport": "openrouter",
+                    "providerModel": "openrouter/free",
+                    "providerCostState": config.get("providerCostState"),
+                    "receiptSha256": receipt.get("receiptSha256"),
+                    "paidFallbackAllowed": False,
+                    "rawSecretReturned": False,
+                },
+            }
+        else:
+            deployment = query(
+                """SELECT status, last_canary_request_id, last_canary_at,
+                          last_error_code, key_fingerprint IS NOT NULL AS key_present
+                   FROM llm_provider_deployments
+                   WHERE route_id='openrouter-paid-gpt-5-4-mini'
+                   LIMIT 1""",
+                one=True,
+            ) or {}
+            verified = bool(
+                deployment.get("status") == "ready"
+                and deployment.get("key_present")
+                and deployment.get("last_canary_at")
+                and config.get("pricingVerified") is True
+                and config.get("catalogVerified") is True
+                and config.get("canaryVerified") is True
+                and config.get("transportCanaryVerified") is True
+            )
+            result = {
+                "ok": verified,
+                "health": "ready" if verified else "blocked",
+                "blocker": None if verified else str(
+                    deployment.get("last_error_code")
+                    or "openrouter_activation_evidence_missing"
+                ),
+                "error": None if verified else "OpenRouter-Key, Katalog, Preis- oder Completion-Evidence ist nicht vollständig.",
+                "httpStatus": 200 if verified else None,
+                "responseTimeMs": None,
+                "readinessVerified": verified,
+                "completionVerified": verified,
+                "evidence": {
+                    "transport": "openrouter",
+                    "canaryRequestId": deployment.get("last_canary_request_id"),
+                    "lastCanaryAt": (
+                        deployment.get("last_canary_at").isoformat()
+                        if deployment.get("last_canary_at")
+                        else None
+                    ),
+                    "rawSecretReturned": False,
+                },
+            }
     elif transport == "freellm":
         model_evidence = query(
             """SELECT model.status, model.enabled,
@@ -2307,6 +2368,7 @@ def health_ready():
                    to_regclass('llm_revolver_provider_sources') IS NOT NULL AS revolver_v3_provider_sources,
                    to_regclass('llm_revolver_provider_models') IS NOT NULL AS revolver_v3_provider_models,
                    to_regclass('llm_revolver_provider_checks') IS NOT NULL AS revolver_v3_provider_checks,
+                   to_regclass('openrouter_managed_execution_keys') IS NOT NULL AS openrouter_managed_execution_keys,
                    to_regclass('llm_route_scanner_runtime') IS NOT NULL AS route_scanner_runtime,
                    to_regclass('llm_route_scanner_runs') IS NOT NULL AS route_scanner_runs,
                    to_regclass('llm_route_scanner_candidates') IS NOT NULL AS route_scanner_candidates,
@@ -2352,6 +2414,7 @@ def health_ready():
             "revolver_v3_provider_sources",
             "revolver_v3_provider_models",
             "revolver_v3_provider_checks",
+            "openrouter_managed_execution_keys",
             "route_scanner_runtime",
             "route_scanner_runs",
             "route_scanner_candidates",
@@ -2389,6 +2452,7 @@ def health_ready():
                 "043_n_plus_one_foundation.sql",
                 "044_n_plus_one_memory_voice_update.sql",
                 "045_sovereign_rescue.sql",
+                "051_openrouter_free_revolver_management.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -2418,8 +2482,25 @@ def health_ready():
                COUNT(*) FILTER (
                    WHERE disabled=false
                      AND lower(COALESCE(runtime_kind, provider))='openrouter'
+                     AND COALESCE(config->>'providerModel', '')='openrouter/free'
+                     AND COALESCE(config->>'billingCategory', '')='free'
+                     AND COALESCE((config->>'freeEligible')::boolean, false)=true
+                     AND COALESCE((config->>'quotaContractVerified')::boolean, false)=true
                      AND COALESCE((config->>'canaryVerified')::boolean, false)=true
-               )::integer AS openrouter_ready,
+                     AND COALESCE((config->>'canaryConfirmationCount')::integer, 0) >= 2
+                     AND COALESCE(config->'canaryReceipt'->>'schemaVersion', '')
+                         ='sovereign.openrouter-free-route-receipt.v1'
+                     AND COALESCE(
+                           (config->'canaryReceipt'->>'zeroCostEvidenceVerified')::boolean,
+                           false
+                         )=true
+               )::integer AS openrouter_free_ready,
+               COUNT(*) FILTER (
+                   WHERE disabled=false
+                     AND lower(COALESCE(runtime_kind, provider))='openrouter'
+                     AND COALESCE(config->>'billingCategory', '') IN ('standard','premium')
+                     AND COALESCE((config->>'canaryVerified')::boolean, false)=true
+               )::integer AS openrouter_paid_ready,
                COUNT(*) FILTER (
                    WHERE disabled=false
                      AND lower(COALESCE(runtime_kind, provider))='litellm'
@@ -2428,7 +2509,13 @@ def health_ready():
         one=True,
     ) or {}
     freellm_ready = int(route_transport_state.get("freellm_ready") or 0)
-    openrouter_ready = int(route_transport_state.get("openrouter_ready") or 0)
+    openrouter_free_ready = int(
+        route_transport_state.get("openrouter_free_ready") or 0
+    )
+    openrouter_paid_ready = int(
+        route_transport_state.get("openrouter_paid_ready") or 0
+    )
+    openrouter_ready = openrouter_free_ready + openrouter_paid_ready
     legacy_litellm_active = int(
         route_transport_state.get("legacy_litellm_active") or 0
     )
@@ -2440,6 +2527,8 @@ def health_ready():
     components["openrouter"] = {
         "ok": openrouter_ready > 0,
         "activeVerifiedRoutes": openrouter_ready,
+        "activeVerifiedFreeRoutes": openrouter_free_ready,
+        "activeVerifiedPaidRoutes": openrouter_paid_ready,
         "transport": "direct-openrouter",
         "required": False,
     }
@@ -2456,12 +2545,19 @@ def health_ready():
         "providerProbePerformed": False,
     }
     components["llmRouting"] = {
-        "ok": (freellm_ready > 0 or openrouter_ready > 0)
-        and legacy_litellm_active == 0,
-        "freeReadyRoutes": freellm_ready,
-        "paidReadyRoutes": openrouter_ready,
+        "ok": (
+            freellm_ready > 0
+            or openrouter_free_ready > 0
+            or openrouter_paid_ready > 0
+        ) and legacy_litellm_active == 0,
+        "freeReadyRoutes": freellm_ready + openrouter_free_ready,
+        "openRouterFreeReadyRoutes": openrouter_free_ready,
+        "freeLlmReadyRoutes": freellm_ready,
+        "paidReadyRoutes": openrouter_paid_ready,
         "legacyLiteLlmActiveRoutes": legacy_litellm_active,
-        "policy": "direct-freellm-free-and-direct-openrouter-paid-only",
+        "policy": (
+            "openrouter-free-first-then-direct-freellm-with-separate-openrouter-paid"
+        ),
     }
     components["adminUi"] = {
         "ok": os.path.isfile(ADMIN_INDEX_PATH),
@@ -5823,6 +5919,13 @@ register_n_plus_one_routes(
     require_session=require_session,
     require_admin=require_admin,
     query=query,
+    audit=audit,
+)
+register_openrouter_free_runtime(
+    app,
+    require_admin=require_admin,
+    query=query,
+    get_connection=get_agent_runtime_connection,
     audit=audit,
 )
 register_openrouter_provider_runtime(
