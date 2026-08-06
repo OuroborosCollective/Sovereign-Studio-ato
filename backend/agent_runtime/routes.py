@@ -65,6 +65,8 @@ from .rescue import (
     verify_proof_pack,
     verify_rescue_csrf_token,
 )
+from .repair_capsule import build_repair_capsule_from_diff
+from .git_workspace import git_diff_full
 from .universal_toolchain import (
     build_agent_handoff_context,
     persist_toolchain_handoff,
@@ -811,6 +813,79 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "proofPack": pack,
                 "verified": verify_proof_pack(pack),
             }), 200 if pack["ready"] else 409
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/rescue/capsule", methods=["POST"])
+    @require_session
+    def user_get_rescue_capsule():
+        """Zero-trust Capsule download. No GitHub write. No agent execution.
+
+        Users receive an encrypted capsule they can apply locally or give to a
+        third-party executor. This endpoint never touches GitHub or spawns agents.
+        """
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            csrf_token = str(request.headers.get("X-Sovereign-Rescue-CSRF") or "").strip()
+            origin = _rescue_request_origin()
+            if not csrf_token or not origin:
+                return jsonify({"error": "rescue_origin_required", "blocker": "csrf_origin_unverified"}), 403
+            if not verify_rescue_csrf_token(
+                csrf_token,
+                user_id=user_id,
+                origin=origin,
+                secret=_rescue_csrf_secret(),
+            ):
+                return jsonify({"error": "rescue_csrf_invalid", "blocker": "csrf_verification_failed"}), 403
+            body = request.get_json(force=True) or {}
+            repair_id = str(body.get("repairId") or "").strip()
+            if not repair_id:
+                return jsonify({"error": "repairId is required"}), 400
+            repair = _read_owned_rescue(conn, user_id, repair_id)
+            if not repair:
+                return jsonify({"error": "Repair not found or not owned by this user"}), 404
+            job_id = str(repair.get("job_id") or "").strip()
+            workspace_id = str(repair.get("workspace_id") or "").strip()
+            if not job_id or not workspace_id:
+                return jsonify({"error": "Repair has no associated workspace"}), 422
+            job = read_agent_job(conn, job_id)
+            if not job:
+                return jsonify({"error": "Job not found"}), 404
+            repo_url = str(job.get("repo_url") or "").strip()
+            branch = str(job.get("branch") or "main").strip()
+            base_sha = str(repair.get("base_sha") or "").strip()
+            evidence_sha = str(repair.get("evidence_sha256") or "").strip()
+            changed_files_raw = repair.get("changed_files") or []
+            changed_files = normalize_repair_changed_files(changed_files_raw)
+            diff_bytes, diff_result = git_diff_full(workspace_id)
+            if diff_result.status == "blocked":
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "capsule": None,
+                    "blocker": f"Workspace blocked: {diff_result.blocker}",
+                }), 409
+            if diff_result.status == "failed":
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "capsule": None,
+                    "blocker": f"Workspace diff failed: {diff_result.blocker}",
+                }), 422
+            capsule = build_repair_capsule_from_diff(
+                repo_url=repo_url,
+                branch=branch,
+                base_sha=base_sha,
+                evidence_sha256=evidence_sha,
+                changed_files=changed_files,
+                diff_bytes=diff_bytes,
+            )
+            return jsonify({
+                "ok": capsule.get("ok", False),
+                "runtime": "sovereign-rescue",
+                "capsule": capsule,
+            })
         finally:
             _close(conn)
 

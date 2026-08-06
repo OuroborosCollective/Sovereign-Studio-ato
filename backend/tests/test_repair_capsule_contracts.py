@@ -17,6 +17,7 @@ from agent_runtime.repair_capsule import (
     MAX_REPAIR_CAPSULE_PATCH_BYTES,
     REPAIR_CAPSULE_SCHEMA_VERSION,
     build_repair_capsule,
+    build_repair_capsule_from_diff,
     build_repair_capsule_manifest,
     build_repair_capsule_verifier,
     parse_repair_patch_paths,
@@ -245,6 +246,97 @@ def test_capsule_enforces_patch_size_boundary() -> None:
     )
     assert manifest["ready"] is False
     assert "capsule_patch_too_large" in manifest["blockers"]
+
+
+# Tests for build_repair_capsule_from_diff
+
+def test_build_capsule_from_diff_success() -> None:
+    patch = patch_for()
+    capsule = build_repair_capsule_from_diff(
+        repo_url="https://github.com/Acme/Example",
+        branch="fix/test",
+        base_sha=BASE_SHA,
+        evidence_sha256="d" * 64,
+        changed_files=["backend/app.py"],
+        diff_bytes=patch,
+    )
+    assert capsule["ok"] is True
+    assert capsule["ready"] is True
+    assert capsule["manifest"]["schemaVersion"] == REPAIR_CAPSULE_SCHEMA_VERSION
+    assert capsule["manifest"]["baseSha"] == BASE_SHA
+    assert capsule["manifest"]["changedFiles"] == ["backend/app.py"]
+    assert capsule["manifest"]["blockers"] == []
+    assert "manifest.json" in capsule["files"]
+    assert "verify.py" in capsule["files"]
+    assert "README.md" in capsule["files"]
+
+
+def test_build_capsule_from_diff_empty_changed_files_fails() -> None:
+    capsule = build_repair_capsule_from_diff(
+        repo_url="https://github.com/Acme/Example",
+        branch="fix/test",
+        base_sha=BASE_SHA,
+        evidence_sha256="d" * 64,
+        changed_files=[],
+        diff_bytes=b"",
+    )
+    assert capsule["ok"] is False
+    assert "capsule_changed_file_evidence_missing" in capsule["blockers"]
+
+
+def test_build_capsule_from_diff_invalid_repo_url_fails() -> None:
+    patch = patch_for()
+    capsule = build_repair_capsule_from_diff(
+        repo_url="not-a-valid-url",
+        branch="fix/test",
+        base_sha=BASE_SHA,
+        evidence_sha256="d" * 64,
+        changed_files=["backend/app.py"],
+        diff_bytes=patch,
+    )
+    assert capsule["ok"] is False
+    assert "capsule_repository_identity_invalid" in capsule["blockers"]
+
+
+def test_build_capsule_from_diff_mismatched_paths_fails() -> None:
+    patch = patch_for()
+    capsule = build_repair_capsule_from_diff(
+        repo_url="https://github.com/Acme/Example",
+        branch="fix/test",
+        base_sha=BASE_SHA,
+        evidence_sha256="d" * 64,
+        changed_files=["wrong/path.py"],
+        diff_bytes=patch,
+    )
+    assert capsule["ok"] is False
+    assert "capsule_changed_file_identity_mismatch" in capsule["blockers"]
+
+
+def test_build_capsule_from_diff_unsafe_patch_fails() -> None:
+    capsule = build_repair_capsule_from_diff(
+        repo_url="https://github.com/Acme/Example",
+        branch="fix/test",
+        base_sha=BASE_SHA,
+        evidence_sha256="d" * 64,
+        changed_files=["backend/app.py"],
+        diff_bytes=b"binary garbage",
+    )
+    assert capsule["ok"] is False
+    assert len(capsule["blockers"]) > 0
+
+
+def test_build_capsule_from_diff_multiple_files() -> None:
+    patch = patch_for("backend/app.py") + patch_for("frontend/index.tsx")
+    capsule = build_repair_capsule_from_diff(
+        repo_url="https://github.com/Acme/Example",
+        branch="fix/test",
+        base_sha=BASE_SHA,
+        evidence_sha256="d" * 64,
+        changed_files=["backend/app.py", "frontend/index.tsx"],
+        diff_bytes=patch,
+    )
+    assert capsule["ok"] is True
+    assert set(capsule["manifest"]["changedFiles"]) == {"backend/app.py", "frontend/index.tsx"}
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

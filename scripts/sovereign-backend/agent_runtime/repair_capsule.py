@@ -309,3 +309,78 @@ def build_repair_capsule(*, repair: Mapping[str, Any], job: Mapping[str, Any], p
         },
         "ready": True,
     }
+
+
+def build_repair_capsule_from_diff(
+    *,
+    repo_url: str,
+    branch: str,
+    base_sha: str,
+    evidence_sha256: str,
+    changed_files: list[str],
+    diff_bytes: bytes,
+) -> dict[str, Any]:
+    """Build Repair Capsule from raw workspace diff. Zero-trust, no GitHub calls."""
+    if not changed_files:
+        return {
+            "ok": False,
+            "blockers": ["capsule_changed_file_evidence_missing"],
+            "manifest": None,
+            "ready": False,
+        }
+    try:
+        repo_identity = repository_identity_from_repo_url(repo_url)
+    except ValueError:
+        return {
+            "ok": False,
+            "blockers": ["capsule_repository_identity_invalid"],
+            "manifest": None,
+            "ready": False,
+        }
+    try:
+        patch = _patch_bytes(diff_bytes)
+    except ValueError as exc:
+        return {"ok": False, "blockers": [str(exc)], "manifest": None, "ready": False}
+    try:
+        parsed_paths = parse_repair_patch_paths(patch)
+    except ValueError as exc:
+        return {"ok": False, "blockers": [str(exc)], "manifest": None, "ready": False}
+    expected_paths = tuple(sorted(set(changed_files)))
+    if parsed_paths != expected_paths:
+        return {
+            "ok": False,
+            "blockers": ["capsule_changed_file_identity_mismatch"],
+            "manifest": None,
+            "ready": False,
+        }
+    verifier = build_repair_capsule_verifier()
+    readme = _readme(base_sha, parsed_paths)
+    manifest = {
+        "schemaVersion": REPAIR_CAPSULE_SCHEMA_VERSION,
+        "ready": True,
+        "blockers": [],
+        "repositoryIdentitySha256": hashlib.sha256(repo_identity.encode()).hexdigest(),
+        "baseSha": base_sha,
+        "branch": branch,
+        "evidenceSha256": evidence_sha256,
+        "changedFiles": list(parsed_paths),
+        "patchByteCount": len(patch),
+        "patchSha256": hashlib.sha256(patch).hexdigest(),
+        "productionMutationIncluded": False,
+        "secretValuesReturned": False,
+        "verifierSha256": hashlib.sha256(verifier.encode()).hexdigest(),
+        "readmeSha256": hashlib.sha256(readme.encode()).hexdigest(),
+    }
+    payload = {k: v for k, v in manifest.items() if k != "capsuleSha256"}
+    manifest["capsuleSha256"] = canonical_sha256(payload)
+    return {
+        "ok": True,
+        "manifest": manifest,
+        "files": {
+            "repair.patch": patch,
+            "manifest.json": (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode(),
+            "verify.py": verifier.encode(),
+            "README.md": readme.encode(),
+        },
+        "ready": True,
+    }

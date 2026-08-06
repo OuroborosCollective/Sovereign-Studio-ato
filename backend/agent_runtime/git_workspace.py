@@ -293,6 +293,68 @@ def git_diff_check(workspace_id: str, root: Path | None = None) -> GitWorkspaceR
         )
 
 
+def git_diff_full(workspace_id: str, root: Path | None = None) -> tuple[bytes, GitWorkspaceResult]:
+    """Return full diff bytes and status for zero-trust Capsule delivery.
+
+    This function captures the complete staged and unstaged diff as raw bytes
+    for Capsule packing. It never pushes, never calls GitHub, and never writes
+    outside the workspace directory. Output is unified diff format compatible
+    with the Repair Capsule parser.
+    """
+    try:
+        repo_path = repo_dir_for_workspace(workspace_id, root)
+        if not (repo_path / ".git").is_dir():
+            return b"", GitWorkspaceResult(
+                status="blocked",
+                events=(_event("git_diff_full_blocked", "warning", "Repo directory does not exist."),),
+                blocker="Repo directory does not exist.",
+            )
+        staged = run_git_command(
+            ("git", "diff", "--cached", "--no-ext-diff", "--full-index", "-p"), repo_path, 60
+        )
+        unstaged = run_git_command(
+            ("git", "diff", "--no-ext-diff", "--full-index", "-p"), repo_path, 60
+        )
+        if staged.returncode != 0:
+            return b"", GitWorkspaceResult(
+                status="failed",
+                command=("git", "diff", "--cached", "--no-ext-diff", "--full-index", "-p"),
+                events=(_event("git_diff_full_failed", "error", staged.stderr or "staged diff failed"),),
+                blocker=sanitize_agent_text(staged.stderr or "staged diff failed", 1200),
+                exit_code=staged.returncode,
+            )
+        if unstaged.returncode != 0:
+            return b"", GitWorkspaceResult(
+                status="failed",
+                command=("git", "diff", "--no-ext-diff", "--full-index", "-p"),
+                events=(_event("git_diff_full_failed", "error", unstaged.stderr or "unstaged diff failed"),),
+                blocker=sanitize_agent_text(unstaged.stderr or "unstaged diff failed", 1200),
+                exit_code=unstaged.returncode,
+            )
+        staged_bytes = staged.stdout.encode("utf-8") if staged.stdout else b""
+        unstaged_bytes = unstaged.stdout.encode("utf-8") if unstaged.stdout else b""
+        combined = staged_bytes + unstaged_bytes
+        if not combined.strip():
+            return b"", GitWorkspaceResult(
+                status="done",
+                command=("git", "diff", "--cached", "-p", "&&", "git", "diff", "-p"),
+                events=(_event("git_diff_full_empty", "info", "No diff produced."),),
+                exit_code=0,
+            )
+        return combined, GitWorkspaceResult(
+            status="done",
+            command=("git", "diff", "--cached", "-p", "&&", "git", "diff", "-p"),
+            events=(_event("git_diff_full_completed", "success", f"Captured {len(combined)} bytes."),),
+            exit_code=0,
+        )
+    except Exception as exc:
+        return b"", GitWorkspaceResult(
+            status="blocked",
+            events=(_event("git_diff_full_blocked", "warning", str(exc)),),
+            blocker=sanitize_agent_text(str(exc), 1200),
+        )
+
+
 def publish_workspace_branch(
     workspace_id: str,
     *,
