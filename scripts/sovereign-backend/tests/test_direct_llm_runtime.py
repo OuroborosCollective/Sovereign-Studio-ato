@@ -43,6 +43,12 @@ def test_direct_failure_classification_keeps_availability_retryable() -> None:
     assert classify_direct_llm_failure(
         _route("openrouter"), None, "openrouter_request_failed"
     )["blocker"] == "openrouter_upstream_unavailable"
+    quota = classify_direct_llm_failure(
+        _route("openrouter"),
+        _response(429, {"error": {"message": "Free quota exhausted"}}),
+        "",
+    )
+    assert quota["blocker"] == "provider_quota_exhausted"
 
 
 def test_direct_failure_classification_keeps_credentials_hard_blocked() -> None:
@@ -75,6 +81,7 @@ def test_direct_runtime_never_uses_redirects_proxy_env_or_unbounded_response() -
     assert "response.raw.read(_MAX_RESPONSE_BYTES + 1" in runtime
     assert "rawProviderResponsePersisted" in runtime
     assert "openrouter_api_key.txt" in runtime
+    assert "openrouter_free_api_key.txt" in runtime
     assert "freellmapi_unified_key.txt" in runtime
 
 

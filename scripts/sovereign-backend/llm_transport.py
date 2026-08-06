@@ -93,6 +93,33 @@ def route_is_openrouter_paid(route: dict[str, Any]) -> bool:
     )
 
 
+def route_is_openrouter_free(route: dict[str, Any]) -> bool:
+    config = route_config(route)
+    policy = config.get("providerPolicy")
+    receipt = config.get("canaryReceipt")
+    return (
+        not bool(route.get("disabled"))
+        and route_transport(route) == OPENROUTER_TRANSPORT
+        and route_profile(route) == "free_single_agent"
+        and route_api_base(route) == OPENROUTER_BASE_URL
+        and route_provider_model(route) == "openrouter/free"
+        and config.get("direct") is True
+        and config.get("freeEligible") is True
+        and config.get("quotaContractVerified") is True
+        and config.get("catalogVerified") is True
+        and config.get("transportCanaryVerified") is True
+        and config.get("selectable") is True
+        and isinstance(receipt, dict)
+        and receipt.get("schemaVersion")
+            == "sovereign.openrouter-free-route-receipt.v1"
+        and receipt.get("zeroCostEvidenceVerified") is True
+        and isinstance(policy, dict)
+        and policy.get("require_parameters") is False
+        and policy.get("allow_fallbacks") is True
+        and policy.get("data_collection") == "deny"
+    )
+
+
 def route_is_direct_freellm(route: dict[str, Any]) -> bool:
     config = route_config(route)
     return (
