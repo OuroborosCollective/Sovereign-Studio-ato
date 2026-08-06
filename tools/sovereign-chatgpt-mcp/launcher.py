@@ -16,6 +16,7 @@ import repository_skill_tools
 import repository_intelligence_tools
 import skill_supply_chain_tools
 import toolchain_composition
+import tool_success_ranking
 import server
 import tool_extensions
 
@@ -38,6 +39,7 @@ continuity.register(server.mcp)
 operating_profile.register(server.mcp)
 OUTPUT_CONTRACT_INSTALLATION = output_contracts.install_output_contracts(server.mcp)
 OPERATING_PROFILE_ENFORCEMENT = operating_profile.install_enforcement(server.mcp)
+TOOL_SUCCESS_TRACKING = tool_success_ranking.install_success_tracking(server.mcp)
 mcp = server.mcp
 
 

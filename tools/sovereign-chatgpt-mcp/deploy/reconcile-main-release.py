@@ -1,0 +1,566 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+IMAGE_REPOSITORY_RE = re.compile(r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$")
+
+REPOSITORY = os.getenv(
+    "SOVEREIGN_MCP_REPOSITORY",
+    "OuroborosCollective/Sovereign-Studio-ato",
+).strip()
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+BACKEND_REPOSITORY = os.getenv(
+    "SOVEREIGN_BACKEND_IMAGE_REPOSITORY",
+    "ghcr.io/ouroboroscollective/sovereign-backend",
+).strip()
+MCP_REPOSITORY = os.getenv(
+    "SOVEREIGN_MCP_IMAGE_REPOSITORY",
+    "ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp",
+).strip()
+WORKFLOW = os.getenv(
+    "SOVEREIGN_COORDINATED_RELEASE_WORKFLOW",
+    "sovereign-coordinated-release.yml",
+).strip()
+STATE_DIR = Path(
+    os.getenv(
+        "SOVEREIGN_RELEASE_RECONCILER_STATE_DIR",
+        "/var/lib/sovereign-release-reconciler",
+    )
+)
+STATUS_FILE = STATE_DIR / "status.json"
+LOCK_FILE = STATE_DIR / "reconcile.lock"
+BACKEND_DEPLOY = os.getenv(
+    "SOVEREIGN_MCP_DEPLOY_SCRIPT",
+    "/opt/sovereign-chatgpt-tools/bin/deploy-sovereign-backend",
+)
+BACKEND_ROLLBACK = os.getenv(
+    "SOVEREIGN_MCP_ROLLBACK_SCRIPT",
+    "/opt/sovereign-chatgpt-tools/bin/rollback-sovereign-backend",
+)
+SELF_UPDATE_REQUEST = Path(
+    os.getenv(
+        "SOVEREIGN_MCP_SELF_UPDATE_REQUEST",
+        "/run/sovereign-chatgpt-broker/self-update.request.json",
+    )
+)
+SELF_UPDATE_STATUS = Path(
+    os.getenv(
+        "SOVEREIGN_MCP_SELF_UPDATE_STATUS",
+        "/var/lib/sovereign-chatgpt-self-update/status.json",
+    )
+)
+SELF_UPDATE_SERVICE = os.getenv(
+    "SOVEREIGN_MCP_SELF_UPDATE_SERVICE",
+    "sovereign-chatgpt-mcp-self-update.service",
+).strip()
+BROKER_SOCKET = Path(
+    os.getenv(
+        "SOVEREIGN_MCP_BROKER_SOCKET",
+        "/run/sovereign-chatgpt-broker/operator.sock",
+    )
+)
+MAX_SELF_UPDATE_SECONDS = max(
+    120,
+    min(int(os.getenv("SOVEREIGN_RELEASE_SELF_UPDATE_TIMEOUT_SECONDS", "1800")), 3600),
+)
+
+
+class ReconcileError(RuntimeError):
+    def __init__(self, stage: str, detail: str) -> None:
+        super().__init__(detail)
+        self.stage = stage
+        self.detail = detail[:1000]
+
+
+def _canonical_sha256(payload: Any) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _write_status(status: str, *, ok: bool, revision: str = "", **evidence: Any) -> dict[str, Any]:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(STATE_DIR, 0o750)
+    payload: dict[str, Any] = {
+        "schemaVersion": "sovereign.coordinated-release-reconciler-status.v1",
+        "ok": bool(ok),
+        "status": status,
+        "revision": revision,
+        "updatedAtEpoch": int(time.time()),
+        "secretValuesReturned": False,
+        **evidence,
+    }
+    evidence_payload = {key: value for key, value in payload.items() if key != "evidenceSha256"}
+    payload["evidenceSha256"] = _canonical_sha256(evidence_payload)
+    temporary = STATUS_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", "utf-8")
+    os.chmod(temporary, 0o640)
+    temporary.replace(STATUS_FILE)
+    print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return payload
+
+
+def _github_json(path: str) -> Any:
+    if not GITHUB_TOKEN:
+        raise ReconcileError("github_auth", "GITHUB_TOKEN is missing")
+    request = urllib.request.Request(
+        f"https://api.github.com{path}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "User-Agent": "sovereign-coordinated-release-reconciler",
+            "X-GitHub-Api-Version": "2026-03-10",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise ReconcileError("github_api", f"GitHub API returned HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise ReconcileError("github_api", type(exc).__name__) from exc
+
+
+def _main_revision() -> str:
+    payload = _github_json(f"/repos/{REPOSITORY}/git/ref/heads/main")
+    revision = str(((payload.get("object") or {}) if isinstance(payload, dict) else {}).get("sha") or "").lower()
+    if not SHA_RE.fullmatch(revision):
+        raise ReconcileError("main_revision", "GitHub returned no full main revision")
+    return revision
+
+
+def _release_gate(revision: str) -> dict[str, Any]:
+    workflow = urllib.parse.quote(WORKFLOW, safe="")
+    payload = _github_json(
+        f"/repos/{REPOSITORY}/actions/workflows/{workflow}/runs"
+        f"?branch=main&event=push&per_page=50"
+    )
+    runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
+    exact = [
+        item
+        for item in runs
+        if isinstance(item, dict) and str(item.get("head_sha") or "").lower() == revision
+    ]
+    exact.sort(key=lambda item: (int(item.get("run_attempt") or 0), int(item.get("id") or 0)), reverse=True)
+    if not exact:
+        return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", "runId": None}
+    run = exact[0]
+    run_status = str(run.get("status") or "")
+    conclusion = str(run.get("conclusion") or "")
+    evidence = {
+        "runId": int(run.get("id") or 0),
+        "runAttempt": int(run.get("run_attempt") or 0),
+        "runStatus": run_status,
+        "conclusion": conclusion or None,
+        "url": str(run.get("html_url") or ""),
+        "headSha": str(run.get("head_sha") or "").lower(),
+    }
+    if run_status != "completed":
+        return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **evidence}
+    if conclusion != "success":
+        return {"ready": False, "status": "RELEASE_GATE_FAILED", **evidence}
+    return {"ready": True, "status": "RELEASE_GATE_VERIFIED", **evidence}
+
+
+def _run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env=os.environ.copy(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ReconcileError("host_command", f"timeout:{Path(argv[0]).name}") from exc
+
+
+def _image_evidence(repository: str, revision: str) -> dict[str, str]:
+    if not IMAGE_REPOSITORY_RE.fullmatch(repository):
+        raise ReconcileError("image_contract", "image repository is invalid")
+    tag = f"{repository}:{revision}"
+    pull = _run(["docker", "pull", tag], timeout=600)
+    if pull.returncode != 0:
+        raise ReconcileError(
+            "image_pull",
+            f"{repository}:sha256={hashlib.sha256((pull.stdout + pull.stderr).encode()).hexdigest()}",
+        )
+    inspect = _run(["docker", "image", "inspect", tag], timeout=60)
+    if inspect.returncode != 0:
+        raise ReconcileError("image_inspect", repository)
+    try:
+        rows = json.loads(inspect.stdout)
+        image = rows[0]
+    except (json.JSONDecodeError, IndexError, TypeError) as exc:
+        raise ReconcileError("image_inspect", "invalid Docker image metadata") from exc
+    labels = ((image.get("Config") or {}).get("Labels") or {}) if isinstance(image, dict) else {}
+    image_revision = str(labels.get("org.opencontainers.image.revision") or "").lower()
+    if image_revision != revision:
+        raise ReconcileError("image_revision", f"{repository}:revision-label-mismatch")
+    prefix = repository + "@"
+    immutable = next(
+        (
+            value
+            for value in (image.get("RepoDigests") or [])
+            if isinstance(value, str) and value.startswith(prefix)
+        ),
+        "",
+    )
+    digest = immutable.split("@", 1)[1] if "@" in immutable else ""
+    if not DIGEST_RE.fullmatch(digest):
+        raise ReconcileError("image_digest", f"{repository}:immutable-digest-missing")
+    return {
+        "repository": repository,
+        "tag": tag,
+        "immutableReference": immutable,
+        "digest": digest,
+        "revision": image_revision,
+        "imageId": str(image.get("Id") or ""),
+    }
+
+
+def _container_identity(container: str, repository: str) -> dict[str, Any]:
+    inspect = _run(["docker", "inspect", container], timeout=30)
+    if inspect.returncode != 0:
+        return {"present": False, "container": container}
+    try:
+        row = json.loads(inspect.stdout)[0]
+    except (json.JSONDecodeError, IndexError, TypeError):
+        return {"present": True, "container": container, "valid": False}
+    image_id = str(row.get("Image") or "")
+    image_inspect = _run(["docker", "image", "inspect", image_id], timeout=30)
+    if image_inspect.returncode != 0:
+        return {"present": True, "container": container, "valid": False}
+    try:
+        image = json.loads(image_inspect.stdout)[0]
+    except (json.JSONDecodeError, IndexError, TypeError):
+        return {"present": True, "container": container, "valid": False}
+    labels = ((image.get("Config") or {}).get("Labels") or {}) if isinstance(image, dict) else {}
+    prefix = repository + "@"
+    immutable = next(
+        (
+            value
+            for value in (image.get("RepoDigests") or [])
+            if isinstance(value, str) and value.startswith(prefix)
+        ),
+        "",
+    )
+    state = row.get("State") if isinstance(row.get("State"), dict) else {}
+    health = state.get("Health") if isinstance(state.get("Health"), dict) else {}
+    return {
+        "present": True,
+        "valid": bool(immutable),
+        "container": container,
+        "running": bool(state.get("Running")),
+        "health": str(health.get("Status") or "no-health"),
+        "restartCount": int(row.get("RestartCount") or 0),
+        "revision": str(labels.get("org.opencontainers.image.revision") or "").lower(),
+        "immutableReference": immutable,
+        "digest": immutable.split("@", 1)[1] if "@" in immutable else "",
+        "imageId": image_id,
+    }
+
+
+def _command_json(argv: list[str], *, timeout: int, stage: str) -> dict[str, Any]:
+    completed = _run(argv, timeout=timeout)
+    combined = completed.stdout + completed.stderr
+    output_sha = hashlib.sha256(combined.encode("utf-8", errors="replace")).hexdigest()
+    if completed.returncode != 0:
+        raise ReconcileError(stage, f"exit={completed.returncode};outputSha256={output_sha}")
+    parsed: dict[str, Any] | None = None
+    for line in reversed(completed.stdout.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            parsed = candidate
+            break
+    if parsed is None or parsed.get("ok") is not True:
+        raise ReconcileError(stage, f"missing-success-receipt;outputSha256={output_sha}")
+    return {"receipt": parsed, "outputSha256": output_sha}
+
+
+def _broker_call(action: str, arguments: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
+    request_id = hashlib.sha256(f"{action}:{time.time_ns()}".encode()).hexdigest()[:24]
+    payload = json.dumps(
+        {"request_id": request_id, "action": action, "arguments": arguments},
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+    if not BROKER_SOCKET.is_socket():
+        raise ReconcileError("broker", "broker socket is missing")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(timeout)
+        client.connect(str(BROKER_SOCKET))
+        client.sendall(payload)
+        chunks = bytearray()
+        while b"\n" not in chunks and len(chunks) < 1_000_000:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            chunks.extend(chunk)
+    try:
+        response = json.loads(bytes(chunks).split(b"\n", 1)[0].decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ReconcileError("broker", "invalid broker response") from exc
+    result = response.get("result") if isinstance(response, dict) else None
+    if not isinstance(result, dict):
+        raise ReconcileError("broker", "broker returned no result")
+    return result
+
+
+def _schedule_self_update(revision: str) -> dict[str, Any]:
+    started_at = int(time.time())
+    SELF_UPDATE_REQUEST.parent.mkdir(parents=True, exist_ok=True)
+    temporary = SELF_UPDATE_REQUEST.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(
+            {
+                "expected_revision": revision,
+                "reason": "coordinated-main-release-reconciler",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        "utf-8",
+    )
+    os.chmod(temporary, 0o600)
+    temporary.replace(SELF_UPDATE_REQUEST)
+    start = _run(["systemctl", "start", "--no-block", SELF_UPDATE_SERVICE], timeout=30)
+    if start.returncode != 0:
+        raise ReconcileError("mcp_self_update", "self-update service did not start")
+    deadline = time.monotonic() + MAX_SELF_UPDATE_SECONDS
+    latest: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        if SELF_UPDATE_STATUS.is_file():
+            try:
+                payload = json.loads(SELF_UPDATE_STATUS.read_text("utf-8"))
+            except (OSError, json.JSONDecodeError):
+                payload = {}
+            if isinstance(payload, dict):
+                latest = payload
+                if (
+                    str(payload.get("revision") or "").lower() == revision
+                    and int(payload.get("updated_at") or payload.get("updatedAtEpoch") or 0) >= started_at
+                ):
+                    if payload.get("ok") is True and payload.get("status") == "UPDATED":
+                        return {
+                            "status": "UPDATED",
+                            "revision": revision,
+                            "evidenceSha256": _canonical_sha256(payload),
+                        }
+                    if payload.get("status") in {"FAILED", "BLOCKED"}:
+                        raise ReconcileError("mcp_self_update", str(payload.get("detail") or payload.get("status")))
+        time.sleep(5)
+    raise ReconcileError(
+        "mcp_self_update",
+        f"timeout;statusSha256={_canonical_sha256(latest) if latest else 'none'}",
+    )
+
+
+def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str]) -> dict[str, Any]:
+    backend_runtime = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
+    mcp_runtime = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
+    if not (
+        backend_runtime.get("running") is True
+        and backend_runtime.get("revision") == revision
+        and backend_runtime.get("digest") == backend["digest"]
+    ):
+        raise ReconcileError("runtime_readback", "backend revision or digest parity failed")
+    if not (
+        mcp_runtime.get("running") is True
+        and mcp_runtime.get("health") == "healthy"
+        and mcp_runtime.get("revision") == revision
+        and mcp_runtime.get("digest") == mcp["digest"]
+    ):
+        raise ReconcileError("runtime_readback", "MCP revision, digest or health parity failed")
+    broker = _broker_call("broker_health", {})
+    if broker.get("status") != "BROKER_READY":
+        raise ReconcileError("runtime_readback", "broker is not ready")
+    patchmon = _broker_call(
+        "patchmon_runtime_inventory",
+        {"include_fleet": True, "max_fleet_containers": 100},
+        timeout=90,
+    )
+    if patchmon.get("ok") is not True:
+        raise ReconcileError("runtime_readback", "PatchMon inventory is not verified")
+    return {
+        "backend": backend_runtime,
+        "mcp": mcp_runtime,
+        "broker": {
+            "status": broker.get("status"),
+            "pid": broker.get("pid"),
+        },
+        "patchmon": {
+            "status": patchmon.get("status"),
+            "evidenceSha256": _canonical_sha256(patchmon),
+        },
+    }
+
+
+def reconcile() -> dict[str, Any]:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY):
+        raise ReconcileError("configuration", "repository is invalid")
+    for repository in (BACKEND_REPOSITORY, MCP_REPOSITORY):
+        if not IMAGE_REPOSITORY_RE.fullmatch(repository):
+            raise ReconcileError("configuration", "image repository is invalid")
+
+    revision = _main_revision()
+    gate = _release_gate(revision)
+    if not gate.get("ready"):
+        return _write_status(
+            str(gate.get("status") or "WAITING_FOR_RELEASE_GATE"),
+            ok=False,
+            revision=revision,
+            releaseGate=gate,
+            mutationPerformed=False,
+            retryable=True,
+        )
+
+    backend_image = _image_evidence(BACKEND_REPOSITORY, revision)
+    mcp_image = _image_evidence(MCP_REPOSITORY, revision)
+    previous_backend = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
+    current_mcp = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
+    backend_changed = not (
+        previous_backend.get("running") is True
+        and previous_backend.get("revision") == revision
+        and previous_backend.get("digest") == backend_image["digest"]
+    )
+    mcp_changed = not (
+        current_mcp.get("running") is True
+        and current_mcp.get("health") == "healthy"
+        and current_mcp.get("revision") == revision
+        and current_mcp.get("digest") == mcp_image["digest"]
+    )
+
+    backend_deploy: dict[str, Any] = {"status": "ALREADY_CURRENT", "mutationPerformed": False}
+    if backend_changed:
+        backend_deploy = {
+            "status": "DEPLOYED",
+            "mutationPerformed": True,
+            **_command_json(
+                [BACKEND_DEPLOY, backend_image["digest"], revision],
+                timeout=1800,
+                stage="backend_deploy",
+            ),
+        }
+
+    mcp_update: dict[str, Any] = {"status": "ALREADY_CURRENT", "mutationPerformed": False}
+    try:
+        if mcp_changed:
+            mcp_update = {
+                **_schedule_self_update(revision),
+                "mutationPerformed": True,
+            }
+    except ReconcileError as exc:
+        rollback: dict[str, Any] = {"attempted": False}
+        previous_digest = str(previous_backend.get("digest") or "")
+        if backend_changed and DIGEST_RE.fullmatch(previous_digest):
+            try:
+                rollback_result = _command_json(
+                    [BACKEND_ROLLBACK, previous_digest],
+                    timeout=900,
+                    stage="backend_rollback_after_mcp_failure",
+                )
+                rollback = {"attempted": True, "ok": True, **rollback_result}
+            except ReconcileError as rollback_exc:
+                rollback = {
+                    "attempted": True,
+                    "ok": False,
+                    "failureStage": rollback_exc.stage,
+                    "failureSha256": hashlib.sha256(rollback_exc.detail.encode()).hexdigest(),
+                }
+        return _write_status(
+            "MCP_UPDATE_FAILED_BACKEND_ROLLBACK_ATTEMPTED",
+            ok=False,
+            revision=revision,
+            releaseGate=gate,
+            backendImage=backend_image,
+            mcpImage=mcp_image,
+            backendDeploy=backend_deploy,
+            mcpUpdate={
+                "status": "FAILED",
+                "failureStage": exc.stage,
+                "failureSha256": hashlib.sha256(exc.detail.encode()).hexdigest(),
+            },
+            rollback=rollback,
+            mutationPerformed=bool(backend_changed or mcp_changed),
+            retryable=True,
+        )
+
+    runtime = _runtime_readback(revision, backend_image, mcp_image)
+    return _write_status(
+        "COORDINATED_RELEASE_DEPLOYED",
+        ok=True,
+        revision=revision,
+        releaseGate=gate,
+        backendImage=backend_image,
+        mcpImage=mcp_image,
+        backendDeploy=backend_deploy,
+        mcpUpdate=mcp_update,
+        runtime=runtime,
+        mutationPerformed=bool(backend_changed or mcp_changed),
+        retryable=False,
+    )
+
+
+def main() -> int:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(STATE_DIR, 0o750)
+    with LOCK_FILE.open("a+") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            _write_status(
+                "ALREADY_RUNNING",
+                ok=False,
+                mutationPerformed=False,
+                retryable=True,
+            )
+            return 0
+        try:
+            reconcile()
+            return 0
+        except ReconcileError as exc:
+            _write_status(
+                "RECONCILIATION_BLOCKED",
+                ok=False,
+                failureStage=exc.stage,
+                failureSha256=hashlib.sha256(exc.detail.encode()).hexdigest(),
+                mutationPerformed=False,
+                retryable=True,
+            )
+            return 1
+        except Exception as exc:  # fail closed without returning raw values
+            _write_status(
+                "RECONCILIATION_FAILED",
+                ok=False,
+                failureStage="unexpected",
+                failureFamily=type(exc).__name__,
+                mutationPerformed=False,
+                retryable=True,
+            )
+            return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

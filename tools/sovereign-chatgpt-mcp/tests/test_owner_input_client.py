@@ -113,6 +113,38 @@ def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatc
     assert result["llm_can_receive_protected_value"] is False
 
 
+def test_create_request_allows_github_personal_access_without_exposing_value(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "88888888-8888-4888-8888-888888888888"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "github_pat",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="github_pat",
+        title="GitHub-Zugang für MCP und Broker aktualisieren",
+        reason="Der neue PAT wird ausschließlich über die geschützte Owner-Seite eingegeben.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "github_pat"
+    assert call["json"]["fieldLabel"] == (
+        "GitHub Personal Access Token für MCP und Broker"
+    )
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+    assert result["owner_url"].endswith(f"request_id={request_id}")
+
+
 def test_create_request_separates_openrouter_free_and_management_targets(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
