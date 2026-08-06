@@ -275,6 +275,18 @@ class RegressionMission(StrictModel):
     observed_evidence: Annotated[list[str], Field(max_length=32)] = []
 
 
+class TriggerMission(StrictModel):
+    """Benchmark mission for skill trigger quality assessment."""
+    mission_id: BoundedName
+    skill_id: BoundedName
+    request_text: BoundedText
+    expected_triggers: Annotated[list[str], Field(max_length=16)]
+    expected_anti_triggers: Annotated[list[str], Field(max_length=16)] = []
+    expected_selection: bool
+    manifest_triggers: Annotated[list[str], Field(min_length=1, max_length=16)]
+    manifest_anti_triggers: Annotated[list[str], Field(max_length=16)] = []
+
+
 class IdempotencyObservation(StrictModel):
     tool_name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,79}$")]
     request_hash: Sha256Value
@@ -475,8 +487,8 @@ def operational_assurance_skill_inventory() -> AssuranceResult:
         ("43", "sovereign-authentication-chaos-negative-test", "authentication_chaos_negative_test_assess"),
     ]
     evidence = {
-        "numberedSlots": 28,
-        "newTools": 27,
+        "numberedSlots": 29,
+        "newTools": 28,
         "existingReusedTools": ["mcp_tool_contract_registry"],
         "uniqueNewSkillFamilies": 27,
         "skills": [
@@ -1316,6 +1328,93 @@ def skill_regression_benchmark(
     )
 
 
+_TOKEN_RE = re.compile(r"[a-z0-9_.:/-]+", re.IGNORECASE)
+
+
+def _normalized_text(value: str) -> str:
+    return " ".join(_TOKEN_RE.findall(value.casefold()))
+
+
+def _matches(phrase: str, normalized_text: str) -> bool:
+    normalized_phrase = _normalized_text(phrase)
+    return bool(normalized_phrase) and normalized_phrase in normalized_text
+
+
+def skill_trigger_quality_benchmark(
+    missions: Annotated[list[TriggerMission], Field(min_length=1, max_length=500)],
+) -> AssuranceResult:
+    """Use this when skill trigger precision, recall and selection must survive an MCP or skill update.
+
+    Runs deterministic trigger matching against supplied mission traces to benchmark
+    whether skill candidates are selected correctly based on their declared triggers.
+    """
+    payload = [item.model_dump(mode="json") for item in missions]
+    findings: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+
+    for item in payload:
+        normalized = _normalized_text(item["request_text"])
+
+        observed_triggers = sorted(
+            t for t in item["manifest_triggers"] if _matches(t, normalized)
+        )
+        observed_anti_triggers = sorted(
+            t for t in item["manifest_anti_triggers"] if _matches(t, normalized)
+        )
+
+        trigger_precision_ok = observed_triggers == sorted(item["expected_triggers"])
+        anti_trigger_ok = observed_anti_triggers == sorted(item["expected_anti_triggers"])
+
+        selected = bool(observed_triggers) and not observed_anti_triggers
+        selection_ok = selected == item["expected_selection"]
+
+        passed = trigger_precision_ok and anti_trigger_ok and selection_ok
+
+        results.append({
+            "missionId": item["mission_id"],
+            "skillId": item["skill_id"],
+            "passed": passed,
+            "observedTriggers": observed_triggers,
+            "expectedTriggers": sorted(item["expected_triggers"]),
+            "triggerPrecisionOk": trigger_precision_ok,
+            "observedAntiTriggers": observed_anti_triggers,
+            "expectedAntiTriggers": sorted(item["expected_anti_triggers"]),
+            "antiTriggerOk": anti_trigger_ok,
+            "observedSelected": selected,
+            "expectedSelected": item["expected_selection"],
+            "selectionOk": selection_ok,
+        })
+
+        if not passed:
+            family = "SKILL_TRIGGER_SELECTION_MISMATCH"
+            if not trigger_precision_ok:
+                family = "SKILL_TRIGGER_PRECISION_MISMATCH"
+            elif not anti_trigger_ok:
+                family = "SKILL_ANTI_TRIGGER_MISMATCH"
+            findings.append({
+                "severity": "P0",
+                "family": family,
+                "missionId": item["mission_id"],
+                "skillId": item["skill_id"],
+            })
+
+    ok = not findings
+    return _result(
+        schema="sovereign.skill-trigger-quality-benchmark.v1",
+        ok=ok,
+        status="SKILL_TRIGGER_BENCHMARK_GREEN" if ok else "SKILL_TRIGGER_BENCHMARK_FAILED",
+        evidence={"results": results, "missionCount": len(results)},
+        findings=findings,
+        next_actions=[
+            "fix trigger patterns that do not match expected phrases",
+            "verify anti-triggers correctly block selection",
+            "block skill updates when trigger benchmarks regress",
+        ],
+        runtime_verified=False,
+        truth_notice="The benchmark evaluates supplied trigger patterns against request text. It does not execute skills or create side effects.",
+    )
+
+
 def tool_idempotency_verify(
     observations: Annotated[list[IdempotencyObservation], Field(min_length=1, max_length=500)],
 ) -> AssuranceResult:
@@ -1604,6 +1703,7 @@ def register(mcp: Any, runtime: Any, database: Any, broker: Any) -> None:
         skill_capability_coverage_map,
         skill_lifecycle_deprecation_preview,
         skill_regression_benchmark,
+        skill_trigger_quality_benchmark,
         tool_idempotency_verify,
         owner_approval_policy_evaluate,
         secret_lifecycle_rotation_assess,

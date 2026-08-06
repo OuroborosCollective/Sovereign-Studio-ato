@@ -543,7 +543,9 @@ def register_are_inference_routes(app: Any, *, require_session: Callable, get_co
     @app.route("/api/inference/are/evaluate", methods=["POST"])
     @require_session
     def are_inference_evaluate():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         conn = get_connection()
         try:
             result = evaluate_are_inference(conn, user_id=request.session_user_id, payload=body)
@@ -561,7 +563,9 @@ def register_are_inference_routes(app: Any, *, require_session: Callable, get_co
     @app.route("/api/inference/are/repair", methods=["POST"])
     @require_session
     def are_inference_repair():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         action = str(body.get("action") or "").strip()
         if action != "recompute_missing_knowledge_embeddings":
             return jsonify({"ok": False, "error": "unsupported repair action"}), 400
@@ -598,7 +602,9 @@ def register_are_inference_routes(app: Any, *, require_session: Callable, get_co
     @app.route("/api/inference/are/quarantine", methods=["POST"])
     @require_session
     def are_quarantine_create():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         conn = get_connection()
         try:
             result = _quarantine_candidate(conn, user_id=request.session_user_id, body=body)
@@ -619,7 +625,9 @@ def register_are_inference_routes(app: Any, *, require_session: Callable, get_co
     @app.route("/api/inference/are/quarantine/<candidate_id>/promote", methods=["POST"])
     @require_session
     def are_quarantine_promote(candidate_id: str):
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error": "Malformed payload; dictionary required"}), 400
         pattern_candidate_id = _bounded_text(body.get("patternCandidateId"), 240)
         if not pattern_candidate_id:
             return jsonify({"ok": False, "error": "patternCandidateId is required"}), 400
