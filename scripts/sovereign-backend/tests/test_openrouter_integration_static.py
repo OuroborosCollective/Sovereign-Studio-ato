@@ -23,6 +23,7 @@ def test_changed_python_surfaces_parse_without_importing_runtime_dependencies() 
         SCRIPT_BACKEND / "free_revolver_provider_runtime.py",
         SCRIPT_BACKEND / "llm_provider_runtime.py",
         SCRIPT_BACKEND / "openrouter_provider_runtime.py",
+        SCRIPT_BACKEND / "openrouter_free_runtime.py",
         SCRIPT_BACKEND / "owner_input_runtime.py",
     ]
     for path in paths:
@@ -119,7 +120,10 @@ def test_admin_and_readiness_reject_legacy_litellm_as_product_transport() -> Non
     assert '"blocker": "legacy_litellm_replaced_by_openrouter"' in app
     assert 'allowed_route_providers = {"openrouter", "freellm"}' in app
     assert '"providerProbePerformed": False' in app
-    assert '"policy": "direct-freellm-free-and-direct-openrouter-paid-only"' in app
+    assert (
+        '"openrouter-free-first-then-direct-freellm-with-separate-openrouter-paid"'
+        in app
+    )
     assert '"platform_legacy_completion_canary_removed"' in enterprise_routes
     assert 'blocker="legacy_litellm_replaced_by_direct_routes"' in enterprise_routes
     assert 'scope="readiness"' in enterprise_routes
