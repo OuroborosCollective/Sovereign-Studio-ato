@@ -22,8 +22,9 @@ if "flask" not in sys.modules:
     sys.modules["flask"] = flask_stub
 
 import flask
-# Stub/mock flask.request so we don't get request context RuntimeError during collection or tests
-flask.request = SimpleNamespace(remote_addr="127.0.0.1")
+# Ensure flask.request has remote_addr
+if not hasattr(flask.request, "remote_addr"):
+    flask.request.remote_addr = "127.0.0.1"
 
 # Stub psycopg2 to avoid external C dependencies
 if "psycopg2" not in sys.modules:

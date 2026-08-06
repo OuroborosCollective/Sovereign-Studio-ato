@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "f46c846c53b259e47abf9659a3f00f3e73080254",
+  "sourceRevision": "3e3849bfb1ffec3705fa8f6f2303ede30dc54e76",
   "rawCandidateCount": 95,
   "canonicalCandidateCount": 76,
   "entries": [
@@ -918,12 +918,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1431,
+      "line": 1413,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "507fce273d3d76c9b71085fe20e39b6b39cc4f3026edc91d7a27cf8cbdd15c03",
+      "fileSha256": "0e70257b480fcde99a37d857df7280331188ccdb931cfdefc2cd6b1e848141b5",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:d1404a844b0de92764407c42",
+      "candidateId": "llm-boundary:4ee38dc25aedb9c1e5fcb356",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -1032,5 +1032,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "5886439eb2524c1eeaec81eed6fdbd60bdc2b86e82a42c62684257076aed22a6"
+  "ledgerSha256": "70daaa66a2ba4de6bb3d98a1e60e3d8ad04f823ed0d5142798225b7b0513307b"
 }
