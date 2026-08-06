@@ -530,6 +530,15 @@ class BrokerRuntime:
                 mark_ready_if_draft=bool(values.get("mark_ready_if_draft", False)),
                 allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
             ),
+            "github_merge_pr_series": lambda values: self.github.merge_pr_series(
+                pull_requests=values.get("pull_requests") if isinstance(values.get("pull_requests"), list) else [],
+                merge_method=str(values.get("merge_method") or "squash"),
+                owner_approved=bool(values.get("owner_approved", False)),
+                mark_ready_if_draft=bool(values.get("mark_ready_if_draft", True)),
+                allow_unrelated_android_pending=bool(values.get("allow_unrelated_android_pending", False)),
+                wait_seconds_per_pr=int(values.get("wait_seconds_per_pr") or 1800),
+                poll_seconds=int(values.get("poll_seconds") or 15),
+            ),
             "github_main_ruleset_apply": lambda values: self.github.apply_main_ruleset(
                 owner_approved=bool(values.get("owner_approved", False)),
             ),

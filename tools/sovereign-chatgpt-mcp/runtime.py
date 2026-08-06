@@ -867,19 +867,18 @@ class OperatorRuntime:
             ),
             None,
         )
-        other_drafts = [
-            int(pull.get("number") or 0)
+        parallel_drafts = [
+            {
+                "number": int(pull.get("number") or 0),
+                "head_ref": str((pull.get("head") or {}).get("ref") or ""),
+                "title": str(pull.get("title") or "")[:256],
+            }
             for pull in open_pulls
             if isinstance(pull, dict)
             and bool(pull.get("draft"))
             and str((pull.get("head") or {}).get("ref") or "") != branch
+            and int(pull.get("number") or 0) > 0
         ]
-        other_drafts = [number for number in other_drafts if number > 0]
-        if same_branch is None and other_drafts:
-            raise RuntimeError(
-                "OPEN_DRAFT_PR_EXISTS: Ein anderer offener Draft-PR blockiert die Erstellung: "
-                + ", ".join(f"#{number}" for number in other_drafts)
-            )
 
         diff_check = self.run_check(workspace_id, "git_diff_check")
         if not diff_check["ok"]:
@@ -962,5 +961,7 @@ class OperatorRuntime:
             "changed_files": changed,
             "checks": metadata.get("checks", {}),
             "remote_validation": metadata.get("remote_validation", {"required": False}),
+            "parallel_drafts_observed": parallel_drafts,
+            "parallel_drafts_blocking": False,
             "continuity": continuity_result,
         }

@@ -39,7 +39,8 @@
     "requiredForRepositoryFinalization": [
       "repository_create_draft_pr",
       "repository_push_main",
-      "repository_merge_pr"
+      "repository_merge_pr",
+      "repository_merge_pr_series"
     ],
     "requiredChangedPaths": [
       "docs/sovereign-continuity/LEDGER.jsonl",

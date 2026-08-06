@@ -1,0 +1,24 @@
+[Unit]
+Description=Sovereign coordinated main release reconciler
+After=network-online.target docker.service sovereign-chatgpt-broker.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env
+Environment=SOVEREIGN_RELEASE_RECONCILER_STATE_DIR=/var/lib/sovereign-release-reconciler
+ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release
+StateDirectory=sovereign-release-reconciler
+StateDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=false
+TimeoutStartSec=2h
+
+[Install]
+WantedBy=multi-user.target

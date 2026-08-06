@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -50,6 +51,10 @@ MAIN_RULESET_REQUIRED_CHECKS = (
     "continuity-ledger",
     "Revision Guardian",
 )
+MAX_PR_SERIES = 500
+MAX_SERIES_WAIT_SECONDS = 3600
+MIN_SERIES_POLL_SECONDS = 2
+MAX_SERIES_POLL_SECONDS = 60
 
 
 def _enabled(name: str) -> bool:
@@ -834,6 +839,348 @@ class GitHubAdminRuntime:
         if not isinstance(updated, dict) or updated.get("isDraft") is not False:
             raise RuntimeError("GitHub bestätigte den Draft-Übergang nicht")
         return {"ok": True, "status": "READY_FOR_REVIEW", "node_id": node_id}
+
+    def _main_head_sha(self) -> str:
+        ref = self._request("GET", f"/repos/{self.repository}/git/ref/heads/main")
+        main_sha = str(((ref.get("object") or {}) if isinstance(ref, dict) else {}).get("sha") or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(main_sha):
+            raise RuntimeError("GitHub lieferte keinen vollständigen aktuellen Main-SHA")
+        return main_sha
+
+    def _verify_update_branch_commit(
+        self,
+        *,
+        new_head_sha: str,
+        previous_head_sha: str,
+        main_sha: str,
+    ) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            f"/repos/{self.repository}/git/commits/{new_head_sha}",
+        )
+        parents = {
+            str(item.get("sha") or "").strip().lower()
+            for item in (payload.get("parents") if isinstance(payload, dict) else []) or []
+            if isinstance(item, dict)
+        }
+        required = {previous_head_sha, main_sha}
+        if not required.issubset(parents):
+            raise RuntimeError("PR_SERIES_UPDATE_COMMIT_IDENTITY_MISMATCH")
+        return {
+            "ok": True,
+            "status": "UPDATE_BRANCH_COMMIT_VERIFIED",
+            "head_sha": new_head_sha,
+            "parents": sorted(parents),
+        }
+
+    def _wait_for_series_checks(
+        self,
+        *,
+        pr_number: int,
+        expected_head_sha: str,
+        changed_files: list[str],
+        allow_unrelated_android_pending: bool,
+        wait_seconds: int,
+        poll_seconds: int,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + wait_seconds
+        last_status: dict[str, Any] | None = None
+        while True:
+            status = self.pr_status(pr_number=pr_number)
+            last_status = status
+            if status.get("head_sha") != expected_head_sha:
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "failure_family": "PR_HEAD_CHANGED_DURING_SERIES",
+                    "blocker": "PR-Head änderte sich während der Serienprüfung",
+                    "pr": status,
+                }
+            checks = status.get("checks") if isinstance(status.get("checks"), dict) else {}
+            failed = list(checks.get("failed") or [])
+            pending = list(checks.get("pending") or [])
+            if failed:
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "failure_family": "PR_SERIES_CHECK_FAILED",
+                    "blocker": "Ein PR der Serie enthält fehlgeschlagene Checks",
+                    "pr": status,
+                }
+            if checks.get("ok") is True:
+                return {"ok": True, "status": "CHECKS_GREEN", "pr": status, "ignored_pending_checks": []}
+            if allow_unrelated_android_pending and not self._touches_android_surface(changed_files):
+                remaining = [name for name in pending if name not in OWNER_SCOPED_IGNORABLE_PENDING_CHECKS]
+                ignored = [name for name in pending if name in OWNER_SCOPED_IGNORABLE_PENDING_CHECKS]
+                if ignored and not remaining:
+                    return {
+                        "ok": True,
+                        "status": "CHECKS_GREEN_WITH_OWNER_ANDROID_EXCEPTION",
+                        "pr": status,
+                        "ignored_pending_checks": ignored,
+                    }
+            if time.monotonic() >= deadline:
+                return {
+                    "ok": False,
+                    "status": "BLOCKED",
+                    "failure_family": "PR_SERIES_CHECK_TIMEOUT",
+                    "blocker": "PR-Checks wurden innerhalb des Serien-Zeitfensters nicht terminal grün",
+                    "pr": last_status,
+                }
+            time.sleep(poll_seconds)
+
+    def merge_pr_series(
+        self,
+        *,
+        pull_requests: list[dict[str, Any]],
+        merge_method: str = "squash",
+        owner_approved: bool = False,
+        mark_ready_if_draft: bool = True,
+        allow_unrelated_android_pending: bool = False,
+        wait_seconds_per_pr: int = 1800,
+        poll_seconds: int = 15,
+    ) -> dict[str, Any]:
+        blocked = self._require_owner_pr_admin(owner_approved)
+        if blocked:
+            return blocked
+        if not isinstance(pull_requests, list) or not pull_requests or len(pull_requests) > MAX_PR_SERIES:
+            raise ValueError(f"pull_requests muss zwischen 1 und {MAX_PR_SERIES} Einträge enthalten")
+        method = str(merge_method or "squash").strip().lower()
+        if method not in ALLOWED_MERGE_METHODS:
+            raise ValueError("merge_method muss merge, squash oder rebase sein")
+        wait_seconds = max(30, min(int(wait_seconds_per_pr), MAX_SERIES_WAIT_SECONDS))
+        selected_poll_seconds = max(
+            MIN_SERIES_POLL_SECONDS,
+            min(int(poll_seconds), MAX_SERIES_POLL_SECONDS),
+        )
+
+        confirmed: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        seen_numbers: set[int] = set()
+        for item in pull_requests:
+            if not isinstance(item, dict):
+                raise ValueError("Jeder Serien-Eintrag muss ein Objekt sein")
+            number = self._pr_number(int(item.get("pr_number") or 0))
+            expected = str(item.get("expected_head_sha") or "").strip().lower()
+            if not COMMIT_SHA_RE.fullmatch(expected):
+                raise ValueError("Jeder Serien-Eintrag benötigt expected_head_sha als vollständige Commit-SHA")
+            if number in seen_numbers:
+                raise ValueError("PR-Nummern dürfen in einer Serie nicht doppelt vorkommen")
+            seen_numbers.add(number)
+            pull = self._pull(number)
+            actual = str((pull.get("head") or {}).get("sha") or "").strip().lower()
+            base_ref = str((pull.get("base") or {}).get("ref") or "").strip()
+            head_repo = str(((pull.get("head") or {}).get("repo") or {}).get("full_name") or "").strip()
+            if str(pull.get("state") or "") != "open" or base_ref != "main":
+                skipped.append({
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "failure_family": "PR_SERIES_PREFLIGHT_FAILED",
+                    "reason": "PR ist nicht offen oder zielt nicht auf main",
+                    "quarantined": True,
+                })
+                continue
+            if actual != expected:
+                skipped.append({
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "actual_head_sha": actual,
+                    "failure_family": "PR_SERIES_HEAD_MISMATCH",
+                    "reason": "PR-Head stimmt nicht mit der Owner-Bestätigung überein",
+                    "quarantined": True,
+                })
+                continue
+            if head_repo.lower() != self.repository.lower():
+                skipped.append({
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "failure_family": "PR_SERIES_FORK_FORBIDDEN",
+                    "reason": "Serienintegration ist nur für Branches desselben Repositorys erlaubt",
+                    "quarantined": True,
+                })
+                continue
+            confirmed.append(
+                {
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "created_at": str(pull.get("created_at") or ""),
+                    "title": str(pull.get("title") or ""),
+                }
+            )
+
+        ordered = sorted(confirmed, key=lambda item: (item["created_at"], item["pr_number"]))
+        results: list[dict[str, Any]] = []
+        all_changed_files: list[str] = []
+        for position, item in enumerate(ordered, start=1):
+            number = int(item["pr_number"])
+            expected = str(item["expected_head_sha"])
+            pull = self._pull(number)
+            current_head = str((pull.get("head") or {}).get("sha") or "").strip().lower()
+            if current_head != expected:
+                skipped.append({
+                    "position": position,
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "actual_head_sha": current_head,
+                    "failure_family": "PR_SERIES_HEAD_CHANGED_BEFORE_TURN",
+                    "reason": "PR-Head änderte sich vor seinem Serienturn",
+                    "quarantined": True,
+                })
+                continue
+
+            try:
+                relation = self._main_revision_relation(current_head)
+                synchronization: dict[str, Any] = {"ok": True, "status": "ALREADY_CONTAINS_CURRENT_MAIN"}
+                if not relation.get("contains_current_main"):
+                    main_sha = str(relation.get("main_sha") or "")
+                    self._request(
+                        "PUT",
+                        f"/repos/{self.repository}/pulls/{number}/update-branch",
+                        json_body={"expected_head_sha": current_head},
+                        expected=(200, 202),
+                        timeout=60,
+                    )
+                    deadline = time.monotonic() + wait_seconds
+                    new_head = ""
+                    while time.monotonic() < deadline:
+                        refreshed = self._pull(number)
+                        candidate = str((refreshed.get("head") or {}).get("sha") or "").strip().lower()
+                        if candidate and candidate != current_head:
+                            self._verify_update_branch_commit(
+                                new_head_sha=candidate,
+                                previous_head_sha=current_head,
+                                main_sha=main_sha,
+                            )
+                            updated_relation = self._main_revision_relation(candidate)
+                            if updated_relation.get("contains_current_main"):
+                                new_head = candidate
+                                relation = updated_relation
+                                break
+                        time.sleep(selected_poll_seconds)
+                    if not new_head:
+                        skipped.append({
+                            "position": position,
+                            "pr_number": number,
+                            "expected_head_sha": expected,
+                            "failure_family": "PR_SERIES_UPDATE_TIMEOUT",
+                            "reason": "GitHub bestätigte die revisionsgebundene Branch-Synchronisierung nicht rechtzeitig",
+                            "quarantined": True,
+                        })
+                        continue
+                    synchronization = {
+                        "ok": True,
+                        "status": "UPDATED_TO_CURRENT_MAIN",
+                        "previous_head_sha": current_head,
+                        "head_sha": new_head,
+                        "main_sha": relation.get("main_sha"),
+                    }
+                    current_head = new_head
+            except RuntimeError as exc:
+                skipped.append({
+                    "position": position,
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "failure_family": "PR_SERIES_SYNCHRONIZATION_FAILED",
+                    "reason": str(exc)[:1000],
+                    "quarantined": True,
+                })
+                continue
+
+            changed_files = self._changed_files(number)
+            check_gate = self._wait_for_series_checks(
+                pr_number=number,
+                expected_head_sha=current_head,
+                changed_files=changed_files,
+                allow_unrelated_android_pending=allow_unrelated_android_pending,
+                wait_seconds=wait_seconds,
+                poll_seconds=selected_poll_seconds,
+            )
+            if not check_gate.get("ok"):
+                skipped.append({
+                    "position": position,
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "evaluated_head_sha": current_head,
+                    "failure_family": check_gate.get("failure_family") or "PR_SERIES_CHECK_GATE_FAILED",
+                    "reason": check_gate.get("blocker") or "PR-Serienprüfung fehlgeschlagen",
+                    "synchronization": synchronization,
+                    "check_gate": check_gate,
+                    "quarantined": True,
+                })
+                continue
+
+            merged = self.merge_pr(
+                pr_number=number,
+                expected_head_sha=current_head,
+                merge_method=method,
+                owner_approved=True,
+                mark_ready_if_draft=mark_ready_if_draft,
+                allow_unrelated_android_pending=allow_unrelated_android_pending,
+            )
+            if not merged.get("ok") or merged.get("status") != "MERGED":
+                skipped.append({
+                    "position": position,
+                    "pr_number": number,
+                    "expected_head_sha": expected,
+                    "evaluated_head_sha": current_head,
+                    "failure_family": "PR_SERIES_MERGE_FAILED",
+                    "reason": merged.get("blocker") or "GitHub bestätigte den Serien-Merge nicht",
+                    "merge_result": merged,
+                    "quarantined": True,
+                })
+                continue
+            merge_sha = str(merged.get("merge_commit_sha") or "").strip().lower()
+            main_readback = self._main_head_sha()
+            if main_readback != merge_sha:
+                return {
+                    "ok": False,
+                    "status": "PR_SERIES_HALTED_SYSTEMIC",
+                    "failure_family": "PR_SERIES_MAIN_READBACK_MISMATCH",
+                    "blocker": "Main-Readback stimmt nicht mit dem bestätigten Merge-Commit überein",
+                    "completed": results,
+                    "skipped": skipped,
+                    "halted_at": number,
+                    "merge_commit_sha": merge_sha,
+                    "main_sha": main_readback,
+                    "already_merged_prs_are_never_rolled_back": True,
+                    "manual_integrity_readback_required": True,
+                }
+            all_changed_files.extend(str(path) for path in merged.get("changed_files") or [])
+            results.append(
+                {
+                    "position": position,
+                    "pr_number": number,
+                    "original_head_sha": expected,
+                    "merged_head_sha": current_head,
+                    "merge_commit_sha": merge_sha,
+                    "main_sha": main_readback,
+                    "synchronization": synchronization,
+                    "check_gate": check_gate,
+                }
+            )
+
+        final_main = self._main_head_sha()
+        unique_changed_files = list(dict.fromkeys(all_changed_files))
+        return {
+            "ok": True,
+            "status": "PR_SERIES_COMPLETED_WITH_SKIPS" if skipped else "PR_SERIES_MERGED",
+            "merge_method": method,
+            "ordered_pr_numbers": [item["pr_number"] for item in ordered],
+            "completed": results,
+            "skipped": skipped,
+            "merged_count": len(results),
+            "skipped_count": len(skipped),
+            "all_merged": not skipped and len(results) == len(ordered),
+            "final_main_sha": final_main,
+            "changed_files": unique_changed_files,
+            "touches_backend": any(path.startswith(("backend/", "scripts/sovereign-backend/")) for path in unique_changed_files),
+            "touches_private_mcp": any(path.startswith(MCP_PATH_PREFIX) or path == MCP_WORKFLOW_PATH for path in unique_changed_files),
+            "owner_approved": True,
+            "candidate_failures_are_quarantined": True,
+            "systemic_integrity_failures_halt_series": True,
+            "already_merged_prs_are_never_rolled_back": True,
+            "blind_merge_performed": False,
+        }
 
     def merge_pr(
         self,

@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodically reconcile the latest verified Sovereign main release
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+RandomizedDelaySec=15s
+AccuracySec=15s
+Persistent=true
+Unit=sovereign-release-reconciler.service
+
+[Install]
+WantedBy=timers.target
