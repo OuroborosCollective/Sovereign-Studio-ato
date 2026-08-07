@@ -228,6 +228,7 @@ export interface DevChatRepoSnapshot {
   readonly branch: string;
   readonly name: string;
   readonly repoUrl: string;
+  readonly headSha?: string;
   readonly treeSha?: string;
   readonly fileCount: number;
   readonly files: readonly DevChatRepoTreeFile[];
@@ -293,18 +294,28 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
   const timeoutId = setTimeout(() => timeoutController.abort(), REPO_TREE_TIMEOUT_MS);
 
   try {
-    const response = await fetch(
-      `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(parsed.branch)}?recursive=1`,
-      {
-        headers: { Accept: 'application/vnd.github+json' },
-        signal: timeoutController.signal,
-      },
-    );
+    const [treeResponse, commitResponse] = await Promise.all([
+      fetch(
+        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(parsed.branch)}?recursive=1`,
+        {
+          headers: { Accept: 'application/vnd.github+json' },
+          signal: timeoutController.signal,
+        },
+      ),
+      fetch(
+        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(parsed.branch)}`,
+        {
+          headers: { Accept: 'application/vnd.github+json' },
+          signal: timeoutController.signal,
+        },
+      ),
+    ]);
     clearTimeout(timeoutId);
 
-    if (!response.ok) return { ok: false, error: `GitHub API ${response.status}` };
+    if (!treeResponse.ok) return { ok: false, error: `GitHub Tree API ${treeResponse.status}` };
+    if (!commitResponse.ok) return { ok: false, error: `GitHub Commit API ${commitResponse.status}` };
 
-    const data = await response.json();
+    const [data, commit] = await Promise.all([treeResponse.json(), commitResponse.json()]);
     const tree = Array.isArray(data.tree) ? data.tree : [];
     const files = tree
       .filter((entry: { type?: string }) => entry.type === 'blob' || entry.type === 'tree')
@@ -330,6 +341,7 @@ export async function fetchDevChatRepoTree(parsed: ParsedDevChatGithubUrl): Prom
         branch: parsed.branch,
         name: parsed.name,
         repoUrl: parsed.repoUrl,
+        headSha: typeof commit.sha === 'string' ? commit.sha : undefined,
         treeSha: typeof data.sha === 'string' ? data.sha : undefined,
         fileCount: files.length,
         files,

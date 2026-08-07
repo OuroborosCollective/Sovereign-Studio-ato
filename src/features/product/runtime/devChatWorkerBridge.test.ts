@@ -93,22 +93,31 @@ describe('devChatWorkerBridge', () => {
     })).toBe('acme/tool geladen · main · 3 files');
   });
 
-  it('fetchDevChatRepoTree loads a bounded GitHub tree snapshot', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
-      sha: 'tree-sha-123',
-      truncated: false,
-      tree: [
-        { path: 'README.md', type: 'blob', size: 42, sha: 'blob-readme' },
-        { path: 'src/App.tsx', type: 'blob', size: 120, sha: 'blob-app' },
-        { path: 'src', type: 'tree', sha: 'tree-src' },
-      ],
-    })));
+  it('fetchDevChatRepoTree loads a bounded revision-bound GitHub snapshot', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/commits/')) {
+        return jsonResponse({ sha: 'a'.repeat(40) });
+      }
+      return jsonResponse({
+        sha: 'tree-sha-123',
+        truncated: false,
+        tree: [
+          { path: 'README.md', type: 'blob', size: 42, sha: 'blob-readme' },
+          { path: 'src/App.tsx', type: 'blob', size: 120, sha: 'blob-app' },
+          { path: 'src', type: 'tree', sha: 'tree-src' },
+        ],
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const parsed = parseDevChatGithubUrl('https://github.com/acme/tool')!;
     const result = await fetchDevChatRepoTree(parsed);
 
     expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.snapshot?.fileCount).toBe(3);
+    expect(result.snapshot?.headSha).toBe('a'.repeat(40));
     expect(result.snapshot?.treeSha).toBe('tree-sha-123');
     expect(result.snapshot?.files.find((file) => file.path === 'src/App.tsx')?.sha).toBe('blob-app');
     expect(result.snapshot?.dirs).toContain('src');
