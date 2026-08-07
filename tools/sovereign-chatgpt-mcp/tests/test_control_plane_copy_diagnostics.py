@@ -29,6 +29,17 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'os.utime(' in script
     assert 'install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"' not in script
     assert 'install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"' not in script
+    assert "backup_managed_control_plane_file()" in script
+    assert 'INSTALL_STAGE="backup_control_plane_file:${label}"' in script
+    assert "remove_managed_legacy_file()" in script
+    assert 'INSTALL_STAGE="remove_legacy_control_plane_file:${label}"' in script
+    assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in script
+    assert 'remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"' in script
+    assert 'chattr -i -- "$target"' in script
+    assert "legacy managed file removal failed after immutable-bit clear" in script
+    assert 'INSTALL_STAGE="remove_legacy_control_plane_directory:templates/sovereign-litellm"' in script
+    assert "legacy LiteLLM template root is not empty after bounded managed-file cleanup" in script
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
 
 
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
