@@ -29,12 +29,17 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     service = (ROOT / "deploy" / "sovereign-chatgpt-broker.service").read_text("utf-8")
     worker_service = (ROOT / "deploy" / "sovereign-chatgpt-command-worker.service").read_text("utf-8")
+    broker_copy_loop = script.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
 
-    assert 'install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"' in script
-    assert 'install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"' in script
-    assert 'install -m 0640 "$SOURCE_DIR/ci_repair_tools.py" "$BROKER_DIR/ci_repair_tools.py"' in script
-    assert 'install -m 0640 "$SOURCE_DIR/llm_boundary_ledger.py" "$BROKER_DIR/llm_boundary_ledger.py"' in script
-    assert 'install -m 0640 "$SOURCE_DIR/llm_boundary_contract.py" "$BROKER_DIR/llm_boundary_contract.py"' in script
+    assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"' in broker_copy_loop
+    for filename in (
+        "admin_mode.py",
+        "github_admin.py",
+        "ci_repair_tools.py",
+        "llm_boundary_ledger.py",
+        "llm_boundary_contract.py",
+    ):
+        assert filename in broker_copy_loop
     assert "SOVEREIGN_MCP_ENABLE_ADMIN_SQL" in script
     assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script
@@ -46,7 +51,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
-    assert 'install -m 0640 "$SOURCE_DIR/command_worker.py" "$BROKER_DIR/command_worker.py"' in script
+    assert "command_worker.py" in broker_copy_loop
     assert 'install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service"' in script
     assert 'systemctl enable --now sovereign-chatgpt-command-worker.service' in script
     assert 'SOVEREIGN_MCP_COMMAND_QUEUE=' in script
@@ -65,9 +70,9 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in script
     assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL' in script
     assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS' in script
-    assert 'install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"' in script
-    assert 'install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"' in script
-    assert 'install -m 0640 "$SOURCE_DIR/fleet_maintenance.py" "$BROKER_DIR/fleet_maintenance.py"' in script
+    assert "managed_compose.py" in broker_copy_loop
+    assert "patchmon_operator.py" in broker_copy_loop
+    assert "fleet_maintenance.py" in broker_copy_loop
     assert 'MAINTENANCE_DIR="$INSTALL_ROOT/maintenance"' in script
     assert 'install -d -m 0700 -o root -g root "$MAINTENANCE_DIR" "$MAINTENANCE_DIR/backups" "$MAINTENANCE_DIR/receipts"' in script
     assert '/opt/sovereign-chatgpt-tools/maintenance' in worker_service
@@ -172,8 +177,10 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
     updater = (ROOT / "deploy" / "self-update-chatgpt-mcp.sh").read_text("utf-8")
     service = (ROOT / "deploy" / "sovereign-chatgpt-mcp-self-update.service").read_text("utf-8")
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
 
-    assert 'install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"' in installer
+    assert "self_update.py" in broker_copy_loop
+    assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"' in broker_copy_loop
     assert 'install -m 0750 "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh"' in installer
     assert "SOVEREIGN_MCP_ENABLE_SELF_UPDATE" in installer
     assert 'git rev-parse origin/main' in updater
