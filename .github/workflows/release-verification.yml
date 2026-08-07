@@ -176,9 +176,23 @@ jobs:
 
       - name: Runtime Unit Tests
         id: unit_tests
-        run: pnpm run test:unit
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p .security-reports
+          pnpm run test:unit 2>&1 | tee .security-reports/runtime-unit-tests.log
         env:
           CI: true
+
+      - name: Upload Runtime Unit Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-unit-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .security-reports/runtime-unit-tests.log
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Build Web + Android Sync
         id: build_sync
