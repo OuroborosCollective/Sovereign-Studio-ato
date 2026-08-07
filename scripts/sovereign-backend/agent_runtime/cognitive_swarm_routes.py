@@ -1699,21 +1699,31 @@ def start_cognitive_swarm_run(
         if mission_intent.mode == "repository_execution":
             conn = get_connection()
             try:
-                repository = _configured_repository()
+                configured_repository = _configured_repository()
+                selected_repository_url = (
+                    normalized_repository_url
+                    or f"https://github.com/{configured_repository}"
+                )
+                job_payload: dict[str, Any] = {
+                    "repoUrl": selected_repository_url,
+                    "branch": normalized_repository_branch,
+                    "mission": mission_intent.normalized_goal,
+                    "executor": "sovereign-local-runner",
+                    "draftPrOnly": True,
+                    "allowAutoMerge": False,
+                }
+                if normalized_expected_head_sha:
+                    job_payload["expectedHeadSha"] = normalized_expected_head_sha
+                if normalized_github_access_token:
+                    job_payload["githubAccessToken"] = normalized_github_access_token
                 implementation_job = create_sovereign_agent_job(
                     conn,
                     user_id=user_id,
-                    payload={
-                        "repoUrl": f"https://github.com/{repository}",
-                        "branch": "main",
-                        "mission": mission_intent.normalized_goal,
-                        "executor": "sovereign-local-runner",
-                        "draftPrOnly": True,
-                        "allowAutoMerge": False,
-                    },
+                    payload=job_payload,
                     workspace_root=_workspace_root(),
                     provision_workspace=True,
                     clone_repo=True,
+                    job_id=normalized_implementation_job_id,
                 )
                 linked_state = link_agent_run_job(
                     conn,
@@ -2348,6 +2358,11 @@ def register_cognitive_swarm_routes(
             agent_model=str(body.get("agentModel") or "") or None,
             mode=str(body.get("mode") or "auto"),
             intent_mode=str(body.get("intentMode") or "auto"),
+            repository_url=str(body.get("repositoryUrl") or body.get("repoUrl") or "") or None,
+            repository_branch=str(body.get("repositoryBranch") or body.get("branch") or "main"),
+            expected_head_sha=str(body.get("expectedHeadSha") or "") or None,
+            github_access_token=str(body.get("githubAccessToken") or "") or None,
+            implementation_job_id=str(body.get("implementationJobId") or "") or None,
         )
         return jsonify(payload), status_code
 
