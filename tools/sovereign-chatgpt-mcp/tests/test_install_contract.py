@@ -166,11 +166,13 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/sovereign-freellmapi' in worker_service
     assert '/opt/sovereign-freellmpool' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' not in script
-    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in script
+    assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in script
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
     assert "managed_compose.py" in broker_copy_loop
     assert "patchmon_operator.py" in broker_copy_loop
     assert 'install -m 0640 "$LITELLM_TEMPLATE_SOURCE/' not in script
-    assert 'rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"' in script
+    assert 'remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml" "templates/sovereign-litellm/docker-compose.yml"' in script
+    assert 'rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"' not in script
     assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL' in script
     assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE' in script
     assert 'templates/pgbackweb-wq5r' in script
