@@ -180,6 +180,7 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
       return normalizeLiteLlmMockResponse(response, userText);
     }
     if (isGitHubApiRequest(input)) {
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
       const next = queue.shift();
       if (!next) return jsonResponse({ message: 'Unexpected GitHub API request in test.' }, 500);
       return typeof next === 'function' ? next() : next;
@@ -194,7 +195,7 @@ function nonAuthFetchCalls(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock.mock.calls.filter(([input]) => {
     const request = input as RequestInfo | URL;
     const url = requestUrl(request);
-    return isGitHubApiRequest(request)
+    return (isGitHubApiRequest(request) && !url.includes('/commits/'))
       || url.includes('/api/llm/routes')
       || url.includes('/api/llm/chat');
   });
@@ -905,6 +906,8 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(props.onStartAgent.mock.calls[0][1]).toEqual({
       repoUrl: TEST_REPO_URL,
       branch: "main",
+      expectedHeadSha: 'c'.repeat(40),
+      githubAccessToken: fakeGitHubPat(),
     });
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
   });
