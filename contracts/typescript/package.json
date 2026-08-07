@@ -1,0 +1,35 @@
+{
+  "name": "@sovereign-studio/contracts",
+  "version": "0.1.0-pilot",
+  "description": "TypeScript Contract Pilot - Compile-time type contracts for MCP and receipt boundaries",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit && node --loader ts-node/esm src/build-contract.ts",
+    "build:schemas": "tsc --noEmit && node --loader ts-node/esm src/generate-schemas.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "validate": "node dist/validate.js"
+  },
+  "keywords": ["typescript", "contracts", "validation", "mcp"],
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "@types/node": "^22.0.0"
+  }
+}
