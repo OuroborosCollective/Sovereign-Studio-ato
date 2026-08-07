@@ -253,3 +253,35 @@ def test_configured_status_requires_all_secret_families() -> None:
     assert payload["apiConfigured"] is False
     assert payload["oauthConfigured"] is False
     assert payload["webhookConfigured"] is False
+
+
+def test_github_app_routes_reject_non_dict_payloads(monkeypatch) -> None:
+    monkeypatch.setattr(github_app, "verify_github_app_webhook", lambda _p, _s: True)
+    client = _registered_app().test_client()
+
+    malformed_bodies = [
+        [],                      # JSON list
+        [1, 2, 3],               # JSON list with elements
+        "string_payload",        # JSON string
+        12345,                   # JSON integer
+    ]
+
+    for body in malformed_bodies:
+        # Test Webhook endpoint
+        resp1 = client.post(
+            "/api/webhooks/github-app",
+            json=body,
+            headers={"X-GitHub-Event": "installation", "X-Hub-Signature-256": "fake"}
+        )
+        assert resp1.status_code == 400
+        payload1 = resp1.get_json()
+        assert payload1["error"] == "Malformed payload; dictionary required"
+
+        # Test Deduct endpoint
+        resp2 = client.post(
+            "/api/github-app/installations/42/deduct",
+            json=body
+        )
+        assert resp2.status_code == 400
+        payload2 = resp2.get_json()
+        assert payload2["error"] == "Malformed payload; dictionary required"
