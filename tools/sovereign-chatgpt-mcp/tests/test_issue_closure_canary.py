@@ -157,10 +157,12 @@ def test_canary_is_registered_and_packaged_for_mcp_and_broker() -> None:
     broker = (MCP / "broker.py").read_text("utf-8")
     dockerfile = (MCP / "Dockerfile").read_text("utf-8")
     installer = (MCP / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
 
     assert "def issue_closure_runtime_canary(" in server
     assert '"issue_closure_runtime_canary"' in broker
     assert "issue_closure_canary.py" in dockerfile
-    assert 'install -m 0640 "$SOURCE_DIR/issue_closure_canary.py"' in installer
+    assert "issue_closure_canary.py" in broker_copy_loop
+    assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"' in broker_copy_loop
     assert "import issue_closure_canary" in installer
     assert "callable(server.issue_closure_runtime_canary)" in installer
