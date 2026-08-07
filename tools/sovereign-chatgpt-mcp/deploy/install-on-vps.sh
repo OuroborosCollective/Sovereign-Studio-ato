@@ -350,6 +350,51 @@ backup_control_plane_file() {
   fi
 }
 
+install_managed_control_plane_file() {
+  local mode="$1"
+  local source="$2"
+  local target="$3"
+  local label="$4"
+  INSTALL_STAGE="copy_control_plane_file:${label}"
+  [[ -f "$source" && ! -L "$source" ]] || fail "managed control-plane source is not a regular file: $label"
+  if [[ -e "$target" || -L "$target" ]]; then
+    [[ -f "$target" && ! -L "$target" ]] \
+      || fail "managed control-plane target is not a regular file: $target"
+  fi
+  backup_control_plane_file "$target"
+  if ! python3 - "$source" "$target" "$mode" <<'PY'
+from pathlib import Path
+import errno
+import os
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+mode = int(sys.argv[3], 8)
+payload = source.read_bytes()
+temporary = target.with_name(f".{target.name}.sovereign-install-{os.getpid()}")
+temporary.write_bytes(payload)
+os.chmod(temporary, mode)
+try:
+    temporary.replace(target)
+except OSError as exc:
+    if exc.errno not in {errno.EPERM, errno.EBUSY, errno.EXDEV}:
+        temporary.unlink(missing_ok=True)
+        raise
+    try:
+        with target.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(target, mode)
+    finally:
+        temporary.unlink(missing_ok=True)
+PY
+  then
+    fail "managed control-plane copy failed: label=$label target=$target"
+  fi
+}
+
 restore_control_plane_files() {
   [[ "$ROLLBACK_ARMED" == "1" && -f "$ROLLBACK_MANIFEST" ]] || return 0
   while IFS=$'\t' read -r target key; do
@@ -559,14 +604,13 @@ ROLLBACK_ARMED=1
 
 INSTALL_STAGE="copy_control_plane_files"
 for file in Dockerfile requirements.txt policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py patchmon_operator.py patchmon_fleet.py launcher.py docker-compose.yml; do
-  backup_control_plane_file "$INSTALL_ROOT/$file"
-  install -m 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file"
+  install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
 done
-install -m 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md"
-install -m 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl" "continuity-data/LEDGER.jsonl"
 
 for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
-  backup_control_plane_file "$BROKER_DIR/$file"
+  install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
 backup_control_plane_file "$BROKER_DIR/litellm_stack.py"
 backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
@@ -593,28 +637,7 @@ chown root:sovereign-mcp "$SELF_UPDATE_NEXT"
 mv -f "$SELF_UPDATE_NEXT" "$SELF_UPDATE_BIN"
 unset SELF_UPDATE_NEXT
 
-install -m 0640 "$SOURCE_DIR/broker.py" "$BROKER_DIR/broker.py"
-install -m 0640 "$SOURCE_DIR/browserless_reader.py" "$BROKER_DIR/browserless_reader.py"
-install -m 0640 "$SOURCE_DIR/document_pipeline.py" "$BROKER_DIR/document_pipeline.py"
-install -m 0640 "$SOURCE_DIR/github_knowledge_canary.py" "$BROKER_DIR/github_knowledge_canary.py"
-install -m 0640 "$SOURCE_DIR/issue_closure_canary.py" "$BROKER_DIR/issue_closure_canary.py"
-install -m 0640 "$SOURCE_DIR/programming_language_catalog_runtime.py" "$BROKER_DIR/programming_language_catalog_runtime.py"
-install -m 0640 "$SOURCE_DIR/command_contract.py" "$BROKER_DIR/command_contract.py"
-install -m 0640 "$SOURCE_DIR/command_queue.py" "$BROKER_DIR/command_queue.py"
-install -m 0640 "$SOURCE_DIR/command_worker.py" "$BROKER_DIR/command_worker.py"
-install -m 0640 "$SOURCE_DIR/operations.py" "$BROKER_DIR/operations.py"
-install -m 0640 "$SOURCE_DIR/admin_mode.py" "$BROKER_DIR/admin_mode.py"
-install -m 0640 "$SOURCE_DIR/github_admin.py" "$BROKER_DIR/github_admin.py"
-install -m 0640 "$SOURCE_DIR/ci_repair_tools.py" "$BROKER_DIR/ci_repair_tools.py"
-install -m 0640 "$SOURCE_DIR/llm_boundary_ledger.py" "$BROKER_DIR/llm_boundary_ledger.py"
-install -m 0640 "$SOURCE_DIR/llm_boundary_contract.py" "$BROKER_DIR/llm_boundary_contract.py"
-install -m 0640 "$SOURCE_DIR/self_update.py" "$BROKER_DIR/self_update.py"
-install -m 0640 "$SOURCE_DIR/policy.py" "$BROKER_DIR/policy.py"
-install -m 0640 "$SOURCE_DIR/self_heal.py" "$BROKER_DIR/self_heal.py"
-install -m 0640 "$SOURCE_DIR/managed_compose.py" "$BROKER_DIR/managed_compose.py"
-install -m 0640 "$SOURCE_DIR/patchmon_operator.py" "$BROKER_DIR/patchmon_operator.py"
-install -m 0640 "$SOURCE_DIR/patchmon_fleet.py" "$BROKER_DIR/patchmon_fleet.py"
-install -m 0640 "$SOURCE_DIR/fleet_maintenance.py" "$BROKER_DIR/fleet_maintenance.py"
+
 rm -f "$BROKER_DIR/litellm_stack.py"
 rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
 rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
