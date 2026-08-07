@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CANONICAL = ROOT / "backend" / "agent_runtime" / "cognitive_swarm_routes.py"
 MIRROR = ROOT / "scripts" / "sovereign-backend" / "agent_runtime" / "cognitive_swarm_routes.py"
 APP = ROOT / "src" / "App.tsx"
+DRAFT_FLOW_TEST = ROOT / "src" / "App.draftPrFlow.test.tsx"
 BUILDER = ROOT / "src" / "features" / "product" / "containers" / "BuilderContainer.tsx"
 CLIENT = ROOT / "src" / "features" / "product" / "runtime" / "sovereignAgentClient.ts"
 RUNTIME = ROOT / "src" / "features" / "product" / "runtime" / "sovereignAgentRuntime.ts"
@@ -43,6 +44,13 @@ def test_devchat_uses_executable_repository_runtime_and_restores_jobs() -> None:
     assert "agentClient.createDraftPr(jobId, input?.githubAccessToken)" in app
     assert "'/api/user/agent/swarm/run'" in client
     assert "async listJobs(): Promise<SovereignAgentJobSnapshot[]>" in client
+
+
+def test_draft_pr_resume_tests_use_optional_transient_token_signature() -> None:
+    source = DRAFT_FLOW_TEST.read_text("utf-8")
+
+    assert "toHaveBeenCalledWith('job-1', undefined)" in source
+    assert "toHaveBeenCalledWith('job-staged', undefined)" in source
 
 
 def test_reviewable_presets_bypass_are_for_direct_and_resumed_execution() -> None:
