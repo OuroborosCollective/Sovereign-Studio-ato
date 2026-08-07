@@ -31,11 +31,19 @@ def test_provider_allowlist_has_keyed_and_keyless_contracts(tmp_path: Path) -> N
     assert FREELLM_PROVIDER_SPECS["aihorde"]["keyless"] is True
     assert provider_secret_path(tmp_path, "groq") == tmp_path / "freellm-provider-keys" / "groq.key"
     fingerprint = "a" * 64
+    second_fingerprint = "b" * 64
     pooled = provider_secret_pool_path(tmp_path, "groq", fingerprint)
+    pooled_second = provider_secret_pool_path(tmp_path, "groq", second_fingerprint)
     assert pooled == tmp_path / "freellm-provider-keys" / f"groq.{fingerprint}.key"
+    assert pooled_second != pooled
+    assert provider_secret_pool_path(tmp_path, "groq", fingerprint) == pooled
     pooled.parent.mkdir(parents=True)
     pooled.write_text("gsk_example-provider-key", encoding="utf-8")
-    assert pooled in provider_secret_paths(tmp_path, "groq")
+    pooled_second.write_text("gsk_second-provider-key", encoding="utf-8")
+    discovered_paths = provider_secret_paths(tmp_path, "groq")
+    assert pooled in discovered_paths
+    assert pooled_second in discovered_paths
+    assert len([path for path in discovered_paths if path.is_file()]) == 2
     assert provider_secret_path(tmp_path, "pollinations") == (
         tmp_path / "freellm-provider-keys" / "pollinations.key"
     )
