@@ -45,3 +45,7 @@
 ## 2025-08-02 - [Lazy-Loaded File Tree Accessibility]
 **Learning:** For dynamic, lazy-loading directory trees (such as remote file lists in a VPS Connector), interactive nodes need clear distinction between files and folders. Folders must expose their state via `aria-expanded` and stateful toggle actions to help screen readers understand current layout status.
 **Action:** Always assign dynamic, state-dependent `aria-label` and matching native `title` tooltips for folder trees, and explicitly manage `aria-expanded` attributes on directories.
+
+## 2025-08-03 - [State-Dependent Action Descriptions on Output Disclosure Toggles]
+**Learning:** When displaying high-density outputs such as test results, inline disclosure toggles are critical to avoid clutter. However, static labels like "Echte Test-Ausgabe anzeigen" or "Ausgabe schließen" benefit enormously from matching state-dependent 'aria-expanded', 'aria-label', and 'title' hover tooltips. This prevents screen readers and visual hover users from being unsure of the consequences of activating the toggle.
+**Action:** Always pair interactive disclosure toggle buttons with dynamic state-dependent title and aria-label texts that explicitly state the state transition (e.g. "Test-Ausgabe verbergen" vs "Echte Test-Ausgabe anzeigen") along with an 'aria-expanded' property.

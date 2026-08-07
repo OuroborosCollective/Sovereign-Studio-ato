@@ -81,6 +81,8 @@ export function SecurityBlockCard({
         <button
           type="button"
           onClick={onOpenSecureAccess}
+          aria-label={buttonLabel}
+          title={buttonLabel}
           style={{
             padding: "8px 14px",
             borderRadius: 7,
@@ -99,6 +101,8 @@ export function SecurityBlockCard({
         <button
           type="button"
           onClick={onDismiss}
+          aria-label="Sicherheitswarnung schließen"
+          title="Sicherheitswarnung schließen"
           style={{
             padding: "8px 12px",
             borderRadius: 7,

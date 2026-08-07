@@ -17,6 +17,8 @@ import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
+import { TestRunnerResultCard } from './TestRunnerResultCard';
+import { SecurityBlockCard } from './SecurityBlockCard';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -639,6 +641,86 @@ describe('Palette Accessibility Enhancements', () => {
 
       const checkUnknown = screen.getByText('unknown');
       expect(checkUnknown).toHaveAttribute('title', 'Unknown');
+    });
+  });
+
+  describe('TestRunnerResultCard Accessibility and UX', () => {
+    it('applies correct accessible attributes to the article container and buttons', () => {
+      const mockResult = {
+        status: 'failed' as const,
+        framework: 'vitest',
+        summary: '2 of 10 tests failed',
+        blocker: 'Linter error in main.ts',
+        counts: { passed: 8, failed: 2, errors: 0, skipped: 0 },
+        output: 'Failed test suite detail...',
+        hasRepairHint: true,
+      };
+      const onRepair = vi.fn();
+
+      const { rerender } = render(
+        <TestRunnerResultCard result={mockResult} onRepair={onRepair} />
+      );
+
+      // Wrapper article tag semantic labels
+      const article = screen.getByRole('article', { name: 'Testergebnis' });
+      expect(article).toBeInTheDocument();
+
+      // Disclosure toggle button initial state (closed)
+      let toggleBtn = screen.getByRole('button', { name: 'Echte Test-Ausgabe anzeigen' });
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(toggleBtn).toHaveAttribute('aria-label', 'Echte Test-Ausgabe anzeigen');
+      expect(toggleBtn).toHaveAttribute('title', 'Echte Test-Ausgabe anzeigen');
+
+      // Click toggle button to open output
+      fireEvent.click(toggleBtn);
+      toggleBtn = screen.getByRole('button', { name: 'Ausgabe schließen' });
+      expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+      expect(toggleBtn).toHaveAttribute('aria-label', 'Ausgabe schließen');
+      expect(toggleBtn).toHaveAttribute('title', 'Ausgabe schließen');
+
+      // Repair button accessibility
+      const repairBtn = screen.getByRole('button', { name: 'Fehlgeschlagene Tests reparieren' });
+      expect(repairBtn).toHaveAttribute('aria-label', 'Fehlgeschlagene Tests reparieren');
+      expect(repairBtn).toHaveAttribute('title', 'Fehlgeschlagene Tests im Workspace reparieren und Fix vorbereiten');
+
+      // Click repair button
+      fireEvent.click(repairBtn);
+      expect(onRepair).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('SecurityBlockCard Accessibility and UX', () => {
+    it('contains clear, localized aria-label and title attributes on its action buttons', () => {
+      const onOpenSecureAccess = vi.fn();
+      const onDismiss = vi.fn();
+
+      render(
+        <SecurityBlockCard
+          title="Secret blockiert"
+          text="Ein GitHub-Token wurde in Ihrer Nachricht erkannt."
+          hint="Bitte übermitteln Sie keine geheimen Zugangsdaten im Chat."
+          buttonLabel="Sicheren Zugriff konfigurieren"
+          onOpenSecureAccess={onOpenSecureAccess}
+          onDismiss={onDismiss}
+        />
+      );
+
+      // Secure access button checks
+      const accessBtn = screen.getByRole('button', { name: 'Sicheren Zugriff konfigurieren' });
+      expect(accessBtn).toHaveAttribute('aria-label', 'Sicheren Zugriff konfigurieren');
+      expect(accessBtn).toHaveAttribute('title', 'Sicheren Zugriff konfigurieren');
+
+      // Close button checks
+      const closeBtn = screen.getByRole('button', { name: 'Sicherheitswarnung schließen' });
+      expect(closeBtn).toHaveAttribute('aria-label', 'Sicherheitswarnung schließen');
+      expect(closeBtn).toHaveAttribute('title', 'Sicherheitswarnung schließen');
+
+      // Interactivity test
+      fireEvent.click(accessBtn);
+      expect(onOpenSecureAccess).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(closeBtn);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
     });
   });
 });
