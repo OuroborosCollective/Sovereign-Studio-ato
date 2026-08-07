@@ -335,18 +335,52 @@ resolve_running_mcp_image_digest() {
 
 backup_control_plane_file() {
   local target="$1"
-  local key
+  local key backup_target
   [[ -n "$ROLLBACK_DIR" && -n "$ROLLBACK_MANIFEST" ]] || fail "rollback storage is not initialized"
   if grep -Fqx "$target" "$ROLLBACK_MANIFEST.paths" 2>/dev/null; then
     return 0
   fi
-  printf '%s\n' "$target" >> "$ROLLBACK_MANIFEST.paths"
-  key="$(printf '%s' "$target" | sha256sum | awk '{print $1}')"
+  printf '%s\n' "$target" >> "$ROLLBACK_MANIFEST.paths" \
+    || fail "rollback manifest path write failed: target=$target"
+  if ! key="$(printf '%s' "$target" | sha256sum | awk '{print $1}')"; then
+    fail "rollback backup key generation failed: target=$target"
+  fi
+  backup_target="$ROLLBACK_DIR/$key"
   if [[ -e "$target" || -L "$target" ]]; then
-    cp -a "$target" "$ROLLBACK_DIR/$key"
-    printf '%s\t%s\n' "$target" "$key" >> "$ROLLBACK_MANIFEST"
+    if [[ -f "$target" && ! -L "$target" ]]; then
+      if ! python3 - "$target" "$backup_target" <<'PY'
+from pathlib import Path
+import os
+import stat
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+metadata = source.stat(follow_symlinks=False)
+payload = source.read_bytes()
+with target.open("wb") as handle:
+    handle.write(payload)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(target, stat.S_IMODE(metadata.st_mode))
+os.chown(target, metadata.st_uid, metadata.st_gid)
+os.utime(
+    target,
+    ns=(metadata.st_atime_ns, metadata.st_mtime_ns),
+    follow_symlinks=False,
+)
+PY
+      then
+        fail "rollback regular-file backup failed: target=$target"
+      fi
+    elif ! cp -a "$target" "$backup_target"; then
+      fail "rollback special-file backup failed: target=$target"
+    fi
+    printf '%s\t%s\n' "$target" "$key" >> "$ROLLBACK_MANIFEST" \
+      || fail "rollback manifest write failed: target=$target"
   else
-    printf '%s\t%s\n' "$target" "__MISSING__" >> "$ROLLBACK_MANIFEST"
+    printf '%s\t%s\n' "$target" "__MISSING__" >> "$ROLLBACK_MANIFEST" \
+      || fail "rollback missing-path manifest write failed: target=$target"
   fi
 }
 
@@ -979,6 +1013,50 @@ docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-continuity-polic
 docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/CONTEXT.md || fail "continuity context is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/LEDGER.jsonl || fail "continuity ledger is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp python -c 'import continuity; import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import a2a_runtime_client; import document_pipeline; import github_knowledge_canary; import issue_closure_canary; import programming_language_catalog_runtime; import owner_input_widget; import tool_extensions; import repository_skill_tools; import repository_intelligence_tools; import proven_learning_tools; import skill_supply_chain_tools; import deterministic_contract; import deterministic_architecture_tools; import database_evidence_tools; import enterprise_backend_tools; import freemium_product_architect_tools; import openai_project_access_tools; import operating_profile; import predictive_tool_router; import tool_success_ranking; import operational_governance_tools; import operational_assurance_tools; import output_contracts; import toolchain_composition; import patchmon_operator; import patchmon_fleet; assert launcher.mcp is server.mcp; assert launcher.TOOL_SUCCESS_TRACKING.get("ok") is True, launcher.TOOL_SUCCESS_TRACKING; output_contract_report=launcher.OUTPUT_CONTRACT_INSTALLATION; assert output_contract_report.get("ok") is True, output_contract_report; assert output_contract_report.get("missingOutputSchemaCount") == 0, output_contract_report; operating_profile_report=launcher.OPERATING_PROFILE_ENFORCEMENT; assert operating_profile_report.ok is True, operating_profile_report; assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(repository_skill_tools.repository_knowledge_surface_scan); assert callable(repository_skill_tools.repository_product_logic_map); assert callable(repository_skill_tools.repository_change_impact_manifest); assert callable(repository_skill_tools.repository_architecture_snapshot); assert callable(repository_skill_tools.repository_architecture_drift_report); assert callable(repository_skill_tools.repository_architecture_runtime_drift_evidence); assert callable(repository_skill_tools.repository_mirror_diff_report); assert callable(repository_skill_tools.repository_endpoint_reference); assert callable(repository_skill_tools.repository_learning_records_normalize_preview); assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(repository_intelligence_tools.repository_intelligence_index_build); assert callable(repository_intelligence_tools.repository_hash_bound_replace); assert callable(repository_intelligence_tools.repository_schema_diagnostics); assert callable(repository_intelligence_tools.deployment_evidence_session_capture); assert callable(repository_intelligence_tools.sovereign_resource_explorer); assert callable(proven_learning_tools.proven_learning_pattern_plan); assert callable(proven_learning_tools.proven_learning_owner_approval_request); assert callable(proven_learning_tools.proven_learning_pattern_apply); assert callable(proven_learning_tools.repository_learning_logbook_update); assert callable(skill_supply_chain_tools.skill_supply_chain_inventory); assert callable(skill_supply_chain_tools.skill_archive_inspect); assert callable(skill_supply_chain_tools.goal_transition_preview); assert callable(skill_supply_chain_tools.template_generation_plan); assert deterministic_contract.KAPPA_SCALE == 1000000; inventory=deterministic_architecture_tools.deterministic_tool_inventory(); assert inventory.get("crossRuntimeParityProven") is True, inventory; assert callable(deterministic_architecture_tools.deterministic_tool_inventory); assert callable(deterministic_architecture_tools.deterministic_architecture_inventory); assert callable(deterministic_architecture_tools.deterministic_nondeterminism_scan); assert callable(deterministic_architecture_tools.deterministic_kappa_contract_audit); assert callable(deterministic_architecture_tools.deterministic_sql_contract_audit); assert callable(deterministic_architecture_tools.deterministic_transition_validate); assert callable(deterministic_architecture_tools.deterministic_replay_verify); assert callable(deterministic_architecture_tools.deterministic_transformation_plan); assert callable(database_evidence_tools.database_evidence_skill_inventory); assert callable(database_evidence_tools.database_evidence_architecture_inventory); assert callable(database_evidence_tools.postgres_evidence_read); assert callable(database_evidence_tools.postgres_evidence_migration_preview); assert callable(database_evidence_tools.database_evidence_receipt_verify); db_evidence_names={"database_evidence_skill_inventory","database_evidence_architecture_inventory","postgres_evidence_read","postgres_evidence_migration_preview","database_evidence_receipt_verify"}; registered_names={tool.name for tool in launcher.mcp._tool_manager.list_tools()}; assert db_evidence_names <= registered_names, db_evidence_names - registered_names; assert callable(enterprise_backend_tools.backend_engineering_tool_inventory); assert callable(enterprise_backend_tools.backend_architecture_assess); assert callable(enterprise_backend_tools.backend_stack_select); assert callable(enterprise_backend_tools.backend_delivery_plan); assert callable(enterprise_backend_tools.backend_api_security_plan); assert callable(enterprise_backend_tools.repository_revision_resolve); assert callable(freemium_product_architect_tools.freemium_product_tool_inventory); assert callable(freemium_product_architect_tools.freemium_market_opportunity_score); assert callable(freemium_product_architect_tools.freemium_offer_contract_build); assert callable(freemium_product_architect_tools.freemium_product_contract_validate); assert callable(freemium_product_architect_tools.freemium_product_bundle_manifest); assert callable(openai_project_access_tools.openai_project_access_plan); assert callable(openai_project_access_tools.openai_project_access_runtime_evidence); assert callable(operating_profile.sovereign_operating_profile_status); assert callable(operating_profile.sovereign_mission_preflight); profile_status=operating_profile.sovereign_operating_profile_status(); assert profile_status.status == "OPERATING_PROFILE_ENFORCED", profile_status; assert callable(operational_governance_tools.operational_skill_inventory); assert callable(operational_governance_tools.mcp_tool_contract_registry); assert callable(operational_governance_tools.tool_recommend_for_mission); assert callable(operational_governance_tools.tool_success_ranking); assert callable(operational_governance_tools.mcp_registry_snapshot_verify); assert callable(operational_governance_tools.evidence_graph_build); assert callable(operational_governance_tools.schema_migration_reconcile); assert callable(operational_governance_tools.llm_route_reliability_assess); assert callable(operational_governance_tools.agent_run_liveness_assess); assert callable(operational_governance_tools.semantic_intent_boundary_audit); assert callable(operational_governance_tools.cost_credit_settlement_reconcile); assert callable(operational_governance_tools.backup_restore_evidence_verify); assert callable(operational_governance_tools.slo_error_budget_assess); assert callable(operational_governance_tools.configuration_drift_assess); assert callable(operational_governance_tools.runtime_runbook_generate); assert callable(operational_governance_tools.ownership_codeowners_guard); assert callable(operational_governance_tools.compliance_evidence_export); assert callable(operational_assurance_tools.operational_assurance_skill_inventory); assert callable(operational_assurance_tools.vps_capacity_resource_pressure_assess); assert callable(operational_assurance_tools.runtime_dependency_health_matrix); assert callable(operational_assurance_tools.outbox_queue_liveness_assess); assert callable(operational_assurance_tools.scheduled_maintenance_coordinate); assert callable(operational_assurance_tools.runtime_topology_change_audit); assert callable(operational_assurance_tools.postgres_query_index_performance_assess); assert callable(operational_assurance_tools.data_integrity_invariant_audit); assert callable(operational_assurance_tools.data_repair_plan_build); assert callable(operational_assurance_tools.vector_memory_consistency_assess); assert callable(operational_assurance_tools.memory_poisoning_provenance_guard); assert callable(operational_assurance_tools.learning_pattern_lifecycle_preview); assert callable(operational_assurance_tools.data_retention_privacy_audit); assert callable(operational_assurance_tools.multi_tenant_isolation_verify); assert callable(operational_assurance_tools.mcp_schema_compatibility_audit); assert callable(operational_assurance_tools.mcp_protocol_conformance_fuzz_plan); assert callable(operational_assurance_tools.tool_permission_minimize); assert callable(operational_assurance_tools.dynamic_execution_containment_audit); assert callable(operational_assurance_tools.skill_capability_coverage_map); assert callable(operational_assurance_tools.skill_lifecycle_deprecation_preview); assert callable(operational_assurance_tools.skill_regression_benchmark); assert callable(operational_assurance_tools.tool_idempotency_verify); assert callable(operational_assurance_tools.owner_approval_policy_evaluate); assert callable(operational_assurance_tools.secret_lifecycle_rotation_assess); assert callable(operational_assurance_tools.secret_literal_triage); assert callable(operational_assurance_tools.sbom_provenance_image_signing_verify); assert callable(operational_assurance_tools.dependency_vulnerability_remediation_plan); assert callable(operational_assurance_tools.authentication_chaos_negative_test_assess); assert output_contracts.ToolOutputEnvelope is not None; assert callable(toolchain_composition.mcp_toolchain_contract_inventory); assert callable(toolchain_composition.mcp_toolchain_compile); assert callable(toolchain_composition.mcp_toolchain_validate); assert callable(toolchain_composition.mcp_toolchain_next_step); assert callable(toolchain_composition.mcp_diagnostic_chain_plan); assert all(getattr(tool, "output_schema", None) for tool in launcher.mcp._tool_manager.list_tools()); assurance=operational_assurance_tools.operational_assurance_skill_inventory(); assert assurance.status == "OPERATIONAL_ASSURANCE_SKILLS_READY", assurance; registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == "MCP_TOOL_REGISTRY_READY", registry; assert registry.toolCount >= 43, registry; assert callable(server.repository_sync_workspace_to_pr_head); assert callable(server.repository_merge_pr_series); assert callable(server.postgres_schema_inventory); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); assert callable(server.memory_gateway_collection_canary); assert callable(server.patchmon_tool_inventory); assert callable(server.patchmon_runtime_inventory); assert callable(server.patchmon_database_inventory); assert callable(server.patchmon_query); assert callable(server.patchmon_brain_snapshot); assert callable(server.patchmon_patch_action_plan); assert callable(server.patchmon_patch_action_apply); assert callable(server.patchmon_fleet_bootstrap_plan); assert callable(server.patchmon_fleet_bootstrap_apply); assert callable(server.patchmon_fleet_orchestrator_status); assert patchmon_operator.PatchmonOperatorRuntime is not None; assert patchmon_fleet.PatchmonFleetRuntime is not None; assert callable(server.a2a_live_canary); assert callable(server.controller_run_external_event); assert callable(server.document_pipeline_live_canary); assert callable(server.github_knowledge_live_canary); assert callable(server.issue_closure_runtime_canary); assert callable(server.programming_language_catalog_persistent_import); assert a2a_runtime_client.A2A_VERSION == "1.0"; assert document_pipeline.DocumentPipelineRuntime is not None; assert github_knowledge_canary.GitHubKnowledgeCanaryRuntime is not None; assert issue_closure_canary.IssueClosureCanaryRuntime is not None; assert programming_language_catalog_runtime.ProgrammingLanguageCatalogRuntime is not None; assert owner_input_widget.WIDGET_URI in {str(item.uri) for item in server.mcp._resource_manager.list_resources()}; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+
+INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
+docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+import asyncio
+
+import launcher
+import server
+
+required_tools = {
+    "backend_architecture_assess",
+    "deterministic_architecture_inventory",
+    "mcp_tool_contract_registry",
+    "operational_assurance_skill_inventory",
+    "patchmon_tool_inventory",
+    "repository_architecture_drift_report",
+    "repository_architecture_snapshot",
+}
+tools = asyncio.run(launcher.mcp.list_tools())
+tool_names = {tool.name for tool in tools}
+missing_tools = sorted(required_tools - tool_names)
+assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
+registry = server._live_mcp_registry_evidence()
+assert registry.get("registry_runtime_verified") is True, registry
+assert registry.get("registry_tool_count") == len(tool_names), (registry, len(tool_names))
+resources = asyncio.run(launcher.mcp.list_resources())
+cognitive_resource = next(
+    resource
+    for resource in resources
+    if str(resource.uri) == "ui://sovereign/dev_dashboard.v2.html"
+)
+serialized = cognitive_resource.model_dump(by_alias=True)
+resource_meta = serialized.get("_meta") or {}
+expected_domain = "https://sovereign-backend.arelorian.de"
+assert (resource_meta.get("ui") or {}).get("domain") == expected_domain, resource_meta
+assert resource_meta.get("openai/widgetDomain") == expected_domain, resource_meta
+print(
+    {
+        "toolCount": len(tool_names),
+        "registrySha256": registry.get("registry_tool_names_sha256"),
+        "widgetDomain": expected_domain,
+        "widgetUri": str(cognitive_resource.uri),
+    }
+)
+PY
 
 INSTALL_STAGE="verify_operating_profile_canaries"
 docker exec -i sovereign-chatgpt-mcp python - <<'PY'
