@@ -170,9 +170,14 @@ Anfrage: ${text}`;
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }} aria-label={`VPS Chat mit ${username}@${host}`}>
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div 
+        style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}
+        role="log"
+        aria-live="polite"
+        aria-label="Chat-Nachrichten"
+      >
         {messages.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -182,8 +187,12 @@ Anfrage: ${text}`;
           />
         ))}
         {thinking && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.textSub }}>
-            <Loader2 size={12} className="animate-spin" />
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.textSub }}
+            role="status"
+            aria-label="Gemini verarbeitet die Anfrage"
+          >
+            <Loader2 size={12} className="animate-spin" aria-hidden="true" />
             <span style={{ fontSize: 11 }}>Gemini denkt…</span>
           </div>
         )}
@@ -244,7 +253,7 @@ function MessageBubble({ msg, onExecute, onCancel }: {
 }) {
   if (msg.role === 'user') {
     return (
-      <div style={{ alignSelf: 'flex-end', maxWidth: '85%' }}>
+      <div style={{ alignSelf: 'flex-end', maxWidth: '85%' }} role="listitem" aria-label={`User-Nachricht: ${msg.text.substring(0, 50)}${msg.text.length > 50 ? '...' : ''}`}>
         <div style={{
           padding: '8px 12px', borderRadius: '12px 12px 2px 12px',
           background: '#6366f140', border: '1px solid #6366f130',
@@ -258,16 +267,21 @@ function MessageBubble({ msg, onExecute, onCancel }: {
 
   if (msg.role === 'exec-result' && msg.execResult) {
     const { stdout, stderr, exitCode } = msg.execResult;
+    const statusLabel = exitCode === 0 ? `Erfolgreich, Exit-Code ${exitCode}` : `Fehlgeschlagen, Exit-Code ${exitCode}`;
     return (
-      <div style={{
-        padding: '10px 12px', borderRadius: 8,
-        background: exitCode === 0 ? 'rgba(52,211,153,0.06)' : 'rgba(248,113,113,0.06)',
-        border: `1px solid ${exitCode === 0 ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}`,
-      }}>
+      <div 
+        role="article"
+        aria-label={`Ausführungsergebnis: ${statusLabel}`}
+        style={{
+          padding: '10px 12px', borderRadius: 8,
+          background: exitCode === 0 ? 'rgba(52,211,153,0.06)' : 'rgba(248,113,113,0.06)',
+          border: `1px solid ${exitCode === 0 ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}`,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
           {exitCode === 0
-            ? <CheckCircle size={12} color={C.green} />
-            : <XCircle size={12} color={C.error} />
+            ? <CheckCircle size={12} color={C.green} aria-hidden="true" />
+            : <XCircle size={12} color={C.error} aria-hidden="true" />
           }
           <span style={{ fontSize: 10, color: C.textSub, fontWeight: 600 }}>
             Exit {exitCode}
