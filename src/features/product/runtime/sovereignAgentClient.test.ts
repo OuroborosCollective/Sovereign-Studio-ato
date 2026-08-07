@@ -106,6 +106,7 @@ describe('SovereignAgentClient', () => {
 
     const job = await client.startToolchainJob({
       repoUrl: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      expectedHeadSha: 'b'.repeat(40),
       mission: 'Fix TypeScript and create a Draft PR.',
       evidenceText: 'TS2339 Property paymentMethods does not exist',
       stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
@@ -132,8 +133,9 @@ describe('SovereignAgentClient', () => {
       stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
       testCommand: 'git diff --check',
       githubAccessToken,
-      cloneRepo: false,
+      cloneRepo: true,
       provisionWorkspace: true,
+      expectedHeadSha: 'b'.repeat(40),
     });
     expect(JSON.parse(String(requestInits[2].body))).toEqual({ githubAccessToken });
     expect(calls).toEqual([
@@ -142,6 +144,74 @@ describe('SovereignAgentClient', () => {
       'https://agent.example.test/api/user/agent/jobs/job-flow/draft-pr/create',
       'https://agent.example.test/api/user/agent/jobs/job-flow',
     ]);
+  });
+
+  it('starts repository repair through the executable swarm route and reads the linked job', async () => {
+    const requestInits: RequestInit[] = [];
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      requestInits.push(init || {});
+      if (requestInits.length === 1) {
+        return new Response(JSON.stringify({
+          ok: true,
+          status: 'COMPLETED',
+          jobId: 'job-repository',
+          workspaceId: 'ws-repository',
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        job: {
+          id: 'job-repository',
+          workspaceId: 'ws-repository',
+          status: 'completed',
+          repoUrl: 'https://github.com/acme/repo',
+          branch: 'main',
+          changedFiles: ['src/App.tsx'],
+          events: [],
+        },
+      }), { status: 200 });
+    });
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const snapshot = await client.startRepositoryExecution({
+      repoUrl: 'https://github.com/acme/repo',
+      branch: 'main',
+      expectedHeadSha: 'c'.repeat(40),
+      mission: 'Repair one causal failure and stop at Draft PR.',
+      evidenceText: 'Observed runtime blocker.',
+      githubAccessToken: 'not-a-real-github-token',
+    });
+
+    expect(fetcher.mock.calls[0][0]).toBe('https://agent.example.test/api/user/agent/swarm/run');
+    expect(fetcher.mock.calls[1][0]).toBe('https://agent.example.test/api/user/agent/jobs/job-repository');
+    expect(JSON.parse(String(requestInits[0].body))).toMatchObject({
+      mode: 'auto',
+      intentMode: 'repository_execution',
+      repositoryUrl: 'https://github.com/acme/repo',
+      repositoryBranch: 'main',
+      expectedHeadSha: 'c'.repeat(40),
+      githubAccessToken: 'not-a-real-github-token',
+    });
+    expect(snapshot).toMatchObject({
+      jobId: 'job-repository',
+      workspaceId: 'ws-repository',
+      status: 'completed',
+      changedFiles: ['src/App.tsx'],
+    });
+  });
+
+  it('lists persisted jobs for app reinstall recovery', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      jobs: [{ id: 'job-latest', workspaceId: 'ws-latest', status: 'running', changedFiles: [], events: [] }],
+    }), { status: 200 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const jobs = await client.listJobs();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://agent.example.test/api/user/agent/jobs?limit=20',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(jobs).toMatchObject([{ jobId: 'job-latest', workspaceId: 'ws-latest', status: 'running' }]);
   });
 
   it('runs the deterministic janitor only through the owned job tool route', async () => {
