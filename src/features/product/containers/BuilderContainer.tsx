@@ -250,9 +250,11 @@ export interface SovereignStagedChange {
 export interface SovereignDraftPrPublishInput {
   readonly repoUrl: string;
   readonly branch: string;
+  readonly expectedHeadSha?: string;
   readonly mission: string;
   readonly changes: readonly SovereignStagedChange[];
   readonly confirmed: boolean;
+  readonly githubAccessToken?: string;
 }
 
 export interface BuilderContainerProps {
@@ -274,7 +276,12 @@ export interface BuilderContainerProps {
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
-  onStartAgent?: (mission: string, input?: { readonly repoUrl: string; readonly branch?: string }) => void | Promise<void>;
+  onStartAgent?: (mission: string, input?: {
+    readonly repoUrl: string;
+    readonly branch?: string;
+    readonly expectedHeadSha?: string;
+    readonly githubAccessToken?: string;
+  }) => void | Promise<void>;
   onCancelAgent?: () => void;
   /**
    * Traditional publish path — set by the parent to the PR URL returned by
@@ -3770,6 +3777,8 @@ export function BuilderContainer({
       await onStartAgent(clean, {
         repoUrl: chatRepoSnapshot.repoUrl,
         branch: chatRepoSnapshot.branch,
+        expectedHeadSha: chatRepoSnapshot.headSha,
+        githubAccessToken: githubTokenRef.current || undefined,
       });
       return true;
     } catch (error) {
@@ -3877,9 +3886,11 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       await onPublishDraftPr({
         repoUrl: chatRepoSnapshot.repoUrl,
         branch: chatRepoSnapshot.branch,
+        expectedHeadSha: chatRepoSnapshot.headSha,
         mission: lastMissionRef.current.trim() || mission.trim() || 'Create a reviewed Draft PR.',
         changes: stagedChanges,
         confirmed: !hasStagedChanges || patchConfirmed,
+        githubAccessToken: githubTokenRef.current || undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -4124,6 +4135,9 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     // reserved for exact controls (slash commands, repository URLs) and becomes
     // the language fallback only when the online interpretation is unavailable.
     const isSafeAnalysisPreset = submittedText.includes('Preset-Ausführungsmodus: safe_analysis');
+    const isReviewableExecutionPreset =
+      submittedText.includes('Risiko: reviewable_patch')
+      || submittedText.includes('Risiko: executor_required');
     const directRepoUrl = parseDevChatGithubUrl(submittedText);
     // "Retry" is an exact UI control, not natural language. It replays the
     // last correlated request through the real pipeline and must never spend a
@@ -4132,8 +4146,22 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     const shouldUseOnlineLanguageUnderstanding =
       !options.resumePendingIntent &&
       !isSafeAnalysisPreset &&
+      !isReviewableExecutionPreset &&
       !directRepoUrl &&
       !isExactRetryControl;
+
+    if (isReviewableExecutionPreset) {
+      appendActionEvent(buildRouteSelectionEvent({
+        route: 'agent',
+        reason: 'Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen; Browser-ARE wird nicht verwendet.',
+        state: 'running',
+      }));
+      const started = await startAgentFromText(submittedText, 'code_execution');
+      if (started) {
+        appendRuntimeNotice('Der vorgemerkte Preset-Auftrag wurde an den revisionsgebundenen Repository-Executor übergeben. Ergebnis bleibt Draft PR; kein Auto-Merge.');
+      }
+      return;
+    }
 
     // ── Issue #522 P2 Fix 2 & 3: Offline/local fallback routing
     // Status, diagnostic, and retry intents must be handled locally FIRST.
@@ -5708,10 +5736,19 @@ Das echte Repo-Setup wurde geöffnet.`,
         state: 'running',
       }));
       addLog('info', `Safe preset analysis routed without executor: ${action.id}`, 'router');
+      setWishText('');
+      await _processSubmit(submitted, { inputAlreadyRecorded: true });
+      return;
     }
 
+    appendActionEvent(buildRouteSelectionEvent({
+      route: 'agent',
+      reason: `${action.label} benötigt einen echten Repository-Executor; Browser-ARE und lokale Code-Synthese werden übersprungen.`,
+      state: 'running',
+    }));
+    addLog('info', `Reviewable preset routed directly to repository agent: ${action.id}`, 'router');
     setWishText('');
-    await _processSubmit(submitted, { inputAlreadyRecorded: true });
+    await startAgentFromText(submitted, 'code_execution');
   };
 
   const handlePresetActionSelect = (actionId: SovereignPresetActionId) => {
