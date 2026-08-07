@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildSovereignAgentJobRequest,
   createSovereignAgentIdleSnapshot,
@@ -8,12 +8,16 @@ import {
 } from './sovereignAgentRuntime';
 
 describe('sovereignAgentRuntime', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   it('uses only the internal backend mode', () => {
     expect(resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'https://agent.example.test' })).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
   });
   it('uses the current HTTPS or localhost origin when no build-time backend URL is present', () => {
+    vi.stubGlobal('window', { location: { origin: 'https://studio.example.test' } });
     const config = resolveSovereignAgentConfig();
-    expect(config.agentApiUrl).toBe(window.location.origin);
+    expect(config.agentApiUrl).toBe('https://studio.example.test');
     expect(config).toMatchObject({ ready: true, deploymentMode: 'sovereign-agent-backend' });
   });
   it('rejects unsafe non-local HTTP URLs', () => {
