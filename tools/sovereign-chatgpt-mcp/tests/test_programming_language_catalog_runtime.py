@@ -193,10 +193,12 @@ def test_persistent_import_is_host_worker_only_and_packaged() -> None:
     broker = (MCP / "broker.py").read_text("utf-8")
     dockerfile = (MCP / "Dockerfile").read_text("utf-8")
     installer = (MCP / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
 
     assert "def programming_language_catalog_persistent_import(" in server
     assert f'"{action}"' in broker
     assert "programming_language_catalog_runtime.py" in dockerfile
-    assert 'install -m 0640 "$SOURCE_DIR/programming_language_catalog_runtime.py"' in installer
+    assert "programming_language_catalog_runtime.py" in broker_copy_loop
+    assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"' in broker_copy_loop
     assert "import programming_language_catalog_runtime" in installer
     assert "callable(server.programming_language_catalog_persistent_import)" in installer
