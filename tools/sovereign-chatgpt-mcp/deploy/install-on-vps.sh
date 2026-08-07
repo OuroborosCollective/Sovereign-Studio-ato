@@ -429,6 +429,35 @@ PY
   fi
 }
 
+backup_managed_control_plane_file() {
+  local target="$1"
+  local label="$2"
+  INSTALL_STAGE="backup_control_plane_file:${label}"
+  backup_control_plane_file "$target"
+}
+
+remove_managed_legacy_file() {
+  local target="$1"
+  local label="$2"
+  INSTALL_STAGE="remove_legacy_control_plane_file:${label}"
+  backup_control_plane_file "$target"
+  if [[ ! -e "$target" && ! -L "$target" ]]; then
+    return 0
+  fi
+  [[ -f "$target" && ! -L "$target" ]] \
+    || fail "legacy managed path is not a regular file: label=$label target=$target"
+  if ! rm -f -- "$target"; then
+    command -v chattr >/dev/null 2>&1 \
+      || fail "legacy managed file removal failed and chattr is unavailable: label=$label target=$target"
+    chattr -i -- "$target" \
+      || fail "legacy managed file immutable-bit clear failed: label=$label target=$target"
+    rm -f -- "$target" \
+      || fail "legacy managed file removal failed after immutable-bit clear: label=$label target=$target"
+  fi
+  [[ ! -e "$target" && ! -L "$target" ]] \
+    || fail "legacy managed file still exists after removal: label=$label target=$target"
+}
+
 restore_control_plane_files() {
   [[ "$ROLLBACK_ARMED" == "1" && -f "$ROLLBACK_MANIFEST" ]] || return 0
   while IFS=$'\t' read -r target key; do
@@ -646,20 +675,20 @@ install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.json
 for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
-backup_control_plane_file "$BROKER_DIR/litellm_stack.py"
-backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
-backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
-backup_control_plane_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py"
-backup_control_plane_file "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs"
-backup_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml"
-backup_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py"
+remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"
+remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml" "templates/sovereign-litellm/docker-compose.yml"
+remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml" "templates/sovereign-litellm/config.yaml"
+remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py" "templates/sovereign-litellm/sovereign-entrypoint.py"
+backup_managed_control_plane_file "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml" "templates/pgbackweb-wq5r/docker-compose.yml"
+backup_managed_control_plane_file "$PATCHMON_TEMPLATE_DIR/docker-compose.yml" "templates/patchmon-sovereign/docker-compose.yml"
+backup_managed_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml" "templates/code-server-46bq/docker-compose.yml"
+backup_managed_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
+backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
+backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
+backup_managed_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"
+backup_managed_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release; do
-  backup_control_plane_file "$BIN_DIR/$file"
+  backup_managed_control_plane_file "$BIN_DIR/$file" "bin/$file"
 done
 
 # The updater is the recovery and diagnostic entrypoint. After syntax validation,
@@ -672,11 +701,13 @@ mv -f "$SELF_UPDATE_NEXT" "$SELF_UPDATE_BIN"
 unset SELF_UPDATE_NEXT
 
 
-rm -f "$BROKER_DIR/litellm_stack.py"
-rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"
-rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml"
-rm -f "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/sovereign-entrypoint.py"
-rmdir "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" 2>/dev/null || true
+INSTALL_STAGE="remove_legacy_control_plane_directory:templates/sovereign-litellm"
+if [[ -e "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" || -L "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" ]]; then
+  [[ -d "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" && ! -L "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" ]] \
+    || fail "legacy LiteLLM template root is not a regular directory"
+  rmdir "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" \
+    || fail "legacy LiteLLM template root is not empty after bounded managed-file cleanup"
+fi
 install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
 install -m 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
