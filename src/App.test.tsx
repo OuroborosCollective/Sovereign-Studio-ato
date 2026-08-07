@@ -41,5 +41,6 @@ describe('App', () => {
     );
     expect(screen.getByLabelText(/Sovereign Chat Eingabe/i)).toBeDefined();
     expect(screen.getByPlaceholderText(/GitHub URL oder Auftrag/)).toBeDefined();
+    expect(screen.queryByLabelText('Sovereign Rescue öffnen')).toBeNull();
   });
 });
