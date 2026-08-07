@@ -189,7 +189,7 @@ describe('App Draft-PR runtime flow', () => {
 
     expect(agent.startJob).not.toHaveBeenCalled();
     expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-1');
-    expect(agent.createDraftPr).toHaveBeenCalledWith('job-1');
+    expect(agent.createDraftPr).toHaveBeenCalledWith('job-1', undefined);
     expect(agent.getJob).toHaveBeenCalledWith('job-1');
   });
 
@@ -233,7 +233,7 @@ describe('App Draft-PR runtime flow', () => {
       stagedFiles: [{ path: 'README.md', content: '# Updated\n', baseContent: '# Original\n' }],
     }));
     expect(agent.prepareDraftPr).toHaveBeenCalledWith('job-staged');
-    expect(agent.createDraftPr).toHaveBeenCalledWith('job-staged');
+    expect(agent.createDraftPr).toHaveBeenCalledWith('job-staged', undefined);
     expect(agent.getJob).toHaveBeenCalledWith('job-staged');
   });
 });

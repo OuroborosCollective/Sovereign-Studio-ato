@@ -267,8 +267,13 @@ def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeyp
         json={
             "mission": "Inspect the selected paid models.",
             "mode": "paid",
+            "intentMode": "repository_execution",
             "mainModel": "openai/gpt-5.4-mini",
             "agentModel": "anthropic/claude-haiku-4.5",
+            "repositoryUrl": "https://github.com/acme/repo",
+            "repositoryBranch": "repair-branch",
+            "expectedHeadSha": "c" * 40,
+            "githubAccessToken": "not-a-real-github-token",
         },
     )
 
@@ -276,6 +281,11 @@ def test_swarm_run_forwards_separate_main_and_six_agent_model_selections(monkeyp
     assert captured["main_model"] == "openai/gpt-5.4-mini"
     assert captured["agent_model"] == "anthropic/claude-haiku-4.5"
     assert captured["mode"] == "paid"
+    assert captured["intent_mode"] == "repository_execution"
+    assert captured["repository_url"] == "https://github.com/acme/repo"
+    assert captured["repository_branch"] == "repair-branch"
+    assert captured["expected_head_sha"] == "c" * 40
+    assert captured["github_access_token"] == "not-a-real-github-token"
 
 
 def test_swarm_run_fails_closed_without_protected_key(monkeypatch) -> None:

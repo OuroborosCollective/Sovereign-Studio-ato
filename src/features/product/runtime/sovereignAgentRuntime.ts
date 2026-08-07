@@ -80,6 +80,12 @@ function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function readSameOriginBackendUrl(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const origin = window.location?.origin?.trim();
+  return origin && origin !== 'null' ? origin : undefined;
+}
+
 function isLocalUrl(value: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?($|\/)/i.test(value);
 }
@@ -104,6 +110,7 @@ export function resolveSovereignAgentConfig(input: SovereignAgentConfigInput = {
       || readWindowOverride('__SOVEREIGN_AGENT_API_URL__')
       || readBuildEnv('VITE_SOVEREIGN_AGENT_API_URL')
       || readBuildEnv('VITE_SOVEREIGN_BACKEND_URL')
+      || readSameOriginBackendUrl()
       || '',
   );
   const enabled = typeof input.enabled === 'boolean' ? input.enabled : Boolean(agentApiUrl);
