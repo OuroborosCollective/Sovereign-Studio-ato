@@ -12,10 +12,13 @@ sys.path.insert(0, str(BACKEND))
 
 from freellm_provider_credentials import (
     FREELLM_PROVIDER_SPECS,
+    detect_freellm_provider_id_from_key,
     normalize_freellm_provider_id,
     provider_id_from_target_id,
     provider_keyless_marker_path,
     provider_secret_path,
+    provider_secret_paths,
+    provider_secret_pool_path,
     provider_target_id,
 )
 
@@ -27,6 +30,12 @@ def test_provider_allowlist_has_keyed_and_keyless_contracts(tmp_path: Path) -> N
     assert FREELLM_PROVIDER_SPECS["kilo"]["keyless"] is True
     assert FREELLM_PROVIDER_SPECS["aihorde"]["keyless"] is True
     assert provider_secret_path(tmp_path, "groq") == tmp_path / "freellm-provider-keys" / "groq.key"
+    fingerprint = "a" * 64
+    pooled = provider_secret_pool_path(tmp_path, "groq", fingerprint)
+    assert pooled == tmp_path / "freellm-provider-keys" / f"groq.{fingerprint}.key"
+    pooled.parent.mkdir(parents=True)
+    pooled.write_text("gsk_example-provider-key", encoding="utf-8")
+    assert pooled in provider_secret_paths(tmp_path, "groq")
     assert provider_secret_path(tmp_path, "pollinations") == (
         tmp_path / "freellm-provider-keys" / "pollinations.key"
     )
@@ -50,6 +59,18 @@ def test_provider_target_ids_round_trip_and_reject_unknown_values() -> None:
         provider_id_from_target_id("freellm_provider_unknown_key")
 
 
+def test_provider_key_detection_is_strong_and_fail_closed() -> None:
+    assert detect_freellm_provider_id_from_key(bytearray(b"AQ.example-auth-key")) == "google"
+    assert detect_freellm_provider_id_from_key(bytearray(b"AIza-example-standard-key")) == "google"
+    assert detect_freellm_provider_id_from_key(bytearray(b"gsk_example-provider-key")) == "groq"
+    assert detect_freellm_provider_id_from_key(bytearray(b"sk-or-v1-example-provider-key")) == "openrouter"
+    assert detect_freellm_provider_id_from_key(bytearray(b"github_pat_example-provider-key")) == "github"
+    assert detect_freellm_provider_id_from_key(bytearray(b"nvapi-example-provider-key")) == "nvidia"
+    assert detect_freellm_provider_id_from_key(bytearray(b"hf_example-provider-key")) == "huggingface"
+    with pytest.raises(ValueError, match="provider_key_unrecognized"):
+        detect_freellm_provider_id_from_key(bytearray(b"opaque-key-without-provider-signature"))
+
+
 def test_owner_input_and_runtime_expose_only_safe_provider_metadata() -> None:
     owner = (BACKEND / "owner_input_runtime.py").read_text("utf-8")
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
@@ -63,6 +84,9 @@ def test_owner_input_and_runtime_expose_only_safe_provider_metadata() -> None:
     assert '"rawCredentialsReturned": False' in runtime
     assert '"rawCredentialReturned": False' in runtime
     assert '"/freellm-provider-keys"' in runtime
+    assert '"/api/admin/llm/freellm/provider-credentials/auto"' in runtime
+    assert "detect_freellm_provider_id_from_key(protected)" in runtime
+    assert "protected[index] = 0" in runtime
     assert "request.get_data" in owner
     assert "protected_buffer[index] = 0" in owner
     assert "FreeLLM Provider-Zugänge" in page

@@ -452,6 +452,70 @@ async function resolveProtectedOwnerInput(
   }
 }
 
+async function autoConfigureFreellmProviderKey(
+  protectedValue: string,
+): Promise<{
+  ok: true;
+  providerId: string;
+  label: string;
+  detectedAutomatically: boolean;
+  configured: true;
+  permissionsValid: true;
+  runtimeImportPending: true;
+  keyCount: number;
+}> {
+  const key = getAdminKey();
+  if (!key) throw new Error('Admin-API-Key fehlt. Bitte im Panel eintragen.');
+  const encoded = new TextEncoder().encode(protectedValue);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(
+      `${ADMIN_API_BASE}/api/admin/llm/freellm/provider-credentials/auto`,
+      {
+        method: 'POST',
+        signal: controller.signal,
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/octet-stream',
+          Authorization: `Bearer ${key}`,
+        },
+        body: encoded,
+      },
+    );
+    const body = await response.json().catch(() => ({})) as {
+      error?: string;
+      providerId?: string;
+      label?: string;
+      detectedAutomatically?: boolean;
+      configured?: boolean;
+      permissionsValid?: boolean;
+      runtimeImportPending?: boolean;
+      keyCount?: number;
+    };
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) clearAdminKey();
+      throw new Error(body.error ?? `HTTP ${response.status}`);
+    }
+    return body as {
+      ok: true;
+      providerId: string;
+      label: string;
+      detectedAutomatically: boolean;
+      configured: true;
+      permissionsValid: true;
+      runtimeImportPending: true;
+      keyCount: number;
+    };
+  } finally {
+    encoded.fill(0);
+    window.clearTimeout(timeout);
+  }
+}
+
 // ── API client ────────────────────────────────────────────────────────────────
 
 export const adminApiClient = {
@@ -586,6 +650,10 @@ export const adminApiClient = {
       activationRule: string;
       providers: FreeRevolverProviderSource[];
     }>('/api/admin/llm/revolver-v3/providers');
+  },
+
+  autoConfigureFreellmProviderKey(protectedValue: string) {
+    return autoConfigureFreellmProviderKey(protectedValue);
   },
 
   createFreeRevolverProvider(input: {

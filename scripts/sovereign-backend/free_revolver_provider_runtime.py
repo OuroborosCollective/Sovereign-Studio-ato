@@ -27,9 +27,12 @@ from freellm_provider_credentials import (
     FREELLM_PROVIDER_SPECS,
     FREELLM_RUNTIME_GID,
     FREELLM_RUNTIME_UID,
+    detect_freellm_provider_id_from_key,
     normalize_freellm_provider_id,
     provider_keyless_marker_path,
     provider_secret_path,
+    provider_secret_paths,
+    provider_secret_pool_path,
     provider_target_id,
 )
 from free_revolver_provider_contracts import (
@@ -597,33 +600,39 @@ def _freellm_provider_credential_state(provider_id: str) -> dict[str, Any]:
         return {
             "configured": enabled,
             "mode": "keyless",
+            "keyCount": 1 if enabled else 0,
             "fingerprintSha256": None,
             "permissionsValid": enabled and stat.S_IMODE(marker.stat().st_mode) & 0o077 == 0,
         }
-    path = provider_secret_path(root, provider_id)
-    try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return {
-            "configured": False,
-            "mode": "credential",
-            "fingerprintSha256": None,
-            "permissionsValid": None,
-        }
-    valid = stat.S_ISREG(info.st_mode) and not path.is_symlink() and not (stat.S_IMODE(info.st_mode) & 0o077)
-    fingerprint = None
-    if valid and 1 <= info.st_size <= 8192:
+    fingerprints: list[str] = []
+    permissions_valid = True
+    for path in provider_secret_paths(root, provider_id):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            continue
+        valid = (
+            stat.S_ISREG(info.st_mode)
+            and not path.is_symlink()
+            and not (stat.S_IMODE(info.st_mode) & 0o077)
+            and 1 <= info.st_size <= 8192
+        )
+        permissions_valid = permissions_valid and valid
+        if not valid:
+            continue
         protected = bytearray(path.read_bytes())
         try:
-            fingerprint = hashlib.sha256(bytes(protected).strip()).hexdigest()
+            fingerprints.append(hashlib.sha256(bytes(protected).strip()).hexdigest())
         finally:
             for index in range(len(protected)):
                 protected[index] = 0
+    fingerprints = sorted(set(fingerprints))
     return {
-        "configured": bool(valid and fingerprint),
-        "mode": "credential",
-        "fingerprintSha256": fingerprint,
-        "permissionsValid": valid,
+        "configured": bool(fingerprints) and permissions_valid,
+        "mode": "credential-pool",
+        "keyCount": len(fingerprints),
+        "fingerprintSha256": fingerprints[0] if len(fingerprints) == 1 else None,
+        "permissionsValid": permissions_valid if fingerprints else None,
     }
 
 
@@ -649,6 +658,57 @@ def _write_keyless_marker(provider_id: str, enabled: bool) -> None:
         os.chmod(path, 0o600)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _write_freellm_provider_key(provider_id: str, protected: bytearray) -> str:
+    """Append one hash-addressed key to the owner-managed FreeLLM provider pool."""
+    provider_id = normalize_freellm_provider_id(provider_id)
+    if bool(FREELLM_PROVIDER_SPECS[provider_id].get("keyless")):
+        raise ValueError("freellm_provider_is_keyless")
+    start = 0
+    end = len(protected)
+    while start < end and protected[start] in b" \t\r\n":
+        start += 1
+    while end > start and protected[end - 1] in b" \t\r\n":
+        end -= 1
+    if end - start < 8 or end - start > 8192:
+        raise ValueError("freellm_provider_key_invalid")
+    view = memoryview(protected)[start:end]
+    fingerprint = hashlib.sha256(view).hexdigest()
+    path = provider_secret_pool_path(_owner_root(), provider_id, fingerprint)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.geteuid() != 0:
+        raise OSError("freellm_provider_key_owner_change_requires_root")
+    os.chown(path.parent, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
+    os.chmod(path.parent, 0o700)
+    if path.exists():
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or path.is_symlink() or stat.S_IMODE(info.st_mode) & 0o077:
+            raise OSError("freellm_provider_key_existing_path_invalid")
+        existing = bytearray(path.read_bytes())
+        try:
+            if hashlib.sha256(bytes(existing).strip()).hexdigest() != fingerprint:
+                raise OSError("freellm_provider_key_existing_fingerprint_mismatch")
+        finally:
+            for index in range(len(existing)):
+                existing[index] = 0
+        return fingerprint
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            written = 0
+            while written < len(view):
+                written += os.write(descriptor, view[written:])
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary, path)
+        os.chown(path, FREELLM_RUNTIME_UID, FREELLM_RUNTIME_GID)
+        os.chmod(path, 0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return fingerprint
 
 
 def _verified_general_chat_block_source(value: Any) -> str | None:
@@ -817,6 +877,80 @@ def register_free_revolver_provider_runtime(
             "databaseCredentialStorage": False,
             "nextAction": "Einzelnen Provider sicher eintragen oder Keyless-Tier aktivieren.",
         })
+
+    @app.route(
+        "/api/admin/llm/freellm/provider-credentials/auto",
+        methods=["POST"],
+    )
+    @require_admin
+    def admin_auto_configure_freellm_provider_credential():
+        content_length = int(request.content_length or 0)
+        if content_length < 8 or content_length > 8192:
+            return jsonify({
+                "error": "API-Key fehlt oder überschreitet das zulässige Limit.",
+                "blocker": "freellm_provider_key_invalid",
+                "rawCredentialReturned": False,
+            }), 400
+        protected = bytearray(request.get_data(cache=False, as_text=False) or b"")
+        provider_id = ""
+        try:
+            explicit_provider = request.headers.get("X-FreeLLM-Provider-Id", "").strip()
+            if explicit_provider:
+                provider_id = normalize_freellm_provider_id(explicit_provider)
+            else:
+                provider_id = detect_freellm_provider_id_from_key(protected)
+            spec = FREELLM_PROVIDER_SPECS[provider_id]
+            _write_freellm_provider_key(provider_id, protected)
+            state = _freellm_provider_credential_state(provider_id)
+            if not bool(state.get("configured")) or state.get("permissionsValid") is not True:
+                raise OSError("freellm_provider_key_readback_failed")
+            audit("admin_freellm_provider_key_auto_configured", provider_id, {
+                "detectionMode": "explicit-fallback" if explicit_provider else "strong-key-signature",
+                "rawCredentialPersistedInDatabase": False,
+                "permissionsValid": True,
+                "keyCount": int(state.get("keyCount") or 0),
+            })
+            return jsonify({
+                "ok": True,
+                "providerId": provider_id,
+                "label": str(spec["label"]),
+                "detectedAutomatically": not bool(explicit_provider),
+                "configured": True,
+                "permissionsValid": True,
+                "keyCount": int(state.get("keyCount") or 0),
+                "runtimeImportPending": True,
+                "nextAction": "FreeLLM übernimmt den Key automatisch; anschließend stehen erkannte Modelle im Revolver-Katalog bereit.",
+                "rawCredentialReturned": False,
+                "databaseCredentialStorage": False,
+            }), 201
+        except ValueError as exc:
+            blocker = str(exc)[:120]
+            status = 422 if blocker == "freellm_provider_key_unrecognized" else 400
+            return jsonify({
+                "error": (
+                    "Provider konnte nicht eindeutig aus dem Key erkannt werden."
+                    if blocker == "freellm_provider_key_unrecognized"
+                    else "Provider-Key konnte nicht sicher verarbeitet werden."
+                ),
+                "blocker": blocker,
+                "providerSelectionRequired": blocker == "freellm_provider_key_unrecognized",
+                "providers": [
+                    {"providerId": item_id, "label": str(item["label"])}
+                    for item_id, item in FREELLM_PROVIDER_SPECS.items()
+                    if not bool(item.get("keyless"))
+                ] if blocker == "freellm_provider_key_unrecognized" else [],
+                "rawCredentialReturned": False,
+            }), status
+        except OSError:
+            return jsonify({
+                "error": "Provider-Key konnte nicht sicher owner-managed gespeichert werden.",
+                "blocker": "freellm_provider_key_write_failed",
+                "providerId": provider_id or None,
+                "rawCredentialReturned": False,
+            }), 500
+        finally:
+            for index in range(len(protected)):
+                protected[index] = 0
 
     @app.route(
         "/api/admin/llm/freellm/provider-credentials/<provider_id>/owner-input",

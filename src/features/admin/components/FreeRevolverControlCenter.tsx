@@ -14,8 +14,6 @@ import type {
 } from '../api/adminApiClient';
 import type { UseAdminFreeRevolverProvidersResult } from '../hooks/useAdminApi';
 
-const FREELLMAPI_DOCKER_API_BASE = 'http://freellmapi:3001/v1';
-
 const AUTH_LABELS: Record<FreeRevolverProviderAuthMode, string> = {
   bearer: 'Bearer API-Key',
   'x-api-key': 'X-API-Key',
@@ -71,9 +69,6 @@ export function FreeRevolverControlCenter({
   api: UseAdminFreeRevolverProvidersResult;
   eligibilityEvidenceTtlHours: number;
 }) {
-  const [label, setLabel] = useState('');
-  const [apiBase, setApiBase] = useState('');
-  const [authMode, setAuthMode] = useState<FreeRevolverProviderAuthMode>('bearer');
   const [apiKey, setApiKey] = useState('');
   const [renewalKeys, setRenewalKeys] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -113,28 +108,20 @@ export function FreeRevolverControlCenter({
     }
   };
 
-  const submitProvider = () => {
+  const submitAutoProviderKey = () => {
     const protectedValue = apiKey;
     setApiKey('');
-    void run('new-provider', async () => {
-      const parsed = new URL(apiBase);
-      const managedDockerTarget = apiBase.trim().replace(/\/$/, '') === FREELLMAPI_DOCKER_API_BASE;
-      if (parsed.protocol !== 'https:' && !managedDockerTarget) {
-        throw new Error('Nur vollständige HTTPS-URLs oder der verwaltete FreeLLM-API-Docker-Endpunkt sind erlaubt.');
-      }
-      if (!label.trim()) throw new Error('Bitte einen verständlichen Provider-Namen eintragen.');
-      if ((authMode === 'bearer' || authMode === 'x-api-key') && protectedValue.length < 8) {
-        throw new Error('Der API-Key muss mindestens 8 Zeichen enthalten.');
-      }
-      await api.createAndDiscover({
-        label: label.trim(),
-        apiBase: apiBase.trim(),
-        authMode,
-        apiKey: protectedValue,
-      });
-      setLabel('');
-      setApiBase('');
-    }, 'Provider geprüft. Nur Modelle mit bestätigtem Free-Quota-Vertrag und erfolgreicher Completion wurden aktiviert.');
+    setBusyId('auto-provider');
+    setActionError(null);
+    setNotice(null);
+    void api.autoConfigureKey(protectedValue)
+      .then(result => {
+        setNotice(`${result.label} erkannt und sicher gespeichert · ${result.keyCount} Key${result.keyCount === 1 ? '' : 's'} im Provider-Pool. FreeLLM übernimmt den Pool automatisch.`);
+      })
+      .catch(error => {
+        setActionError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setBusyId(null));
   };
 
   const renewProvider = (sourceId: string) => {
@@ -175,67 +162,27 @@ export function FreeRevolverControlCenter({
       <section className="llm-catalog free-revolver-admin__onboarding">
         <div className="llm-section-title">
           <div><KeyRound size={21} /><div>
-            <h2>Provider automatisch erkennen</h2>
-            <p>Basis-URL genügt; `/v1/models` und `/models` werden sicher geprüft.</p>
+            <h2>API-Key eintragen</h2>
+            <p>Key einfügen – Provider, sichere Ablage und FreeLLM-Zuordnung erledigt das Backend automatisch.</p>
           </div></div>
         </div>
-        <button type="button" className="llm-button"
-          disabled={busyId !== null}
-          onClick={() => {
-            setLabel('FreeLLM API 0.5.0 · interner Docker');
-            setApiBase(FREELLMAPI_DOCKER_API_BASE);
-            setAuthMode('managed-bearer');
-            setApiKey('');
-          }}>
-          <Server size={17} /> FreeLLM API 0.5.0 auswählen
-        </button>
         <div className="free-revolver-form">
           <label>
-            <span>Provider-Name</span>
-            <input value={label} maxLength={120} disabled={busyId !== null}
-              placeholder="z. B. Mein Free Provider"
-              onChange={event => setLabel(event.target.value)} />
-          </label>
-          <label>
-            <span>API-Basis</span>
-            <input value={apiBase} disabled={busyId !== null} inputMode="url"
-              placeholder="https://api.provider.example oder interner FreeLLM-Docker"
-              onChange={event => setApiBase(event.target.value)} />
-          </label>
-          <label>
-            <span>Authentifizierung</span>
-            <select value={authMode} disabled={busyId !== null}
-              onChange={event => setAuthMode(event.target.value as FreeRevolverProviderAuthMode)}>
-              {Object.entries(AUTH_LABELS).map(([value, text]) => (
-                <option key={value} value={value}>{text}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>{authMode === 'none'
-              ? 'API-Key nicht erforderlich'
-              : authMode === 'managed-bearer'
-                ? 'Interner Schlüssel · owner-managed'
-                : 'API-Key · einmalige Übergabe'}</span>
+            <span>API-Key</span>
             <input type="password" autoComplete="new-password" spellCheck={false}
-              value={apiKey} disabled={busyId !== null || authMode === 'none' || authMode === 'managed-bearer'}
-              placeholder={authMode === 'none'
-                ? 'Kein Key wird übertragen'
-                : authMode === 'managed-bearer'
-                  ? 'Wird aus der geschützten Owner-Datei gelesen'
-                  : 'Wird nach Übergabe sofort aus dem Formular gelöscht'}
+              value={apiKey} disabled={busyId !== null}
+              placeholder="API-Key einfügen"
               onChange={event => setApiKey(event.target.value)} />
           </label>
           <button type="button" className="llm-button llm-button--primary"
-            disabled={busyId !== null || !label.trim() || !apiBase.trim()
-              || ((authMode === 'bearer' || authMode === 'x-api-key') && apiKey.length < 8)}
-            onClick={submitProvider}>
-            {busyId === 'new-provider' ? <RefreshCw className="llm-spin" size={18} /> : <Search size={18} />}
-            Sicher prüfen und Free-Routen anlegen
+            disabled={busyId !== null || apiKey.length < 8}
+            onClick={submitAutoProviderKey}>
+            {busyId === 'auto-provider' ? <RefreshCw className="llm-spin" size={18} /> : <Search size={18} />}
+            Provider erkennen + speichern
           </button>
         </div>
         <p className="llm-catalog__evidence">
-          Modelle ohne Free-Quota-Vertrag oder mit ausdrücklich positiv gemeldeten Providerkosten bleiben automatisch blockiert.
+          Der Roh-Key wird nicht in PostgreSQL gespeichert. Unbekannte Schlüssel bleiben fail-closed statt einem falschen Provider zugeordnet zu werden.
         </p>
       </section>
 
@@ -403,7 +350,7 @@ export function FreeRevolverControlCenter({
             );
           })}
           {api.providers.length === 0 && !api.loading && (
-            <div className="llm-empty">Noch kein Free-Provider eingetragen. Oben genügen Name, API-Basis und gegebenenfalls API-Key; FreeLLM API 0.5.0 kann als interner Docker gewählt werden.</div>
+            <div className="llm-empty">Noch keine FreeLLM-Routen verfügbar. Im Adminbereich oben genügt ein API-Key; Provider und sichere Zuordnung übernimmt das Backend.</div>
           )}
           {api.loading && api.providers.length === 0 && (
             <div className="llm-empty"><RefreshCw className="llm-spin" /> Free-Revolver-Evidence wird geladen…</div>

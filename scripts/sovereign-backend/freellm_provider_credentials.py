@@ -14,6 +14,19 @@ _SECRET_DIRECTORY = "freellm-provider-keys"
 FREELLM_RUNTIME_UID = 1000
 FREELLM_RUNTIME_GID = 1000
 
+# Strong provider-issued prefixes only. Unknown or ambiguous keys remain
+# fail-closed and require an explicit provider choice in the admin fallback.
+_PROVIDER_KEY_PREFIXES: tuple[tuple[bytes, str], ...] = (
+    (b"AQ.", "google"),
+    (b"AIza", "google"),
+    (b"gsk_", "groq"),
+    (b"sk-or-v1-", "openrouter"),
+    (b"github_pat_", "github"),
+    (b"ghp_", "github"),
+    (b"nvapi-", "nvidia"),
+    (b"hf_", "huggingface"),
+)
+
 FREELLM_PROVIDER_SPECS: dict[str, dict[str, Any]] = {
     "google": {"label": "Google AI Studio", "keyless": False},
     "groq": {"label": "Groq", "keyless": False},
@@ -69,6 +82,28 @@ def normalize_freellm_provider_id(value: Any) -> str:
     return provider_id
 
 
+def detect_freellm_provider_id_from_key(value: bytes | bytearray | memoryview) -> str:
+    """Return one provider only for a strong, non-ambiguous key signature."""
+    protected = value if isinstance(value, bytearray) else bytearray(value)
+    start = 0
+    end = len(protected)
+    while start < end and protected[start] in b" \t\r\n":
+        start += 1
+    while end > start and protected[end - 1] in b" \t\r\n":
+        end -= 1
+    if end - start < 8:
+        raise ValueError("freellm_provider_key_unrecognized")
+    candidate = memoryview(protected)[start:end]
+    matches = {
+        provider_id
+        for prefix, provider_id in _PROVIDER_KEY_PREFIXES
+        if len(candidate) >= len(prefix) and bytes(candidate[:len(prefix)]) == prefix
+    }
+    if len(matches) != 1:
+        raise ValueError("freellm_provider_key_unrecognized")
+    return next(iter(matches))
+
+
 def provider_target_id(provider_id: str) -> str:
     normalized = normalize_freellm_provider_id(provider_id)
     return f"freellm_provider_{normalized.replace('-', '_')}_key"
@@ -87,8 +122,35 @@ def provider_secret_directory(owner_root: Path) -> Path:
 
 
 def provider_secret_path(owner_root: Path, provider_id: str) -> Path:
+    """Legacy single-key path retained for backwards-compatible imports."""
     normalized = normalize_freellm_provider_id(provider_id)
     return provider_secret_directory(owner_root) / f"{normalized}.key"
+
+
+def provider_secret_pool_path(
+    owner_root: Path,
+    provider_id: str,
+    fingerprint_sha256: str,
+) -> Path:
+    normalized = normalize_freellm_provider_id(provider_id)
+    fingerprint = str(fingerprint_sha256 or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        raise ValueError("freellm_provider_key_fingerprint_invalid")
+    return provider_secret_directory(owner_root) / f"{normalized}.{fingerprint}.key"
+
+
+def provider_secret_paths(owner_root: Path, provider_id: str) -> tuple[Path, ...]:
+    normalized = normalize_freellm_provider_id(provider_id)
+    root = provider_secret_directory(owner_root)
+    candidates = [provider_secret_path(owner_root, normalized)]
+    if root.is_dir():
+        for path in sorted(root.glob(f"{normalized}.*.key"))[:100]:
+            if re.fullmatch(
+                rf"{re.escape(normalized)}\.[0-9a-f]{{64}}\.key",
+                path.name,
+            ):
+                candidates.append(path)
+    return tuple(dict.fromkeys(candidates))
 
 
 def provider_keyless_marker_path(owner_root: Path, provider_id: str) -> Path:

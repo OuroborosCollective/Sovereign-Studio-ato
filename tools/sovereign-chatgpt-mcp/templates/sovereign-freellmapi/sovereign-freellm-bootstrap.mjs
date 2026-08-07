@@ -22,8 +22,11 @@ function safeEntries() {
   }
   const entries = [];
   for (const name of names.sort()) {
-    const match = /^([a-z][a-z0-9-]{1,31})\.(key|keyless)$/.exec(name);
+    const match = /^([a-z][a-z0-9-]{1,31})(?:\.([0-9a-f]{64}))?\.(key|keyless)$/.exec(name);
     if (!match || !providerPattern.test(match[1])) continue;
+    if (match[3] === 'keyless' && match[2]) {
+      throw new Error(`invalid keyless pool secret contract: ${name}`);
+    }
     const filePath = path.join(SECRET_ROOT, name);
     const info = fs.lstatSync(filePath);
     if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
@@ -39,12 +42,16 @@ function safeEntries() {
         throw new Error(`invalid provider secret value: ${name}`);
       }
       const fingerprint = crypto.createHash('sha256').update(protectedValue).digest('hex');
+      if (match[2] && match[2] !== fingerprint) {
+        throw new Error(`provider secret fingerprint mismatch: ${name}`);
+      }
       entries.push({
+        sourceName: name,
         fingerprint,
         input: {
           platform: match[1],
-          key: match[2] === 'keyless' ? undefined : value,
-          label: match[2] === 'keyless' ? 'sovereign-keyless' : 'sovereign-owner',
+          key: match[3] === 'keyless' ? undefined : value,
+          label: match[3] === 'keyless' ? 'sovereign-keyless' : `sovereign-owner-${fingerprint.slice(0, 12)}`,
           enabled: true,
         },
       });
@@ -66,7 +73,7 @@ if (initialEntries.length) {
   );
   process.env.FREEAPI_CONFIG_PATH = initialConfigPath;
   for (const entry of initialEntries) {
-    appliedFingerprints.set(entry.input.platform, entry.fingerprint);
+    appliedFingerprints.set(entry.sourceName, entry.fingerprint);
   }
 }
 
@@ -89,10 +96,9 @@ function cleanupInitialConfigWhenReady() {
 function syncProviderKeys() {
   const changed = [];
   for (const entry of safeEntries()) {
-    const provider = entry.input.platform;
-    if (appliedFingerprints.get(provider) === entry.fingerprint) continue;
+    if (appliedFingerprints.get(entry.sourceName) === entry.fingerprint) continue;
     changed.push(entry.input);
-    appliedFingerprints.set(provider, entry.fingerprint);
+    appliedFingerprints.set(entry.sourceName, entry.fingerprint);
   }
   if (!changed.length) return;
   const result = applyDeclarativeConfig({ keys: changed }, 'sovereign-owner-secret-files');

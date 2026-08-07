@@ -256,6 +256,7 @@ export interface UseAdminFreeRevolverProvidersResult {
     authMode: FreeRevolverProviderAuthMode;
     apiKey: string;
   }) => Promise<void>;
+  autoConfigureKey: (apiKey: string) => Promise<{ providerId: string; label: string; keyCount: number }>;
   renewAndDiscover: (sourceId: string, apiKey: string) => Promise<void>;
   discover: (sourceId: string) => Promise<void>;
   recheck: (sourceId: string) => Promise<void>;
@@ -302,6 +303,14 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     reload();
   }, [reload]);
 
+  const autoConfigureKey = useCallback(async (apiKey: string) => {
+    setError(null);
+    if (apiKey.length < 8) throw new Error('Der API-Key muss mindestens 8 Zeichen enthalten.');
+    const result = await adminApiClient.autoConfigureFreellmProviderKey(apiKey);
+    reload();
+    return { providerId: result.providerId, label: result.label, keyCount: result.keyCount };
+  }, [reload]);
+
   const renewAndDiscover = useCallback(async (sourceId: string, apiKey: string) => {
     setError(null);
     if (apiKey.length < 8) throw new Error('Der API-Key muss mindestens 8 Zeichen enthalten.');
@@ -335,6 +344,7 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
     error,
     reload,
     createAndDiscover,
+    autoConfigureKey,
     renewAndDiscover,
     discover,
     recheck,
