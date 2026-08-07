@@ -162,6 +162,41 @@ export {
   formatPainSignal,
 } from './nociceptorBoundary';
 
+export {
+  SCHEMA_VERSIONS,
+  type SchemaVersion,
+  type RuntimeSignalSchema,
+  type PredictionResultSchema,
+  type PredictionErrorSchema,
+  type ActionStep,
+  type BoundedActionPlanSchema,
+  type ActionOutcome,
+  type RuntimeActionReceiptSchema,
+  type PredictiveSnapshotSchema,
+  type ReadbackStatus,
+  type RuntimeReadbackSchema,
+  type RiskLevel,
+  type RiskCategory,
+  type RiskEvidence,
+  type RiskEvidenceBundleSchema,
+  validateRuntimeSignal,
+  isValidRuntimeSignal,
+  validatePredictionResult,
+  isValidPredictionResult,
+  validatePredictionError,
+  isValidPredictionError,
+  validateBoundedActionPlan,
+  isValidBoundedActionPlan,
+  validateRuntimeActionReceipt,
+  isValidRuntimeActionReceipt,
+  validatePredictiveSnapshot,
+  isValidPredictiveSnapshot,
+  validateRuntimeReadback,
+  isValidRuntimeReadback,
+  validateRiskEvidenceBundle,
+  isValidRiskEvidenceBundle,
+} from './schemas';
+
 export function createQuickPredictiveLayer(): PredictiveLayer {
   return createPredictiveLayer(DEFAULT_PREDICTIVE_CONFIG);
 }

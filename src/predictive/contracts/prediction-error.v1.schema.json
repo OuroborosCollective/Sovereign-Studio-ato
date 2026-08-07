@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "prediction-error.v1",
+  "title": "Prediction Error",
+  "description": "Prediction error computed as the difference between actual and predicted. Only signals with error above threshold propagate through the network.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "actual", "predicted", "error", "absoluteError", "propagated", "node", "timestamp", "traceId", "weight"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "prediction-error.v1",
+      "description": "Schema version identifier"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Unique identifier for this error"
+    },
+    "actual": {
+      "type": "number",
+      "description": "Actual value x(t)"
+    },
+    "predicted": {
+      "type": "number",
+      "description": "Predicted value x̂(t)"
+    },
+    "error": {
+      "type": "number",
+      "description": "Error value ε(t) = actual - predicted"
+    },
+    "absoluteError": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Absolute error magnitude"
+    },
+    "propagated": {
+      "type": "boolean",
+      "description": "Whether this error exceeds the propagation threshold"
+    },
+    "node": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "The node this error occurred on"
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 1000000000000,
+      "maximum": 9000000000000,
+      "description": "Unix timestamp in milliseconds"
+    },
+    "traceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Trace context for debugging"
+    },
+    "sourceRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Git SHA-1 revision at error computation"
+    },
+    "weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Weight of this error for learning"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "runtime-signal.v1",
+  "title": "Runtime Signal",
+  "description": "Micro-signal emitted when runtime state changes. Captures the raw sensory input from the runtime environment.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "node", "value", "timestamp", "traceId"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "runtime-signal.v1",
+      "description": "Schema version identifier"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Unique identifier for the signal"
+    },
+    "node": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Name of the node that emitted this signal"
+    },
+    "value": {
+      "type": "number",
+      "description": "Numeric value representing the signal state"
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 1000000000000,
+      "maximum": 9000000000000,
+      "description": "Unix timestamp in milliseconds"
+    },
+    "traceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Trace context for debugging"
+    },
+    "sourceRevision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Git SHA-1 revision at signal emission"
+    },
+    "signalHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the signal content"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata"
+    }
+  }
+}
