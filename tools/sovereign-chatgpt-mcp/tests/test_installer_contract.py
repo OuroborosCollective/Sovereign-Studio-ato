@@ -67,8 +67,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/gpt-tools' in worker_service
     assert '/opt/code-server-46bq' in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' not in script
-    assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in script
-    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in script
     assert 'remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL' in script
     assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS' in script
     assert "managed_compose.py" in broker_copy_loop

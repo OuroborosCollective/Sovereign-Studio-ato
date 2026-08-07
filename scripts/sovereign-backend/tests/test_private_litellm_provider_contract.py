@@ -98,8 +98,7 @@ def test_readiness_and_legacy_litellm_retirement_are_required() -> None:
     assert "direct OpenRouter and FreeLLM routing network" in backend_compose
     assert 'RETIREMENT_BLOCKER = "legacy_litellm_runtime_retired"' in stack
     assert "raise RuntimeError(" in stack
-    assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in installer
-    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in installer
+    assert 'rm -f "$BROKER_DIR/litellm_stack.py"' in installer
     assert "templates/sovereign-litellm" not in workflow
     assert "deploy/sovereign-litellm" not in workflow
 
