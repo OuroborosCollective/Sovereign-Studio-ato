@@ -13,6 +13,15 @@ export interface SovereignAgentClientOptions {
   now?: () => number;
 }
 
+export interface SovereignRepositoryExecutionInput {
+  repoUrl: string;
+  branch?: string;
+  expectedHeadSha?: string;
+  mission: string;
+  evidenceText?: string;
+  githubAccessToken?: string;
+}
+
 export interface SovereignPatternLearningEvidence {
   candidateId?: string;
   candidateCreated: boolean;
@@ -32,6 +41,7 @@ export interface SovereignStagedFile {
 export interface SovereignAgentStartJobInput {
   repoUrl: string;
   branch?: string;
+  expectedHeadSha?: string;
   mission: string;
   provisionWorkspace?: boolean;
   cloneRepo?: boolean;
@@ -360,6 +370,7 @@ export class SovereignAgentClient {
           ...job,
           provisionWorkspace: input.provisionWorkspace ?? true,
           cloneRepo: input.cloneRepo ?? true,
+          ...(input.expectedHeadSha?.trim() ? { expectedHeadSha: input.expectedHeadSha.trim() } : {}),
           ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
           ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
           ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
@@ -383,7 +394,8 @@ export class SovereignAgentClient {
           ...job,
           evidenceText: input.evidenceText || '',
           provisionWorkspace: input.provisionWorkspace ?? true,
-          cloneRepo: input.cloneRepo ?? false,
+          cloneRepo: input.cloneRepo ?? true,
+          ...(input.expectedHeadSha?.trim() ? { expectedHeadSha: input.expectedHeadSha.trim() } : {}),
           ...(input.stagedFiles?.length ? { stagedFiles: input.stagedFiles } : {}),
           ...(input.testCommand?.trim() ? { testCommand: input.testCommand.trim() } : {}),
           ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
@@ -400,6 +412,50 @@ export class SovereignAgentClient {
       branch: snapshot.branch ?? job.branch,
       events: [...toolchainEvents(diagnosis, this.now), ...snapshot.events],
     };
+  }
+
+  async startRepositoryExecution(input: SovereignRepositoryExecutionInput): Promise<SovereignAgentJobSnapshot> {
+    assertReady(this.config);
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, '/api/user/agent/swarm/run'),
+      init: {
+        method: 'POST',
+        headers: headers(),
+        credentials: 'include',
+        body: JSON.stringify({
+          mission: input.mission.trim(),
+          evidenceText: input.evidenceText || '',
+          mode: 'auto',
+          intentMode: 'repository_execution',
+          repositoryUrl: input.repoUrl,
+          repositoryBranch: input.branch || 'main',
+          ...(input.expectedHeadSha?.trim() ? { expectedHeadSha: input.expectedHeadSha.trim() } : {}),
+          ...(input.githubAccessToken?.trim() ? { githubAccessToken: input.githubAccessToken.trim() } : {}),
+        }),
+      },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign repository execution',
+    });
+    const jobId = stringValue(body.jobId);
+    if (!jobId) throw new Error('Sovereign repository execution returned no linked job id.');
+    const snapshot = await this.getJob(jobId);
+    return {
+      ...snapshot,
+      repoUrl: snapshot.repoUrl ?? input.repoUrl,
+      branch: snapshot.branch ?? input.branch ?? 'main',
+    };
+  }
+
+  async listJobs(): Promise<SovereignAgentJobSnapshot[]> {
+    assertReady(this.config);
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, '/api/user/agent/jobs?limit=20'),
+      init: { method: 'GET', headers: headers(), credentials: 'include' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Agent job list',
+    });
+    const jobs = Array.isArray(body.jobs) ? body.jobs : [];
+    return jobs.filter(isObject).map((job) => sanitizeSnapshot(job, this.now));
   }
   async getJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);
