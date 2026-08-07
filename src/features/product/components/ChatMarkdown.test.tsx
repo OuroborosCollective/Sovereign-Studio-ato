@@ -3,8 +3,8 @@
  * Tests for markdown rendering (bold, code, links, code blocks)
  */
 
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent, act } from '@testing-library/react';
 import { ChatMarkdown } from './ChatMarkdown';
 
 describe('ChatMarkdown', () => {
@@ -90,5 +90,34 @@ describe('ChatMarkdown', () => {
     expect(text).toContain('bold');
     expect(text).toContain('normal');
     expect(text).toContain('code');
+  });
+
+  it('handles copy button click in code blocks', async () => {
+    // Mock clipboard
+    const originalClipboard = navigator.clipboard;
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    const { getByRole, findByText } = render(<ChatMarkdown content={"```typescript\nconst x = 1;\n```"} />);
+
+    const copyButton = getByRole('button', { name: 'Copy code' });
+    expect(copyButton).toBeTruthy();
+    expect(copyButton.textContent).toBe('Copy');
+
+    await act(async () => {
+      fireEvent.click(copyButton);
+    });
+
+    expect(writeTextMock).toHaveBeenCalledWith('const x = 1;');
+    expect(copyButton.textContent).toBe('✓ Copied');
+
+    // Restore clipboard
+    Object.assign(navigator, {
+      clipboard: originalClipboard,
+    });
   });
 });
