@@ -155,13 +155,12 @@ export default function App() {
     });
     try {
       const evidenceText = await evidenceWithReusableMemory(nextMission);
-      const snapshot = await agentClient.startToolchainJob({
+      const snapshot = await agentClient.startRepositoryExecution({
         repoUrl: input.repoUrl,
         branch: input.branch,
+        expectedHeadSha: input.expectedHeadSha,
         mission: nextMission,
         evidenceText,
-        provisionWorkspace: true,
-        cloneRepo: false,
         githubAccessToken: input.githubAccessToken,
       });
       setAgentJob(snapshot);
@@ -270,6 +269,7 @@ export default function App() {
         const snapshot = await agentClient.startToolchainJob({
           repoUrl: input.repoUrl,
           branch: input.branch,
+          expectedHeadSha: input.expectedHeadSha,
           mission: input.mission,
           evidenceText,
           provisionWorkspace: true,
@@ -327,7 +327,7 @@ export default function App() {
         );
       }
 
-      const creation = await agentClient.createDraftPr(jobId);
+      const creation = await agentClient.createDraftPr(jobId, input?.githubAccessToken);
       if (!creation.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
         throw new Error(
           creation.draftPrCreate.blocker
@@ -383,27 +383,29 @@ export default function App() {
           onStartAgent={startChatOnlyTask}
           onCancelAgent={cancelChatOnlyTask}
         />
-        <button
-          type="button"
-          onClick={() => setRescueOpen(true)}
-          aria-label="Sovereign Rescue öffnen"
-          style={{
-            position: 'fixed',
-            right: 14,
-            bottom: 14,
-            zIndex: 70,
-            minHeight: 48,
-            borderRadius: 24,
-            border: '1px solid #38bdf8',
-            background: '#0c4a6e',
-            color: '#f0f9ff',
-            padding: '10px 16px',
-            fontWeight: 800,
-            boxShadow: '0 12px 30px rgba(0,0,0,.35)',
-          }}
-        >
-          Rescue
-        </button>
+        {!rescueOpen && ['blocked', 'failed'].includes(agentJob.status) && (
+          <button
+            type="button"
+            onClick={() => setRescueOpen(true)}
+            aria-label="Sovereign Rescue öffnen"
+            style={{
+              position: 'fixed',
+              right: 14,
+              bottom: 14,
+              zIndex: 70,
+              minHeight: 48,
+              borderRadius: 24,
+              border: '1px solid #38bdf8',
+              background: '#0c4a6e',
+              color: '#f0f9ff',
+              padding: '10px 16px',
+              fontWeight: 800,
+              boxShadow: '0 12px 30px rgba(0,0,0,.35)',
+            }}
+          >
+            Rescue
+          </button>
+        )}
         <RescuePanel
           open={rescueOpen}
           apiBaseUrl={agentConfig.agentApiUrl}
