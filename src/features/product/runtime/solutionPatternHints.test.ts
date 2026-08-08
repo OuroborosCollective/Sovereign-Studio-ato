@@ -64,6 +64,30 @@ describe('solutionPatternHints', () => {
     expect(result.detail).not.toContain('Older');
   });
 
+  it('reads the pattern store only once while building a hint', () => {
+    const patterns = [
+      pattern({ id: 'winner', successfulUses: 2 }),
+      pattern({ id: 'runner-up', successfulUses: 1 }),
+    ];
+    let patternReads = 0;
+    const observedStore: SolutionPatternStore = {
+      version: 1,
+      get patterns() {
+        patternReads += 1;
+        return patterns;
+      },
+      rejections: [],
+      updatedAt: 0,
+    };
+
+    const result = buildSolutionPatternHint(observedStore, 1);
+
+    expect(patternReads).toBe(1);
+    expect(result.activeCount).toBe(2);
+    expect(result.selectedPatternIds).toEqual(['winner']);
+    expect(result.detail).toContain('Remote Aha Memory:');
+  });
+
   it('redacts sensitive text from pattern summaries', () => {
     const hint = formatSolutionPatternHints(store([
       pattern({
