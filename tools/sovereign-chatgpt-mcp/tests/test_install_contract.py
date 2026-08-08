@@ -107,6 +107,11 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "admin_mode.py" in broker_copy_loop
     assert "browserless_reader.py" in broker_copy_loop
     assert "github_admin.py" in broker_copy_loop
+    assert 'BROKER_GOVERNANCE_MODE="$BROKER_DIR/sovereign-governance-mode.json"' in script
+    assert 'versioned governance mode is missing' in script
+    assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"' in script
+    assert 'installed broker governance mode does not match the exact source revision' in script
+    assert 'SOVEREIGN_MCP_GOVERNANCE_MODE_PATH=%s' in script
     assert "SOVEREIGN_MCP_ENABLE_ADMIN_SQL" in script
     assert "SOVEREIGN_MCP_ENABLE_MAIN_PUSH" in script
     assert "SOVEREIGN_MCP_ENABLE_PR_MERGE" in script

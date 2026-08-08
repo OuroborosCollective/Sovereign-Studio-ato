@@ -435,7 +435,8 @@ provider_status_code, provider_status, provider_status_evidence = internal_json_
     "/api/internal/llm/freellm/providers"
 )
 verified_receipts = revision_bound_v3_chat_receipts(provider_status)
-if not verified_receipts:
+minimum_ready_routes = 5
+if len(verified_receipts) < minimum_ready_routes:
     for provider in providers:
         source_id = str(provider.get("sourceId") or "")
         if not source_id:
@@ -468,8 +469,8 @@ freellm_bootstrap = {
     "ok": True,
     "providerCount": len(providers),
     "revisionBoundV3ChatReadyCount": len(verified_receipts),
-    "minimumReadyRoutes": 5,
-    "minimumReadySatisfied": len(verified_receipts) >= 5,
+    "minimumReadyRoutes": minimum_ready_routes,
+    "minimumReadySatisfied": len(verified_receipts) >= minimum_ready_routes,
     "receipts": verified_receipts[:20],
     "attempts": bootstrap_attempts[:20],
     "statusEvidence": provider_status_evidence,

@@ -102,6 +102,7 @@ def _android_pending_checks(extra_pending: str = "") -> tuple[FakeResponse, Fake
 def _runtime(monkeypatch, routes):
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
     monkeypatch.setenv("SOVEREIGN_MCP_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato")
+    monkeypatch.setattr(GitHubAdminRuntime, "_governance_mode", staticmethod(lambda: "enforced"))
     update = FakeSelfUpdate()
     session = FakeSession(routes)
     return GitHubAdminRuntime(update, session=session), update, session
@@ -178,6 +179,25 @@ def test_workflow_failure_evidence_uses_exact_head_artifact_content(monkeypatch)
     assert result["repairSurface"] == "config/architecture/llm-tool-boundary-review-ledger.json"
     assert result["rawLogsReturned"] is False
     assert "text" not in result
+
+
+def test_governance_mode_uses_explicit_broker_path_and_fails_closed(monkeypatch, tmp_path) -> None:
+    mode_path = tmp_path / "sovereign-governance-mode.json"
+    mode_path.write_text(
+        '{"schemaVersion":"sovereign.governance-mode.v1","mode":"acceleration"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SOVEREIGN_MCP_GOVERNANCE_MODE_PATH", str(mode_path))
+
+    assert GitHubAdminRuntime._governance_mode() == "acceleration"
+
+    mode_path.unlink()
+    with pytest.raises(RuntimeError, match="GOVERNANCE_MODE_PATH_INVALID"):
+        GitHubAdminRuntime._governance_mode()
+
+    monkeypatch.setenv("SOVEREIGN_MCP_GOVERNANCE_MODE_PATH", "relative/governance.json")
+    with pytest.raises(RuntimeError, match="GOVERNANCE_MODE_PATH_INVALID"):
+        GitHubAdminRuntime._governance_mode()
 
 
 def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
@@ -347,6 +367,59 @@ def test_merge_blocks_when_head_does_not_contain_current_main(monkeypatch) -> No
     assert not any(call["path"].endswith("/merge") for call in session.calls)
 
 
+def test_merge_allows_stale_main_ancestry_only_when_governance_is_advisory(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    head = "6" * 40
+    main_sha = "a" * 40
+    merge_sha = "7" * 40
+    checks = FakeResponse(
+        200,
+        {
+            "check_runs": [
+                {"id": 10, "name": "Release Gate", "status": "completed", "conclusion": "success"},
+                {"id": 11, "name": "Agent Runtime Tests", "status": "completed", "conclusion": "success"},
+                {"id": 12, "name": "continuity-ledger", "status": "completed", "conclusion": "failure"},
+                {"id": 13, "name": "Revision Guardian", "status": "completed", "conclusion": "failure"},
+                {"id": 14, "name": "Revision Guardian Evidence", "status": "completed", "conclusion": "failure"},
+                {"id": 15, "name": "Boundary ledger drift preflight", "status": "completed", "conclusion": "failure"},
+            ]
+        },
+    )
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [FakeResponse(200, _pull(head))],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/check-runs"): [checks],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/commits/{head}/status"): [FakeResponse(200, {"state": "failure", "statuses": []})],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [{"filename": "backend/agent_runtime/cognitive_run_store.py"}])
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/git/ref/heads/main"): [
+                FakeResponse(200, {"object": {"sha": main_sha}})
+            ],
+            ("GET", f"/repos/OuroborosCollective/Sovereign-Studio-ato/compare/{main_sha}...{head}"): [
+                FakeResponse(200, {"status": "diverged", "merge_base_commit": {"sha": "9" * 40}})
+            ],
+            ("PUT", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/merge"): [
+                FakeResponse(200, {"merged": True, "sha": merge_sha, "message": "merged"})
+            ],
+        },
+    )
+    monkeypatch.setattr(GitHubAdminRuntime, "_governance_mode", staticmethod(lambda: "acceleration"))
+
+    result = runtime.merge_pr(pr_number=7, expected_head_sha=head)
+
+    assert result["status"] == "MERGED"
+    assert result["governance_mode"] == "acceleration"
+    assert result["revision_relation"]["contains_current_main"] is False
+    assert result["advisory_failed_checks"] == [
+        "continuity-ledger",
+        "Revision Guardian",
+        "Revision Guardian Evidence",
+        "Boundary ledger drift preflight",
+    ]
+
+
 def test_merge_pr_series_orders_oldest_first_and_revalidates_after_each_main_advance(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
@@ -434,6 +507,67 @@ def test_merge_pr_series_orders_oldest_first_and_revalidates_after_each_main_adv
     assert result["skipped"] == []
     assert result["all_merged"] is True
     assert result["candidate_failures_are_quarantined"] is True
+
+
+def test_merge_pr_series_does_not_update_stale_branches_in_acceleration(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    runtime, _update, _session = _runtime(monkeypatch, {})
+    monkeypatch.setattr(GitHubAdminRuntime, "_governance_mode", staticmethod(lambda: "acceleration"))
+    head = "5" * 40
+    main_state = {"sha": "a" * 40}
+    pull = {
+        **_pull(head, head_ref="sovereign/acceleration"),
+        "number": 7,
+        "created_at": "2026-08-06T01:00:00Z",
+    }
+    monkeypatch.setattr(runtime, "_pull", lambda number: pull)
+    monkeypatch.setattr(
+        runtime,
+        "_main_revision_relation",
+        lambda current: {
+            "main_sha": main_state["sha"],
+            "head_sha": current,
+            "relation": "diverged",
+            "merge_base_sha": "0" * 40,
+            "contains_current_main": False,
+        },
+    )
+    monkeypatch.setattr(runtime, "_changed_files", lambda number: ["backend/pr-7.py"])
+    monkeypatch.setattr(
+        runtime,
+        "_wait_for_series_checks",
+        lambda **kwargs: {"ok": True, "status": "CHECKS_GREEN", "ignored_pending_checks": []},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_request",
+        lambda method, path, **kwargs: (_ for _ in ()).throw(AssertionError(f"unexpected request: {method} {path}")),
+    )
+
+    def fake_merge_pr(*, pr_number: int, expected_head_sha: str, **kwargs):
+        assert expected_head_sha == head
+        main_state["sha"] = "b" * 40
+        return {
+            "ok": True,
+            "status": "MERGED",
+            "merge_commit_sha": main_state["sha"],
+            "changed_files": ["backend/pr-7.py"],
+        }
+
+    monkeypatch.setattr(runtime, "merge_pr", fake_merge_pr)
+    monkeypatch.setattr(runtime, "_main_head_sha", lambda: main_state["sha"])
+
+    result = runtime.merge_pr_series(
+        pull_requests=[{"pr_number": 7, "expected_head_sha": head}],
+        owner_approved=True,
+        poll_seconds=2,
+        wait_seconds_per_pr=30,
+    )
+
+    assert result["status"] == "PR_SERIES_MERGED"
+    assert result["completed"][0]["synchronization"]["status"] == "CURRENT_MAIN_ANCESTRY_ADVISORY"
+    assert result["completed"][0]["merged_head_sha"] == head
 
 
 def test_merge_pr_series_quarantines_bad_middle_pr_and_continues(monkeypatch) -> None:
@@ -934,6 +1068,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
             {
                 "type": "required_status_checks",
                 "parameters": {
+                    "strict_required_status_checks_policy": True,
                     "required_status_checks": [
                         {"context": "Release Gate"},
                         {"context": "Agent Runtime Tests"},
@@ -975,6 +1110,59 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
         "Agent Runtime Tests",
         "continuity-ledger",
         "Revision Guardian",
+    }
+
+
+def test_apply_main_ruleset_acceleration_keeps_product_gates_and_drops_governance_checks(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    repository_path = "/repos/OuroborosCollective/Sovereign-Studio-ato"
+    readback = {
+        "id": 43,
+        "name": "Sovereign Main Revision Green Gate",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": False,
+                    "required_status_checks": [
+                        {"context": "Release Gate"},
+                        {"context": "Agent Runtime Tests"},
+                    ],
+                },
+            },
+        ],
+        "_links": {"html": {"href": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/rules/43"}},
+    }
+    runtime, _update, session = _runtime(
+        monkeypatch,
+        {
+            ("GET", repository_path): [FakeResponse(200, {"default_branch": "main"})],
+            ("GET", f"{repository_path}/rulesets"): [FakeResponse(200, [{"id": 43, "name": "Sovereign Main Revision Green Gate"}])],
+            ("PUT", f"{repository_path}/rulesets/43"): [FakeResponse(200, {"id": 43})],
+            ("GET", f"{repository_path}/rulesets/43"): [FakeResponse(200, readback)],
+        },
+    )
+    monkeypatch.setattr(GitHubAdminRuntime, "_governance_mode", staticmethod(lambda: "acceleration"))
+
+    result = runtime.apply_main_ruleset(owner_approved=True)
+
+    assert result["status"] == "RULESET_UPDATED"
+    assert result["governance_mode"] == "acceleration"
+    assert result["strict_required_status_checks_policy"] is False
+    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests"]
+    put_call = next(call for call in session.calls if call["method"] == "PUT")
+    required = next(rule for rule in put_call["json"]["rules"] if rule["type"] == "required_status_checks")
+    assert required["parameters"]["strict_required_status_checks_policy"] is False
+    assert {item["context"] for item in required["parameters"]["required_status_checks"]} == {
+        "Release Gate",
+        "Agent Runtime Tests",
     }
 
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
 
 import pytest
 
@@ -17,6 +19,7 @@ from agent_runtime.repair_capsule import (
     MAX_REPAIR_CAPSULE_PATCH_BYTES,
     REPAIR_CAPSULE_SCHEMA_VERSION,
     build_repair_capsule,
+    build_repair_capsule_archive,
     build_repair_capsule_manifest,
     build_repair_capsule_verifier,
     parse_repair_patch_paths,
@@ -245,6 +248,23 @@ def test_capsule_enforces_patch_size_boundary() -> None:
     )
     assert manifest["ready"] is False
     assert "capsule_patch_too_large" in manifest["blockers"]
+
+
+def test_capsule_archive_is_deterministic_and_contains_only_canonical_files() -> None:
+    capsule = build_repair_capsule(
+        repair=repair(),
+        job=job(["backend/app.py"]),
+        patch_value=patch_for(),
+    )
+    first = build_repair_capsule_archive(capsule)
+    second = build_repair_capsule_archive(capsule)
+    assert first == second
+
+    with zipfile.ZipFile(io.BytesIO(first)) as archive:
+        assert archive.namelist() == ["README.md", "manifest.json", "repair.patch", "verify.py"]
+        assert archive.read("repair.patch") == capsule["files"]["repair.patch"]
+        assert archive.read("manifest.json") == capsule["files"]["manifest.json"]
+        assert all(item.date_time == (1980, 1, 1, 0, 0, 0) for item in archive.infolist())
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:

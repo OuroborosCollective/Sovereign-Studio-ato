@@ -293,6 +293,187 @@ def git_diff_check(workspace_id: str, root: Path | None = None) -> GitWorkspaceR
         )
 
 
+def git_diff_full(
+    workspace_id: str,
+    root: Path | None = None,
+    *,
+    max_bytes: int = 2_000_000,
+    max_files: int = 12,
+) -> tuple[bytes, GitWorkspaceResult]:
+    """Read one bounded HEAD-relative workspace patch without mutating Git state."""
+
+    try:
+        if max_bytes < 1 or max_files < 1:
+            raise WorkspacePolicyError("git diff bounds must be positive")
+        repo_path = repo_dir_for_workspace(workspace_id, root)
+        if not (repo_path / ".git").is_dir():
+            return b"", GitWorkspaceResult(
+                status="blocked",
+                events=(_event("git_diff_full_blocked", "warning", "Repo directory does not exist."),),
+                blocker="Repo directory does not exist.",
+            )
+
+        status = git_status_changed_files(workspace_id, root)
+        if status.status != "done":
+            return b"", status
+        if len(status.changed_files) > max_files:
+            return b"", GitWorkspaceResult(
+                status="blocked",
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_blocked", "warning", "Changed-file limit exceeded."),),
+                blocker=f"capsule_changed_file_limit_exceeded:{len(status.changed_files)}>{max_files}",
+            )
+
+        revision = run_git_command(("git", "rev-parse", "HEAD"), repo_path, 30)
+        head_sha = (revision.stdout or "").strip()
+        if revision.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+            return b"", GitWorkspaceResult(
+                status="failed",
+                command=("git", "rev-parse", "HEAD"),
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_failed", "error", "Workspace HEAD is unavailable."),),
+                blocker="capsule_workspace_head_unavailable",
+                exit_code=revision.returncode,
+            )
+
+        tracked = run_git_command(
+            ("git", "diff", "--no-ext-diff", "--full-index", "--no-renames", "--no-color", "-p", "HEAD"),
+            repo_path,
+            60,
+        )
+        if tracked.returncode != 0:
+            return b"", GitWorkspaceResult(
+                status="failed",
+                command=("git", "diff", "--no-ext-diff", "--full-index", "--no-renames", "--no-color", "-p", "HEAD"),
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_failed", "error", "Tracked workspace diff failed."),),
+                blocker="capsule_workspace_diff_failed",
+                exit_code=tracked.returncode,
+                commit_sha=head_sha,
+            )
+
+        untracked_result = run_git_command(
+            ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+            repo_path,
+            30,
+        )
+        if untracked_result.returncode != 0:
+            return b"", GitWorkspaceResult(
+                status="failed",
+                command=("git", "ls-files", "--others", "--exclude-standard", "-z"),
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_failed", "error", "Untracked-file inventory failed."),),
+                blocker="capsule_untracked_inventory_failed",
+                exit_code=untracked_result.returncode,
+                commit_sha=head_sha,
+            )
+
+        untracked = normalize_agent_paths(
+            item for item in untracked_result.stdout.split("\0") if item
+        )
+        if any(path not in status.changed_files for path in untracked):
+            return b"", GitWorkspaceResult(
+                status="blocked",
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_blocked", "warning", "Workspace inventory changed during capture."),),
+                blocker="capsule_workspace_inventory_changed",
+                commit_sha=head_sha,
+            )
+
+        parts = [tracked.stdout] if tracked.stdout else []
+        repo_root = repo_path.resolve()
+        for relative_path in untracked:
+            candidate = repo_path / relative_path
+            if candidate.is_symlink():
+                return b"", GitWorkspaceResult(
+                    status="blocked",
+                    changed_files=status.changed_files,
+                    events=(_event("git_diff_full_blocked", "warning", "Symlink changes are not supported."),),
+                    blocker="capsule_patch_symlink_or_submodule_forbidden",
+                    commit_sha=head_sha,
+                )
+            resolved = candidate.resolve()
+            if repo_root not in resolved.parents or not resolved.is_file():
+                return b"", GitWorkspaceResult(
+                    status="blocked",
+                    changed_files=status.changed_files,
+                    events=(_event("git_diff_full_blocked", "warning", "Unsafe untracked file blocked."),),
+                    blocker="capsule_patch_path_unsafe",
+                    commit_sha=head_sha,
+                )
+            if resolved.stat().st_size > max_bytes:
+                return b"", GitWorkspaceResult(
+                    status="blocked",
+                    changed_files=status.changed_files,
+                    events=(_event("git_diff_full_blocked", "warning", "Capsule patch size limit exceeded."),),
+                    blocker="capsule_patch_too_large",
+                    commit_sha=head_sha,
+                )
+            addition = run_git_command(
+                (
+                    "git",
+                    "diff",
+                    "--no-index",
+                    "--no-ext-diff",
+                    "--full-index",
+                    "--no-renames",
+                    "--no-color",
+                    "-p",
+                    "--",
+                    "/dev/null",
+                    relative_path,
+                ),
+                repo_path,
+                60,
+            )
+            if addition.returncode not in {0, 1}:
+                return b"", GitWorkspaceResult(
+                    status="failed",
+                    changed_files=status.changed_files,
+                    events=(_event("git_diff_full_failed", "error", "Untracked-file diff failed."),),
+                    blocker="capsule_untracked_diff_failed",
+                    exit_code=addition.returncode,
+                    commit_sha=head_sha,
+                )
+            if addition.stdout:
+                parts.append(addition.stdout)
+
+        patch = "".join(
+            part if part.endswith("\n") else f"{part}\n"
+            for part in parts
+        ).encode("utf-8")
+        if len(patch) > max_bytes:
+            return b"", GitWorkspaceResult(
+                status="blocked",
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_blocked", "warning", "Capsule patch size limit exceeded."),),
+                blocker="capsule_patch_too_large",
+                commit_sha=head_sha,
+            )
+        if status.changed_files and not patch:
+            return b"", GitWorkspaceResult(
+                status="blocked",
+                changed_files=status.changed_files,
+                events=(_event("git_diff_full_blocked", "warning", "Workspace diff is missing."),),
+                blocker="capsule_workspace_diff_missing",
+                commit_sha=head_sha,
+            )
+        return patch, GitWorkspaceResult(
+            status="done",
+            command=("git", "diff", "--no-ext-diff", "--full-index", "--no-renames", "--no-color", "-p", "HEAD"),
+            changed_files=status.changed_files,
+            events=(_event("git_diff_full_completed", "success", "Bounded workspace patch captured."),),
+            exit_code=0,
+            commit_sha=head_sha,
+        )
+    except Exception as exc:
+        return b"", GitWorkspaceResult(
+            status="blocked",
+            events=(_event("git_diff_full_blocked", "warning", str(exc)),),
+            blocker=sanitize_agent_text(str(exc), 1200),
+        )
+
+
 def publish_workspace_branch(
     workspace_id: str,
     *,

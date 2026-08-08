@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 import re
 import time
 from typing import Any
@@ -45,12 +47,25 @@ ANDROID_SURFACE_FILES = frozenset({
     "gradle.properties",
 })
 MAIN_RULESET_NAME = "Sovereign Main Revision Green Gate"
-MAIN_RULESET_REQUIRED_CHECKS = (
+MAIN_RULESET_REQUIRED_CHECKS_ENFORCED = (
     "Release Gate",
     "Agent Runtime Tests",
     "continuity-ledger",
     "Revision Guardian",
 )
+MAIN_RULESET_REQUIRED_CHECKS_ACCELERATION = (
+    "Release Gate",
+    "Agent Runtime Tests",
+)
+DEFAULT_GOVERNANCE_MODE_PATH = Path(__file__).resolve().parent / "config" / "sovereign-governance-mode.json"
+GOVERNANCE_MODE_ENV = "SOVEREIGN_MCP_GOVERNANCE_MODE_PATH"
+GOVERNANCE_MODES = frozenset({"enforced", "acceleration", "reconciliation"})
+GOVERNANCE_ADVISORY_CHECKS = frozenset({
+    "continuity-ledger",
+    "Revision Guardian",
+    "Revision Guardian Evidence",
+    "Boundary ledger drift preflight",
+})
 MAX_PR_SERIES = 500
 MAX_SERIES_WAIT_SECONDS = 3600
 MIN_SERIES_POLL_SECONDS = 2
@@ -81,6 +96,61 @@ class GitHubAdminRuntime:
                 "android.yml,android-release.yml,sovereign-chatgpt-mcp.yml",
             ).split(",")
             if item.strip()
+        }
+
+    @staticmethod
+    def _governance_mode() -> str:
+        configured_path = os.getenv(GOVERNANCE_MODE_ENV, "").strip()
+        path = Path(configured_path) if configured_path else DEFAULT_GOVERNANCE_MODE_PATH
+        if configured_path and (not path.is_absolute() or path.is_symlink() or not path.is_file()):
+            raise RuntimeError("GOVERNANCE_MODE_PATH_INVALID")
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            if configured_path:
+                raise RuntimeError("GOVERNANCE_MODE_PATH_INVALID")
+            return "enforced"
+        if payload.get("schemaVersion") != "sovereign.governance-mode.v1":
+            raise RuntimeError("GOVERNANCE_MODE_SCHEMA_INVALID")
+        mode = str(payload.get("mode") or "enforced").strip().lower()
+        if mode not in GOVERNANCE_MODES:
+            raise RuntimeError("GOVERNANCE_MODE_INVALID")
+        return mode
+
+    @classmethod
+    def _governance_is_advisory(cls) -> bool:
+        return cls._governance_mode() != "enforced"
+
+    @classmethod
+    def _required_main_checks(cls) -> tuple[str, ...]:
+        return (
+            MAIN_RULESET_REQUIRED_CHECKS_ACCELERATION
+            if cls._governance_is_advisory()
+            else MAIN_RULESET_REQUIRED_CHECKS_ENFORCED
+        )
+
+    @classmethod
+    def _effective_check_state(cls, checks: dict[str, Any]) -> dict[str, Any]:
+        failed = list(checks.get("failed") or [])
+        pending = list(checks.get("pending") or [])
+        if not cls._governance_is_advisory():
+            return {
+                "ok": bool(checks.get("ok")),
+                "failed": failed,
+                "pending": pending,
+                "advisory_failed": [],
+                "advisory_pending": [],
+            }
+        advisory_failed = [name for name in failed if name in GOVERNANCE_ADVISORY_CHECKS]
+        advisory_pending = [name for name in pending if name in GOVERNANCE_ADVISORY_CHECKS]
+        effective_failed = [name for name in failed if name not in GOVERNANCE_ADVISORY_CHECKS]
+        effective_pending = [name for name in pending if name not in GOVERNANCE_ADVISORY_CHECKS]
+        return {
+            "ok": not effective_failed and not effective_pending and bool(checks.get("has_check_evidence")),
+            "failed": effective_failed,
+            "pending": effective_pending,
+            "advisory_failed": advisory_failed,
+            "advisory_pending": advisory_pending,
         }
 
     def _headers(self) -> dict[str, str]:
@@ -897,8 +967,9 @@ class GitHubAdminRuntime:
                     "pr": status,
                 }
             checks = status.get("checks") if isinstance(status.get("checks"), dict) else {}
-            failed = list(checks.get("failed") or [])
-            pending = list(checks.get("pending") or [])
+            effective = self._effective_check_state(checks)
+            failed = list(effective.get("failed") or [])
+            pending = list(effective.get("pending") or [])
             if failed:
                 return {
                     "ok": False,
@@ -907,8 +978,15 @@ class GitHubAdminRuntime:
                     "blocker": "Ein PR der Serie enthält fehlgeschlagene Checks",
                     "pr": status,
                 }
-            if checks.get("ok") is True:
-                return {"ok": True, "status": "CHECKS_GREEN", "pr": status, "ignored_pending_checks": []}
+            if effective.get("ok") is True:
+                return {
+                    "ok": True,
+                    "status": "CHECKS_GREEN",
+                    "pr": status,
+                    "ignored_pending_checks": [],
+                    "advisory_failed_checks": list(effective.get("advisory_failed") or []),
+                    "advisory_pending_checks": list(effective.get("advisory_pending") or []),
+                }
             if allow_unrelated_android_pending and not self._touches_android_surface(changed_files):
                 remaining = [name for name in pending if name not in OWNER_SCOPED_IGNORABLE_PENDING_CHECKS]
                 ignored = [name for name in pending if name in OWNER_SCOPED_IGNORABLE_PENDING_CHECKS]
@@ -1031,7 +1109,15 @@ class GitHubAdminRuntime:
             try:
                 relation = self._main_revision_relation(current_head)
                 synchronization: dict[str, Any] = {"ok": True, "status": "ALREADY_CONTAINS_CURRENT_MAIN"}
-                if not relation.get("contains_current_main"):
+                if not relation.get("contains_current_main") and self._governance_is_advisory():
+                    synchronization = {
+                        "ok": True,
+                        "status": "CURRENT_MAIN_ANCESTRY_ADVISORY",
+                        "head_sha": current_head,
+                        "main_sha": relation.get("main_sha"),
+                        "relation": relation.get("relation"),
+                    }
+                elif not relation.get("contains_current_main"):
                     main_sha = str(relation.get("main_sha") or "")
                     self._request(
                         "PUT",
@@ -1230,10 +1316,13 @@ class GitHubAdminRuntime:
 
         changed_files = self._changed_files(number)
         checks = status["checks"]
+        effective_checks = self._effective_check_state(checks)
         ignored_pending_checks: list[str] = []
-        if not checks["ok"]:
-            failed = list(checks.get("failed") or [])
-            pending = list(checks.get("pending") or [])
+        advisory_failed_checks = list(effective_checks.get("advisory_failed") or [])
+        advisory_pending_checks = list(effective_checks.get("advisory_pending") or [])
+        if not effective_checks["ok"]:
+            failed = list(effective_checks.get("failed") or [])
+            pending = list(effective_checks.get("pending") or [])
             if failed:
                 return {"ok": False, "status": "BLOCKED", "blocker": "PR-Checks enthalten Fehler", "pr": status}
             scoped_override = owner_approved and allow_unrelated_android_pending
@@ -1264,7 +1353,7 @@ class GitHubAdminRuntime:
                 return {"ok": False, "status": "BLOCKED", "blocker": "Keine fachfremden Android-Pending-Gates belegt", "pr": status}
 
         main_relation = self._main_revision_relation(expected)
-        if not main_relation["contains_current_main"]:
+        if not main_relation["contains_current_main"] and not self._governance_is_advisory():
             return {
                 "ok": False,
                 "status": "BLOCKED",
@@ -1311,6 +1400,9 @@ class GitHubAdminRuntime:
             "owner_approved": bool(owner_approved),
             "ready_transition": ready_transition,
             "ignored_pending_checks": ignored_pending_checks,
+            "advisory_failed_checks": advisory_failed_checks,
+            "advisory_pending_checks": advisory_pending_checks,
+            "governance_mode": self._governance_mode(),
             "revision_relation": main_relation,
             "self_update": update_result,
         }
@@ -1328,6 +1420,9 @@ class GitHubAdminRuntime:
                 "blocker": "Repository-Default-Branch ist nicht main",
                 "default_branch": default_branch,
             }
+        governance_mode = self._governance_mode()
+        required_checks = self._required_main_checks()
+        strict_required_status_checks_policy = governance_mode == "enforced"
         payload = {
             "name": MAIN_RULESET_NAME,
             "target": "branch",
@@ -1352,9 +1447,9 @@ class GitHubAdminRuntime:
                     "type": "required_status_checks",
                     "parameters": {
                         "do_not_enforce_on_create": False,
-                        "strict_required_status_checks_policy": True,
+                        "strict_required_status_checks_policy": strict_required_status_checks_policy,
                         "required_status_checks": [
-                            {"context": context} for context in MAIN_RULESET_REQUIRED_CHECKS
+                            {"context": context} for context in required_checks
                         ],
                     },
                 },
@@ -1413,8 +1508,11 @@ class GitHubAdminRuntime:
             for item in ((required_rule or {}).get("parameters") or {}).get("required_status_checks", [])
             if isinstance(item, dict)
         }
-        if contexts != set(MAIN_RULESET_REQUIRED_CHECKS):
+        if contexts != set(required_checks):
             raise RuntimeError("GitHub bestätigte die erforderlichen Statuschecks nicht vollständig")
+        strict_readback = bool(((required_rule or {}).get("parameters") or {}).get("strict_required_status_checks_policy"))
+        if strict_readback != strict_required_status_checks_policy:
+            raise RuntimeError("GitHub bestätigte den Governance-Strictness-Modus nicht")
         return {
             "ok": True,
             "status": f"RULESET_{mutation_status}",
@@ -1422,7 +1520,9 @@ class GitHubAdminRuntime:
             "name": MAIN_RULESET_NAME,
             "target_ref": "refs/heads/main",
             "enforcement": "active",
-            "required_status_checks": list(MAIN_RULESET_REQUIRED_CHECKS),
+            "required_status_checks": list(required_checks),
+            "strict_required_status_checks_policy": strict_required_status_checks_policy,
+            "governance_mode": governance_mode,
             "bypass_actors": [],
             "owner_approved": True,
             "readback_verified": True,

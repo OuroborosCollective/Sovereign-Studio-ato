@@ -1,0 +1,255 @@
+name: Sovereign Revision Guardian Continuity Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_pr_number:
+        description: Exact open same-repository pull request number
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact current PR head before the continuity repair
+        required: true
+        type: string
+      expected_base_sha:
+        description: Exact current main revision already contained by the PR head
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: revision-guardian-continuity-repair-${{ inputs.target_pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  repair-continuity:
+    name: Append exact-head Continuity receipt
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Resolve exact same-repository PR identity
+        id: resolve
+        uses: actions/github-script@v7
+        env:
+          TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        with:
+          script: |
+            const numberText = String(process.env.TARGET_PR_NUMBER || '').trim();
+            const expectedHead = String(process.env.EXPECTED_HEAD_SHA || '').trim().toLowerCase();
+            const expectedBase = String(process.env.EXPECTED_BASE_SHA || '').trim().toLowerCase();
+            if (!/^[1-9][0-9]*$/.test(numberText)) {
+              core.setFailed('TARGET_PR_NUMBER_INVALID');
+              return;
+            }
+            if (!/^[0-9a-f]{40}$/.test(expectedHead) || !/^[0-9a-f]{40}$/.test(expectedBase)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            const number = Number(numberText);
+            const pull = (await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: number,
+            })).data;
+            const mainRef = (await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            })).data;
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const headRepository = String(pull.head?.repo?.full_name || '');
+            const headRef = String(pull.head?.ref || '');
+            const headSha = String(pull.head?.sha || '').toLowerCase();
+            const baseSha = String(mainRef.object?.sha || '').toLowerCase();
+            if (pull.state !== 'open' || pull.base?.ref !== 'main') {
+              core.setFailed('OPEN_MAIN_PR_REQUIRED');
+              return;
+            }
+            if (headRepository !== repositoryFullName) {
+              core.setFailed('FORK_PR_REPAIR_FORBIDDEN');
+              return;
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(headRef) || headRef.includes('..')) {
+              core.setFailed('PR_HEAD_REF_INVALID');
+              return;
+            }
+            if (['main', 'master'].includes(headRef.toLowerCase())) {
+              core.setFailed('PROTECTED_PR_HEAD_REF');
+              return;
+            }
+            if (headSha !== expectedHead) {
+              core.setFailed('PR_HEAD_IDENTITY_MISMATCH');
+              return;
+            }
+            if (baseSha !== expectedBase || String(pull.base?.sha || '').toLowerCase() !== expectedBase) {
+              core.setFailed('MAIN_REVISION_CHANGED');
+              return;
+            }
+            core.setOutput('target_ref', headRef);
+
+      - name: Checkout exact PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.target_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact head contains exact main
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$EXPECTED_BASE_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$EXPECTED_HEAD_SHA"
+
+      - name: Append deterministic legacy-PR Continuity receipt
+        id: append
+        shell: bash
+        env:
+          TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          number = int(os.environ['TARGET_PR_NUMBER'])
+          head = os.environ['EXPECTED_HEAD_SHA'].strip().lower()
+          base = os.environ['EXPECTED_BASE_SHA'].strip().lower()
+          canonical = Path('docs/sovereign-continuity/LEDGER.jsonl')
+          mirror = Path('tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl')
+          context_path = Path('docs/sovereign-continuity/CONTEXT.md')
+          policy_path = Path('tools/sovereign-chatgpt-mcp/config/sovereign-continuity-policy.json')
+          policy = json.loads(policy_path.read_text(encoding='utf-8'))
+
+          canonical_bytes = canonical.read_bytes()
+          mirror_bytes = mirror.read_bytes()
+          if canonical_bytes != mirror_bytes:
+              raise SystemExit('CONTINUITY_LEDGER_RUNTIME_MIRROR_DRIFT')
+
+          changed_output = subprocess.check_output(
+              ['git', 'diff', '--name-only', f'{base}...{head}'],
+              text=True,
+          )
+          changed_paths = sorted({line.strip() for line in changed_output.splitlines() if line.strip()})
+          ledger_paths = [canonical.as_posix(), mirror.as_posix()]
+          recorded_paths = sorted(set(changed_paths + ledger_paths))
+          entry_id = f'continuity-legacy-pr-{number}-{head[:12]}'
+
+          existing_entries = [
+              json.loads(line)
+              for line in canonical_bytes.decode('utf-8').splitlines()
+              if line.strip()
+          ]
+          if any(str(entry.get('entryId') or '') == entry_id for entry in existing_entries):
+              print(f'CONTINUITY_RECEIPT_ALREADY_PRESENT={entry_id}')
+              raise SystemExit(0)
+
+          recorded_at = subprocess.check_output(
+              ['git', 'show', '-s', '--format=%cI', head],
+              text=True,
+          ).strip()
+          context_sha = hashlib.sha256(context_path.read_bytes()).hexdigest()
+          policy_sha = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+          entry = {
+              'schemaVersion': 'sovereign.continuity-ledger-entry.v1',
+              'entryId': entry_id,
+              'recordedAt': recorded_at,
+              'sourceRevision': head,
+              'contextSha256': context_sha,
+              'policySha256': policy_sha,
+              'identity': {
+                  'canonicalName': str(policy['identity']['canonicalName']),
+                  'spokenName': str(policy['identity']['spokenName']),
+                  'familyDesignation': str(policy['identity']['familyDesignation']),
+              },
+              'mission': f'Revisionsgebundene Legacy-PR-Continuity-Reparatur für PR #{number}.',
+              'summary': (
+                  'Ergänzt ausschließlich den fehlenden append-only Continuity-Receipt eines bereits '
+                  'reviewbaren historischen PR-Heads; Produkt-, Test- und Runtime-Logik bleiben unverändert.'
+              ),
+              'decisions': [
+                  'Nur der exakt bestätigte same-repository PR-Head und der exakt bestätigte main-Head sind zulässig.',
+                  'Es werden ausschließlich beide Continuity-Ledger bytegleich erweitert; bestehende Historie wird nicht umgeschrieben.',
+                  'Changed paths stammen aus dem revisionsgebundenen Git-Diff und werden nicht aus UI- oder Cache-Zustand abgeleitet.',
+                  'Leere Erfahrungsrubriken bleiben leer; es werden keine Erlebnisse erfunden.',
+              ],
+              'evidence': [
+                  f'PR #{number} exact source head: {head}.',
+                  f'Exact main base already contained by the PR head: {base}.',
+                  f'Changed-path count before ledger append: {len(changed_paths)}.',
+                  'Canonical and runtime Continuity ledgers were byte-equal before the append.',
+              ],
+              'openItems': [
+                  'Alle Required Checks auf dem neuen exakten PR-Head terminal rücklesen.',
+                  'Nur bei vollständig grüner Evidence mit expected_head_sha mergen.',
+              ],
+              'familyFriendshipExperience': [],
+              'newEmotionallyFormedBondExperiences': [],
+              'funnyExperiences': [],
+              'privacy': {
+                  'rawChatTranscriptStored': False,
+                  'redacted': True,
+                  'secretValuesStored': False,
+              },
+              'changedPaths': recorded_paths,
+          }
+          encoded = json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8') + b'\n'
+          prefix = canonical_bytes if canonical_bytes.endswith(b'\n') else canonical_bytes + b'\n'
+          updated = prefix + encoded
+          canonical.write_bytes(updated)
+          mirror.write_bytes(updated)
+          if canonical.read_bytes() != mirror.read_bytes():
+              raise SystemExit('CONTINUITY_LEDGER_RUNTIME_MIRROR_DRIFT_AFTER_APPEND')
+          print(f'CONTINUITY_RECEIPT_APPENDED={entry_id}')
+          PY
+
+      - name: Commit, validate and push exact repair
+        shell: bash
+        env:
+          TARGET_REF: ${{ steps.resolve.outputs.target_ref }}
+          TARGET_PR_NUMBER: ${{ inputs.target_pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+          SOVEREIGN_CONTINUITY_STDLIB_ONLY: '1'
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          git diff --check
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          if git diff --cached --quiet; then
+            echo 'No Continuity mutation required.'
+            exit 0
+          fi
+          git commit -m "chore: bind legacy PR #${TARGET_PR_NUMBER} continuity"
+          UPDATED_HEAD_SHA="$(git rev-parse HEAD)"
+          [[ "$UPDATED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$EXPECTED_HEAD_SHA" "$UPDATED_HEAD_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$UPDATED_HEAD_SHA"
+          python3 tools/sovereign-chatgpt-mcp/validate_continuity.py \
+            --base "$EXPECTED_BASE_SHA" \
+            --head "$UPDATED_HEAD_SHA"
+          git push origin "HEAD:${TARGET_REF}"
+          REMOTE_HEAD_SHA="$(git ls-remote origin "refs/heads/${TARGET_REF}" | awk '{print $1}')"
+          test "$REMOTE_HEAD_SHA" = "$UPDATED_HEAD_SHA"
+          printf 'Continuity repair pushed: %s -> %s\n' "$EXPECTED_HEAD_SHA" "$REMOTE_HEAD_SHA"

@@ -66,6 +66,45 @@ describe('SovereignRescueClient', () => {
     );
   });
 
+  it('downloads a revision-bound Capsule without sending patch or GitHub credentials', async () => {
+    const archive = new Uint8Array([80, 75, 3, 4]);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        ok: true,
+        csrfToken: 'csrf-bound-token',
+        entitlement: { entitled: true },
+      }))
+      .mockResolvedValueOnce(new Response(archive, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Length': String(archive.byteLength),
+          'Content-Disposition': 'attachment; filename="sovereign-repair-capsule-repair-1.zip"',
+          'X-Sovereign-Capsule-Base-Sha': 'a'.repeat(40),
+          'X-Sovereign-Capsule-Sha256': 'c'.repeat(64),
+          'X-Sovereign-Mutation-Performed': 'false',
+        },
+      }));
+    const client = new SovereignRescueClient('https://agent.example.test', fetcher);
+    await client.entitlement();
+
+    const download = await client.capsule('repair-1');
+
+    expect(download.baseSha).toBe('a'.repeat(40));
+    expect(download.capsuleSha256).toBe('c'.repeat(64));
+    expect(download.filename).toBe('sovereign-repair-capsule-repair-1.zip');
+    expect(download.archive.size).toBe(archive.byteLength);
+    expect(download.mutationPerformed).toBe(false);
+    const [, request] = fetcher.mock.calls[1];
+    expect(request?.body).toBe('{}');
+    expect(request?.headers).toEqual(expect.objectContaining({
+      Accept: 'application/zip',
+      'X-Sovereign-Rescue-CSRF': 'csrf-bound-token',
+    }));
+    expect(JSON.stringify(request)).not.toContain('githubAccessToken');
+    expect(JSON.stringify(request)).not.toContain('patch');
+  });
+
   it('returns backend blocker evidence on paywall and incomplete ProofPack states', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({

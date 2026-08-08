@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "60843b7e775d1d9ee3371bd8899b3a86bb83e7ac",
+  "sourceRevision": "325d807babca41d2890c21afaea622cf822e0d61",
   "rawCandidateCount": 94,
   "canonicalCandidateCount": 75,
   "entries": [
@@ -176,12 +176,12 @@
         "backend/agent_runtime/repair_capsule.py"
       ],
       "symbol": "_changed_files",
-      "line": 173,
+      "line": 176,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "bf872224bfd8c13365d79c9f3c1454109122987b69e098f4279dbc332373d69c",
+      "fileSha256": "98a36461121b738652122047b5c15ee38ee1a344d4f6e7e1fce4270b6587ae8c",
       "anchorSha256": "b9e5d7b9dffab05422bf61ec246517701a7c802c6203fca6efac75f595600050",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:f159950381df78b3e595a7d7",
+      "candidateId": "llm-boundary:357d220600970fd506f45736",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_changed_files normalizes only a persisted changed-file list through bounded path validation and exact deduplication; it does not interpret free user language or authorize any effect."
     },
@@ -191,12 +191,12 @@
         "backend/agent_runtime/repair_capsule.py"
       ],
       "symbol": "build_repair_capsule_manifest",
-      "line": 214,
+      "line": 217,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "bf872224bfd8c13365d79c9f3c1454109122987b69e098f4279dbc332373d69c",
+      "fileSha256": "98a36461121b738652122047b5c15ee38ee1a344d4f6e7e1fce4270b6587ae8c",
       "anchorSha256": "cc22ba87ff96d8ba72a9b3811824b44d98d24b3ef7bf8af7968e3a4cfc96a302",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:9e825a3a3c65bdab56cb56c0",
+      "candidateId": "llm-boundary:8cc67a2868a47cd828e52335",
       "classification": "STRUCTURED_POLICY",
       "rationale": "build_repair_capsule_manifest compares a structured failure-family field only with the fixed supported-family enum; it does not infer semantic intent from free language or authorize execution."
     },
@@ -463,12 +463,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/ci_repair_tools.py",
       "mirrorPaths": [],
       "symbol": "bounded_text_sources_from_archive",
-      "line": 85,
+      "line": 86,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "0e650d68a1c1f09f8ca3bfe7483f190e3635970f9e6555b8aa6067cef90adfa1",
+      "fileSha256": "42735dae5291afbe72c590d6c25131d83ca00442cd7f21c6aea5cf458f9d3b50",
       "anchorSha256": "7201d430c527a3989c76147d952c6afd22ccfd67386a0522d38d4eccc7bd34e8",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:26cb6b27896a7187eb791c7d",
+      "candidateId": "llm-boundary:a877589d889b7cdadbd1c92e",
       "classification": "STRUCTURED_POLICY",
       "rationale": "bounded_text_sources_from_archive compares normalized archive member paths as exact set keys to reject duplicates; it does not interpret free language, select a repair, or authorize an effect."
     },
@@ -684,25 +684,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1199,
+      "line": 1285,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "aabd40e9c922de18ab3d1dad50e84f689ffef9149e0ee718965eb6a4da2386f7",
+      "fileSha256": "d5cbe82815045d00721e12b5e5e1a2daaecb5f00bdcd13a430b4d99f5685d873",
       "anchorSha256": "4be124cfb705222dcc6474447317bb689e609671d071f21e36b8243922476ed9",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:757bfadfcb6cdc89e1f9b0bc",
-      "classification": "STRUCTURED_POLICY",
-      "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
-    },
-    {
-      "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
-      "mirrorPaths": [],
-      "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1200,
-      "patternFamily": "python_keyword_intent",
-      "fileSha256": "aabd40e9c922de18ab3d1dad50e84f689ffef9149e0ee718965eb6a4da2386f7",
-      "anchorSha256": "ed747409eb91e564149b91519c92fc1d01cd47f69f059c648214be3a3517ceeb",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:c457ebe4ce52a9ba19ad58ff",
+      "candidateId": "llm-boundary:c6aa0f20470caa941ad61bd7",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -711,11 +698,24 @@
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
       "line": 1286,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "d5cbe82815045d00721e12b5e5e1a2daaecb5f00bdcd13a430b4d99f5685d873",
+      "anchorSha256": "ed747409eb91e564149b91519c92fc1d01cd47f69f059c648214be3a3517ceeb",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:866a2737165d51a23f7a9ee2",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
+    },
+    {
+      "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
+      "mirrorPaths": [],
+      "symbol": "GitHubAdminRuntime.merge_pr",
+      "line": 1375,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "aabd40e9c922de18ab3d1dad50e84f689ffef9149e0ee718965eb6a4da2386f7",
+      "fileSha256": "d5cbe82815045d00721e12b5e5e1a2daaecb5f00bdcd13a430b4d99f5685d873",
       "anchorSha256": "645a786ff90fba018853eb5bce65cfb12419f97398d5d2683e69b3c7fa00492e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:a9e7fcd59a576954e608da87",
+      "candidateId": "llm-boundary:4440a0d4c9ce9a30925b93a0",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1019,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "93bc1ec911882f7f9601aafd84995d2946f8ecdc87f95debbe091b24015049bc"
+  "ledgerSha256": "45dd23c586757cf38fd57a6c975589f32bd788fe690dd120ed920a2521e1c67b"
 }

@@ -42,6 +42,7 @@ BACKEND_MANAGED_ENV="$INSTALL_ROOT/backend-runtime.env"
 GHCR_ENV="$INSTALL_ROOT/.ghcr.env"
 TUNNEL_ENV="$INSTALL_ROOT/tunnel.env"
 BROKER_ENV="$INSTALL_ROOT/broker.env"
+BROKER_GOVERNANCE_MODE="$BROKER_DIR/sovereign-governance-mode.json"
 BROKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-broker.service"
 COMMAND_WORKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-command-worker.service"
 SELF_UPDATE_SERVICE="/etc/systemd/system/sovereign-chatgpt-mcp-self-update.service"
@@ -857,6 +858,7 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$SOURCE_DIR/skills/sovereign-mcp-optimal-operation/SKILL.md" ]] || fail "optimal operation skill manifest is missing"
 [[ -f "$SOURCE_DIR/config/sovereign-mcp-operating-profile.json" ]] || fail "versioned MCP operating profile is missing"
 [[ -f "$SOURCE_DIR/config/sovereign-continuity-policy.json" ]] || fail "versioned continuity policy is missing"
+[[ -f "$SOURCE_DIR/config/sovereign-governance-mode.json" ]] || fail "versioned governance mode is missing"
 [[ -f "$SOURCE_DIR/continuity.py" ]] || fail "continuity runtime is missing"
 [[ -f "$SOURCE_DIR/continuity-data/CONTEXT.md" ]] || fail "runtime continuity context is missing"
 [[ -f "$SOURCE_DIR/continuity-data/LEDGER.jsonl" ]] || fail "runtime continuity ledger is missing"
@@ -952,6 +954,9 @@ install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.json
 for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
+install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"
+[[ "$(sha256sum "$BROKER_GOVERNANCE_MODE" | awk '{print $1}')" == "$(sha256sum "$SOURCE_DIR/config/sovereign-governance-mode.json" | awk '{print $1}')" ]] \
+  || fail "installed broker governance mode does not match the exact source revision"
 remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"
 remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml" "templates/sovereign-litellm/docker-compose.yml"
 remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/config.yaml" "templates/sovereign-litellm/config.yaml"
@@ -1223,6 +1228,7 @@ if ! {
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
   printf 'SOVEREIGN_MCP_SOURCE_DIR=/opt/sovereign-operator-source\n'
+  printf 'SOVEREIGN_MCP_GOVERNANCE_MODE_PATH=%s\n' "$BROKER_GOVERNANCE_MODE"
   printf 'SOVEREIGN_MCP_SELF_UPDATE_SERVICE=sovereign-chatgpt-mcp-self-update.service\n'
   printf 'SOVEREIGN_MCP_SELF_UPDATE_STATUS=/var/lib/sovereign-chatgpt-self-update/status.json\n'
   printf 'SOVEREIGN_MCP_COMMAND_QUEUE=%s\n' "$COMMAND_QUEUE_DIR"

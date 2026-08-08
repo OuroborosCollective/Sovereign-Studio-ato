@@ -14,7 +14,7 @@ from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 import uuid
 
-from flask import jsonify, request
+from flask import Response, jsonify, request
 
 from .auto_code_review import AutoCodeReviewInput, auto_code_review, auto_code_review_signal
 from .productivity_insights import (
@@ -30,7 +30,7 @@ from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
-from .git_workspace import normalize_ephemeral_github_token
+from .git_workspace import git_diff_full, normalize_ephemeral_github_token
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import (
@@ -44,7 +44,13 @@ from .reusable_memory import search_reusable_memory
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
+from .repair_capsule import (
+    MAX_REPAIR_CAPSULE_PATCH_BYTES,
+    build_repair_capsule,
+    build_repair_capsule_archive,
+)
 from .rescue import (
+    MAX_REPAIR_CHANGED_FILES,
     REPAIR_PACK_CREDITS,
     RESCUE_CSRF_TTL_SECONDS,
     build_free_diagnosis,
@@ -811,6 +817,115 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "proofPack": pack,
                 "verified": verify_proof_pack(pack),
             }), 200 if pack["ready"] else 409
+        finally:
+            _close(conn)
+
+    @app.route(
+        "/api/user/agent/rescue/repairs/<repair_id>/capsule",
+        methods=["POST"],
+    )
+    @require_session
+    def user_get_sovereign_rescue_capsule(repair_id: str):
+        """Return a bounded, zero-write Capsule built from current workspace evidence."""
+
+        user_id = _current_session_user_id()
+        csrf_error = _rescue_csrf_request_error(user_id)
+        if csrf_error:
+            return csrf_error
+        parsed_body = request.get_json(silent=True)
+        if not isinstance(parsed_body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        if parsed_body:
+            return jsonify({
+                "error": "Capsule delivery accepts no request fields",
+                "blocker": "capsule_request_fields_forbidden",
+            }), 400
+        try:
+            repair_uuid = str(uuid.UUID(repair_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid repair id"}), 400
+
+        conn = _connection()
+        try:
+            repair = _read_owned_rescue(conn, user_id, repair_uuid)
+            if not repair:
+                return jsonify({"error": "Repair not found"}), 404
+            job = _read_owned_job(conn, user_id, str(repair.get("job_id") or ""))
+            if not job:
+                return jsonify({"error": "Repair job not found"}), 404
+            workspace_id = str(job.workspace_id or "").strip()
+            if not workspace_id:
+                return jsonify({
+                    "error": "Repair workspace is unavailable",
+                    "blocker": "capsule_workspace_missing",
+                }), 409
+
+            patch, diff_result = git_diff_full(
+                workspace_id,
+                _workspace_root(),
+                max_bytes=MAX_REPAIR_CAPSULE_PATCH_BYTES,
+                max_files=MAX_REPAIR_CHANGED_FILES,
+            )
+            if diff_result.status != "done":
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "blocker": diff_result.blocker or "capsule_workspace_diff_failed",
+                    "mutationPerformed": False,
+                }), 409 if diff_result.status == "blocked" else 422
+            try:
+                base_sha = normalize_head_sha(repair.get("base_sha"))
+            except ValueError:
+                return jsonify({
+                    "error": "Repair base revision is invalid",
+                    "blocker": "capsule_base_sha_invalid",
+                }), 409
+            if diff_result.commit_sha != base_sha:
+                return jsonify({
+                    "error": "Workspace base revision changed",
+                    "blocker": "capsule_workspace_base_stale",
+                    "expectedBaseSha": base_sha,
+                    "observedBaseSha": diff_result.commit_sha,
+                    "mutationPerformed": False,
+                }), 409
+
+            capsule = build_repair_capsule(
+                repair=repair,
+                job={
+                    "changed_files": list(job.changed_files),
+                    "test_summary": job.test_summary,
+                },
+                patch_value=patch,
+            )
+            manifest = capsule.get("manifest", {})
+            if capsule.get("ready") is not True:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "capsule": manifest,
+                    "blocker": "capsule_evidence_incomplete",
+                    "mutationPerformed": False,
+                }), 409
+            try:
+                archive = build_repair_capsule_archive(capsule)
+            except ValueError as exc:
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-rescue",
+                    "blocker": str(exc),
+                    "mutationPerformed": False,
+                }), 409
+
+            response = Response(archive, status=200, mimetype="application/zip")
+            response.headers["Content-Disposition"] = (
+                f'attachment; filename="sovereign-repair-capsule-{repair_uuid}.zip"'
+            )
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Sovereign-Capsule-Sha256"] = str(manifest["capsuleSha256"])
+            response.headers["X-Sovereign-Capsule-Base-Sha"] = base_sha
+            response.headers["X-Sovereign-Mutation-Performed"] = "false"
+            return response
         finally:
             _close(conn)
 
