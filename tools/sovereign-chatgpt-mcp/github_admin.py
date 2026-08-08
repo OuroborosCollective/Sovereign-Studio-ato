@@ -56,12 +56,16 @@ MAIN_RULESET_REQUIRED_CHECKS_ENFORCED = (
 MAIN_RULESET_REQUIRED_CHECKS_ACCELERATION = (
     "Release Gate",
     "Agent Runtime Tests",
-    "Revision Guardian",
 )
 DEFAULT_GOVERNANCE_MODE_PATH = Path(__file__).resolve().parent / "config" / "sovereign-governance-mode.json"
 GOVERNANCE_MODE_ENV = "SOVEREIGN_MCP_GOVERNANCE_MODE_PATH"
 GOVERNANCE_MODES = frozenset({"enforced", "acceleration", "reconciliation"})
-GOVERNANCE_ADVISORY_CHECKS = frozenset({"continuity-ledger"})
+GOVERNANCE_ADVISORY_CHECKS = frozenset({
+    "continuity-ledger",
+    "Revision Guardian",
+    "Revision Guardian Evidence",
+    "Boundary ledger drift preflight",
+})
 MAX_PR_SERIES = 500
 MAX_SERIES_WAIT_SECONDS = 3600
 MIN_SERIES_POLL_SECONDS = 2

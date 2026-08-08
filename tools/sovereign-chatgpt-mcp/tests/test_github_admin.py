@@ -379,7 +379,9 @@ def test_merge_allows_stale_main_ancestry_only_when_governance_is_advisory(monke
                 {"id": 10, "name": "Release Gate", "status": "completed", "conclusion": "success"},
                 {"id": 11, "name": "Agent Runtime Tests", "status": "completed", "conclusion": "success"},
                 {"id": 12, "name": "continuity-ledger", "status": "completed", "conclusion": "failure"},
-                {"id": 13, "name": "Revision Guardian", "status": "completed", "conclusion": "success"},
+                {"id": 13, "name": "Revision Guardian", "status": "completed", "conclusion": "failure"},
+                {"id": 14, "name": "Revision Guardian Evidence", "status": "completed", "conclusion": "failure"},
+                {"id": 15, "name": "Boundary ledger drift preflight", "status": "completed", "conclusion": "failure"},
             ]
         },
     )
@@ -410,7 +412,12 @@ def test_merge_allows_stale_main_ancestry_only_when_governance_is_advisory(monke
     assert result["status"] == "MERGED"
     assert result["governance_mode"] == "acceleration"
     assert result["revision_relation"]["contains_current_main"] is False
-    assert result["advisory_failed_checks"] == ["continuity-ledger"]
+    assert result["advisory_failed_checks"] == [
+        "continuity-ledger",
+        "Revision Guardian",
+        "Revision Guardian Evidence",
+        "Boundary ledger drift preflight",
+    ]
 
 
 def test_merge_pr_series_orders_oldest_first_and_revalidates_after_each_main_advance(monkeypatch) -> None:
@@ -1106,7 +1113,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
     }
 
 
-def test_apply_main_ruleset_acceleration_drops_only_continuity_and_strict_up_to_date(monkeypatch) -> None:
+def test_apply_main_ruleset_acceleration_keeps_product_gates_and_drops_governance_checks(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_MCP_ENABLE_PR_MERGE", "1")
     monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
     repository_path = "/repos/OuroborosCollective/Sovereign-Studio-ato"
@@ -1127,7 +1134,6 @@ def test_apply_main_ruleset_acceleration_drops_only_continuity_and_strict_up_to_
                     "required_status_checks": [
                         {"context": "Release Gate"},
                         {"context": "Agent Runtime Tests"},
-                        {"context": "Revision Guardian"},
                     ],
                 },
             },
@@ -1150,14 +1156,13 @@ def test_apply_main_ruleset_acceleration_drops_only_continuity_and_strict_up_to_
     assert result["status"] == "RULESET_UPDATED"
     assert result["governance_mode"] == "acceleration"
     assert result["strict_required_status_checks_policy"] is False
-    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests", "Revision Guardian"]
+    assert result["required_status_checks"] == ["Release Gate", "Agent Runtime Tests"]
     put_call = next(call for call in session.calls if call["method"] == "PUT")
     required = next(rule for rule in put_call["json"]["rules"] if rule["type"] == "required_status_checks")
     assert required["parameters"]["strict_required_status_checks_policy"] is False
     assert {item["context"] for item in required["parameters"]["required_status_checks"]} == {
         "Release Gate",
         "Agent Runtime Tests",
-        "Revision Guardian",
     }
 
 
