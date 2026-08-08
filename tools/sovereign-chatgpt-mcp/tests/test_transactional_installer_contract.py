@@ -86,7 +86,7 @@ def test_private_mode_preflight_rejects_protected_public_file(tmp_path, monkeypa
 def test_env_update_falls_back_when_replace_and_chmod_are_not_permitted(tmp_path, monkeypatch) -> None:
     script = INSTALLER.read_text("utf-8")
     marker = 'python3 - "$file" "$key" "$value" <<\'PY\'\n'
-    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
+    embedded = script.split(marker, 1)[1].split("\nPY\n  then", 1)[0]
     target = tmp_path / ".env"
     target.write_text("ALPHA=old\nOTHER=kept\n", "utf-8")
     target.chmod(0o600)
@@ -116,7 +116,7 @@ def test_env_update_falls_back_when_replace_and_chmod_are_not_permitted(tmp_path
 def test_env_update_rejects_unfixable_public_mode(tmp_path, monkeypatch) -> None:
     script = INSTALLER.read_text("utf-8")
     marker = 'python3 - "$file" "$key" "$value" <<\'PY\'\n'
-    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
+    embedded = script.split(marker, 1)[1].split("\nPY\n  then", 1)[0]
     target = tmp_path / ".env"
     target.write_text("ALPHA=old\n", "utf-8")
     target.chmod(0o644)
