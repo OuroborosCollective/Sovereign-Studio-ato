@@ -162,6 +162,39 @@ export {
   formatPainSignal,
 } from './nociceptorBoundary';
 
+export {
+  // Signal Ordering
+  type SignalOrderKey,
+  type OrderedSignal,
+  type SignalOrderingOptions,
+  extractTick,
+  extractSequence,
+  createOrderKey,
+  compareOrderKeys,
+  withOrderKey,
+  orderSignals,
+  groupByNode,
+  verifyOrder,
+  DEFAULT_ORDERING_OPTIONS,
+  // Deterministic Iterables
+  type ChunkResult,
+  type PairResult,
+  type GroupResult,
+  type MinMaxResult,
+  type ChunkOptions,
+  type ChunkOverlapOptions,
+  LengthMismatchError,
+  chunkwise,
+  chunkwiseOverlap,
+  pairwise,
+  zipEqual,
+  groupBy,
+  runningDifference,
+  runningTotal,
+  toMinMax,
+  validateDeterministic,
+} from './pipeline';
+
 export function createQuickPredictiveLayer(): PredictiveLayer {
   return createPredictiveLayer(DEFAULT_PREDICTIVE_CONFIG);
 }
