@@ -391,6 +391,7 @@ install_managed_control_plane_file() {
   local label="$4"
   local target_attrs=""
   local target_was_immutable=0
+  local target_owner_group=""
   INSTALL_STAGE="validate_control_plane_file:${label}"
   [[ -f "$source" && ! -L "$source" ]] || fail "managed control-plane source is not a regular file: $label"
   if [[ -e "$target" || -L "$target" ]]; then
@@ -441,6 +442,16 @@ PY
       chattr +i -- "$target" >/dev/null 2>&1 || true
     fi
     fail "managed control-plane copy failed: label=$label target=$target"
+  fi
+  case "$target" in
+    "$BROKER_DIR"/*|"$BIN_DIR"/*|"$COMPOSE_TEMPLATE_ROOT"/*)
+      target_owner_group="root:sovereign-mcp"
+      ;;
+  esac
+  if [[ -n "$target_owner_group" ]]; then
+    INSTALL_STAGE="set_control_plane_file_ownership:${label}"
+    chown "$target_owner_group" -- "$target" \
+      || fail "managed control-plane ownership update failed: label=$label target=$target owner=$target_owner_group"
   fi
   if [[ "$target_was_immutable" == "1" ]]; then
     INSTALL_STAGE="restore_control_plane_file_immutable:${label}"
@@ -792,6 +803,7 @@ install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mc
 install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-release-reconciler.service" "$RELEASE_RECONCILER_SERVICE" "systemd/sovereign-release-reconciler.service"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-release-reconciler.timer" "$RELEASE_RECONCILER_TIMER" "systemd/sovereign-release-reconciler.timer"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-openai-tunnel.service" "$TUNNEL_SERVICE" "systemd/sovereign-openai-tunnel.service"
+INSTALL_STAGE="verify_dormant_tunnel_unit_contract"
 grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' "$TUNNEL_SERVICE" \
   || fail "installed tunnel unit does not use the shared MCP protocol checker"
 grep -q '^Restart=on-failure$' "$TUNNEL_SERVICE" || fail "installed tunnel unit has an unsafe restart policy"
@@ -799,7 +811,18 @@ grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit h
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
   fail "installed tunnel unit still contains a curl-based MCP probe"
 fi
-chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR" "$COMPOSE_TEMPLATE_ROOT"
+INSTALL_STAGE="set_control_plane_directory_ownership"
+chown root:sovereign-mcp \
+  "$BROKER_DIR" \
+  "$BIN_DIR" \
+  "$COMPOSE_TEMPLATE_ROOT" \
+  "$PGBACKWEB_TEMPLATE_DIR" \
+  "$PATCHMON_TEMPLATE_DIR" \
+  "$CODE_SERVER_TEMPLATE_DIR" \
+  "$MILVUS_TEMPLATE_DIR" \
+  "$FREELLMAPI_TEMPLATE_DIR" \
+  "$FREELLMPOOL_TEMPLATE_DIR" \
+  || fail "managed control-plane directory ownership update failed"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.env.example" "$INSTALL_ROOT/.env.example"
