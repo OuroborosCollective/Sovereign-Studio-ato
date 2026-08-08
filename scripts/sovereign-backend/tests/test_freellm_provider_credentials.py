@@ -12,10 +12,13 @@ sys.path.insert(0, str(BACKEND))
 
 from freellm_provider_credentials import (
     FREELLM_PROVIDER_SPECS,
+    detect_freellm_provider_id_from_key,
     normalize_freellm_provider_id,
     provider_id_from_target_id,
     provider_keyless_marker_path,
     provider_secret_path,
+    provider_secret_paths,
+    provider_secret_pool_path,
     provider_target_id,
 )
 
@@ -25,8 +28,22 @@ def test_provider_allowlist_has_keyed_and_keyless_contracts(tmp_path: Path) -> N
     assert FREELLM_PROVIDER_SPECS["pollinations"]["keyless"] is False
     assert FREELLM_PROVIDER_SPECS["ovh"]["keyless"] is True
     assert FREELLM_PROVIDER_SPECS["kilo"]["keyless"] is True
-    assert FREELLM_PROVIDER_SPECS["aihorde"]["keyless"] is True
+    assert FREELLM_PROVIDER_SPECS["aihorde"]["keyless"] is False
     assert provider_secret_path(tmp_path, "groq") == tmp_path / "freellm-provider-keys" / "groq.key"
+    fingerprint = "a" * 64
+    second_fingerprint = "b" * 64
+    pooled = provider_secret_pool_path(tmp_path, "groq", fingerprint)
+    pooled_second = provider_secret_pool_path(tmp_path, "groq", second_fingerprint)
+    assert pooled == tmp_path / "freellm-provider-keys" / f"groq.{fingerprint}.key"
+    assert pooled_second != pooled
+    assert provider_secret_pool_path(tmp_path, "groq", fingerprint) == pooled
+    pooled.parent.mkdir(parents=True)
+    pooled.write_text("gsk_" + "x" * 24, encoding="utf-8")
+    pooled_second.write_text("gsk_" + "y" * 24, encoding="utf-8")
+    discovered_paths = provider_secret_paths(tmp_path, "groq")
+    assert pooled in discovered_paths
+    assert pooled_second in discovered_paths
+    assert len([path for path in discovered_paths if path.is_file()]) == 2
     assert provider_secret_path(tmp_path, "pollinations") == (
         tmp_path / "freellm-provider-keys" / "pollinations.key"
     )
@@ -38,6 +55,8 @@ def test_provider_allowlist_has_keyed_and_keyless_contracts(tmp_path: Path) -> N
     )
     with pytest.raises(ValueError, match="provider_not_keyless"):
         provider_keyless_marker_path(tmp_path, "pollinations")
+    with pytest.raises(ValueError, match="provider_not_keyless"):
+        provider_keyless_marker_path(tmp_path, "aihorde")
 
 
 def test_provider_target_ids_round_trip_and_reject_unknown_values() -> None:
@@ -48,6 +67,18 @@ def test_provider_target_ids_round_trip_and_reject_unknown_values() -> None:
         normalize_freellm_provider_id("unknown-provider")
     with pytest.raises(ValueError, match="target_id_invalid"):
         provider_id_from_target_id("freellm_provider_unknown_key")
+
+
+def test_provider_key_detection_is_strong_and_fail_closed() -> None:
+    assert detect_freellm_provider_id_from_key(bytearray(b"AQ." + b"x" * 24)) == "google"
+    assert detect_freellm_provider_id_from_key(bytearray(b"AIza-" + b"x" * 24)) == "google"
+    assert detect_freellm_provider_id_from_key(bytearray(b"gsk_" + b"x" * 24)) == "groq"
+    assert detect_freellm_provider_id_from_key(bytearray(b"sk-or-v1-" + b"x" * 24)) == "openrouter"
+    assert detect_freellm_provider_id_from_key(bytearray(b"github_pat_" + b"x" * 24)) == "github"
+    assert detect_freellm_provider_id_from_key(bytearray(b"nvapi-" + b"x" * 24)) == "nvidia"
+    assert detect_freellm_provider_id_from_key(bytearray(b"hf_" + b"x" * 24)) == "huggingface"
+    with pytest.raises(ValueError, match="provider_key_unrecognized"):
+        detect_freellm_provider_id_from_key(bytearray(b"opaque-" + b"x" * 24))
 
 
 def test_owner_input_and_runtime_expose_only_safe_provider_metadata() -> None:
@@ -63,10 +94,43 @@ def test_owner_input_and_runtime_expose_only_safe_provider_metadata() -> None:
     assert '"rawCredentialsReturned": False' in runtime
     assert '"rawCredentialReturned": False' in runtime
     assert '"/freellm-provider-keys"' in runtime
+    assert '"/api/admin/llm/freellm/provider-credentials/auto"' in runtime
+    assert "detect_freellm_provider_id_from_key(protected)" in runtime
+    assert "protected[index] = 0" in runtime
     assert "request.get_data" in owner
     assert "protected_buffer[index] = 0" in owner
     assert "FreeLLM Provider-Zugänge" in page
     assert "type=\"password\"" in page
+    assert "/api/admin/llm/freellm/provider-credentials/auto" in page
+    assert "X-FreeLLM-Provider-Id" in page
+    assert "providerSelectionRequired" in page
+    assert "p.keyCount" in page
+    assert "def _prepare_freellm_secret_directory(" in runtime
+    assert 'getattr(os, "O_NOFOLLOW", 0)' in runtime
+    assert "os.fchmod(descriptor, 0o700)" in runtime
+
+
+def test_react_admin_preserves_unknown_key_fallback_until_provider_selection() -> None:
+    api_client = (
+        REPO / "src" / "features" / "admin" / "api" / "adminApiClient.ts"
+    ).read_text("utf-8")
+    control_center = (
+        REPO / "src" / "features" / "admin" / "components" / "FreeRevolverControlCenter.tsx"
+    ).read_text("utf-8")
+    hook = (
+        REPO / "src" / "features" / "admin" / "hooks" / "useAdminApi.ts"
+    ).read_text("utf-8")
+
+    assert "FreellmProviderSelectionRequiredError" in api_client
+    assert "'X-FreeLLM-Provider-Id': providerId" in api_client
+    assert "body.providerSelectionRequired === true" in api_client
+    assert "body.providers.length > 0" in api_client
+    assert "setProviderChoices(error.providers)" in control_center
+    assert "setApiKey('');" in control_center
+    assert control_center.index("setApiKey('');") > control_center.index(".then(result =>")
+    assert "api.autoConfigureKey(protectedValue, explicitProviderId)" in control_center
+    assert "providerChoices.length > 0" in control_center
+    assert "autoConfigureKey: (apiKey: string, providerId?: string)" in hook
 
 
 def test_bootstrap_reads_only_bounded_private_files_and_drops_privileges() -> None:
