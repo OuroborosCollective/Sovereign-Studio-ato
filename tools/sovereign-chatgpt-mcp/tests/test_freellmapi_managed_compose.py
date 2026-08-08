@@ -156,9 +156,11 @@ def test_freellmapi_keyless_markers_are_imported_by_the_real_bootstrap_loop() ->
         / "sovereign-freellm-bootstrap.mjs"
     ).read_text("utf-8")
 
-    assert "^([a-z][a-z0-9-]{1,31})\\.(key|keyless)$" in bootstrap
-    assert "match[2] === 'keyless' ? undefined : value" in bootstrap
-    assert "label: match[2] === 'keyless' ? 'sovereign-keyless' : 'sovereign-owner'" in bootstrap
+    assert "(?:\\.([0-9a-f]{64}))?\\.(key|keyless)$" in bootstrap
+    assert "match[3] === 'keyless' ? undefined : value" in bootstrap
+    assert "sovereign-owner-${fingerprint.slice(0, 12)}" in bootstrap
+    assert "appliedFingerprints.set(entry.sourceName, entry.fingerprint)" in bootstrap
+    assert "provider secret fingerprint mismatch" in bootstrap
     assert "applyDeclarativeConfig({ keys: changed }, 'sovereign-owner-secret-files')" in bootstrap
     assert "SOVEREIGN_FREELLM_PROVIDER_KEYS_IMPORTED" in bootstrap
     assert "}, 15_000).unref();" in bootstrap

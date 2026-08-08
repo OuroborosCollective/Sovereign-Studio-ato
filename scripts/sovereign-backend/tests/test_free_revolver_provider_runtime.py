@@ -641,15 +641,21 @@ def test_reconcile_prioritizes_previous_zero_cost_canary_before_retry_failures()
     proven_zero_cost = """WHEN last_canary_request_id IS NOT NULL
                             AND canary_cost_state='zero'
                             AND receipt_current=false THEN 1"""
+    never_canaried = """WHEN receipt_current=false
+                            AND last_canary_request_id IS NULL"""
     retry_failure = """WHEN status<>'ready' AND last_error_code IN (
                            'freellm_rate_limited','freellm_timeout','freellm_upstream_unavailable'
-                       ) THEN 3"""
+                       ) THEN 4"""
 
     assert "model.last_canary_request_id" in runtime
     assert "model.canary_cost_state" in runtime
     assert proven_zero_cost in runtime
+    assert never_canaried in runtime
+    assert "general_chat_canary_required" in runtime
+    assert "freellm_quota_contract_recheck_required" in runtime
     assert retry_failure in runtime
-    assert runtime.index(proven_zero_cost) < runtime.index(retry_failure)
+    assert runtime.index(proven_zero_cost) < runtime.index(never_canaried)
+    assert runtime.index(never_canaried) < runtime.index(retry_failure)
     assert "THEN last_canary_at" in runtime
     assert "END DESC NULLS LAST" in runtime
 
@@ -667,6 +673,9 @@ def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> No
     assert "_reconcile_pace_seconds()" in runtime
     assert "overall_ready_count = int(ready_state.get(\"ready_count\") or 0)" in runtime
     assert "minimum_ready_satisfied = overall_ready_count >= target_ready_count" in runtime
+    assert '"healthy"\n                if minimum_ready_satisfied\n' in runtime
+    assert "minimum_ready_satisfied and overall_blocked_count == 0" not in runtime
+    assert "freellm_minimum_ready_routes_not_met" in runtime
     assert '"minimumReadyRoutes": target_ready_count' in runtime
     assert '"minimumReadySatisfied": minimum_ready_satisfied' in runtime
     assert '"readyRouteCeiling": None' in runtime
@@ -684,3 +693,15 @@ def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> No
     assert "route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'" in runtime
     assert '"canaryLatencyMs"' in runtime
     assert '"certificationState": "certified"' in runtime
+
+
+def test_managed_status_exposes_secret_free_key_pool_and_upstream_assignment() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+
+    assert "route.config->'actualUpstream' AS actual_upstream" in runtime
+    assert '"actualUpstream": item.get("actual_upstream") or {}' in runtime
+    assert '"credentialPools": credential_pools' in runtime
+    assert '"ownerManagedCredentialCount": sum(' in runtime
+    assert '"keylessMarkerCount": sum(' in runtime
+    assert '"keyCount": int(state.get("keyCount") or 0)' in runtime
+    assert '"protectedValuesReturned": False' in runtime
