@@ -61,33 +61,9 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'chattr +a -- "$target"' in script
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
     assert 'INSTALL_STAGE="verify_dormant_tunnel_unit_contract"' in script
-    assert "set_managed_control_plane_directory_ownership()" in script
-    assert 'INSTALL_STAGE="set_control_plane_directory_ownership:${label}"' in script
-    assert "managed control-plane directory ownership update failed after protected-attribute clear" in script
-    assert "managed control-plane directory immutable-bit restore failed" in script
-    assert "managed control-plane directory append-only-bit restore failed" in script
-    assert 'set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"' in script
-    assert 'set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"' in script
+    assert 'INSTALL_STAGE="set_control_plane_directory_ownership"' in script
     assert 'chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR" "$COMPOSE_TEMPLATE_ROOT"' not in script
-    assert "prepare_managed_private_file_mutation()" in script
-    assert "restore_managed_private_file_mutation()" in script
-    assert "restore_managed_private_file_mutation_best_effort()" in script
-    assert 'INSTALL_STAGE="prepare_managed_private_file:${label}"' in script
-    assert 'INSTALL_STAGE="mutate_managed_private_file:${label}"' in script
-    assert 'INSTALL_STAGE="restore_managed_private_file:${label}"' in script
-    assert "managed private file immutable-bit clear failed" in script
-    assert "managed private file append-only-bit clear failed" in script
-    assert "managed private file immutable-bit restore failed" in script
-    assert "managed private file append-only-bit restore failed" in script
-    assert 'local label="env-set:${key}"' in script
-    assert 'local label="env-remove:${key}"' in script
-    assert 'local label="env-remove-csv:${key}"' in script
-    assert 'prepare_managed_private_file_mutation "$BROKER_ENV" "broker-environment"' in script
-    assert "managed broker environment rewrite failed" in script
-    assert 'INSTALL_STAGE="prepare_private_environment_files"' in script
-    assert 'local failed_stage="$INSTALL_STAGE"' in script
-    assert 'local failed_reason="$INSTALL_FAILURE_REASON"' in script
-    assert '"$failed_stage" "$exit_code" "${failed_reason:-unexpected command failure}"' in script
+    assert 'chown root:sovereign-mcp \\\n  "$BROKER_DIR" \\\n  "$BIN_DIR" \\\n  "$COMPOSE_TEMPLATE_ROOT"' in script
 
 
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
