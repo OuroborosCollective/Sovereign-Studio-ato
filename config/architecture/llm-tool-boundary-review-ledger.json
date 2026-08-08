@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "8359f8310d170cbc0f4977c6de17287816fd9423",
+  "sourceRevision": "325d807babca41d2890c21afaea622cf822e0d61",
   "rawCandidateCount": 94,
   "canonicalCandidateCount": 75,
   "entries": [
@@ -463,12 +463,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/ci_repair_tools.py",
       "mirrorPaths": [],
       "symbol": "bounded_text_sources_from_archive",
-      "line": 85,
+      "line": 86,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "0e650d68a1c1f09f8ca3bfe7483f190e3635970f9e6555b8aa6067cef90adfa1",
+      "fileSha256": "42735dae5291afbe72c590d6c25131d83ca00442cd7f21c6aea5cf458f9d3b50",
       "anchorSha256": "7201d430c527a3989c76147d952c6afd22ccfd67386a0522d38d4eccc7bd34e8",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:26cb6b27896a7187eb791c7d",
+      "candidateId": "llm-boundary:a877589d889b7cdadbd1c92e",
       "classification": "STRUCTURED_POLICY",
       "rationale": "bounded_text_sources_from_archive compares normalized archive member paths as exact set keys to reject duplicates; it does not interpret free language, select a repair, or authorize an effect."
     },
@@ -1019,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "863f16d5aae83f801f546353ef13dfd949e004d4826bfa78363fe151bf22106d"
+  "ledgerSha256": "45dd23c586757cf38fd57a6c975589f32bd788fe690dd120ed920a2521e1c67b"
 }
