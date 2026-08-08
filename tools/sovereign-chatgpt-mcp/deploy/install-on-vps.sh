@@ -166,11 +166,65 @@ except OSError as exc:
 PY
 }
 
+MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+
+prepare_managed_private_file_mutation() {
+  local file="$1"
+  local label="$2"
+  local attrs=""
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+  INSTALL_STAGE="prepare_managed_private_file:${label}"
+  if [[ ! -e "$file" && ! -L "$file" ]]; then
+    return 0
+  fi
+  [[ -f "$file" && ! -L "$file" ]] \
+    || fail "managed private mutation target is not a regular file: label=$label file=$file"
+  attrs="$(lsattr -d -- "$file" 2>/dev/null | awk '{print $1}' || true)"
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS="$attrs"
+  if [[ "$attrs" == *i* ]]; then
+    chattr -i -- "$file" \
+      || fail "managed private file immutable-bit clear failed: label=$label file=$file"
+  fi
+  if [[ "$attrs" == *a* ]]; then
+    if ! chattr -a -- "$file"; then
+      [[ "$attrs" != *i* ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+      fail "managed private file append-only-bit clear failed: label=$label file=$file"
+    fi
+  fi
+}
+
+restore_managed_private_file_mutation() {
+  local file="$1"
+  local label="$2"
+  local attrs="$MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS"
+  INSTALL_STAGE="restore_managed_private_file:${label}"
+  if [[ "$attrs" == *a* ]]; then
+    chattr +a -- "$file" \
+      || fail "managed private file append-only-bit restore failed: label=$label file=$file"
+  fi
+  if [[ "$attrs" == *i* ]]; then
+    chattr +i -- "$file" \
+      || fail "managed private file immutable-bit restore failed: label=$label file=$file"
+  fi
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+}
+
+restore_managed_private_file_mutation_best_effort() {
+  local file="$1"
+  local attrs="$MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS"
+  [[ "$attrs" != *a* || ! -e "$file" ]] || chattr +a -- "$file" >/dev/null 2>&1 || true
+  [[ "$attrs" != *i* || ! -e "$file" ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+}
+
 set_value() {
   local file="$1"
   local key="$2"
   local value="$3"
-  python3 - "$file" "$key" "$value" <<'PY'
+  local label="env-set:${key}"
+  prepare_managed_private_file_mutation "$file" "$label"
+  INSTALL_STAGE="mutate_managed_private_file:${label}"
+  if ! python3 - "$file" "$key" "$value" <<'PY'
 from pathlib import Path
 import errno
 import os
@@ -217,12 +271,21 @@ except OSError as exc:
     finally:
         temporary.unlink(missing_ok=True)
 PY
+  then
+    restore_managed_private_file_mutation_best_effort "$file"
+    fail "managed private file set failed: label=$label file=$file"
+  fi
+  restore_managed_private_file_mutation "$file" "$label"
 }
 
 remove_value() {
   local file="$1"
   local key="$2"
-  python3 - "$file" "$key" <<'PY'
+  local label="env-remove:${key}"
+  [[ -e "$file" ]] || return 0
+  prepare_managed_private_file_mutation "$file" "$label"
+  INSTALL_STAGE="mutate_managed_private_file:${label}"
+  if ! python3 - "$file" "$key" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -238,13 +301,22 @@ temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
 os.chmod(temporary, 0o600)
 temporary.replace(path)
 PY
+  then
+    restore_managed_private_file_mutation_best_effort "$file"
+    fail "managed private file key removal failed: label=$label file=$file"
+  fi
+  restore_managed_private_file_mutation "$file" "$label"
 }
 
 remove_csv_values() {
   local file="$1"
   local key="$2"
   local blocked_csv="$3"
-  python3 - "$file" "$key" "$blocked_csv" <<'PY'
+  local label="env-remove-csv:${key}"
+  [[ -e "$file" ]] || return 0
+  prepare_managed_private_file_mutation "$file" "$label"
+  INSTALL_STAGE="mutate_managed_private_file:${label}"
+  if ! python3 - "$file" "$key" "$blocked_csv" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -268,6 +340,11 @@ temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
 os.chmod(temporary, 0o600)
 temporary.replace(path)
 PY
+  then
+    restore_managed_private_file_mutation_best_effort "$file"
+    fail "managed private file csv removal failed: label=$label file=$file"
+  fi
+  restore_managed_private_file_mutation "$file" "$label"
 }
 
 valid_mcp_image_digest() {
@@ -629,6 +706,8 @@ recover_previous_control_plane() {
 
 on_installer_exit() {
   local exit_code="$?"
+  local failed_stage="$INSTALL_STAGE"
+  local failed_reason="$INSTALL_FAILURE_REASON"
   trap - EXIT
   if [[ "$exit_code" -eq 0 && "$INSTALL_COMPLETED" == "1" ]]; then
     [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
@@ -637,7 +716,7 @@ on_installer_exit() {
   [[ "$exit_code" -ne 0 ]] || exit_code=1
   recover_previous_control_plane
   printf 'install blocked: stage=%s exit=%s reason=%s rollback_attempted=%s\n' \
-    "$INSTALL_STAGE" "$exit_code" "${INSTALL_FAILURE_REASON:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
+    "$failed_stage" "$exit_code" "${failed_reason:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
   [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
   exit "${exit_code:-1}"
 }
@@ -867,6 +946,7 @@ set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/
 set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
 set_managed_control_plane_directory_ownership "$FREELLMPOOL_TEMPLATE_DIR" "templates/sovereign-freellmpool"
 
+INSTALL_STAGE="prepare_private_environment_files"
 if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.env.example" "$INSTALL_ROOT/.env.example"
   install -m 0600 "$SOURCE_DIR/.ghcr.env.example" "$INSTALL_ROOT/.ghcr.env.example"
@@ -1053,7 +1133,9 @@ set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"
 export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 
 INSTALL_STAGE="write_broker_environment"
-{
+prepare_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
+INSTALL_STAGE="mutate_managed_private_file:broker-environment"
+if ! {
   printf 'GITHUB_TOKEN=%s\n' "$EFFECTIVE_GITHUB_TOKEN"
   for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
     grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
@@ -1068,9 +1150,15 @@ INSTALL_STAGE="write_broker_environment"
   printf 'PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
-} > "$BROKER_ENV"
-chmod 0600 "$BROKER_ENV"
-chown root:root "$BROKER_ENV"
+} > "$BROKER_ENV"; then
+  restore_managed_private_file_mutation_best_effort "$BROKER_ENV"
+  fail "managed broker environment rewrite failed: file=$BROKER_ENV"
+fi
+chmod 0600 "$BROKER_ENV" \
+  || { restore_managed_private_file_mutation_best_effort "$BROKER_ENV"; fail "managed broker environment mode update failed: file=$BROKER_ENV"; }
+chown root:root "$BROKER_ENV" \
+  || { restore_managed_private_file_mutation_best_effort "$BROKER_ENV"; fail "managed broker environment ownership update failed: file=$BROKER_ENV"; }
+restore_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
 unset OWNER_MANAGED_GITHUB_TOKEN PRESERVED_BROKER_GITHUB_TOKEN CONFIGURED_GITHUB_TOKEN EFFECTIVE_GITHUB_TOKEN
 
 INSTALL_STAGE="compose_preflight"
