@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   revision-guardian:
-    name: Revision Guardian Orchestrator
+    name: Revision Guardian
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -137,7 +137,7 @@ jobs:
             const created = await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Revision Guardian',
+              name: 'Revision Guardian Evidence',
               head_sha: target.revision,
               status: 'in_progress',
               output: {
