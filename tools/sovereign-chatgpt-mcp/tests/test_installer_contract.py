@@ -52,7 +52,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
     assert "command_worker.py" in broker_copy_loop
-    assert 'install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service"' in script
+    assert 'install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE" "systemd/sovereign-chatgpt-command-worker.service"' in script
     assert 'systemctl enable --now sovereign-chatgpt-command-worker.service' in script
     assert 'SOVEREIGN_MCP_COMMAND_QUEUE=' in script
     assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
