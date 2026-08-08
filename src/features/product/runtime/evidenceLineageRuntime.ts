@@ -31,9 +31,9 @@ export function buildEvidenceLineage(entries: readonly EvidenceLineageInput[]): 
   }
 
   return [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     .map(([scope, scopedEntries]) => {
-      const ordered = [...scopedEntries].sort((left, right) => left.at - right.at || left.id.localeCompare(right.id));
+      const ordered = [...scopedEntries].sort((left, right) => left.at - right.at || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
       const nodes = ordered.map((entry, index): EvidenceLineageNode => ({
         id: entry.id,
         label: entry.message,

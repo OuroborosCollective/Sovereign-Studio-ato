@@ -74,7 +74,7 @@ export function mergeQuietInspectorSignals(signals: QuietInspectorSignal[]): Qui
       lampWeight(b.lamp) - lampWeight(a.lamp) ||
       signalPriority(b) - signalPriority(a) ||
       (b.updatedAt ?? 0) - (a.updatedAt ?? 0) ||
-      a.id.localeCompare(b.id)
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     )
     .slice(0, MAX_SIGNALS);
 

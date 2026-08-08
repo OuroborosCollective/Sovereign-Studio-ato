@@ -524,7 +524,7 @@ function compareCandidates(a: PatternCandidateInternal, b: PatternCandidateInter
   return (
     b.rule.priority - a.rule.priority ||
     b.score - a.score ||
-    a.rule.id.localeCompare(b.rule.id)
+    (a.rule.id < b.rule.id ? -1 : a.rule.id > b.rule.id ? 1 : 0)
   );
 }
 

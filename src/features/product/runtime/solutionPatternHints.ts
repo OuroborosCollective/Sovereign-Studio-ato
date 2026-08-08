@@ -20,7 +20,7 @@ function activePatterns(store: SolutionPatternStore): SolutionPattern[] {
   const patterns = Array.isArray(storedPatterns) ? storedPatterns : [];
   return patterns
     .filter((pattern) => pattern.status === 'active')
-    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 function patternLine(pattern: SolutionPattern): string {

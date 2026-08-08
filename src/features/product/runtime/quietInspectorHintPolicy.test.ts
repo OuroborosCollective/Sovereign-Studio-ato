@@ -67,7 +67,7 @@ describe('quietInspectorHintPolicy', () => {
     );
 
     expect(result.signals.map((item) => item.id)).toEqual(
-      [...ids].sort((left, right) => left.localeCompare(right)),
+      [...ids].sort((left, right) => left < right ? -1 : left > right ? 1 : 0),
     );
   });
 });

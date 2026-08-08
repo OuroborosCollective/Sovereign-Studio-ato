@@ -104,7 +104,7 @@ function RepoInput({ onLoad, branch, onBranchChange }: RepoInputProps) {
           path: directory,
           ref: branch,
         });
-        for (const entry of [...response.items].sort((left, right) => left.path.localeCompare(right.path))) {
+        for (const entry of [...response.items].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)) {
           if (files.length >= 250) break;
           const type = entry.type === 'file' ? 'blob' : 'tree';
           files.push({ path: entry.path, type, size: entry.size ?? undefined });
