@@ -19,7 +19,7 @@ function activePatterns(store: SolutionPatternStore): SolutionPattern[] {
   const patterns = Array.isArray(store.patterns) ? store.patterns : [];
   return patterns
     .filter((pattern) => pattern.status === 'active')
-    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 function patternLine(pattern: SolutionPattern): string {
@@ -36,8 +36,9 @@ export function formatSolutionPatternHints(store: SolutionPatternStore, limit = 
 }
 
 export function buildSolutionPatternHint(store: SolutionPatternStore, limit = 5): SolutionPatternHint {
-  const selected = activePatterns(store).slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
-  const activeCount = activePatterns(store).length;
+  const activeList = activePatterns(store);
+  const selected = activeList.slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
+  const activeCount = activeList.length;
   if (selected.length === 0) {
     return {
       visible: false,
