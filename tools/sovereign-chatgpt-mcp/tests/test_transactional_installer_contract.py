@@ -37,50 +37,34 @@ def test_broker_readiness_window_covers_observed_control_plane_restart_latency()
     assert "did not become ready after ${BROKER_READY_ATTEMPTS}s" in installer
 
 
-def test_private_mode_preflight_accepts_protected_secure_file(tmp_path, monkeypatch) -> None:
+def test_private_mode_preflight_accepts_already_secure_protected_file_without_mutation() -> None:
     script = INSTALLER.read_text("utf-8")
-    marker = 'ensure_private_file_mode() {\n  local file="$1"\n  python3 - "$file" <<\'PY\'\n'
-    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
-    target = tmp_path / ".env"
-    target.write_text("ALPHA=old\n", "utf-8")
-    target.chmod(0o600)
-    original_chmod = os.chmod
+    block = script.split("ensure_private_file_mode() {", 1)[1].split("\n}\n\nMANAGED_PRIVATE_FILE_ORIGINAL_ATTRS", 1)[0]
 
-    def deny_target_chmod(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int) -> None:
-        if Path(path) == target:
-            raise OSError(errno.EPERM, "operation not permitted")
-        original_chmod(path, mode)
-
-    monkeypatch.setattr(os, "chmod", deny_target_chmod)
-    monkeypatch.setattr(sys, "argv", ["ensure-private-mode", str(target)])
-    exec(compile(embedded, "embedded-private-mode", "exec"), {})
-
-    assert os.stat(target).st_mode & 0o777 == 0o600
+    assert 'INSTALL_STAGE="ensure_private_file_mode:${label}"' in block
+    assert 'current_mode="$(stat -c \'%a\' -- "$file")"' in block
+    assert 'if [[ "$current_mode" == "600" ]]; then\n    return 0\n  fi' in block
+    assert 'private file mode read failed: label=$label file=$file' in block
 
 
-def test_private_mode_preflight_rejects_protected_public_file(tmp_path, monkeypatch) -> None:
+def test_private_mode_preflight_repairs_only_bounded_protected_attributes() -> None:
     script = INSTALLER.read_text("utf-8")
-    marker = 'ensure_private_file_mode() {\n  local file="$1"\n  python3 - "$file" <<\'PY\'\n'
-    embedded = script.split(marker, 1)[1].split("\nPY\n}", 1)[0]
-    target = tmp_path / ".env"
-    target.write_text("ALPHA=old\n", "utf-8")
-    target.chmod(0o644)
-    original_chmod = os.chmod
+    mode_block = script.split("ensure_private_file_mode() {", 1)[1].split("\n}\n\nMANAGED_PRIVATE_FILE_ORIGINAL_ATTRS", 1)[0]
+    create_block = script.split("ensure_managed_env() {", 1)[1].split("\n}\n\nensure_private_file_mode()", 1)[0]
 
-    def deny_target_chmod(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int) -> None:
-        if Path(path) == target:
-            raise OSError(errno.EPERM, "operation not permitted")
-        original_chmod(path, mode)
-
-    monkeypatch.setattr(os, "chmod", deny_target_chmod)
-    monkeypatch.setattr(sys, "argv", ["ensure-private-mode", str(target)])
-
-    try:
-        exec(compile(embedded, "embedded-private-mode", "exec"), {})
-    except SystemExit as exc:
-        assert "unsafe mode" in str(exc)
-    else:
-        raise AssertionError("protected public file must be rejected")
+    assert 'chmod 0600 -- "$file"' in mode_block
+    assert 'attrs="$(lsattr -d -- "$file"' in mode_block
+    assert 'chattr -i -- "$file"' in mode_block
+    assert 'chattr -a -- "$file"' in mode_block
+    assert 'chattr +a -- "$file"' in mode_block
+    assert 'chattr +i -- "$file"' in mode_block
+    assert "private file mode repair failed without protected attributes" in mode_block
+    assert "private file mode remains unsafe after repair" in mode_block
+    assert 'INSTALL_STAGE="ensure_managed_environment:${label}"' in create_block
+    assert 'attrs="$(lsattr -d -- "$parent"' in create_block
+    assert 'managed environment creation failed without protected parent attributes' in create_block
+    assert 'managed environment parent immutable-bit restore failed' in create_block
+    assert 'managed environment parent append-only-bit restore failed' in create_block
 
 
 def test_env_update_falls_back_when_replace_and_chmod_are_not_permitted(tmp_path, monkeypatch) -> None:
