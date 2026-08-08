@@ -76,9 +76,12 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
       </div>
 
       {/* Mobile Tab-Switch */}
-      <div className="flex lg:hidden" style={{
-        display: 'flex', flexShrink: 0, borderBottom: `1px solid ${C.border}`,
-      }}>
+      <div
+        className="flex lg:hidden"
+        style={{ display: 'flex', flexShrink: 0, borderBottom: `1px solid ${C.border}` }}
+        role="tablist"
+        aria-label="Ansicht auswählen"
+      >
         {([
           { id: 'tree' as MobileTab, icon: Folder, label: 'Dateien' },
           { id: 'chat' as MobileTab, icon: MessageSquare, label: 'Chat' },
@@ -86,7 +89,13 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
           <button
             key={id}
             type="button"
+            id={`${id}-tab`}
+            role="tab"
+            aria-selected={mobileTab === id}
+            aria-controls={`${id}-panel`}
+            tabIndex={mobileTab === id ? 0 : -1}
             onClick={() => setMobileTab(id)}
+            title={id === 'tree' ? 'Dateibaum anzeigen' : 'Chat anzeigen'}
             style={{
               flex: 1, padding: '8px 0', border: 'none', cursor: 'pointer',
               background: mobileTab === id ? `${C.violet}18` : 'transparent',
@@ -97,7 +106,7 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
               transition: 'all 0.15s',
             }}
           >
-            <Icon size={12} />
+            <Icon size={12} aria-hidden="true" />
             {label}
           </button>
         ))}
@@ -112,6 +121,9 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
           flexDirection: 'column',
         }}
           className="md:flex"
+          role="tabpanel"
+          id="tree-panel"
+          aria-labelledby="tree-tab"
         >
           <div style={{
             padding: '8px 10px', fontSize: 9, fontWeight: 700,
@@ -129,6 +141,9 @@ export function VpsWorkspace({ host, username, getTree, execCommand, onDisconnec
           flexDirection: 'column',
         }}
           className="md:flex"
+          role="tabpanel"
+          id="chat-panel"
+          aria-labelledby="chat-tab"
         >
           <VpsChat
             host={host}

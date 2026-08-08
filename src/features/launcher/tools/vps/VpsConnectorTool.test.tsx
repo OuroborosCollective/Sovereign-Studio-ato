@@ -87,6 +87,34 @@ describe('VpsWorkspace & VpsChat Palette Accessibility Enhancements', () => {
     expect(disconnectBtn).toHaveAttribute('title', 'SSH-Verbindung trennen');
   });
 
+  it('renders VpsWorkspace tablist with ARIA roles and keyboard support', async () => {
+    const { VpsWorkspace } = await import('./VpsWorkspace');
+    const getTree = vi.fn().mockResolvedValue([]);
+    const execCommand = vi.fn();
+    const onDisconnect = vi.fn();
+
+    render(
+      <VpsWorkspace
+        host="test.host.com"
+        username="root"
+        getTree={getTree}
+        execCommand={execCommand}
+        onDisconnect={onDisconnect}
+      />
+    );
+
+    const tablist = screen.getByRole('tablist', { name: 'Ansicht auswählen' });
+    expect(tablist).toBeTruthy();
+
+    const treeTab = screen.getByRole('tab', { name: /Dateien/i });
+    expect(treeTab).toHaveAttribute('aria-selected', 'false');
+    expect(treeTab).toHaveAttribute('id', 'tree-tab');
+
+    const chatTab = screen.getByRole('tab', { name: /Chat/i });
+    expect(chatTab).toHaveAttribute('aria-selected', 'true');
+    expect(chatTab).toHaveAttribute('id', 'chat-tab');
+  });
+
   it('renders VpsChat input and send button with correct accessible and hover attributes', async () => {
     const { VpsChat } = await import('./VpsChat');
     const execCommand = vi.fn();
@@ -104,5 +132,24 @@ describe('VpsWorkspace & VpsChat Palette Accessibility Enhancements', () => {
 
     const sendBtn = screen.getByRole('button', { name: 'Anfrage senden' });
     expect(sendBtn).toHaveAttribute('title', 'Bitte beschreiben Sie zuerst eine Aktion');
+  });
+
+  it('renders VpsChat region with accessible messages log', async () => {
+    const { VpsChat } = await import('./VpsChat');
+    const execCommand = vi.fn();
+
+    render(
+      <VpsChat
+        host="test.host.com"
+        username="root"
+        execCommand={execCommand}
+      />
+    );
+
+    const chatRegion = screen.getByRole('region', { name: /VPS Chat mit root@test\.host\.com/i });
+    expect(chatRegion).toBeTruthy();
+
+    const messagesLog = screen.getByRole('log', { name: 'Chat-Nachrichten' });
+    expect(messagesLog).toBeTruthy();
   });
 });
