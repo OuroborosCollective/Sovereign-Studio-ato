@@ -162,6 +162,58 @@ export {
   formatPainSignal,
 } from './nociceptorBoundary';
 
+// Predictive Inference Layer (Issue #1172)
+export {
+  // Types
+  type RevisionBinding,
+  type InputWindowHash,
+  type ModelStateHash,
+  type InferenceChannelType,
+  type InferenceSeverity,
+  type BaseInferenceResult,
+  type ModelReceipt,
+  type ModelReceiptValidation,
+  type RiskEvidenceBundle,
+  type RiskBundleValidation,
+  type CausalVerdict,
+  type InferenceChannelConfig,
+  type InferenceChannelResult,
+  // Type helpers
+  isReceiptStale,
+  validateModelReceipt,
+  computeReceiptHash,
+  detectChannelConflicts,
+  // Hard Invariant Channel
+  type HardInvariant,
+  type HardInvariantCheckResult,
+  type HardInvariantChannelConfig,
+  DEFAULT_HARD_INVARIANT_CONFIG,
+  checkHardInvariant,
+  createHardInvariantReceipt,
+  runHardInvariantChannel,
+  createDefaultRuntimeInvariantConfig,
+  // Risk Evidence Bundle
+  type CreateBundleInput,
+  type PostActionVerification,
+  createRiskEvidenceBundle,
+  validateRiskBundle,
+  determineCausalVerdict,
+  applyCausalVerdict,
+  receiptsToChannelResults,
+  // Model Receipt
+  type CreateReceiptInput,
+  type ReceiptIdentifiers,
+  createModelReceipt,
+  validateModelReceipt as validateReceipt,
+  isSameInferenceRun,
+  verifyReceiptIntegrity,
+  formatReceiptSummary,
+  extractReceiptIdentifiers,
+  createRevisionBinding,
+  createInputWindowHash,
+  createModelStateHash,
+} from './inference';
+
 export function createQuickPredictiveLayer(): PredictiveLayer {
   return createPredictiveLayer(DEFAULT_PREDICTIVE_CONFIG);
 }
