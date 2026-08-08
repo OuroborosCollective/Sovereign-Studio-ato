@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
+import zipfile
 from typing import Any, Mapping
 import uuid
 
@@ -36,6 +38,7 @@ except ImportError:
 
 REPAIR_CAPSULE_SCHEMA_VERSION = "sovereign.repair-capsule.v1"
 MAX_REPAIR_CAPSULE_PATCH_BYTES = 2_000_000
+MAX_REPAIR_CAPSULE_ARCHIVE_BYTES = 2_500_000
 _SUPPORTED_FAMILIES = frozenset(item.code for item in FAILURE_FAMILIES)
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -309,3 +312,38 @@ def build_repair_capsule(*, repair: Mapping[str, Any], job: Mapping[str, Any], p
         },
         "ready": True,
     }
+
+
+def build_repair_capsule_archive(capsule: Mapping[str, Any]) -> bytes:
+    """Package exactly the canonical Capsule files into one deterministic ZIP."""
+
+    if capsule.get("ready") is not True:
+        raise ValueError("capsule_not_ready")
+    files = capsule.get("files")
+    if not isinstance(files, Mapping):
+        raise ValueError("capsule_files_missing")
+    canonical_names = ("README.md", "manifest.json", "repair.patch", "verify.py")
+    if set(files) != set(canonical_names):
+        raise ValueError("capsule_file_set_invalid")
+
+    target = io.BytesIO()
+    with zipfile.ZipFile(
+        target,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+        strict_timestamps=True,
+    ) as archive:
+        for name in canonical_names:
+            value = files[name]
+            if not isinstance(value, bytes):
+                raise ValueError("capsule_file_bytes_required")
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = ((0o100755 if name == "verify.py" else 0o100644) << 16)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, value, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+    payload = target.getvalue()
+    if not payload or len(payload) > MAX_REPAIR_CAPSULE_ARCHIVE_BYTES:
+        raise ValueError("capsule_archive_size_invalid")
+    return payload

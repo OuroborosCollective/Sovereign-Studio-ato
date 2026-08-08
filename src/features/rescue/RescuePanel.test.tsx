@@ -16,6 +16,21 @@ function response(body: unknown, status = 200): Promise<Response> {
   }));
 }
 
+function capsuleResponse(): Promise<Response> {
+  const archive = new Uint8Array([80, 75, 3, 4]);
+  return Promise.resolve(new Response(archive, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Length': String(archive.byteLength),
+      'Content-Disposition': 'attachment; filename="sovereign-repair-capsule-test.zip"',
+      'X-Sovereign-Capsule-Base-Sha': 'a'.repeat(40),
+      'X-Sovereign-Capsule-Sha256': 'c'.repeat(64),
+      'X-Sovereign-Mutation-Performed': 'false',
+    },
+  }));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -167,6 +182,7 @@ describe('RescuePanel', () => {
           checkout: { required: false, surface: 'existing-paywall-modal', external: true },
         },
       }))
+      .mockImplementationOnce(() => capsuleResponse())
       .mockImplementationOnce(() => response({
         ok: false,
         proofPack: {
@@ -181,6 +197,7 @@ describe('RescuePanel', () => {
     vi.stubGlobal('fetch', fetcher);
     const onJobReady = vi.fn();
     const onPublishDraftPr = vi.fn();
+    const onCapsuleReady = vi.fn();
     render(
       <RescuePanel
         open
@@ -190,6 +207,7 @@ describe('RescuePanel', () => {
         onClose={() => undefined}
         onJobReady={onJobReady}
         onPublishDraftPr={onPublishDraftPr}
+        onCapsuleReady={onCapsuleReady}
       />,
     );
     fireEvent.change(screen.getByLabelText('GitHub-Repository'), {
@@ -206,6 +224,15 @@ describe('RescuePanel', () => {
       /GitHub-Zugriffe laufen ausschließlich über die authentifizierte Sovereign-Backend-Session/,
     )).toBeInTheDocument();
     expect(screen.queryByLabelText(/GitHub-Zugang für private Repositories/)).toBeNull();
+    expect(screen.getByRole('group', { name: 'Ausgabe ausdrücklich wählen' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Zero-Trust Capsule herunterladen' }));
+    await waitFor(() => expect(onCapsuleReady).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/weder angewendet noch an GitHub übertragen/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Zero-Trust Capsule Evidence')).toHaveTextContent('a'.repeat(40));
+    const capsuleCall = fetcher.mock.calls.find(([url]) => String(url).endsWith('/capsule'));
+    expect(capsuleCall?.[1]?.body).toBe('{}');
+    expect(JSON.stringify(capsuleCall?.[1])).not.toContain('githubAccessToken');
+    expect(JSON.stringify(capsuleCall?.[1])).not.toContain('patch');
     fireEvent.click(screen.getByRole('button', { name: 'Draft PR aus geprüfter Evidence erstellen' }));
     await waitFor(() => expect(onPublishDraftPr).toHaveBeenCalledTimes(1));
     expect(onPublishDraftPr.mock.calls[0]).toEqual([]);
