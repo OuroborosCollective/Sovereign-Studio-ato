@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 const guardian = require('./revision-guardian.cjs');
 
@@ -61,22 +64,32 @@ test('workflow runs are classified only against the exact authoritative revision
   assert.equal(guardian.classifyRun({ head_sha: HEAD, status: 'completed', conclusion: 'cancelled' }, HEAD), 'rerun-all');
 });
 
-test('path impact keeps all PR gates but selects only matching main workflows', () => {
-  const prSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-chatgpt-mcp/server.py']);
-  assert.deepEqual(prSpecs.map((item) => item.name), [
+test('path impact preserves blocking product gates while acceleration makes only continuity advisory', () => {
+  const enforcedPrSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-chatgpt-mcp/server.py'], 'enforced');
+  assert.deepEqual(enforcedPrSpecs.map((item) => item.name), [
     'Release Verification',
     'Sovereign Agent Backend',
     'Sovereign Continuity Gate',
     'Sovereign ChatGPT MCP',
   ]);
 
-  const frontendMainSpecs = guardian.workflowSpecs('main', ['src/features/admin/api/adminApiClient.ts']);
+  const accelerationPrSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-chatgpt-mcp/server.py'], 'acceleration');
+  assert.deepEqual(accelerationPrSpecs.map((item) => item.name), [
+    'Release Verification',
+    'Sovereign Agent Backend',
+    'Sovereign ChatGPT MCP',
+  ]);
+
+  const reconciliationPrSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-chatgpt-mcp/server.py'], 'reconciliation');
+  assert.deepEqual(reconciliationPrSpecs.map((item) => item.name), accelerationPrSpecs.map((item) => item.name));
+
+  const frontendMainSpecs = guardian.workflowSpecs('main', ['src/features/admin/api/adminApiClient.ts'], 'acceleration');
   assert.deepEqual(frontendMainSpecs.map((item) => item.name), [
     'Release Verification',
     'Sovereign Backend Immutable Image',
   ]);
 
-  const backendMainSpecs = guardian.workflowSpecs('main', ['scripts/sovereign-backend/app.py']);
+  const backendMainSpecs = guardian.workflowSpecs('main', ['scripts/sovereign-backend/app.py'], 'acceleration');
   assert.deepEqual(backendMainSpecs.map((item) => item.name), [
     'Release Verification',
     'Sovereign Agent Backend',
@@ -87,8 +100,32 @@ test('path impact keeps all PR gates but selects only matching main workflows', 
   const docsOnlyMainSpecs = guardian.workflowSpecs('main', [
     'docs/architecture/SOVEREIGN_AI_ARCHITECTURE_CORPUS.md',
     'docs/sovereign-continuity/LEDGER.jsonl',
-  ]);
+  ], 'acceleration');
   assert.deepEqual(docsOnlyMainSpecs, []);
+});
+
+test('governance mode is fail-closed by default and reversible', () => {
+  assert.equal(guardian.normalizeGovernanceMode('enforced'), 'enforced');
+  assert.equal(guardian.normalizeGovernanceMode('acceleration'), 'acceleration');
+  assert.equal(guardian.normalizeGovernanceMode('reconciliation'), 'reconciliation');
+  assert.equal(guardian.requiresCurrentMainAncestor('enforced'), true);
+  assert.equal(guardian.shouldAutoSyncOpenPrs('enforced'), true);
+  assert.equal(guardian.requiresCurrentMainAncestor('acceleration'), false);
+  assert.equal(guardian.shouldAutoSyncOpenPrs('reconciliation'), false);
+  assert.throws(() => guardian.normalizeGovernanceMode('disabled'), /GOVERNANCE_MODE_INVALID/);
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sovereign-governance-'));
+  try {
+    const missing = path.join(root, 'missing.json');
+    assert.equal(guardian.loadGovernanceMode(missing), 'enforced');
+    const config = path.join(root, 'mode.json');
+    fs.writeFileSync(config, JSON.stringify({ schemaVersion: 'sovereign.governance-mode.v1', mode: 'acceleration' }));
+    assert.equal(guardian.loadGovernanceMode(config), 'acceleration');
+    fs.writeFileSync(config, JSON.stringify({ schemaVersion: 'wrong', mode: 'acceleration' }));
+    assert.throws(() => guardian.loadGovernanceMode(config), /GOVERNANCE_MODE_SCHEMA_INVALID/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('latest workflow selection is deterministic by run id', () => {

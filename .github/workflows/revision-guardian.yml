@@ -97,6 +97,13 @@ jobs:
               });
             };
             writeEvidence();
+            const governanceMode = guardian.loadGovernanceMode(
+              path.join(process.env.GITHUB_WORKSPACE, 'tools', 'sovereign-chatgpt-mcp', 'config', 'sovereign-governance-mode.json'),
+            );
+            writeEvidence({
+              governanceMode,
+              governanceAdvisory: guardian.governanceIsAdvisory(governanceMode),
+            });
             const target = guardian.resolveTarget(context.eventName, context.payload, inputs);
             const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
             writeEvidence({
@@ -219,38 +226,43 @@ jobs:
                 target.baseRevision = currentMain;
                 target.baseRelation = branchStatus;
                 if (!['ahead', 'identical'].includes(branchStatus)) {
-                  if (repair) {
-                    await github.rest.actions.createWorkflowDispatch({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      workflow_id: 'revision-guardian-sync-pr.yml',
-                      ref: 'main',
-                      inputs: {
-                        target_pr_number: String(target.prNumber),
-                        expected_head_sha: target.revision,
-                        expected_base_sha: currentMain,
-                      },
-                    });
+                  if (guardian.requiresCurrentMainAncestor(governanceMode)) {
+                    if (repair) {
+                      await github.rest.actions.createWorkflowDispatch({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        workflow_id: 'revision-guardian-sync-pr.yml',
+                        ref: 'main',
+                        inputs: {
+                          target_pr_number: String(target.prNumber),
+                          expected_head_sha: target.revision,
+                          expected_base_sha: currentMain,
+                        },
+                      });
+                    }
+                    await finish(
+                      'failure',
+                      repair ? 'Exact main-to-PR synchronization dispatched' : 'PR head is behind main',
+                      [
+                        `Governance mode: ${governanceMode}`,
+                        `PR: #${target.prNumber}`,
+                        `PR head: ${target.revision}`,
+                        `Current main: ${currentMain}`,
+                        `Relation: ${branchStatus}`,
+                        repair
+                          ? 'The trusted update workflow will merge this exact main revision into the same-repository PR branch without force-push. The resulting synchronize event must pass all checks on the new head.'
+                          : 'Automatic repair is disabled for this run.',
+                      ].join('\n'),
+                    );
+                    if (repair) {
+                      core.notice('PR_HEAD_SYNC_DISPATCHED_WAIT_FOR_NEW_EVIDENCE');
+                    } else {
+                      core.setFailed('PR_HEAD_NOT_BASED_ON_CURRENT_MAIN');
+                    }
+                    return;
                   }
-                  await finish(
-                    'failure',
-                    repair ? 'Exact main-to-PR synchronization dispatched' : 'PR head is behind main',
-                    [
-                      `PR: #${target.prNumber}`,
-                      `PR head: ${target.revision}`,
-                      `Current main: ${currentMain}`,
-                      `Relation: ${branchStatus}`,
-                      repair
-                        ? 'The trusted update workflow will merge this exact main revision into the same-repository PR branch without force-push. The resulting synchronize event must pass all checks on the new head.'
-                        : 'Automatic repair is disabled for this run.',
-                    ].join('\n'),
-                  );
-                  if (repair) {
-                    core.notice('PR_HEAD_SYNC_DISPATCHED_WAIT_FOR_NEW_EVIDENCE');
-                  } else {
-                    core.setFailed('PR_HEAD_NOT_BASED_ON_CURRENT_MAIN');
-                  }
-                  return;
+                  target.baseRelationAdvisory = true;
+                  core.warning(`PR_HEAD_NOT_BASED_ON_CURRENT_MAIN_ADVISORY:${branchStatus}:${currentMain}`);
                 }
               } else {
                 const mainRef = await github.rest.git.getRef({
@@ -265,7 +277,7 @@ jobs:
                 }
                 target.ref = 'main';
 
-                if (context.eventName === 'push' && repair) {
+                if (context.eventName === 'push' && repair && guardian.shouldAutoSyncOpenPrs(governanceMode)) {
                   const openPulls = await github.paginate(
                     github.rest.pulls.list,
                     {
@@ -366,7 +378,7 @@ jobs:
                 String(run?.head_sha || '').toLowerCase() === target.revision
               ));
               const latest = guardian.latestRunsByName(allRuns);
-              const specs = guardian.workflowSpecs(target.mode, changedFiles);
+              const specs = guardian.workflowSpecs(target.mode, changedFiles, governanceMode);
               const results = [];
               let repairRequested = false;
               let hardFailure = false;
@@ -459,8 +471,10 @@ jobs:
                 deploymentStatus,
               });
               const summary = [
-                `Mode: ${target.mode}`,
-                `Revision: ${target.revision}`,
+                guardian.governanceIsAdvisory(governanceMode)
+                  ? 'Continuity and current-main ancestry remain visible governance evidence but are advisory during acceleration/reconciliation; product, security, build, runtime and exact-revision evidence remain blocking.'
+                  : 'All configured governance gates are enforced.',
+                'The guardian never rewrites repository files to contain their own final commit SHA. Exact identity is bound through GitHub checks, workflow runs, immutable image labels and deployment readbacks.',
                 `Ref: ${target.ref}`,
                 `PR: ${target.prNumber || 'none'}`,
                 `Base revision: ${target.baseRevision || target.revision}`,
