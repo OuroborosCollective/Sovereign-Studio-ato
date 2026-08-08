@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "87fdc13fdc11162f59e39be67bfd10ed2b631538",
+  "sourceRevision": "1e90f4b6e96de8661e8fb1b634bffd1f8a13ddec",
   "rawCandidateCount": 94,
   "canonicalCandidateCount": 75,
   "entries": [
@@ -684,12 +684,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1274,
+      "line": 1281,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "f5a6796b0ecf118c0c8081584f0b76ec98358004994f9cb8744ed838d9490e45",
+      "fileSha256": "9f808eef2b5406827918cadec9612df39dbe990bb3c7ced47c7c28a332cedc8c",
       "anchorSha256": "4be124cfb705222dcc6474447317bb689e609671d071f21e36b8243922476ed9",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:959e428cad3ecfc8a0665c95",
+      "candidateId": "llm-boundary:eab5918092f23be275feb62a",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -697,12 +697,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1275,
+      "line": 1282,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "f5a6796b0ecf118c0c8081584f0b76ec98358004994f9cb8744ed838d9490e45",
+      "fileSha256": "9f808eef2b5406827918cadec9612df39dbe990bb3c7ced47c7c28a332cedc8c",
       "anchorSha256": "ed747409eb91e564149b91519c92fc1d01cd47f69f059c648214be3a3517ceeb",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:a92d6010b798c22d8103d03c",
+      "candidateId": "llm-boundary:7927745806463aa20c705148",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -710,12 +710,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1364,
+      "line": 1371,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "f5a6796b0ecf118c0c8081584f0b76ec98358004994f9cb8744ed838d9490e45",
+      "fileSha256": "9f808eef2b5406827918cadec9612df39dbe990bb3c7ced47c7c28a332cedc8c",
       "anchorSha256": "645a786ff90fba018853eb5bce65cfb12419f97398d5d2683e69b3c7fa00492e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:af1b390180b89727ae879968",
+      "candidateId": "llm-boundary:73fae13ddb84a7c604559a0f",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1019,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "158a4aa67cb2a4eff9701aeb852733c63cd231976bc5aae72ca200a7671e98a8"
+  "ledgerSha256": "e3df868851769da5ec8861fbdbad0e70c1464b895ffeb93ab5f3559f8fcc6e8a"
 }
