@@ -119,11 +119,17 @@ export function analyzeRepoFileIntegrity(file: RepoFile): RepoFileIntegrityResul
   };
 }
 
+const INTEGRITY_RISK_ORDER: Readonly<Record<IntegrityRiskLevel, number>> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
 export function analyzeRepoFileIntegrityList(files: RepoFile[]): RepoFileIntegrityResult[] {
-  return files.map(analyzeRepoFileIntegrity).sort((a, b) => {
-    const riskOrder: Record<IntegrityRiskLevel, number> = { high: 0, medium: 1, low: 2 };
-    return riskOrder[a.riskLevel] - riskOrder[b.riskLevel] || a.path.localeCompare(b.path);
-  });
+  return files.map(analyzeRepoFileIntegrity).sort((a, b) => (
+    INTEGRITY_RISK_ORDER[a.riskLevel] - INTEGRITY_RISK_ORDER[b.riskLevel]
+    || a.path.localeCompare(b.path)
+  ));
 }
 
 export function summarizeFileIntegrity(results: RepoFileIntegrityResult[]): string {
