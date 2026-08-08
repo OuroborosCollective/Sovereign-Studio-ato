@@ -489,6 +489,52 @@ remove_managed_legacy_file() {
     || fail "legacy managed file still exists after removal: label=$label target=$target"
 }
 
+set_managed_control_plane_directory_ownership() {
+  local target="$1"
+  local label="$2"
+  local target_attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="set_control_plane_directory_ownership:${label}"
+  [[ -d "$target" && ! -L "$target" ]] \
+    || fail "managed control-plane ownership target is not a regular directory: label=$label target=$target"
+  if chown root:sovereign-mcp -- "$target"; then
+    return 0
+  fi
+  target_attrs="$(lsattr -d -- "$target" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$target_attrs" == *i* ]]; then
+    chattr -i -- "$target" \
+      || fail "managed control-plane directory immutable-bit clear failed: label=$label target=$target"
+    cleared_immutable=1
+  fi
+  if [[ "$target_attrs" == *a* ]]; then
+    chattr -a -- "$target" \
+      || {
+        if [[ "$cleared_immutable" == "1" ]]; then
+          chattr +i -- "$target" >/dev/null 2>&1 || true
+        fi
+        fail "managed control-plane directory append-only-bit clear failed: label=$label target=$target"
+      }
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" != "1" && "$cleared_append_only" != "1" ]]; then
+    fail "managed control-plane directory ownership update failed without protected attributes: label=$label target=$target"
+  fi
+  if ! chown root:sovereign-mcp -- "$target"; then
+    [[ "$cleared_append_only" != "1" ]] || chattr +a -- "$target" >/dev/null 2>&1 || true
+    [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$target" >/dev/null 2>&1 || true
+    fail "managed control-plane directory ownership update failed after protected-attribute clear: label=$label target=$target"
+  fi
+  if [[ "$cleared_append_only" == "1" ]]; then
+    chattr +a -- "$target" \
+      || fail "managed control-plane directory append-only-bit restore failed: label=$label target=$target"
+  fi
+  if [[ "$cleared_immutable" == "1" ]]; then
+    chattr +i -- "$target" \
+      || fail "managed control-plane directory immutable-bit restore failed: label=$label target=$target"
+  fi
+}
+
 remove_managed_legacy_directory() {
   local target="$1"
   local label="$2"
@@ -811,18 +857,15 @@ grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit h
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
   fail "installed tunnel unit still contains a curl-based MCP probe"
 fi
-INSTALL_STAGE="set_control_plane_directory_ownership"
-chown root:sovereign-mcp \
-  "$BROKER_DIR" \
-  "$BIN_DIR" \
-  "$COMPOSE_TEMPLATE_ROOT" \
-  "$PGBACKWEB_TEMPLATE_DIR" \
-  "$PATCHMON_TEMPLATE_DIR" \
-  "$CODE_SERVER_TEMPLATE_DIR" \
-  "$MILVUS_TEMPLATE_DIR" \
-  "$FREELLMAPI_TEMPLATE_DIR" \
-  "$FREELLMPOOL_TEMPLATE_DIR" \
-  || fail "managed control-plane directory ownership update failed"
+set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"
+set_managed_control_plane_directory_ownership "$BIN_DIR" "bin"
+set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"
+set_managed_control_plane_directory_ownership "$PGBACKWEB_TEMPLATE_DIR" "templates/pgbackweb-wq5r"
+set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "templates/patchmon-sovereign"
+set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
+set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
+set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
+set_managed_control_plane_directory_ownership "$FREELLMPOOL_TEMPLATE_DIR" "templates/sovereign-freellmpool"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.env.example" "$INSTALL_ROOT/.env.example"
