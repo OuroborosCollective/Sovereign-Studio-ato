@@ -139,31 +139,102 @@ read_backend_value() {
 
 ensure_managed_env() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
-    install -m 0600 /dev/null "$file"
-  else
-    ensure_private_file_mode "$file"
+  local label="${2:-${file##*/}}"
+  local parent attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="ensure_managed_environment:${label}"
+  if [[ -e "$file" || -L "$file" ]]; then
+    ensure_private_file_mode "$file" "$label"
+    return 0
+  fi
+  parent="$(dirname -- "$file")"
+  [[ -d "$parent" && ! -L "$parent" ]] \
+    || fail "managed environment parent is not a regular directory: label=$label parent=$parent"
+  if install -m 0600 /dev/null "$file"; then
+    return 0
+  fi
+  attrs="$(lsattr -d -- "$parent" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$attrs" == *i* ]]; then
+    chattr -i -- "$parent" \
+      || fail "managed environment parent immutable-bit clear failed: label=$label parent=$parent"
+    cleared_immutable=1
+  fi
+  if [[ "$attrs" == *a* ]]; then
+    if ! chattr -a -- "$parent"; then
+      [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$parent" >/dev/null 2>&1 || true
+      fail "managed environment parent append-only-bit clear failed: label=$label parent=$parent"
+    fi
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" != "1" && "$cleared_append_only" != "1" ]]; then
+    fail "managed environment creation failed without protected parent attributes: label=$label parent=$parent"
+  fi
+  if ! install -m 0600 /dev/null "$file"; then
+    [[ "$cleared_append_only" != "1" ]] || chattr +a -- "$parent" >/dev/null 2>&1 || true
+    [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$parent" >/dev/null 2>&1 || true
+    fail "managed environment creation failed after protected parent attribute clear: label=$label parent=$parent"
+  fi
+  if [[ "$cleared_append_only" == "1" ]]; then
+    chattr +a -- "$parent" \
+      || fail "managed environment parent append-only-bit restore failed: label=$label parent=$parent"
+  fi
+  if [[ "$cleared_immutable" == "1" ]]; then
+    chattr +i -- "$parent" \
+      || fail "managed environment parent immutable-bit restore failed: label=$label parent=$parent"
   fi
 }
 
 ensure_private_file_mode() {
   local file="$1"
-  python3 - "$file" <<'PY'
-import errno
-import os
-import stat
-import sys
-
-path = sys.argv[1]
-try:
-    os.chmod(path, 0o600)
-except OSError as exc:
-    if exc.errno not in {errno.EPERM, errno.EACCES, errno.EROFS}:
-        raise
-    mode = stat.S_IMODE(os.stat(path).st_mode)
-    if mode & 0o077:
-        raise SystemExit(f"protected file has unsafe mode: {mode:o}")
-PY
+  local label="${2:-${file##*/}}"
+  local current_mode attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="ensure_private_file_mode:${label}"
+  [[ -f "$file" && ! -L "$file" ]] \
+    || fail "private file is not a regular file: label=$label file=$file"
+  current_mode="$(stat -c '%a' -- "$file")" \
+    || fail "private file mode read failed: label=$label file=$file"
+  if [[ "$current_mode" == "600" ]]; then
+    return 0
+  fi
+  if chmod 0600 -- "$file"; then
+    return 0
+  fi
+  attrs="$(lsattr -d -- "$file" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$attrs" == *i* ]]; then
+    chattr -i -- "$file" \
+      || fail "private file immutable-bit clear failed for mode repair: label=$label file=$file"
+    cleared_immutable=1
+  fi
+  if [[ "$attrs" == *a* ]]; then
+    if ! chattr -a -- "$file"; then
+      [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+      fail "private file append-only-bit clear failed for mode repair: label=$label file=$file"
+    fi
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" != "1" && "$cleared_append_only" != "1" ]]; then
+    fail "private file mode repair failed without protected attributes: label=$label file=$file mode=$current_mode"
+  fi
+  if ! chmod 0600 -- "$file"; then
+    [[ "$cleared_append_only" != "1" ]] || chattr +a -- "$file" >/dev/null 2>&1 || true
+    [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+    fail "private file mode repair failed after protected-attribute clear: label=$label file=$file"
+  fi
+  if [[ "$cleared_append_only" == "1" ]]; then
+    chattr +a -- "$file" \
+      || fail "private file append-only-bit restore failed after mode repair: label=$label file=$file"
+  fi
+  if [[ "$cleared_immutable" == "1" ]]; then
+    chattr +i -- "$file" \
+      || fail "private file immutable-bit restore failed after mode repair: label=$label file=$file"
+  fi
+  current_mode="$(stat -c '%a' -- "$file")" \
+    || fail "private file post-repair mode read failed: label=$label file=$file"
+  [[ "$current_mode" == "600" ]] \
+    || fail "private file mode remains unsafe after repair: label=$label file=$file mode=$current_mode"
 }
 
 MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
@@ -768,7 +839,7 @@ INSTALL_STAGE="preflight"
 [[ "$BROKER_READY_ATTEMPTS" =~ ^[0-9]+$ ]] && (( BROKER_READY_ATTEMPTS >= 30 && BROKER_READY_ATTEMPTS <= 180 )) \
   || fail "SOVEREIGN_MCP_BROKER_READY_ATTEMPTS must be between 30 and 180"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-for command in docker systemctl python3 git ss openssl sha256sum lsattr chattr; do
+for command in docker systemctl python3 git ss openssl sha256sum stat lsattr chattr; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -953,19 +1024,25 @@ if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.tunnel.env.example" "$INSTALL_ROOT/tunnel.env.example"
   fail "create $ENV_FILE from $INSTALL_ROOT/.env.example and fill it only on the VPS"
 fi
-ensure_private_file_mode "$ENV_FILE"
-ensure_managed_env "$MANAGED_ENV"
+ensure_private_file_mode "$ENV_FILE" "base-env"
+ensure_managed_env "$MANAGED_ENV" "runtime-env"
 OWNER_MANAGED_GITHUB_TOKEN=""
 if [[ -f "$OWNER_GITHUB_PAT_FILE" ]]; then
-  ensure_private_file_mode "$OWNER_GITHUB_PAT_FILE"
-  OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"
+  ensure_private_file_mode "$OWNER_GITHUB_PAT_FILE" "owner-github-pat"
+  INSTALL_STAGE="read_private_environment:owner-github-pat"
+  OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")" \
+    || fail "owner-managed GitHub token file read failed"
 fi
 PRESERVED_BROKER_GITHUB_TOKEN=""
 if [[ -f "$BROKER_ENV" ]]; then
-  ensure_private_file_mode "$BROKER_ENV"
-  PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)"
+  ensure_private_file_mode "$BROKER_ENV" "broker-env"
+  INSTALL_STAGE="read_private_environment:broker-env"
+  PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)" \
+    || fail "broker GitHub token metadata read failed"
 fi
-CONFIGURED_GITHUB_TOKEN="$(read_mcp_value GITHUB_TOKEN)"
+INSTALL_STAGE="read_private_environment:configured-github-token"
+CONFIGURED_GITHUB_TOKEN="$(read_mcp_value GITHUB_TOKEN)" \
+  || fail "configured GitHub token metadata read failed"
 if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then
   EFFECTIVE_GITHUB_TOKEN="$OWNER_MANAGED_GITHUB_TOKEN"
 elif [[ -n "$PRESERVED_BROKER_GITHUB_TOKEN" ]]; then
@@ -1029,8 +1106,8 @@ if [[ -z "$BACKEND_ENV_PATH" ]]; then
   done
 fi
 [[ -n "$BACKEND_ENV_PATH" && -f "$BACKEND_ENV_PATH" ]] || fail "backend env file is missing for the owner approval bridge"
-ensure_private_file_mode "$BACKEND_ENV_PATH"
-ensure_managed_env "$BACKEND_MANAGED_ENV"
+ensure_private_file_mode "$BACKEND_ENV_PATH" "backend-base-env"
+ensure_managed_env "$BACKEND_MANAGED_ENV" "backend-runtime-env"
 OWNER_REQUEST_KEY="$(read_mcp_value SOVEREIGN_OWNER_REQUEST_KEY)"
 if [[ -z "$OWNER_REQUEST_KEY" ]]; then
   OWNER_REQUEST_KEY="$(read_backend_value SOVEREIGN_OWNER_REQUEST_KEY)"
@@ -1105,9 +1182,12 @@ fi
 
 DOCKER_CONFIG_VALUE=""
 if [[ -f "$GHCR_ENV" ]]; then
-  ensure_private_file_mode "$GHCR_ENV"
-  GHCR_USERNAME="$(read_value "$GHCR_ENV" GHCR_USERNAME)"
-  GHCR_TOKEN="$(read_value "$GHCR_ENV" GHCR_TOKEN)"
+  ensure_private_file_mode "$GHCR_ENV" "ghcr-env"
+  INSTALL_STAGE="read_private_environment:ghcr-env"
+  GHCR_USERNAME="$(read_value "$GHCR_ENV" GHCR_USERNAME)" \
+    || fail "GHCR username metadata read failed"
+  GHCR_TOKEN="$(read_value "$GHCR_ENV" GHCR_TOKEN)" \
+    || fail "GHCR token metadata read failed"
   if [[ -n "$GHCR_USERNAME" || -n "$GHCR_TOKEN" ]]; then
     [[ -n "$GHCR_USERNAME" && -n "$GHCR_TOKEN" ]] || fail "GHCR_USERNAME and GHCR_TOKEN must both be configured"
     install -d -m 0700 "$DOCKER_AUTH_DIR"
