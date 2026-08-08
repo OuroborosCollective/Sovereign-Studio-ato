@@ -12,6 +12,7 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'INSTALL_STAGE="validate_control_plane_file:${label}"' in script
     assert 'INSTALL_STAGE="prepare_control_plane_file:${label}"' in script
     assert 'INSTALL_STAGE="copy_control_plane_file:${label}"' in script
+    assert 'INSTALL_STAGE="set_control_plane_file_ownership:${label}"' in script
     assert 'INSTALL_STAGE="restore_control_plane_file_immutable:${label}"' in script
     assert "managed control-plane source is not a regular file" in script
     assert "managed control-plane target is not a regular file" in script
@@ -45,6 +46,7 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'chattr -i -- "$target"' in script
     assert 'chattr +i -- "$target"' in script
     assert "managed control-plane immutable-bit clear failed" in script
+    assert "managed control-plane ownership update failed" in script
     assert "managed control-plane immutable-bit restore failed" in script
     assert "legacy managed file removal failed after immutable-bit clear" in script
     assert "remove_managed_legacy_directory()" in script
@@ -58,6 +60,10 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'chattr -a -- "$target"' in script
     assert 'chattr +a -- "$target"' in script
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
+    assert 'INSTALL_STAGE="verify_dormant_tunnel_unit_contract"' in script
+    assert 'INSTALL_STAGE="set_control_plane_directory_ownership"' in script
+    assert 'chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR" "$COMPOSE_TEMPLATE_ROOT"' not in script
+    assert 'chown root:sovereign-mcp \\\n  "$BROKER_DIR" \\\n  "$BIN_DIR" \\\n  "$COMPOSE_TEMPLATE_ROOT"' in script
 
 
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
