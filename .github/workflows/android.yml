@@ -30,8 +30,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NODE_VERSION: 22
   JAVA_VERSION: 17
-  ANDROID_COMPILE_SDK: 35
-  ANDROID_BUILD_TOOLS: 35.0.0
+  ANDROID_COMPILE_SDK: 36
+  ANDROID_BUILD_TOOLS: 36.0.0
   KEYSTORE_FILE: android/app/keystore/release.jks
   VALIDATION_PROFILE: ${{ github.event_name == 'pull_request' && 'standard' || (inputs.validation_profile || 'release') }}
   VITE_ADMIN_API_BASE: https://sovereign-backend.arelorian.de
@@ -376,6 +376,6 @@ jobs:
             echo "| Version | ${{ steps.vars.outputs.version_name }} |"
             echo "| Version code | ${{ steps.vars.outputs.version_code }} |"
             echo "| Commit | ${{ github.sha }} |"
-            echo "| compileSdk / targetSdk | 35 / 35 |"
+            echo "| compileSdk / targetSdk | 36 / 36 |"
             echo "| Signed APK/AAB required | ${{ env.VALIDATION_PROFILE == 'release' }} |"
           } >> "$GITHUB_STEP_SUMMARY"

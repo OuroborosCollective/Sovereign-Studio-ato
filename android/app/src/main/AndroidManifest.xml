@@ -12,7 +12,7 @@
         android:usesCleartextTraffic="${usesCleartextTraffic}"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
-        tools:targetApi="35">
+        tools:targetApi="36">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:name=".MainActivity"

@@ -38,8 +38,8 @@ jobs:
     env:
       NODE_VERSION: 22
       JAVA_VERSION: 17
-      ANDROID_COMPILE_SDK: 35
-      ANDROID_BUILD_TOOLS: 35.0.0
+      ANDROID_COMPILE_SDK: 36
+      ANDROID_BUILD_TOOLS: 36.0.0
       KEYSTORE_FILE: android/app/keystore/release.jks
     steps:
       - name: Checkout Repository
@@ -343,7 +343,7 @@ jobs:
             echo "| Version | ${{ steps.vars.outputs.version_name }} |"
             echo "| Version Code | ${{ steps.vars.outputs.version_code }} |"
             echo "| Validation profile | ${{ github.event.inputs.validation_profile || 'release' }} |"
-            echo "| compileSdk / targetSdk | 35 / 35 |"
-            echo "| Android SDK packages | platform 35, build-tools 35.0.0 |"
+            echo "| compileSdk / targetSdk | 36 / 36 |"
+            echo "| Android SDK packages | platform 36, build-tools 36.0.0 |"
             echo "| Artifacts | signed AAB, signed APK, PlayStore ZIP |"
           } >> "$GITHUB_STEP_SUMMARY"
