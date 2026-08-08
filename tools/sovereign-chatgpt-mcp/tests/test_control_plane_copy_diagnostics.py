@@ -61,9 +61,21 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'chattr +a -- "$target"' in script
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
     assert 'INSTALL_STAGE="verify_dormant_tunnel_unit_contract"' in script
-    assert 'INSTALL_STAGE="set_control_plane_directory_ownership"' in script
+    assert "set_managed_control_plane_directory_ownership()" in script
+    assert 'INSTALL_STAGE="set_control_plane_directory_ownership:${label}"' in script
+    assert "managed control-plane directory ownership read failed" in script
+    assert "managed control-plane directory attribute read failed after ownership refusal" in script
+    assert "managed control-plane directory ownership update failed after protected-attribute clear" in script
+    assert "managed control-plane directory immutable-bit clear failed" in script
+    assert "managed control-plane directory immutable-bit restore failed" in script
+    assert "managed control-plane directory append-only-bit clear failed" in script
+    assert "managed control-plane directory append-only-bit restore failed" in script
+    assert "current_uid_gid" in script
+    assert 'if [[ "$current_uid_gid" == "0:$expected_gid" ]]' in script
+    assert 'for MANAGED_CONTROL_PLANE_DIRECTORY in \\' in script
+    assert 'set_managed_control_plane_directory_ownership \\' in script
     assert 'chown -R root:sovereign-mcp "$BROKER_DIR" "$BIN_DIR" "$COMPOSE_TEMPLATE_ROOT"' not in script
-    assert 'chown root:sovereign-mcp \\\n  "$BROKER_DIR" \\\n  "$BIN_DIR" \\\n  "$COMPOSE_TEMPLATE_ROOT"' in script
+    assert 'chown root:sovereign-mcp \\\n  "$BROKER_DIR" \\\n  "$BIN_DIR" \\\n  "$COMPOSE_TEMPLATE_ROOT"' not in script
 
 
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
