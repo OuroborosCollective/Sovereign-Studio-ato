@@ -214,6 +214,35 @@ export {
   createModelStateHash,
 } from './inference';
 
+// Deterministic Signal Pipeline (Issue #1170)
+export {
+  type PipelineSignal,
+  type PipelineConfig,
+  type SignalPipelineResult,
+  type TickWindow,
+  type TickWindowConfig,
+  type FeatureReceipt,
+  type FeatureDescriptorName,
+  type SignalDrop,
+  type DropReasonCode,
+  DEFAULT_PIPELINE_CONFIG,
+  DEFAULT_TICK_WINDOW_CONFIG,
+  FEATURE_DESCRIPTOR_NAMES,
+  DETERMINISTIC_ITERABLE_ALLOWLIST,
+  runSignalPipeline,
+  runSignalPipelineAsync,
+  assertReplayParity,
+  buildTickWindows,
+  buildFeatureReceipt,
+  verifyFeatureReceipt,
+  signalTickHash,
+  tickWindowConfigHash,
+  canonicalOrder,
+  canonicalSignalCompare,
+  findDuplicateKeys,
+  groupByNode,
+} from './pipeline';
+
 export function createQuickPredictiveLayer(): PredictiveLayer {
   return createPredictiveLayer(DEFAULT_PREDICTIVE_CONFIG);
 }
