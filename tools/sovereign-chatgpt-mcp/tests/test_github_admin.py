@@ -181,6 +181,25 @@ def test_workflow_failure_evidence_uses_exact_head_artifact_content(monkeypatch)
     assert "text" not in result
 
 
+def test_governance_mode_uses_explicit_broker_path_and_fails_closed(monkeypatch, tmp_path) -> None:
+    mode_path = tmp_path / "sovereign-governance-mode.json"
+    mode_path.write_text(
+        '{"schemaVersion":"sovereign.governance-mode.v1","mode":"acceleration"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SOVEREIGN_MCP_GOVERNANCE_MODE_PATH", str(mode_path))
+
+    assert GitHubAdminRuntime._governance_mode() == "acceleration"
+
+    mode_path.unlink()
+    with pytest.raises(RuntimeError, match="GOVERNANCE_MODE_PATH_INVALID"):
+        GitHubAdminRuntime._governance_mode()
+
+    monkeypatch.setenv("SOVEREIGN_MCP_GOVERNANCE_MODE_PATH", "relative/governance.json")
+    with pytest.raises(RuntimeError, match="GOVERNANCE_MODE_PATH_INVALID"):
+        GitHubAdminRuntime._governance_mode()
+
+
 def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
     head = "a" * 40
     runtime, _update, _session = _runtime(

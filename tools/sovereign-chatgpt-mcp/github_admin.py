@@ -58,7 +58,8 @@ MAIN_RULESET_REQUIRED_CHECKS_ACCELERATION = (
     "Agent Runtime Tests",
     "Revision Guardian",
 )
-GOVERNANCE_MODE_PATH = Path(__file__).resolve().parent / "config" / "sovereign-governance-mode.json"
+DEFAULT_GOVERNANCE_MODE_PATH = Path(__file__).resolve().parent / "config" / "sovereign-governance-mode.json"
+GOVERNANCE_MODE_ENV = "SOVEREIGN_MCP_GOVERNANCE_MODE_PATH"
 GOVERNANCE_MODES = frozenset({"enforced", "acceleration", "reconciliation"})
 GOVERNANCE_ADVISORY_CHECKS = frozenset({"continuity-ledger"})
 MAX_PR_SERIES = 500
@@ -95,9 +96,15 @@ class GitHubAdminRuntime:
 
     @staticmethod
     def _governance_mode() -> str:
+        configured_path = os.getenv(GOVERNANCE_MODE_ENV, "").strip()
+        path = Path(configured_path) if configured_path else DEFAULT_GOVERNANCE_MODE_PATH
+        if configured_path and (not path.is_absolute() or path.is_symlink() or not path.is_file()):
+            raise RuntimeError("GOVERNANCE_MODE_PATH_INVALID")
         try:
-            payload = json.loads(GOVERNANCE_MODE_PATH.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
+            if configured_path:
+                raise RuntimeError("GOVERNANCE_MODE_PATH_INVALID")
             return "enforced"
         if payload.get("schemaVersion") != "sovereign.governance-mode.v1":
             raise RuntimeError("GOVERNANCE_MODE_SCHEMA_INVALID")
