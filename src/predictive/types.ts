@@ -450,6 +450,55 @@ export function isValidSynapse(obj: unknown): obj is Synapse {
   );
 }
 
+/**
+ * Runtime validation for PredictionError objects.
+ * Strict validation following Predictive Contract Foundation rules:
+ * - Rejects NaN, Infinity, -Infinity, and ambiguous negative zero
+ * - Rejects objects with unknown fields
+ * - Only accepts finite numbers for all numeric fields
+ * - Timestamp must be positive
+ * - Weight must be in [0, 1]
+ */
+export function isValidPredictionError(obj: unknown): obj is PredictionError {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const e = obj as Partial<PredictionError> & Record<string, unknown>;
+
+  // Reject unknown fields (strict mode)
+  const knownFields = [
+    'id', 'actual', 'predicted', 'error', 'absoluteError',
+    'propagated', 'node', 'timestamp', 'traceId', 'weight'
+  ];
+  const objKeys = Object.keys(e);
+  if (objKeys.length !== knownFields.length || !objKeys.every(k => knownFields.includes(k))) {
+    return false;
+  }
+
+  // Check all required fields exist and are valid types
+  if (typeof e.id !== 'string') return false;
+  if (typeof e.actual !== 'number' || !isFiniteAndNotNegativeZero(e.actual)) return false;
+  if (typeof e.predicted !== 'number' || !isFiniteAndNotNegativeZero(e.predicted)) return false;
+  if (typeof e.error !== 'number' || !isFiniteAndNotNegativeZero(e.error)) return false;
+  if (typeof e.absoluteError !== 'number' || !isFiniteAndNotNegativeZero(e.absoluteError)) return false;
+  if (typeof e.propagated !== 'boolean') return false;
+  if (typeof e.node !== 'string') return false;
+  if (typeof e.timestamp !== 'number' || e.timestamp <= 0) return false;
+  if (typeof e.traceId !== 'string') return false;
+  if (typeof e.weight !== 'number' || !isFinite(e.weight)) return false;
+  if (e.weight < 0 || e.weight > 1) return false;
+
+  return true;
+}
+
+/**
+ * Check if a number is finite and not negative zero.
+ * Rejects NaN, Infinity, -Infinity, and -0.
+ */
+function isFiniteAndNotNegativeZero(n: number): boolean {
+  if (!Number.isFinite(n)) return false;
+  if (n === 0 && Object.is(n, -0)) return false;
+  return true;
+}
+
 // ============================================================================
 // Default Configuration
 // ============================================================================

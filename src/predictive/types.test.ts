@@ -7,11 +7,13 @@ import {
   isValidSignal,
   isValidPrediction,
   isValidSynapse,
+  isValidPredictionError,
   DEFAULT_HEBBIAN_CONFIG,
   DEFAULT_PREDICTIVE_CONFIG,
   type Signal,
   type Prediction,
   type Synapse,
+  type PredictionError,
 } from './types';
 
 describe('Type Validation', () => {
@@ -171,6 +173,264 @@ describe('Type Validation', () => {
         weightDelta: 0.01,
       };
       expect(isValidSynapse(synapse)).toBe(false);
+    });
+  });
+
+  describe('isValidPredictionError', () => {
+    it('should return true for valid prediction error', () => {
+      const error: PredictionError = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(true);
+    });
+
+    it('should return false for null', () => {
+      expect(isValidPredictionError(null)).toBe(false);
+    });
+
+    it('should return false for non-object', () => {
+      expect(isValidPredictionError('not an object')).toBe(false);
+    });
+
+    it('should return false for missing required fields', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        // missing predicted, error, absoluteError, propagated, node, timestamp, traceId, weight
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for unknown fields (strict mode)', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+        unknownField: 'should reject',
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for NaN actual value', () => {
+      const error = {
+        id: 'err-123',
+        actual: NaN,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for Infinity actual value', () => {
+      const error = {
+        id: 'err-123',
+        actual: Infinity,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for -Infinity predicted value', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: -Infinity,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for negative zero actual value', () => {
+      const error = {
+        id: 'err-123',
+        actual: -0, // negative zero
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for negative zero error value', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: -0, // negative zero
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for weight > 1', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 1.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for negative weight', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: -0.1,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for non-positive timestamp', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: 0,
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for negative timestamp', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: -1,
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should return false for propagated not being boolean', () => {
+      const error = {
+        id: 'err-123',
+        actual: 0.85,
+        predicted: 0.75,
+        error: 0.10,
+        absoluteError: 0.10,
+        propagated: 'true', // should be boolean
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0.5,
+      };
+      expect(isValidPredictionError(error)).toBe(false);
+    });
+
+    it('should accept zero for actual/predicted/error (non-negative zero)', () => {
+      const error: PredictionError = {
+        id: 'err-123',
+        actual: 0, // positive zero is OK
+        predicted: 0,
+        error: 0,
+        absoluteError: 0,
+        propagated: false,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0,
+      };
+      expect(isValidPredictionError(error)).toBe(true);
+    });
+
+    it('should accept weight of exactly 0 and 1', () => {
+      const errorMin: PredictionError = {
+        id: 'err-123',
+        actual: 0.5,
+        predicted: 0.5,
+        error: 0,
+        absoluteError: 0,
+        propagated: false,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 0,
+      };
+      expect(isValidPredictionError(errorMin)).toBe(true);
+
+      const errorMax: PredictionError = {
+        id: 'err-456',
+        actual: 1,
+        predicted: 1,
+        error: 0,
+        absoluteError: 0,
+        propagated: true,
+        node: 'runtime.decision',
+        timestamp: Date.now(),
+        traceId: 'trace-456',
+        weight: 1,
+      };
+      expect(isValidPredictionError(errorMax)).toBe(true);
     });
   });
 });
