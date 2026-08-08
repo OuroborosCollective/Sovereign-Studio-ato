@@ -139,38 +139,163 @@ read_backend_value() {
 
 ensure_managed_env() {
   local file="$1"
-  if [[ ! -f "$file" ]]; then
-    install -m 0600 /dev/null "$file"
-  else
-    ensure_private_file_mode "$file"
+  local label="${2:-${file##*/}}"
+  local parent attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="ensure_managed_environment:${label}"
+  if [[ -e "$file" || -L "$file" ]]; then
+    ensure_private_file_mode "$file" "$label"
+    return 0
+  fi
+  parent="$(dirname -- "$file")"
+  [[ -d "$parent" && ! -L "$parent" ]] \
+    || fail "managed environment parent is not a regular directory: label=$label parent=$parent"
+  if install -m 0600 /dev/null "$file"; then
+    return 0
+  fi
+  attrs="$(lsattr -d -- "$parent" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$attrs" == *i* ]]; then
+    chattr -i -- "$parent" \
+      || fail "managed environment parent immutable-bit clear failed: label=$label parent=$parent"
+    cleared_immutable=1
+  fi
+  if [[ "$attrs" == *a* ]]; then
+    if ! chattr -a -- "$parent"; then
+      [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$parent" >/dev/null 2>&1 || true
+      fail "managed environment parent append-only-bit clear failed: label=$label parent=$parent"
+    fi
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" != "1" && "$cleared_append_only" != "1" ]]; then
+    fail "managed environment creation failed without protected parent attributes: label=$label parent=$parent"
+  fi
+  if ! install -m 0600 /dev/null "$file"; then
+    [[ "$cleared_append_only" != "1" ]] || chattr +a -- "$parent" >/dev/null 2>&1 || true
+    [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$parent" >/dev/null 2>&1 || true
+    fail "managed environment creation failed after protected parent attribute clear: label=$label parent=$parent"
+  fi
+  if [[ "$cleared_append_only" == "1" ]]; then
+    chattr +a -- "$parent" \
+      || fail "managed environment parent append-only-bit restore failed: label=$label parent=$parent"
+  fi
+  if [[ "$cleared_immutable" == "1" ]]; then
+    chattr +i -- "$parent" \
+      || fail "managed environment parent immutable-bit restore failed: label=$label parent=$parent"
   fi
 }
 
 ensure_private_file_mode() {
   local file="$1"
-  python3 - "$file" <<'PY'
-import errno
-import os
-import stat
-import sys
+  local label="${2:-${file##*/}}"
+  local current_mode attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="ensure_private_file_mode:${label}"
+  [[ -f "$file" && ! -L "$file" ]] \
+    || fail "private file is not a regular file: label=$label file=$file"
+  current_mode="$(stat -c '%a' -- "$file")" \
+    || fail "private file mode read failed: label=$label file=$file"
+  if [[ "$current_mode" == "600" ]]; then
+    return 0
+  fi
+  if chmod 0600 -- "$file"; then
+    return 0
+  fi
+  attrs="$(lsattr -d -- "$file" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$attrs" == *i* ]]; then
+    chattr -i -- "$file" \
+      || fail "private file immutable-bit clear failed for mode repair: label=$label file=$file"
+    cleared_immutable=1
+  fi
+  if [[ "$attrs" == *a* ]]; then
+    if ! chattr -a -- "$file"; then
+      [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+      fail "private file append-only-bit clear failed for mode repair: label=$label file=$file"
+    fi
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" != "1" && "$cleared_append_only" != "1" ]]; then
+    fail "private file mode repair failed without protected attributes: label=$label file=$file mode=$current_mode"
+  fi
+  if ! chmod 0600 -- "$file"; then
+    [[ "$cleared_append_only" != "1" ]] || chattr +a -- "$file" >/dev/null 2>&1 || true
+    [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+    fail "private file mode repair failed after protected-attribute clear: label=$label file=$file"
+  fi
+  if [[ "$cleared_append_only" == "1" ]]; then
+    chattr +a -- "$file" \
+      || fail "private file append-only-bit restore failed after mode repair: label=$label file=$file"
+  fi
+  if [[ "$cleared_immutable" == "1" ]]; then
+    chattr +i -- "$file" \
+      || fail "private file immutable-bit restore failed after mode repair: label=$label file=$file"
+  fi
+  current_mode="$(stat -c '%a' -- "$file")" \
+    || fail "private file post-repair mode read failed: label=$label file=$file"
+  [[ "$current_mode" == "600" ]] \
+    || fail "private file mode remains unsafe after repair: label=$label file=$file mode=$current_mode"
+}
 
-path = sys.argv[1]
-try:
-    os.chmod(path, 0o600)
-except OSError as exc:
-    if exc.errno not in {errno.EPERM, errno.EACCES, errno.EROFS}:
-        raise
-    mode = stat.S_IMODE(os.stat(path).st_mode)
-    if mode & 0o077:
-        raise SystemExit(f"protected file has unsafe mode: {mode:o}")
-PY
+MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+
+prepare_managed_private_file_mutation() {
+  local file="$1"
+  local label="$2"
+  local attrs=""
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+  INSTALL_STAGE="prepare_managed_private_file:${label}"
+  if [[ ! -e "$file" && ! -L "$file" ]]; then
+    return 0
+  fi
+  [[ -f "$file" && ! -L "$file" ]] \
+    || fail "managed private mutation target is not a regular file: label=$label file=$file"
+  attrs="$(lsattr -d -- "$file" 2>/dev/null | awk '{print $1}' || true)"
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS="$attrs"
+  if [[ "$attrs" == *i* ]]; then
+    chattr -i -- "$file" \
+      || fail "managed private file immutable-bit clear failed: label=$label file=$file"
+  fi
+  if [[ "$attrs" == *a* ]]; then
+    if ! chattr -a -- "$file"; then
+      [[ "$attrs" != *i* ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+      fail "managed private file append-only-bit clear failed: label=$label file=$file"
+    fi
+  fi
+}
+
+restore_managed_private_file_mutation() {
+  local file="$1"
+  local label="$2"
+  local attrs="$MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS"
+  INSTALL_STAGE="restore_managed_private_file:${label}"
+  if [[ "$attrs" == *a* ]]; then
+    chattr +a -- "$file" \
+      || fail "managed private file append-only-bit restore failed: label=$label file=$file"
+  fi
+  if [[ "$attrs" == *i* ]]; then
+    chattr +i -- "$file" \
+      || fail "managed private file immutable-bit restore failed: label=$label file=$file"
+  fi
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
+}
+
+restore_managed_private_file_mutation_best_effort() {
+  local file="$1"
+  local attrs="$MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS"
+  [[ "$attrs" != *a* || ! -e "$file" ]] || chattr +a -- "$file" >/dev/null 2>&1 || true
+  [[ "$attrs" != *i* || ! -e "$file" ]] || chattr +i -- "$file" >/dev/null 2>&1 || true
+  MANAGED_PRIVATE_FILE_ORIGINAL_ATTRS=""
 }
 
 set_value() {
   local file="$1"
   local key="$2"
   local value="$3"
-  python3 - "$file" "$key" "$value" <<'PY'
+  local label="env-set:${key}"
+  prepare_managed_private_file_mutation "$file" "$label"
+  INSTALL_STAGE="mutate_managed_private_file:${label}"
+  if ! python3 - "$file" "$key" "$value" <<'PY'
 from pathlib import Path
 import errno
 import os
@@ -217,12 +342,21 @@ except OSError as exc:
     finally:
         temporary.unlink(missing_ok=True)
 PY
+  then
+    restore_managed_private_file_mutation_best_effort "$file"
+    fail "managed private file set failed: label=$label file=$file"
+  fi
+  restore_managed_private_file_mutation "$file" "$label"
 }
 
 remove_value() {
   local file="$1"
   local key="$2"
-  python3 - "$file" "$key" <<'PY'
+  local label="env-remove:${key}"
+  [[ -e "$file" ]] || return 0
+  prepare_managed_private_file_mutation "$file" "$label"
+  INSTALL_STAGE="mutate_managed_private_file:${label}"
+  if ! python3 - "$file" "$key" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -238,13 +372,22 @@ temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
 os.chmod(temporary, 0o600)
 temporary.replace(path)
 PY
+  then
+    restore_managed_private_file_mutation_best_effort "$file"
+    fail "managed private file key removal failed: label=$label file=$file"
+  fi
+  restore_managed_private_file_mutation "$file" "$label"
 }
 
 remove_csv_values() {
   local file="$1"
   local key="$2"
   local blocked_csv="$3"
-  python3 - "$file" "$key" "$blocked_csv" <<'PY'
+  local label="env-remove-csv:${key}"
+  [[ -e "$file" ]] || return 0
+  prepare_managed_private_file_mutation "$file" "$label"
+  INSTALL_STAGE="mutate_managed_private_file:${label}"
+  if ! python3 - "$file" "$key" "$blocked_csv" <<'PY'
 from pathlib import Path
 import os
 import sys
@@ -268,6 +411,11 @@ temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
 os.chmod(temporary, 0o600)
 temporary.replace(path)
 PY
+  then
+    restore_managed_private_file_mutation_best_effort "$file"
+    fail "managed private file csv removal failed: label=$label file=$file"
+  fi
+  restore_managed_private_file_mutation "$file" "$label"
 }
 
 valid_mcp_image_digest() {
@@ -489,6 +637,52 @@ remove_managed_legacy_file() {
     || fail "legacy managed file still exists after removal: label=$label target=$target"
 }
 
+set_managed_control_plane_directory_ownership() {
+  local target="$1"
+  local label="$2"
+  local target_attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="set_control_plane_directory_ownership:${label}"
+  [[ -d "$target" && ! -L "$target" ]] \
+    || fail "managed control-plane ownership target is not a regular directory: label=$label target=$target"
+  if chown root:sovereign-mcp -- "$target"; then
+    return 0
+  fi
+  target_attrs="$(lsattr -d -- "$target" 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$target_attrs" == *i* ]]; then
+    chattr -i -- "$target" \
+      || fail "managed control-plane directory immutable-bit clear failed: label=$label target=$target"
+    cleared_immutable=1
+  fi
+  if [[ "$target_attrs" == *a* ]]; then
+    chattr -a -- "$target" \
+      || {
+        if [[ "$cleared_immutable" == "1" ]]; then
+          chattr +i -- "$target" >/dev/null 2>&1 || true
+        fi
+        fail "managed control-plane directory append-only-bit clear failed: label=$label target=$target"
+      }
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" != "1" && "$cleared_append_only" != "1" ]]; then
+    fail "managed control-plane directory ownership update failed without protected attributes: label=$label target=$target"
+  fi
+  if ! chown root:sovereign-mcp -- "$target"; then
+    [[ "$cleared_append_only" != "1" ]] || chattr +a -- "$target" >/dev/null 2>&1 || true
+    [[ "$cleared_immutable" != "1" ]] || chattr +i -- "$target" >/dev/null 2>&1 || true
+    fail "managed control-plane directory ownership update failed after protected-attribute clear: label=$label target=$target"
+  fi
+  if [[ "$cleared_append_only" == "1" ]]; then
+    chattr +a -- "$target" \
+      || fail "managed control-plane directory append-only-bit restore failed: label=$label target=$target"
+  fi
+  if [[ "$cleared_immutable" == "1" ]]; then
+    chattr +i -- "$target" \
+      || fail "managed control-plane directory immutable-bit restore failed: label=$label target=$target"
+  fi
+}
+
 remove_managed_legacy_directory() {
   local target="$1"
   local label="$2"
@@ -583,6 +777,8 @@ recover_previous_control_plane() {
 
 on_installer_exit() {
   local exit_code="$?"
+  local failed_stage="$INSTALL_STAGE"
+  local failed_reason="$INSTALL_FAILURE_REASON"
   trap - EXIT
   if [[ "$exit_code" -eq 0 && "$INSTALL_COMPLETED" == "1" ]]; then
     [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
@@ -591,7 +787,7 @@ on_installer_exit() {
   [[ "$exit_code" -ne 0 ]] || exit_code=1
   recover_previous_control_plane
   printf 'install blocked: stage=%s exit=%s reason=%s rollback_attempted=%s\n' \
-    "$INSTALL_STAGE" "$exit_code" "${INSTALL_FAILURE_REASON:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
+    "$failed_stage" "$exit_code" "${failed_reason:-unexpected command failure}" "$ROLLBACK_ARMED" >&2
   [[ -z "$ROLLBACK_DIR" ]] || rm -rf "$ROLLBACK_DIR"
   exit "${exit_code:-1}"
 }
@@ -643,7 +839,7 @@ INSTALL_STAGE="preflight"
 [[ "$BROKER_READY_ATTEMPTS" =~ ^[0-9]+$ ]] && (( BROKER_READY_ATTEMPTS >= 30 && BROKER_READY_ATTEMPTS <= 180 )) \
   || fail "SOVEREIGN_MCP_BROKER_READY_ATTEMPTS must be between 30 and 180"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-for command in docker systemctl python3 git ss openssl sha256sum lsattr chattr; do
+for command in docker systemctl python3 git ss openssl sha256sum stat lsattr chattr; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -811,38 +1007,42 @@ grep -q '^StartLimitBurst=3$' "$TUNNEL_SERVICE" || fail "installed tunnel unit h
 if grep -Eq 'c[u]rl[[:space:]]' "$TUNNEL_SERVICE"; then
   fail "installed tunnel unit still contains a curl-based MCP probe"
 fi
-INSTALL_STAGE="set_control_plane_directory_ownership"
-chown root:sovereign-mcp \
-  "$BROKER_DIR" \
-  "$BIN_DIR" \
-  "$COMPOSE_TEMPLATE_ROOT" \
-  "$PGBACKWEB_TEMPLATE_DIR" \
-  "$PATCHMON_TEMPLATE_DIR" \
-  "$CODE_SERVER_TEMPLATE_DIR" \
-  "$MILVUS_TEMPLATE_DIR" \
-  "$FREELLMAPI_TEMPLATE_DIR" \
-  "$FREELLMPOOL_TEMPLATE_DIR" \
-  || fail "managed control-plane directory ownership update failed"
+set_managed_control_plane_directory_ownership "$BROKER_DIR" "broker"
+set_managed_control_plane_directory_ownership "$BIN_DIR" "bin"
+set_managed_control_plane_directory_ownership "$COMPOSE_TEMPLATE_ROOT" "templates"
+set_managed_control_plane_directory_ownership "$PGBACKWEB_TEMPLATE_DIR" "templates/pgbackweb-wq5r"
+set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "templates/patchmon-sovereign"
+set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
+set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
+set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
+set_managed_control_plane_directory_ownership "$FREELLMPOOL_TEMPLATE_DIR" "templates/sovereign-freellmpool"
 
+INSTALL_STAGE="prepare_private_environment_files"
 if [[ ! -f "$ENV_FILE" ]]; then
   install -m 0600 "$SOURCE_DIR/.env.example" "$INSTALL_ROOT/.env.example"
   install -m 0600 "$SOURCE_DIR/.ghcr.env.example" "$INSTALL_ROOT/.ghcr.env.example"
   install -m 0600 "$SOURCE_DIR/.tunnel.env.example" "$INSTALL_ROOT/tunnel.env.example"
   fail "create $ENV_FILE from $INSTALL_ROOT/.env.example and fill it only on the VPS"
 fi
-ensure_private_file_mode "$ENV_FILE"
-ensure_managed_env "$MANAGED_ENV"
+ensure_private_file_mode "$ENV_FILE" "base-env"
+ensure_managed_env "$MANAGED_ENV" "runtime-env"
 OWNER_MANAGED_GITHUB_TOKEN=""
 if [[ -f "$OWNER_GITHUB_PAT_FILE" ]]; then
-  ensure_private_file_mode "$OWNER_GITHUB_PAT_FILE"
-  OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"
+  ensure_private_file_mode "$OWNER_GITHUB_PAT_FILE" "owner-github-pat"
+  INSTALL_STAGE="read_private_environment:owner-github-pat"
+  OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")" \
+    || fail "owner-managed GitHub token file read failed"
 fi
 PRESERVED_BROKER_GITHUB_TOKEN=""
 if [[ -f "$BROKER_ENV" ]]; then
-  ensure_private_file_mode "$BROKER_ENV"
-  PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)"
+  ensure_private_file_mode "$BROKER_ENV" "broker-env"
+  INSTALL_STAGE="read_private_environment:broker-env"
+  PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)" \
+    || fail "broker GitHub token metadata read failed"
 fi
-CONFIGURED_GITHUB_TOKEN="$(read_mcp_value GITHUB_TOKEN)"
+INSTALL_STAGE="read_private_environment:configured-github-token"
+CONFIGURED_GITHUB_TOKEN="$(read_mcp_value GITHUB_TOKEN)" \
+  || fail "configured GitHub token metadata read failed"
 if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then
   EFFECTIVE_GITHUB_TOKEN="$OWNER_MANAGED_GITHUB_TOKEN"
 elif [[ -n "$PRESERVED_BROKER_GITHUB_TOKEN" ]]; then
@@ -906,8 +1106,8 @@ if [[ -z "$BACKEND_ENV_PATH" ]]; then
   done
 fi
 [[ -n "$BACKEND_ENV_PATH" && -f "$BACKEND_ENV_PATH" ]] || fail "backend env file is missing for the owner approval bridge"
-ensure_private_file_mode "$BACKEND_ENV_PATH"
-ensure_managed_env "$BACKEND_MANAGED_ENV"
+ensure_private_file_mode "$BACKEND_ENV_PATH" "backend-base-env"
+ensure_managed_env "$BACKEND_MANAGED_ENV" "backend-runtime-env"
 OWNER_REQUEST_KEY="$(read_mcp_value SOVEREIGN_OWNER_REQUEST_KEY)"
 if [[ -z "$OWNER_REQUEST_KEY" ]]; then
   OWNER_REQUEST_KEY="$(read_backend_value SOVEREIGN_OWNER_REQUEST_KEY)"
@@ -982,9 +1182,12 @@ fi
 
 DOCKER_CONFIG_VALUE=""
 if [[ -f "$GHCR_ENV" ]]; then
-  ensure_private_file_mode "$GHCR_ENV"
-  GHCR_USERNAME="$(read_value "$GHCR_ENV" GHCR_USERNAME)"
-  GHCR_TOKEN="$(read_value "$GHCR_ENV" GHCR_TOKEN)"
+  ensure_private_file_mode "$GHCR_ENV" "ghcr-env"
+  INSTALL_STAGE="read_private_environment:ghcr-env"
+  GHCR_USERNAME="$(read_value "$GHCR_ENV" GHCR_USERNAME)" \
+    || fail "GHCR username metadata read failed"
+  GHCR_TOKEN="$(read_value "$GHCR_ENV" GHCR_TOKEN)" \
+    || fail "GHCR token metadata read failed"
   if [[ -n "$GHCR_USERNAME" || -n "$GHCR_TOKEN" ]]; then
     [[ -n "$GHCR_USERNAME" && -n "$GHCR_TOKEN" ]] || fail "GHCR_USERNAME and GHCR_TOKEN must both be configured"
     install -d -m 0700 "$DOCKER_AUTH_DIR"
@@ -1010,7 +1213,9 @@ set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"
 export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 
 INSTALL_STAGE="write_broker_environment"
-{
+prepare_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
+INSTALL_STAGE="mutate_managed_private_file:broker-environment"
+if ! {
   printf 'GITHUB_TOKEN=%s\n' "$EFFECTIVE_GITHUB_TOKEN"
   for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
     grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
@@ -1025,9 +1230,15 @@ INSTALL_STAGE="write_broker_environment"
   printf 'PATCHMON_MCP_ADMIN_TOKEN_FILE=/opt/patchmon-sovereign/mcp-admin.jwt\n'
   printf 'SOVEREIGN_BACKEND_CONTAINER=sovereign-backend\n'
   [[ -z "$DOCKER_CONFIG_VALUE" ]] || printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG_VALUE"
-} > "$BROKER_ENV"
-chmod 0600 "$BROKER_ENV"
-chown root:root "$BROKER_ENV"
+} > "$BROKER_ENV"; then
+  restore_managed_private_file_mutation_best_effort "$BROKER_ENV"
+  fail "managed broker environment rewrite failed: file=$BROKER_ENV"
+fi
+chmod 0600 "$BROKER_ENV" \
+  || { restore_managed_private_file_mutation_best_effort "$BROKER_ENV"; fail "managed broker environment mode update failed: file=$BROKER_ENV"; }
+chown root:root "$BROKER_ENV" \
+  || { restore_managed_private_file_mutation_best_effort "$BROKER_ENV"; fail "managed broker environment ownership update failed: file=$BROKER_ENV"; }
+restore_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
 unset OWNER_MANAGED_GITHUB_TOKEN PRESERVED_BROKER_GITHUB_TOKEN CONFIGURED_GITHUB_TOKEN EFFECTIVE_GITHUB_TOKEN
 
 INSTALL_STAGE="compose_preflight"
