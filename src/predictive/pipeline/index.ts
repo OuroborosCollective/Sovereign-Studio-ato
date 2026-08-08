@@ -40,3 +40,19 @@ export {
   toMinMax,
   validateDeterministic,
 } from './deterministicIterables';
+
+export {
+  type TickWindow,
+  type TickWindowReceipt,
+  type TickWindowConfig,
+  type TickWindowStats,
+  createFixedTickWindows,
+  createOverlapTickWindows,
+  createBoundedTickWindows,
+  verifyWindowDeterminism,
+  getUniqueTicks,
+  groupByTick,
+  computeTickWindowStats,
+} from './tickWindow';
+
+export { createFeatureVector } from './featureVector';
