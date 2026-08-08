@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PaywallModal } from '../billing/PaywallModal';
 import {
   createSovereignRescueClient,
+  type RescueCapsuleDownload,
   type RescueDiagnosis,
   type RescueEntitlement,
   type RescueFailureFamily,
@@ -61,6 +62,7 @@ export interface RescuePanelProps {
   readonly onClose: () => void;
   readonly onJobReady: (jobId: string) => void | Promise<void>;
   readonly onPublishDraftPr: () => void | Promise<void>;
+  readonly onCapsuleReady?: (download: RescueCapsuleDownload) => void | Promise<void>;
 }
 
 export function RescuePanel({
@@ -71,6 +73,7 @@ export function RescuePanel({
   onClose,
   onJobReady,
   onPublishDraftPr,
+  onCapsuleReady,
 }: RescuePanelProps) {
   const client = useMemo(() => createSovereignRescueClient(apiBaseUrl), [apiBaseUrl]);
   const [repository, setRepository] = useState('');
@@ -81,6 +84,7 @@ export function RescuePanel({
   const [entitlement, setEntitlement] = useState<RescueEntitlement>();
   const [repair, setRepair] = useState<RescueRepair>();
   const [proofPack, setProofPack] = useState<RescueProofPack>();
+  const [capsule, setCapsule] = useState<RescueCapsuleDownload>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [showPaywall, setShowPaywall] = useState(false);
@@ -106,6 +110,7 @@ export function RescuePanel({
     setMessage('Revision und Fehlerfamilie werden geprüft …');
     setRepair(undefined);
     setProofPack(undefined);
+    setCapsule(undefined);
     try {
       const result = await client.diagnose(request);
       setDiagnosis(result);
@@ -121,6 +126,7 @@ export function RescuePanel({
   const startRepair = async () => {
     if (!diagnosis) return;
     setBusy(true);
+    setCapsule(undefined);
     setMessage('Repair Pack wird serverseitig autorisiert und gestartet …');
     const key = idempotency.current || crypto.randomUUID();
     idempotency.current = key;
@@ -152,6 +158,41 @@ export function RescuePanel({
       setMessage('Draft-PR-Anfrage übergeben. GitHub-Readback und CI-Evidence entscheiden den Status.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft-PR-Anfrage konnte nicht übergeben werden.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadCapsule = async () => {
+    if (!repair) return;
+    setBusy(true);
+    setMessage('Zero-Trust Capsule wird aus aktuellem Workspace-Evidence erzeugt …');
+    try {
+      const download = await client.capsule(repair.repairId);
+      if (onCapsuleReady) {
+        await onCapsuleReady(download);
+      } else {
+        const objectUrl = URL.createObjectURL(download.archive);
+        try {
+          const anchor = document.createElement('a');
+          anchor.href = objectUrl;
+          anchor.download = download.filename;
+          anchor.rel = 'noopener';
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      }
+      setCapsule(download);
+      setMessage(
+        'Capsule heruntergeladen. Der Patch wurde weder angewendet noch an GitHub übertragen.',
+      );
+    } catch (error) {
+      const payload = (error as Error & { payload?: Record<string, unknown> }).payload;
+      const blocker = typeof payload?.blocker === 'string' ? payload.blocker : undefined;
+      setMessage(blocker || (error instanceof Error ? error.message : 'Capsule konnte nicht erzeugt werden.'));
     } finally {
       setBusy(false);
     }
@@ -192,7 +233,7 @@ export function RescuePanel({
         <li>Repository und exakte Revision verbinden</li>
         <li>Kostenlose Diagnose ohne Repository-Änderung</li>
         <li>Begrenzten Repair Pack autorisieren</li>
-        <li>Draft PR, CI-Evidence, ProofPack und Rollback prüfen</li>
+        <li>Draft PR oder Zero-Trust Capsule ausdrücklich wählen und Evidence prüfen</li>
       </ol>
 
       <div style={{ display: 'grid', gap: 10 }}>
@@ -246,7 +287,7 @@ export function RescuePanel({
           <p>
             Repair Pack: {diagnosis.outcomeContract.repairPack.credits} Credits,
             höchstens {diagnosis.outcomeContract.repairPack.maxChangedFiles} Dateien,
-            Draft PR only.
+            keine direkte Anwendung und kein Auto-Merge.
           </p>
           {entitlement && (
             <p>
@@ -271,14 +312,31 @@ export function RescuePanel({
         <section style={{ border: '1px solid #334155', borderRadius: 12, padding: 14, marginTop: 12 }}>
           <h2 style={{ marginTop: 0 }}>Reparaturstatus</h2>
           <p>Repair {repair.repairId} · Job {repair.jobId} · {repair.state}</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <h3 id="rescue-delivery-choice">Ausgabe ausdrücklich wählen</h3>
+          <p>
+            Draft PR und Zero-Trust Capsule sind getrennte Wege. Die Capsule schreibt nichts nach
+            GitHub und wendet den Patch nicht an.
+          </p>
+          <div role="group" aria-labelledby="rescue-delivery-choice" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <button type="button" style={button} disabled={busy || currentJobId !== repair.jobId} onClick={() => { void publishDraftPr(); }}>
               Draft PR aus geprüfter Evidence erstellen
+            </button>
+            <button type="button" style={button} disabled={busy || currentJobId !== repair.jobId} onClick={() => { void downloadCapsule(); }}>
+              Zero-Trust Capsule herunterladen
             </button>
             <button type="button" style={button} disabled={busy || !draftPrUrl} onClick={() => { void loadProofPack(); }}>
               ProofPack prüfen
             </button>
           </div>
+        </section>
+      )}
+
+      {capsule && (
+        <section aria-label="Zero-Trust Capsule Evidence" style={{ border: '1px solid #334155', borderRadius: 12, padding: 14, marginTop: 12 }}>
+          <h2 style={{ marginTop: 0 }}>Zero-Trust Capsule</h2>
+          <p>Basis-SHA: <code>{capsule.baseSha}</code></p>
+          <p>Manifest-Evidence: <code>{capsule.capsuleSha256}</code></p>
+          <p>Nur heruntergeladen — nicht angewendet, nicht gepusht und nicht deployed.</p>
         </section>
       )}
 

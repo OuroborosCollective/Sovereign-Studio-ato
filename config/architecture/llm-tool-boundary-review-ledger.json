@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "38fa89fff402e91faa21cde27f996e1728995a5a",
+  "sourceRevision": "325d807babca41d2890c21afaea622cf822e0d61",
   "rawCandidateCount": 94,
   "canonicalCandidateCount": 75,
   "entries": [
@@ -176,12 +176,12 @@
         "backend/agent_runtime/repair_capsule.py"
       ],
       "symbol": "_changed_files",
-      "line": 173,
+      "line": 176,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "bf872224bfd8c13365d79c9f3c1454109122987b69e098f4279dbc332373d69c",
+      "fileSha256": "98a36461121b738652122047b5c15ee38ee1a344d4f6e7e1fce4270b6587ae8c",
       "anchorSha256": "b9e5d7b9dffab05422bf61ec246517701a7c802c6203fca6efac75f595600050",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:f159950381df78b3e595a7d7",
+      "candidateId": "llm-boundary:357d220600970fd506f45736",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_changed_files normalizes only a persisted changed-file list through bounded path validation and exact deduplication; it does not interpret free user language or authorize any effect."
     },
@@ -191,12 +191,12 @@
         "backend/agent_runtime/repair_capsule.py"
       ],
       "symbol": "build_repair_capsule_manifest",
-      "line": 214,
+      "line": 217,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "bf872224bfd8c13365d79c9f3c1454109122987b69e098f4279dbc332373d69c",
+      "fileSha256": "98a36461121b738652122047b5c15ee38ee1a344d4f6e7e1fce4270b6587ae8c",
       "anchorSha256": "cc22ba87ff96d8ba72a9b3811824b44d98d24b3ef7bf8af7968e3a4cfc96a302",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:9e825a3a3c65bdab56cb56c0",
+      "candidateId": "llm-boundary:8cc67a2868a47cd828e52335",
       "classification": "STRUCTURED_POLICY",
       "rationale": "build_repair_capsule_manifest compares a structured failure-family field only with the fixed supported-family enum; it does not infer semantic intent from free language or authorize execution."
     },
@@ -463,12 +463,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/ci_repair_tools.py",
       "mirrorPaths": [],
       "symbol": "bounded_text_sources_from_archive",
-      "line": 85,
+      "line": 86,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "0e650d68a1c1f09f8ca3bfe7483f190e3635970f9e6555b8aa6067cef90adfa1",
+      "fileSha256": "42735dae5291afbe72c590d6c25131d83ca00442cd7f21c6aea5cf458f9d3b50",
       "anchorSha256": "7201d430c527a3989c76147d952c6afd22ccfd67386a0522d38d4eccc7bd34e8",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:26cb6b27896a7187eb791c7d",
+      "candidateId": "llm-boundary:a877589d889b7cdadbd1c92e",
       "classification": "STRUCTURED_POLICY",
       "rationale": "bounded_text_sources_from_archive compares normalized archive member paths as exact set keys to reject duplicates; it does not interpret free language, select a repair, or authorize an effect."
     },
@@ -1019,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "70b8400132e86ddf2ddb5784d3faee07d5dd3964b621011f2f48efff21f9a88e"
+  "ledgerSha256": "45dd23c586757cf38fd57a6c975589f32bd788fe690dd120ed920a2521e1c67b"
 }

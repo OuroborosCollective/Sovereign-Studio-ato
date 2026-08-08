@@ -220,11 +220,16 @@ def test_continuity_append_is_mirrored_and_idempotent(tmp_path: Path) -> None:
     canonical.write_text("", "utf-8")
     runtime.write_text("", "utf-8")
     context.write_text("bounded context", "utf-8")
-    _git(tmp_path, "init")
+    _git(tmp_path, "init", "-b", "main")
     _git(tmp_path, "config", "user.email", "test@example.invalid")
     _git(tmp_path, "config", "user.name", "Test")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-m", "baseline")
+    _git(tmp_path, "checkout", "-b", "feature")
+    (tmp_path / "committed.txt").write_text("committed", "utf-8")
+    _git(tmp_path, "add", "committed.txt")
+    _git(tmp_path, "commit", "-m", "feature")
+    source_revision = _git(tmp_path, "rev-parse", "HEAD")
     (tmp_path / "change.txt").write_text("changed", "utf-8")
     reconciliation = {
         "ledgerSha256": "b" * 64,
@@ -236,17 +241,17 @@ def test_continuity_append_is_mirrored_and_idempotent(tmp_path: Path) -> None:
 
     first = append_boundary_reconciliation_continuity(
         tmp_path,
-        source_revision="a" * 40,
+        source_revision=source_revision,
         reconciliation=reconciliation,
     )
     second = append_boundary_reconciliation_continuity(
         tmp_path,
-        source_revision="a" * 40,
+        source_revision=source_revision,
         reconciliation=reconciliation,
     )
 
     assert first["status"] == "CONTINUITY_ENTRY_APPENDED"
-    assert first["changedPaths"] == ["change.txt"]
+    assert first["changedPaths"] == ["change.txt", "committed.txt"]
     assert second["status"] == "CONTINUITY_ENTRY_ALREADY_PRESENT"
     assert canonical.read_bytes() == runtime.read_bytes()
     assert len(canonical.read_text("utf-8").splitlines()) == 1
