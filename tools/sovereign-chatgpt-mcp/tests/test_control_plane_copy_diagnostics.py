@@ -9,7 +9,10 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     script = INSTALLER.read_text("utf-8")
 
     assert "install_managed_control_plane_file()" in script
+    assert 'INSTALL_STAGE="validate_control_plane_file:${label}"' in script
+    assert 'INSTALL_STAGE="prepare_control_plane_file:${label}"' in script
     assert 'INSTALL_STAGE="copy_control_plane_file:${label}"' in script
+    assert 'INSTALL_STAGE="restore_control_plane_file_immutable:${label}"' in script
     assert "managed control-plane source is not a regular file" in script
     assert "managed control-plane target is not a regular file" in script
     assert "managed control-plane copy failed: label=$label target=$target" in script
@@ -20,6 +23,9 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md"' in script
     assert 'install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl"' in script
     assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"' in script
+    assert 'install_managed_control_plane_file 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml" "templates/pgbackweb-wq5r/docker-compose.yml"' in script
+    assert 'install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend" "bin/deploy-sovereign-backend"' in script
+    assert 'install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE" "systemd/sovereign-chatgpt-broker.service"' in script
     assert 'rollback regular-file backup failed: target=$target' in script
     assert 'rollback special-file backup failed: target=$target' in script
     assert 'rollback manifest write failed: target=$target' in script
@@ -35,10 +41,22 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert 'INSTALL_STAGE="remove_legacy_control_plane_file:${label}"' in script
     assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in script
     assert 'remove_managed_legacy_file "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm/docker-compose.yml"' in script
+    assert 'target_attrs="$(lsattr -d -- "$target"' in script
     assert 'chattr -i -- "$target"' in script
+    assert 'chattr +i -- "$target"' in script
+    assert "managed control-plane immutable-bit clear failed" in script
+    assert "managed control-plane immutable-bit restore failed" in script
     assert "legacy managed file removal failed after immutable-bit clear" in script
-    assert 'INSTALL_STAGE="remove_legacy_control_plane_directory:templates/sovereign-litellm"' in script
-    assert "legacy LiteLLM template root is not empty after bounded managed-file cleanup" in script
+    assert "remove_managed_legacy_directory()" in script
+    assert 'INSTALL_STAGE="remove_legacy_control_plane_directory:${label}"' in script
+    assert 'remove_managed_legacy_directory "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" "templates/sovereign-litellm"' in script
+    assert "legacy managed directory attribute read failed after removal refusal" in script
+    assert "legacy managed directory immutable-bit clear failed" in script
+    assert "legacy managed directory append-only-bit clear failed" in script
+    assert "legacy managed directory removal failed after protected-attribute clear" in script
+    assert "legacy managed directory is not empty or not removable after bounded managed-file cleanup" in script
+    assert 'chattr -a -- "$target"' in script
+    assert 'chattr +a -- "$target"' in script
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
 
 
