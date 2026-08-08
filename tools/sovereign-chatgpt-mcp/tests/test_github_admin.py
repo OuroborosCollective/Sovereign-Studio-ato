@@ -1042,6 +1042,7 @@ def test_apply_main_ruleset_creates_active_fail_closed_contract_and_verifies_rea
             {
                 "type": "required_status_checks",
                 "parameters": {
+                    "strict_required_status_checks_policy": True,
                     "required_status_checks": [
                         {"context": "Release Gate"},
                         {"context": "Agent Runtime Tests"},
