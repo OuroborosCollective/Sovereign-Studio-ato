@@ -389,13 +389,25 @@ install_managed_control_plane_file() {
   local source="$2"
   local target="$3"
   local label="$4"
-  INSTALL_STAGE="copy_control_plane_file:${label}"
+  local target_attrs=""
+  local target_was_immutable=0
+  INSTALL_STAGE="validate_control_plane_file:${label}"
   [[ -f "$source" && ! -L "$source" ]] || fail "managed control-plane source is not a regular file: $label"
   if [[ -e "$target" || -L "$target" ]]; then
     [[ -f "$target" && ! -L "$target" ]] \
       || fail "managed control-plane target is not a regular file: $target"
   fi
   backup_control_plane_file "$target"
+  if [[ -e "$target" ]]; then
+    target_attrs="$(lsattr -d -- "$target" 2>/dev/null | awk '{print $1}' || true)"
+    if [[ "$target_attrs" == *i* ]]; then
+      INSTALL_STAGE="prepare_control_plane_file:${label}"
+      chattr -i -- "$target" \
+        || fail "managed control-plane immutable-bit clear failed: label=$label target=$target"
+      target_was_immutable=1
+    fi
+  fi
+  INSTALL_STAGE="copy_control_plane_file:${label}"
   if ! python3 - "$source" "$target" "$mode" <<'PY'
 from pathlib import Path
 import errno
@@ -425,7 +437,15 @@ except OSError as exc:
         temporary.unlink(missing_ok=True)
 PY
   then
+    if [[ "$target_was_immutable" == "1" && -e "$target" ]]; then
+      chattr +i -- "$target" >/dev/null 2>&1 || true
+    fi
     fail "managed control-plane copy failed: label=$label target=$target"
+  fi
+  if [[ "$target_was_immutable" == "1" ]]; then
+    INSTALL_STAGE="restore_control_plane_file_immutable:${label}"
+    chattr +i -- "$target" \
+      || fail "managed control-plane immutable-bit restore failed: label=$label target=$target"
   fi
 }
 
@@ -456,6 +476,56 @@ remove_managed_legacy_file() {
   fi
   [[ ! -e "$target" && ! -L "$target" ]] \
     || fail "legacy managed file still exists after removal: label=$label target=$target"
+}
+
+remove_managed_legacy_directory() {
+  local target="$1"
+  local label="$2"
+  local target_attrs=""
+  local cleared_immutable=0
+  local cleared_append_only=0
+  INSTALL_STAGE="remove_legacy_control_plane_directory:${label}"
+  if [[ ! -e "$target" && ! -L "$target" ]]; then
+    return 0
+  fi
+  [[ -d "$target" && ! -L "$target" ]] \
+    || fail "legacy managed directory is not a regular directory: label=$label target=$target"
+  if rmdir -- "$target"; then
+    return 0
+  fi
+  if ! target_attrs="$(lsattr -d -- "$target" 2>/dev/null | awk '{print $1}')"; then
+    fail "legacy managed directory attribute read failed after removal refusal: label=$label target=$target"
+  fi
+  if [[ "$target_attrs" == *i* ]]; then
+    chattr -i -- "$target" \
+      || fail "legacy managed directory immutable-bit clear failed: label=$label target=$target"
+    cleared_immutable=1
+  fi
+  if [[ "$target_attrs" == *a* ]]; then
+    chattr -a -- "$target" \
+      || {
+        if [[ "$cleared_immutable" == "1" ]]; then
+          chattr +i -- "$target" >/dev/null 2>&1 || true
+        fi
+        fail "legacy managed directory append-only-bit clear failed: label=$label target=$target"
+      }
+    cleared_append_only=1
+  fi
+  if [[ "$cleared_immutable" == "1" || "$cleared_append_only" == "1" ]]; then
+    if rmdir -- "$target"; then
+      return 0
+    fi
+    if [[ "$cleared_append_only" == "1" ]]; then
+      chattr +a -- "$target" \
+        || fail "legacy managed directory append-only-bit restore failed after removal refusal: label=$label target=$target"
+    fi
+    if [[ "$cleared_immutable" == "1" ]]; then
+      chattr +i -- "$target" \
+        || fail "legacy managed directory immutable-bit restore failed after removal refusal: label=$label target=$target"
+    fi
+    fail "legacy managed directory removal failed after protected-attribute clear: label=$label target=$target"
+  fi
+  fail "legacy managed directory is not empty or not removable after bounded managed-file cleanup: label=$label target=$target"
 }
 
 restore_control_plane_files() {
@@ -562,7 +632,7 @@ INSTALL_STAGE="preflight"
 [[ "$BROKER_READY_ATTEMPTS" =~ ^[0-9]+$ ]] && (( BROKER_READY_ATTEMPTS >= 30 && BROKER_READY_ATTEMPTS <= 180 )) \
   || fail "SOVEREIGN_MCP_BROKER_READY_ATTEMPTS must be between 30 and 180"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-for command in docker systemctl python3 git ss openssl sha256sum; do
+for command in docker systemctl python3 git ss openssl sha256sum lsattr chattr; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -701,33 +771,27 @@ mv -f "$SELF_UPDATE_NEXT" "$SELF_UPDATE_BIN"
 unset SELF_UPDATE_NEXT
 
 
-INSTALL_STAGE="remove_legacy_control_plane_directory:templates/sovereign-litellm"
-if [[ -e "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" || -L "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" ]]; then
-  [[ -d "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" && ! -L "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" ]] \
-    || fail "legacy LiteLLM template root is not a regular directory"
-  rmdir "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" \
-    || fail "legacy LiteLLM template root is not empty after bounded managed-file cleanup"
-fi
-install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs"
-install -m 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml"
-install -m 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py"
-install -m 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend"
-install -m 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend"
-install -m 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database"
-install -m 0750 "$SOURCE_DIR/deploy/install-secure-tunnel.sh" "$BIN_DIR/install-secure-tunnel"
-install -m 0750 "$SOURCE_DIR/deploy/validate-tunnel-doctor-report.py" "$BIN_DIR/validate-tunnel-doctor-report"
-install -m 0750 "$SOURCE_DIR/deploy/reconcile-main-release.py" "$RELEASE_RECONCILER_BIN"
-install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE"
-install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE"
-install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mcp-self-update.service" "$SELF_UPDATE_SERVICE"
-install -m 0644 "$SOURCE_DIR/deploy/sovereign-release-reconciler.service" "$RELEASE_RECONCILER_SERVICE"
-install -m 0644 "$SOURCE_DIR/deploy/sovereign-release-reconciler.timer" "$RELEASE_RECONCILER_TIMER"
-install -m 0644 "$SOURCE_DIR/deploy/sovereign-openai-tunnel.service" "$TUNNEL_SERVICE"
+remove_managed_legacy_directory "$COMPOSE_TEMPLATE_ROOT/sovereign-litellm" "templates/sovereign-litellm"
+install_managed_control_plane_file 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml" "templates/pgbackweb-wq5r/docker-compose.yml"
+install_managed_control_plane_file 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml" "templates/patchmon-sovereign/docker-compose.yml"
+install_managed_control_plane_file 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-compose.yml" "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml" "templates/code-server-46bq/docker-compose.yml"
+install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
+install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
+install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
+install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"
+install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend" "bin/deploy-sovereign-backend"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend" "bin/rollback-sovereign-backend"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database" "bin/bootstrap-database"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/install-secure-tunnel.sh" "$BIN_DIR/install-secure-tunnel" "bin/install-secure-tunnel"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/validate-tunnel-doctor-report.py" "$BIN_DIR/validate-tunnel-doctor-report" "bin/validate-tunnel-doctor-report"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/reconcile-main-release.py" "$RELEASE_RECONCILER_BIN" "bin/reconcile-main-release"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE" "systemd/sovereign-chatgpt-broker.service"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE" "systemd/sovereign-chatgpt-command-worker.service"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mcp-self-update.service" "$SELF_UPDATE_SERVICE" "systemd/sovereign-chatgpt-mcp-self-update.service"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-release-reconciler.service" "$RELEASE_RECONCILER_SERVICE" "systemd/sovereign-release-reconciler.service"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-release-reconciler.timer" "$RELEASE_RECONCILER_TIMER" "systemd/sovereign-release-reconciler.timer"
+install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-openai-tunnel.service" "$TUNNEL_SERVICE" "systemd/sovereign-openai-tunnel.service"
 grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' "$TUNNEL_SERVICE" \
   || fail "installed tunnel unit does not use the shared MCP protocol checker"
 grep -q '^Restart=on-failure$' "$TUNNEL_SERVICE" || fail "installed tunnel unit has an unsafe restart policy"
