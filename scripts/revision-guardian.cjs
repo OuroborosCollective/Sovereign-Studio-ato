@@ -1,10 +1,15 @@
 'use strict';
 
+const fs = require('node:fs');
+
 const SHA40 = /^[0-9a-f]{40}$/;
 const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 const SUCCESS = new Set(['success', 'neutral', 'skipped']);
 const RERUN_FAILED = new Set(['failure']);
 const RERUN_ALL = new Set(['cancelled', 'timed_out', 'action_required', 'stale']);
+const GOVERNANCE_MODES = new Set(['enforced', 'acceleration', 'reconciliation']);
+const GOVERNANCE_SCHEMA_VERSION = 'sovereign.governance-mode.v1';
+const CONTINUITY_WORKFLOW_NAME = 'Sovereign Continuity Gate';
 
 const PR_WORKFLOWS = Object.freeze([
   { name: 'Release Verification', workflowId: 'release-verification.yml' },
@@ -67,6 +72,35 @@ function safeRef(value, label = 'ref') {
   return result;
 }
 
+function normalizeGovernanceMode(value = 'enforced') {
+  const mode = String(value || 'enforced').trim().toLowerCase();
+  if (!GOVERNANCE_MODES.has(mode)) throw new Error('GOVERNANCE_MODE_INVALID');
+  return mode;
+}
+
+function loadGovernanceMode(filePath) {
+  try {
+    const payload = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (payload?.schemaVersion !== GOVERNANCE_SCHEMA_VERSION) throw new Error('GOVERNANCE_MODE_SCHEMA_INVALID');
+    return normalizeGovernanceMode(payload?.mode);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return 'enforced';
+    throw error;
+  }
+}
+
+function governanceIsAdvisory(value) {
+  return normalizeGovernanceMode(value) !== 'enforced';
+}
+
+function requiresCurrentMainAncestor(value) {
+  return !governanceIsAdvisory(value);
+}
+
+function shouldAutoSyncOpenPrs(value) {
+  return !governanceIsAdvisory(value);
+}
+
 function resolveTarget(eventName, payload, inputs = {}) {
   if (eventName === 'pull_request_target' || eventName === 'pull_request') {
     const pull = payload.pull_request || {};
@@ -97,9 +131,12 @@ function globToRegExp(pattern) {
   return new RegExp(`^${escaped.replace(/__DOUBLE_STAR__/g, '.*')}$`);
 }
 
-function workflowSpecs(mode, changedFiles = []) {
+function workflowSpecs(mode, changedFiles = [], governanceMode = 'enforced') {
+  const selectedGovernanceMode = normalizeGovernanceMode(governanceMode);
   const specs = mode === 'pr'
-    ? [...PR_WORKFLOWS]
+    ? PR_WORKFLOWS.filter((spec) => (
+      !governanceIsAdvisory(selectedGovernanceMode) || spec.name !== CONTINUITY_WORKFLOW_NAME
+    ))
     : MAIN_WORKFLOWS.filter((spec) => (
       changedFiles.some((file) => spec.patterns.some((pattern) => globToRegExp(pattern).test(file)))
     ));
@@ -158,4 +195,24 @@ function classifyRun(run, revision) {
   return 'failed';
 }
 
-module.exports = { SHA40, PR_WORKFLOWS, MAIN_WORKFLOWS, IMPACT_WORKFLOWS, fullSha, safeRef, resolveTarget, globToRegExp, workflowSpecs, latestRunsByName, classifyRun };
+module.exports = {
+  SHA40,
+  PR_WORKFLOWS,
+  MAIN_WORKFLOWS,
+  IMPACT_WORKFLOWS,
+  GOVERNANCE_MODES,
+  GOVERNANCE_SCHEMA_VERSION,
+  CONTINUITY_WORKFLOW_NAME,
+  fullSha,
+  safeRef,
+  normalizeGovernanceMode,
+  loadGovernanceMode,
+  governanceIsAdvisory,
+  requiresCurrentMainAncestor,
+  shouldAutoSyncOpenPrs,
+  resolveTarget,
+  globToRegExp,
+  workflowSpecs,
+  latestRunsByName,
+  classifyRun,
+};
