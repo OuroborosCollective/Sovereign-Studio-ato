@@ -145,7 +145,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
     assert "command_worker.py" in broker_copy_loop
-    assert 'install -m 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service"' in script
+    assert 'install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE" "systemd/sovereign-chatgpt-command-worker.service"' in script
     assert 'systemctl enable --now sovereign-chatgpt-command-worker.service' in script
     assert 'SOVEREIGN_MCP_COMMAND_QUEUE=' in script
     assert 'ExecStart=/usr/bin/python3 /opt/sovereign-chatgpt-tools/broker/command_worker.py' in worker_service
@@ -180,12 +180,12 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'templates/milvus-sovereign' in script
     assert 'templates/sovereign-freellmapi' in script
     assert 'templates/sovereign-freellmpool' in script
-    assert 'install -m 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml"' in script
-    assert 'install -m 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml"' in script
-    assert 'install -m 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml"' in script
-    assert 'install -m 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml"' in script
-    assert 'install -m 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml"' in script
-    assert 'install -m 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py"' in script
+    assert 'install_managed_control_plane_file 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml" "templates/pgbackweb-wq5r/docker-compose.yml"' in script
+    assert 'install_managed_control_plane_file 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml" "templates/patchmon-sovereign/docker-compose.yml"' in script
+    assert 'install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"' in script
+    assert 'install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"' in script
+    assert 'install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"' in script
+    assert 'install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"' in script
     assert '"pgbackweb-wq5r"' in script
     assert '"patchmon-sovereign"' in script
     assert '"milvus-sovereign"' in script
