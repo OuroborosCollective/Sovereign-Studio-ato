@@ -59,4 +59,15 @@ describe('quietInspectorHintPolicy', () => {
     expect(result.signals[0].source).toBe('Telemetry');
     expect(result.signals[0].message).toBe('Viele Leerzeichen im Hinweis');
   });
+
+  it('preserves the locale-aware tie-break contract for unconstrained signal IDs', () => {
+    const ids = ['B', 'Z', '_id', 'a', 'ä'];
+    const result = mergeQuietInspectorSignals(
+      ids.map((id) => signal({ id, lamp: 'green', updatedAt: 1 })),
+    );
+
+    expect(result.signals.map((item) => item.id)).toEqual(
+      [...ids].sort((left, right) => left.localeCompare(right)),
+    );
+  });
 });
