@@ -81,7 +81,7 @@ def _extract_vectors(payload: Any) -> tuple[tuple[float, ...], ...]:
         if all(isinstance(item, (list, tuple)) for item in data):
             return tuple(_normalize_vector(item) for item in data)
 
-    # Some compatible providers wrap arrays below result.
+    # Cloudflare REST: {"result": {"data": [[...], ...]}}
     result = payload.get("result")
     if isinstance(result, dict):
         nested = result.get("data") or result.get("embeddings")
@@ -91,6 +91,7 @@ def _extract_vectors(payload: Any) -> tuple[tuple[float, ...], ...]:
             if all(isinstance(item, (list, tuple)) for item in nested):
                 return tuple(_normalize_vector(item) for item in nested)
 
+    # Some compatible proxies use {"embeddings": [[...], ...]}.
     embeddings = payload.get("embeddings")
     if isinstance(embeddings, list) and embeddings:
         return tuple(_normalize_vector(item) for item in embeddings)
