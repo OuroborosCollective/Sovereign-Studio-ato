@@ -85,6 +85,25 @@ describe('deterministic signal pipeline - canonical ordering', () => {
     expect(dupDrops.every(d => d.node === 'nodeA' && d.sequence === 1)).toBe(true);
     expect(result.consumedTicks).toBe(1); // only seq 2 accepted
   });
+
+  it('canonicalizes out-of-order sequences instead of dropping them (no SEQUENCE_NON_MONOTONIC)', () => {
+    // Unique (node, sequence) keys arriving out of order. These are reordered by
+    // canonicalOrder, not lost — that is what keeps replay parity for shuffled
+    // input. A drop here would be a silent, order-dependent loss.
+    const shuffled = [
+      sig('nodeA', 4, 3, 4),
+      sig('nodeA', 1, 0, 1),
+      sig('nodeA', 3, 2, 3),
+      sig('nodeA', 2, 1, 2),
+    ];
+    const ordered = [sig('nodeA', 1, 0, 1), sig('nodeA', 2, 1, 2), sig('nodeA', 3, 2, 3), sig('nodeA', 4, 3, 4)];
+    const a = runSignalPipeline(shuffled, config);
+    const b = runSignalPipeline(ordered, config);
+    expect(a.consumedTicks).toBe(4); // none dropped
+    expect(b.consumedTicks).toBe(4);
+    expect(a.drops.some(d => (d.reason as string) === 'SEQUENCE_NON_MONOTONIC')).toBe(false);
+    expect(a.pipelineHash).toBe(b.pipelineHash); // order-independent
+  });
 });
 
 describe('deterministic signal pipeline - backpressure and bounds', () => {
