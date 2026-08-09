@@ -199,12 +199,19 @@ def test_provider_projection_preserves_current_direct_routes_without_health_clai
 
 def test_runtime_readback_is_bounded_and_never_exposes_environment_values() -> None:
     readback = adaptive.runtime_environment_readback()
-    serialized = json.dumps(readback, ensure_ascii=False)
+    observations = readback["observations"]
 
     assert readback["runtimeVerified"] is False
     assert readback["status"] == "OBSERVED_UNVERIFIED"
-    assert "environment" not in serialized.lower()
-    assert "hostname" not in serialized.lower()
+    assert set(observations) == {
+        "os",
+        "architecture",
+        "cpuCount",
+        "memoryBytes",
+        "deviceVisibility",
+    }
+    assert set(observations["deviceVisibility"]) == {"nvidiaControl", "drm"}
+    assert "hostname" not in observations
     assert len(readback["readbackHash"]) == 64
 
 
