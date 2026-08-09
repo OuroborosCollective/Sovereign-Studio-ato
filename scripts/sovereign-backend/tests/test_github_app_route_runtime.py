@@ -111,15 +111,32 @@ def test_credit_deduction_rejects_non_object_json_without_database_access() -> N
     assert payload["blocker"] == "github_app_credit_payload_invalid"
 
 
-def test_callback_never_claims_unperformed_oauth_exchange() -> None:
+def test_callback_never_claims_authentication_before_state_and_pkce_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        github_app,
+        "GITHUB_APP_LOGIN_FORWARD_URI",
+        "https://chat.arelorian.de/auth/github/callback.html",
+    )
     client = _registered_app().test_client()
 
     response = client.get("/api/auth/github-app/callback?code=unexchanged-code")
     payload = response.get_json()
-    assert response.status_code == 501
+    assert response.status_code == 400
     assert payload["ok"] is False
-    assert payload["blocker"] == "github_app_oauth_exchange_unavailable"
+    assert payload["blocker"] == "github_app_oauth_state_missing"
     assert payload["authenticationEstablished"] is False
+
+    response = client.get(
+        "/api/auth/github-app/callback?code=unexchanged-code&state=bound-state"
+    )
+    assert response.status_code == 302
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Location"] == (
+        "https://chat.arelorian.de/auth/github/callback.html"
+        "?code=unexchanged-code&state=bound-state"
+    )
 
     response = client.get(
         "/api/auth/github-app/callback?setup_action=install&installation_id=42"

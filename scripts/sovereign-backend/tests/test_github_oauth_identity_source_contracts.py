@@ -53,3 +53,31 @@ def test_init_and_exchange_share_the_same_resolved_oauth_identity() -> None:
     assert '"client_id": oauth_contract["client_id"]' in source
     assert '@app.route("/api/auth/github/configured", methods=["GET"])' in source
     assert '"rawCredentialReturned": False' in source
+
+
+def test_github_app_authorize_uses_registered_callback_instead_of_foreign_redirect_uri() -> None:
+    source = APP_SOURCE.read_text(encoding="utf-8")
+    start = source.index("def auth_github_init():")
+    end = source.index("# ═════════════════════════════════════════════════════════════════════════════\n# SOVEREIGN APP TOOLCHAIN", start)
+    route = source[start:end]
+
+    assert 'if oauth_contract["source"] == "github-app"' in route
+    assert 'else GITHUB_OAUTH_REDIRECT_URI' in route
+    assert 'if redirect_uri:' in route
+    assert 'auth_params["redirect_uri"] = redirect_uri' in route
+    assert '"redirect_uri": redirect_uri' not in route.split("auth_params = {", 1)[1].split("}", 1)[0]
+
+
+def test_github_app_backend_callback_forwards_code_and_state_to_fixed_login_callback() -> None:
+    source = GITHUB_APP_SOURCE.read_text(encoding="utf-8")
+    start = source.index("def github_app_oauth_callback():")
+    end = source.index('@app.route("/api/github-app/configured"', start)
+    route = source[start:end]
+
+    assert 'state = str(request.args.get("state")' in route
+    assert 'github_app_oauth_state_missing' in route
+    assert 'GITHUB_APP_LOGIN_FORWARD_URI' in route
+    assert 'urllib.parse.urlencode({"code": code, "state": state})' in route
+    assert 'response = redirect(target, code=302)' in route
+    assert 'response.headers["Cache-Control"] = "no-store"' in route
+    assert 'github_app_oauth_exchange_unavailable' not in route

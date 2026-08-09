@@ -101,3 +101,16 @@ def test_backend_error_states_are_not_empty_http_200_successes() -> None:
     assert 'return jsonify({"error": str(exc), "runtimeState": "failed"}), 500' in source
     assert 'return jsonify({"credits": 0, "error": str(exc)' not in source
     assert '"ok": health_status == "healthy"' in source
+
+
+def test_revolver_attempt_evidence_uses_the_existing_pooled_connection_factory() -> None:
+    source = _backend_source()
+    start = source.index("def _record_llm_revolver_attempt(")
+    end = source.index('@app.route("/api/llm/chat", methods=["POST"])', start)
+    helper = source[start:end]
+
+    assert "connection = get_agent_runtime_connection()" in helper
+    assert "connection = get_connection()" not in helper
+    assert "INSERT INTO llm_route_attempts" in helper
+    assert "connection.commit()" in helper
+    assert "connection.rollback()" in helper

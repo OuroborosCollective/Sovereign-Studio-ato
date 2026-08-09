@@ -4779,9 +4779,16 @@ def auth_github_init():
             requested_opener_origin = f"{parsed_requested_redirect.scheme}://{parsed_requested_redirect.netloc}"
         opener_origin = _normalize_oauth_origin(requested_opener_origin)
 
-        # OAuth Redirect URI wird SERVERSEITIG festgelegt.
-        # Client-Input wird ignoriert, um Redirect-URI-Mismatch zu vermeiden.
-        redirect_uri = GITHUB_OAUTH_REDIRECT_URI
+        # Traditional OAuth Apps are bound to our explicit browser callback.
+        # GitHub Apps instead use the callback URL registered in GitHub itself;
+        # sending a different redirect_uri makes GitHub reject the request before
+        # authorization. The GitHub-App callback forwards code+state back to the
+        # existing browser/Capacitor callback while PKCE remains client-held.
+        redirect_uri = (
+            ""
+            if oauth_contract["source"] == "github-app"
+            else GITHUB_OAUTH_REDIRECT_URI
+        )
         client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
         if "," in client_ip:
             client_ip = client_ip.split(",")[0].strip()
@@ -4827,14 +4834,16 @@ def auth_github_init():
             "opener_origin": opener_origin,
         })
 
-        # GitHub Auth URL bauen
+        # GitHub Auth URL bauen. For a GitHub App, omit redirect_uri so GitHub
+        # uses the callback registered for that exact App identity.
         auth_params = {
             "client_id": oauth_contract["client_id"],
-            "redirect_uri": redirect_uri,
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
+        if redirect_uri:
+            auth_params["redirect_uri"] = redirect_uri
         if scopes:
             auth_params["scope"] = " ".join(scopes)
         params = urllib.parse.urlencode(auth_params)
@@ -7369,7 +7378,7 @@ def _record_llm_revolver_attempt(
     provider_cost_micros = provider_cost_usd_to_micros(
         evidence.get("providerCostUsd")
     )
-    connection = get_connection()
+    connection = get_agent_runtime_connection()
     try:
         with connection.cursor() as cursor:
             cursor.execute(
