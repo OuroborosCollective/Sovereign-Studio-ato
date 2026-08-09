@@ -1,20 +1,6 @@
 name: Sovereign Brain Projection
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - BRAIN.md
-      - brain/**
-      - scripts/sovereign_brain_projection.py
-      - scripts/test_sovereign_brain_projection.py
-      - AGENTS.md
-      - docs/CURRENT_STATE_2026-08-03.md
-      - docs/SOVEREIGN_PRODUCT_TRUTH.md
-      - docs/sovereign-continuity/CONTEXT.md
-      - .github/workflows/sovereign-continuity-gate.yml
-      - .github/workflows/sovereign-brain-projection.yml
   push:
     branches:
       - main
