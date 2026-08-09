@@ -689,6 +689,10 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(draftButton).toHaveAttribute("data-gate-state", "ready");
     fireEvent.click(draftButton);
 
+    expect(await screen.findByTestId("draft-pr-action-preview")).toBeDefined();
+    expect(props.onPublishDraftPr).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("confirm-draft-pr-action-preview"));
+
     await waitFor(() => expect(props.onPublishDraftPr).toHaveBeenCalledOnce());
     expect(props.onPublishDraftPr).toHaveBeenCalledWith(expect.objectContaining({
       repoUrl: TEST_REPO_URL,
