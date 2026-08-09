@@ -83,6 +83,34 @@ def test_routes_register_without_database_access() -> None:
     assert "/api/github-app/installations/<int:installation_id>/credits" in rules
 
 
+def test_webhook_rejects_non_object_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(github_app, "verify_github_app_webhook", lambda *_args: True)
+    response = _registered_app().test_client().post(
+        "/api/webhooks/github-app",
+        json=[],
+        headers={
+            "X-GitHub-Event": "installation",
+            "X-Hub-Signature-256": "sha256=test",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["blocker"] == "github_app_webhook_payload_invalid"
+
+
+def test_credit_deduction_rejects_non_object_json_without_database_access() -> None:
+    response = _registered_app().test_client().post(
+        "/api/github-app/installations/42/deduct",
+        json=[],
+        headers={"Idempotency-Key": "11111111-1111-4111-8111-111111111111"},
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 400
+    assert payload["blocker"] == "github_app_credit_payload_invalid"
+
+
 def test_callback_never_claims_unperformed_oauth_exchange() -> None:
     client = _registered_app().test_client()
 
