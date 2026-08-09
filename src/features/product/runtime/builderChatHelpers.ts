@@ -342,7 +342,7 @@ export function buildWorkerBlockerAnswer(args: {
     : "Health: noch nicht geprüft.";
   const codeLine = diagnostic.canClientFix
     ? "Einschätzung: Der Fehler ist wahrscheinlich durch unseren App-Request oder die Route im Code korrigierbar."
-    : "Einschätzung: Der letzte Fehler liegt wahrscheinlich in Worker-Konfiguration, Worker-Runtime oder Upstream-Provider und muss über Cloudflare/Bridge-Diagnose geprüft werden.";
+    : "Einschätzung: Der letzte Fehler liegt im direkten Sovereign-LLM-Pfad. Bei Free-Routen müssen FreeLLMAPI-Revolver- und Provider-Evidence geprüft werden; bei Paid-Routen die direkte OpenRouter-Evidence. Cloudflare ist kein produktiver Chat-Fallback.";
 
   return [
     "Die Online-Sprachdeutung ist derzeit nicht erreichbar.",

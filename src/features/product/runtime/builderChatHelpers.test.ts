@@ -4,6 +4,7 @@ import {
   isLocalCompletionStatusQuestion,
   buildLocalStatusAnswer,
   buildChatLines,
+  buildWorkerBlockerAnswer,
 } from './builderChatHelpers';
 
 describe('isWriteIntent', () => {
@@ -112,6 +113,31 @@ describe('buildLocalStatusAnswer', () => {
 
   it('reports nothing started when runtime is fully idle', () => {
     expect(buildLocalStatusAnswer(base)).toMatch(/kein Auftrag gestartet/);
+  });
+});
+
+describe('buildWorkerBlockerAnswer', () => {
+  it('routes 502 diagnostics to direct FreeLLM/OpenRouter evidence instead of the retired Cloudflare bridge', () => {
+    const answer = buildWorkerBlockerAnswer({
+      blocker: {
+        diagnostic: {
+          route: 'https://sovereign-backend.arelorian.de/api/llm/chat',
+          model: 'revolver-test',
+          messageCount: 3,
+          status: 502,
+          scope: 'upstream_provider',
+          canClientFix: false,
+          nextAction: 'Direkten OpenRouter-/FreeLLM-Transport und dessen Upstream-Evidence prüfen.',
+        },
+      } as any,
+      repoReady: true,
+      chatRepoSnapshot: null,
+      agentReady: true,
+    });
+
+    expect(answer).toContain('FreeLLMAPI-Revolver');
+    expect(answer).toContain('OpenRouter-Evidence');
+    expect(answer).not.toContain('Cloudflare/Bridge-Diagnose');
   });
 });
 

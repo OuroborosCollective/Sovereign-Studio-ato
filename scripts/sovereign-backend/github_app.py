@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import time
+import urllib.parse
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ import os
 import requests
 import jwt
 
-from flask import jsonify, request, Response
+from flask import jsonify, request, redirect, Response
 
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -30,6 +31,10 @@ GITHUB_APP_CLIENT_ID = os.getenv("GITHUB_APP_CLIENT_ID", "")
 GITHUB_APP_CLIENT_SECRET = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
 GITHUB_APP_WEBHOOK_SECRET = os.getenv("GITHUB_APP_WEBHOOK_SECRET", "")
 GITHUB_APP_PRIVATE_KEY_B64 = os.getenv("GITHUB_APP_PRIVATE_KEY", "")
+GITHUB_APP_LOGIN_FORWARD_URI = os.getenv(
+    "GITHUB_OAUTH_REDIRECT_URI",
+    "https://chat.arelorian.de/auth/github/callback.html",
+).strip()
 
 
 # ── Private Key Management ────────────────────────────────────────────────────
@@ -786,7 +791,8 @@ def register_github_app_routes(
     @app.route("/api/auth/github-app/callback", methods=["GET"])
     def github_app_oauth_callback():
         """OAuth callback for GitHub App installation."""
-        code = request.args.get("code", "")
+        code = str(request.args.get("code") or "").strip()
+        state = str(request.args.get("state") or "").strip()
         installation_id = request.args.get("installation_id", "")
         setup_action = request.args.get("setup_action", "")
         
@@ -810,12 +816,40 @@ def register_github_app_routes(
                 "redirect_url": "https://chat.arelorian.de/?github_app_installed=pending",
             })
         if code:
-            return jsonify({
-                "ok": False,
-                "error": "GitHub App OAuth code exchange is not implemented on this route",
-                "blocker": "github_app_oauth_exchange_unavailable",
-                "authenticationEstablished": False,
-            }), 501
+            if not state:
+                return jsonify({
+                    "ok": False,
+                    "error": "GitHub App OAuth callback requires state",
+                    "blocker": "github_app_oauth_state_missing",
+                    "authenticationEstablished": False,
+                }), 400
+            # User-login OAuth remains owned by /api/auth/github where the stored
+            # state and client-held PKCE verifier are validated. This route is
+            # only a fixed same-product bridge when the GitHub App callback is
+            # registered on the backend instead of the static browser page.
+            parsed_forward = urllib.parse.urlsplit(GITHUB_APP_LOGIN_FORWARD_URI)
+            if (
+                parsed_forward.scheme != "https"
+                or parsed_forward.hostname not in {"chat.arelorian.de", "arelorian.de"}
+                or parsed_forward.username
+                or parsed_forward.password
+                or parsed_forward.fragment
+            ):
+                return jsonify({
+                    "ok": False,
+                    "error": "GitHub App login callback target is not approved",
+                    "blocker": "github_app_oauth_forward_target_invalid",
+                    "authenticationEstablished": False,
+                }), 503
+            separator = "&" if parsed_forward.query else "?"
+            target = (
+                GITHUB_APP_LOGIN_FORWARD_URI
+                + separator
+                + urllib.parse.urlencode({"code": code, "state": state})
+            )
+            response = redirect(target, code=302)
+            response.headers["Cache-Control"] = "no-store"
+            return response
         return jsonify({
             "ok": False,
             "error": "GitHub App callback has no verifiable installation action",

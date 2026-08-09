@@ -1006,10 +1006,29 @@ class ManagedComposeRuntime:
                 raise RuntimeError("FreeLLM Provider-Secret-Verzeichnis benötigt Root-Eigentümerwechsel")
             os.chown(provider_secret_root, FREELLMAPI_RUNTIME_UID, FREELLMAPI_RUNTIME_GID)
             os.chmod(provider_secret_root, 0o700)
+            reconciled_provider_files = 0
+            provider_secret_pattern = re.compile(
+                r"^[a-z][a-z0-9-]{1,31}(?:\.[0-9a-f]{64})?\.(?:key|keyless)$"
+            )
+            for provider_secret in sorted(provider_secret_root.iterdir()):
+                if not provider_secret_pattern.fullmatch(provider_secret.name):
+                    continue
+                if provider_secret.is_symlink() or not provider_secret.is_file():
+                    raise RuntimeError("FreeLLM Provider-Secret-Datei ist ungültig")
+                size = provider_secret.stat().st_size
+                if size < 1 or size > 8192:
+                    raise RuntimeError("FreeLLM Provider-Secret-Datei verletzt den Größenvertrag")
+                os.chown(provider_secret, FREELLMAPI_RUNTIME_UID, FREELLMAPI_RUNTIME_GID)
+                os.chmod(provider_secret, 0o400)
+                reconciled_provider_files += 1
             additional_files.append({
                 "path": str(provider_secret_root),
                 "mode": "0700",
+                "ownerUid": FREELLMAPI_RUNTIME_UID,
+                "ownerGid": FREELLMAPI_RUNTIME_GID,
                 "type": "directory",
+                "providerSecretFilesReconciled": reconciled_provider_files,
+                "secretValuesReturned": False,
             })
         if stack.stack_id == "patchmon-sovereign":
             redis_path = deploy_root / "redis.conf"
@@ -1483,11 +1502,38 @@ const Database = require('better-sqlite3');
   const payload = JSON.parse(raw);
   const rows = Array.isArray(payload && payload.data) ? payload.data : [];
   if (!ping.ok || !models.ok) throw new Error('http_not_ready');
+  const embeddings = await fetch('http://127.0.0.1:3001/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gemini-embedding-001',
+      input: ['Sovereign embedding canary'],
+      dimensions: 768,
+    }),
+  });
+  const embeddingRaw = await embeddings.text();
+  if (embeddingRaw.length > 2000000) throw new Error('embeddings_response_too_large');
+  if (!embeddings.ok) throw new Error('embeddings_http_not_ready');
+  const embeddingPayload = JSON.parse(embeddingRaw);
+  const embeddingRows = Array.isArray(embeddingPayload && embeddingPayload.data)
+    ? embeddingPayload.data
+    : [];
+  const vector = embeddingRows.length === 1 && embeddingRows[0]
+    ? embeddingRows[0].embedding
+    : null;
+  if (!Array.isArray(vector) || vector.length !== 768 || vector.some((value) => !Number.isFinite(value))) {
+    throw new Error('embeddings_vector_invalid');
+  }
   process.stdout.write(JSON.stringify({
     ok: true,
     pingStatus: ping.status,
     modelsStatus: models.status,
     modelCount: rows.length,
+    embeddingsStatus: embeddings.status,
+    embeddingDimensions: vector.length,
     unifiedKeySha256: crypto.createHash('sha256').update(key).digest('hex'),
   }));
 })().catch((error) => {
@@ -1516,6 +1562,8 @@ const Database = require('better-sqlite3');
             receipt.get("ok") is True
             and int(receipt.get("pingStatus") or 0) == 200
             and int(receipt.get("modelsStatus") or 0) == 200
+            and int(receipt.get("embeddingsStatus") or 0) == 200
+            and int(receipt.get("embeddingDimensions") or 0) == 768
             and re.fullmatch(r"[0-9a-f]{64}", str(receipt.get("unifiedKeySha256") or ""))
         )
         return {
@@ -1524,6 +1572,8 @@ const Database = require('better-sqlite3');
             "pingStatus": int(receipt.get("pingStatus") or 0),
             "modelsStatus": int(receipt.get("modelsStatus") or 0),
             "modelCount": int(receipt.get("modelCount") or 0),
+            "embeddingsStatus": int(receipt.get("embeddingsStatus") or 0),
+            "embeddingDimensions": int(receipt.get("embeddingDimensions") or 0),
             "keyFingerprintSha256": str(receipt.get("unifiedKeySha256") or "") if ok else "",
             "errorFamily": None if ok else str(receipt.get("errorFamily") or "runtime_canary_failed"),
             "responseContentReturned": False,

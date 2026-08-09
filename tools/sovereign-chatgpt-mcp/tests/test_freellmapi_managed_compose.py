@@ -128,6 +128,10 @@ def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: P
     runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
     original = STACKS["sovereign-freellmapi"]
     stack = type(original)(**{**original.__dict__, "deploy_root": str(tmp_path / "deploy")})
+    provider_root.mkdir(parents=True, exist_ok=True)
+    provider_secret = provider_root / ("google." + ("a" * 64) + ".key")
+    provider_secret.write_text("test-provider-key-fixture\n", encoding="utf-8")
+    provider_secret.chmod(0o600)
 
     result = runtime._ensure_stack_secret_env(stack)
     env_path = Path(result["path"])
@@ -145,6 +149,9 @@ def test_freellmapi_secret_env_is_generated_without_returning_values(tmp_path: P
     assert values["ENCRYPTION_KEY"] not in str(result)
     assert provider_root.is_dir()
     assert provider_root.stat().st_mode & 0o777 == 0o700
+    assert provider_secret.stat().st_mode & 0o777 == 0o400
+    assert result["additionalFiles"][0]["providerSecretFilesReconciled"] == 1
+    assert result["additionalFiles"][0]["secretValuesReturned"] is False
     assert FREELLMAPI_BOOTSTRAP_COMMAND == ["node", "/opt/sovereign/freellm-bootstrap.mjs"]
 
 
@@ -220,6 +227,7 @@ def test_freellmapi_owner_key_sync_writes_private_file_without_returning_key(
 def test_freellmapi_runtime_canary_requires_authenticated_models_without_content(tmp_path: Path) -> None:
     receipt = (
         '{"ok":true,"pingStatus":200,"modelsStatus":200,"modelCount":7,'
+        '"embeddingsStatus":200,"embeddingDimensions":768,'
         '"unifiedKeySha256":"' + ("b" * 64) + '"}'
     )
 
@@ -233,6 +241,20 @@ def test_freellmapi_runtime_canary_requires_authenticated_models_without_content
 
     assert result["status"] == "FREELLMAPI_AUTHENTICATED_MODELS_VERIFIED"
     assert result["modelCount"] == 7
+    assert result["embeddingsStatus"] == 200
+    assert result["embeddingDimensions"] == 768
     assert result["keyFingerprintSha256"] == "b" * 64
     assert result["responseContentReturned"] is False
     assert result["secretValuesReturned"] is False
+
+
+def test_freellmapi_runtime_canary_requires_real_embedding_vector_contract() -> None:
+    source = Path(__file__).resolve().parents[1] / "managed_compose.py"
+    content = source.read_text("utf-8")
+
+    assert "http://127.0.0.1:3001/v1/embeddings" in content
+    assert "model: 'gemini-embedding-001'" in content
+    assert "dimensions: 768" in content
+    assert "vector.length !== 768" in content
+    assert 'int(receipt.get("embeddingsStatus") or 0) == 200' in content
+    assert 'int(receipt.get("embeddingDimensions") or 0) == 768' in content
