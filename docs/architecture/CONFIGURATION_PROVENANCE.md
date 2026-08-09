@@ -33,6 +33,37 @@ Each source binds:
 - `schemaHash` — schema version hash
 - `priority` — resolution priority (higher wins)
 
+## Source inventory (concrete repo surfaces)
+
+The five abstract `ConfigSourceKind`s map onto these concrete surfaces in the
+repository (inventoried at revision `313bc910`, 2026-08-08):
+
+| Kind | Concrete surface | Notes |
+|------|------------------|-------|
+| `compiled-defaults` | Hardcoded defaults inside resolver call sites (no file) | Lowest priority; always present |
+| `image-manifest` | Immutable image digest bound at build/deploy time | Bound externally; read back via `imageDigest` |
+| `deployment-config` | `.env.example`, `.env.sovereign-toolchain.example` (templates only) | Revision-bound at deploy; no compose file exists in-repo |
+| `environment-projection` | `process.env.TOOLCHAIN_API_KEY` (src); build-time `VITE_ADMIN_API_BASE`, `VITE_SOVEREIGN_BACKEND_URL`, `VITE_SOVEREIGN_AGENT_API_URL`, `VITE_GITHUB_OAUTH_CLIENT_ID`, `VITE_OPENHANDS_*`; runtime `GEMINI_API_KEY` | Projected read-only; secrets redacted before receipt |
+| `approved-runtime-overlay` | Explicitly approved overlay only | Highest priority; must be pre-bound |
+
+Findings:
+
+- **No `docker-compose*.yml` / `compose*.yml` exists in the repository** at this
+  revision. Deployment-config is therefore not sourced from a compose file; it
+  is bound from revision-bound env templates and the deploy-time image manifest.
+  If a compose surface is introduced later it must be re-inventoried here and
+  bound as a `deployment-config` source.
+- **Env fallbacks are build-time / runtime projections**, never a mutable truth
+  path: `VITE_*` values are baked at frontend build, `process.env.*` runtime
+  values are projected read-only into the `environment-projection` source. None
+  mutate config directly; all flow through the resolver merge.
+- **Secrets** (`GEMINI_API_KEY`, `TOOLCHAIN_API_KEY`, OAuth secrets) never enter
+  receipts: they reach the resolver only as a `RedactedSecret`
+  (`redactedId` = sha256 prefix), so the inventory lists them by name only.
+
+This inventory is a claim surface: if the concrete surfaces change, this table
+must be updated at the same revision so it never contradicts the repo.
+
 ## Merge semantics (deterministic)
 
 Applied in priority order, lowest to highest:
@@ -132,6 +163,45 @@ Fields the receipt does not bind (empty on the receipt) are ignored — PatchMon
 omitting an unbound field does not block. Either a contradiction or a missing
 bound field routes the runtime to `BLOCKED`/`CONTRADICTED` instead of
 advancing. No secret material appears in observations or audits by design.
+
+## Zod-4 pilot assessment and clean-room rationale
+
+Issue #1169 requires that Zod-4 compatibility of a library pilot be checked and
+that either adoption or a clean-room core be justified. The codebase made the
+**clean-room** decision; this section records the assessment that justifies it
+and is referenced by `src/runtime/config/index.ts`. The Python mirror
+(`backend/agent_runtime/configuration/`) implements the same clean-room core
+(stdlib-only `hashlib` + deterministic serialization) without an external
+validation dependency, verified by the mirror-parity test.
+
+Assessment (at revision `313bc910`):
+
+- **`zod` is not a dependency.** It is absent from both `package.json`
+  (`dependencies` + `devDependencies`, 56 total) and `node_modules`. Adding it
+  would introduce a new runtime dependency for a layer whose job is
+  deterministic hashing and fail-closed source binding — precisely the
+  surface that must stay dependency-light and auditable.
+- The provenance layer needs **stable canonical serialization** and
+  **content/schema hashing**, not rich runtime validation. The schema contract
+  is a `ConfigSchemaDescriptor` (field list) whose `schemaHash` is sha256 of the
+  canonicalized descriptor — a stdlib-equivalent operation with no
+  validation-library benefit.
+- The TS Contract Pilot inventory
+  (`docs/architecture/TYPESCRIPT_CONTRACT_PILOT/INVENTORY.md`, issue #1115)
+  separately evaluated Zod/Typia for compile-time contract generation at MCP and
+  receipt boundaries and remains `PLANNED`. That is the correct home for any
+  future Zod adoption; it is deliberately **not** pulled into the read-only
+  provenance resolver, which must not gain an unaudited central dependency.
+- Zod-4 compatibility was therefore checked by **absence + scope fit**: the
+  provenance layer has no call site that would benefit from Zod runtime parsing,
+  and adopting it would contradict the agent-rule prohibition on introducing an
+  unaudited central dependency into a truth-adjacent layer.
+
+Decision: **clean-room core, no Zod dependency.** The resolver, canonicalizer
+and receipt use only the language stdlib (`crypto`/`hashlib`) and deterministic
+key-sorted serialization. If a future Zod pilot (#1115) lands and a provenance
+call site gains a real validation need, that adoption must be a separately
+approved design bound to a revision — not a silent addition here.
 
 ## File map
 
