@@ -162,8 +162,10 @@ def validate(root: Path) -> list[str]:
             data = path.read_bytes()
             if git_blob_sha1(data) != item.get("git_blob_sha1"):
                 errors.append(f"GIT_BLOB_HASH_MISMATCH:{relative_path}")
-            if sha256(data) != item.get("sha256"):
-                errors.append(f"SHA256_MISMATCH:{relative_path}")
+            expected_sha256 = item.get("sha256")
+            if expected_sha256 is not None:
+                if not isinstance(expected_sha256, str) or sha256(data) != expected_sha256:
+                    errors.append(f"SHA256_MISMATCH:{relative_path}")
             if group_name == "pages":
                 errors.extend(_validate_page(relative_path, data.decode("utf-8")))
 
