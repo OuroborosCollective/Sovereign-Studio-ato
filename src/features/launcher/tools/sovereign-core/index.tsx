@@ -10,6 +10,7 @@ import {
   useSovereignToolInspectionStore,
   type SovereignToolInspectionEvidence,
 } from '../../../product/runtime/sovereignToolInspectionRuntime';
+import { IdleLiveAwarenessSettingsCard } from '../../../product/components/IdleLiveAwarenessSettingsCard';
 
 const C = {
   bg: '#0e1116',
@@ -164,6 +165,7 @@ export function SovereignSettingsTool(_props: LauncherToolProps) {
       <Row label="Merge Policy" value="Draft PR erlaubt · Auto-Merge nicht erlaubt" tone="ok" />
       <Row label="Storage" value={storageReady ? 'localStorage verfügbar' : 'localStorage blockiert'} tone={storageReady ? 'ok' : 'warn'} />
       <Row label="Client" value={`Sprache: ${language} · Netzwerk: ${online ? 'online' : 'offline'}`} tone={online ? 'ok' : 'warn'} />
+      <IdleLiveAwarenessSettingsCard />
       <Row label="Nächste Aktion" value={evidence.nextAction} />
     </Shell>
   );
