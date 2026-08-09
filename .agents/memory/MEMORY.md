@@ -2,6 +2,7 @@
 
 This index points to current canonical knowledge. It must not preserve transient failing tests, temporary routing orders, mutable provider/model names or dated UI details as permanent truth.
 
+- [Sovereign project brain](../../BRAIN.md) — hash-bound, Git-native **derived projection** for cross-agent orientation; never a replacement for canonical evidence or runtime readback.
 - [Current repository state](../../docs/CURRENT_STATE_2026-08-03.md) — dated baseline, truth classes, current architecture and removed drift.
 - [Repository agent rules](../../AGENTS.md) — mandatory preflight, mutation, evidence, continuity, PR and deployment contract.
 - [Agent knowledge](../../AGENTS_KNOWLEDGE.md) — durable repository-specific architecture and lessons.
