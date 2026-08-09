@@ -65,11 +65,13 @@ from llm_revolver import (
     normalize_quota_scope,
     provider_usage_seen as revolver_provider_usage_seen,
     route_quota_scope,
+    route_is_verified_free,
 )
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
     PAID_SWARM_PROFILE,
     build_paid_to_free_candidates,
+    route_is_verified_paid,
 )
 from free_revolver_runtime import (
     FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS,
@@ -3931,6 +3933,15 @@ def user_purchase():
 
 # ── Public LLM Route endpoints (Issue #461) ──────────────────────────────────
 
+def _is_runtime_selectable_llm_route(route: dict) -> bool:
+    """Return only routes the direct executor can accept at this revision."""
+    candidate = dict(route or {})
+    return (
+        route_is_verified_free(candidate)
+        or route_is_verified_paid(candidate)
+    )
+
+
 def _public_llm_route_payload(row) -> dict:
     admin_payload = _admin_llm_route_payload(row)
     return {
@@ -3976,7 +3987,7 @@ def public_llm_routes():
         rows = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
-                      disabled, priority, config
+                      base_url, runtime_kind, tier, disabled, priority, config
                FROM llm_routes
                WHERE lower(COALESCE(runtime_kind, provider))
                      IN ('openrouter', 'freellm')
@@ -3985,10 +3996,17 @@ def public_llm_routes():
                    WHEN 'free' THEN 0 WHEN 'standard' THEN 1 ELSE 2 END,
                  priority ASC, model_name ASC"""
         )
-        return jsonify({
-            "routes": [_public_llm_route_payload(row) for row in (rows or [])],
+        selectable_routes = [
+            dict(row)
+            for row in (rows or [])
+            if _is_runtime_selectable_llm_route(dict(row))
+        ]
+        response = make_response(jsonify({
+            "routes": [_public_llm_route_payload(row) for row in selectable_routes],
             "revolverPolicy": "free-first",
-        })
+        }))
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     except Exception:
         return jsonify({
             "error": "LLM-Routenkatalog konnte nicht sicher gelesen werden",
@@ -4004,7 +4022,7 @@ def public_llm_route(route_id):
         row = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
-                      disabled, priority, config
+                      base_url, runtime_kind, tier, disabled, priority, config
                FROM llm_routes
                WHERE id::text = %s
                  AND lower(COALESCE(runtime_kind, provider))
@@ -4012,9 +4030,11 @@ def public_llm_route(route_id):
                LIMIT 1""",
             (route_id,), one=True,
         )
-        if not row:
+        if not row or not _is_runtime_selectable_llm_route(dict(row)):
             return jsonify({"error": "Route nicht gefunden"}), 404
-        return jsonify(_public_llm_route_payload(row))
+        response = make_response(jsonify(_public_llm_route_payload(row)))
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     except Exception:
         return jsonify({
             "error": "LLM-Route konnte nicht sicher gelesen werden",
@@ -6802,7 +6822,7 @@ def public_llm_auto_route():
         routes = query(
             """SELECT id::text, model_id AS "modelId", model_name AS "modelName",
                       provider, credits_per_unit AS "creditsPerUnit",
-                      disabled, priority, config
+                      base_url, runtime_kind, tier, disabled, priority, config
                FROM llm_routes
                WHERE disabled=false
                  AND lower(COALESCE(runtime_kind, provider))
@@ -6810,11 +6830,12 @@ def public_llm_auto_route():
                ORDER BY
                  CASE COALESCE(config->>'billingCategory', config->>'billingClass')
                    WHEN 'free' THEN 0 WHEN 'standard' THEN 1 ELSE 2 END,
-                 priority ASC, model_name ASC
-               LIMIT 20"""
+                 priority ASC, model_name ASC"""
         )
         safe_routes = []
         for row in routes or []:
+            if not _is_runtime_selectable_llm_route(dict(row)):
+                continue
             payload = _public_llm_route_payload(row)
             paid_ready = (
                 payload["billingCategory"] != FREE_CATEGORY
@@ -6828,6 +6849,8 @@ def public_llm_auto_route():
             )
             if paid_ready or free_ready:
                 safe_routes.append(payload)
+            if len(safe_routes) >= 20:
+                break
         if not safe_routes:
             return jsonify({
                 "error": "Keine policy-verifizierte direkte OpenRouter- oder FreeLLM-Route verfügbar",
@@ -6886,7 +6909,7 @@ def _resolve_enabled_llm_route(model: str):
     normalized = str(model or "").strip()
     if not normalized:
         return None
-    route = query(
+    routes = query(
         """SELECT id::text, model_id, model_name, provider, base_url,
                   credits_per_unit::float AS credits_per_unit, priority,
                   runtime_kind, tier, config
@@ -6894,17 +6917,18 @@ def _resolve_enabled_llm_route(model: str):
            WHERE disabled=false
              AND lower(COALESCE(runtime_kind, provider)) IN ('openrouter', 'freellm')
              AND (model_id=%s OR id::text=%s)
-           ORDER BY priority ASC LIMIT 1""",
+           ORDER BY priority ASC""",
         (normalized, normalized),
-        one=True,
     )
-    if not route:
-        return None
-    try:
-        route_billing_policy(route)
-    except BillingPolicyError:
-        return None
-    return route
+    for route in routes or []:
+        if not _is_runtime_selectable_llm_route(dict(route)):
+            continue
+        try:
+            route_billing_policy(route)
+        except BillingPolicyError:
+            continue
+        return route
+    return None
 
 
 def _normalize_llm_request_id(body: dict) -> str:

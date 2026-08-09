@@ -385,7 +385,11 @@ export async function fetchSovereignDirectLlmInterpretation(
       },
       body: JSON.stringify({
         requestId,
-        model: selected.modelId,
+        // Send the immutable route UUID to the backend. `defaultModelId` is
+        // provider-facing metadata and can become stale after a verified
+        // FreeLLM catalog refresh; the backend resolves the current provider
+        // model from the persisted route.
+        model: selected.routeId,
         messages,
         max_tokens: 700,
         stream: false,
