@@ -43,8 +43,10 @@ def test_current_review_ledger_is_complete_and_fresh() -> None:
         sort_keys=True,
     )
     assert result["status"] == "LLM_BOUNDARY_LEDGER_VERIFIED"
-    assert result["rawCandidateCount"] == 94
-    assert result["canonicalCandidateCount"] == 75
+    # validate_ledger already rejects a ledger whose counts drift from discovery.
+    # Bind this regression assertion to the reviewed ledger, not stale literals.
+    assert result["rawCandidateCount"] == payload["rawCandidateCount"]
+    assert result["canonicalCandidateCount"] == payload["canonicalCandidateCount"]
     assert result["findings"] == []
 
 
