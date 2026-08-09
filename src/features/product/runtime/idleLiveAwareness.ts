@@ -242,6 +242,7 @@ export function startIdleLiveAwareness(input: {
   fetcher?: typeof fetch;
   pollMs?: number;
   onObservation?: (observation: IdleLiveAwarenessObservation, transition: IdleLiveAwarenessTransition) => void;
+  onError?: (error: Error) => void;
 }): IdleLiveAwarenessController {
   let stopped = false;
   let running = false;
@@ -274,10 +275,16 @@ export function startIdleLiveAwareness(input: {
     }
   };
 
+  const runScheduledProbe = (): void => {
+    void probeNow().catch((error: unknown) => {
+      input.onError?.(error instanceof Error ? error : new Error('Idle Live Awareness read failed.'));
+    });
+  };
+
   let timer: ReturnType<typeof setInterval> | null = null;
   if (input.mode !== 'off' && typeof window !== 'undefined') {
-    void probeNow();
-    timer = window.setInterval(() => { void probeNow(); }, pollMs);
+    runScheduledProbe();
+    timer = window.setInterval(runScheduledProbe, pollMs);
   }
 
   return {
