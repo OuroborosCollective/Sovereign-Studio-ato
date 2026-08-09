@@ -11,6 +11,7 @@ BACKEND = ROOT / "backend"
 DEPLOY = ROOT / "scripts" / "sovereign-backend"
 sys.path.insert(0, str(BACKEND))
 
+from agent_runtime import adaptive_handoff as adaptive
 from agent_runtime import universal_toolchain as runtime
 
 
@@ -21,6 +22,9 @@ def read(path: Path) -> str:
 def test_backend_and_deployment_runtime_are_exact_mirrors() -> None:
     assert read(BACKEND / "agent_runtime" / "universal_toolchain.py") == read(
         DEPLOY / "agent_runtime" / "universal_toolchain.py"
+    )
+    assert read(BACKEND / "agent_runtime" / "adaptive_handoff.py") == read(
+        DEPLOY / "agent_runtime" / "adaptive_handoff.py"
     )
     assert read(BACKEND / "agent_runtime" / "routes.py") == read(
         DEPLOY / "agent_runtime" / "routes.py"
@@ -152,3 +156,77 @@ def test_handoff_context_contains_four_predictive_checks_and_hard_policy() -> No
     assert "Four logical neighbouring failures to verify:" in mission
     assert "no direct main write" in mission
     assert "Draft PR only" in mission
+    assert "adaptiveHandoff" in handoff["diagnosis"]
+    assert "Projected tools (advisory only):" in mission
+    assert handoff["diagnosis"]["adaptiveHandoff"]["toolProjection"]["authorizesExecution"] is False
+
+
+def test_read_only_tool_projection_never_surfaces_mutating_effects() -> None:
+    projection = adaptive.project_tools_for_mission(
+        "Inspect repository status and explain the current diff without changing anything"
+    )
+
+    assert projection["authorizesExecution"] is False
+    assert projection["mutationIntentDetected"] is False
+    assert projection["selected"]
+    assert all(item["effect"] == "read" for item in projection["selected"])
+    assert len(projection["selected"]) <= adaptive.MAX_PROJECTED_TOOLS
+    assert len(projection["projectionHash"]) == 64
+
+
+def test_mutation_projection_is_bounded_but_does_not_authorize_execution() -> None:
+    projection = adaptive.project_tools_for_mission(
+        "Implement the frontend fix, run tests, inspect the git diff and prepare a Draft PR"
+    )
+
+    assert projection["mutationIntentDetected"] is True
+    assert projection["authorizesExecution"] is False
+    assert len(projection["selected"]) <= adaptive.MAX_PROJECTED_TOOLS
+    assert any(item["effect"] != "read" for item in projection["selected"])
+
+
+def test_provider_projection_preserves_current_direct_routes_without_health_claim() -> None:
+    provider = adaptive.provider_readiness_projection()
+
+    assert provider["canonicalRoutes"] == {
+        "paid": ["openrouter"],
+        "free": ["freellm", "revolver"],
+    }
+    assert provider["prohibitedRuntimeRoutes"] == ["litellm"]
+    assert provider["runtimeVerified"] is False
+    assert provider["status"] == "UNVERIFIED"
+
+
+def test_runtime_readback_is_bounded_and_never_exposes_environment_values() -> None:
+    readback = adaptive.runtime_environment_readback()
+    serialized = json.dumps(readback, ensure_ascii=False)
+
+    assert readback["runtimeVerified"] is False
+    assert readback["status"] == "OBSERVED_UNVERIFIED"
+    assert "environment" not in serialized.lower()
+    assert "hostname" not in serialized.lower()
+    assert len(readback["readbackHash"]) == 64
+
+
+def test_model_comparison_binds_same_input_but_never_claims_runtime_truth() -> None:
+    result = adaptive.compare_candidate_evidence(
+        "same mission",
+        [
+            {"model": "candidate-a", "output": "A", "evidence": ["test-a"]},
+            {"model": "candidate-b", "output": "B", "evidence": ["test-b"]},
+        ],
+    )
+
+    assert result["status"] == "EVIDENCE_BOUND_COMPARISON"
+    assert result["candidateCount"] == 2
+    assert result["runtimeVerified"] is False
+    assert result["winner"] is None
+    assert len({item["inputHash"] for item in result["candidates"]}) == 1
+
+
+def test_model_comparison_rejects_cross_input_candidate_replay() -> None:
+    with pytest.raises(ValueError, match="inputHash does not match"):
+        adaptive.compare_candidate_evidence(
+            "same mission",
+            [{"model": "candidate-a", "inputHash": "0" * 64, "output": "A"}],
+        )
