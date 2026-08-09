@@ -40,7 +40,7 @@ def task(task_id: str, **overrides: object) -> FleetTask:
         ({"invariant_scopes": ("auth",)}, {"invariant_scopes": ("auth",)}, "INVARIANT_SCOPE_CONFLICT"),
         ({"mutation_resources": ("postgres",)}, {"mutation_resources": ("postgres",)}, "MUTATION_RESOURCE_CONFLICT"),
         ({"lock_scopes": ("workspace",)}, {"lock_scopes": ("workspace",)}, "LOCK_SCOPE_CONFLICT"),
-        ({"changed_paths": ("a",)}, {"canonical_owners": ("b",)}, "UNPROVEN_INDEPENDENCE"),
+        ({"changed_paths": ("a",), "independence_proven": False}, {"canonical_owners": ("b",)}, "UNPROVEN_INDEPENDENCE"),
         ({"independence_proven": False}, {}, "UNPROVEN_INDEPENDENCE"),
         ({}, {"independence_proven": False}, "UNPROVEN_INDEPENDENCE"),
         ({"lock_scopes": ("mcp",), "independence_proven": False}, {"lock_scopes": ("mcp",)}, "LOCK_SCOPE_CONFLICT"),
