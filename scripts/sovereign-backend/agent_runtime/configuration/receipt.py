@@ -144,6 +144,183 @@ def verify_receipt(receipt: ConfigReceipt) -> bool:
     return compute_receipt_hash(body) == receipt.receipt_hash
 
 
+# ---------------------------------------------------------------------------
+# PatchMon readback (#1169)
+#
+# PatchMon independently reads back the configuration identity the running
+# container actually loaded. A container is considered configured only when
+# PatchMon's readback matches the resolved receipt exactly. Any mismatch, or a
+# receipt that was never RESOLVED/bound, yields BLOCKED or CONTRADICTED - never
+# a green state on a stale or unbound projection.
+# ---------------------------------------------------------------------------
+
+READBACK_VERIFIED: str = "VERIFIED"
+READBACK_CONTRADICTED: str = "CONTRADICTED"
+READBACK_BLOCKED: str = "BLOCKED"
+
+
+@dataclass(frozen=True)
+class PatchMonReadback:
+    """Independent PatchMon observation of the loaded configuration identity.
+
+    Every field is a redacted, hash/digest value - never raw config or secrets.
+    """
+
+    revision: Optional[str]
+    image_digest: Optional[str]
+    schema_hash: Optional[str]
+    config_hash: Optional[str]
+
+
+@dataclass(frozen=True)
+class ReadbackResult:
+    verdict: str
+    matched_fields: tuple[str, ...]
+    mismatched_fields: tuple[str, ...]
+    missing_fields: tuple[str, ...]
+    detail: str
+
+
+_READBACK_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("revision", "revision", "revision"),
+    ("image_digest", "image_digest", "imageDigest"),
+    ("schema_hash", "schema_hash", "schemaHash"),
+    ("config_hash", "resolved_hash", "resolvedHash (config)"),
+)
+
+
+def compare_patchmon_readback(
+    receipt: ConfigReceipt,
+    observed: PatchMonReadback,
+) -> ReadbackResult:
+    """Compare a bound receipt against an independent PatchMon readback.
+
+    Returns a ReadbackResult whose verdict is:
+      - VERIFIED      only when the receipt is RESOLVED and every bound field
+                      PatchMon must confirm matches exactly;
+      - CONTRADICTED  when a field PatchMon observed does not match the bound
+                      receipt (loaded projection diverges from resolved);
+      - BLOCKED       when the receipt was not RESOLVED, or a required field
+                      is missing on either side (unknown truth, not green).
+
+    PatchMon readback never promotes a non-RESOLVED or tampered receipt to
+    VERIFIED.
+    """
+    matched: list[str] = []
+    mismatched: list[str] = []
+    missing: list[str] = []
+
+    if receipt.status != "RESOLVED":
+        return ReadbackResult(
+            verdict=READBACK_BLOCKED,
+            matched_fields=(),
+            mismatched_fields=(),
+            missing_fields=(),
+            detail=f"receipt not RESOLVED (status={receipt.status})",
+        )
+
+    for obs_attr, receipt_attr, label in _READBACK_FIELDS:
+        bound = getattr(receipt, receipt_attr)
+        seen = getattr(observed, obs_attr)
+        if not bound or not seen:
+            missing.append(label)
+            continue
+        if bound == seen:
+            matched.append(label)
+        else:
+            mismatched.append(label)
+
+    if mismatched:
+        return ReadbackResult(
+            verdict=READBACK_CONTRADICTED,
+            matched_fields=tuple(matched),
+            mismatched_fields=tuple(mismatched),
+            missing_fields=tuple(missing),
+            detail=f"PatchMon readback contradicts receipt: {', '.join(mismatched)}",
+        )
+    if missing:
+        return ReadbackResult(
+            verdict=READBACK_BLOCKED,
+            matched_fields=tuple(matched),
+            mismatched_fields=(),
+            missing_fields=tuple(missing),
+            detail=f"PatchMon readback incomplete: {', '.join(missing)}",
+        )
+    return ReadbackResult(
+        verdict=READBACK_VERIFIED,
+        matched_fields=tuple(matched),
+        mismatched_fields=(),
+        missing_fields=(),
+        detail="PatchMon readback matches resolved receipt",
+    )
+
+
+# ---------------------------------------------------------------------------
+# RunEnvelope config binding (#1116 / #1169)
+#
+# Binds a redacted config fingerprint to a run envelope hash so the run carries
+# a deterministic, tamper-evident reference to the exact configuration
+# projection it started under. The binding is read-only provenance: it never
+# mutates config and never carries raw secret material (only hashes).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigRunBinding:
+    """A run envelope <-> resolved config binding.
+
+    ``binding_hash`` is sha256 of the canonical binding body (excluding the
+    hash itself), so identical (runEnvelopeHash, receiptHash) pairs always
+    produce identical bindings.
+    """
+
+    run_envelope_hash: str
+    config_receipt_hash: str
+    config_fingerprint: str
+    schema_hash: str
+    revision: Optional[str]
+    image_digest: Optional[str]
+    binding_hash: str
+
+
+def bind_config_to_run(
+    run_envelope_hash: str,
+    receipt: ConfigReceipt,
+) -> ConfigRunBinding:
+    """Bind a resolved config receipt to a run envelope hash (#1116).
+
+    Produces a deterministic ``ConfigRunBinding`` whose ``config_fingerprint``
+    is the redacted public config hash (the receipt's resolved_hash) and whose
+    ``binding_hash`` ties the run envelope to that fingerprint. A non-RESOLVED
+    or tampered receipt still produces a binding, but callers MUST gate
+    advancement on ``is_safe_to_advance`` (resolver) / receipt.status ==
+    RESOLVED before trusting the binding - the fingerprint alone does not prove
+    the config was safely resolved.
+    """
+    if not run_envelope_hash:
+        raise ValueError("run_envelope_hash is required")
+    if not receipt.receipt_hash:
+        raise ValueError("receipt must carry a receipt_hash")
+    body = {
+        "runEnvelopeHash": run_envelope_hash,
+        "configReceiptHash": receipt.receipt_hash,
+        "configFingerprint": receipt.resolved_hash,
+        "schemaHash": receipt.schema_hash,
+        "revision": receipt.revision,
+        "imageDigest": receipt.image_digest,
+    }
+    binding_hash = hash_value(json.loads(canonical_json(body)))
+    return ConfigRunBinding(
+        run_envelope_hash=run_envelope_hash,
+        config_receipt_hash=receipt.receipt_hash,
+        config_fingerprint=receipt.resolved_hash,
+        schema_hash=receipt.schema_hash,
+        revision=receipt.revision,
+        image_digest=receipt.image_digest,
+        binding_hash=binding_hash,
+    )
+
+
 __all__ = [
     "ConfigReceipt",
     "ReceiptOptions",
@@ -151,4 +328,12 @@ __all__ = [
     "compute_receipt_hash",
     "verify_receipt",
     "DETERMINISTIC_EPOCH",
+    "PatchMonReadback",
+    "ReadbackResult",
+    "READBACK_VERIFIED",
+    "READBACK_CONTRADICTED",
+    "READBACK_BLOCKED",
+    "compare_patchmon_readback",
+    "ConfigRunBinding",
+    "bind_config_to_run",
 ]

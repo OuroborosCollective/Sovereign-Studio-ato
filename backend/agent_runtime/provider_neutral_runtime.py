@@ -20,6 +20,7 @@ import re
 from types import MappingProxyType
 from typing import Any, Callable, Literal, Mapping, Sequence
 
+from .configuration import ConfigRunBinding, bind_config_to_run
 from .contracts import sanitize_agent_text
 
 ZERO_SHA256 = "0" * 64
@@ -310,6 +311,11 @@ class RuntimeInputPart:
 class RuntimeInputEnvelope:
     parts: tuple[RuntimeInputPart, ...]
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    # Configuration-provenance binding (#1116 / #1169). When present, the
+    # resolved config fingerprint is bound to this run envelope so a config
+    # change changes the run identity. Only redacted hashes travel here;
+    # never raw resolved config or secrets.
+    config_binding: ConfigRunBinding | None = None
 
     def __post_init__(self) -> None:
         if not self.parts:
@@ -318,12 +324,31 @@ class RuntimeInputEnvelope:
             raise ProviderNeutralRuntimeError("runtime input exceeds 64 parts")
         object.__setattr__(self, "parts", tuple(self.parts))
         object.__setattr__(self, "metadata", _snapshot_mapping("metadata", self.metadata))
+        if self.config_binding is not None:
+            cb = self.config_binding
+            for label, value in (
+                ("config_binding.binding_hash", cb.binding_hash),
+                ("config_binding.config_fingerprint", cb.config_fingerprint),
+                ("config_binding.config_receipt_hash", cb.config_receipt_hash),
+            ):
+                if not _SHA256_RE.fullmatch(value):
+                    raise ProviderNeutralRuntimeError(f"invalid {label}: expected 64-hex sha256")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "parts": [part.to_dict() for part in self.parts],
             "metadata": _canonicalize(self.metadata),
         }
+        if self.config_binding is not None:
+            body["configBinding"] = {
+                "bindingHash": self.config_binding.binding_hash,
+                "configFingerprint": self.config_binding.config_fingerprint,
+                "schemaHash": self.config_binding.schema_hash,
+                "configReceiptHash": self.config_binding.config_receipt_hash,
+                "revision": self.config_binding.revision,
+                "imageDigest": self.config_binding.image_digest,
+            }
+        return body
 
     @property
     def sha256(self) -> str:
@@ -331,6 +356,45 @@ class RuntimeInputEnvelope:
             "parts": [part._binding_dict() for part in self.parts],
             "metadata": _canonicalize(self.metadata),
         })
+
+    @property
+    def config_fingerprint(self) -> str | None:
+        """Redacted resolved-config fingerprint bound to this run (#1116).
+
+        ``None`` when no config provenance is bound. When present, PatchMon
+        must read back this same fingerprint from the running container or
+        the run is contradicted/blocked (see ``compare_patchmon_readback``).
+        """
+        return self.config_binding.config_fingerprint if self.config_binding else None
+
+    @property
+    def bound_sha256(self) -> str:
+        """Run identity hash folded with the bound config fingerprint (#1116).
+
+        Falls back to :attr:`sha256` when no config binding is present, so
+        existing callers are unaffected. When a binding is present the config
+        fingerprint becomes part of the run identity: a config change changes
+        the bound hash even if parts/metadata are identical.
+        """
+        base = self.sha256
+        if self.config_binding is None:
+            return base
+        return canonical_sha256({"envelope": base, "configFingerprint": self.config_fingerprint})
+
+    @classmethod
+    def with_config_binding(
+        cls,
+        parts: Sequence[RuntimeInputPart],
+        *,
+        metadata: Mapping[str, Any] | None = None,
+        config_binding: ConfigRunBinding,
+    ) -> RuntimeInputEnvelope:
+        """Build an envelope whose run identity is bound to a config receipt."""
+        return cls(
+            parts=tuple(parts),
+            metadata=metadata if metadata is not None else {},
+            config_binding=config_binding,
+        )
 
 
 @dataclass(frozen=True)

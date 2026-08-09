@@ -54,6 +54,18 @@ export {
   verifyReceipt,
   canonicalReceiptBody,
   DETERMINISTIC_EPOCH,
+  comparePatchMonReadback,
+  bindConfigToRun,
+  READBACK_VERIFIED,
+  READBACK_CONTRADICTED,
+  READBACK_BLOCKED,
 } from './configReceipt';
 
-export type { ConfigReceipt, ReceiptOptions } from './configReceipt';
+export type {
+  ConfigReceipt,
+  ReceiptOptions,
+  PatchMonReadback,
+  ReadbackResult,
+  ReadbackVerdict,
+  ConfigRunBinding,
+} from './configReceipt';

@@ -21,6 +21,11 @@ import {
   hashValue,
   isRedactedSecret,
   schemaHashFromFields,
+  comparePatchMonReadback,
+  bindConfigToRun,
+  READBACK_VERIFIED,
+  READBACK_CONTRADICTED,
+  READBACK_BLOCKED,
   type ConfigSourceContract,
   type ResolveOptions,
 } from './index';
@@ -412,5 +417,114 @@ describe('cross-language hash parity (TS vs Python)', () => {
     // sha256 of the canonical JSON above, hex lowercase.
     const expected = '490e12734026df474ee4de8ce1d5d891cf1e702b14f038ca4174ddd64ed6731c';
     expect(await hashValue(parityInput)).toBe(expected);
+  });
+});
+
+// PatchMon config readback gate (#1169): the running container is configured
+// only when PatchMon's independent observation matches the resolved receipt
+// exactly. Mismatch -> CONTRADICTED; missing/unbound -> BLOCKED; never green.
+describe('PatchMon config readback (#1169)', () => {
+  it('VERIFIED when PatchMon observation matches the resolved receipt', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+    });
+    const result = comparePatchMonReadback(receipt, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+      schemaHash: receipt.schemaHash,
+      configHash: receipt.resolvedHash,
+    });
+    expect(result.verdict).toBe(READBACK_VERIFIED);
+    expect(result.mismatchedFields).toEqual([]);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it('CONTRADICTED when image digest diverges (loaded projection drift)', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+    });
+    const result = comparePatchMonReadback(receipt, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-OTHER',
+      schemaHash: receipt.schemaHash,
+      configHash: receipt.resolvedHash,
+    });
+    expect(result.verdict).toBe(READBACK_CONTRADICTED);
+    expect(result.mismatchedFields).toContain('imageDigest');
+  });
+
+  it('BLOCKED when a required readback field is missing', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+    });
+    const result = comparePatchMonReadback(receipt, {
+      revision: null,
+      imageDigest: null,
+      schemaHash: null,
+      configHash: null,
+    });
+    expect(result.verdict).toBe(READBACK_BLOCKED);
+    expect(result.missingFields.length).toBeGreaterThan(0);
+  });
+
+  it('BLOCKED (never VERIFIED) when receipt was not RESOLVED', async () => {
+    const unknown = src({ id: 'bad', kind: 'unknown-kind' as never, values: { a: 1 } });
+    const res = await resolveConfigSources([unknown]);
+    expect(res.status).not.toBe('RESOLVED');
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const result = comparePatchMonReadback(receipt, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+      schemaHash: receipt.schemaHash,
+      configHash: receipt.resolvedHash,
+    });
+    expect(result.verdict).toBe(READBACK_BLOCKED);
+  });
+});
+
+// RunEnvelope config binding (#1116 / #1169): a redacted config fingerprint
+// bound deterministically to a run envelope hash.
+describe('RunEnvelope config binding (#1116)', () => {
+  it('binds a config fingerprint to a run envelope deterministically', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+    });
+    const b1 = await bindConfigToRun('envelope-A', receipt);
+    const b2 = await bindConfigToRun('envelope-A', receipt);
+    expect(b1.bindingHash).toBe(b2.bindingHash);
+    expect(b1.bindingHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(b1.configFingerprint).toBe(receipt.resolvedHash);
+    expect(b1.configReceiptHash).toBe(receipt.receiptHash);
+  });
+
+  it('different run envelopes produce different binding hashes', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const b1 = await bindConfigToRun('envelope-A', receipt);
+    const b2 = await bindConfigToRun('envelope-B', receipt);
+    expect(b1.bindingHash).not.toBe(b2.bindingHash);
+  });
+
+  it('different config receipts produce different binding hashes', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const r1 = await materializeReceipt(res, { revision: 'rev-1' });
+    const r2 = await materializeReceipt(res, { revision: 'rev-2' });
+    const b1 = await bindConfigToRun('envelope-A', r1);
+    const b2 = await bindConfigToRun('envelope-A', r2);
+    expect(b1.bindingHash).not.toBe(b2.bindingHash);
+  });
+
+  it('rejects an empty run envelope hash', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res);
+    await expect(bindConfigToRun('', receipt)).rejects.toThrow();
   });
 });
