@@ -151,7 +151,7 @@ describe('devChatWorkerBridge', () => {
     expect(result).toMatchObject({ ok: true, content: 'Antwort aus Worker.', route: SOVEREIGN_WORKER_CHAT });
     expect(fetchMock).toHaveBeenNthCalledWith(2, SOVEREIGN_WORKER_CHAT, expect.objectContaining({ method: 'POST' }));
     const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toMatchObject({ model: ACTIVE_OPENROUTER_MODEL });
+    expect(JSON.parse(String(request.body))).toMatchObject({ model: 'openrouter-reka-edge' });
   });
 
   it('resolves sovereign-fast to the active free FreeLLM route before paid OpenRouter', async () => {
@@ -187,7 +187,7 @@ describe('devChatWorkerBridge', () => {
 
     expect(result.ok).toBe(true);
     const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toMatchObject({ model: freeModel });
+    expect(JSON.parse(String(request.body))).toMatchObject({ model: 'free-gemini' });
   });
 
   it('accepts structured online intent evidence without treating it as execution truth', async () => {

@@ -58,7 +58,10 @@ interface BackendLlmRoute {
 }
 
 function concreteRouteModel(route: BackendLlmRoute | undefined): string {
-  return route?.defaultModelId?.trim() || route?.id?.trim() || '';
+  // The backend accepts a route UUID as `model` and resolves the provider model
+  // itself. Prefer that immutable ID so an old model alias can never select a
+  // different persisted route after a catalog refresh.
+  return route?.id?.trim() || route?.defaultModelId?.trim() || '';
 }
 
 function routePriority(route: BackendLlmRoute): number {

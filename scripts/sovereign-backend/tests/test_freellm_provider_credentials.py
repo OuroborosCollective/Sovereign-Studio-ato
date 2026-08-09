@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from pathlib import Path
 import sys
 
@@ -21,6 +22,7 @@ from freellm_provider_credentials import (
     provider_secret_pool_path,
     provider_target_id,
 )
+import free_revolver_provider_runtime as provider_runtime
 
 
 def test_provider_allowlist_has_keyed_and_keyless_contracts(tmp_path: Path) -> None:
@@ -79,6 +81,40 @@ def test_provider_key_detection_is_strong_and_fail_closed() -> None:
     assert detect_freellm_provider_id_from_key(bytearray(b"hf_" + b"x" * 24)) == "huggingface"
     with pytest.raises(ValueError, match="provider_key_unrecognized"):
         detect_freellm_provider_id_from_key(bytearray(b"opaque-" + b"x" * 24))
+
+
+def test_recognized_provider_key_is_persisted_and_read_back_from_the_owner_pool(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A recognized key is durable without ever placing its raw value in PostgreSQL."""
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setattr(provider_runtime.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(provider_runtime.os, "fchown", lambda *_args: None)
+    monkeypatch.setattr(provider_runtime.os, "chown", lambda *_args: None)
+
+    raw_key = b"gsk_" + b"x" * 24
+    protected = bytearray(b"  " + raw_key + b"\n")
+    expected_fingerprint = hashlib.sha256(raw_key).hexdigest()
+    try:
+        fingerprint = provider_runtime._write_freellm_provider_key("groq", protected)
+        saved_path = provider_secret_pool_path(tmp_path, "groq", fingerprint)
+        state = provider_runtime._freellm_provider_credential_state("groq")
+
+        assert fingerprint == expected_fingerprint
+        assert saved_path.read_bytes() == raw_key
+        assert state == {
+            "configured": True,
+            "mode": "credential-pool",
+            "keyCount": 1,
+            "fingerprintSha256": expected_fingerprint,
+            "permissionsValid": True,
+        }
+        assert provider_runtime._write_freellm_provider_key("groq", protected) == fingerprint
+        assert provider_runtime._freellm_provider_credential_state("groq")["keyCount"] == 1
+    finally:
+        for index in range(len(protected)):
+            protected[index] = 0
 
 
 def test_owner_input_and_runtime_expose_only_safe_provider_metadata() -> None:

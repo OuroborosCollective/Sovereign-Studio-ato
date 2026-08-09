@@ -372,6 +372,22 @@ def test_database_never_receives_raw_provider_keys() -> None:
     assert "key_hint" in migration
 
 
+def test_verified_models_are_persisted_as_one_route_and_model_state_transaction() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    start = runtime.index("    def activate_model(")
+    end = runtime.index("    @app.route(", start)
+    activation = runtime[start:end]
+
+    assert "INSERT INTO llm_routes" in activation
+    assert "ON CONFLICT (id) DO UPDATE" in activation
+    assert "UPDATE llm_revolver_provider_models" in activation
+    assert "connection.commit()" in activation
+    assert "connection.rollback()" in activation
+    assert activation.index("INSERT INTO llm_routes") < activation.index(
+        "UPDATE llm_revolver_provider_models"
+    ) < activation.index("connection.commit()")
+
+
 def test_revolver_migrations_are_preview_safe_and_restore_production_foreign_keys() -> None:
     migration_31 = (BACKEND / "migrations" / "031_sovereign_free_revolver_v3.sql").read_text("utf-8")
     migration_32 = (BACKEND / "migrations" / "032_free_revolver_provider_control.sql").read_text("utf-8")

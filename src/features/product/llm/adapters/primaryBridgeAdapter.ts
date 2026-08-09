@@ -88,9 +88,15 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
         if (!routesResponse.ok) {
           throw new Error(typeof routesPayload.error === 'string' ? routesPayload.error : `Route catalog HTTP ${routesResponse.status}`);
         }
-        const selectedRoute = routesPayload.routes?.find((route) => route.enabled && route.defaultModelId)
-          ?? routesPayload.routes?.find((route) => route.enabled && route.id);
-        const selectedModel = config.model || selectedRoute?.defaultModelId || selectedRoute?.id || '';
+        const enabledRoutes = (routesPayload.routes ?? []).filter((route) => route.enabled);
+        const selectedRoute = (config.model
+          ? enabledRoutes.find((route) => route.id === config.model || route.defaultModelId === config.model)
+          : undefined)
+          ?? enabledRoutes.find((route) => route.id)
+          ?? enabledRoutes.find((route) => route.defaultModelId);
+        // Route IDs are immutable backend identities. Never post a cached
+        // provider alias when an active catalog route is available.
+        const selectedModel = selectedRoute?.id || selectedRoute?.defaultModelId || '';
         if (!selectedModel) throw new Error('No owner-verified OpenRouter or FreeLLM route is active.');
 
         const response = await fetch(`${backendBaseUrl}/api/llm/chat`, {

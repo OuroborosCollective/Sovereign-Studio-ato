@@ -63,7 +63,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
       credentials: 'include',
     }));
     const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(request.model).toBe('openai/gpt-5.2-mini');
+    expect(request.model).toBe('sovereign-chat');
     expect(request.requestId).toBe('00000000-0000-4000-8000-000000000101');
     expect(request.stream).toBe(false);
   });
@@ -98,7 +98,7 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(result.interpretation?.model).toBe('deepseek-r1');
     expect(result.interpretation?.fallbackUsed).toBe(false);
     const request = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(request.model).toBe('deepseek-r1');
+    expect(request.model).toBe('power');
   });
 
   it('preserves the LLM distinction between startup and completion status', async () => {
