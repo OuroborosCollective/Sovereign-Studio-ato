@@ -1,0 +1,67 @@
+{
+  "pages": [
+    {
+      "git_blob_sha1": "31fa62c6eef92a053f80eb8bc18edb5daad3d208",
+      "path": "BRAIN.md"
+    },
+    {
+      "git_blob_sha1": "135ff9d85e11cda76d5740ff1b48c78a3b2a826d",
+      "path": "brain/architecture.md"
+    },
+    {
+      "git_blob_sha1": "0918f92781af699d2d4dd0669c7ced7869bd85ec",
+      "path": "brain/current-state.md"
+    },
+    {
+      "git_blob_sha1": "1dffbfc44a2dbd2e4c65035561976609ff712392",
+      "path": "brain/decisions.md"
+    },
+    {
+      "git_blob_sha1": "0cc3b3d019a1ccb41423c0a2fa354a2475a162be",
+      "path": "brain/runtime-truth.md"
+    },
+    {
+      "git_blob_sha1": "35b967b78bb0d395fdd6ef0e8172ee92478fe116",
+      "path": "brain/workflows.md"
+    },
+    {
+      "git_blob_sha1": "5bf99d8088a0cd05abc8d3139b023b64f54ee3e8",
+      "path": "brain/roadmap.md"
+    },
+    {
+      "git_blob_sha1": "2db4285b4f150a3e3ed48fbd47677167ba605607",
+      "path": "brain/continuity.md"
+    }
+  ],
+  "purpose": "Git-native derived projection for coding-agent orientation",
+  "runtimeVerified": false,
+  "schemaVersion": "sovereign.brain-projection.v1",
+  "sources": [
+    {
+      "git_blob_sha1": "c69bd2fd90d63d5765b0d24b1aba21b50f17d45e",
+      "path": "AGENTS.md"
+    },
+    {
+      "git_blob_sha1": "a3569b071d014e6346aa8a17c8c3313e04cdeab0",
+      "path": "docs/CURRENT_STATE_2026-08-03.md"
+    },
+    {
+      "git_blob_sha1": "d1683d80ff58378e6c999d64d0bd0c7f626585e7",
+      "path": "docs/SOVEREIGN_PRODUCT_TRUTH.md"
+    },
+    {
+      "git_blob_sha1": "bdf64add39067dbbb2579e7a60869f606e24fd0a",
+      "path": "docs/sovereign-continuity/CONTEXT.md"
+    },
+    {
+      "git_blob_sha1": "81671b6a24f908ed529ae79a5c69187e91a1773e",
+      "path": ".github/workflows/sovereign-continuity-gate.yml"
+    }
+  ],
+  "truthBoundary": {
+    "canonicalTruthSourcesRemainExternal": true,
+    "continuityGithubWorkflowAdvisoryOnly": true,
+    "technicalCompletionRequiresIndependentReadback": true
+  },
+  "truthClass": "DERIVED_PROJECTION"
+}
