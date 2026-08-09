@@ -45,3 +45,7 @@
 ## 2025-08-02 - [Lazy-Loaded File Tree Accessibility]
 **Learning:** For dynamic, lazy-loading directory trees (such as remote file lists in a VPS Connector), interactive nodes need clear distinction between files and folders. Folders must expose their state via `aria-expanded` and stateful toggle actions to help screen readers understand current layout status.
 **Action:** Always assign dynamic, state-dependent `aria-label` and matching native `title` tooltips for folder trees, and explicitly manage `aria-expanded` attributes on directories.
+
+## 2025-08-03 - [Semantic Labels and Programmatic Association in Modals]
+**Learning:** For modals and complex settings grids containing inputs and dropdowns, screen readers rely heavily on semantic associations. Visual section headers (like `<h4>` elements) that describe adjacent fields must be implemented using proper `<label>` elements linked programmatically via `htmlFor` and `id` to ensure screen readers can announce the context of the active field.
+**Action:** In Settings lists and form sections, avoid using non-semantic heading elements (like `<h4>`) to label inputs. Instead, use a styling-compatible `<label>` element programmatically linked with the form field's `id` attribute.

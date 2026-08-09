@@ -129,11 +129,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <div className="space-y-4 pt-4 border-t border-stone-200">
             <div>
-              <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">
+              <label htmlFor="settings-repo-url" className="block text-[10px] font-black text-stone-500 uppercase mb-1">
                 GitHub Repository <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <input
+                  id="settings-repo-url"
                   value={repoUrl}
                   onChange={(e) => setRepoUrl(e.target.value)}
                   className="w-full p-2 pr-10 text-[12px] border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -155,9 +156,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key (optional)</label>
+                <label htmlFor="settings-access-key" className="block text-[10px] font-black text-stone-500 uppercase mb-1">GitHub Schreib-Key (optional)</label>
                 <div className="relative">
                   <input
+                    id="settings-access-key"
                     type={showKeys['github'] ? 'text' : 'password'}
                     value={accessKey}
                     onChange={(e) => setAccessKey(e.target.value)}
@@ -190,9 +192,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
               <div className="hidden" aria-hidden="true">
-                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Legacy Provider Key deaktiviert</label>
+                <label htmlFor="settings-gemini-key" className="block text-[10px] font-black text-stone-500 uppercase mb-1">Legacy Provider Key deaktiviert</label>
                 <div className="relative">
                   <input
+                    id="settings-gemini-key"
                     type={showKeys['gemini'] ? 'text' : 'password'}
                     value=""
                     disabled
@@ -231,8 +234,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="space-y-3 pt-4 border-t border-stone-200">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Package Manager</label>
-                <select value={settings.packageManager} onChange={(e) => setSettings({ ...settings, packageManager: e.target.value as ProjectSettings['packageManager'] })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none" aria-label="Package Manager auswählen">
+                <label htmlFor="settings-package-manager" className="block text-[10px] font-black text-stone-500 uppercase mb-1">Package Manager</label>
+                <select id="settings-package-manager" value={settings.packageManager} onChange={(e) => setSettings({ ...settings, packageManager: e.target.value as ProjectSettings['packageManager'] })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none" aria-label="Package Manager auswählen">
                   <option value="auto">Auto-Detect</option>
                   <option value="pnpm">pnpm</option>
                   <option value="npm">npm</option>
@@ -240,22 +243,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-black text-stone-500 uppercase mb-1">Projektart</label>
-                <select value={settings.repoMode} onChange={(e) => setSettings({ ...settings, repoMode: e.target.value as ProjectSettings['repoMode'] })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none" aria-label="Projektart auswählen">
+                <label htmlFor="settings-repo-mode" className="block text-[10px] font-black text-stone-500 uppercase mb-1">Projektart</label>
+                <select id="settings-repo-mode" value={settings.repoMode} onChange={(e) => setSettings({ ...settings, repoMode: e.target.value as ProjectSettings['repoMode'] })} className="w-full p-2 text-[12px] border border-stone-200 rounded-lg outline-none" aria-label="Projektart auswählen">
                   <option value="monorepo">Monorepo</option>
                   <option value="single">Single Repo</option>
                 </select>
               </div>
             </div>
             <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-              <h4 className="text-[10px] font-black text-indigo-800 uppercase flex items-center gap-1 mb-1"><Sparkles size={12}/> Arbeitsweise</h4>
-              <textarea value={settings.specialization} onChange={(e) => setSettings({ ...settings, specialization: e.target.value })} rows={2} className="w-full p-2 text-[10px] bg-white border border-indigo-200 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none resize-none" aria-label="Arbeitsweise beschreiben" />
+              <label htmlFor="settings-specialization" className="block text-[10px] font-black text-indigo-800 uppercase flex items-center gap-1 mb-1"><Sparkles size={12}/> Arbeitsweise</label>
+              <textarea id="settings-specialization" value={settings.specialization} onChange={(e) => setSettings({ ...settings, specialization: e.target.value })} rows={2} className="w-full p-2 text-[10px] bg-white border border-indigo-200 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none resize-none" aria-label="Arbeitsweise beschreiben" />
             </div>
           </div>
         </div>
 
         <div className="p-4 bg-stone-50 border-t border-stone-200">
-          <button onClick={() => setShowSettings(false)} className="w-full bg-stone-900 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-lg hover:bg-black transition-all">
+          <button onClick={() => setShowSettings(false)} title="Einstellungen speichern und modal schließen" className="w-full bg-stone-900 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-lg hover:bg-black transition-all">
             Speichern & Schließen
           </button>
         </div>

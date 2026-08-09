@@ -69,4 +69,39 @@ describe('SettingsModal Palette Enhancements', () => {
     const closeBtn = screen.getByLabelText('Schließen');
     expect(closeBtn.querySelector('svg.lucide-x')).toBeTruthy();
   });
+
+  it('correctly associates input labels with HTML elements', () => {
+    render(<SettingsModal {...mockProps} />);
+
+    const repoLabel = screen.getByText('GitHub Repository');
+    expect(repoLabel).toHaveAttribute('for', 'settings-repo-url');
+    const repoInput = screen.getByLabelText('GitHub Repository URL');
+    expect(repoInput).toHaveAttribute('id', 'settings-repo-url');
+
+    const accessKeyLabel = screen.getByText('GitHub Schreib-Key (optional)');
+    expect(accessKeyLabel).toHaveAttribute('for', 'settings-access-key');
+    const accessKeyInput = screen.getByLabelText('GitHub Schreib-Key');
+    expect(accessKeyInput).toHaveAttribute('id', 'settings-access-key');
+
+    const packageManagerLabel = screen.getByText('Package Manager');
+    expect(packageManagerLabel).toHaveAttribute('for', 'settings-package-manager');
+    const packageManagerSelect = screen.getByLabelText('Package Manager auswählen');
+    expect(packageManagerSelect).toHaveAttribute('id', 'settings-package-manager');
+
+    const repoModeLabel = screen.getByText('Projektart');
+    expect(repoModeLabel).toHaveAttribute('for', 'settings-repo-mode');
+    const repoModeSelect = screen.getByLabelText('Projektart auswählen');
+    expect(repoModeSelect).toHaveAttribute('id', 'settings-repo-mode');
+
+    const specializationLabel = screen.getByText('Arbeitsweise');
+    expect(specializationLabel).toHaveAttribute('for', 'settings-specialization');
+    const specializationTextarea = screen.getByLabelText('Arbeitsweise beschreiben');
+    expect(specializationTextarea).toHaveAttribute('id', 'settings-specialization');
+  });
+
+  it('renders the Speichern & Schließen button with proper title attribute', () => {
+    render(<SettingsModal {...mockProps} />);
+    const submitBtn = screen.getByRole('button', { name: 'Speichern & Schließen' });
+    expect(submitBtn).toHaveAttribute('title', 'Einstellungen speichern und modal schließen');
+  });
 });
