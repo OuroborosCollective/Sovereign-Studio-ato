@@ -1,11 +1,13 @@
 import { installSovereignDependencyBrowserSurface } from './features/product/runtime/sovereignDependencyBrowserSurface';
+import { installIdleLiveAwarenessRuntime } from './features/product/runtime/idleLiveAwarenessRuntime';
 
 /**
  * Runtime adapter for mobile fallback.
  *
  * NOTE:
  * The main mobile pane logic is handled by React state in useProductMagic.ts.
- * This file exists only as a defensive Android WebView / CSS fallback.
+ * This file exists only as a defensive Android WebView / CSS fallback and for
+ * read-only browser runtime observers with explicit user authority.
  *
  * No workflow auto-driver.
  * No idea factory.
@@ -73,5 +75,6 @@ function scheduleMobilePaneFallback(): void {
 
 scheduleMobilePaneFallback();
 installSovereignDependencyBrowserSurface();
+installIdleLiveAwarenessRuntime();
 
 export {};
