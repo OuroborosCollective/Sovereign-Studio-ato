@@ -12,7 +12,7 @@
  *  - Pulsing lamp only on the current (last) event when executor is active.
  */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
 import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
@@ -233,7 +233,10 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
   const changedFiles = job?.changedFiles ?? [];
   const draftPrUrl = job?.draftPrUrl ?? snapshot.draftPrUrl ?? null;
 
-  const stream = buildStream(snapshot, job, isActive);
+  const stream = useMemo(
+    () => buildStream(snapshot, job, isActive),
+    [snapshot, job, isActive],
+  );
 
   useEffect(() => {
     const el = scrollRef.current;
