@@ -14,9 +14,7 @@ import json
 import re
 from typing import Any, Iterable
 
-from .adaptive_handoff import build_adaptive_handoff_projection, render_adaptive_handoff_lines
-
-TOOLCHAIN_VERSION = "2.1.0-embedded-adaptive"
+TOOLCHAIN_VERSION = "2.0.0-embedded"
 MAX_EVIDENCE_CHARS = 120_000
 MAX_FAMILIES = 6
 FOLLOWUP_LIMIT = 4
@@ -386,8 +384,6 @@ def build_agent_handoff_context(mission: str, evidence_text: str = "") -> dict[s
     if not normalized_mission:
         raise ValueError("mission is required")
     diagnosis = runtime_failure_diagnose(evidence_text, mission=normalized_mission)
-    adaptive = build_adaptive_handoff_projection(normalized_mission)
-    diagnosis["adaptiveHandoff"] = adaptive
     family_lines = [
         f"- {item['code']}: {item['title']} (severity={item['severity']})"
         for item in diagnosis["failureFamilies"]
@@ -396,7 +392,6 @@ def build_agent_handoff_context(mission: str, evidence_text: str = "") -> dict[s
         f"{index}. {item['prediction']} Check next: {item['checkNext']}"
         for index, item in enumerate(diagnosis["nextLogicalFailures"], start=1)
     ]
-    adaptive_lines = render_adaptive_handoff_lines(adaptive)
     augmented_mission = "\n".join((
         normalized_mission,
         "",
@@ -406,8 +401,6 @@ def build_agent_handoff_context(mission: str, evidence_text: str = "") -> dict[s
         *family_lines,
         "Four logical neighbouring failures to verify:",
         *followup_lines,
-        "",
-        *adaptive_lines,
         "Hard policy: no direct main write, no fake success, no arbitrary shell from chat, and Draft PR only after persisted runtime evidence.",
     ))
     return {"mission": augmented_mission, "diagnosis": diagnosis}
