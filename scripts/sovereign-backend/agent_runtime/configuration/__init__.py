@@ -42,9 +42,12 @@ from .resolver import (
 from .receipt import (
     DETERMINISTIC_EPOCH,
     ConfigReceipt,
+    ConfigReadbackAudit,
+    ConfigReadbackObservation,
     ReceiptOptions,
     compute_receipt_hash as compute_public_receipt_hash,
     materialize_receipt,
+    verify_config_readback,
     verify_receipt,
 )
 
@@ -52,6 +55,8 @@ __all__ = [
     "ALLOWED_SOURCE_KINDS",
     "ConfigDriftRecord",
     "ConfigReceipt",
+    "ConfigReadbackAudit",
+    "ConfigReadbackObservation",
     "ConfigResolutionContract",
     "ConfigSchemaDescriptor",
     "ConfigSchemaField",
@@ -81,5 +86,6 @@ __all__ = [
     "merge_values",
     "resolve_config_sources",
     "schema_hash_from_fields",
+    "verify_config_readback",
     "verify_receipt",
 ]

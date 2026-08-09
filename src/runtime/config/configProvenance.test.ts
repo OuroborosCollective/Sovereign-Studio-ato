@@ -13,6 +13,7 @@ import {
   computeResolvedHash,
   materializeReceipt,
   verifyReceipt,
+  verifyConfigReadback,
   defaultPriorityFor,
   canonicalSourceOrder,
   isSafeToAdvance,
@@ -23,6 +24,8 @@ import {
   schemaHashFromFields,
   type ConfigSourceContract,
   type ResolveOptions,
+  type ConfigReceipt,
+  type ConfigReadbackObservation,
 } from './index';
 
 async function sha256(s: string): Promise<string> {
@@ -384,6 +387,110 @@ describe('cross-environment safety (negative tests)', () => {
     expect((res.resolved as { url: string }).url).toBe('https://evil.example/cfg');
     // No remote readback recorded because it was not a bound remote source.
     expect(res.sourceHashes[0]?.remoteOrigin).toBeNull();
+  });
+});
+
+// Config readback verification (#1169): RunEnvelope and PatchMon must read
+// back the same redacted config fingerprint; deviation blocks RUNTIME.
+describe('verifyConfigReadback - PatchMon readback acceptance', () => {
+  function readbackFrom(receipt: ConfigReceipt, overrides: Partial<ConfigReadbackObservation> = {}): ConfigReadbackObservation {
+    return {
+      revision: receipt.revision,
+      imageDigest: receipt.imageDigest,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+      receiptHash: receipt.receiptHash,
+      ...overrides,
+    };
+  }
+
+  it('accepts when readback matches every bound receipt field', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt));
+    expect(audit.accepted).toBe(true);
+    expect(audit.blocker).toBeNull();
+    expect(audit.contradicted).toBe(false);
+  });
+
+  it('blocks with contradiction when revision contradicts', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { revision: 'rev-evil' }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('blocks with contradiction when image digest contradicts', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { imageDigest: 'sha256:img-evil' }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('blocks with contradiction when schema hash contradicts', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { schemaHash: 'sch-evil' }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('blocks with contradiction when resolved hash contradicts', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { resolvedHash: '0'.repeat(64) }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('blocks with contradiction when receipt hash contradicts', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { receiptHash: '0'.repeat(64) }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('blocks (not contradicted) when a bound field is missing', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { imageDigest: null }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_missing_bound_field');
+    expect(audit.contradicted).toBe(false);
+  });
+
+  it('blocks (not contradicted) when receipt hash is missing', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { receiptHash: null }));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_missing_bound_field');
+    expect(audit.contradicted).toBe(false);
+  });
+
+  it('fails closed on a tampered receipt', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const tampered = { ...receipt, revision: 'rev-tampered' };
+    const audit = await verifyConfigReadback(tampered, readbackFrom(tampered));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_receipt_self_verification_failed');
+    expect(audit.contradicted).toBe(false);
+  });
+
+  it('ignores fields the receipt does not bind', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' }); // imageDigest unbound
+    const audit = await verifyConfigReadback(receipt, readbackFrom(receipt, { imageDigest: null }));
+    expect(audit.accepted).toBe(true);
   });
 });
 

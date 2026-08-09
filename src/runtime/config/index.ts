@@ -52,8 +52,15 @@ export {
   materializeReceipt,
   computeReceiptHash,
   verifyReceipt,
+  verifyConfigReadback,
   canonicalReceiptBody,
   DETERMINISTIC_EPOCH,
 } from './configReceipt';
 
-export type { ConfigReceipt, ReceiptOptions } from './configReceipt';
+export type {
+  ConfigReceipt,
+  ReceiptOptions,
+  ConfigReadbackObservation,
+  ConfigReadbackAudit,
+  ConfigReadbackBlocker,
+} from './configReceipt';

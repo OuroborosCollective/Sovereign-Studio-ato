@@ -21,6 +21,8 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_runtime.configuration import (  # noqa: E402
+    ConfigReadbackAudit,
+    ConfigReadbackObservation,
     ConfigSourceContract,
     ConfigDriftRecord,
     RemoteBinding,
@@ -31,6 +33,7 @@ from agent_runtime.configuration import (  # noqa: E402
     is_safe_to_advance,
     materialize_receipt,
     resolve_config_sources,
+    verify_config_readback,
     verify_receipt,
 )
 from agent_runtime.configuration.config_canonicalize import (
@@ -374,3 +377,114 @@ def test_bare_url_value_is_not_a_remote_truth_path():
     assert res.status == "RESOLVED"
     assert res.resolved["url"] == "https://evil.example/cfg"
     assert res.source_hashes[0].remote_origin is None
+
+
+# ---------------------------------------------------------------------------
+# Config readback verification (#1169): RunEnvelope and PatchMon must read
+# back the same redacted config fingerprint; deviation blocks RUNTIME.
+# ---------------------------------------------------------------------------
+
+def _readback_from(receipt, **overrides) -> ConfigReadbackObservation:
+    """Build an observation that matches a receipt, with optional overrides."""
+    base = {
+        "revision": receipt.revision,
+        "image_digest": receipt.image_digest,
+        "schema_hash": receipt.schema_hash,
+        "resolved_hash": receipt.resolved_hash,
+        "receipt_hash": receipt.receipt_hash,
+    }
+    base.update(overrides)
+    return ConfigReadbackObservation(**base)
+
+
+def test_readback_accepted_when_readback_matches_receipt():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1", "image_digest": "sha256:img-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt))
+    assert audit.accepted is True
+    assert audit.blocker is None
+    assert audit.contradicted is False
+
+
+def test_readback_blocks_when_revision_contradicts():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, revision="rev-evil"))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_readback_blocks_when_image_digest_contradicts():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1", "image_digest": "sha256:img-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, image_digest="sha256:img-evil"))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_readback_blocks_when_schema_hash_contradicts():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, schema_hash="sch-evil"))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_readback_blocks_when_resolved_hash_contradicts():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, resolved_hash="0" * 64))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_readback_blocks_when_receipt_hash_contradicts():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, receipt_hash="0" * 64))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_readback_blocks_when_bound_field_missing():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1", "image_digest": "sha256:img-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, image_digest=None))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_missing_bound_field"
+    assert audit.contradicted is False
+
+
+def test_readback_blocks_when_receipt_hash_missing():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    audit = verify_config_readback(receipt, _readback_from(receipt, receipt_hash=None))
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_missing_bound_field"
+    assert audit.contradicted is False
+
+
+def test_readback_fails_closed_on_tampered_receipt():
+    import dataclasses
+
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    tampered = dataclasses.replace(receipt, revision="rev-tampered")
+    audit = verify_config_readback(tampered, _readback_from(tampered))
+    assert audit.accepted is False
+    assert audit.blocker == "config_receipt_self_verification_failed"
+    assert audit.contradicted is False
+
+
+def test_readback_ignores_fields_receipt_does_not_bind():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]  # image_digest unbound
+    # Observation omits image_digest entirely; since the receipt does not bind
+    # it, readback must still succeed when every bound field matches.
+    audit = verify_config_readback(receipt, _readback_from(receipt, image_digest=None))
+    assert audit.accepted is True
