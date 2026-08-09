@@ -10,11 +10,17 @@ redaction, and PatchMon readback fields. Mirrors the TypeScript tests in
 from __future__ import annotations
 
 import hashlib
+import os
+import sys
 from typing import Any
 
 import pytest
 
-from agent_runtime.configuration import (
+# Make agent_runtime importable whether pytest runs from the repo root
+# (sovereign-agent-backend.yml PR gate) or from backend/ (ci.yml push gate).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from agent_runtime.configuration import (  # noqa: E402
     ConfigSourceContract,
     ConfigDriftRecord,
     RemoteBinding,
