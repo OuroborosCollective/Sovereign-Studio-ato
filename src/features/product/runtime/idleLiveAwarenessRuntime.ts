@@ -1,4 +1,4 @@
-import { createSovereignAgentClient } from './sovereignAgentClient';
+import { createSovereignAgentClient, type SovereignAgentClient } from './sovereignAgentClient';
 import { resolveSovereignAgentConfig, type SovereignAgentJobSnapshot } from './sovereignAgentRuntime';
 import { createTelemetryEvent, type SovereignTelemetryLevel } from './sovereignTelemetry';
 import {
@@ -18,6 +18,8 @@ const ACTIVE_AGENT_STATUSES = new Set<SovereignAgentJobSnapshot['status']>([
   'validating',
 ]);
 const AGENT_STATE_POLL_MS = 15_000;
+
+type IdleAwarenessAgentReader = Pick<SovereignAgentClient, 'listJobs'>;
 
 type IdleAwarenessWindow = Window & typeof globalThis & {
   __sovereignIdleLiveAwarenessRuntimeInstalled?: boolean;
@@ -75,7 +77,7 @@ export function installIdleLiveAwarenessRuntime(): void {
   win.__sovereignIdleLiveAwarenessRuntimeInstalled = true;
 
   const config = resolveSovereignAgentConfig();
-  const agentClient = createSovereignAgentClient({ config });
+  const agentReader: IdleAwarenessAgentReader = createSovereignAgentClient({ config });
   let controller: IdleLiveAwarenessController | null = null;
   let controllerKey = '';
   let agentIdle = false;
@@ -118,9 +120,7 @@ export function installIdleLiveAwarenessRuntime(): void {
 
       let jobs: SovereignAgentJobSnapshot[];
       try {
-        // Deliberately read-only. Idle Awareness never receives the client's
-        // start/cancel/prepare/create/janitor methods as callable dependencies.
-        jobs = await agentClient.listJobs();
+        jobs = await agentReader.listJobs();
       } catch (error) {
         agentIdle = false;
         stopWatch();
