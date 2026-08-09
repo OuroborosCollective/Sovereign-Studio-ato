@@ -98,10 +98,40 @@ The resolved receipt exposes the fields PatchMon must read back independently:
 - `revision` — the resolved bound revision
 - `imageDigest` — immutable image digest (when present)
 - `schemaHash` — schema version hash
-- `redactedConfigHash` — redacted public config hash (never contains secrets)
+- `resolvedHash` — redacted resolved-config hash (never contains secrets)
+- `receiptHash` — the redacted public config fingerprint both sides must agree on
 
 A container is considered configured only when PatchMon's independent readback
 matches the resolved receipt. Mismatch → `BLOCKED` / `CONTRADICTED`.
+
+### Readback verification contract
+
+`verifyConfigReadback(receipt, observation)` (TS) /
+`verify_config_readback(receipt, observation)` (Python) performs a fail-closed
+audit of an independent PatchMon `ConfigReadbackObservation` against a bound
+`ConfigReceipt`. It is the readback side of the #1169 causal chain:
+RunEnvelope materializes a receipt, PatchMon independently reads back the
+loaded projection, and deviation produces an explicit, routable finding rather
+than silent continuation.
+
+Rules, in order:
+
+1. The receipt must self-verify (`verifyReceipt`); a tampered receipt →
+   `config_receipt_self_verification_failed` (`accepted=false`,
+   `contradicted=false`).
+2. For every **bound** (non-empty) field — `revision`, `imageDigest`,
+   `schemaHash`, `resolvedHash` — PatchMon must report the same value:
+   - mismatch on a populated field → `config_readback_contradicts_receipt`
+     (`contradicted=true` — the wrong config is loaded);
+   - PatchMon omits a bound field → `config_readback_missing_bound_field`
+     (`contradicted=false` — readback incomplete).
+3. The redacted `receiptHash` fingerprint must match byte-for-byte when
+   PatchMon reports it; if PatchMon omits it, readback is incomplete.
+
+Fields the receipt does not bind (empty on the receipt) are ignored — PatchMon
+omitting an unbound field does not block. Either a contradiction or a missing
+bound field routes the runtime to `BLOCKED`/`CONTRADICTED` instead of
+advancing. No secret material appears in observations or audits by design.
 
 ## File map
 
@@ -110,9 +140,10 @@ matches the resolved receipt. Mismatch → `BLOCKED` / `CONTRADICTED`.
 src/runtime/config/configSources.ts         # source contracts, kinds, priority
 src/runtime/config/configCanonicalize.ts    # stable serialization, redaction
 src/runtime/config/sovereignConfigResolver.ts  # merge + resolve + drift
-src/runtime/config/configReceipt.ts         # receipt shape + public hash
+src/runtime/config/configReceipt.ts         # receipt shape + public hash +
+                                            # verifyConfigReadback + readback types
 src/runtime/config/index.ts                 # public surface
-src/runtime/config/configProvenance.test.ts # contract tests (36)
+src/runtime/config/configProvenance.test.ts # contract tests (46)
 ```
 
 ### Python (canonical backend)
@@ -120,9 +151,9 @@ src/runtime/config/configProvenance.test.ts # contract tests (36)
 backend/agent_runtime/configuration/config_sources.py
 backend/agent_runtime/configuration/config_canonicalize.py
 backend/agent_runtime/configuration/resolver.py
-backend/agent_runtime/configuration/receipt.py
+backend/agent_runtime/configuration/receipt.py  # + verify_config_readback + readback types
 backend/agent_runtime/configuration/__init__.py
-backend/tests/test_configuration_provenance.py        # contract tests (29)
+backend/tests/test_configuration_provenance.py        # contract tests (39, incl. readback)
 backend/tests/test_configuration_provenance_mirror.py # cross-language parity (1)
 ```
 
@@ -140,12 +171,14 @@ scripts/sovereign-backend/agent_runtime/configuration/*  # parity verified
 
 ## Validation
 
-- TypeScript: 36/36 contract tests pass (`vitest run src/runtime/config/`).
-- Python: 30/30 contract + parity tests pass (`pytest`).
+- TypeScript: 46/46 contract tests pass (`vitest run src/runtime/config/`),
+  including 11 PatchMon readback cases.
+- Python: 39/39 contract tests pass + 1 cross-language parity test (40 total)
+  (`pytest`), including 11 readback cases.
 - Mirror parity: `backend/.../configuration` byte-identical to
   `scripts/sovereign-backend/.../configuration`.
-- `pnpm run type-check`: PASS (6 config files).
-- `pnpm run build:web`: PASS.
+- `pnpm run type-check`: PASS (sharded, 0 deferred).
+- `pnpm run build:web`: PASS (Sovereign static audit passed).
 - Lint: pre-existing repo-wide failure (no `eslint.config` present); unrelated
   to this change.
 
