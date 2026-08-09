@@ -69,6 +69,10 @@ UI projection and next allowed action
 | Continuity | `docs/sovereign-continuity/` and MCP continuity data | context, policy and append-only handoff records |
 | Architecture docs | `docs/architecture/` | focused contracts and evidence lanes |
 
+### Browser mirror of the Android app
+
+The user-facing web test surface is `/app/`; `/admin/` is a separate, authenticated backend administration surface and is not the APK user interface. Both are built from the revision-bound Vite output, while the route boundary selects the correct entry surface: `/app/` mounts `src/App.tsx`, and `/admin/` mounts the admin panel. The Android release continues to embed the product build under `android/app/src/main/assets/public/`.
+
 ## Implemented repository capabilities
 
 At the documented baseline, the repository contains:
