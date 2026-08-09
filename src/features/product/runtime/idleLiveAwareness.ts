@@ -38,7 +38,7 @@ export interface IdleLiveAwarenessController {
   probeNow: () => Promise<IdleLiveAwarenessObservation | null>;
 }
 
-interface ParsedPullRequestUrl {
+export interface ParsedPullRequestUrl {
   owner: string;
   repo: string;
   prNumber: number;
@@ -51,6 +51,7 @@ interface PullRequestResponse {
 }
 
 const MODE_STORAGE_KEY = 'sovereign_idle_live_awareness_mode';
+const TARGET_STORAGE_KEY = 'sovereign_idle_live_awareness_pr_url';
 const DEFAULT_POLL_MS_WITH_TOKEN = 60_000;
 const DEFAULT_POLL_MS_WITHOUT_TOKEN = 300_000;
 const SECRET_PATTERNS = [
@@ -86,6 +87,15 @@ export function parseIdleAwarenessPullRequestUrl(value: string): ParsedPullReque
   return { owner: match[1], repo: match[2].replace(/\.git$/i, ''), prNumber };
 }
 
+export function idleAwarenessTargetFromPullRequestUrl(prUrl: string): IdleLiveAwarenessTarget | null {
+  const parsed = parseIdleAwarenessPullRequestUrl(prUrl);
+  if (!parsed) return null;
+  return {
+    repoUrl: `https://github.com/${parsed.owner}/${parsed.repo}`,
+    prUrl: `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.prNumber}`,
+  };
+}
+
 export function normalizeIdleLiveAwarenessMode(value: unknown): IdleLiveAwarenessMode {
   return value === 'observe' || value === 'observe-notify' ? value : 'off';
 }
@@ -101,7 +111,33 @@ export function readIdleLiveAwarenessMode(storage: Pick<Storage, 'getItem'> | nu
 
 export function writeIdleLiveAwarenessMode(mode: IdleLiveAwarenessMode, storage: Pick<Storage, 'setItem'> | null = typeof window === 'undefined' ? null : window.localStorage): void {
   if (!storage) return;
-  storage.setItem(MODE_STORAGE_KEY, normalizeIdleLiveAwarenessMode(mode));
+  try {
+    storage.setItem(MODE_STORAGE_KEY, normalizeIdleLiveAwarenessMode(mode));
+  } catch {
+    // Consent state must fail closed when browser storage is unavailable.
+  }
+}
+
+export function readIdleLiveAwarenessPrUrl(storage: Pick<Storage, 'getItem'> | null = typeof window === 'undefined' ? null : window.localStorage): string {
+  if (!storage) return '';
+  try {
+    const value = storage.getItem(TARGET_STORAGE_KEY)?.trim() ?? '';
+    return parseIdleAwarenessPullRequestUrl(value) ? value : '';
+  } catch {
+    return '';
+  }
+}
+
+export function writeIdleLiveAwarenessPrUrl(prUrl: string, storage: Pick<Storage, 'setItem'> | null = typeof window === 'undefined' ? null : window.localStorage): boolean {
+  if (!storage) return false;
+  const target = idleAwarenessTargetFromPullRequestUrl(prUrl);
+  if (!target || hasSecret(prUrl)) return false;
+  try {
+    storage.setItem(TARGET_STORAGE_KEY, target.prUrl);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isStrictWorkflowGreen(report: WorkflowWatchReport): boolean {
@@ -255,3 +291,4 @@ export function startIdleLiveAwareness(input: {
 }
 
 export const IDLE_LIVE_AWARENESS_MODE_STORAGE_KEY = MODE_STORAGE_KEY;
+export const IDLE_LIVE_AWARENESS_TARGET_STORAGE_KEY = TARGET_STORAGE_KEY;
