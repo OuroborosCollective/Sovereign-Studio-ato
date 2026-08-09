@@ -3,6 +3,7 @@ import { Shield, Sparkles, Key, ExternalLink, X, Eye, EyeOff, CircleX } from 'lu
 import type { ProjectSettings } from '../types';
 import { defaultSettings } from '../constants';
 import type { UserApiKeys } from './UserKeyManager';
+import { IdleLiveAwarenessSettingsCard } from './IdleLiveAwarenessSettingsCard';
 
 interface SettingsModalProps {
   repoUrl: string;
@@ -227,6 +228,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           </div>
+
+          <IdleLiveAwarenessSettingsCard />
 
           <div className="space-y-3 pt-4 border-t border-stone-200">
             <div className="grid grid-cols-2 gap-3">
