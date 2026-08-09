@@ -58,6 +58,10 @@ import {
   buildToolchainAutoContext,
   formatToolchainAutoContext,
 } from "../runtime/toolchainAutoCallingRuntime";
+import {
+  fetchOpenPrReviewEvidence,
+  formatOpenPrReviewEvidence,
+} from "../runtime/githubOpenPrReviewRuntime";
 import { Ampel } from "../components/Ampel";
 import { FileBadge } from "../components/FileBadge";
 import { ThoughtBubble } from "../components/ThoughtBubble";
@@ -2687,7 +2691,7 @@ export function BuilderContainer({
   const [openWorkbenchSlot, setOpenWorkbenchSlot] = useState<WorkbenchStatusSlotId | null>(null);
   const [palDecisions, setPalDecisions] = useState<PALDecision[]>([]);
   const [budgetLedger, setBudgetLedger] = useState<LlmBudgetLedger>(createBudgetLedger());
-  const { credits, chargeCredits } = useCreditGuard();
+  const { credits } = useCreditGuard();
   // ── Issue #459: User auth state
   const { user: authUser, refreshUser } = useUserStore();
   const [showLogin, setShowLogin]     = useState(false);
@@ -4371,13 +4375,10 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       let interpretationResult: Awaited<ReturnType<typeof fetchSovereignDirectLlmInterpretation>>;
 
       if (interpreterOnline) {
-        const estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-        const canInterpret = await chargeCredits(routeDecision.modelId, estimatedTokens);
-        if (!canInterpret) {
-          addLog('warn', `Credits nicht ausreichend für Online-Sprachdeutung mit ${routeDecision.modelId}`, 'billing');
-          return;
-        }
-
+        // LLM billing is owned by /api/llm/chat. Free routes reserve zero credits;
+        // paid OpenRouter routes are reserved and settled from real provider
+        // evidence there. A client-side pre-charge would bypass the free revolver
+        // and is forbidden by the current backend billing contract.
         setPalDecisions((previous) => [...previous.slice(-99), routeDecision]);
         setBudgetLedger((previous) => recordRouteUsage(previous, routeDecision.tier));
         setLastWorkerRequestMessage(submittedText);
@@ -5398,19 +5399,15 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       }
     };
 
-    // ── #458 Credit guard — route first, then charge the exact selected model.
+    // Route selection is followed directly by /api/llm/chat. The backend owns
+    // free-vs-paid selection and provider-evidence settlement; the Android/Web
+    // client must never pre-charge an abstract Sovereign alias.
     const d = palRoute(
       submittedText,
       chatHistory.length + 1,
       chatRepoSnapshot?.fileCount ?? 0,
       palDecisions,
     );
-    const _estimatedTokens = Math.ceil(submittedText.length / 3 * 1.3);
-    const _canProceed = await chargeCredits(d.modelId, _estimatedTokens);
-    if (!_canProceed) {
-      addLog("warn", `Credits nicht ausreichend für ${d.modelId} — Paywall geöffnet`, "billing");
-      return;
-    }
 
     setPalDecisions((prev) => [...prev.slice(-99), d]);
     setBudgetLedger((prev) => recordRouteUsage(prev, d.tier));
@@ -5752,6 +5749,43 @@ Das echte Repo-Setup wurde geöffnet.`,
       }));
       addLog('info', `Safe preset analysis routed without executor: ${action.id}`, 'router');
       setWishText('');
+
+      if (action.id === 'open_pr_review' && chatRepoSnapshot) {
+        setChatResponseBusy(true);
+        const review = await fetchOpenPrReviewEvidence(chatRepoSnapshot);
+        setChatResponseBusy(false);
+        if (!review.ok || !review.evidence) {
+          const detail = review.error || 'Read-only PR-Evidence ist nicht verfügbar.';
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'toolchain',
+            label: 'Offene PRs konnten nicht gelesen werden',
+            detail,
+            kind: 'failed',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: `PR-Review blockiert: ${detail}\nEs wurde kein GitHub-Schreibzugang angefordert, kein Executor gestartet und kein LLM-Credit verbraucht.`,
+          });
+          addLog('warn', `Open PR read-only review failed: ${detail}`, 'router');
+          return;
+        }
+
+        appendActionEvent({
+          kind: 'context_collected',
+          route: 'toolchain',
+          label: 'Offene PRs read-only geprüft',
+          detail: `${review.evidence.openPrCount} offene PR(s) mit Merge-/Check-Evidence gelesen.`,
+          state: 'done',
+        });
+        appendChatLine({
+          role: 'assistant',
+          text: formatOpenPrReviewEvidence(review.evidence),
+        });
+        setLastAnswerWasLocal(true);
+        addLog('info', `Open PR review completed read-only: ${review.evidence.openPrCount} PR(s)`, 'router');
+        return;
+      }
+
       await _processSubmit(submitted, { inputAlreadyRecorded: true });
       return;
     }

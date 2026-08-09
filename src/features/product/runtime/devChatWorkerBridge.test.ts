@@ -154,6 +154,42 @@ describe('devChatWorkerBridge', () => {
     expect(JSON.parse(String(request.body))).toMatchObject({ model: ACTIVE_OPENROUTER_MODEL });
   });
 
+  it('resolves sovereign-fast to the active free FreeLLM route before paid OpenRouter', async () => {
+    const freeModel = 'freellm:gemini-2.5-flash';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        routes: [
+          {
+            id: 'paid-openrouter',
+            defaultModelId: ACTIVE_OPENROUTER_MODEL,
+            provider: 'openrouter',
+            billingCategory: 'standard',
+            priority: 1,
+            enabled: true,
+          },
+          {
+            id: 'free-gemini',
+            defaultModelId: freeModel,
+            provider: 'freellm',
+            billingCategory: 'free',
+            priority: 10,
+            enabled: true,
+          },
+        ],
+      }))
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'Free route.' } }], model: freeModel }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchDevChatWorkerReply({
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      messages: [{ role: 'user', content: 'Hallo' }],
+    });
+
+    expect(result.ok).toBe(true);
+    const request = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({ model: freeModel });
+  });
+
   it('accepts structured online intent evidence without treating it as execution truth', async () => {
     stubRoutedFetch(() => jsonResponse({
       choices: [{ message: { content: JSON.stringify({

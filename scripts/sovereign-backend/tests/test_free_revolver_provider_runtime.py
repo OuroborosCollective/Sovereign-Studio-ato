@@ -56,9 +56,11 @@ def test_only_exact_managed_free_endpoints_bypass_public_https_resolution() -> N
         assert is_managed_internal_provider_url(managed) is True
         assert is_managed_internal_provider_url(f"{managed}/models") is True
         assert is_managed_internal_provider_url(f"{managed}/chat/completions") is True
+        assert is_managed_internal_provider_url(f"{managed}/embeddings") is True
         assert managed_internal_source_spec(managed)["sourceId"] == source_type
         assert_provider_target_allowed(f"{managed}/models")
         assert_provider_target_allowed(f"{managed}/chat/completions")
+        assert_provider_target_allowed(f"{managed}/embeddings")
     for blocked in (
         "http://freellmapi:3002/v1",
         "http://freellmapi:3001/admin",

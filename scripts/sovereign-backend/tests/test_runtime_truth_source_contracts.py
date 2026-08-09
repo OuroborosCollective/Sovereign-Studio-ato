@@ -25,6 +25,38 @@ def test_github_oauth_requires_state_pkce_and_real_callback() -> None:
     assert 'if not _validate_pkce(code_verifier, stored_challenge):' in source
 
 
+def test_github_oauth_resolves_one_credential_family_and_blocks_app_id_collision() -> None:
+    source = _backend_source()
+    start = source.index('def _github_oauth_credential_contract()')
+    end = source.index('_DEFAULT_GITHUB_OAUTH_OPENER_ORIGINS', start)
+    contract = source[start:end]
+
+    assert 'GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET' in contract
+    assert 'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET' in contract
+    assert 'source = "github-app"' in contract
+    assert 'source = "legacy-oauth-app"' in contract
+    assert 'hmac.compare_digest(str(client_id), str(GITHUB_APP_ID))' in contract
+    assert 'github_oauth_client_id_is_app_id' in contract
+    assert 'github_app_identity_evidence()' in contract
+    assert '"client_id_fingerprint"' in contract
+    assert '"client_secret": secret' in contract
+
+
+def test_github_oauth_init_uses_resolved_identity_and_fails_before_browser_redirect() -> None:
+    source = _backend_source()
+    start = source.index('def auth_github_init():')
+    end = source.index('# ═════════════════════════════════════════════════════════════════════════════\n# SOVEREIGN APP TOOLCHAIN', start)
+    route = source[start:end]
+
+    assert 'oauth_contract = _github_oauth_credential_contract()' in route
+    assert 'if not oauth_contract["configured"]:' in route
+    assert '"blocker": oauth_contract["blocker"]' in route
+    assert '"client_id": oauth_contract["client_id"]' in route
+    assert 'if oauth_contract["source"] == "github-app"' in route
+    assert 'auth_params["scope"]' in route
+    assert '"rawCredentialReturned": False' in route
+
+
 def test_admin_browser_session_does_not_persist_admin_key() -> None:
     ui = ADMIN_UI_SOURCE.read_text(encoding="utf-8")
     assert "sessionStorage.getItem('sov_admin_key')" not in ui

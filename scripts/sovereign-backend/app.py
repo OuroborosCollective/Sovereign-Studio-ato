@@ -95,10 +95,11 @@ from enterprise_platform import register_enterprise_platform_routes
 
 # GitHub App integration (Marketplace)
 try:
-    from github_app import register_github_app_routes
+    from github_app import github_app_identity_evidence, register_github_app_routes
     HAS_GITHUB_APP = True
 except ImportError:
     HAS_GITHUB_APP = False
+    github_app_identity_evidence = None
     register_github_app_routes = None
 
 # ── Worker AI Helper ───────────────────────────────────────────────────────────
@@ -4191,12 +4192,88 @@ def _decode_jwt(token: str) -> str | None:
 
 
 # ── GitHub OAuth Config ───────────────────────────────────────────────────────
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+# Login OAuth and GitHub App installation are historically separate surfaces.
+# Resolve one COMPLETE credential pair only; never mix a client id from one app
+# with the secret from another. The GitHub App client id is intentionally
+# different from the numeric GitHub App id.
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "").strip()
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "").strip()
+GITHUB_APP_ID = os.getenv("GITHUB_APP_ID", "").strip()
+GITHUB_APP_CLIENT_ID = os.getenv("GITHUB_APP_CLIENT_ID", "").strip()
+GITHUB_APP_CLIENT_SECRET = os.getenv("GITHUB_APP_CLIENT_SECRET", "").strip()
 GITHUB_OAUTH_REDIRECT_URI = os.getenv(
     "GITHUB_OAUTH_REDIRECT_URI",
     "https://chat.arelorian.de/auth/github/callback.html",
 ).strip()
+
+
+def _github_oauth_credential_contract() -> dict:
+    """Resolve one secret-safe OAuth identity without crossing credential families."""
+    app_pair_complete = bool(GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET)
+    legacy_pair_complete = bool(GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET)
+    app_pair_partial = bool(GITHUB_APP_CLIENT_ID) != bool(GITHUB_APP_CLIENT_SECRET)
+    legacy_pair_partial = bool(GITHUB_CLIENT_ID) != bool(GITHUB_CLIENT_SECRET)
+
+    if app_pair_complete:
+        client_id = GITHUB_APP_CLIENT_ID
+        source = "github-app"
+        secret = GITHUB_APP_CLIENT_SECRET
+    elif legacy_pair_complete:
+        client_id = GITHUB_CLIENT_ID
+        source = "legacy-oauth-app"
+        secret = GITHUB_CLIENT_SECRET
+    else:
+        blocker = (
+            "github_oauth_credential_pair_incomplete"
+            if app_pair_partial or legacy_pair_partial
+            else "github_oauth_not_configured"
+        )
+        return {
+            "configured": False,
+            "source": None,
+            "client_id": "",
+            "client_secret": "",
+            "client_id_fingerprint": None,
+            "app_id_collision": False,
+            "blocker": blocker,
+        }
+
+    app_id_collision = bool(
+        GITHUB_APP_ID
+        and hmac.compare_digest(str(client_id), str(GITHUB_APP_ID))
+    )
+    identity_evidence = None
+    identity_blocker = None
+    if source == "github-app":
+        if not callable(github_app_identity_evidence):
+            identity_blocker = "github_app_identity_verifier_unavailable"
+        else:
+            identity_evidence = github_app_identity_evidence()
+            if identity_evidence.get("ok") is not True:
+                identity_blocker = str(
+                    identity_evidence.get("blocker")
+                    or "github_app_identity_unverified"
+                )
+
+    blocker = (
+        "github_oauth_client_id_is_app_id"
+        if app_id_collision
+        else identity_blocker
+    )
+    return {
+        "configured": blocker is None,
+        "source": source,
+        "client_id": client_id,
+        "client_secret": secret,
+        "client_id_fingerprint": hashlib.sha256(client_id.encode("utf-8")).hexdigest()[:16],
+        "app_id_collision": app_id_collision,
+        "identity_verified": bool(
+            source != "github-app"
+            or (identity_evidence and identity_evidence.get("ok") is True)
+        ),
+        "identity_evidence": identity_evidence,
+        "blocker": blocker,
+    }
 
 _DEFAULT_GITHUB_OAUTH_OPENER_ORIGINS = {
     "https://chat.arelorian.de",
@@ -4511,8 +4588,14 @@ def auth_github():
             _audit_event("RATE_LIMIT_EXCEEDED", False, "github_callback", client_ip)
             return jsonify({"error": "Zu viele Anfragen. Bitte später erneut versuchen."}), 429
 
-        if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
-            return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
+        oauth_contract = _github_oauth_credential_contract()
+        if not oauth_contract["configured"]:
+            return jsonify({
+                "error": "GitHub OAuth ist nicht konsistent konfiguriert",
+                "blocker": oauth_contract["blocker"],
+                "credentialSource": oauth_contract["source"],
+                "clientIdFingerprint": oauth_contract["client_id_fingerprint"],
+            }), 503
 
         body = request.get_json(force=True) or {}
         code = body.get("code") or ""
@@ -4536,8 +4619,8 @@ def auth_github():
 
         # 3. Code gegen Access Token tauschen
         token_payload = {
-            "client_id":     GITHUB_CLIENT_ID,
-            "client_secret": GITHUB_CLIENT_SECRET,
+            "client_id":     oauth_contract["client_id"],
+            "client_secret": oauth_contract["client_secret"],
             "code":          code,
         }
         if code_verifier:
@@ -4641,6 +4724,24 @@ def auth_github():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/auth/github/configured", methods=["GET"])
+def auth_github_configured():
+    """Return secret-safe login OAuth configuration evidence for UI/runtime diagnosis."""
+    contract = _github_oauth_credential_contract()
+    return jsonify({
+        "configured": bool(contract["configured"]),
+        "credentialSource": contract["source"],
+        "clientIdFingerprint": contract["client_id_fingerprint"],
+        "appIdCollision": bool(contract["app_id_collision"]),
+        "identityVerified": bool(contract.get("identity_verified")),
+        "identityEvidence": contract.get("identity_evidence"),
+        "blocker": contract["blocker"],
+        "redirectUri": GITHUB_OAUTH_REDIRECT_URI,
+        "callbackOrigin": _github_oauth_callback_origin(),
+        "rawCredentialReturned": False,
+    }), 200 if contract["configured"] else 503
+
+
 @app.route("/api/auth/github/init", methods=["POST"])
 def auth_github_init():
     """
@@ -4656,8 +4757,15 @@ def auth_github_init():
         }
     """
     try:
-        if not GITHUB_CLIENT_ID:
-            return jsonify({"error": "GitHub OAuth nicht konfiguriert"}), 500
+        oauth_contract = _github_oauth_credential_contract()
+        if not oauth_contract["configured"]:
+            return jsonify({
+                "error": "GitHub OAuth ist nicht konsistent konfiguriert",
+                "blocker": oauth_contract["blocker"],
+                "credentialSource": oauth_contract["source"],
+                "clientIdFingerprint": oauth_contract["client_id_fingerprint"],
+                "redirectUri": GITHUB_OAUTH_REDIRECT_URI,
+            }), 503
 
         body = request.get_json(force=True) or {}
         requested_redirect_uri = str(body.get("redirect_uri") or "").strip()
@@ -4696,10 +4804,15 @@ def auth_github_init():
                 client_ip,
             )
 
-        # OAuth darf nicht durch Client-Input auf repo/write-Scope erweitert werden.
-        # Schreibzugang läuft separat über validierten GitHub-Zugang, nicht über den
-        # Login-Flow der APK/WebView.
-        scopes = ["read:user", "user:email"]
+        # Traditional OAuth Apps use explicit read-only scopes. GitHub App user
+        # tokens are permission-bounded by the GitHub App itself and GitHub
+        # returns an empty OAuth scope set, so do not fabricate OAuth-App scopes
+        # when the canonical GitHub App identity is selected.
+        scopes = (
+            []
+            if oauth_contract["source"] == "github-app"
+            else ["read:user", "user:email"]
+        )
 
         # Generiere State + PKCE über das zentrale Security-Modul.
         state = _generate_state()
@@ -4715,14 +4828,16 @@ def auth_github_init():
         })
 
         # GitHub Auth URL bauen
-        params = urllib.parse.urlencode({
-            "client_id": GITHUB_CLIENT_ID,
+        auth_params = {
+            "client_id": oauth_contract["client_id"],
             "redirect_uri": redirect_uri,
-            "scope": " ".join(scopes),
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
-        })
+        }
+        if scopes:
+            auth_params["scope"] = " ".join(scopes)
+        params = urllib.parse.urlencode(auth_params)
         auth_url = f"https://github.com/login/oauth/authorize?{params}"
 
         return jsonify({
@@ -4732,6 +4847,9 @@ def auth_github_init():
             "codeVerifier": code_verifier,  # Client braucht das für Token-Request
             "callbackOrigin": _github_oauth_callback_origin(),
             "openerOrigin": opener_origin,
+            "credentialSource": oauth_contract["source"],
+            "clientIdFingerprint": oauth_contract["client_id_fingerprint"],
+            "rawCredentialReturned": False,
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -5130,6 +5248,160 @@ def tc_github_search_code():
         return jsonify({"error": str(e)}), 403
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+_PR_FAILED_CHECK_CONCLUSIONS = {
+    "action_required", "cancelled", "failure", "startup_failure", "timed_out",
+}
+_PR_GENERATED_PATH_MARKERS = (
+    "/generated/", "/dist/", "/build/", "/coverage/", "/.sovereign-artifacts/",
+)
+
+
+def _tc_generated_artifact_candidate(path: str) -> bool:
+    normalized = f"/{str(path or '').strip().lower().lstrip('/')}"
+    return any(marker in normalized for marker in _PR_GENERATED_PATH_MARKERS) or normalized.endswith(".min.js")
+
+
+@app.route("/api/toolchain/github/open-pr-review", methods=["POST"])
+@require_session
+def tc_github_open_pr_review():
+    """Return bounded read-only open-PR/check evidence without requiring client GitHub write access."""
+    try:
+        b = request.get_json(force=True) or {}
+        owner = str(b.get("owner") or "").strip()
+        repo = str(b.get("repo") or "").strip()
+        try:
+            limit = max(1, min(int(b.get("limit", 20)), 20))
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit muss eine ganze Zahl zwischen 1 und 20 sein"}), 400
+        if not owner or not repo:
+            return jsonify({"error": "owner und repo erforderlich"}), 400
+        _tc_allowed(owner, repo)
+
+        pulls = _tc_gh_get(
+            f"/repos/{owner}/{repo}/pulls?state=open&per_page={limit}&sort=created&direction=asc"
+        )
+        if not isinstance(pulls, list):
+            raise RuntimeError("GitHub lieferte keine PR-Liste")
+
+        reviews = []
+        for listed in pulls[:limit]:
+            number = int(listed.get("number") or 0)
+            if number <= 0:
+                continue
+            detail = _tc_gh_get(f"/repos/{owner}/{repo}/pulls/{number}")
+            head = detail.get("head") if isinstance(detail.get("head"), dict) else {}
+            head_sha = str(head.get("sha") or "").strip()
+            checks_payload = (
+                _tc_gh_get(
+                    f"/repos/{owner}/{repo}/commits/{urllib.parse.quote(head_sha, safe='')}/check-runs?per_page=100"
+                )
+                if head_sha
+                else {}
+            )
+            check_runs = (
+                checks_payload.get("check_runs", [])
+                if isinstance(checks_payload, dict)
+                else []
+            )
+            checks = []
+            for check in check_runs[:100]:
+                status = str(check.get("status") or "unknown")
+                conclusion = check.get("conclusion")
+                conclusion_text = str(conclusion) if conclusion is not None else None
+                checks.append({
+                    "name": str(check.get("name") or "unnamed")[:160],
+                    "status": status,
+                    "conclusion": conclusion_text,
+                })
+
+            files_payload = _tc_gh_get(
+                f"/repos/{owner}/{repo}/pulls/{number}/files?per_page=100"
+            )
+            files = files_payload if isinstance(files_payload, list) else []
+            file_paths = [str(item.get("filename") or "")[:500] for item in files if item.get("filename")]
+            generated_candidates = [
+                path for path in file_paths if _tc_generated_artifact_candidate(path)
+            ]
+            failed_checks = [
+                item["name"] for item in checks
+                if item["conclusion"] in _PR_FAILED_CHECK_CONCLUSIONS
+            ]
+            pending_checks = [
+                item["name"] for item in checks
+                if item["status"] != "completed" or item["conclusion"] is None
+            ]
+            successful_checks = [
+                item["name"] for item in checks
+                if item["status"] == "completed"
+                and item["conclusion"] in {"success", "neutral", "skipped"}
+            ]
+            mergeable = detail.get("mergeable")
+            mergeable_state = str(detail.get("mergeable_state") or "unknown")
+            blockers = []
+            if mergeable is False:
+                blockers.append("merge_conflict")
+            if mergeable_state in {"blocked", "dirty"}:
+                blockers.append(f"mergeable_state:{mergeable_state}")
+            if failed_checks:
+                blockers.append("failed_checks")
+            if pending_checks:
+                blockers.append("pending_checks")
+
+            reviews.append({
+                "number": number,
+                "title": str(detail.get("title") or listed.get("title") or "")[:300],
+                "url": str(detail.get("html_url") or listed.get("html_url") or "")[:500],
+                "draft": bool(detail.get("draft")),
+                "headSha": head_sha,
+                "baseRef": str((detail.get("base") or {}).get("ref") or "")[:160]
+                    if isinstance(detail.get("base"), dict) else "",
+                "mergeable": mergeable if isinstance(mergeable, bool) else None,
+                "mergeableState": mergeable_state,
+                "changedFiles": int(detail.get("changed_files") or len(file_paths)),
+                "additions": int(detail.get("additions") or 0),
+                "deletions": int(detail.get("deletions") or 0),
+                "filePaths": file_paths[:100],
+                "generatedArtifactCandidates": generated_candidates[:20],
+                "checks": checks,
+                "checkSummary": {
+                    "successful": len(successful_checks),
+                    "pending": len(pending_checks),
+                    "failed": len(failed_checks),
+                    "failedNames": failed_checks[:20],
+                    "pendingNames": pending_checks[:20],
+                },
+                "blockers": blockers,
+            })
+
+        _tc_audit(
+            request.session_user_id,
+            "open_pr_review",
+            {"owner": owner, "repo": repo, "openPrCount": len(reviews), "writeAction": False},
+        )
+        return jsonify({
+            "ok": True,
+            "owner": owner,
+            "repo": repo,
+            "openPrCount": len(reviews),
+            "pullRequests": reviews,
+            "reviewMode": "read_only",
+            "githubWriteRequired": False,
+            "executorStarted": False,
+            "bounded": True,
+        })
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 502
+        return jsonify({
+            "error": "GitHub PR-Evidence konnte nicht gelesen werden",
+            "upstreamStatus": status,
+            "githubWriteRequired": False,
+        }), 502
+    except Exception as e:
+        return jsonify({"error": str(e)[:240]}), 500
 
 
 @app.route("/api/toolchain/preview-patch", methods=["POST"])
