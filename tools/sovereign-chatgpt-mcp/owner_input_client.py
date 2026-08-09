@@ -603,6 +603,47 @@ class ControllerRuntimeClient(OwnerInputClient):
             "protected_values_returned": False,
         }
 
+    @staticmethod
+    def _fleet_preview_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("fleet payload must be an object")
+        rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 120_000:
+            raise ValueError("fleet payload exceeds the bounded input limit")
+        if any(marker in rendered.casefold() for marker in OPERATOR_SECRET_MARKERS):
+            raise ValueError("secret-shaped material is forbidden in fleet input")
+        return payload
+
+    def fleet_plan_preview(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._request(
+            "POST",
+            "/api/internal/controller/fleet/plan-preview",
+            json_body=self._fleet_preview_payload(payload),
+            timeout=30,
+        )
+        return {
+            **response,
+            "status": "FLEET_PLAN_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "protected_values_returned": False,
+        }
+
+    def fleet_projection_preview(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._request(
+            "POST",
+            "/api/internal/controller/fleet/projection-preview",
+            json_body=self._fleet_preview_payload(payload),
+            timeout=30,
+        )
+        return {
+            **response,
+            "status": "FLEET_PROJECTION_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "protected_values_returned": False,
+        }
+
     def record_external_event(
         self,
         run_id: str,
