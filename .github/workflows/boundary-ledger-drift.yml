@@ -176,6 +176,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Setup verified backend Python runtime
+        uses: ./.github/actions/setup-backend-python
+        with:
+          python-version: '3.11'
+
       - name: Verify non-protected exact branch identity
         shell: bash
         env:
