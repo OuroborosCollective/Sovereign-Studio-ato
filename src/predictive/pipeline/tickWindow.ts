@@ -279,6 +279,11 @@ export function processSignalsToWindows(
   let aborted = false;
   let ticksProcessed = 0;
 
+  // Pre-flight abort check: if already aborted, no windows are produced.
+  if (options.abortSignal?.aborted) {
+    aborted = true;
+  }
+
   // Track queue depth (number of pending signals)
   let queueDepth = 0;
 

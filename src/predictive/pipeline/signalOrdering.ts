@@ -140,22 +140,22 @@ export function validateCanonicalOrder(signals: OrderedSignal[]): void {
       );
     }
 
-    // For same tick, check node and sequence
+    // For same tick, check node and sequence (node is the canonical top-level field)
     if (curr.metadata.tick === prev.metadata.tick) {
-      if (curr.metadata.node < prev.metadata.node) {
+      if (curr.node < prev.node) {
         throw new SignalOrderingError(
-          `Node ordering violation at tick ${curr.metadata.tick}: ${curr.metadata.node} < ${prev.metadata.node}`,
+          `Node ordering violation at tick ${curr.metadata.tick}: ${curr.node} < ${prev.node}`,
           'OUT_OF_ORDER',
           { prevSignal: prev.id, currSignal: curr.id },
         );
       }
 
       if (
-        curr.metadata.node === prev.metadata.node &&
+        curr.node === prev.node &&
         curr.metadata.sequence <= prev.metadata.sequence
       ) {
         throw new SignalOrderingError(
-          `Sequence non-monotonic at tick ${curr.metadata.tick}, node ${curr.metadata.node}: ${curr.metadata.sequence} <= ${prev.metadata.sequence}`,
+          `Sequence non-monotonic at tick ${curr.metadata.tick}, node ${curr.node}: ${curr.metadata.sequence} <= ${prev.metadata.sequence}`,
           'OUT_OF_ORDER',
           { prevSignal: prev.id, currSignal: curr.id },
         );
@@ -183,10 +183,10 @@ export function detectSequenceGaps(signals: OrderedSignal[]): Array<{
     gapSize: number;
   }> = [];
 
-  // Group by tick and node
+  // Group by tick and node (node is the canonical top-level field)
   const byTickNode = new Map<string, OrderedSignal[]>();
   for (const signal of signals) {
-    const key = `${signal.metadata.tick}:${signal.metadata.node}`;
+    const key = `${signal.metadata.tick}:${signal.node}`;
     if (!byTickNode.has(key)) byTickNode.set(key, []);
     byTickNode.get(key)!.push(signal);
   }
@@ -201,7 +201,7 @@ export function detectSequenceGaps(signals: OrderedSignal[]): Array<{
       if (curr.metadata.sequence > expected) {
         gaps.push({
           tick: curr.metadata.tick,
-          node: curr.metadata.node,
+          node: curr.node,
           expectedSequence: expected,
           actualSequence: curr.metadata.sequence,
           gapSize: curr.metadata.sequence - expected,
@@ -224,7 +224,7 @@ export function groupByNode(signals: OrderedSignal[]): Map<string, OrderedSignal
   const groups = new Map<string, OrderedSignal[]>();
 
   for (const signal of signals) {
-    const node = signal.metadata.node;
+    const node = signal.node;
     if (!groups.has(node)) groups.set(node, []);
     groups.get(node)!.push(signal);
   }
@@ -379,7 +379,7 @@ export function generateOrderingReceipt(signals: OrderedSignal[]): OrderingRecei
 
   const ticks = signals.map((s) => s.metadata.tick);
   const sequences = signals.map((s) => s.metadata.sequence);
-  const nodes = [...new Set(signals.map((s) => s.metadata.node))].sort();
+  const nodes = [...new Set(signals.map((s) => s.node))].sort();
   const revision = signals[0].metadata.revision;
   const gaps = detectSequenceGaps(signals);
 

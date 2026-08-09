@@ -19,6 +19,7 @@ import {
 import type { Signal } from '../types';
 
 function createSignal(overrides: Partial<Signal> & { tick: number; sequence: number; revision: string }): Signal {
+  const { tick, sequence, revision, metadata, ...rest } = overrides;
   return {
     id: 'sig-1',
     node: 'node-a',
@@ -26,11 +27,12 @@ function createSignal(overrides: Partial<Signal> & { tick: number; sequence: num
     timestamp: Date.now(),
     traceId: 'trace-1',
     metadata: {
-      tick: 0,
-      sequence: 0,
-      revision: 'rev-1',
+      tick,
+      sequence,
+      revision,
+      ...metadata,
     },
-    ...overrides,
+    ...rest,
   };
 }
 

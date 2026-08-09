@@ -167,11 +167,14 @@ export function extractFeatures(
     return createEmptyFeatures(window);
   }
 
-  // Sort signals canonically for consistent processing
+  // Sort signals canonically for consistent processing: by node, then tick,
+  // then sequence. This keeps per-node signals contiguous so node statistics
+  // aggregate correctly regardless of the original input order.
   const sortedSignals = [...signals].sort((a, b) => {
+    if (a.metadata.node !== b.metadata.node) {
+      return a.metadata.node < b.metadata.node ? -1 : 1;
+    }
     if (a.metadata.tick !== b.metadata.tick) return a.metadata.tick - b.metadata.tick;
-    if (a.metadata.node < b.metadata.node) return -1;
-    if (a.metadata.node > b.metadata.node) return 1;
     return a.metadata.sequence - b.metadata.sequence;
   });
 
@@ -244,7 +247,7 @@ function computeNodeStats(
   const byNode = new Map<string, number[]>();
 
   for (const signal of signals) {
-    const node = signal.metadata.node;
+    const node = signal.node;
     if (!byNode.has(node)) byNode.set(node, []);
     byNode.get(node)!.push(signal.value);
   }

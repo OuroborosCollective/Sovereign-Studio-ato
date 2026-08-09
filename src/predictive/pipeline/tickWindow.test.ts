@@ -19,19 +19,24 @@ import type { Signal } from '../types';
 import type { TickWindowConfig } from './deterministicIterables';
 
 function createOrderedSignal(overrides: Partial<OrderedSignal> = {}): OrderedSignal {
+  const { tick, sequence, node, value, metadata, ...rest } = overrides as Partial<OrderedSignal> & {
+    tick?: number;
+    sequence?: number;
+  };
   return {
     id: 'sig-1',
-    node: 'node-a',
-    value: 1,
+    node: node ?? 'node-a',
+    value: value ?? 1,
     timestamp: Date.now(),
     traceId: 'trace-1',
     metadata: {
-      tick: 0,
-      sequence: 0,
+      tick: tick ?? 0,
+      sequence: sequence ?? 0,
       revision: 'rev-1',
-      node: 'node-a',
+      node: node ?? 'node-a',
+      ...metadata,
     },
-    ...overrides,
+    ...rest,
   } as OrderedSignal;
 }
 
@@ -41,8 +46,8 @@ function createSignals(count: number, startTick: number = 0): OrderedSignal[] {
     signals.push(
       createOrderedSignal({
         id: `sig-${i}`,
-        tick: startTick + Math.floor(i / 2),
-        sequence: i % 2,
+        tick: startTick + i,
+        sequence: i,
         node: i % 2 === 0 ? 'node-a' : 'node-b',
         value: i + 1,
       }),

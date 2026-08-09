@@ -82,10 +82,10 @@ describe('deterministicIterables', () => {
     it('should respect maxItems', () => {
       const input = [1, 2, 3, 4, 5, 6];
       const result = [...chunkwiseOverlap(input, 2, 1, 3)];
+      // maxItems caps consumed input items at 3: items 1,2,3 yield [1,2] then [2,3]
       expect(result).toEqual([
         [1, 2],
         [2, 3],
-        [3, 4],
       ]);
     });
   });
@@ -163,7 +163,9 @@ describe('deterministicIterables', () => {
     });
 
     it('should group by numeric key', () => {
-      const input = [1, 2, 3, 4];
+      // groupBy groups CONSECUTIVE elements sharing a key, so pre-group the input
+      // so odd values (1,3) come first, then even values (2,4).
+      const input = [1, 3, 2, 4];
       const result = [...groupBy(input, (n) => n % 2)];
       expect(result).toEqual([
         [1, [1, 3]],

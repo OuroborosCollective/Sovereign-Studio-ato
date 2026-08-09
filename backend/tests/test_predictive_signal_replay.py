@@ -9,11 +9,17 @@ Matches the TypeScript tests in src/predictive/pipeline/replay.test.ts.
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 import pytest
 from typing import Any, Dict, List, Tuple, Optional
 
-from backend.agent_runtime.predictive.signal_pipeline import (
+# Put backend/ on sys.path so the agent_runtime package resolves when this
+# test is run directly (matches the repo backend test convention).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from agent_runtime.predictive.signal_pipeline import (  # noqa: E402
     Signal,
     OrderedSignal,
     SignalOrderingError,
@@ -37,6 +43,7 @@ from backend.agent_runtime.predictive.signal_pipeline import (
     running_difference,
     running_total,
     to_min_max,
+    zip_equal,
 )
 
 

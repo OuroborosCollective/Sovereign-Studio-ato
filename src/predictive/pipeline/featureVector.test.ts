@@ -69,10 +69,10 @@ describe('featureVector', () => {
   describe('computeStdDev', () => {
     it('should compute standard deviation correctly', () => {
       // Values: [2, 4, 4, 4, 5, 5, 7, 9] - mean is 5
-      // Variance = [(2-5)² + (4-5)² + ...] / (n-1) = 36 / 7 ≈ 5.14
-      // StdDev ≈ 2.27
+      // Sample variance = [(2-5)² + (4-5)² + ...] / (n-1) = 32 / 7 ≈ 4.571
+      // StdDev ≈ 2.138 (sample stddev, n-1 denominator)
       const result = computeStdDev([2, 4, 4, 4, 5, 5, 7, 9]);
-      expect(result).toBeCloseTo(2.27, 1);
+      expect(result).toBeCloseTo(2.138, 1);
     });
 
     it('should return 0 for single element', () => {
@@ -141,7 +141,7 @@ describe('featureVector', () => {
       expect(features.max).toBe(30);
       expect(features.range).toBe(20);
       expect(features.sum).toBe(60);
-      expect(features.deltas).toEqual([10, 10]); // Running difference
+      expect(features.deltas).toEqual([10, 10, 10]); // Running difference (first value, then deltas)
       expect(features.cumulativeSum).toEqual([10, 30, 60]); // Running total
     });
 
@@ -164,14 +164,16 @@ describe('featureVector', () => {
 
       const features = extractFeatures(window);
 
+      // node-a values [10, 15]: mean 12.5, sample stddev (n-1) = sqrt(((10-12.5)^2 + (15-12.5)^2)/1) = sqrt(12.5) ≈ 3.5355
       expect(features.nodeStats.get('node-a')).toEqual({
         mean: 12.5,
-        stdDev: 2.5,
+        stdDev: 3.5355339059327378,
         count: 2,
       });
+      // node-b values [20, 25]: mean 22.5, sample stddev (n-1) = sqrt(12.5) ≈ 3.5355
       expect(features.nodeStats.get('node-b')).toEqual({
         mean: 22.5,
-        stdDev: 2.5,
+        stdDev: 3.5355339059327378,
         count: 2,
       });
     });

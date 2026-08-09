@@ -324,9 +324,10 @@ export function bounded<T>(
   let itemCount = 0;
   const startTime = Date.now();
 
+  const sourceIterator = iterable[Symbol.iterator]();
+
   return {
     [Symbol.iterator]() {
-      const self = this;
       return {
         next(): IteratorResult<T> {
           if (cancelled) return { done: true, value: undefined as unknown as T };
@@ -346,8 +347,7 @@ export function bounded<T>(
             return { done: true, value: undefined as unknown as T };
           }
 
-          const iterator = iterable[Symbol.iterator]();
-          const result = iterator.next();
+          const result = sourceIterator.next();
           if (!result.done) itemCount++;
           return result;
         },
