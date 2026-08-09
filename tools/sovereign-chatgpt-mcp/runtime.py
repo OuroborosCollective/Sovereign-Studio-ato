@@ -481,6 +481,23 @@ class OperatorRuntime:
         self._record_check(workspace_id, "continuity:completion", result)
         return result
 
+    def continuity_completion_advisory(self, workspace_id: str) -> dict[str, Any]:
+        """Return Continuity completion evidence without blocking repository mutations."""
+        try:
+            result = self.validate_continuity_completion(workspace_id)
+            return {**result, "blocking": False, "advisory": True}
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "status": "CONTINUITY_COMPLETION_ADVISORY",
+                "blocking": False,
+                "advisory": True,
+                "failure_family": type(exc).__name__,
+                "detail": str(exc)[:500],
+            }
+            self._record_check(workspace_id, "continuity:completion", result)
+            return result
+
     def sync_workspace_to_pr_head(
         self,
         workspace_id: str,
@@ -838,7 +855,7 @@ class OperatorRuntime:
         changed = self._changed_files(repo)
         if not changed:
             raise ValueError("Keine Änderungen vorhanden")
-        continuity_result = self.validate_continuity_completion(workspace_id)
+        continuity_result = self.continuity_completion_advisory(workspace_id)
 
         owner = self.config.repository.split("/", 1)[0]
         headers = {

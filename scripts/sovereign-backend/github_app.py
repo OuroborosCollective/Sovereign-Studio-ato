@@ -173,6 +173,77 @@ def get_installation_token(installation_id: int) -> str | None:
         return None
 
 
+def github_app_identity_evidence() -> dict[str, Any]:
+    """Verify configured GitHub App id/client-id against GitHub without returning secrets."""
+    jwt_token = _create_jwt()
+    if not jwt_token:
+        return {
+            "ok": False,
+            "blocker": "github_app_jwt_unavailable",
+            "appIdConfigured": bool(GITHUB_APP_ID),
+            "clientIdConfigured": bool(GITHUB_APP_CLIENT_ID),
+            "privateKeyConfigured": bool(GITHUB_APP_PRIVATE_KEY_B64),
+            "rawCredentialReturned": False,
+        }
+    try:
+        response = requests.get(
+            "https://api.github.com/app",
+            headers={
+                "Authorization": f"Bearer {jwt_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=15,
+        )
+        if not response.ok:
+            return {
+                "ok": False,
+                "blocker": "github_app_identity_read_failed",
+                "httpStatus": response.status_code,
+                "rawCredentialReturned": False,
+            }
+        payload = response.json()
+        actual_app_id = str(payload.get("id") or "").strip()
+        actual_client_id = str(payload.get("client_id") or "").strip()
+        app_id_matches = bool(
+            GITHUB_APP_ID and actual_app_id
+            and hmac.compare_digest(GITHUB_APP_ID, actual_app_id)
+        )
+        client_id_matches = bool(
+            GITHUB_APP_CLIENT_ID and actual_client_id
+            and hmac.compare_digest(GITHUB_APP_CLIENT_ID, actual_client_id)
+        )
+        return {
+            "ok": bool(app_id_matches and client_id_matches),
+            "blocker": None if app_id_matches and client_id_matches else "github_app_identity_mismatch",
+            "appIdMatches": app_id_matches,
+            "clientIdMatches": client_id_matches,
+            "configuredClientIdFingerprint": (
+                hashlib.sha256(GITHUB_APP_CLIENT_ID.encode("utf-8")).hexdigest()[:16]
+                if GITHUB_APP_CLIENT_ID else None
+            ),
+            "actualClientIdFingerprint": (
+                hashlib.sha256(actual_client_id.encode("utf-8")).hexdigest()[:16]
+                if actual_client_id else None
+            ),
+            "slug": str(payload.get("slug") or "")[:120] or None,
+            "httpStatus": response.status_code,
+            "rawCredentialReturned": False,
+        }
+    except requests.RequestException:
+        return {
+            "ok": False,
+            "blocker": "github_app_identity_transport_failed",
+            "rawCredentialReturned": False,
+        }
+    except ValueError:
+        return {
+            "ok": False,
+            "blocker": "github_app_identity_response_invalid",
+            "rawCredentialReturned": False,
+        }
+
+
 def list_installations() -> list[Installation]:
     """List all installations for the app."""
     jwt_token = _create_jwt()

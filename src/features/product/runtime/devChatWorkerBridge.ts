@@ -77,26 +77,36 @@ async function resolveActiveBackendModel(requestedModel: string, signal?: AbortS
     throw new Error(typeof payload.error === 'string' ? payload.error : `Route catalog HTTP ${response.status}`);
   }
   const active = (payload.routes ?? []).filter((route) => route.enabled !== false);
+  const freeRoutes = active
+    .filter((route) => route.billingCategory === 'free')
+    .sort((left, right) => routePriority(left) - routePriority(right));
   const paidOpenRouter = active
     .filter((route) => route.provider?.trim().toLowerCase() === 'openrouter' && route.billingCategory !== 'free')
     .sort((left, right) => routePriority(left) - routePriority(right));
 
   let selected: BackendLlmRoute | undefined;
   if (requestedModel === DEV_CHAT_WORKER_DEFAULT_MODEL) {
-    selected = paidOpenRouter[0];
+    // Fast is the zero-cost lane: use the verified FreeLLM/OpenRouter-Free
+    // catalog first and only fall back to paid OpenRouter when no free route is
+    // currently active. The backend remains authoritative for revolver/failover.
+    selected = freeRoutes[0] ?? paidOpenRouter[0];
   } else if (requestedModel === DEV_CHAT_WORKER_FALLBACK_MODEL) {
-    selected = paidOpenRouter[Math.floor((paidOpenRouter.length - 1) / 2)] ?? paidOpenRouter[0];
+    // Balanced is the paid quality lane when configured; a free route keeps the
+    // app usable when no paid OpenRouter deployment is active.
+    selected = paidOpenRouter[Math.floor((paidOpenRouter.length - 1) / 2)]
+      ?? paidOpenRouter[0]
+      ?? freeRoutes[0];
   } else {
     selected = active.find((route) => (
       route.defaultModelId === requestedModel || route.id === requestedModel
-    )) ?? paidOpenRouter[0];
+    )) ?? freeRoutes[0] ?? paidOpenRouter[0];
   }
 
   const model = concreteRouteModel(selected);
   if (!model) {
     throw new Error(
       requestedModel === DEV_CHAT_WORKER_DEFAULT_MODEL || requestedModel === DEV_CHAT_WORKER_FALLBACK_MODEL
-        ? 'Keine aktive, owner-bestätigte OpenRouter-Paid-Route kann den Sovereign-Leistungstarif auflösen.'
+        ? 'Keine aktive, policy-verifizierte FreeLLM- oder OpenRouter-Route kann den Sovereign-Leistungstarif auflösen.'
         : 'Die angeforderte OpenRouter- oder FreeLLM-Route ist nicht aktiv.',
     );
   }

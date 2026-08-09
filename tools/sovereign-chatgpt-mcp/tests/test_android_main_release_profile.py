@@ -31,6 +31,11 @@ def test_release_workflows_compare_keystore_apk_and_aab_certificates() -> None:
         workflow = (REPO_ROOT / relative).read_text("utf-8")
 
         assert "ANDROID_EXPECTED_SIGNING_CERT_SHA256" in workflow
+        assert "ANDROID_EXPECTED_UPLOAD_CERT_SHA1: f2839b94378bc12b8e616fe9b22c9ad78c2dc660" in workflow
+        assert 'EFFECTIVE_KEYSTORE_BASE64="${KEYSTORE_BASE64_LEGACY:-${ANDROID_KEYSTORE_BASE64_CURRENT:-}}"' in workflow
+        assert "KEYSTORE_CERT_SHA1" in workflow
+        assert '"$KEYSTORE_CERT_SHA1" != "$ANDROID_EXPECTED_UPLOAD_CERT_SHA1"' in workflow
+        assert "F2:83:9B:94:37:8B:C1:2B:8E:61:6F:E9:B2:2C:9A:D7:8C:2D:C6:60" in workflow
         assert "APK_CERT_SHA256" in workflow
         assert "AAB_CERT_SHA256" in workflow
         assert 'test "$APK_CERT_SHA256" = "$AAB_CERT_SHA256"' in workflow
@@ -39,3 +44,25 @@ def test_release_workflows_compare_keystore_apk_and_aab_certificates() -> None:
         assert "jarsigner -verify -certs" in workflow
         assert "android-signing-certificate-sha256.txt" in workflow
         assert "signature-diagnostics" in workflow
+
+
+def test_android_release_targets_api_36_with_compatible_toolchain() -> None:
+    variables = (REPO_ROOT / "android" / "variables.gradle").read_text("utf-8")
+    build_gradle = (REPO_ROOT / "android" / "build.gradle").read_text("utf-8")
+    wrapper = (REPO_ROOT / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text("utf-8")
+    manifest = (REPO_ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text("utf-8")
+
+    assert "compileSdkVersion = 36" in variables
+    assert "targetSdkVersion = 36" in variables
+    assert "com.android.tools.build:gradle:8.9.1" in build_gradle
+    assert "gradle-8.11.1-bin.zip" in wrapper
+    assert 'tools:targetApi="36"' in manifest
+
+    for relative in (
+        ".github/workflows/android.yml",
+        ".github/workflows/android-release.yml",
+    ):
+        workflow = (REPO_ROOT / relative).read_text("utf-8")
+        assert "ANDROID_COMPILE_SDK: 36" in workflow
+        assert "ANDROID_BUILD_TOOLS: 36.0.0" in workflow
+        assert "compileSdk / targetSdk | 36 / 36" in workflow

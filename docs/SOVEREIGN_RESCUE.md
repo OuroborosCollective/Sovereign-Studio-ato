@@ -73,6 +73,7 @@ All routes require the existing HTTP-only Sovereign session.
 | `POST` | `/api/user/agent/rescue/repair` | Reserve one idempotent pack and execute |
 | `GET` | `/api/user/agent/rescue/repairs/<id>` | Read tenant-owned repair and job |
 | `POST` | `/api/user/agent/rescue/repairs/<id>/proof-pack` | Read PR/check evidence |
+| `POST` | `/api/user/agent/rescue/repairs/<id>/capsule` | Download bounded zero-write Capsule ZIP |
 
 `POST /repair` requires a UUID `Idempotency-Key`. A replay with the same tenant,
 repository, base SHA and family returns the existing repair and charges zero
@@ -110,12 +111,11 @@ UI-only flag or old runtime cannot satisfy it.
 
 ## Zero-Trust Repair Capsule core
 
-The repository contains the pure `sovereign.repair-capsule.v1` construction and
-offline-verification contracts. This core is intentionally separate from the
-Draft-PR publication path and does not yet claim an available download route or
-released user interface.
+The repository contains the pure `sovereign.repair-capsule.v1` construction,
+offline-verification and tenant-safe delivery contracts. Capsule delivery stays
+intentionally separate from the Draft-PR publication path.
 
-A ready core result contains exactly four in-memory files:
+A ready core result and its deterministic ZIP contain exactly four files:
 
 - `repair.patch`;
 - `manifest.json`;
@@ -142,9 +142,15 @@ manifest base SHA and executes only `git apply --check`. It performs no network
 request and never applies the patch. This is hash-bound integrity, not a digital
 signature or proof that customer production is healthy.
 
-The tenant-safe download endpoint and explicit frontend choice remain the
-separate delivery work in Issue #1124. Real zero-write sandbox acceptance and
-observed benchmarks remain Issue #1125.
+The Capsule route accepts only an empty JSON object under the existing session,
+origin-bound CSRF token and tenant-owned repair/job lookup. It accepts neither a
+patch nor any GitHub credential. The patch is captured read-only from the current
+isolated workspace, bound to its exact HEAD, persisted changed-file evidence and
+test summary, then returned as `application/zip` with base- and manifest-hash
+headers. Stale HEAD, path drift, missing tests, secrets or size overflow block the
+download. The frontend presents Draft PR and Capsule as explicit separate choices
+and states that a downloaded Capsule is not applied, pushed, merged or deployed.
+Real zero-write sandbox acceptance and observed benchmarks remain Issue #1125.
 
 ## Secrets and tenancy
 

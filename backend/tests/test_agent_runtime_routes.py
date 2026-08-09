@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import io
+import json
 import os
+from pathlib import Path
+import subprocess
 import sys
+import zipfile
 
 # Füge Backend zum Python Path hinzu
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -76,6 +81,13 @@ class FakeCursor:
                 self.conn.jobs[job_id]["blocker"] = None
             elif params[8]:
                 self.conn.jobs[job_id]["blocker"] = params[8]
+        elif normalized.startswith("SELECT * FROM SOVEREIGN_RESCUE_REPAIRS") and "REPAIR_ID" in normalized:
+            repair_id, user_id = params[:2]
+            row = self.conn.rescues.get(repair_id)
+            self.last_result = row if row and row.get("user_id") == user_id else None
+        elif normalized.startswith("SELECT * FROM SOVEREIGN_RESCUE_REPAIRS"):
+            user_id = params[0]
+            self.last_result = [row for row in self.conn.rescues.values() if row.get("user_id") == user_id]
         elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS") and "AND JOB_ID" in normalized:
             user_id, job_id = params
             row = self.conn.jobs.get(job_id)
@@ -101,6 +113,7 @@ class FakeConnection:
     def __init__(self):
         self.executed = []
         self.jobs = {}
+        self.rescues = {}
         self.events = []
         self.commits = 0
         self.closed = False
@@ -574,3 +587,143 @@ def test_rescue_duplicate_repair_returns_persisted_running_job_without_second_ex
     assert payload["repair"]["state"] == "running"
     assert captured["state"] == "running"
     assert captured["job_id"] == job_id
+
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def seed_capsule_evidence(
+    conn: FakeConnection,
+    tmp_path: Path,
+    *,
+    user_id: str = "11111111-1111-4111-8111-111111111111",
+    repair_id: str = "66666666-6666-4666-8666-666666666666",
+    job_id: str = "agent-capsule-test",
+) -> tuple[str, str, str]:
+    seed_job(conn, user_id, job_id, status="running")
+    repo = tmp_path / job_id / "repo"
+    repo.mkdir(parents=True)
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Capsule Route Test")
+    _git(repo, "config", "user.email", "capsule-route@example.invalid")
+    (repo / "README.md").write_text("before\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "baseline")
+    base_sha = _git(repo, "rev-parse", "HEAD")
+    (repo / "README.md").write_text("after\n", encoding="utf-8")
+    conn.jobs[job_id]["workspace_id"] = job_id
+    conn.jobs[job_id]["changed_files"] = ["README.md"]
+    conn.jobs[job_id]["test_summary"] = "targeted capsule route tests passed"
+    conn.rescues[repair_id] = {
+        "user_id": user_id,
+        "repair_id": repair_id,
+        "job_id": job_id,
+        "state": "draft_pr_ready",
+        "failure_family": "github_actions_ci",
+        "base_sha": base_sha,
+        "repository": "https://github.com/example/broken-app",
+        "outcome_contract_sha256": "c" * 64,
+    }
+    return user_id, repair_id, base_sha
+
+
+def _capsule_headers(user_id: str) -> dict[str, str]:
+    return {
+        "X-Test-User": user_id,
+        "X-Sovereign-Rescue-CSRF": "bound-test-token",
+        "Origin": "https://studio.example.test",
+        "X-Sovereign-Rescue-Origin": "https://studio.example.test",
+    }
+
+
+def test_rescue_capsule_returns_deterministic_zero_write_attachment(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    user_id, repair_id, base_sha = seed_capsule_evidence(conn, tmp_path)
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        routes_module,
+        "read_github_pr_evidence",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Capsule must not call GitHub")),
+    )
+    app = create_test_app(conn)
+    conn.executed.clear()
+    conn.commits = 0
+
+    first = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers=_capsule_headers(user_id),
+        json={},
+    )
+    second = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers=_capsule_headers(user_id),
+        json={},
+    )
+
+    assert first.status_code == 200
+    assert first.content_type == "application/zip"
+    assert first.headers["X-Sovereign-Capsule-Base-Sha"] == base_sha
+    assert first.headers["X-Sovereign-Mutation-Performed"] == "false"
+    assert len(first.headers["X-Sovereign-Capsule-Sha256"]) == 64
+    assert first.data == second.data
+    assert first.headers["X-Sovereign-Capsule-Sha256"] == second.headers["X-Sovereign-Capsule-Sha256"]
+    with zipfile.ZipFile(io.BytesIO(first.data)) as archive:
+        assert archive.namelist() == ["README.md", "manifest.json", "repair.patch", "verify.py"]
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["baseSha"] == base_sha
+        assert manifest["productionMutationIncluded"] is False
+        assert manifest["secretValuesReturned"] is False
+        assert manifest["changedFiles"] == ["README.md"]
+    assert conn.commits == 0
+    assert all("SELECT" in " ".join(sql.upper().split()) for sql, _ in conn.executed)
+
+
+def test_rescue_capsule_rejects_request_fields_and_cross_tenant_access(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    user_id, repair_id, _ = seed_capsule_evidence(conn, tmp_path)
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    app = create_test_app(conn)
+
+    forbidden = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers=_capsule_headers(user_id),
+        json={"githubAccessToken": "not-accepted"},
+    )
+    cross_tenant = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers=_capsule_headers("22222222-2222-4222-8222-222222222222"),
+        json={},
+    )
+
+    assert forbidden.status_code == 400
+    assert forbidden.get_json()["blocker"] == "capsule_request_fields_forbidden"
+    assert cross_tenant.status_code == 404
+    assert cross_tenant.content_type.startswith("application/json")
+
+
+def test_rescue_capsule_blocks_stale_workspace_base(monkeypatch, tmp_path: Path):
+    conn = FakeConnection()
+    user_id, repair_id, _ = seed_capsule_evidence(conn, tmp_path)
+    conn.rescues[repair_id]["base_sha"] = "b" * 40
+    monkeypatch.setenv("SOVEREIGN_AGENT_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(routes_module, "verify_rescue_csrf_token", lambda *args, **kwargs: True)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        f"/api/user/agent/rescue/repairs/{repair_id}/capsule",
+        headers=_capsule_headers(user_id),
+        json={},
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["blocker"] == "capsule_workspace_base_stale"
+    assert response.get_json()["mutationPerformed"] is False

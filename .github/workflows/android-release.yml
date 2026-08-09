@@ -38,9 +38,10 @@ jobs:
     env:
       NODE_VERSION: 22
       JAVA_VERSION: 17
-      ANDROID_COMPILE_SDK: 35
-      ANDROID_BUILD_TOOLS: 35.0.0
+      ANDROID_COMPILE_SDK: 36
+      ANDROID_BUILD_TOOLS: 36.0.0
       KEYSTORE_FILE: android/app/keystore/release.jks
+      ANDROID_EXPECTED_UPLOAD_CERT_SHA1: f2839b94378bc12b8e616fe9b22c9ad78c2dc660
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -178,10 +179,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EFFECTIVE_KEYSTORE_BASE64="${ANDROID_KEYSTORE_BASE64_CURRENT:-${KEYSTORE_BASE64_LEGACY:-}}"
-          EFFECTIVE_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD_CURRENT:-${KEYSTORE_PASSWORD_LEGACY:-}}"
-          EFFECTIVE_KEY_ALIAS="${ANDROID_KEY_ALIAS_CURRENT:-${KEYSTORE_ALIAS_LEGACY:-}}"
-          EFFECTIVE_KEY_PASSWORD="${ANDROID_KEY_PASSWORD_CURRENT:-${KEY_PASSWORD_LEGACY:-${EFFECTIVE_KEYSTORE_PASSWORD:-}}}"
+          # Google Play is bound to the original upload certificate. Prefer the
+          # original KEYSTORE_* secret set; newer ANDROID_* values are fallback only.
+          EFFECTIVE_KEYSTORE_BASE64="${KEYSTORE_BASE64_LEGACY:-${ANDROID_KEYSTORE_BASE64_CURRENT:-}}"
+          EFFECTIVE_KEYSTORE_PASSWORD="${KEYSTORE_PASSWORD_LEGACY:-${ANDROID_KEYSTORE_PASSWORD_CURRENT:-}}"
+          EFFECTIVE_KEY_ALIAS="${KEYSTORE_ALIAS_LEGACY:-${ANDROID_KEY_ALIAS_CURRENT:-}}"
+          EFFECTIVE_KEY_PASSWORD="${KEY_PASSWORD_LEGACY:-${ANDROID_KEY_PASSWORD_CURRENT:-${EFFECTIVE_KEYSTORE_PASSWORD:-}}}"
 
           if [ -z "$EFFECTIVE_KEYSTORE_BASE64" ]; then
             echo "ANDROID_KEYSTORE_BASE64 or KEYSTORE_BASE64 is required for signed release artifacts." >&2
@@ -203,6 +206,16 @@ jobs:
           fi
           test -s "$KEYSTORE_FILE"
           keytool -list -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" >/dev/null
+          KEYSTORE_CERT_SHA1="$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" \
+            | sed -n 's/^[[:space:]]*SHA1: //p' \
+            | head -n 1 \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr -d ':[:space:]')"
+          [[ "$KEYSTORE_CERT_SHA1" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$KEYSTORE_CERT_SHA1" != "$ANDROID_EXPECTED_UPLOAD_CERT_SHA1" ]; then
+            echo "Release keystore does not match the Google Play upload certificate F2:83:9B:94:37:8B:C1:2B:8E:61:6F:E9:B2:2C:9A:D7:8C:2D:C6:60." >&2
+            exit 1
+          fi
           KEYSTORE_CERT_SHA256="$(keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$EFFECTIVE_KEYSTORE_PASSWORD" -alias "$EFFECTIVE_KEY_ALIAS" \
             | sed -n 's/^[[:space:]]*SHA256: //p' \
             | head -n 1 \
@@ -343,7 +356,7 @@ jobs:
             echo "| Version | ${{ steps.vars.outputs.version_name }} |"
             echo "| Version Code | ${{ steps.vars.outputs.version_code }} |"
             echo "| Validation profile | ${{ github.event.inputs.validation_profile || 'release' }} |"
-            echo "| compileSdk / targetSdk | 35 / 35 |"
-            echo "| Android SDK packages | platform 35, build-tools 35.0.0 |"
+            echo "| compileSdk / targetSdk | 36 / 36 |"
+            echo "| Android SDK packages | platform 36, build-tools 36.0.0 |"
             echo "| Artifacts | signed AAB, signed APK, PlayStore ZIP |"
           } >> "$GITHUB_STEP_SUMMARY"

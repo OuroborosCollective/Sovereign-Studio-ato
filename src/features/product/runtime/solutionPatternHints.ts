@@ -16,7 +16,8 @@ function sanitizeText(value: string, maxLength: number): string {
 }
 
 function activePatterns(store: SolutionPatternStore): SolutionPattern[] {
-  const patterns = Array.isArray(store.patterns) ? store.patterns : [];
+  const storedPatterns = store.patterns;
+  const patterns = Array.isArray(storedPatterns) ? storedPatterns : [];
   return patterns
     .filter((pattern) => pattern.status === 'active')
     .sort((a, b) => b.successfulUses - a.successfulUses || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
@@ -29,15 +30,23 @@ function patternLine(pattern: SolutionPattern): string {
   return `- ${category} ${extension}: ${summary}`;
 }
 
+function boundedLimit(limit: number): number {
+  return Math.max(0, Math.min(10, Math.floor(limit)));
+}
+
+function formatSelectedPatterns(patterns: readonly SolutionPattern[]): string {
+  if (patterns.length === 0) return '';
+  return ['Remote Aha Memory:', ...patterns.map(patternLine)].join('\n');
+}
+
 export function formatSolutionPatternHints(store: SolutionPatternStore, limit = 5): string {
-  const selected = activePatterns(store).slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
-  if (selected.length === 0) return '';
-  return ['Remote Aha Memory:', ...selected.map(patternLine)].join('\n');
+  return formatSelectedPatterns(activePatterns(store).slice(0, boundedLimit(limit)));
 }
 
 export function buildSolutionPatternHint(store: SolutionPatternStore, limit = 5): SolutionPatternHint {
-  const selected = activePatterns(store).slice(0, Math.max(0, Math.min(10, Math.floor(limit))));
-  const activeCount = activePatterns(store).length;
+  const active = activePatterns(store);
+  const selected = active.slice(0, boundedLimit(limit));
+  const activeCount = active.length;
   if (selected.length === 0) {
     return {
       visible: false,
@@ -53,7 +62,7 @@ export function buildSolutionPatternHint(store: SolutionPatternStore, limit = 5)
     visible: true,
     title: 'Remote Memory',
     message: `Remote Memory: ${activeCount} aktive Pattern${activeCount === 1 ? '' : 's'} verfügbar.`,
-    detail: formatSolutionPatternHints(store, limit),
+    detail: formatSelectedPatterns(selected),
     activeCount,
     selectedPatternIds: selected.map((pattern) => pattern.id),
   };

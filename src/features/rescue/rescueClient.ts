@@ -67,6 +67,14 @@ export interface RescueProofPack {
   readonly blockers: string[];
 }
 
+export interface RescueCapsuleDownload {
+  readonly archive: Blob;
+  readonly filename: string;
+  readonly baseSha: string;
+  readonly capsuleSha256: string;
+  readonly mutationPerformed: false;
+}
+
 interface RequestInput {
   readonly repository: string;
   readonly baseBranch: string;
@@ -100,6 +108,7 @@ async function responseObject(response: Response): Promise<Record<string, unknow
 }
 
 interface RescueHeadersOptions {
+  readonly accept?: string;
   readonly idempotencyKey?: string;
   readonly origin: string;
   readonly csrfToken?: string;
@@ -107,7 +116,7 @@ interface RescueHeadersOptions {
 
 function headers(options: RescueHeadersOptions): HeadersInit {
   return {
-    Accept: 'application/json',
+    Accept: options.accept || 'application/json',
     'Content-Type': 'application/json',
     'X-Sovereign-Rescue-Origin': options.origin,
     ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
@@ -195,6 +204,66 @@ export class SovereignRescueClient {
     );
     const body = await responseObject(response);
     return body.proofPack as unknown as RescueProofPack;
+  }
+
+  async capsule(repairId: string): Promise<RescueCapsuleDownload> {
+    if (!this.csrfToken) {
+      throw new Error('Sovereign Rescue requires fresh CSRF evidence before Capsule delivery.');
+    }
+    const response = await this.fetcher(
+      endpoint(
+        this.baseUrl,
+        '/api/user/agent/rescue/repairs/' + encodeURIComponent(repairId) + '/capsule',
+      ),
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: headers({
+          accept: 'application/zip',
+          origin: this.requestOrigin,
+          csrfToken: this.csrfToken,
+        }),
+        body: JSON.stringify({}),
+      },
+    );
+    if (!response.ok) {
+      await responseObject(response);
+      throw new Error('Sovereign Rescue Capsule download failed.');
+    }
+
+    const contentType = (response.headers.get('Content-Type') || '').split(';', 1)[0].trim().toLowerCase();
+    const baseSha = (response.headers.get('X-Sovereign-Capsule-Base-Sha') || '').toLowerCase();
+    const capsuleSha256 = (response.headers.get('X-Sovereign-Capsule-Sha256') || '').toLowerCase();
+    const mutationPerformed = response.headers.get('X-Sovereign-Mutation-Performed');
+    if (
+      contentType !== 'application/zip'
+      || !/^[0-9a-f]{40}$/.test(baseSha)
+      || !/^[0-9a-f]{64}$/.test(capsuleSha256)
+      || mutationPerformed !== 'false'
+    ) {
+      throw new Error('Sovereign Rescue returned unbound Capsule evidence.');
+    }
+
+    const archive = await response.blob();
+    const declaredLength = Number(response.headers.get('Content-Length') || archive.size);
+    if (
+      archive.size < 1
+      || archive.size > 2_500_000
+      || !Number.isSafeInteger(declaredLength)
+      || declaredLength !== archive.size
+    ) {
+      throw new Error('Sovereign Rescue returned an invalid Capsule size.');
+    }
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const matchedFilename = /filename="([A-Za-z0-9._-]+\.zip)"/.exec(disposition)?.[1];
+    const safeRepairId = repairId.replace(/[^A-Za-z0-9-]/g, '').slice(0, 80);
+    return {
+      archive,
+      filename: matchedFilename || 'sovereign-repair-capsule-' + (safeRepairId || 'download') + '.zip',
+      baseSha,
+      capsuleSha256,
+      mutationPerformed: false,
+    };
   }
 }
 

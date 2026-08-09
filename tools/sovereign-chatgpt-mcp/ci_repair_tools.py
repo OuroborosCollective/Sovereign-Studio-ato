@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 import zipfile
@@ -255,6 +256,69 @@ def _git(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+def _git_optional(repo: Path, *args: str) -> str | None:
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=90,
+    )
+    value = completed.stdout.strip()
+    return value if completed.returncode == 0 and value else None
+
+
+def _cumulative_changed_paths(repo: Path, source_revision: str) -> tuple[str, ...]:
+    """Bind already committed PR paths as well as the dirty reconciliation patch."""
+
+    configured_base = (os.getenv("GITHUB_BASE_REF") or "").strip()
+    if configured_base and (
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}", configured_base)
+        or ".." in configured_base
+        or "@{" in configured_base
+    ):
+        raise ValueError("GITHUB_BASE_REF is not a safe Git ref")
+    base_refs = (
+        [f"origin/{configured_base}", configured_base]
+        if configured_base
+        else []
+    )
+    base_refs.extend(("origin/main", "main"))
+    seen: set[str] = set()
+    for base_ref in base_refs:
+        if base_ref in seen:
+            continue
+        seen.add(base_ref)
+        resolved = _git_optional(repo, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
+        if not resolved or not _SHA_RE.fullmatch(resolved):
+            continue
+        merge_base = _git_optional(repo, "merge-base", source_revision, resolved)
+        if not merge_base or not _SHA_RE.fullmatch(merge_base):
+            continue
+        completed = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "diff",
+                "--name-only",
+                "--diff-filter=ACDMRTUXB",
+                "-z",
+                merge_base,
+                source_revision,
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=90,
+        )
+        if completed.returncode == 0:
+            return tuple(sorted(path for path in completed.stdout.split("\0") if path))
+    return ()
+
+
 def append_boundary_reconciliation_continuity(
     repo: Path,
     *,
@@ -280,12 +344,16 @@ def append_boundary_reconciliation_continuity(
         timeout=90,
     ).stdout.rstrip("\n")
     status_paths = [line[3:].strip() for line in status_output.splitlines() if len(line) >= 4]
+    ledger_relative_paths = {str(item.relative_to(repo)) for item in ledger_paths}
     changed_paths = sorted(
-        {
-            path.split(" -> ", 1)[-1]
-            for path in status_paths
-            if path not in {str(item.relative_to(repo)) for item in ledger_paths}
-        }
+        (
+            {
+                path.split(" -> ", 1)[-1]
+                for path in status_paths
+            }
+            | set(_cumulative_changed_paths(repo, source_revision))
+        )
+        - ledger_relative_paths
     )
     ledger_hash = str(reconciliation.get("ledgerSha256") or "")
     entry_id = f"continuity-boundary-ledger-reconcile-{source_revision[:12]}-{ledger_hash[:12]}"

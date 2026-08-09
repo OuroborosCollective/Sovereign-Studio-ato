@@ -9,8 +9,10 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_runtime import git_workspace  # noqa: E402
+from agent_runtime.repair_capsule import parse_repair_patch_paths  # noqa: E402
 from agent_runtime.git_workspace import (  # noqa: E402
     build_git_clone_command,
+    git_diff_full,
     git_diff_summary,
     git_status_changed_files,
     publish_workspace_branch,
@@ -153,6 +155,43 @@ def test_git_status_and_diff_collect_real_workspace_evidence(tmp_path: Path):
     assert diff.status == "done"
     assert diff.diff_summary is not None
     assert "README.md" in diff.diff_summary
+
+
+def test_git_diff_full_binds_head_and_includes_untracked_files(tmp_path: Path):
+    create_agent_workspace("job-capsule", tmp_path)
+    repo = repo_dir_for_workspace("job-capsule", tmp_path)
+    _init_git_repo(repo)
+    expected_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    (repo / "new.txt").write_text("new\n", encoding="utf-8")
+
+    patch, result = git_diff_full("job-capsule", tmp_path)
+
+    assert result.status == "done", result.blocker
+    assert result.commit_sha == expected_head
+    assert result.changed_files == ("README.md", "new.txt")
+    assert b"diff --git a/README.md b/README.md" in patch
+    assert b"diff --git a/new.txt b/new.txt" in patch
+    assert parse_repair_patch_paths(patch) == ("README.md", "new.txt")
+
+
+def test_git_diff_full_blocks_oversized_capsule_patch(tmp_path: Path):
+    create_agent_workspace("job-capsule-size", tmp_path)
+    repo = repo_dir_for_workspace("job-capsule-size", tmp_path)
+    _init_git_repo(repo)
+    (repo / "README.md").write_text("changed-content\n", encoding="utf-8")
+
+    patch, result = git_diff_full("job-capsule-size", tmp_path, max_bytes=32)
+
+    assert patch == b""
+    assert result.status == "blocked"
+    assert result.blocker == "capsule_patch_too_large"
 
 
 def test_publish_workspace_branch_commits_declared_files_and_hides_token(monkeypatch, tmp_path: Path):

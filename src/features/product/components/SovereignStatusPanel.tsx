@@ -48,6 +48,17 @@ function statusColor(hasErrors: boolean, hasWarnings: boolean, hasBlockers: bool
   return C.green;
 }
 
+function countDescription(
+  count: number,
+  zeroLabel: string,
+  singularLabel: string,
+  pluralLabel: string,
+): string {
+  if (count === 0) return zeroLabel;
+  if (count === 1) return `1 ${singularLabel}`;
+  return `${count} ${pluralLabel}`;
+}
+
 /**
  * Individual status indicator chip
  */
@@ -55,13 +66,18 @@ function StatusChip({
   label,
   count,
   color,
+  description,
 }: {
   label: string;
   count: number;
   color: string;
+  description: string;
 }) {
   return (
     <span
+      role="status"
+      aria-label={description}
+      title={description}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -95,13 +111,18 @@ function StatusChip({
 function SubStatus({
   label,
   ready,
+  description,
 }: {
   label: string;
   ready: boolean;
+  description: string;
 }) {
   const color = ready ? C.green : C.rose;
   return (
     <span
+      role="status"
+      aria-label={description}
+      title={description}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -152,19 +173,28 @@ export function SovereignStatusPanel({
       agentConfigured,
     });
 
-  const hasErrors = (blockerCounts?.errors ?? 0) > 0;
-  const hasWarnings = (blockerCounts?.warnings ?? 0) > 0;
-  const hasBlockers = (blockerCounts?.activeBlockers ?? 0) > 0;
+  const activeBlockerCount = blockerCounts?.activeBlockers ?? 0;
+  const warningCount = blockerCounts?.warnings ?? 0;
+  const errorCount = blockerCounts?.errors ?? 0;
+  const hasErrors = errorCount > 0;
+  const hasWarnings = warningCount > 0;
+  const hasBlockers = activeBlockerCount > 0;
   const mainColor = statusColor(hasErrors, hasWarnings, hasBlockers);
 
   // Determine overall readiness based on sub-components (from runtime state)
   const githubReady = githubState === 'ready';
   const patchReady = patchRouteAvailable;
   const draftPrMissing = !githubReady || !patchReady;
+  const compactSummary = blockerCounts
+    ? `${activeBlockerCount} Blocker · ${warningCount} Warnungen · ${errorCount} Fehler`
+    : nextAction;
 
   if (compact) {
     return (
       <div
+        role="status"
+        aria-label={compactSummary}
+        title={compactSummary}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -186,7 +216,7 @@ export function SovereignStatusPanel({
           }}
         />
         <span style={{ color: C.text, fontFamily: 'monospace' }}>
-          {blockerCounts ? `${blockerCounts.activeBlockers} Blocker · ${blockerCounts.warnings} Warnungen · ${blockerCounts.errors} Fehler` : nextAction}
+          {compactSummary}
         </span>
       </div>
     );
@@ -194,6 +224,8 @@ export function SovereignStatusPanel({
 
   return (
     <div
+      role="region"
+      aria-label="Sovereign Runtime-Status"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -208,31 +240,53 @@ export function SovereignStatusPanel({
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <StatusChip
           label="Blocker"
-          count={blockerCounts?.activeBlockers ?? 0}
+          count={activeBlockerCount}
           color={C.amber}
+          description={countDescription(activeBlockerCount, 'Keine aktiven Blocker', 'aktiver Blocker', 'aktive Blocker')}
         />
         <StatusChip
           label="Warnungen"
-          count={blockerCounts?.warnings ?? 0}
+          count={warningCount}
           color={C.amber}
+          description={countDescription(warningCount, 'Keine Warnungen', 'Warnung', 'Warnungen')}
         />
         <StatusChip
           label="Fehler"
-          count={blockerCounts?.errors ?? 0}
+          count={errorCount}
           color={C.rose}
+          description={countDescription(errorCount, 'Keine Fehler', 'Fehler', 'Fehler')}
         />
       </div>
 
       {/* Sub-status indicators */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <SubStatus label="Repo bereit" ready={repoReady} />
-        <SubStatus label="GitHub bereit" ready={githubReady} />
-        <SubStatus label="Patch-Route" ready={patchReady} />
-        <SubStatus label="Draft PR" ready={!draftPrMissing} />
+        <SubStatus
+          label="Repo bereit"
+          ready={repoReady}
+          description={repoReady ? 'Repository ist bereit' : 'Repository ist nicht bereit'}
+        />
+        <SubStatus
+          label="GitHub bereit"
+          ready={githubReady}
+          description={githubReady ? 'GitHub-Verbindung ist bereit' : 'GitHub-Verbindung ist nicht bereit'}
+        />
+        <SubStatus
+          label="Patch-Route"
+          ready={patchReady}
+          description={patchReady ? 'Patch-Route ist bereit' : 'Patch-Route ist nicht bereit'}
+        />
+        <SubStatus
+          label="Draft PR"
+          ready={!draftPrMissing}
+          description={draftPrMissing ? 'Draft PR fehlt oder ist nicht bereit' : 'Draft PR ist vorhanden und bereit'}
+        />
       </div>
 
       {/* Next action */}
       <div
+        role="status"
+        aria-label={`Nächste empfohlene Aktion: ${nextAction}`}
+        title={`Nächste empfohlene Aktion: ${nextAction}`}
         style={{
           padding: '6px 10px',
           background: `${mainColor}08`,
