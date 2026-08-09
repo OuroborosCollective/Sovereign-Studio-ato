@@ -39,6 +39,13 @@ const SECRET_PATTERNS: Array<{ readonly kind: SecretKind; readonly pattern: RegE
   },
 ];
 
+// ⚡ Bolt Optimization: Pre-compile and hoist global regex patterns for redactSecret
+// to avoid O(N) allocation of new RegExp objects on every function call.
+const REDACT_PATTERNS: Array<RegExp> = SECRET_PATTERNS.map((entry) => {
+  const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
+  return new RegExp(entry.pattern.source, flags);
+});
+
 const HINT_FOR_KIND: Record<SecretKind, string> = {
   github_pat: 'GitHub Personal Access Token (ghp_…)',
   github_pat_fine: 'GitHub Fine-Grained PAT (github_pat_…)',
@@ -48,29 +55,57 @@ const HINT_FOR_KIND: Record<SecretKind, string> = {
   generic_secret: 'Secret / Token / API Key',
 };
 
+// ⚡ Bolt Optimization: 1-Slot cache for high-frequency scanForSecret calls
+// This prevents redundant Regex testing for the exact same consecutive input chunks.
+let lastScanInput: string | null = null;
+let lastScanResult: SecretGuardResult | null = null;
+
 export function scanForSecret(input: string): SecretGuardResult {
+  if (input === lastScanInput && lastScanResult) {
+    return lastScanResult;
+  }
+
   const trimmed = input.trim();
-  if (trimmed.length < 10) return { detected: false };
+  if (trimmed.length < 10) {
+    lastScanInput = input;
+    lastScanResult = { detected: false };
+    return lastScanResult;
+  }
 
   for (const entry of SECRET_PATTERNS) {
     if (entry.pattern.test(trimmed)) {
-      return {
+      lastScanInput = input;
+      lastScanResult = {
         detected: true,
         kind: entry.kind,
         hint: HINT_FOR_KIND[entry.kind],
       };
+      return lastScanResult;
     }
   }
 
-  return { detected: false };
+  lastScanInput = input;
+  lastScanResult = { detected: false };
+  return lastScanResult;
 }
 
+// ⚡ Bolt Optimization: 1-Slot cache for high-frequency redactSecret calls
+// Using pre-compiled REDACT_PATTERNS eliminates O(N) RegExp creation overhead.
+let lastRedactInput: string | null = null;
+let lastRedactOutput: string = '';
+
 export function redactSecret(input: string): string {
-  let redacted = input;
-  for (const entry of SECRET_PATTERNS) {
-    const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
-    redacted = redacted.replace(new RegExp(entry.pattern.source, flags), '[REDACTED]');
+  if (input === lastRedactInput) {
+    return lastRedactOutput;
   }
+
+  let redacted = input;
+  for (const pattern of REDACT_PATTERNS) {
+    redacted = redacted.replace(pattern, '[REDACTED]');
+  }
+
+  lastRedactInput = input;
+  lastRedactOutput = redacted;
   return redacted;
 }
 
