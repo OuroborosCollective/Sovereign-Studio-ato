@@ -63,6 +63,8 @@ jobs:
       exit_code: ${{ steps.reconcile.outputs.exit_code }}
       source_revision: ${{ steps.reconcile.outputs.source_revision }}
       only_new_structured: ${{ steps.reconcile.outputs.only_new_structured }}
+      safe_to_apply: ${{ steps.reconcile.outputs.safe_to_apply }}
+      owner_decision_count: ${{ steps.reconcile.outputs.owner_decision_count }}
     steps:
       - name: Checkout exact source revision
         uses: actions/checkout@v4
@@ -82,15 +84,30 @@ jobs:
             --expected-head "${SOURCE_REVISION}" \
             --report .sovereign-evidence/boundary-ledger-drift.json
           status=$?
-          only_new_structured="$(python -c 'import json; print(str(bool(json.load(open(".sovereign-evidence/boundary-ledger-drift.json", encoding="utf-8")).get("onlyNewStructuredCandidates"))).lower())')"
+          read -r only_new_structured safe_to_apply owner_decision_count <<EOF
+          $(python - <<'PY'
+          import json
+          report = json.load(open('.sovereign-evidence/boundary-ledger-drift.json', encoding='utf-8'))
+          print(
+              str(bool(report.get('onlyNewStructuredCandidates'))).lower(),
+              str(bool(report.get('safeToApply'))).lower(),
+              len(report.get('ownerDecisionCandidateIds') or []),
+          )
+          PY
+          )
+          EOF
           printf 'exit_code=%s\n' "${status}" >> "${GITHUB_OUTPUT}"
           printf 'source_revision=%s\n' "${SOURCE_REVISION}" >> "${GITHUB_OUTPUT}"
           printf 'only_new_structured=%s\n' "${only_new_structured}" >> "${GITHUB_OUTPUT}"
+          printf 'safe_to_apply=%s\n' "${safe_to_apply}" >> "${GITHUB_OUTPUT}"
+          printf 'owner_decision_count=%s\n' "${owner_decision_count}" >> "${GITHUB_OUTPUT}"
           {
             echo '## Boundary ledger drift'
             echo
             echo "Exact source revision: \`${SOURCE_REVISION}\`"
             echo "Reconciliation exit code: \`${status}\`"
+            echo "Safe deterministic reconciliation: \`${safe_to_apply}\`"
+            echo "Owner decisions required: \`${owner_decision_count}\`"
             echo
             echo 'The attached artifact contains bounded candidate IDs, hashes, classifications, and owner-decision flags.'
           } >> "${GITHUB_STEP_SUMMARY}"
@@ -105,24 +122,48 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Fail closed before the MCP full suite
-        if: steps.reconcile.outputs.exit_code != '0' && inputs.apply_safe_patch != true
+      - name: Fail closed when reconciliation is not safely automatable
+        if: >-
+          steps.reconcile.outputs.exit_code != '0' &&
+          !(
+            steps.reconcile.outputs.safe_to_apply == 'true' &&
+            steps.reconcile.outputs.owner_decision_count == '0' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository
+          ) &&
+          inputs.apply_safe_patch != true
         env:
           RECONCILE_EXIT: ${{ steps.reconcile.outputs.exit_code }}
         run: |
-          echo "Boundary ledger reconciliation is required (exit ${RECONCILE_EXIT})." >&2
+          echo "Boundary ledger reconciliation requires review (exit ${RECONCILE_EXIT})." >&2
           exit 1
 
-      - name: Reject an ineligible automatic patch
-        if: inputs.apply_safe_patch == true && steps.reconcile.outputs.exit_code != '0' && steps.reconcile.outputs.only_new_structured != 'true'
+      - name: Reject an ineligible requested patch
+        if: >-
+          inputs.apply_safe_patch == true &&
+          steps.reconcile.outputs.exit_code != '0' &&
+          (
+            steps.reconcile.outputs.safe_to_apply != 'true' ||
+            steps.reconcile.outputs.owner_decision_count != '0'
+          )
         run: |
-          echo 'Automatic reconciliation is limited to exclusively new deterministic STRUCTURED_POLICY candidates.' >&2
+          echo 'Requested automatic reconciliation is not proven safe or still requires an owner decision.' >&2
           exit 1
 
   apply-safe-patch:
     name: Apply deterministic same-branch patch
     needs: analyze
-    if: inputs.apply_safe_patch == true && needs.analyze.outputs.exit_code != '0' && needs.analyze.outputs.only_new_structured == 'true'
+    if: >-
+      needs.analyze.outputs.exit_code != '0' &&
+      needs.analyze.outputs.safe_to_apply == 'true' &&
+      needs.analyze.outputs.owner_decision_count == '0' &&
+      (
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) ||
+        inputs.apply_safe_patch == true
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 8
     permissions:
@@ -131,61 +172,52 @@ jobs:
       - name: Checkout exact selected branch head
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ needs.analyze.outputs.source_revision }}
           fetch-depth: 0
           persist-credentials: true
 
       - name: Verify non-protected exact branch identity
         shell: bash
         env:
-          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
-          TARGET_REF: ${{ github.ref_name }}
-          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          REQUESTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          TARGET_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          SOURCE_REVISION: ${{ needs.analyze.outputs.source_revision }}
         run: |
           set -euo pipefail
-          [[ "${EXPECTED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          test "${EXPECTED_HEAD_SHA}" = "${SOURCE_REVISION}"
-          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD_SHA}"
+          expected_head="${REQUESTED_HEAD_SHA:-${SOURCE_REVISION}}"
+          [[ "${expected_head}" =~ ^[0-9a-f]{40}$ ]]
+          test "${expected_head}" = "${SOURCE_REVISION}"
+          test "$(git rev-parse HEAD)" = "${expected_head}"
           [[ "${TARGET_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]
           [[ "${TARGET_REF}" != *".."* ]]
           test "${TARGET_REF}" != main
           test "${TARGET_REF}" != master
 
-      - name: Reconcile, append continuity, and validate
+      - name: Reconcile and validate exact bindings
         shell: bash
         env:
-          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          SOURCE_REVISION: ${{ needs.analyze.outputs.source_revision }}
         run: |
           set -euo pipefail
           mkdir -p .sovereign-evidence
           python scripts/reconcile_llm_boundary_ledger.py \
-            --expected-head "${EXPECTED_HEAD_SHA}" \
+            --expected-head "${SOURCE_REVISION}" \
             --write \
-            --append-continuity \
             --report .sovereign-evidence/boundary-ledger-reconciled.json
           python scripts/verify_llm_boundary_ledger.py
           python -m pytest tools/sovereign-chatgpt-mcp/tests/test_llm_boundary_ledger.py -q
           git diff --check
-          git diff --name-only | while IFS= read -r path; do
-            case "${path}" in
-              config/architecture/llm-tool-boundary-review-ledger.json|docs/sovereign-continuity/LEDGER.jsonl|tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl) ;;
-              *) echo "Unexpected safe-patch path: ${path}" >&2; exit 1 ;;
-            esac
-          done
-          cmp -s docs/sovereign-continuity/LEDGER.jsonl tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          test "$(git diff --name-only)" = 'config/architecture/llm-tool-boundary-review-ledger.json'
 
       - name: Commit and push without force
         shell: bash
         env:
-          TARGET_REF: ${{ github.ref_name }}
+          TARGET_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: |
           set -euo pipefail
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add \
-            config/architecture/llm-tool-boundary-review-ledger.json \
-            docs/sovereign-continuity/LEDGER.jsonl \
-            tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl
+          git add config/architecture/llm-tool-boundary-review-ledger.json
           git commit -m 'chore(ci): reconcile revision-bound boundary ledger'
           new_head="$(git rev-parse HEAD)"
           git push origin "HEAD:${TARGET_REF}"
