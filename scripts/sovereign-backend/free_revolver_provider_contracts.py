@@ -182,6 +182,8 @@ def managed_internal_source_id(value: Any) -> str | None:
             "/models",
             "/v1/chat/completions",
             "/chat/completions",
+            "/v1/embeddings",
+            "/embeddings",
             "/healthz",
             "/status",
             "/v1/status",

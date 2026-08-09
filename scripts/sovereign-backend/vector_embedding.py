@@ -1,8 +1,9 @@
-"""Shared, fail-closed text embedding adapter for Sovereign memory systems.
+"""Shared fail-closed text embedding adapter for Sovereign memory systems.
 
-The adapter never fabricates vectors. It either returns real 768-dimensional
-vectors from Cloudflare Workers AI / a configured compatible proxy, or raises a
-clear blocker. Secrets stay server-side and are never included in return values.
+Embeddings use the same private FreeLLMAPI Docker runtime as the free chat
+revolver. The adapter never fabricates vectors and never falls back to the
+retired Cloudflare Worker path. Protected unified-key material stays server-side
+and is zeroed from its mutable read buffer after every request.
 """
 
 from __future__ import annotations
@@ -10,21 +11,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import os
+from pathlib import Path
 from typing import Any, Iterable
 
 import requests
 
+from free_revolver_provider_contracts import (
+    ManagedKeyContractError,
+    normalize_api_base,
+    read_managed_freellm_key_file,
+)
+
 EMBEDDING_MODEL = os.getenv(
     "SOVEREIGN_EMBEDDING_MODEL",
-    "@cf/google/embeddinggemma-300m",
+    "gemini-embedding-001",
 ).strip()
 EMBEDDING_DIMENSIONS = 768
 EMBEDDING_TIMEOUT_SECONDS = 30
 MAX_EMBEDDING_INPUTS = 32
 MAX_EMBEDDING_TEXT_CHARS = 8_000
-DEFAULT_WORKER_AI_PROXY_URL = (
-    "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev"
-)
+DEFAULT_FREELLMAPI_BASE_URL = "http://freellmapi:3001/v1"
+DEFAULT_OWNER_INPUT_ROOT = Path("/opt/sovereign-owner-managed")
+DEFAULT_FREELLMAPI_KEY_FILENAME = "freellmapi_unified_key.txt"
 
 
 class EmbeddingUnavailable(RuntimeError):
@@ -91,103 +99,81 @@ def _extract_vectors(payload: Any) -> tuple[tuple[float, ...], ...]:
     raise EmbeddingUnavailable("Embedding provider response contained no usable vectors")
 
 
-def _direct_cloudflare_request(texts: list[str]) -> EmbeddingBatch | None:
-    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
-    api_token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
-    if not account_id or not api_token:
-        return None
-
-    url = (
-        "https://api.cloudflare.com/client/v4/accounts/"
-        f"{account_id}/ai/run/{EMBEDDING_MODEL}"
-    )
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json",
-    }
-    gateway_id = os.getenv("AI_GATEWAY_ID", "").strip()
-    if gateway_id:
-        headers["cf-aig-gateway-id"] = gateway_id
-
-    response = requests.post(
-        url,
-        headers=headers,
-        json={"text": texts},
-        timeout=EMBEDDING_TIMEOUT_SECONDS,
-    )
-    if not response.ok:
-        raise EmbeddingUnavailable(f"Cloudflare embedding route returned HTTP {response.status_code}")
-    vectors = _extract_vectors(response.json())
-    if len(vectors) != len(texts):
-        raise EmbeddingUnavailable("Cloudflare embedding count did not match input count")
-    return EmbeddingBatch(model=EMBEDDING_MODEL, vectors=vectors, provider="cloudflare-rest")
-
-
-def _proxy_request(texts: list[str]) -> EmbeddingBatch | None:
-    # Use the same organization-controlled Worker that already serves the live
-    # LLM bridge when no deployment-specific embedding URL is configured. An
-    # explicit empty WORKER_AI_PROXY_URL still disables this default fail-closed.
-    configured_worker = os.getenv("WORKER_AI_PROXY_URL")
-    base = (
-        os.getenv("KNOWLEDGE_EMBEDDING_BASE_URL", "").strip()
-        or (
-            DEFAULT_WORKER_AI_PROXY_URL
-            if configured_worker is None
-            else configured_worker.strip()
+def _freellm_request(texts: list[str]) -> EmbeddingBatch:
+    configured_base = os.getenv(
+        "FREELLMAPI_INTERNAL_URL",
+        DEFAULT_FREELLMAPI_BASE_URL,
+    ).strip()
+    try:
+        base = normalize_api_base(configured_base)
+    except ValueError as exc:
+        raise EmbeddingUnavailable("FreeLLMAPI embedding base is invalid") from exc
+    if base != DEFAULT_FREELLMAPI_BASE_URL:
+        raise EmbeddingUnavailable(
+            "Embeddings require the private FreeLLMAPI Docker endpoint"
         )
-    ).rstrip("/")
-    if not base:
-        return None
 
-    headers = {"Content-Type": "application/json"}
-    proxy_key = os.getenv("WORKER_AI_PROXY_KEY", "").strip()
-    if proxy_key:
-        headers["Authorization"] = f"Bearer {proxy_key}"
+    owner_root = Path(
+        os.getenv("SOVEREIGN_OWNER_INPUT_ROOT", str(DEFAULT_OWNER_INPUT_ROOT))
+    ).resolve()
+    configured_key_path = os.getenv(
+        "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE",
+        str(owner_root / DEFAULT_FREELLMAPI_KEY_FILENAME),
+    ).strip()
+    protected = bytearray()
+    try:
+        protected, unified_key = read_managed_freellm_key_file(
+            owner_root=owner_root,
+            configured_path=configured_key_path,
+            expected_filename=DEFAULT_FREELLMAPI_KEY_FILENAME,
+            error_prefix="freellm",
+        )
+        response = requests.post(
+            f"{base}/embeddings",
+            headers={
+                "Authorization": f"Bearer {unified_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": EMBEDDING_MODEL,
+                "input": texts,
+                "dimensions": EMBEDDING_DIMENSIONS,
+            },
+            timeout=EMBEDDING_TIMEOUT_SECONDS,
+        )
+    except ManagedKeyContractError as exc:
+        raise EmbeddingUnavailable(f"FreeLLMAPI unified key unavailable: {exc.code}") from exc
+    finally:
+        for index in range(len(protected)):
+            protected[index] = 0
 
-    response = requests.post(
-        f"{base}/v1/embeddings",
-        headers=headers,
-        json={"model": EMBEDDING_MODEL, "input": texts},
-        timeout=EMBEDDING_TIMEOUT_SECONDS,
-    )
     if not response.ok:
-        if response.status_code == 404:
-            worker_version = "unknown"
-            embedding_path = "missing"
-            try:
-                health_response = requests.get(
-                    f"{base}/health",
-                    headers=headers,
-                    timeout=EMBEDDING_TIMEOUT_SECONDS,
-                )
-                if health_response.ok:
-                    health = health_response.json()
-                    if isinstance(health, dict):
-                        worker_version = str(health.get("version") or "unknown")[:40]
-                        embedding_path = str(health.get("embeddingPath") or "missing")[:80]
-            except (requests.RequestException, ValueError):
-                pass
-            raise EmbeddingUnavailable(
-                "Embedding proxy route /v1/embeddings returned HTTP 404; "
-                f"deployed worker version={worker_version}, embeddingPath={embedding_path}. "
-                "Deploy the verified Worker embedding contract version 1.2.0 or newer."
-            )
-        raise EmbeddingUnavailable(f"Embedding proxy returned HTTP {response.status_code}")
-    vectors = _extract_vectors(response.json())
+        raise EmbeddingUnavailable(
+            f"FreeLLMAPI embedding route returned HTTP {response.status_code}"
+        )
+    payload = response.json()
+    vectors = _extract_vectors(payload)
     if len(vectors) != len(texts):
-        raise EmbeddingUnavailable("Embedding proxy count did not match input count")
-    return EmbeddingBatch(model=EMBEDDING_MODEL, vectors=vectors, provider="embedding-proxy")
+        raise EmbeddingUnavailable("FreeLLMAPI embedding count did not match input count")
+    response_model = (
+        str(payload.get("model") or EMBEDDING_MODEL).strip()
+        if isinstance(payload, dict)
+        else EMBEDDING_MODEL
+    )
+    return EmbeddingBatch(
+        model=response_model or EMBEDDING_MODEL,
+        vectors=vectors,
+        provider="freellmapi-private",
+    )
 
 
 def embed_texts(values: Iterable[str]) -> EmbeddingBatch:
     texts = _clean_texts(values)
     errors: list[str] = []
 
-    for requester in (_direct_cloudflare_request, _proxy_request):
+    for requester in (_freellm_request,):
         try:
-            result = requester(texts)
-            if result is not None:
-                return result
+            return requester(texts)
         except (requests.RequestException, ValueError, EmbeddingUnavailable) as exc:
             errors.append(str(exc)[:240])
 
