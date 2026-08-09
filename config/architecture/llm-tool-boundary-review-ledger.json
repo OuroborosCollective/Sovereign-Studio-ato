@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "7ac9e145dbc88b970957012e29e4b8f9b3fb32d5",
+  "sourceRevision": "4dd936c3fdbfd02f6625c229bbfa0c771d02fdc0",
   "rawCandidateCount": 96,
   "canonicalCandidateCount": 76,
   "entries": [
@@ -296,12 +296,12 @@
         "backend/agent_runtime/universal_toolchain.py"
       ],
       "symbol": "toolchain_briefing",
-      "line": 376,
+      "line": 378,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "ce2705ed6d3aca27ac769ec2ec7330ea9be3e2e106648dd9234f1fabbe3766ad",
+      "fileSha256": "29dc75a1fb4f1362e80616f0d2df915c3dadb3af2e171a1d4c29201259ea0741",
       "anchorSha256": "15ec542dedfa850274b671ecb9e142b6d621abc6871ee4d7e8357ae23f03a363",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:fb31d0e0a6adc6e6faab5f8d",
+      "candidateId": "llm-boundary:b920302200d8043541bf4e13",
       "classification": "STRUCTURED_POLICY",
       "rationale": "toolchain_briefing evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1034,5 +1034,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "da5a9130973d8e375668a280742f9b9146982fed7246e1200e12ff0a2e6afe27"
+  "ledgerSha256": "1c9541458e656888380362a9938437ffd0d5722f901b10ae3c202848995fe8ca"
 }
