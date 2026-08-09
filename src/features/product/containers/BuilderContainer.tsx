@@ -4797,7 +4797,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
 
       const diagnostic = interpretationResult.diagnostic;
       if (diagnostic) {
-        if (diagnostic.scope === 'authentication') {
+        if (diagnostic.scope === 'authentication' && diagnostic.status === 401) {
           await refreshUser();
           setShowLogin(true);
         }
@@ -6661,6 +6661,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                     );
                     appendRuntimeNotice(explanation);
                   }}
+                  onLogin={() => setShowLogin(true)}
                   onAgentInstead={(msg) => {
                     void startAgentFromText(msg, 'code_execution');
                   }}
