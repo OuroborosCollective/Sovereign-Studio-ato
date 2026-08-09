@@ -43,6 +43,12 @@ from agent_runtime.cognitive_swarm_routes import (
 )
 from agent_runtime.cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from agent_runtime.job_lifecycle import create_sovereign_agent_job
+from agent_runtime.fleet_supervisor import (
+    FleetContractError,
+    FleetPlan,
+    build_fleet_plan,
+    build_fleet_projection,
+)
 from llm_execution_resolver import (
     PAID_SWARM_PROFILE,
     ExecutionResolutionError,
@@ -695,6 +701,77 @@ def register_controller_board_routes(
             },
         )
         return _operator_json(payload, status_code)
+
+    @app.route("/api/internal/controller/fleet/plan-preview", methods=["POST"])
+    def operator_fleet_plan_preview():
+        """Build a deterministic FleetPlan without creating workers or workspaces."""
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        body = request.get_json(force=True) or {}
+        if not isinstance(body, dict):
+            return _operator_json({"error": "fleet plan body must be an object"}, 400)
+        rendered = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 120_000:
+            return _operator_json({"error": "fleet plan exceeds the bounded input limit"}, 400)
+        if _operator_contains_secret(rendered):
+            return _operator_json({"error": "secret-shaped material is forbidden in fleet input"}, 400)
+        tasks = body.get("tasks")
+        if not isinstance(tasks, list):
+            return _operator_json({"error": "tasks must be a list"}, 400)
+        try:
+            plan = build_fleet_plan(
+                integration_id=str(body.get("integrationId") or body.get("integration_id") or "").strip(),
+                repository=str(body.get("repository") or _controller_repository()).strip(),
+                base_revision=str(body.get("baseRevision") or body.get("base_revision") or "").strip(),
+                tasks=tasks,
+                architecture_receipt_hashes=body.get("architectureReceiptHashes") or body.get("architecture_receipt_hashes") or [],
+                max_parallel_lanes=int(body.get("maxParallelLanes") or body.get("max_parallel_lanes") or 1),
+            )
+        except (FleetContractError, TypeError, ValueError) as exc:
+            return _operator_json({"error": str(exc), "status": "FLEET_PLAN_BLOCKED"}, 400)
+        return _operator_json({
+            "ok": True,
+            "status": "FLEET_PLAN_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "plan": plan.to_dict(),
+            "protectedValuesReturned": False,
+        })
+
+    @app.route("/api/internal/controller/fleet/projection-preview", methods=["POST"])
+    def operator_fleet_projection_preview():
+        """Rebuild a read-only fleet projection from a hash-bound plan and evidence."""
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        body = request.get_json(force=True) or {}
+        if not isinstance(body, dict):
+            return _operator_json({"error": "fleet projection body must be an object"}, 400)
+        rendered = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 120_000:
+            return _operator_json({"error": "fleet projection exceeds the bounded input limit"}, 400)
+        if _operator_contains_secret(rendered):
+            return _operator_json({"error": "secret-shaped material is forbidden in fleet input"}, 400)
+        try:
+            plan = FleetPlan.from_dict(body.get("plan") or {})
+            projection = build_fleet_projection(
+                plan,
+                assignments=body.get("assignments") or [],
+                worker_events=body.get("workerEvents") or body.get("worker_events") or [],
+                verdicts=body.get("verdicts") or [],
+                observed_main_revision=str(
+                    body.get("observedMainRevision") or body.get("observed_main_revision") or ""
+                ).strip(),
+            )
+        except (FleetContractError, TypeError, ValueError) as exc:
+            return _operator_json({"error": str(exc), "status": "FLEET_PROJECTION_BLOCKED"}, 400)
+        return _operator_json({
+            "ok": True,
+            "status": "FLEET_PROJECTION_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "projection": projection,
+            "protectedValuesReturned": False,
+        })
 
     @app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])
     def operator_controller_run_status(run_id: str):

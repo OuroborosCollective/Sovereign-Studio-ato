@@ -461,6 +461,233 @@ def repository_pr_status(pr_number: int) -> dict[str, Any]:
     return broker.call("github_pr_status", {"pr_number": pr_number}, timeout=60)
 
 
+def _fleet_numbers(values: list[int] | None, label: str) -> list[int]:
+    if values is None:
+        return []
+    if len(values) > 40:
+        raise ValueError(f"{label} exceeds the bounded item limit")
+    normalized = sorted(dict.fromkeys(int(value) for value in values))
+    if any(value < 1 for value in normalized):
+        raise ValueError(f"{label} must contain positive identifiers")
+    return normalized
+
+
+def _fleet_projection_read(
+    *,
+    plan: dict[str, Any],
+    assignments: list[dict[str, Any]] | None,
+    worker_events: list[dict[str, Any]] | None,
+    verdicts: list[dict[str, Any]] | None,
+    observed_main_revision: str,
+) -> dict[str, Any]:
+    if not isinstance(plan, dict):
+        raise ValueError("plan must be an object returned by fleet_plan_read")
+    return controller_runtime.fleet_projection_preview({
+        "plan": plan,
+        "assignments": assignments or [],
+        "workerEvents": worker_events or [],
+        "verdicts": verdicts or [],
+        "observedMainRevision": str(observed_main_revision or "").strip(),
+    })
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def fleet_plan_read(
+    integration_id: Annotated[str, Field(min_length=3, max_length=120)],
+    base_revision: Annotated[str, Field(min_length=40, max_length=64)],
+    issue_numbers: list[int] | None = None,
+    pr_numbers: list[int] | None = None,
+    architecture_receipt_hashes: list[str] | None = None,
+    max_parallel_lanes: Annotated[int, Field(ge=1, le=8)] = 1,
+) -> dict[str, Any]:
+    """Read GitHub sources and build a fail-closed, non-mutating FleetPlan."""
+
+    sources: list[dict[str, Any]] = []
+    readbacks: list[dict[str, Any]] = []
+    for issue_number in _fleet_numbers(issue_numbers, "issue_numbers"):
+        issue = normalize_tool_output(
+            broker.call("github_issue_read", {"issue_number": issue_number}, timeout=60)
+        )
+        sources.append({
+            "taskId": f"issue-{issue_number}",
+            "sourceType": "issue",
+            "sourceId": str(issue_number),
+            "expectedBaseRevision": base_revision.strip(),
+            "changedPaths": [],
+            "reasonCodes": [
+                "GITHUB_ISSUE_READBACK_BOUND",
+                "CHANGED_PATHS_UNAVAILABLE_SERIALIZED",
+            ],
+            "independenceProven": False,
+        })
+        readbacks.append({
+            "sourceType": "issue",
+            "sourceId": str(issue_number),
+            "title": _bounded_controller_text(issue.get("title"), 180),
+            "readbackVerified": bool(issue.get("readbackVerified") or issue.get("readback_verified")),
+        })
+    for pr_number in _fleet_numbers(pr_numbers, "pr_numbers"):
+        pull = normalize_tool_output(
+            broker.call("github_pr_status", {"pr_number": pr_number}, timeout=60)
+        )
+        raw_head = pull.get("headSha") or pull.get("head_sha") or ""
+        head_sha = raw_head.strip() if isinstance(raw_head, str) else ""
+        sources.append({
+            "taskId": f"pr-{pr_number}",
+            "sourceType": "pr",
+            "sourceId": str(pr_number),
+            "expectedBaseRevision": base_revision.strip(),
+            "expectedHeadRevision": head_sha,
+            "changedPaths": [],
+            "reasonCodes": [
+                "GITHUB_PR_STATUS_READBACK_BOUND",
+                "CHANGED_PATHS_UNAVAILABLE_SERIALIZED",
+            ],
+            "independenceProven": False,
+        })
+        readbacks.append({
+            "sourceType": "pr",
+            "sourceId": str(pr_number),
+            "headSha": head_sha or None,
+            "readbackVerified": bool(pull.get("readbackVerified") or pull.get("readback_verified")),
+        })
+    if not sources:
+        raise ValueError("at least one issue or pull request source is required")
+
+    result = controller_runtime.fleet_plan_preview({
+        "integrationId": integration_id.strip(),
+        "repository": "OuroborosCollective/Sovereign-Studio-ato",
+        "baseRevision": base_revision.strip(),
+        "tasks": sources,
+        "architectureReceiptHashes": architecture_receipt_hashes or [],
+        "maxParallelLanes": max_parallel_lanes,
+    })
+    return {
+        **result,
+        "sourceReadbacks": readbacks,
+        "plannerNotice": (
+            "Paths or canonical ownership not supplied by authenticated source readback "
+            "remain serialized; this tool does not infer safe parallelism."
+        ),
+    }
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def fleet_status(
+    plan: dict[str, Any],
+    observed_main_revision: str,
+    assignments: list[dict[str, Any]] | None = None,
+    worker_events: list[dict[str, Any]] | None = None,
+    verdicts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Rebuild the read-only fleet projection; stale main-head evidence blocks commands."""
+
+    return _fleet_projection_read(
+        plan=plan,
+        assignments=assignments,
+        worker_events=worker_events,
+        verdicts=verdicts,
+        observed_main_revision=observed_main_revision,
+    )
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def fleet_lane_status(
+    plan: dict[str, Any],
+    lane_id: Annotated[str, Field(min_length=1, max_length=120)],
+    observed_main_revision: str,
+    assignments: list[dict[str, Any]] | None = None,
+    worker_events: list[dict[str, Any]] | None = None,
+    verdicts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Read one lane from a rebuilt, hash-bound FleetPlan projection."""
+
+    result = _fleet_projection_read(
+        plan=plan,
+        assignments=assignments,
+        worker_events=worker_events,
+        verdicts=verdicts,
+        observed_main_revision=observed_main_revision,
+    )
+    projection = result.get("projection") if isinstance(result.get("projection"), dict) else {}
+    lane = next(
+        (item for item in projection.get("lanes", []) if isinstance(item, dict) and item.get("laneId") == lane_id),
+        None,
+    )
+    if lane is None:
+        raise ValueError("lane_id is not present in the submitted FleetPlan")
+    return {
+        "ok": bool(result.get("ok")),
+        "status": "FLEET_LANE_STATUS",
+        "readOnly": True,
+        "mutationPerformed": False,
+        "lane": lane,
+        "stale": bool(projection.get("stale")),
+        "evidenceGaps": projection.get("evidenceGaps", []),
+    }
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def fleet_blockers(
+    plan: dict[str, Any],
+    observed_main_revision: str,
+    assignments: list[dict[str, Any]] | None = None,
+    worker_events: list[dict[str, Any]] | None = None,
+    verdicts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Return only readback-backed lane blockers; this tool has no action side effect."""
+
+    result = _fleet_projection_read(
+        plan=plan,
+        assignments=assignments,
+        worker_events=worker_events,
+        verdicts=verdicts,
+        observed_main_revision=observed_main_revision,
+    )
+    projection = result.get("projection") if isinstance(result.get("projection"), dict) else {}
+    return {
+        "ok": bool(result.get("ok")),
+        "status": "FLEET_BLOCKERS",
+        "readOnly": True,
+        "mutationPerformed": False,
+        "blockers": [
+            lane for lane in projection.get("lanes", [])
+            if isinstance(lane, dict) and lane.get("status") in {"BLOCKED", "STALE"}
+        ],
+        "evidenceGaps": projection.get("evidenceGaps", []),
+    }
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def fleet_evidence_gaps(
+    plan: dict[str, Any],
+    observed_main_revision: str,
+    assignments: list[dict[str, Any]] | None = None,
+    worker_events: list[dict[str, Any]] | None = None,
+    verdicts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Return the exact evidence gaps which keep Fleet execution or verification blocked."""
+
+    result = _fleet_projection_read(
+        plan=plan,
+        assignments=assignments,
+        worker_events=worker_events,
+        verdicts=verdicts,
+        observed_main_revision=observed_main_revision,
+    )
+    projection = result.get("projection") if isinstance(result.get("projection"), dict) else {}
+    return {
+        "ok": bool(result.get("ok")),
+        "status": "FLEET_EVIDENCE_GAPS",
+        "readOnly": True,
+        "mutationPerformed": False,
+        "stale": bool(projection.get("stale")),
+        "commandsBlocked": bool(projection.get("commandsBlocked")),
+        "evidenceGaps": projection.get("evidenceGaps", []),
+        "nextEligibleActions": projection.get("nextEligibleActions", []),
+    }
+
+
 @mcp.tool(annotations=NETWORK_READ)
 def workflow_failure_evidence_extract(
     workflow_run_id: int,

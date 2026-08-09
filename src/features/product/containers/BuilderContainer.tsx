@@ -83,6 +83,7 @@ import { SecurityBlockCard } from "../components/SecurityBlockCard";
 import { RepoTreeExplorer } from "../components/RepoTreeExplorer";
 import { CompactRepoSetupSheet } from "../components/CompactRepoSetupSheet";
 import { PatchDiffEvidenceSheet } from "../components/PatchDiffEvidenceSheet";
+import { DraftPrActionPreview } from "../components/DraftPrActionPreview";
 import { RuntimeEvidenceLogSheet } from "../components/RuntimeEvidenceLogSheet";
 import { TestRunnerResultCard } from "../components/TestRunnerResultCard";
 import { AutoCodeReviewCard } from "../components/AutoCodeReviewCard";
@@ -2627,6 +2628,7 @@ export function BuilderContainer({
   const [repoSetupError, setRepoSetupError] = useState<string | null>(null);
   const [showRuntimeEvidenceLogs, setShowRuntimeEvidenceLogs] = useState(false);
   const [showPatchDiffEvidence, setShowPatchDiffEvidence] = useState(false);
+  const [showDraftPrActionPreview, setShowDraftPrActionPreview] = useState(false);
   const [patchDiffReport, setPatchDiffReport] = useState<GeneratedFileDiffReport | null>(null);
   const [showAgentBriefing, setOHB] = useState(false);
   const [chatRepoSnapshot, setChatRepo] = useState<DevChatRepoSnapshot | null>(
@@ -3924,6 +3926,31 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     }
   };
 
+  const requestDraftPrActionPreview = () => {
+    const hasStagedChanges = stagedChanges.length > 0;
+    const hasAgentEvidence = Boolean(
+      scopedAgentJob?.jobId && (scopedAgentJob.changedFiles?.length ?? 0) > 0,
+    );
+    if (
+      !chatRepoSnapshot
+      || !currentRepoScopeKey
+      || (!hasStagedChanges && !hasAgentEvidence)
+      || (hasStagedChanges && !patchConfirmed)
+    ) {
+      void publishConfirmedDraftPr();
+      return;
+    }
+
+    setShowDraftPrActionPreview(true);
+    appendActionEvent({
+      kind: 'route_selected',
+      route: 'github-patch',
+      label: 'Draft-PR-Aktion zur Bestätigung bereit',
+      detail: 'Die konkrete Repository-, Head- und Evidence-Vorschau wird vor der externen Draft-PR-Aktion angezeigt.',
+      state: 'queued',
+    });
+  };
+
   const handleSubmit = async () => {
     const submittedText = wishText.trim();
     if (!submittedText || localRepoLoading || chatResponseBusy || isPublishing)
@@ -3989,7 +4016,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
       if (command.action === "pr") {
         triggerHaptic("medium");
-        void publishConfirmedDraftPr();
+        requestDraftPrActionPreview();
         return;
       }
       if (command.action === "repo") {
@@ -5932,7 +5959,7 @@ Das echte Repo-Setup wurde geöffnet.`,
     }
     if (sideMenuDraftPrDecision.action !== 'publish-draft-pr') return;
 
-    void publishConfirmedDraftPr();
+    requestDraftPrActionPreview();
   };
 
   const selectedSlashCommand =
@@ -6901,6 +6928,34 @@ Das echte Repo-Setup wurde geöffnet.`,
             setWishText(prompt);
             setFilePreviewPath(null);
             setFilePreviewResult(null);
+          }}
+        />
+      )}
+      {showDraftPrActionPreview && chatRepoSnapshot && (
+        <DraftPrActionPreview
+          repoUrl={chatRepoSnapshot.repoUrl}
+          branch={chatRepoSnapshot.branch}
+          expectedHeadSha={chatRepoSnapshot.headSha}
+          mission={lastMissionRef.current.trim() || mission.trim() || 'Create a reviewed Draft PR.'}
+          changedFileCount={stagedChanges.length || (scopedAgentJob?.changedFiles?.length ?? 0)}
+          evidenceSource={
+            stagedChanges.length > 0 && (scopedAgentJob?.changedFiles?.length ?? 0) > 0
+              ? 'mixed'
+              : stagedChanges.length > 0
+                ? 'staged'
+                : 'agent'
+          }
+          onCancel={() => setShowDraftPrActionPreview(false)}
+          onConfirm={() => {
+            setShowDraftPrActionPreview(false);
+            appendActionEvent({
+              kind: 'agent_job_requested',
+              route: 'github-patch',
+              label: 'Draft-PR-Übergabe ausdrücklich bestätigt',
+              detail: 'Die Runtime führt jetzt ihren serverseitigen Repository-, Diff-, Review- und Evidence-Gate aus.',
+              state: 'queued',
+            });
+            void publishConfirmedDraftPr();
           }}
         />
       )}
