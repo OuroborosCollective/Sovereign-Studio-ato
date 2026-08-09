@@ -81,6 +81,29 @@ describe('WorkerBlockerCard', () => {
     expect(onExplain).toHaveBeenCalledTimes(1);
   });
 
+  it('shows a user-owned sign-in action for an authentication blocker', () => {
+    const onLogin = vi.fn();
+    render(
+      <WorkerBlockerCard
+        blocker={{
+          ...mockBlocker,
+          diagnostic: {
+            ...mockDiagnostic,
+            scope: 'authentication',
+            status: 401,
+          },
+        }}
+        onLogin={onLogin}
+        onExplain={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Anmeldung erforderlich')).toBeTruthy();
+    expect(screen.getByText('Scope: Anmeldung · HTTP 401')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Sign in to Sovereign Backend/i }));
+    expect(onLogin).toHaveBeenCalledTimes(1);
+  });
+
   it('calls onRetryWithMessage when retry with message clicked', () => {
     const onRetryWithMessage = vi.fn();
     render(

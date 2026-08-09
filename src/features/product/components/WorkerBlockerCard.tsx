@@ -18,6 +18,8 @@ export interface WorkerBlockerCardProps {
   onRetry?: () => void;
   /** Retry with a specific message - cleaner runtime action path */
   onRetryWithMessage?: (message: string) => void;
+  /** Opens the user-owned sign-in flow; never supplies a provider secret. */
+  onLogin?: () => void;
   onExplain: () => void;
   onAgentInstead?: (message: string) => void;
   /** Last correlated user request; never interpreted locally. */
@@ -73,6 +75,7 @@ function formatScope(diagnostic: DevChatWorkerDiagnostic): string {
   if (scope === 'worker_config') return 'config';
   if (scope === 'worker_runtime') return 'runtime';
   if (scope === 'upstream_provider') return 'upstream';
+  if (scope === 'authentication') return 'Anmeldung';
   return 'unknown';
 }
 
@@ -91,6 +94,7 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   blocker,
   onRetry,
   onRetryWithMessage,
+  onLogin,
   onExplain,
   onAgentInstead,
   userMessage,
@@ -100,6 +104,9 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   const actionMessage = normalizeActionMessage(userMessage);
   const canAgent = Boolean(allowAgentAction && actionMessage && onAgentInstead);
   const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
+  const requiresLogin = diagnostic.scope === 'authentication';
+  const title = requiresLogin ? 'Anmeldung erforderlich' : 'Worker nicht erreichbar';
+  const titleColor = requiresLogin ? C.amber : C.rose;
   
   // A visible retry action is enabled only when a real retry callback exists.
   const handleRetry = useCallback(() => {
@@ -136,8 +143,8 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
         <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, color: C.rose, fontSize: 14 }}>
-            Worker nicht erreichbar
+          <div style={{ fontWeight: 600, color: titleColor, fontSize: 14 }}>
+            {title}
           </div>
           <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
             Scope: {formatScope(diagnostic)}
@@ -154,6 +161,27 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
 
       {/* Actions */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {requiresLogin && onLogin && (
+          <button
+            type="button"
+            onClick={onLogin}
+            style={{
+              minHeight: 44,
+              padding: '8px 16px',
+              borderRadius: 8,
+              background: C.green + '18',
+              border: `1px solid ${C.green}45`,
+              color: C.green,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            aria-label="Sign in to Sovereign Backend"
+          >
+            Anmelden
+          </button>
+        )}
+
         <button
           type="button"
           onClick={handleRetry}
