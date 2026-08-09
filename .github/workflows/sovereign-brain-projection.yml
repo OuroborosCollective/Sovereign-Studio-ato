@@ -1,0 +1,52 @@
+name: Sovereign Brain Projection
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - BRAIN.md
+      - brain/**
+      - scripts/sovereign_brain_projection.py
+      - scripts/test_sovereign_brain_projection.py
+      - AGENTS.md
+      - docs/CURRENT_STATE_2026-08-03.md
+      - docs/SOVEREIGN_PRODUCT_TRUTH.md
+      - docs/sovereign-continuity/CONTEXT.md
+      - .github/workflows/sovereign-continuity-gate.yml
+      - .github/workflows/sovereign-brain-projection.yml
+  push:
+    branches:
+      - main
+    paths:
+      - BRAIN.md
+      - brain/**
+      - scripts/sovereign_brain_projection.py
+      - scripts/test_sovereign_brain_projection.py
+      - AGENTS.md
+      - docs/CURRENT_STATE_2026-08-03.md
+      - docs/SOVEREIGN_PRODUCT_TRUTH.md
+      - docs/sovereign-continuity/CONTEXT.md
+      - .github/workflows/sovereign-continuity-gate.yml
+      - .github/workflows/sovereign-brain-projection.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  brain-projection:
+    name: brain-projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact workflow revision
+        uses: actions/checkout@v4
+
+      - name: Validate hash-bound brain projection
+        shell: bash
+        run: python3 scripts/sovereign_brain_projection.py check
+
+      - name: Run projection contract tests
+        shell: bash
+        run: python3 -m unittest scripts.test_sovereign_brain_projection -v
