@@ -241,7 +241,8 @@ export function alignByNode(signals: OrderedSignal[]): Map<string, OrderedSignal
   const groups = groupByNode(signals);
 
   // Verify all groups have consistent tick ranges
-  const sortedGroups = Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  // Performance optimized: Replace slow localeCompare with native lexicographical comparison for node identifiers
+  const sortedGroups = Array.from(groups.entries()).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
   // Check tick alignment
   for (let i = 1; i < sortedGroups.length; i++) {

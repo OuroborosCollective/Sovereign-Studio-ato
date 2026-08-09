@@ -128,7 +128,8 @@ const INTEGRITY_RISK_ORDER: Readonly<Record<IntegrityRiskLevel, number>> = {
 export function analyzeRepoFileIntegrityList(files: RepoFile[]): RepoFileIntegrityResult[] {
   return files.map(analyzeRepoFileIntegrity).sort((a, b) => (
     INTEGRITY_RISK_ORDER[a.riskLevel] - INTEGRITY_RISK_ORDER[b.riskLevel]
-    || a.path.localeCompare(b.path)
+    // Performance optimized: Replace slow localeCompare with native lexicographical comparison for file paths
+    || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
   ));
 }
 

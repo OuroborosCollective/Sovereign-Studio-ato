@@ -267,7 +267,8 @@ function deriveHotspots(findings: BrownfieldFinding[]): string[] {
     weights.set(finding.file, (weights.get(finding.file) ?? 0) + severityWeight(finding.severity));
   }
   return Array.from(weights.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    // Performance optimized: Replace slow localeCompare with native lexicographical comparison for file names
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .slice(0, 5)
     .map(([file]) => file);
 }
@@ -349,7 +350,8 @@ export function buildBrownfieldReport(input: BrownfieldExplorerInput): Brownfiel
 
   const sortedFindings = findings.sort((a, b) => {
     const bySeverity = severityWeight(b.severity) - severityWeight(a.severity);
-    return bySeverity || a.id.localeCompare(b.id);
+    // Performance optimized: Replace slow localeCompare with native lexicographical comparison for finding IDs
+    return bySeverity || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   });
   const score = categoryScore(sortedFindings);
 

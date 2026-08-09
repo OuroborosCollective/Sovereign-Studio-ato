@@ -101,7 +101,8 @@ function normalizeRepository(repository?: Partial<AreRepositoryState>): AreRepos
       objectId: entry.objectId.trim().toLowerCase(),
     }))
     .filter((entry) => entry.path.length > 0)
-    .sort((left, right) => left.path.localeCompare(right.path) || left.objectId.localeCompare(right.objectId));
+    // Performance optimized: Replace slow localeCompare with native lexicographical comparisons
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0) || (left.objectId < right.objectId ? -1 : left.objectId > right.objectId ? 1 : 0));
   const repositoryRevision = repository?.repositoryRevision?.trim().toLowerCase() ?? '';
   const evidenceComplete = Boolean(
     repository?.evidenceComplete
