@@ -122,7 +122,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Fail closed when reconciliation is not safely automatable
+      - name: Fail closed before the MCP full suite
         if: >-
           steps.reconcile.outputs.exit_code != '0' &&
           !(
