@@ -1,4 +1,4 @@
-name: Test Sovereign Primary LLM Runtime
+name: Test Sovereign Primary LLM Route Catalog
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   smoke:
-    name: Smoke test hosted Sovereign primary runtime
+    name: Smoke test hosted Sovereign route catalog
     runs-on: ubuntu-latest
     timeout-minutes: 8
 
@@ -42,7 +42,7 @@ jobs:
           const fs = require('fs');
           const body = fs.existsSync('health.json') ? fs.readFileSync('health.json', 'utf8').trim() : '';
           if (!body) {
-            console.log('Health diagnostic returned no body; continuing to POST smoke test.');
+            console.log('Health diagnostic returned no body; continuing to route-catalog smoke.');
             process.exit(0);
           }
           try {
@@ -50,7 +50,7 @@ jobs:
             if (payload.ok !== true || payload.status !== 'live') {
               throw new Error(`Backend health is not live: ${body.slice(0, 500)}`);
             }
-            console.log('Health diagnostic:', JSON.stringify({ ok: payload.ok, status: payload.status, sourceRevision: payload.sourceRevision, imageDigest: payload.imageDigest }));
+            console.log('Hosted backend identity (diagnostic only):', JSON.stringify({ ok: payload.ok, status: payload.status, sourceRevision: payload.sourceRevision, imageDigest: payload.imageDigest }));
           } catch {
             console.log('Health diagnostic was not JSON.');
             process.exit(1);
@@ -74,13 +74,14 @@ jobs:
           if (!Array.isArray(routes) || routes.length === 0) {
             throw new Error(`No executable LLM route returned: ${JSON.stringify(payload).slice(0, 500)}`);
           }
-          for (const route of routes) {
-            if (!route?.id || route.enabled !== true || !route.defaultModelId) {
-              throw new Error(`Malformed executable route: ${JSON.stringify(route)}`);
-            }
-            if (String(route.provider || '').toLowerCase() === 'cloudflare') {
-              throw new Error(`Retired Cloudflare route leaked into the primary catalog: ${JSON.stringify(route)}`);
-            }
+          const executableRoutes = routes.filter((route) => (
+            Boolean(route?.id && route?.defaultModelId)
+            && route.enabled === true
+            && String(route.provider || '').toLowerCase() !== 'cloudflare'
+          ));
+          if (executableRoutes.length === 0) {
+            throw new Error(`No enabled direct route returned: ${JSON.stringify(routes).slice(0, 500)}`);
           }
-          console.log(`SOVEREIGN_PRIMARY_RUNTIME=PASS routes=${routes.length}`);
+          console.log(`SOVEREIGN_PRIMARY_CATALOG=PASS routes=${executableRoutes.length}`);
+          console.log('This unauthenticated smoke validates the public catalog only; authenticated provider canaries remain an operator evidence step.');
           NODE

@@ -104,9 +104,17 @@ export const WorkerBlockerCard: React.FC<WorkerBlockerCardProps> = ({
   const actionMessage = normalizeActionMessage(userMessage);
   const canAgent = Boolean(allowAgentAction && actionMessage && onAgentInstead);
   const canRetry = Boolean((onRetryWithMessage && actionMessage) || onRetry);
-  const requiresLogin = diagnostic.scope === 'authentication';
-  const title = requiresLogin ? 'Anmeldung erforderlich' : 'Worker nicht erreichbar';
-  const titleColor = requiresLogin ? C.amber : C.rose;
+  // A 401 means the user can recover by starting their own sign-in flow. A
+  // 403 is a distinct authorization denial and must never suggest that
+  // re-authentication will grant access.
+  const requiresLogin = diagnostic.scope === 'authentication' && diagnostic.status === 401;
+  const accessDenied = diagnostic.scope === 'authentication' && diagnostic.status === 403;
+  const title = requiresLogin
+    ? 'Anmeldung erforderlich'
+    : accessDenied
+      ? 'Zugriff nicht erlaubt'
+      : 'Worker nicht erreichbar';
+  const titleColor = requiresLogin || accessDenied ? C.amber : C.rose;
   
   // A visible retry action is enabled only when a real retry callback exists.
   const handleRetry = useCallback(() => {

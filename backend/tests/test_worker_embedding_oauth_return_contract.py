@@ -1,4 +1,4 @@
-"""Cross-surface contracts for Worker embeddings and GitHub OAuth return flow.
+"""Cross-surface contracts for the retired Worker and GitHub OAuth return flow.
 
 These checks prevent repository truth from drifting away from deployment and UI
 truth. They inspect the canonical deployed backend, mirrored support modules,
@@ -14,17 +14,16 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_worker_exposes_versioned_768_embedding_route():
+def test_legacy_worker_is_fail_closed_before_any_historical_route_handling():
     source = read("cloudflare-worker-ai-proxy/src/index.ts")
 
-    assert "url.pathname === '/v1/embeddings'" in source
-    assert "const EMBEDDING_DIMENSIONS = 768" in source
-    assert "version: '1.2.0'" in source
-    assert "embeddingPath: '/v1/embeddings'" in source
-    assert "handleEmbeddings(request, env)" in source
+    assert "const LEGACY_WORKER_RETIRED = true" in source
+    assert "legacy_cloudflare_worker_retired" in source
+    assert "status: 410" in source
+    assert source.index("LEGACY_WORKER_RETIRED") < source.index("const url = new URL")
 
 
-def test_worker_deploy_requires_real_live_embedding_evidence():
+def test_worker_deploy_is_explicitly_disabled():
     workflow = read(".github/workflows/deploy-worker.yml")
 
     for secret in (
@@ -33,26 +32,23 @@ def test_worker_deploy_requires_real_live_embedding_evidence():
         "CLOUDFLARE_API_TOKEN",
         "CLOUDFLARE_ACCOUNT_ID",
     ):
-        assert secret in workflow
+        assert secret not in workflow
     worker_package = read("cloudflare-worker-ai-proxy/package.json")
     assert '"wrangler": "4.110.0"' in worker_package
-    assert "npx wrangler --version" in workflow
-    assert "npx wrangler deploy" in workflow
-    assert 'EXPECTED_WORKER_VERSION: \'1.2.0\'' in workflow
-    assert 'POST "${WORKER_URL}/v1/embeddings"' in workflow
-    assert "vector.length !== 768" in workflow
-    assert "WORKER_EMBEDDING_RUNTIME=PASS" in workflow
+    assert '"deploy": "wrangler deploy"' not in worker_package
+    assert "Legacy Cloudflare Worker AI Proxy Disabled" in workflow
+    assert "wrangler" not in workflow
+    assert "workers.dev" not in workflow
 
 
-def test_backend_mirrors_report_deployment_drift_instead_of_generic_404():
-    for path in (
-        "backend/vector_embedding.py",
-        "scripts/sovereign-backend/vector_embedding.py",
-    ):
-        source = read(path)
-        assert "deployed worker version=" in source
-        assert "embeddingPath=" in source
-        assert "version 1.2.0 or newer" in source
+def test_deployment_embedding_adapter_has_no_cloudflare_runtime_fallback():
+    source = read("scripts/sovereign-backend/vector_embedding.py")
+
+    assert "DEFAULT_WORKER_AI_PROXY_URL" not in source
+    assert "CLOUDFLARE_ACCOUNT_ID" not in source
+    assert "CLOUDFLARE_API_TOKEN" not in source
+    assert "WORKER_AI_PROXY_URL" not in source
+    assert "http://freellmapi:3001/v1" in source
 
 
 def test_oauth_callback_uses_state_bound_opener_origin():

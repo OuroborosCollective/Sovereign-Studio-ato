@@ -104,6 +104,26 @@ describe('WorkerBlockerCard', () => {
     expect(onLogin).toHaveBeenCalledTimes(1);
   });
 
+  it('does not offer sign-in as a recovery for an authorization denial', () => {
+    render(
+      <WorkerBlockerCard
+        blocker={{
+          ...mockBlocker,
+          diagnostic: {
+            ...mockDiagnostic,
+            scope: 'authentication',
+            status: 403,
+          },
+        }}
+        onLogin={() => {}}
+        onExplain={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Zugriff nicht erlaubt')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Sign in to Sovereign Backend/i })).toBeNull();
+  });
+
   it('calls onRetryWithMessage when retry with message clicked', () => {
     const onRetryWithMessage = vi.fn();
     render(

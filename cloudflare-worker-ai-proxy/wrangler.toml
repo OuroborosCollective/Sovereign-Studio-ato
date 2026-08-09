@@ -1,15 +1,6 @@
-name = "sovereign-llm-proxy"
+# Retired tombstone. The normal package scripts intentionally refuse all
+# Wrangler operations; if this file is deployed manually it returns HTTP 410
+# before reading a request or contacting any provider.
+name = "sovereign-llm-proxy-retired"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
-
-# Account ID - wird via secrets oder environment gesetzt
-# account_id = "4a82319180f1f1cee60d85a971c3041d"
-
-[vars]
-# Default AI model
-# NOTE: "@cf/meta/llama-3-8b-instruct" was removed here - Cloudflare returns HTTP 410
-# "Model has been deprecated" for it as of 2026-05-30. Replaced with a verified-working model.
-DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct"
-
-[observability]
-enabled = true
