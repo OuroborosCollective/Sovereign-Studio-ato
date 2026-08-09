@@ -646,7 +646,12 @@ def register_github_app_routes(
     def github_app_webhook():
         """Handle GitHub App webhook events."""
         event = request.headers.get("X-GitHub-Event", "")
-        payload = request.get_json() or {}
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({
+                "error": "GitHub App webhook JSON body must be an object",
+                "blocker": "github_app_webhook_payload_invalid",
+            }), 400
         installation = payload.get("installation", {})
         
         if event == "installation" or event == "installation_repositories":
@@ -736,7 +741,12 @@ def register_github_app_routes(
     @require_admin
     def github_app_deduct_credits(installation_id: int):
         """Deduct credits from an installation."""
-        body = request.get_json() or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({
+                "error": "GitHub App credit JSON body must be an object",
+                "blocker": "github_app_credit_payload_invalid",
+            }), 400
         try:
             amount = int(body.get("amount", 0))
         except (TypeError, ValueError):
