@@ -46,4 +46,19 @@ describe('DevChat Draft PR execution contract', () => {
 
     expect(app).toContain("!rescueOpen && ['blocked', 'failed'].includes(agentJob.status)");
   });
+
+  it('requires a concrete action preview before menu or slash Draft PR publication', () => {
+    const builder = source('src/features/product/containers/BuilderContainer.tsx');
+    const preview = source('src/features/product/components/DraftPrActionPreview.tsx');
+
+    expect(builder).toContain('const requestDraftPrActionPreview = () =>');
+    expect(builder).toContain('setShowDraftPrActionPreview(true)');
+    expect(builder).toContain('requestDraftPrActionPreview();');
+    expect(builder).toContain('<DraftPrActionPreview');
+    expect(builder).toContain('void publishConfirmedDraftPr();');
+    expect(preview).toContain('role="alertdialog"');
+    expect(preview).toContain('Draft PR nach Serverprüfung posten');
+    expect(preview).toContain('expectedHeadSha');
+  });
+
 });

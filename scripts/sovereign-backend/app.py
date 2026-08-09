@@ -6126,6 +6126,8 @@ ADMIN_DIST_DIR = os.getenv(
     os.path.join(os.path.dirname(__file__), "admin-dist"),
 ).strip()
 ADMIN_INDEX_PATH = os.path.join(ADMIN_DIST_DIR, "index.html")
+USER_APP_DIST_DIR = os.getenv("SOVEREIGN_USER_APP_DIST_DIR", ADMIN_DIST_DIR).strip()
+USER_APP_INDEX_PATH = os.path.join(USER_APP_DIST_DIR, "index.html")
 
 
 def _admin_index_response():
@@ -6135,6 +6137,25 @@ def _admin_index_response():
     resp.headers["Content-Type"] = "text/html; charset=utf-8"
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["X-Sovereign-Admin-Producer"] = "CANONICAL_REACT_ADMIN"
+    resp.headers["X-Sovereign-Source-Revision"] = os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified")
+    return resp
+
+
+def _user_app_index_response():
+    """Serve the Android/Web product shell, never the admin route.
+
+    The current revision-bound Vite artifact contains both entry surfaces.  The
+    browser path is the explicit boundary: ``/admin/`` mounts ``AdminPanel``;
+    ``/app/`` mounts the ordinary ``App`` that is copied into the Capacitor APK.
+    ``SOVEREIGN_USER_APP_DIST_DIR`` permits a future separately staged artifact
+    without changing either public route.
+    """
+    if not os.path.isfile(USER_APP_INDEX_PATH):
+        return make_response("Canonical Sovereign user app artifact is unavailable.", 503)
+    resp = send_from_directory(USER_APP_DIST_DIR, "index.html")
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Sovereign-User-App-Producer"] = "CANONICAL_CAPACITOR_WEB_APP"
     resp.headers["X-Sovereign-Source-Revision"] = os.getenv("SOVEREIGN_SOURCE_REVISION", "unverified")
     return resp
 
@@ -6162,6 +6183,30 @@ def admin_asset(asset_path: str):
     resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return resp
 
+
+
+@app.route("/app")
+def user_app_redirect():
+    return redirect("/app/", code=308)
+
+
+@app.route("/app/")
+def user_app():
+    return _user_app_index_response()
+
+
+@app.route("/app/<path:asset_path>")
+def user_app_asset(asset_path: str):
+    if not os.path.isdir(USER_APP_DIST_DIR):
+        return make_response("Canonical Sovereign user app artifact is unavailable.", 503)
+    try:
+        resp = send_from_directory(USER_APP_DIST_DIR, asset_path)
+    except NotFound:
+        if "." in os.path.basename(asset_path):
+            abort(404)
+        return _user_app_index_response()
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
 
 
 # Register modular knowledge and account-security contracts only after the
