@@ -3,20 +3,17 @@
 > ⚠️ **SICHERHEIT**: Client Secrets NIE in Chat, Docs, Issues oder Commits posten!
 > Secrets nur über sichere Kanäle teilen.
 
-> 🔴 **AKTION ERFORDERLICH**: Client Secret wurde in diesem Chat geteilt.
-> **SOFORT ROTIEREN**: https://github.com/settings/applications/4247582
-
 ## Übersicht
 
 Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einrichtest.
 
-## Bereits vorhanden (NICHT erledigt - Security-Checks ausstehend)
+## Aktueller Vertrag
 
-- ⏳ Backend Endpoint `/api/auth/github` - Code vorhanden, Security-Tests ausstehend
-- ⏳ DB Migration `github_*` Spalten - vorhanden
-- ⏳ Frontend `loginWithGitHub()` - vorhanden, Security-Tests ausstehend
-- ⏳ LoginModal mit GitHub Button - vorhanden
-- ⏳ `VITE_GITHUB_OAUTH_CLIENT_ID` - gesetzt (VPS), Secret noch ausstehend
+- Der Login-Button bezieht die OAuth-Authorize-URL ausschließlich vom Backend über `/api/auth/github/init`.
+- Canonical bevorzugt Sovereign ein vollständiges `GITHUB_APP_CLIENT_ID`/`GITHUB_APP_CLIENT_SECRET`-Paar und fällt nur auf ein vollständiges Legacy-`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`-Paar zurück.
+- GitHub App ID und GitHub App Client ID sind verschiedene Identitäten und dürfen nicht verwechselt werden.
+- Der produktive Callback ist `https://chat.arelorian.de/auth/github/callback.html`.
+- `/api/auth/github/configured` liefert nur secret-sichere Konfigurations-Evidence/Fingerprints, niemals Credentials.
 
 ## Security Status: 🟡 IN PROGRESS
 
@@ -33,36 +30,15 @@ Dieses Dokument beschreibt, wie du GitHub OAuth Login in Sovereign Studio einric
 
 **Backend deployed mit allen Security-Features.**
 
-## Schritt 1: GitHub OAuth App erstellen (NOCH OFFEN ⏳)
+## Schritt 1: GitHub-Identität konfigurieren
 
-1. Gehe zu: https://github.com/settings/applications/new
-2. Fülle die Felder aus:
+Bevorzugt wird die bestehende GitHub App. In deren Einstellungen muss die Callback URL exakt `https://chat.arelorian.de/auth/github/callback.html` enthalten. Verwende für den Login die **Client ID** der GitHub App, niemals die numerische App ID.
 
-   | Feld | Wert |
-   |------|------|
-   | **Application name** | Sovereign Studio (oder dein Name) |
-   | **Homepage URL** | `https://deine-domain.de` |
-   | **Authorization callback URL** | `https://deine-backend-domain.de/api/auth/github/callback` |
+Ein separates Legacy-OAuth-App-Paar bleibt nur als expliziter Fallback unterstützt. Der Browser bzw. die APK enthält keine GitHub Client ID; die Authorize-URL wird serverseitig erzeugt.
 
-3. Klicke **Register application**
-4. Kopiere die **Client ID**
-5. Generiere einen **Client Secret** (falls noch nicht vorhanden)
+## Schritt 2: Backend-Konfiguration
 
-## Schritt 2: Client ID im Frontend setzen
-
-> **Für AI Studio / Cloud Deployment:**
-> Setze die `VITE_GITHUB_OAUTH_CLIENT_ID` in den Secrets/Environment Variables deines Deployments.
-
-> **Für lokale Entwicklung:**
-> Füge in deiner `.env` Datei hinzu:
-
-```env
-# GitHub OAuth (für Login)
-VITE_GITHUB_OAUTH_CLIENT_ID=dein_github_client_id
-
-# Optional: Alternative Redirect-URI
-# VITE_GITHUB_OAUTH_REDIRECT_URI=https://deine-domain.de/auth/github/callback
-```
+Die Credentials werden ausschließlich als geschützte Backend-Environment-Werte verwaltet. Keine Client ID/Secrets müssen als `VITE_*`-Variable in die APK eingebaut werden.
 
 ### Scopes erklärt
 
@@ -88,13 +64,27 @@ docker exec sovereign-backend env | grep GITHUB
 docker restart sovereign-backend
 ```
 
-### Erforderliche Environment Variables:
+### Erforderliche Environment Variables
+
+Bevorzugte GitHub-App-Identität:
 
 ```bash
-GITHUB_CLIENT_ID=DEINE_CLIENT_ID          # Von GitHub OAuth App
-GITHUB_CLIENT_SECRET=DEIN_CLIENT_SECRET     # ⚠️ FRISCH GENERIERT
-GITHUB_TOKEN_ENCRYPTION_KEY=zufälliger_64_byte_string  # Für Token-Verschlüsselung
+GITHUB_APP_ID=<numerische-app-id>
+GITHUB_APP_CLIENT_ID=<github-app-client-id>
+GITHUB_APP_CLIENT_SECRET=<geschützt>
+GITHUB_APP_PRIVATE_KEY=<geschützt>
+GITHUB_OAUTH_REDIRECT_URI=https://chat.arelorian.de/auth/github/callback.html
+GITHUB_TOKEN_ENCRYPTION_KEY=<geschützt>
 ```
+
+Legacy-Fallback nur als vollständiges Paar:
+
+```bash
+GITHUB_CLIENT_ID=<oauth-app-client-id>
+GITHUB_CLIENT_SECRET=<geschützt>
+```
+
+Sovereign mischt niemals Client ID und Secret aus unterschiedlichen Credential-Familien.
 
 **Siehe `backend/tests/test_github_oauth_security.py` für Security-Requirements.**
 
@@ -154,15 +144,16 @@ Alle GitHub-API-Operationen laufen über das Backend:
 → Der Popup-Blocker des Browsers hat das OAuth-Fenster blockiert.
 → Lösung: Der Code fällt automatisch auf Redirect-Flow zurück.
 
-### "GitHub-Login fehlgeschlagen"
-→ Prüfe in der Browser-Konsole:
-  - Ist `VITE_GITHUB_OAUTH_CLIENT_ID` gesetzt?
-  - Stimmt die Redirect-URI mit der GitHub App überein?
+### GitHub zeigt direkt nach Klick eine 404
 
-### Backend-Fehler
-→ Prüfe Server-Logs:
-  - Ist `GITHUB_CLIENT_SECRET` gesetzt?
-  - Ist die Datenbank-Verbindung OK?
+Das passiert vor dem Callback und deutet auf eine ungültige/stale Client-ID hin. Prüfe `/api/auth/github/configured`: `configured`, `credentialSource`, `identityVerified`, `appIdCollision`, `blocker` und die Client-ID-Fingerprints sind secret-sicher abrufbar. Bei GitHub-App-Nutzung verifiziert Sovereign die konfigurierte Client-ID zusätzlich gegen die authentifizierte GitHub-App-Identität.
+
+### GitHub-Login fehlgeschlagen
+
+- Callback URL muss exakt `https://chat.arelorian.de/auth/github/callback.html` sein.
+- GitHub App **Client ID** verwenden, nicht die numerische App ID.
+- Credential-Paare vollständig halten; keine Cross-Mischung zwischen GitHub App und Legacy OAuth App.
+- Datenbank/State/PKCE müssen verfügbar sein.
 
 ## User Interface nach Login
 

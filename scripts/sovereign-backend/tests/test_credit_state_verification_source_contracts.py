@@ -3,6 +3,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_SOURCE = REPO_ROOT / "scripts" / "sovereign-backend" / "app.py"
+BUILDER_SOURCE = (
+    REPO_ROOT / "src" / "features" / "product" / "containers" / "BuilderContainer.tsx"
+)
 MIGRATION = (
     REPO_ROOT
     / "scripts"
@@ -124,3 +127,16 @@ def test_llm_route_selection_uses_verified_credit_state_when_present() -> None:
     assert "_read_verified_credit_balance(user_id)" in route
     assert '"blocker": "credit_state_verification_failed"' in route
     assert "SELECT id, credits FROM admin_users" not in route
+
+
+def test_android_builder_never_precharges_llm_aliases() -> None:
+    builder = BUILDER_SOURCE.read_text(encoding="utf-8")
+    billing_start = _source().index("def user_billing_deduct")
+    billing_end = _source().index("# ═", billing_start)
+    billing_route = _source()[billing_start:billing_end]
+
+    assert "chargeCredits(" not in builder
+    assert "Credits nicht ausreichend für sovereign-fast" not in builder
+    assert "Credits nicht ausreichend für ${d.modelId}" not in builder
+    assert '"blocker": "llm_usage_requires_provider_settlement"' in billing_route
+    assert '"requiredEndpoint": "/api/llm/chat"' in billing_route
