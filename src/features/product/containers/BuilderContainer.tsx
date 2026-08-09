@@ -58,6 +58,10 @@ import {
   buildToolchainAutoContext,
   formatToolchainAutoContext,
 } from "../runtime/toolchainAutoCallingRuntime";
+import {
+  fetchOpenPrReviewEvidence,
+  formatOpenPrReviewEvidence,
+} from "../runtime/githubOpenPrReviewRuntime";
 import { Ampel } from "../components/Ampel";
 import { FileBadge } from "../components/FileBadge";
 import { ThoughtBubble } from "../components/ThoughtBubble";
@@ -5745,6 +5749,43 @@ Das echte Repo-Setup wurde geöffnet.`,
       }));
       addLog('info', `Safe preset analysis routed without executor: ${action.id}`, 'router');
       setWishText('');
+
+      if (action.id === 'open_pr_review' && chatRepoSnapshot) {
+        setChatResponseBusy(true);
+        const review = await fetchOpenPrReviewEvidence(chatRepoSnapshot);
+        setChatResponseBusy(false);
+        if (!review.ok || !review.evidence) {
+          const detail = review.error || 'Read-only PR-Evidence ist nicht verfügbar.';
+          appendActionEvent(buildBlockedActionEvent({
+            route: 'toolchain',
+            label: 'Offene PRs konnten nicht gelesen werden',
+            detail,
+            kind: 'failed',
+          }));
+          appendChatLine({
+            role: 'assistant',
+            text: `PR-Review blockiert: ${detail}\nEs wurde kein GitHub-Schreibzugang angefordert, kein Executor gestartet und kein LLM-Credit verbraucht.`,
+          });
+          addLog('warn', `Open PR read-only review failed: ${detail}`, 'router');
+          return;
+        }
+
+        appendActionEvent({
+          kind: 'context_collected',
+          route: 'toolchain',
+          label: 'Offene PRs read-only geprüft',
+          detail: `${review.evidence.openPrCount} offene PR(s) mit Merge-/Check-Evidence gelesen.`,
+          state: 'done',
+        });
+        appendChatLine({
+          role: 'assistant',
+          text: formatOpenPrReviewEvidence(review.evidence),
+        });
+        setLastAnswerWasLocal(true);
+        addLog('info', `Open PR review completed read-only: ${review.evidence.openPrCount} PR(s)`, 'router');
+        return;
+      }
+
       await _processSubmit(submitted, { inputAlreadyRecorded: true });
       return;
     }
