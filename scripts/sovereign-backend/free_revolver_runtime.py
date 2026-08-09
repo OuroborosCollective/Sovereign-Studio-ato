@@ -10,6 +10,7 @@ from flask import jsonify, request
 
 from free_revolver_v3 import RevolverProfile, eligible_free_routes, plan_routes
 from llm_cost_policy import BillingPolicyError, route_billing_policy
+from llm_transport import route_is_direct_freellm
 
 FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS = max(
     1,
@@ -72,7 +73,9 @@ def resolve_free_revolver_plan(
         )
     rows = query(
         """SELECT route.id::text, route.model_id, route.model_name,
-                  route.provider, route.disabled, route.priority, route.config
+                  route.provider, route.base_url, route.runtime_kind, route.tier,
+                  route.credits_per_unit::float AS credits_per_unit,
+                  route.disabled, route.priority, route.config
            FROM llm_routes AS route
            LEFT JOIN llm_revolver_provider_models AS provider_model
              ON provider_model.litellm_alias=route.model_id
@@ -95,6 +98,8 @@ def resolve_free_revolver_plan(
     verified: list[dict[str, Any]] = []
     for source in rows:
         route = dict(source)
+        if not route_is_direct_freellm(route):
+            continue
         try:
             policy = route_billing_policy(route)
         except BillingPolicyError:
