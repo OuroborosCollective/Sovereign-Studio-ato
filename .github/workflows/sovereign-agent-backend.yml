@@ -47,6 +47,33 @@ jobs:
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"
 
+      - name: Validate Sovereign Brain Projection (advisory)
+        id: brain_projection
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/sovereign_brain_projection.py check
+          python3 -m unittest scripts.test_sovereign_brain_projection -v
+
+      - name: Record Brain Projection advisory result
+        if: always()
+        shell: bash
+        env:
+          BRAIN_OUTCOME: ${{ steps.brain_projection.outcome }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Sovereign Brain Projection (advisory)'
+            echo
+            echo "- Outcome: ${BRAIN_OUTCOME}"
+            echo '- This projection is context/evidence navigation only and is not a product, merge, release, deployment, or runtime gate.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$BRAIN_OUTCOME" != success ]]; then
+            echo '::warning title=Brain projection advisory::The project-brain projection is stale or invalid. Product/runtime evidence remains independently authoritative.'
+          fi
+
       - name: Upload bounded agent-runtime test evidence
         if: always()
         uses: actions/upload-artifact@v4
