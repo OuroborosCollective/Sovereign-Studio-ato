@@ -174,6 +174,53 @@ describe('sovereignLiteLlmIntentRuntime', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url) === SOVEREIGN_WORKER_CHAT)).toBe(false);
   });
 
+  it('classifies HTTP 401 as a recoverable backend-session blocker', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        routes: [{ id: 'sovereign-chat', defaultModelId: 'model-a', enabled: true }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Nicht eingeloggt' }, 401));
+
+    const result = await fetchSovereignLiteLlmInterpretation({
+      text: 'Hallo',
+      requestId: '00000000-0000-4000-8000-000000000107',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic).toMatchObject({
+      route: SOVEREIGN_LITELLM_CHAT,
+      status: 401,
+      scope: 'authentication',
+      canClientFix: true,
+    });
+    expect(result.diagnostic?.nextAction).toMatch(/Session|anmelden/i);
+  });
+
+  it('classifies HTTP 403 as authorization denial without proposing login as the fix', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        routes: [{ id: 'sovereign-chat', defaultModelId: 'model-a', enabled: true }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Zugriff verweigert' }, 403));
+
+    const result = await fetchSovereignLiteLlmInterpretation({
+      text: 'Hallo',
+      requestId: '00000000-0000-4000-8000-000000000108',
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic).toMatchObject({
+      route: SOVEREIGN_LITELLM_CHAT,
+      status: 403,
+      scope: 'authentication',
+      canClientFix: false,
+    });
+    expect(result.diagnostic?.nextAction).toContain('Berechtigung');
+    expect(result.diagnostic?.nextAction).toContain('erneutes Anmelden');
+  });
+
   it('reports the backend credit gate without attempting a second route', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({

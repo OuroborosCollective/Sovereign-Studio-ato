@@ -182,7 +182,7 @@ function createDiagnostic(args: {
       nextAction: 'Backend-Credit-Gate prüfen oder Credits aufladen; keine zweite Frontend-Abbuchung ausführen.',
     };
   }
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return {
       route: args.route,
       model: args.model,
@@ -190,9 +190,22 @@ function createDiagnostic(args: {
       status,
       statusText: args.statusText,
       bodySnippet: boundedSnippet(body),
-      scope: 'worker_config',
+      scope: 'authentication',
+      canClientFix: true,
+      nextAction: 'Backend-Session erneut bestätigen oder anmelden; keine Provider-Secrets im Client verwenden.',
+    };
+  }
+  if (status === 403) {
+    return {
+      route: args.route,
+      model: args.model,
+      messageCount: args.messageCount,
+      status,
+      statusText: args.statusText,
+      bodySnippet: boundedSnippet(body),
+      scope: 'authentication',
       canClientFix: false,
-      nextAction: 'Backend-Session und Authentifizierung prüfen; keine Provider-Secrets im Client verwenden.',
+      nextAction: 'Berechtigung der bestätigten Backend-Session prüfen; erneutes Anmelden darf nicht als automatische Lösung angeboten werden.',
     };
   }
   if (status === 400 || status === 404 || status === 405 || status === 428) {

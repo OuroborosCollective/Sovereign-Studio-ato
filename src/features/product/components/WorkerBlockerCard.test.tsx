@@ -40,7 +40,7 @@ describe('WorkerBlockerCard', () => {
         onExplain={() => {}}
       />
     );
-    expect(screen.getByText('Worker nicht erreichbar')).toBeTruthy();
+    expect(screen.getByText('LLM-Runtime nicht erreichbar')).toBeTruthy();
   });
 
   it('disables retry when no previous request or retry callback exists', () => {
@@ -142,6 +142,50 @@ describe('WorkerBlockerCard', () => {
       />
     );
     expect(screen.queryByText(/Sovereign Agent für Code-Auftrag/i)).toBeNull();
+  });
+
+  it('offers login only for HTTP 401 authentication failures', () => {
+    const onLogin = vi.fn();
+    render(
+      <WorkerBlockerCard
+        blocker={{
+          ...mockBlocker,
+          diagnostic: {
+            ...mockDiagnostic,
+            status: 401,
+            scope: 'authentication',
+            canClientFix: true,
+          },
+        }}
+        onExplain={() => {}}
+        onLogin={onLogin}
+      />
+    );
+
+    expect(screen.getByText('Anmeldung erforderlich')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Bei Sovereign anmelden' }));
+    expect(onLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not offer login for HTTP 403 authorization failures', () => {
+    render(
+      <WorkerBlockerCard
+        blocker={{
+          ...mockBlocker,
+          diagnostic: {
+            ...mockDiagnostic,
+            status: 403,
+            scope: 'authentication',
+            canClientFix: false,
+          },
+        }}
+        onExplain={() => {}}
+        onLogin={() => {}}
+      />
+    );
+
+    expect(screen.getByText('Zugriff nicht erlaubt')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Bei Sovereign anmelden' })).toBeNull();
   });
 });
 
