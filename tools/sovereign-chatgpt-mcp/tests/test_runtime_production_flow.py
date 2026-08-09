@@ -47,6 +47,23 @@ def continuity_completion_receipt() -> dict[str, Any]:
     }
 
 
+def test_continuity_completion_is_advisory_for_repository_mutations(repo_runtime, monkeypatch) -> None:
+    runtime, workspace_id, _repo = repo_runtime
+
+    def fail_completion(_workspace_id: str) -> dict[str, Any]:
+        raise RuntimeError("CONTINUITY_LEDGER_UPDATE_REQUIRED: fixture")
+
+    monkeypatch.setattr(runtime, "validate_continuity_completion", fail_completion)
+
+    result = runtime.continuity_completion_advisory(workspace_id)
+
+    assert result["ok"] is False
+    assert result["status"] == "CONTINUITY_COMPLETION_ADVISORY"
+    assert result["blocking"] is False
+    assert result["advisory"] is True
+    assert "CONTINUITY_LEDGER_UPDATE_REQUIRED" in result["detail"]
+
+
 def test_dependency_install_is_delegated_without_starting_pnpm(repo_runtime, monkeypatch) -> None:
     runtime, workspace_id, repo = repo_runtime
     calls: list[list[str]] = []

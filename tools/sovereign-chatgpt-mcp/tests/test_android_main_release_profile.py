@@ -31,6 +31,11 @@ def test_release_workflows_compare_keystore_apk_and_aab_certificates() -> None:
         workflow = (REPO_ROOT / relative).read_text("utf-8")
 
         assert "ANDROID_EXPECTED_SIGNING_CERT_SHA256" in workflow
+        assert "ANDROID_EXPECTED_UPLOAD_CERT_SHA1: f2839b94378bc12b8e616fe9b22c9ad78c2dc660" in workflow
+        assert 'EFFECTIVE_KEYSTORE_BASE64="${KEYSTORE_BASE64_LEGACY:-${ANDROID_KEYSTORE_BASE64_CURRENT:-}}"' in workflow
+        assert "KEYSTORE_CERT_SHA1" in workflow
+        assert '"$KEYSTORE_CERT_SHA1" != "$ANDROID_EXPECTED_UPLOAD_CERT_SHA1"' in workflow
+        assert "F2:83:9B:94:37:8B:C1:2B:8E:61:6F:E9:B2:2C:9A:D7:8C:2D:C6:60" in workflow
         assert "APK_CERT_SHA256" in workflow
         assert "AAB_CERT_SHA256" in workflow
         assert 'test "$APK_CERT_SHA256" = "$AAB_CERT_SHA256"' in workflow

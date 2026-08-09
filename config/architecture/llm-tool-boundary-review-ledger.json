@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "325d807babca41d2890c21afaea622cf822e0d61",
+  "sourceRevision": "13d8d316378291cf94afb3b038fdc2cf42e77a3b",
   "rawCandidateCount": 94,
   "canonicalCandidateCount": 75,
   "entries": [
@@ -881,7 +881,7 @@
       "symbol": "OperatorRuntime.search_text",
       "line": 200,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "26ea298c40f9a46f48c0131a9ca2a82354bb492a027556fe3d6a9b3a9c451b03",
+      "fileSha256": "be0cee2e74ac4f131242939b0a4f05fe2b6675b72edec2c5d8fc39f6e4930886",
       "anchorSha256": "cff24d5a7819df9ea6f2f6d8c662b8e340888f32a64efbca867ee5651450b6bb",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:672c8dd5c4599d6db39123cf",
@@ -894,7 +894,7 @@
       "symbol": "OperatorRuntime.import_workflow_artifact",
       "line": 394,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "26ea298c40f9a46f48c0131a9ca2a82354bb492a027556fe3d6a9b3a9c451b03",
+      "fileSha256": "be0cee2e74ac4f131242939b0a4f05fe2b6675b72edec2c5d8fc39f6e4930886",
       "anchorSha256": "e3f59706bd3805948719abf464988251e1688863b07480dd0d97149b78072749",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:2a485f173296425740ece7d3",
@@ -907,7 +907,7 @@
       "symbol": "_patchmon_revision_from_payload",
       "line": 1458,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "8b165f42a6f4278eb2cab34b5d7e4ac2610617e2a904f5dab2871d868c110789",
+      "fileSha256": "fb0bc7340d074a4be5edb817ddf11b80f1eacd751c8c3e469d7442c37cf45925",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:efbf7099ea52768f25007bc8",
@@ -1019,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "45dd23c586757cf38fd57a6c975589f32bd788fe690dd120ed920a2521e1c67b"
+  "ledgerSha256": "e71061ea47f938cc5608330186315adf58f2d0c100bbd690199bdcc1ad7cf05d"
 }
