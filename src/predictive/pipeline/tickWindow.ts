@@ -32,9 +32,18 @@ export const DEFAULT_TICK_WINDOW_CONFIG: TickWindowConfig = {
   maxTicks: 1_000_000,
 };
 
-/** Reason codes for non-silent signal loss. */
+/**
+ * Reason codes for non-silent signal loss.
+ *
+ * Note: there is intentionally no SEQUENCE_NON_MONOTONIC code. Because signals
+ * are iterated in `canonicalOrder` (node asc, sequence asc, tick asc) and every
+ * duplicated causal key is dropped by DUPLICATE_KEY, accepted sequences within
+ * a node are strictly ascending by construction. An out-of-order input is
+ * therefore canonicalized (reordered), not dropped — which is what preserves
+ * replay parity for shuffled input. A monotonicity guard run after the sort can
+ * never fire, so it is omitted to keep the drop surface honest.
+ */
 export type DropReasonCode =
-  | 'SEQUENCE_NON_MONOTONIC'
   | 'DUPLICATE_KEY'
   | 'WINDOW_LIMIT_REACHED'
   | 'TICK_LIMIT_REACHED'
@@ -161,7 +170,6 @@ export function buildTickWindows(
   const accepted: PipelineSignal[] = [];
 
   const duplicates = new Set(findDuplicateKeyStrings(signals));
-  let lastSeqPerNode = new Map<string, number>();
 
   for (const s of canonicalOrder(signals)) {
     const key = `${s.node}:${s.sequence}`;
@@ -175,17 +183,9 @@ export function buildTickWindows(
       });
       continue;
     }
-    const last = lastSeqPerNode.get(s.node);
-    if (last !== undefined && s.sequence <= last) {
-      drops.push({
-        reason: 'SEQUENCE_NON_MONOTONIC',
-        node: s.node,
-        sequence: s.sequence,
-        tick: s.tick,
-        detail: `sequence ${s.sequence} <= last ${last} for node ${s.node}`,
-      });
-      continue;
-    }
+    // No monotonicity guard: canonicalOrder already yields strictly ascending
+    // sequences per node once duplicates are excluded, so SEQUENCE_NON_MONOTONIC
+    // could never fire here (see DropReasonCode for the full rationale).
     if (accepted.length >= config.maxTicks) {
       drops.push({
         reason: 'TICK_LIMIT_REACHED',
@@ -196,7 +196,6 @@ export function buildTickWindows(
       });
       break;
     }
-    lastSeqPerNode.set(s.node, s.sequence);
     accepted.push(s);
   }
 
