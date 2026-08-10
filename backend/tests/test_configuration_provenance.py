@@ -374,3 +374,52 @@ def test_bare_url_value_is_not_a_remote_truth_path():
     assert res.status == "RESOLVED"
     assert res.resolved["url"] == "https://evil.example/cfg"
     assert res.source_hashes[0].remote_origin is None
+
+
+# ---------------------------------------------------------------------------
+# Cross-language float canonicalization parity.
+#
+# The TypeScript canonicalizer uses JS ``Number.prototype.toString`` (via
+# ``String(value)``). Python ``str(float)`` diverges for some floats (whole
+# floats, exponential threshold), which would break provenance hash parity.
+# These values were chosen to exercise the divergent formatting boundaries and
+# are asserted byte-for-byte against the JS reference output. If either side
+# changes float serialization, these tests fail.
+# ---------------------------------------------------------------------------
+
+_JS_FLOAT_REFERENCE = [
+    # (input, expected canonical JS string, expected sha256 of that string).
+    # Expected values were produced by the TypeScript canonicalizer (the
+    # declared-canonical implementation) and re-confirmed byte-identical by the
+    # fixed Python implementation. Do NOT edit these by hand - regenerate from
+    # both runtimes if float serialization changes.
+    (1.0, "1", "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"),
+    (-0.0, "0", "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"),
+    (0.1, "0.1", "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310"),
+    (-0.1, "-0.1", "ffe616e28103a848cc8a18531f5ba096e153b50c6d597297ad5cb69e39496f6a"),
+    (100.25, "100.25", "276e984dd04dbd73c7d99e14cf02cff9fe8d1b467a04929a3770f8c7c7f0ace2"),
+    (1e16, "10000000000000000", "139eb393675707818651f879828a526159209ca3ad3b2f94f9f8ec8c4fb5e610"),
+    (1e20, "100000000000000000000", "c344e9487bfbd5c4e03c9fb90d62a5dde5e00b54d55c46e9f4a803aea162b80c"),
+    (1e21, "1e+21", "241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"),
+    (1e-7, "1e-7", "5b33e02f2c5103a05d32f6ba9cb058294452bfbf393967f68bb30c1bdcbbab22"),
+    (5e-7, "5e-7", "1dbb0eeaf281e991374e0969e04ccffc84d2c820f69c056f105256cf4cc2bba0"),
+    (5e-324, "5e-324", "c46e7ca1be4c8734f373a56530787288fa2058d73d07855e9247e949f811a42a"),
+    (1.7976931348623157e308, "1.7976931348623157e+308", "c2784e1abd6317452708f3fbf9641c16b959561bc621a1d408c23a20aa2cb585"),
+    (1234567.89, "1234567.89", "3b1ff895d2562d2fd5af9c6868370fb954997d8d863abd0e28bdd981b3ba6cd2"),
+    (1234567890123456.0, "1234567890123456", "7a51d064a1a216a692f753fcdab276e4ff201a01d8b66f56d50d4d719fd0dc87"),
+]
+
+
+@pytest.mark.parametrize("value,expected_str,expected_hash", _JS_FLOAT_REFERENCE)
+def test_float_canonicalization_matches_js(value, expected_str, expected_hash):
+    assert canonical_json(value) == expected_str
+    assert hash_value(value) == expected_hash
+
+
+def test_float_nested_canonicalization_matches_js():
+    # A nested structure mixing floats, ints, strings and arrays must serialize
+    # byte-identically to the JS canonicalizer. The expected string was produced
+    # from the TypeScript implementation.
+    value = {"a": 1.0, "b": [1e20, 2.5, 3], "c": {"d": 0.1, "e": 1e-7}}
+    expected = '{"a":1,"b":[100000000000000000000,2.5,3],"c":{"d":0.1,"e":1e-7}}'
+    assert canonical_json(value) == expected
