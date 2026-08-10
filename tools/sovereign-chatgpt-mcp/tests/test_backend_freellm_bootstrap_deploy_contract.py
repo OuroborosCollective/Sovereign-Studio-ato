@@ -37,12 +37,16 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert '"/api/internal/llm/freellm/providers"' in deploy
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile"' in deploy
     assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover"' in deploy
-    assert "minimum_ready_routes = 5" in deploy
+    assert "minimum_ready_routes = 7" in deploy
     assert "if len(verified_receipts) < minimum_ready_routes:" in deploy
     assert '"minimumReadyRoutes": minimum_ready_routes' in deploy
     assert '"minimumReadySatisfied": len(verified_receipts) >= minimum_ready_routes' in deploy
     assert 'status_code not in {200, 409}' in deploy
     assert 'except urllib.error.HTTPError as exc:' in deploy
+    assert 'timeout_seconds: int = 120' in deploy
+    assert 'timeout_seconds=45' in deploy
+    assert 'except (TimeoutError, urllib.error.URLError, OSError) as exc:' in deploy
+    assert '"blocker": "provider_request_timeout_or_network_error"' in deploy
 
     assert 'receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v3"' in deploy
     assert 'receipt.get("generalChatEvidenceVerified") is True' in deploy
