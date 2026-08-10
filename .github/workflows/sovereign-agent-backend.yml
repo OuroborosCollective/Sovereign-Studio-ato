@@ -45,7 +45,6 @@ jobs:
             backend/tests/test_agent_runtime_routes.py \
             backend/tests/test_configuration_provenance.py \
             backend/tests/test_configuration_provenance_mirror.py \
-            backend/tests/test_configuration_inventory.py \
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"

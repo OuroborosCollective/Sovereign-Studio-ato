@@ -16,7 +16,23 @@ from pathlib import Path
 import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _find_repo_root() -> Path:
+    """Walk up from this test file until we find the dir containing
+    backend/agent_runtime and scripts/sovereign-backend. Works identically
+    whether the test runs from backend/tests/ or scripts/sovereign-backend/tests/."""
+    here = Path(__file__).resolve()
+    for parent in [here.parent, *here.parents]:
+        if (parent / "backend" / "agent_runtime").is_dir() and (
+            parent / "scripts" / "sovereign-backend"
+        ).is_dir():
+            return parent
+    # Fallback: assume two levels up (canonical location).
+    return here.parents[2]
+
+
+REPO_ROOT = _find_repo_root()
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
