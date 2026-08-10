@@ -20,6 +20,9 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Final, Mapping, Sequence
 
+from .configuration.config_sources import ConfigResolutionContract
+from .configuration.receipt import ConfigReceipt, verify_receipt
+
 
 # ---------------------------------------------------------------------------
 # Capability status vocabulary
@@ -682,6 +685,99 @@ def collect_provider(
     )
 
 
+def collect_config_provenance(
+    *,
+    resolution: ConfigResolutionContract,
+    receipt: ConfigReceipt,
+) -> CollectorObservation:
+    """Bind the resolved configuration projection into the evidence surface.
+
+    This is the read-only PatchMon readback that confirms the *actually loaded*
+    configuration projection matches its redacted receipt. Config-drift (a
+    CONTRADICTED resolution) invalidates prior run/permission bindings and
+    blocks active countermeasures instead of silently continuing — it is
+    reported as ``DEGRADED`` so the evidence gate cannot advance on a drifted
+    config. A resolution that failed closed (``BLOCKED``) or a tampered receipt
+    yields ``UNVERIFIABLE``: the loaded config cannot be bound to any revision.
+    """
+    if not isinstance(resolution, ConfigResolutionContract):
+        raise CollectorContractError(
+            "resolution must be a ConfigResolutionContract"
+        )
+    if not isinstance(receipt, ConfigReceipt):
+        raise CollectorContractError("receipt must be a ConfigReceipt")
+
+    rh = str(receipt.receipt_hash or "").strip().lower()
+    if not rh or not _SHA64.fullmatch(rh):
+        return build_observation(
+            capability_id="configuration.provenance",
+            collector="config_provenance",
+            status=UNVERIFIABLE,
+            cause="receipt_hash is missing or not a valid SHA-256 — config projection cannot be bound",
+        )
+    if not verify_receipt(receipt):
+        return build_observation(
+            capability_id="configuration.provenance",
+            collector="config_provenance",
+            status=UNVERIFIABLE,
+            cause="receipt failed verification — loaded config projection does not match its receipt",
+        )
+
+    rev = str(receipt.revision or "").strip().lower()
+    if rev and not (_SHA40.fullmatch(rev) or _SHA64.fullmatch(rev)):
+        rev = ""
+
+    status = resolution.status
+    drift = resolution.drift
+    errors = resolution.errors
+
+    if status == "RESOLVED" and drift is None and not errors:
+        cap_status = PRESERVED
+        cause = "configuration projection resolved and receipt verified"
+    elif status == "CONTRADICTED" or drift is not None:
+        cap_status = DEGRADED
+        drift_kind = drift.kind if drift else "content-drift"
+        cause = (
+            f"config-drift ({drift_kind}) invalidates prior run/permission bindings"
+        )
+    elif status == "BLOCKED":
+        cap_status = UNVERIFIABLE
+        cause = "configuration resolution blocked — no loadable projection to bind"
+    elif status == "DEGRADED":
+        cap_status = DEGRADED
+        cause = "configuration resolution degraded — prior bindings invalidated"
+    else:
+        cap_status = UNVERIFIABLE
+        cause = f"unknown resolution status: {status}"
+
+    if not rev:
+        rev = (
+            str(resolution.resolved_hash or "").strip().lower()
+            if _SHA64.fullmatch(str(resolution.resolved_hash or ""))
+            else ""
+        )
+
+    detail = {
+        "receipt_hash": rh,
+        "schema_hash": str(resolution.schema_hash or ""),
+        "resolved_hash": str(resolution.resolved_hash or ""),
+        "status": status,
+        "source_count": len(resolution.source_hashes),
+        "image_digest": str(receipt.image_digest or "") or None,
+        "drift": None if drift is None else drift.kind,
+        "errors": tuple(errors) if errors else (),
+    }
+
+    return build_observation(
+        capability_id="configuration.provenance",
+        collector="config_provenance",
+        status=cap_status,
+        source_revision=rev,
+        cause=cause,
+        detail=detail,
+    )
+
+
 __all__ = [
     "CAPABILITY_STATUSES",
     "DEGRADED",
@@ -697,6 +793,7 @@ __all__ = [
     "build_capability_delta",
     "build_observation",
     "canonical_evidence_sha256",
+    "collect_config_provenance",
     "collect_docker",
     "collect_git_workspace",
     "collect_github_ci",

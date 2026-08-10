@@ -15,6 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
@@ -32,6 +34,7 @@ from agent_runtime.evidence_collectors import (
     build_capability_delta,
     build_observation,
     canonical_evidence_sha256,
+    collect_config_provenance,
     collect_docker,
     collect_git_workspace,
     collect_github_ci,
@@ -578,3 +581,206 @@ def test_delta_intentionally_removed_propagates() -> None:
         result_observations=result,
     )
     assert delta.entries[0].status == INTENTIONALLY_REMOVED
+
+
+# ---------------------------------------------------------------------------
+# collect_config_provenance (Issue #1169)
+#
+# Wires the configuration provenance module into the read-only evidence /
+# PatchMon readback surface. Uses the real live path: resolve_config_sources
+# + materialize_receipt + verify_receipt. No production logic is copied here.
+# ---------------------------------------------------------------------------
+
+from agent_runtime.configuration import (  # noqa: E402
+    ConfigSourceContract,
+    ReceiptOptions,
+    ResolveOptions,
+    default_priority_for,
+    materialize_receipt,
+    resolve_config_sources,
+)
+
+
+def _csrc(
+    id: str,
+    kind: str,
+    values: dict,
+    *,
+    revision: str = SHA40,
+    content_hash: str | None = None,
+    schema_hash: str = "sch-default",
+    priority: int | None = None,
+) -> ConfigSourceContract:
+    if priority is None:
+        try:
+            priority = default_priority_for(kind)  # type: ignore[arg-type]
+        except KeyError:
+            priority = 999
+    return ConfigSourceContract(
+        id=id,
+        kind=kind,  # type: ignore[arg-type]
+        revision=revision,
+        content_hash=content_hash or f"ch-{id}",
+        schema_hash=schema_hash,
+        priority=priority,
+        values=values,
+    )
+
+
+_CBASE = [
+    _csrc("defaults", "compiled-defaults", {"a": 1}),
+    _csrc("deploy", "deployment-config", {"b": 2}),
+]
+
+
+def test_config_provenance_resolved_is_preserved() -> None:
+    res = resolve_config_sources(_CBASE)
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+    obs = collect_config_provenance(resolution=res, receipt=receipt)
+
+    assert obs.status == PRESERVED
+    assert obs.capability_id == "configuration.provenance"
+    assert obs.collector == "config_provenance"
+    assert obs.source_revision == SHA40
+    assert obs.detail["receipt_hash"] == receipt.receipt_hash
+    assert obs.detail["schema_hash"] == res.schema_hash
+    assert obs.detail["resolved_hash"] == res.resolved_hash
+    assert obs.detail["status"] == "RESOLVED"
+    assert obs.detail["drift"] is None
+    assert obs.detail["source_count"] == 2
+
+
+def test_config_provenance_contradicted_is_degraded_and_blocks() -> None:
+    # Resolve against a wrong expected hash -> CONTRADICTED (config-drift).
+    res = resolve_config_sources(
+        _CBASE, ResolveOptions(expected_receipt_hash="deadbeef")
+    )
+    assert res.status == "CONTRADICTED"
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+    obs = collect_config_provenance(resolution=res, receipt=receipt)
+
+    # Drift invalidates prior run/permission bindings: never PRESERVED.
+    assert obs.status == DEGRADED
+    assert "config-drift" in obs.cause
+    assert "invalidates" in obs.cause
+    assert obs.detail["drift"] == "content-drift"
+    assert obs.detail["status"] == "CONTRADICTED"
+    # Revision binding survives drift so the contradiction is auditable.
+    assert obs.source_revision == SHA40
+
+
+def test_config_provenance_blocked_is_unverifiable() -> None:
+    # Unknown source kind fails closed -> BLOCKED, no loadable projection.
+    bad = [
+        _csrc("defaults", "compiled-defaults", {"a": 1}),
+        _csrc("bogus", "not-a-real-kind", {"z": 9}),
+    ]
+    res = resolve_config_sources(bad)
+    assert res.status == "BLOCKED"
+    assert res.resolved_hash == ""  # no loadable projection to hash
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+    obs = collect_config_provenance(resolution=res, receipt=receipt)
+
+    assert obs.status == UNVERIFIABLE
+    assert "blocked" in obs.cause
+    assert obs.detail["resolved_hash"] == ""
+
+
+def test_config_provenance_missing_receipt_hash_is_unverifiable() -> None:
+    res = resolve_config_sources(_CBASE)
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+    # Tamper: blank the receipt hash.
+    tampered = type(receipt)(
+        receipt_hash="",
+        status=receipt.status,
+        source_order=receipt.source_order,
+        source_hashes=receipt.source_hashes,
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+        resolved=receipt.resolved,
+        drift=receipt.drift,
+        errors=receipt.errors,
+        revision=receipt.revision,
+        image_digest=receipt.image_digest,
+        materialized_at=receipt.materialized_at,
+    )
+    obs = collect_config_provenance(resolution=res, receipt=tampered)
+
+    assert obs.status == UNVERIFIABLE
+    assert "receipt_hash" in obs.cause
+    assert obs.source_revision == ""
+
+
+def test_config_provenance_tampered_receipt_is_unverifiable() -> None:
+    res = resolve_config_sources(_CBASE)
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+    # Tamper: keep a valid-looking hash but mutate the resolved payload so
+    # verify_receipt() fails (loaded projection != receipt).
+    tampered = type(receipt)(
+        receipt_hash=receipt.receipt_hash,
+        status=receipt.status,
+        source_order=receipt.source_order,
+        source_hashes=receipt.source_hashes,
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+        resolved={**receipt.resolved, "injected": 999},
+        drift=receipt.drift,
+        errors=receipt.errors,
+        revision=receipt.revision,
+        image_digest=receipt.image_digest,
+        materialized_at=receipt.materialized_at,
+    )
+    obs = collect_config_provenance(resolution=res, receipt=tampered)
+
+    assert obs.status == UNVERIFIABLE
+    assert "verification" in obs.cause
+
+
+def test_config_provenance_revision_falls_back_to_resolved_hash() -> None:
+    # revision is not a SHA -> fall back to resolved_hash (SHA-256) so the
+    # observation is still revision-bound.
+    res = resolve_config_sources(_CBASE)
+    receipt = materialize_receipt(res, ReceiptOptions(revision="rev-not-a-sha"))
+    obs = collect_config_provenance(resolution=res, receipt=receipt)
+
+    assert obs.status == PRESERVED
+    assert obs.source_revision == res.resolved_hash
+    assert len(obs.source_revision) == 64
+
+
+def test_config_provenance_observation_hash_is_deterministic() -> None:
+    res = resolve_config_sources(_CBASE)
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+    o1 = collect_config_provenance(resolution=res, receipt=receipt)
+    o2 = collect_config_provenance(resolution=res, receipt=receipt)
+
+    assert o1.observation_hash == o2.observation_hash
+    assert o1.observation_hash  # non-empty
+
+
+def test_config_provenance_drift_changes_observation_hash() -> None:
+    res_ok = resolve_config_sources(_CBASE)
+    receipt_ok = materialize_receipt(res_ok, ReceiptOptions(revision=SHA40))
+    o_ok = collect_config_provenance(resolution=res_ok, receipt=receipt_ok)
+
+    res_drift = resolve_config_sources(
+        _CBASE, ResolveOptions(expected_receipt_hash="deadbeef")
+    )
+    receipt_drift = materialize_receipt(res_drift, ReceiptOptions(revision=SHA40))
+    o_drift = collect_config_provenance(
+        resolution=res_drift, receipt=receipt_drift
+    )
+
+    assert o_ok.status == PRESERVED
+    assert o_drift.status == DEGRADED
+    assert o_ok.observation_hash != o_drift.observation_hash
+
+
+def test_config_provenance_rejects_non_contract_inputs() -> None:
+    res = resolve_config_sources(_CBASE)
+    receipt = materialize_receipt(res, ReceiptOptions(revision=SHA40))
+
+    with pytest.raises(CollectorContractError):
+        collect_config_provenance(resolution="not-a-contract", receipt=receipt)  # type: ignore[arg-type]
+    with pytest.raises(CollectorContractError):
+        collect_config_provenance(resolution=res, receipt="not-a-receipt")  # type: ignore[arg-type]
