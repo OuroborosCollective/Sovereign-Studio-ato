@@ -414,3 +414,47 @@ describe('cross-language hash parity (TS vs Python)', () => {
     expect(await hashValue(parityInput)).toBe(expected);
   });
 });
+
+// Cross-language receipt-hash parity: ``materializeReceipt`` must produce a
+// byte-identical ``receiptHash`` for the same resolved configuration in both
+// the TypeScript and Python implementations. The values below are golden
+// hashes produced from the canonical Python receipt module
+// (backend/agent_runtime/configuration/receipt.py) using the same source
+// fixtures. This enforces the documented cross-language receipt-byte-identity
+// invariant: any divergence in receipt-body field names, key ordering,
+// source-hash projection, determinism epoch or default option handling breaks
+// the test on the side that changed.
+describe('cross-language receipt hash parity (TS vs Python)', () => {
+  it('matches the Python-reference receiptHash for default baseSources', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res);
+    expect(receipt.receiptHash).toBe(
+      'a58b2d4d5ec81b20b1b1d6d498a30abbe67313e6ba5dd20d71c6ec5c0725937d',
+    );
+  });
+
+  it('matches the Python-reference receiptHash when revision and image digest are bound', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+    });
+    expect(receipt.receiptHash).toBe(
+      '01f55bccfc4862097dc438ea08b46bf315e7344bf571033a4d0f60e9f19d2070',
+    );
+  });
+
+  it('matches the Python-reference receiptHash when resolved config redacts a secret', async () => {
+    const res = await resolveConfigSources([
+      src({
+        id: 'env',
+        kind: 'environment-projection',
+        values: { apiKey: { kind: 'secret', redactedId: 'r-1' }, public: 'visible' },
+      }),
+    ]);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    expect(receipt.receiptHash).toBe(
+      'e9e096f53596af52221c3a620f1711286bd30f49746271a86b25736ff2839b13',
+    );
+  });
+});

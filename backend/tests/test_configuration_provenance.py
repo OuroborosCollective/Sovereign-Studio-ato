@@ -374,3 +374,46 @@ def test_bare_url_value_is_not_a_remote_truth_path():
     assert res.status == "RESOLVED"
     assert res.resolved["url"] == "https://evil.example/cfg"
     assert res.source_hashes[0].remote_origin is None
+
+
+# Cross-language receipt-hash parity: ``materialize_receipt`` must produce a
+# byte-identical ``receipt_hash`` for the same resolved configuration in both
+# the Python and TypeScript implementations. The values below are golden
+# hashes produced from the TypeScript receipt module
+# (src/runtime/config/configReceipt.ts) using the same source fixtures. This
+# enforces the documented cross-language receipt-byte-identity invariant: any
+# divergence in receipt-body field names, key ordering, source-hash projection,
+# determinism epoch or default option handling breaks the test on the side
+# that changed.
+def test_cross_language_receipt_hash_parity_default_base_sources():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res)
+    assert (
+        receipt.receipt_hash
+        == "a58b2d4d5ec81b20b1b1d6d498a30abbe67313e6ba5dd20d71c6ec5c0725937d"
+    )
+
+
+def test_cross_language_receipt_hash_parity_revision_and_image_digest():
+    res = resolve_config_sources(BASE_SOURCES)
+    receipt = materialize_receipt(res, {"revision": "rev-1", "image_digest": "sha256:img-1"})
+    assert (
+        receipt.receipt_hash
+        == "01f55bccfc4862097dc438ea08b46bf315e7344bf571033a4d0f60e9f19d2070"
+    )
+
+
+def test_cross_language_receipt_hash_parity_with_secret_redaction():
+    secret_sources = [
+        _src(
+            "env",
+            "environment-projection",
+            {"apiKey": {"kind": "secret", "redactedId": "r-1"}, "public": "visible"},
+        )
+    ]
+    res = resolve_config_sources(secret_sources)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})
+    assert (
+        receipt.receipt_hash
+        == "e9e096f53596af52221c3a620f1711286bd30f49746271a86b25736ff2839b13"
+    )
