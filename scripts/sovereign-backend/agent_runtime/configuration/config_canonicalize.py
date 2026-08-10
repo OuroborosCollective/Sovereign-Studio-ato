@@ -45,8 +45,10 @@ def _serialize_stable(value: Any) -> str:
     if value is None:
         return "null"
     if isinstance(value, str):
-        # ensure_ascii=True matches JS JSON.stringify default (escapes non-ASCII).
-        return json.dumps(value, ensure_ascii=True)
+        # JS JSON.stringify emits raw UTF-8 (it does NOT escape non-ASCII);
+        # ensure_ascii=False matches it so identical input yields byte-identical
+        # canonical JSON / sha256 hashes across both runtimes.
+        return json.dumps(value, ensure_ascii=False)
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
@@ -54,9 +56,9 @@ def _serialize_stable(value: Any) -> str:
     if isinstance(value, float):
         return str(value) if math.isfinite(value) else "null"
     if isinstance(value, RedactedSecret):
-        return '{"kind":"secret","redactedId":' + json.dumps(value.redacted_id, ensure_ascii=True) + '}'
+        return '{"kind":"secret","redactedId":' + json.dumps(value.redacted_id, ensure_ascii=False) + '}'
     if is_redacted_secret(value):
-        return '{"kind":"secret","redactedId":' + json.dumps(value["redactedId"], ensure_ascii=True) + '}'
+        return '{"kind":"secret","redactedId":' + json.dumps(value["redactedId"], ensure_ascii=False) + '}'
     if isinstance(value, (list, tuple)):
         return "[" + ",".join(_serialize_stable(v) for v in value) + "]"
     if isinstance(value, dict):
@@ -64,8 +66,8 @@ def _serialize_stable(value: Any) -> str:
         for key in sorted(value.keys()):
             # Python has no `undefined`; None serializes as "null" (matching
             # the TS treatment of null). Keys are JSON-encoded with the same
-            # ensure_ascii rule as JS JSON.stringify.
-            parts.append(json.dumps(key, ensure_ascii=True) + ":" + _serialize_stable(value[key]))
+            # ensure_ascii=False rule as JS JSON.stringify (raw UTF-8).
+            parts.append(json.dumps(key, ensure_ascii=False) + ":" + _serialize_stable(value[key]))
         return "{" + ",".join(parts) + "}"
     return "null"
 

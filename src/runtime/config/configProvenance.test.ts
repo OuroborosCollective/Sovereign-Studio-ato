@@ -414,3 +414,52 @@ describe('cross-language hash parity (TS vs Python)', () => {
     expect(await hashValue(parityInput)).toBe(expected);
   });
 });
+
+// Cross-language unicode / non-ASCII string parity (#1169).
+//
+// JS JSON.stringify emits raw UTF-8 (it does NOT escape non-ASCII code points).
+// The Python mirror must use ensure_ascii=False to match; otherwise non-ASCII
+// config inputs (German labels, emojis) produce different canonical JSON and
+// different sha256 receipt hashes, breaking the #1169 acceptance criterion
+// "gleicher Input erzeugt bytegleichen Public-Receipt-Hash". These cases lock
+// the corrected parity: the TS canonical form must be byte-identical to the
+// Python (ensure_ascii=False) form. Python reference values below were
+// computed from backend/agent_runtime/configuration/config_canonicalize.py.
+describe('cross-language hash parity - non-ASCII strings (#1169)', () => {
+  const unicodeInput = {
+    label: 'café',
+    emoji: '🛡️',
+    greeting: 'Grüße',
+    model: 'llama-3',
+    nested: { title: 'Synchronisieren' },
+    arr: ['Wiederherstellung', 1, true, null],
+  };
+
+  it('produces byte-identical (raw UTF-8) canonical JSON for non-ASCII inputs', () => {
+    const expected =
+      '{"arr":["Wiederherstellung",1,true,null],"emoji":"🛡️","greeting":"Grüße","label":"café","model":"llama-3","nested":{"title":"Synchronisieren"}}';
+    expect(canonicalJson(unicodeInput)).toBe(expected);
+  });
+
+  it('produces the Python-reference sha256 hash for non-ASCII inputs', async () => {
+    // sha256 of the canonical JSON above over its raw UTF-8 bytes, hex lowercase.
+    const expected = '6929ea6b770c93c1f9d34bc0ecac2d6aa6f8373906c2c69ebd4ad953cab1756c';
+    expect(await hashValue(unicodeInput)).toBe(expected);
+  });
+
+  it('does not ASCII-escape a non-ASCII string value', () => {
+    expect(canonicalJson({ k: 'café' })).toBe('{"k":"café"}');
+    expect(canonicalJson({ k: 'café' })).not.toContain('\\u');
+  });
+
+  it('does not ASCII-escape a non-ASCII object key', () => {
+    expect(canonicalJson({ Synchronisieren: 1 })).toBe('{"Synchronisieren":1}');
+    expect(canonicalJson({ Synchronisieren: 1 })).not.toContain('\\u');
+  });
+
+  it('produces the Python-reference sha256 for a single non-ASCII string', async () => {
+    // sha256 of '"café"' over raw UTF-8 bytes.
+    const expected = '28380feb8724d669bc8d4cf5b5a5bb1adbdc61b81ebd06f3fabc567b4f3b0fc5';
+    expect(await hashValue('café')).toBe(expected);
+  });
+});

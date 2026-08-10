@@ -374,3 +374,74 @@ def test_bare_url_value_is_not_a_remote_truth_path():
     assert res.status == "RESOLVED"
     assert res.resolved["url"] == "https://evil.example/cfg"
     assert res.source_hashes[0].remote_origin is None
+
+
+# ---------------------------------------------------------------------------
+# Cross-language unicode / non-ASCII string parity (#1169).
+#
+# The TypeScript canonicalizer serializes strings with ``JSON.stringify``,
+# which emits raw UTF-8 (it does NOT escape non-ASCII code points). The Python
+# mirror previously used ``json.dumps(..., ensure_ascii=True)`` which escapes
+# non-ASCII to ``\uXXXX`` sequences, producing different canonical JSON and
+# therefore different sha256 receipt hashes for identical config inputs that
+# contained any non-ASCII text (e.g. German labels, emojis). That broke the
+# #1169 acceptance criterion "gleicher Input erzeugt bytegleichen
+# Public-Receipt-Hash". These cases lock the corrected behavior: the Python
+# canonical form must be byte-identical to the TS ``JSON.stringify`` form.
+# Reference values below were computed from the authoritative TS
+# ``configCanonicalize.ts`` implementation (WebCrypto sha256 of the raw UTF-8
+# canonical bytes), then asserted here against the Python mirror.
+# ---------------------------------------------------------------------------
+
+_UNICODE_PARITY_INPUT = {
+    "label": "café",
+    "emoji": "🛡️",
+    "greeting": "Grüße",
+    "model": "llama-3",
+    "nested": {"title": "Synchronisieren"},
+    "arr": ["Wiederherstellung", 1, True, None],
+}
+
+_UNICODE_PARITY_CANONICAL = (
+    '{"arr":["Wiederherstellung",1,true,null],"emoji":"🛡️",'
+    '"greeting":"Grüße","label":"café","model":"llama-3",'
+    '"nested":{"title":"Synchronisieren"}}'
+)
+
+# sha256 of _UNICODE_PARITY_CANONICAL over its raw UTF-8 bytes, computed from
+# the TS reference implementation.
+_UNICODE_PARITY_HASH = "6929ea6b770c93c1f9d34bc0ecac2d6aa6f8373906c2c69ebd4ad953cab1756c"
+
+
+def test_canonical_json_non_ascii_strings_emit_raw_utf8():
+    # Must match the TS JSON.stringify form byte-for-byte (no \uXXXX escaping).
+    assert canonical_json(_UNICODE_PARITY_INPUT) == _UNICODE_PARITY_CANONICAL
+
+
+def test_canonical_json_non_ascii_string_value_is_not_ascii_escaped():
+    # Single non-ASCII value: regression guard for ensure_ascii=True.
+    assert canonical_json({"k": "café"}) == '{"k":"café"}'
+    assert "\\u" not in canonical_json({"k": "café"})
+
+
+def test_canonical_json_non_ascii_key_is_not_ascii_escaped():
+    assert canonical_json({"Synchronisieren": 1}) == '{"Synchronisieren":1}'
+    assert "\\u" not in canonical_json({"Synchronisieren": 1})
+
+
+def test_hash_value_non_ascii_matches_ts_reference():
+    assert hash_value(_UNICODE_PARITY_INPUT) == _UNICODE_PARITY_HASH
+
+
+def test_hash_value_non_ascii_string_matches_ts_reference():
+    # Reference: sha256 of '"café"' over raw UTF-8 bytes (TS hashValue).
+    assert hash_value("café") == "28380feb8724d669bc8d4cf5b5a5bb1adbdc61b81ebd06f3fabc567b4f3b0fc5"
+
+
+def test_unicode_regresses_with_old_ascii_escaped_form():
+    # Sanity guard: the old (buggy) ensure_ascii=True form must NOT match.
+    import json as _json
+
+    old = _json.dumps("café", ensure_ascii=True)
+    assert old == '"caf\\u00e9"'
+    assert canonical_json({"k": "café"}) != '{"k":' + old + "}"
