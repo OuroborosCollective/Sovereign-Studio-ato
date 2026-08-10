@@ -1,0 +1,133 @@
+{
+  "schema_version": "sovereign.config-provenance-parity.v1",
+  "issue": 1169,
+  "description": "Cross-language (Python/TypeScript) end-to-end receipt-hash parity golden vector. Both implementations must produce byte-identical resolvedHash and receiptHash for these inputs. The single source of truth for inputs is this file; schema fields live under options.schemaFields.",
+  "sources": [
+    {
+      "id": "defaults",
+      "kind": "compiled-defaults",
+      "revision": "sha-defaults-0000000000000000000000000000000000000000",
+      "content_hash": "ch-defaults",
+      "schema_hash": "sch-a5c28a8409179d35",
+      "priority": 0,
+      "values": {
+        "model": "llama-3",
+        "temperature": 0.5,
+        "maxTokens": 100,
+        "label": "café",
+        "emoji": "🛡️",
+        "features": {
+          "streaming": true,
+          "tools": false
+        },
+        "tags": [
+          "alpha",
+          "beta"
+        ],
+        "apiKey": {
+          "kind": "secret",
+          "redactedId": "r-defaults"
+        }
+      }
+    },
+    {
+      "id": "image",
+      "kind": "image-manifest",
+      "revision": "sha-image-1111111111111111111111111111111111111111",
+      "content_hash": "ch-image",
+      "schema_hash": "sch-a5c28a8409179d35",
+      "priority": 10,
+      "values": {
+        "temperature": 0.7,
+        "features": {
+          "tools": true
+        },
+        "tags": [
+          "alpha"
+        ]
+      }
+    },
+    {
+      "id": "deploy",
+      "kind": "deployment-config",
+      "revision": "sha-deploy-2222222222222222222222222222222222222222",
+      "content_hash": "ch-deploy",
+      "schema_hash": "sch-a5c28a8409179d35",
+      "priority": 20,
+      "values": {
+        "maxTokens": 200,
+        "label": "Grüße",
+        "features": {
+          "streaming": null
+        }
+      }
+    }
+  ],
+  "options": {
+    "schemaFields": [
+      {
+        "name": "model",
+        "kind": "string"
+      },
+      {
+        "name": "temperature",
+        "kind": "number"
+      },
+      {
+        "name": "maxTokens",
+        "kind": "number"
+      },
+      {
+        "name": "label",
+        "kind": "string"
+      },
+      {
+        "name": "emoji",
+        "kind": "string"
+      },
+      {
+        "name": "features",
+        "kind": "object"
+      },
+      {
+        "name": "tags",
+        "kind": "array"
+      },
+      {
+        "name": "apiKey",
+        "kind": "secret"
+      }
+    ],
+    "revision": "sha-receipt-revision-33333333333333333333333333333333",
+    "imageDigest": "sha256:image-digest-4444444444444444444444444444444444"
+  },
+  "expected": {
+    "status": "RESOLVED",
+    "resolved_hash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+    "receipt_hash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d",
+    "resolved": {
+      "model": "llama-3",
+      "temperature": 0.7,
+      "maxTokens": 200,
+      "label": "Grüße",
+      "emoji": "🛡️",
+      "features": {
+        "tools": true
+      },
+      "tags": [
+        "alpha"
+      ],
+      "apiKey": {
+        "kind": "secret",
+        "redactedId": "r-defaults"
+      }
+    }
+  },
+  "parity_verified": {
+    "python_resolved_hash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+    "typescript_resolved_hash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+    "python_receipt_hash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d",
+    "typescript_receipt_hash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d",
+    "identical": true
+  }
+}
