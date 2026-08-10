@@ -42,3 +42,4 @@ backend_app.py
 runtime-evidence/
 .sovereign-artifacts/
 .venv-backend-tests/
+.venv-mcp-tests/
