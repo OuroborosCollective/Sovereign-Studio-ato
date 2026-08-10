@@ -4,7 +4,9 @@ on:
   push:
     branches: [main, master, develop]
     paths:
+      - '.devcontainer/**'
       - 'backend/requirements-test.txt'
+      - 'backend/tests/test_codespace_devcontainer_contract.py'
       - 'backend/litellm_runtime.py'
       - 'scripts/check-backend-python-runtime.py'
       - 'scripts/sovereign-backend/**'
@@ -45,6 +47,7 @@ jobs:
             backend/tests/test_agent_runtime_routes.py \
             backend/tests/test_configuration_provenance.py \
             backend/tests/test_configuration_provenance_mirror.py \
+            backend/tests/test_codespace_devcontainer_contract.py \
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"
