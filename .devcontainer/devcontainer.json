@@ -1,0 +1,58 @@
+{
+  "name": "Sovereign Studio ATO",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "remoteUser": "vscode",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installGradle": false,
+      "installMaven": false
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "containerEnv": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1",
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1"
+  },
+  "postCreateCommand": "bash .devcontainer/bootstrap.sh",
+  "forwardPorts": [3000, 8787],
+  "portsAttributes": {
+    "3000": {
+      "label": "ATO Vite frontend",
+      "onAutoForward": "notify"
+    },
+    "8787": {
+      "label": "ATO Flask backend",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "ms-azuretools.vscode-docker",
+        "github.vscode-github-actions"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv-backend-tests/bin/python",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}
