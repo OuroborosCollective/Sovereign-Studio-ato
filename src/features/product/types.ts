@@ -30,6 +30,11 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   timestamp: number;
+  metadata?: {
+    modelId?: string;
+    latencyMs?: number;
+    [key: string]: unknown;
+  };
 }
 
 export type SuggestionType = 'feature' | 'error' | 'improvement';

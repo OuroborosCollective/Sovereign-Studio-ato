@@ -90,7 +90,8 @@ const TerminalChatLayout: React.FC<{
   canSubmit: boolean;
   isAnalyzing: boolean;
   thinkingFrame: number;
-}> = ({ messages, inputValue, onInputChange, onSubmit, canSubmit, isAnalyzing, thinkingFrame }) => (
+  selectedModel?: string;
+}> = ({ messages, inputValue, onInputChange, onSubmit, canSubmit, isAnalyzing, thinkingFrame, selectedModel }) => (
   <div className="flex flex-col h-full bg-slate-950">
     {/* Terminal-style header */}
     <div className="px-4 py-2 border-b border-slate-800 bg-slate-900/50 flex items-center gap-2">
@@ -110,6 +111,11 @@ const TerminalChatLayout: React.FC<{
             {msg.role === 'user' ? '> ' : '$ '}
           </span>
           <span className="text-slate-300">{msg.content}</span>
+          {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
+            <div className="text-[10px] text-slate-500 mt-1 pl-4 opacity-70">
+              # Fallback: {msg.metadata.modelId as string}
+            </div>
+          )}
         </div>
       ))}
       {isAnalyzing && (
@@ -266,10 +272,18 @@ const FloatingChatLayout: React.FC<{
             }`}>
               {msg.role === 'user' ? <User size={14} className="text-indigo-400" /> : <Bot size={14} className="text-cyan-400" />}
             </div>
-            <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-              msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
-            }`}>
-              {msg.content}
+            <div className="flex flex-col gap-1 max-w-[85%]">
+              <div className={`rounded-2xl px-4 py-3 text-sm ${
+                msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
+              }`}>
+                {msg.content}
+              </div>
+              {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
+                <div className="text-[10px] text-slate-500 px-2 flex items-center gap-1">
+                  <AlertTriangle size={10} className="text-amber-500/70" />
+                  Fallback: {msg.metadata.modelId as string}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -368,7 +382,8 @@ const SplitViewLayout: React.FC<{
   canSubmit: boolean;
   isAnalyzing: boolean;
   thinkingFrame: number;
-}> = ({ messages, inputValue, onInputChange, onSubmit, canSubmit, isAnalyzing, thinkingFrame }) => {
+  selectedModel?: string;
+}> = ({ messages, inputValue, onInputChange, onSubmit, canSubmit, isAnalyzing, thinkingFrame, selectedModel }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -387,6 +402,12 @@ const SplitViewLayout: React.FC<{
             <div key={msg.id} className={`text-sm ${msg.role === 'user' ? 'text-indigo-300' : 'text-slate-300'}`}>
               <span className="font-bold">{msg.role === 'user' ? 'You: ' : 'AI: '}</span>
               {msg.content}
+              {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
+                <div className="text-[10px] text-amber-500/70 mt-0.5 ml-6 flex items-center gap-1">
+                  <AlertTriangle size={10} />
+                  Fallback: {msg.metadata.modelId as string}
+                </div>
+              )}
             </div>
           ))}
           {isAnalyzing && (
@@ -483,6 +504,7 @@ export const ChatLayoutTemplates: React.FC<ChatLayoutTemplatesProps> = ({
       canSubmit,
       isAnalyzing,
       thinkingFrame,
+      selectedModel,
     };
 
     switch (layout) {
