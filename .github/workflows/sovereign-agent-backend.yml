@@ -45,9 +45,50 @@ jobs:
             backend/tests/test_agent_runtime_routes.py \
             backend/tests/test_configuration_provenance.py \
             backend/tests/test_configuration_provenance_mirror.py \
+            backend/tests/test_configuration_inventory.py \
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"
+
+      - name: Configuration provenance inventory must report zero drift
+        shell: bash
+        run: |
+          python backend/agent_runtime/configuration_inventory.py --strict > config-inventory.json
+          python -c "import json, sys
+          inv = json.load(open('config-inventory.json'))
+          if len(inv['surfaces']) < 5:
+              sys.exit('too few config surfaces catalogued')
+          if len(inv['drift']) != 0:
+              sys.exit('drift in config inventory: ' + str(inv['drift']))
+          print('Config inventory OK:', inv['snapshotSha256'])"
+
+      - name: Config inventory checked-in artifact must match the runner
+        shell: bash
+        run: |
+          python -c "import json, sys
+          from pathlib import Path
+          sys.path.insert(0, 'backend')
+          from agent_runtime.configuration_inventory import build_inventory
+          artifact = json.loads(Path('docs/architecture/CONFIGURATION_PROVENANCE_INVENTORY.json').read_text())
+          live = build_inventory(Path('.').resolve())
+          if artifact['snapshotSha256'] != live['snapshotSha256']:
+              sys.exit('stale inventory artifact: regenerate with: python backend/agent_runtime/configuration_inventory.py --write')
+          print('Config inventory artifact matches runner:', artifact['snapshotSha256'])"
+
+      - name: Mirror parity for configuration inventory runner + tests
+        shell: bash
+        run: |
+          set -e
+          for f in backend/agent_runtime/configuration_inventory.py \
+                   backend/tests/test_configuration_inventory.py; do
+            canonical="$f"
+            mirror="scripts/sovereign-backend/${f#backend/}"
+            if ! diff -q "$canonical" "$mirror" > /dev/null; then
+              echo "MIRROR DRIFT: $canonical vs $mirror"
+              diff "$canonical" "$mirror" || true
+              exit 1
+            fi
+          done
 
       - name: Validate Sovereign Brain Projection (advisory)
         id: brain_projection

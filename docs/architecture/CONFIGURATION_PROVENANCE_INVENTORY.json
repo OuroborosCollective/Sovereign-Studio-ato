@@ -1,0 +1,102 @@
+{
+  "composeFilesFound": [],
+  "drift": [],
+  "generatedBy": "backend/agent_runtime/configuration_inventory.py",
+  "invariantStatements": [
+    "Configuration provenance is a read-only resolver; mutation stays under #1119.",
+    "Unknown source kinds and bare remote URLs fail closed.",
+    "No mutable URL-config truth path; remote config requires pre-bound origin, digest and hash.",
+    "A compose file in the repo is an un-inventoried deployment-config source and must be explicitly bound.",
+    "Secrets never enter receipts; they are projected only as a redacted identity.",
+    "This inventory is a claim surface: if concrete surfaces change it must be regenerated at the same revision."
+  ],
+  "repositoryRootLabel": "Sovereign-Studio-ato",
+  "schemaVersion": "sovereign.configuration-provenance-inventory.v1",
+  "snapshotSha256": "6bc0107a4139c6226e73ce15f0a8faa38101891f6b86c60bb5a90761fb73e655",
+  "sourceOrder": [
+    "compiled-defaults",
+    "image-manifest",
+    "deployment-config",
+    "environment-projection",
+    "approved-runtime-overlay"
+  ],
+  "surfaces": [
+    {
+      "contentHash": "cf897136d8219f5d97ddef7e6caf2efab326e36a28f1d9496fa3317fb6678a80",
+      "external": false,
+      "kind": "compiled-defaults",
+      "label": "compiled-defaults",
+      "note": "Hardcoded defaults inside resolver call sites; lowest priority, always present.",
+      "present": true,
+      "relativePath": "backend/agent_runtime/configuration/resolver.py",
+      "sha256": "cf897136d8219f5d97ddef7e6caf2efab326e36a28f1d9496fa3317fb6678a80",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "contentHash": "",
+      "external": true,
+      "kind": "image-manifest",
+      "label": "image-manifest",
+      "note": "Immutable image digest bound at build/deploy; read back via SOVEREIGN_IMAGE_DIGEST.",
+      "present": false,
+      "readbackChannel": "SOVEREIGN_IMAGE_DIGEST",
+      "relativePath": null,
+      "sha256": "",
+      "truthClass": "external-binding"
+    },
+    {
+      "contentHash": "c5ae59d8b44418e20c2e33edc26b7c5d17068fea42914affb7ed6b3501dcf815",
+      "external": false,
+      "kind": "deployment-config",
+      "label": "deployment-config-env-template",
+      "note": "Revision-bound deploy template; not a mutable truth path.",
+      "present": true,
+      "relativePath": ".env.example",
+      "sha256": "c5ae59d8b44418e20c2e33edc26b7c5d17068fea42914affb7ed6b3501dcf815",
+      "truthClass": "documentation"
+    },
+    {
+      "contentHash": "63dc6763db54d104b95795e23b6406fbc9a6fa2531c49e4e1b04d2217d87e419",
+      "external": false,
+      "kind": "deployment-config",
+      "label": "deployment-config-toolchain-template",
+      "note": "Toolchain patch-flow template; revision-bound deploy input.",
+      "present": true,
+      "relativePath": ".env.sovereign-toolchain.example",
+      "sha256": "63dc6763db54d104b95795e23b6406fbc9a6fa2531c49e4e1b04d2217d87e419",
+      "truthClass": "documentation"
+    },
+    {
+      "contentHash": "793a34426ba4aeb5de597f206af927b116caeea2bfd134f26009211ad025feb4",
+      "envNames": [
+        "TOOLCHAIN_API_KEY",
+        "VITE_ADMIN_API_BASE",
+        "VITE_GOOGLE_CLIENT_ID",
+        "VITE_POSTHOG_HOST",
+        "VITE_POSTHOG_KEY",
+        "VITE_SOVEREIGN_AGENT_API_URL",
+        "VITE_SOVEREIGN_BACKEND_URL",
+        "VITE_SOVEREIGN_SOURCE_REVISION"
+      ],
+      "external": true,
+      "kind": "environment-projection",
+      "label": "environment-projection-buildtime",
+      "note": "Build-time env (VITE_*, process.env, import.meta.env) baked at frontend build; projected read-only.",
+      "present": true,
+      "relativePath": null,
+      "sha256": "",
+      "truthClass": "projection"
+    },
+    {
+      "contentHash": "",
+      "external": true,
+      "kind": "approved-runtime-overlay",
+      "label": "approved-runtime-overlay",
+      "note": "Explicitly approved overlay only; highest priority, pre-bound externally.",
+      "present": false,
+      "relativePath": null,
+      "sha256": "",
+      "truthClass": "external-binding"
+    }
+  ]
+}
