@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "7ac9e145dbc88b970957012e29e4b8f9b3fb32d5",
-  "rawCandidateCount": 96,
-  "canonicalCandidateCount": 76,
+  "sourceRevision": "613a2e4f23619127d563ecc1c2e68875d34ce313",
+  "rawCandidateCount": 94,
+  "canonicalCandidateCount": 75,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -139,21 +139,6 @@
       "candidateId": "llm-boundary:f2f9e19a6dbc146874576101",
       "classification": "STRUCTURED_POLICY",
       "rationale": "collect_provider compares explicit route-health booleans, a revision and a SHA-256 truth-boundary identifier to build read-only provider evidence; it does not interpret free language or select or authorize a provider effect."
-    },
-    {
-      "canonicalPath": "scripts/sovereign-backend/agent_runtime/fleet_supervisor.py",
-      "mirrorPaths": [
-        "backend/agent_runtime/fleet_supervisor.py"
-      ],
-      "symbol": "evaluate_fleet_verdict",
-      "line": 606,
-      "patternFamily": "python_keyword_intent",
-      "fileSha256": "a9ce776c958de1759fd8f72634c63b0d24053324705d9d3826d9e4bac7187405",
-      "anchorSha256": "b2b6400cc015e14f59c01719ae269c8d3719278851a44cfa5a5b6f9c301a9f9c",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:9c76a78c0a64732a920a1c94",
-      "classification": "STRUCTURED_POLICY",
-      "rationale": "evaluate_fleet_verdict compares exact revisions and bounded structured gate, merge, and runtime receipts; it does not interpret free user language, select a model route, or authorize a mutation."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/pattern_gateway.py",
@@ -699,12 +684,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1285,
+      "line": 1326,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "d5cbe82815045d00721e12b5e5e1a2daaecb5f00bdcd13a430b4d99f5685d873",
+      "fileSha256": "76d21e4ee98223fae69c9e0fb77457bca21a93ef415284807764fb35b9245142",
       "anchorSha256": "4be124cfb705222dcc6474447317bb689e609671d071f21e36b8243922476ed9",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:c6aa0f20470caa941ad61bd7",
+      "candidateId": "llm-boundary:82378722b4a6cd77ffd0e06b",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -712,12 +697,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1286,
+      "line": 1327,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "d5cbe82815045d00721e12b5e5e1a2daaecb5f00bdcd13a430b4d99f5685d873",
+      "fileSha256": "76d21e4ee98223fae69c9e0fb77457bca21a93ef415284807764fb35b9245142",
       "anchorSha256": "ed747409eb91e564149b91519c92fc1d01cd47f69f059c648214be3a3517ceeb",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:866a2737165d51a23f7a9ee2",
+      "candidateId": "llm-boundary:7eb626a94509176dfa4efd6b",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -725,12 +710,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/github_admin.py",
       "mirrorPaths": [],
       "symbol": "GitHubAdminRuntime.merge_pr",
-      "line": 1375,
+      "line": 1416,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "d5cbe82815045d00721e12b5e5e1a2daaecb5f00bdcd13a430b4d99f5685d873",
+      "fileSha256": "76d21e4ee98223fae69c9e0fb77457bca21a93ef415284807764fb35b9245142",
       "anchorSha256": "645a786ff90fba018853eb5bce65cfb12419f97398d5d2683e69b3c7fa00492e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:4440a0d4c9ce9a30925b93a0",
+      "candidateId": "llm-boundary:27b4143ef007f462021c4cae",
       "classification": "STRUCTURED_POLICY",
       "rationale": "GitHubAdminRuntime.merge_pr evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -920,12 +905,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1685,
+      "line": 1793,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "8b791c57e25c1a8575e53de8f9ac4eb5dc5e216957e6e700e621774fda6f3c1f",
+      "fileSha256": "4f8a4269477d1e855e869a02f68dc4c12690242d8cb83bf02256cc346f9927fc",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:9e60ea1f36e1f5c61f822dc1",
+      "candidateId": "llm-boundary:29d09b99a8926302efca7d3f",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -1034,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "da5a9130973d8e375668a280742f9b9146982fed7246e1200e12ff0a2e6afe27"
+  "ledgerSha256": "6a66c1d006684723c719a74267e14f8bbe3ed010d1fb0682c2960d2898f51c9f"
 }

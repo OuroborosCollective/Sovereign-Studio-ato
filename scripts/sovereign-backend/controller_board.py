@@ -46,10 +46,14 @@ from agent_runtime.job_lifecycle import create_sovereign_agent_job
 from agent_runtime.fleet_supervisor import (
     FleetContractError,
     FleetPlan,
+    FleetTask,
     build_fleet_plan,
     build_fleet_projection,
+    evaluate_fleet_verdict,
 )
 from llm_execution_resolver import (
+    FREE_SINGLE_AGENT_PROFILE,
+    FREE_SWARM_PROFILE,
     PAID_SWARM_PROFILE,
     ExecutionResolutionError,
     load_execution_resolution,
@@ -323,7 +327,7 @@ def register_controller_board_routes(
         try:
             requested_intent_mode = _normalize_intent_mode(
                 str(body.get("intentMode") or "auto"),
-                free_profile=requested_mode == "free",
+                free_profile=False,
             )
         except ValueError as exc:
             return _operator_json({"error": str(exc)}, 400)
@@ -440,7 +444,7 @@ def register_controller_board_routes(
             }, status_code)
         if (
             execution_resolution is None
-            or execution_resolution.profile_id != PAID_SWARM_PROFILE
+            or execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}
         ):
             state = _persist_execution_resolution_blocker(
                 get_connection,
@@ -448,15 +452,15 @@ def register_controller_board_routes(
                 run_id=run_id,
                 trace_id=trace_id,
                 status="BLOCKED",
-                blocker="CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
-                reason="The six-agent controller requires a verified paid OpenRouter profile.",
-                next_action="USE_USER_SWARM_ENDPOINT_FOR_FREE_SINGLE_AGENT",
+                blocker="CONTROLLER_REQUIRES_SWARM_CAPABLE_PROFILE",
+                reason="The six-agent controller requires a verified paid profile or enough independent verified free quota scopes.",
+                next_action="ACTIVATE_PAID_ROUTE_OR_SEVEN_FREE_QUOTA_SCOPES",
             )
             return _operator_json({
                 "ok": False,
                 "runId": run_id,
                 "status": state["status"],
-                "blocker": "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
+                "blocker": "CONTROLLER_REQUIRES_SWARM_CAPABLE_PROFILE",
                 "reason": state["reason"],
                 "nextAction": state["nextAction"],
                 "requestedMode": requested_mode,
@@ -773,6 +777,53 @@ def register_controller_board_routes(
             "protectedValuesReturned": False,
         })
 
+    @app.route("/api/internal/controller/fleet/verdict-preview", methods=["POST"])
+    def operator_fleet_verdict_preview():
+        """Arbitrate exact-head Fleet evidence without authorizing merge or mutating state."""
+        if not _service_authorized():
+            return _operator_json({"error": "not authorized"}, 401)
+        body = request.get_json(force=True) or {}
+        if not isinstance(body, dict):
+            return _operator_json({"error": "fleet verdict body must be an object"}, 400)
+        rendered = json.dumps(body, ensure_ascii=False, sort_keys=True)
+        if len(rendered.encode("utf-8")) > 120_000:
+            return _operator_json({"error": "fleet verdict exceeds the bounded input limit"}, 400)
+        if _operator_contains_secret(rendered):
+            return _operator_json({"error": "secret-shaped material is forbidden in fleet input"}, 400)
+        try:
+            task = FleetTask.from_dict(body.get("task") or {})
+            assignment = body.get("assignment")
+            if assignment is not None and not isinstance(assignment, dict):
+                raise FleetContractError("assignment must be an object when supplied")
+            verdict = evaluate_fleet_verdict(
+                task,
+                assignment=assignment,
+                observed_base_revision=str(
+                    body.get("observedBaseRevision") or body.get("observed_base_revision") or ""
+                ).strip(),
+                observed_head_revision=str(
+                    body.get("observedHeadRevision") or body.get("observed_head_revision") or ""
+                ).strip(),
+                workspace_head_revision=str(
+                    body.get("workspaceHeadRevision") or body.get("workspace_head_revision") or ""
+                ).strip(),
+                check_receipts=body.get("checkReceipts") or body.get("check_receipts") or [],
+                review_receipts=body.get("reviewReceipts") or body.get("review_receipts") or [],
+                cross_task_receipts=body.get("crossTaskReceipts") or body.get("cross_task_receipts") or [],
+                merge_readback=body.get("mergeReadback") or body.get("merge_readback"),
+                runtime_readback=body.get("runtimeReadback") or body.get("runtime_readback"),
+            )
+        except (FleetContractError, TypeError, ValueError) as exc:
+            return _operator_json({"error": str(exc), "status": "FLEET_VERDICT_BLOCKED"}, 400)
+        return _operator_json({
+            "ok": True,
+            "status": "FLEET_VERDICT_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "verdict": verdict,
+            "protectedValuesReturned": False,
+        })
+
     @app.route("/api/internal/controller/runs/<run_id>", methods=["GET"])
     def operator_controller_run_status(run_id: str):
         if not _service_authorized():
@@ -1005,19 +1056,16 @@ def register_controller_board_routes(
                 "requestedMode": requested_mode,
                 "protectedValuesReturned": False,
             }, status_code)
-        if (
-            execution_resolution is None
-            or execution_resolution.profile_id != PAID_SWARM_PROFILE
-        ):
+        if execution_resolution is None:
             state = _persist_execution_resolution_blocker(
                 get_connection,
                 user_id=owner_id,
                 run_id=claim.run.run_id,
                 trace_id=trace_id,
                 status="BLOCKED",
-                blocker="CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
-                reason="The six-agent controller cannot change transport mid-run.",
-                next_action="START_NEW_FREE_SINGLE_AGENT_RUN",
+                blocker="CONTROLLER_REQUIRES_SWARM_CAPABLE_PROFILE",
+                reason="No verified six-worker execution profile is currently ready.",
+                next_action="ACTIVATE_PAID_ROUTE_OR_SEVEN_FREE_QUOTA_SCOPES",
                 task_id=claim.task_id,
                 expected_lease_token=claim.lease_token,
             )
@@ -1025,22 +1073,69 @@ def register_controller_board_routes(
                 "ok": False,
                 "runId": claim.run.run_id,
                 "status": state["status"],
-                "blocker": "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE",
+                "blocker": "CONTROLLER_REQUIRES_SWARM_CAPABLE_PROFILE",
                 "reason": state["reason"],
                 "nextAction": state["nextAction"],
                 "requestedMode": requested_mode,
                 "protectedValuesReturned": False,
             }, 409)
-        resolved_model = route_provider_model(execution_resolution.primary_route)
-        try:
-            stage_billing = AgentStageBilling(
-                get_connection=get_connection,
+        if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
+            state = _persist_execution_resolution_blocker(
+                get_connection,
                 user_id=owner_id,
                 run_id=claim.run.run_id,
                 trace_id=trace_id,
-                main_route=execution_resolution.primary_route,
-                agent_route=execution_resolution.agent_route,
-                requested_mode=execution_resolution.requested_mode,
+                status="BLOCKED",
+                blocker="FREE_MODE_REQUIRES_NEW_SINGLE_AGENT_RUN",
+                reason="The available free capacity is below the six-worker controller threshold for this resume.",
+                next_action="START_NEW_FREE_SINGLE_AGENT_RUN_OR_REPLENISH_FREE_ROUTES",
+                task_id=claim.task_id,
+                expected_lease_token=claim.lease_token,
+            )
+            return _operator_json({
+                "ok": False,
+                "runId": claim.run.run_id,
+                "status": state["status"],
+                "blocker": "FREE_MODE_REQUIRES_NEW_SINGLE_AGENT_RUN",
+                "reason": state["reason"],
+                "nextAction": state["nextAction"],
+                "requestedMode": requested_mode,
+                "protectedValuesReturned": False,
+            }, 409)
+        if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:
+            return _operator_json({
+                "ok": False,
+                "runId": claim.run.run_id,
+                "blocker": "EXECUTION_PROFILE_UNSUPPORTED",
+                "protectedValuesReturned": False,
+            }, 503)
+        free_swarm = execution_resolution.profile_id == FREE_SWARM_PROFILE
+        worker_routes = (
+            {
+                role: route
+                for role, route in zip(
+                    WORKER_ROLES,
+                    execution_resolution.candidate_routes[1:7],
+                    strict=True,
+                )
+            }
+            if free_swarm
+            else None
+        )
+        resolved_model = route_provider_model(execution_resolution.primary_route)
+        try:
+            stage_billing = (
+                None
+                if free_swarm
+                else AgentStageBilling(
+                    get_connection=get_connection,
+                    user_id=owner_id,
+                    run_id=claim.run.run_id,
+                    trace_id=trace_id,
+                    main_route=execution_resolution.primary_route,
+                    agent_route=execution_resolution.agent_route,
+                    requested_mode=execution_resolution.requested_mode,
+                )
             )
         except AgentBillingError as exc:
             try:
@@ -1141,6 +1236,7 @@ def register_controller_board_routes(
             repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
             job_id=claim.run.job_id,
             task_ids_by_agent=task_ids_by_agent,
+            worker_routes=worker_routes,
             stage_billing=stage_billing,
             response_context={
                 "sessionKey": claim.run.session_key,
@@ -1148,6 +1244,11 @@ def register_controller_board_routes(
                 "operatorBridge": True,
                 "resumeClaimEvidenceId": claim.evidence_id,
                 "executionResolution": execution_resolution.safe_payload(),
+                "freeSwarm": free_swarm,
+                "resolvedWorkerModelIds": {
+                    role: route_provider_model(route)
+                    for role, route in (worker_routes or {}).items()
+                },
                 "recoveryTask": {
                     "taskId": claim.task_id,
                     "workPackage": claim.work_package,
@@ -1614,7 +1715,7 @@ _CONTROLLER_HTML = r"""<!doctype html>
 <section id="login" class="auth card"><h1>Sovereign Controller</h1><p class="muted">Diese Anmeldung erzeugt die echte Sovereign-Benutzersitzung für Agents-SDK-Läufe.</p><input id="email" type="email" placeholder="E-Mail" autocomplete="username"><input id="password" type="password" placeholder="Passwort" autocomplete="current-password" style="margin-top:8px"><button class="primary" style="width:100%;margin-top:10px" onclick="login()">Anmelden</button><p id="loginMsg" class="bad"></p></section>
 <section id="app" class="hidden"><div class="top"><div class="head"><h1>Sovereign Controller Board</h1><span id="sessionState" class="state badge">Sitzung wird geprüft</span><button class="ghost" onclick="logout()">Abmelden</button></div><div class="tabs"><button class="active" data-view="overview">Monitor</button><button data-view="agents">Agenten</button><button data-view="code">Code</button><button data-view="playwright">Playwright</button><button data-view="approvals">Bestätigungen</button><button data-view="admin">Admin</button></div></div>
 <section id="overview" class="view active"><div id="metrics" class="grid"></div><div class="split"><div class="card"><div class="row between"><h2>Aktive Agenten</h2><button class="ghost" onclick="refreshAll()">Aktualisieren</button></div><div id="activeAgents" class="list"></div></div><div class="card"><h2>Letzte Runs</h2><div id="recentRuns" class="list"></div></div></div></section>
-<section id="agents" class="view"><div class="card"><h2>Neue Agents-SDK-Mission</h2><textarea id="mission" placeholder="Mission ohne Secrets"></textarea><textarea id="evidence" placeholder="Optionale Runtime-Evidence ohne Zugangsdaten" style="margin-top:8px"></textarea><div class="split" style="margin-top:10px"><label class="muted">Ausführungsmodus<select id="executionMode" onchange="syncExecutionMode()"><option value="auto">Automatisch (Paid, sonst Free)</option><option value="paid">Paid · OpenRouter + 6 Agenten</option><option value="free">Free · FreeLLM, 1 Agent</option></select></label><label class="muted">Absichtsvertrag<select id="intentMode"><option value="auto">Automatisch · nur Paid-Classifier</option><option value="conversation">Gespräch · keine Repository-Werkzeuge</option><option value="read_only_analysis">Read-only Analyse</option><option value="repository_execution">Repository-Ausführung · isolierter Workspace</option></select></label></div><div id="paidModelSelection" class="split" style="margin-top:10px"><label class="muted">Paid-Hauptmodell<select id="mainModel" onchange="renderModelPrice()"></select></label><label class="muted">Gemeinsames Modell der 6 Agenten<select id="agentModel" onchange="renderModelPrice()"></select></label></div><p id="modelPrice" class="muted">OpenRouter-Katalog wird geladen…</p><div class="row" style="margin-top:10px"><button class="primary" onclick="startMission()">Mission starten</button><span id="missionMsg" class="muted"></span></div></div><div class="card"><h2>Run-Status</h2><div id="runs" class="list"></div></div><div id="runDetail" class="card hidden"></div></section>
+<section id="agents" class="view"><div class="card"><h2>Neue Agents-SDK-Mission</h2><textarea id="mission" placeholder="Mission ohne Secrets"></textarea><textarea id="evidence" placeholder="Optionale Runtime-Evidence ohne Zugangsdaten" style="margin-top:8px"></textarea><div class="split" style="margin-top:10px"><label class="muted">Ausführungsmodus<select id="executionMode" onchange="syncExecutionMode()"><option value="auto">Automatisch (Paid, sonst Free)</option><option value="paid">Paid · OpenRouter + 6 Agenten</option><option value="free">Free · FreeLLM · 6 Agenten bei 7 freien Quota-Scopes, sonst 1 Agent</option></select></label><label class="muted">Absichtsvertrag<select id="intentMode"><option value="auto">Automatisch · nur Paid-Classifier</option><option value="conversation">Gespräch · keine Repository-Werkzeuge</option><option value="read_only_analysis">Read-only Analyse</option><option value="repository_execution">Repository-Ausführung · isolierter Workspace</option></select></label></div><div id="paidModelSelection" class="split" style="margin-top:10px"><label class="muted">Paid-Hauptmodell<select id="mainModel" onchange="renderModelPrice()"></select></label><label class="muted">Gemeinsames Modell der 6 Agenten<select id="agentModel" onchange="renderModelPrice()"></select></label></div><p id="modelPrice" class="muted">OpenRouter-Katalog wird geladen…</p><div class="row" style="margin-top:10px"><button class="primary" onclick="startMission()">Mission starten</button><span id="missionMsg" class="muted"></span></div></div><div class="card"><h2>Run-Status</h2><div id="runs" class="list"></div></div><div id="runDetail" class="card hidden"></div></section>
 <section id="code" class="view"><div class="card"><div class="row between"><h2>Commits & Änderungen</h2><button class="ghost" onclick="loadGithub()">Neu laden</button></div><div id="latestCommit"></div><div id="commits" class="list"></div></div></section>
 <section id="playwright" class="view"><div id="playwrightMetrics" class="grid"></div><div class="card"><h2>Playwright / E2E Evidence</h2><p class="muted">Nur echte GitHub-Actions-Läufe; keine simulierten Browserzustände.</p><div id="playwrightRuns" class="list"></div></div><div class="card"><h2>Weitere Workflows</h2><div id="workflowRuns" class="list"></div></div></section>
 <section id="approvals" class="view"><div class="card notice"><h2>Bestätigungen des aktiven Nutzers</h2><p class="muted">Zustimmung speichert Evidence und startet anschließend den echten Resume-Pfad. Geschützte Eingaben bleiben im Owner-Panel.</p><div id="approvalList" class="list"></div></div></section>
@@ -1632,8 +1733,8 @@ async function loadOverview(){const d=await api('/api/controller/overview');stat
 function runCard(r){return `<div class="item"><div class="row between"><h3>${esc(r.mission_summary)}</h3>${badge(r.status)}</div><p class="code">${esc(r.run_id)}</p><p>${esc(r.reason)}</p><div class="row"><button class="ghost" onclick="runDetail('${esc(r.run_id)}')">Details</button>${!['COMPLETED','FAILED_FINAL','DRAFT_PR_CREATED','READY_FOR_DRAFT_PR','WAITING_FOR_OWNER'].includes(r.status)&&!r.lease_active?`<button class="primary" onclick="resumeRun('${esc(r.run_id)}','Manueller Resume aus Controller Board; keine Secrets.')">Resume</button>`:''}</div></div>`}
 function modelOptionLabel(model){const p=model.prices||{};return (model.displayName||model.selectionId)+' · Preis Input $'+(p.input||'–')+'/M · Output $'+(p.output||'–')+'/M'}
 function selectedModel(id){return (state.modelCatalog?.models||[]).find(model=>model.selectionId===$(id)?.value)}
-function renderModelPrice(){const mode=$('executionMode')?.value||'auto';if(mode==='free'){$('modelPrice').textContent='FreeLLM wählt automatisch nach verfügbarem Modellkontingent · 1 Agent · 0 Zusatz-/Workspace-Agenten.';return}const main=selectedModel('mainModel'),agents=selectedModel('agentModel');if(!main||!agents){$('modelPrice').textContent='Paid-Katalog ist noch nicht aktiviert oder nicht verfügbar.';return}const mp=main.prices||{},ap=agents.prices||{};$('modelPrice').textContent='Euer Preis · Hauptmodell: $'+mp.input+'/M Input, $'+mp.output+'/M Output · 6-Agenten-Modell: $'+ap.input+'/M Input, $'+ap.output+'/M Output.'}
-function syncExecutionMode(){const free=($('executionMode')?.value||'auto')==='free';$('paidModelSelection').classList.toggle('hidden',free);$('mainModel').disabled=free||!state.modelCatalog;$('agentModel').disabled=free||!state.modelCatalog;if(free&&$('intentMode').value==='auto')$('intentMode').value='conversation';renderModelPrice()}
+function renderModelPrice(){const mode=$('executionMode')?.value||'auto';if(mode==='free'){$('modelPrice').textContent='FreeLLM wählt automatisch nach verifizierten Quota-Scopes · ab 7 unabhängigen verfügbaren Scopes: 1 Kontrolllane + 6 parallele Kernagenten; darunter sicherer Single-Agent-Fallback.';return}const main=selectedModel('mainModel'),agents=selectedModel('agentModel');if(!main||!agents){$('modelPrice').textContent='Paid-Katalog ist noch nicht aktiviert oder nicht verfügbar.';return}const mp=main.prices||{},ap=agents.prices||{};$('modelPrice').textContent='Euer Preis · Hauptmodell: $'+mp.input+'/M Input, $'+mp.output+'/M Output · 6-Agenten-Modell: $'+ap.input+'/M Input, $'+ap.output+'/M Output.'}
+function syncExecutionMode(){const free=($('executionMode')?.value||'auto')==='free';$('paidModelSelection').classList.toggle('hidden',free);$('mainModel').disabled=free||!state.modelCatalog;$('agentModel').disabled=free||!state.modelCatalog;renderModelPrice()}
 async function loadModelCatalog(){const main=$('mainModel'),agents=$('agentModel');if(!main||!agents)return;const previousMain=main.value,previousAgent=agents.value;try{const d=await api('/api/user/agent/swarm/models');state.modelCatalog=d;const options=(d.models||[]).map(model=>'<option value="'+esc(model.selectionId)+'">'+esc(modelOptionLabel(model))+'</option>').join('');main.innerHTML=options;agents.innerHTML=options;const defaults=d.defaults||{};main.value=(d.models||[]).some(x=>x.selectionId===previousMain)?previousMain:(defaults.mainModel||'');agents.value=(d.models||[]).some(x=>x.selectionId===previousAgent)?previousAgent:(defaults.agentModel||'')}catch(e){state.modelCatalog=null;main.innerHTML='<option value="">OpenRouter noch nicht aktiviert</option>';agents.innerHTML='<option value="">OpenRouter noch nicht aktiviert</option>'}syncExecutionMode()}
 function executionSelectionPayload(){const mode=$('executionMode')?.value||'auto',intentMode=$('intentMode')?.value||'auto',payload={mode,intentMode};if(mode!=='free'&&state.modelCatalog){payload.mainModel=$('mainModel').value;payload.agentModel=$('agentModel').value}return payload}
 async function startMission(){const m=$('mission').value.trim();if(!m)return;$('missionMsg').textContent='Runtime läuft…';try{const d=await api('/api/user/agent/swarm/run',{method:'POST',body:JSON.stringify({mission:m,evidence:$('evidence').value.trim(),...executionSelectionPayload()})});$('missionMsg').textContent=(d.status||'')+' · '+(d.reason||'');await loadOverview();if(d.runId)runDetail(d.runId)}catch(e){$('missionMsg').textContent=(e.data?.status||'Fehler')+' · '+(e.data?.reason||e.message);await loadOverview()}}

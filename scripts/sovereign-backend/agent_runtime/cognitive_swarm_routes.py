@@ -58,6 +58,7 @@ from .pattern_gateway import (
 from .pattern_vector_memory import persist_pattern_vector
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
+    FREE_SWARM_PROFILE,
     PAID_SWARM_PROFILE,
     ExecutionResolution,
     ExecutionResolutionError,
@@ -343,6 +344,7 @@ def execute_persisted_swarm(
     repository_tool_summary: Callable[[], dict[str, Any]] | None = None,
     job_id: str | None = None,
     task_ids_by_agent: dict[str, str] | None = None,
+    worker_routes: dict[str, dict[str, Any]] | None = None,
     stage_billing: AgentStageBilling | None = None,
 ) -> tuple[dict[str, object], int]:
     manifest = manifest_payload()
@@ -390,6 +392,7 @@ def execute_persisted_swarm(
                 model=model,
                 main_route=route,
                 agent_route=agent_route or route,
+                worker_routes=worker_routes,
                 stage_observer=persist_stage_event,
                 repository_tool_factory=repository_tool_factory,
                 stage_billing=stage_billing,
@@ -907,7 +910,7 @@ def start_cognitive_swarm_run(
     try:
         normalized_intent_mode = _normalize_intent_mode(
             intent_mode,
-            free_profile=normalized_mode == "free" or _force_free_profile,
+            free_profile=_force_free_profile,
         )
     except ValueError as exc:
         return {"error": str(exc)}, 400
@@ -1517,21 +1520,38 @@ def start_cognitive_swarm_run(
                 "freeRouteFailoverCount": _free_retry_count,
             }, 502 if exc.retryable else 503
 
-    if execution_resolution.profile_id != PAID_SWARM_PROFILE:
+    if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:
         return {
             "ok": False,
             "runtime": "openai-agents-sdk",
             "blocker": "EXECUTION_PROFILE_UNSUPPORTED",
         }, 503
+    free_swarm = execution_resolution.profile_id == FREE_SWARM_PROFILE
+    worker_routes = (
+        {
+            role: route
+            for role, route in zip(
+                WORKER_ROLES,
+                execution_resolution.candidate_routes[1:7],
+                strict=True,
+            )
+        }
+        if free_swarm
+        else None
+    )
     try:
-        stage_billing = AgentStageBilling(
-            get_connection=get_connection,
-            user_id=user_id,
-            run_id=resolved_run_id,
-            trace_id=resolved_trace_id,
-            main_route=execution_resolution.primary_route,
-            agent_route=execution_resolution.agent_route,
-            requested_mode=execution_resolution.requested_mode,
+        stage_billing = (
+            None
+            if free_swarm
+            else AgentStageBilling(
+                get_connection=get_connection,
+                user_id=user_id,
+                run_id=resolved_run_id,
+                trace_id=resolved_trace_id,
+                main_route=execution_resolution.primary_route,
+                agent_route=execution_resolution.agent_route,
+                requested_mode=execution_resolution.requested_mode,
+            )
         )
         mission_intent = _explicit_mission_intent(
             normalized_intent_mode,
@@ -1831,6 +1851,7 @@ def start_cognitive_swarm_run(
         job_id=implementation_job.job_id if implementation_job else None,
         task_id=task_ids_by_agent.get("judge"),
         task_ids_by_agent=task_ids_by_agent,
+        worker_routes=worker_routes,
         stage_billing=stage_billing,
         response_context={
             "sessionKey": resolved_session_key,
@@ -1846,7 +1867,12 @@ def start_cognitive_swarm_run(
             "resolvedModelId": resolved_model,
             "resolvedMainModelId": resolved_model,
             "resolvedAgentModelId": resolved_agent_model,
-            "sixAgentModelShared": True,
+            "resolvedWorkerModelIds": {
+                role: route_provider_model(route)
+                for role, route in (worker_routes or {}).items()
+            },
+            "sixAgentModelShared": not free_swarm,
+            "freeSwarm": free_swarm,
             "maxBackgroundAgents": execution_resolution.max_background_agents,
             "autoMerge": False,
         },
@@ -2137,7 +2163,7 @@ def resume_cognitive_swarm_run(
             "nextAction": blocked_state["nextAction"],
             "requestedMode": normalized_mode,
         }, 503
-    if execution_resolution.profile_id != PAID_SWARM_PROFILE:
+    if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:
         blocked_state = _persist_execution_resolution_blocker(
             get_connection,
             user_id=user_id,
@@ -2145,8 +2171,8 @@ def resume_cognitive_swarm_run(
             trace_id=resolved_trace_id,
             status="BLOCKED",
             blocker="FREE_MODE_REQUIRES_NEW_SINGLE_AGENT_RUN",
-            reason="A paid swarm resume cannot change transport mid-run.",
-            next_action="START_NEW_FREE_SINGLE_AGENT_RUN",
+            reason="The available free capacity is below the six-worker swarm threshold for this resume.",
+            next_action="START_NEW_FREE_SINGLE_AGENT_RUN_OR_REPLENISH_FREE_ROUTES",
             task_id=claim.task_id,
             expected_lease_token=claim.lease_token,
         )
@@ -2160,6 +2186,26 @@ def resume_cognitive_swarm_run(
             "nextAction": blocked_state["nextAction"],
             "requestedMode": normalized_mode,
         }, 409
+    if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:
+        return {
+            "ok": False,
+            "runtime": "openai-agents-sdk",
+            "runId": claim.run.run_id,
+            "blocker": "EXECUTION_PROFILE_UNSUPPORTED",
+        }, 503
+    free_swarm = execution_resolution.profile_id == FREE_SWARM_PROFILE
+    worker_routes = (
+        {
+            role: route
+            for role, route in zip(
+                WORKER_ROLES,
+                execution_resolution.candidate_routes[1:7],
+                strict=True,
+            )
+        }
+        if free_swarm
+        else None
+    )
     try:
         _validate_execution_resolution_snapshot(execution_resolution)
     except (TypeError, ValueError) as exc:
@@ -2194,14 +2240,18 @@ def resume_cognitive_swarm_run(
     resolved_model = route_provider_model(execution_resolution.primary_route)
     resolved_agent_model = route_provider_model(execution_resolution.agent_route)
     try:
-        stage_billing = AgentStageBilling(
-            get_connection=get_connection,
-            user_id=user_id,
-            run_id=claim.run.run_id,
-            trace_id=resolved_trace_id,
-            main_route=execution_resolution.primary_route,
-            agent_route=execution_resolution.agent_route,
-            requested_mode=execution_resolution.requested_mode,
+        stage_billing = (
+            None
+            if free_swarm
+            else AgentStageBilling(
+                get_connection=get_connection,
+                user_id=user_id,
+                run_id=claim.run.run_id,
+                trace_id=resolved_trace_id,
+                main_route=execution_resolution.primary_route,
+                agent_route=execution_resolution.agent_route,
+                requested_mode=execution_resolution.requested_mode,
+            )
         )
     except AgentBillingError as exc:
         try:
@@ -2257,6 +2307,7 @@ def resume_cognitive_swarm_run(
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
         job_id=claim.run.job_id,
         task_ids_by_agent=task_ids_by_agent,
+        worker_routes=worker_routes,
         stage_billing=stage_billing,
         response_context={
             "sessionKey": claim.run.session_key,
@@ -2267,7 +2318,12 @@ def resume_cognitive_swarm_run(
             "resolvedModelId": resolved_model,
             "resolvedMainModelId": resolved_model,
             "resolvedAgentModelId": resolved_agent_model,
-            "sixAgentModelShared": True,
+            "resolvedWorkerModelIds": {
+                role: route_provider_model(route)
+                for role, route in (worker_routes or {}).items()
+            },
+            "sixAgentModelShared": not free_swarm,
+            "freeSwarm": free_swarm,
             "recoveryTask": {
                 "taskId": claim.task_id,
                 "workPackage": claim.work_package,

@@ -344,7 +344,7 @@ def test_controller_start_can_explicitly_select_free_mode(monkeypatch) -> None:
         "mission": "Prüfe den direkten FreeLLM-Livepfad.",
         "evidence": "Zwei direkte Provider-Canaries sind bestätigt.",
         "mode": "free",
-        "intentMode": "conversation",
+        "intentMode": "auto",
     }
     assert result["requestedMode"] == "free"
 
@@ -392,6 +392,48 @@ def test_controller_start_rejects_secret_shaped_input_before_network(monkeypatch
     with pytest.raises(ValueError, match="Secret-förmiger"):
         client.start_run("Nutze sk-proj-x")
     assert session.calls == []
+
+
+def test_controller_fleet_verdict_preview_is_read_only_and_forwards_evidence(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    task = {
+        "taskId": "task-verdict",
+        "sourceType": "pr",
+        "sourceId": "7",
+        "expectedBaseRevision": "a" * 40,
+        "expectedHeadRevision": "b" * 40,
+        "independenceProven": True,
+    }
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "FLEET_VERDICT_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "verdict": {"status": "REVIEW_WAITING"},
+        })
+    ])
+    client = ControllerRuntimeClient(session=session)
+
+    result = client.fleet_verdict_preview({
+        "task": task,
+        "observedBaseRevision": "a" * 40,
+        "observedHeadRevision": "b" * 40,
+        "workspaceHeadRevision": "b" * 40,
+        "checkReceipts": [],
+        "reviewReceipts": [],
+        "crossTaskReceipts": [],
+    })
+
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "http://backend:8787/api/internal/controller/fleet/verdict-preview"
+    assert call["json"]["task"] == task
+    assert result["status"] == "FLEET_VERDICT_PREVIEW"
+    assert result["readOnly"] is True
+    assert result["mutationPerformed"] is False
+    assert result["protected_values_returned"] is False
 
 
 def test_controller_external_event_uses_idempotent_owner_bridge_contract(monkeypatch) -> None:

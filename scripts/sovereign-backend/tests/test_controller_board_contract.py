@@ -144,7 +144,9 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "intent_mode=requested_intent_mode" in controller
     assert 'body.get("intentMode")' in controller
     assert '"requestedMode": "free"' in controller
-    assert "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE" in controller
+    assert "CONTROLLER_REQUIRES_PAID_OPENROUTER_PROFILE" not in controller
+    assert "CONTROLLER_REQUIRES_SWARM_CAPABLE_PROFILE" in controller
+    assert "FREE_SWARM_PROFILE" in controller
     assert '"operatorBridge": True' in controller
     assert '"protectedValuesReturned": False' in controller
     assert "secret-shaped material is forbidden in operator input" in controller
@@ -152,6 +154,35 @@ def test_internal_operator_bridge_is_owner_scoped_and_never_accepts_browser_cred
     assert "secret-shaped material is forbidden in external event input" in controller
     assert "adminKey" not in controller.split('@app.route("/api/internal/controller/runs"', 1)[1].split('@app.route("/api/controller/overview"', 1)[0]
     assert "sovereign_session" not in controller
+
+
+def test_interactive_agent_and_controller_actions_require_authenticated_session() -> None:
+    controller = CONTROLLER.read_text("utf-8")
+    routes = SWARM_ROUTES.read_text("utf-8")
+
+    for route_marker in (
+        '@app.route("/api/user/agent/swarm/run", methods=["POST"])',
+        '@app.route("/api/user/agent/swarm/runs/<run_id>/resume", methods=["POST"])',
+    ):
+        segment = routes.split(route_marker, 1)[1][:500]
+        assert "@require_session" in segment
+
+    for route_marker in (
+        '@app.route("/api/controller/overview", methods=["GET"])',
+        '@app.route("/api/controller/runs/<run_id>", methods=["GET"])',
+        '@app.route("/api/controller/approvals", methods=["GET"])',
+        '@app.route("/api/controller/approvals/<approval_id>/decision", methods=["POST"])',
+        '@app.route("/api/controller/github", methods=["GET"])',
+    ):
+        segment = controller.split(route_marker, 1)[1][:500]
+        assert "@require_session" in segment
+
+    assert "if not user_id:" in routes
+    assert 'return {"error": "authenticated user id is required"}, 401' in routes
+    assert "load_execution_resolution(" in routes
+    assert "WHERE account.id = %s::uuid" in (BACKEND / "llm_execution_resolver.py").read_text("utf-8")
+    assert "_service_authorized()" in controller
+    assert "_operator_owner_user_id(conn)" in controller
 
 
 def test_external_action_stream_is_idempotent_owner_scoped_and_state_neutral() -> None:
@@ -239,9 +270,12 @@ def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> N
     free_profile = routes.split(
         "if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:",
         1,
-    )[1].split("if execution_resolution.profile_id != PAID_SWARM_PROFILE:", 1)[0]
-    paid_profile = routes.split(
-        "if execution_resolution.profile_id != PAID_SWARM_PROFILE:",
+    )[1].split(
+        "if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:",
+        1,
+    )[0]
+    swarm_profile = routes.split(
+        "if execution_resolution.profile_id not in {PAID_SWARM_PROFILE, FREE_SWARM_PROFILE}:",
         1,
     )[1].split("except AgentBillingError as exc:", 1)[0]
 
@@ -255,11 +289,14 @@ def test_visible_user_swarm_route_uses_the_same_repository_execution_path() -> N
     assert 'task_ids_by_agent={"free_single_agent": free_task_id}' in free_profile
     assert '"codeServerWorkspace"' in free_profile
     assert '"backgroundAgentsStarted": 0' in free_profile
-    assert "stage_billing = AgentStageBilling(" in paid_profile
-    assert "mission_intent = asyncio.run(classify_mission_intent(" in paid_profile
-    assert "model=resolved_model," in paid_profile
-    assert "stage_billing=stage_billing," in paid_profile
-    assert paid_profile.index("stage_billing = AgentStageBilling(") < paid_profile.index("mission_intent = asyncio.run(classify_mission_intent(")
+    assert "free_swarm = execution_resolution.profile_id == FREE_SWARM_PROFILE" in swarm_profile
+    assert "execution_resolution.candidate_routes[1:7]" in swarm_profile
+    assert "strict=True" in swarm_profile
+    assert "None\n            if free_swarm\n            else AgentStageBilling(" in swarm_profile
+    assert "mission_intent = asyncio.run(classify_mission_intent(" in swarm_profile
+    assert "model=resolved_model," in swarm_profile
+    assert "stage_billing=stage_billing," in swarm_profile
+    assert swarm_profile.index("else AgentStageBilling(") < swarm_profile.index("mission_intent = asyncio.run(classify_mission_intent(")
     assert routes.index("received_state = create_agent_run(") < routes.index("if execution_resolution.profile_id == FREE_SINGLE_AGENT_PROFILE:")
     assert "payload, status_code = start_cognitive_swarm_run(" in routes
     assert "payload, status_code = resume_cognitive_swarm_run(" in routes
@@ -407,9 +444,11 @@ def test_controller_exposes_paid_free_switch_and_priced_model_pair() -> None:
     assert "Sovereign-Faktor" not in controller
     assert "...executionSelectionPayload()" in controller
     assert "payload={mode,intentMode}" in controller
-    assert "$('intentMode').value='conversation'" in controller
+    assert "$('intentMode').value='conversation'" not in controller
     assert "FreeLLM wählt automatisch" in controller
-    assert "0 Zusatz-/Workspace-Agenten" in controller
+    assert "7 unabhängigen verfügbaren Scopes" in controller
+    assert "6 parallele Kernagenten" in controller
+    assert "Single-Agent-Fallback" in controller
 
 
 def test_controller_is_android_first_and_touch_safe() -> None:

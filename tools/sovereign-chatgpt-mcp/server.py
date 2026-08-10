@@ -26,6 +26,7 @@ from output_contracts import normalize_tool_output
 from owner_input_client import ControllerRuntimeClient, OwnerInputClient, ProviderRuntimeClient
 from owner_input_widget import TOOL_META as OWNER_INPUT_TOOL_META, register_owner_input_widget
 from runtime import OperatorRuntime
+from repository_skill_tools import classify_changed_paths
 from self_heal import REPAIR_ENGINE
 from sovereign_cognitive_widget import register_sovereign_cognitive_widget
 from sovereign_rescue_widget import register_sovereign_rescue_widget
@@ -461,6 +462,19 @@ def repository_pr_status(pr_number: int) -> dict[str, Any]:
     return broker.call("github_pr_status", {"pr_number": pr_number}, timeout=60)
 
 
+@mcp.tool(annotations=NETWORK_READ)
+def repository_pr_changed_paths(
+    pr_number: int,
+    max_paths: Annotated[int, Field(ge=1, le=64)] = 64,
+) -> dict[str, Any]:
+    """Read bounded changed paths twice-bound to one unchanged PR head."""
+    return broker.call(
+        "github_pr_changed_paths",
+        {"pr_number": pr_number, "max_paths": max_paths},
+        timeout=120,
+    )
+
+
 def _fleet_numbers(values: list[int] | None, label: str) -> list[int]:
     if values is None:
         return []
@@ -532,24 +546,89 @@ def fleet_plan_read(
         )
         raw_head = pull.get("headSha") or pull.get("head_sha") or ""
         head_sha = raw_head.strip() if isinstance(raw_head, str) else ""
+        path_readback = normalize_tool_output(
+            broker.call(
+                "github_pr_changed_paths",
+                {"pr_number": pr_number, "max_paths": 64},
+                timeout=120,
+            )
+        )
+        raw_path_head = path_readback.get("headSha") or path_readback.get("head_sha") or ""
+        path_head = raw_path_head.strip() if isinstance(raw_path_head, str) else ""
+        changed_paths = (
+            [str(path) for path in path_readback.get("changedPaths", path_readback.get("changed_paths", []))]
+            if isinstance(path_readback.get("changedPaths", path_readback.get("changed_paths", [])), list)
+            else []
+        )
+        paths_complete = bool(path_readback.get("pathsComplete", path_readback.get("paths_complete", False)))
+        path_readback_verified = bool(
+            path_readback.get("readbackVerified") or path_readback.get("readback_verified")
+        )
+        exact_path_binding = bool(
+            path_readback.get("ok")
+            and paths_complete
+            and path_readback_verified
+            and head_sha
+            and path_head == head_sha
+            and changed_paths
+        )
+        classification = (
+            classify_changed_paths(changed_paths)
+            if exact_path_binding
+            else {
+                "changedPaths": [],
+                "domains": [],
+                "requiredGates": [],
+                "safetyScopes": [],
+                "independenceClassifiable": False,
+                "receiptSha256": None,
+            }
+        )
+        receipts_bound = bool(architecture_receipt_hashes)
+        independence_proven = bool(
+            exact_path_binding
+            and classification.get("independenceClassifiable")
+            and receipts_bound
+        )
+        reason_codes = ["GITHUB_PR_STATUS_READBACK_BOUND"]
+        if exact_path_binding:
+            reason_codes.extend((
+                "GITHUB_PR_CHANGED_PATHS_EXACT_HEAD_BOUND",
+                "ARCHITECTURE_PATH_CLASSIFICATION_BOUND",
+            ))
+        else:
+            reason_codes.append("CHANGED_PATHS_INCOMPLETE_OR_STALE_SERIALIZED")
+        if independence_proven:
+            reason_codes.append("ARCHITECTURE_RECEIPT_BOUND_INDEPENDENCE_PROVEN")
+        elif not receipts_bound:
+            reason_codes.append("ARCHITECTURE_RECEIPT_MISSING_SERIALIZED")
+        elif exact_path_binding:
+            reason_codes.append("ARCHITECTURE_PATH_UNCLASSIFIED_SERIALIZED")
         sources.append({
             "taskId": f"pr-{pr_number}",
             "sourceType": "pr",
             "sourceId": str(pr_number),
             "expectedBaseRevision": base_revision.strip(),
             "expectedHeadRevision": head_sha,
-            "changedPaths": [],
-            "reasonCodes": [
-                "GITHUB_PR_STATUS_READBACK_BOUND",
-                "CHANGED_PATHS_UNAVAILABLE_SERIALIZED",
-            ],
-            "independenceProven": False,
+            "changedPaths": classification.get("changedPaths", []),
+            "architectureDomains": classification.get("domains", []),
+            "canonicalOwners": classification.get("safetyScopes", []),
+            "invariantScopes": classification.get("safetyScopes", []),
+            "requiredGates": classification.get("requiredGates", []),
+            "reasonCodes": reason_codes,
+            "independenceProven": independence_proven,
         })
         readbacks.append({
             "sourceType": "pr",
             "sourceId": str(pr_number),
             "headSha": head_sha or None,
             "readbackVerified": bool(pull.get("readbackVerified") or pull.get("readback_verified")),
+            "changedPathHeadSha": path_head or None,
+            "changedPathReadbackVerified": path_readback_verified,
+            "changedPathCount": path_readback.get("changedFileCount", path_readback.get("changed_file_count", 0)),
+            "changedPathsComplete": paths_complete,
+            "architectureClassificationReceiptSha256": classification.get("receiptSha256"),
+            "independenceProven": independence_proven,
         })
     if not sources:
         raise ValueError("at least one issue or pull request source is required")
@@ -570,6 +649,35 @@ def fleet_plan_read(
             "remain serialized; this tool does not infer safe parallelism."
         ),
     }
+
+
+@mcp.tool(annotations=NETWORK_READ)
+def fleet_verdict_preview(
+    task: dict[str, Any],
+    observed_base_revision: str,
+    observed_head_revision: str,
+    workspace_head_revision: str,
+    assignment: dict[str, Any] | None = None,
+    check_receipts: list[dict[str, Any]] | None = None,
+    review_receipts: list[dict[str, Any]] | None = None,
+    cross_task_receipts: list[dict[str, Any]] | None = None,
+    merge_readback: dict[str, Any] | None = None,
+    runtime_readback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Arbitrate Fleet evidence through the controller without authorizing merge or mutating state."""
+    payload = {
+        "task": task,
+        "assignment": assignment,
+        "observedBaseRevision": observed_base_revision,
+        "observedHeadRevision": observed_head_revision,
+        "workspaceHeadRevision": workspace_head_revision,
+        "checkReceipts": check_receipts or [],
+        "reviewReceipts": review_receipts or [],
+        "crossTaskReceipts": cross_task_receipts or [],
+        "mergeReadback": merge_readback,
+        "runtimeReadback": runtime_readback,
+    }
+    return controller_runtime.fleet_verdict_preview(payload)
 
 
 @mcp.tool(annotations=NETWORK_READ)

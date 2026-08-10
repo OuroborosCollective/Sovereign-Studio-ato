@@ -562,15 +562,37 @@ def evaluate_fleet_verdict(
     observed_head_revision: str,
     workspace_head_revision: str,
     check_receipts: Sequence[Mapping[str, Any]] | None = None,
+    review_receipts: Sequence[Mapping[str, Any]] | None = None,
+    cross_task_receipts: Sequence[Mapping[str, Any]] | None = None,
     merge_readback: Mapping[str, Any] | None = None,
     runtime_readback: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Evaluate exact-head evidence. This is a projection, never a merge operation."""
+    """Arbitrate exact-head worker, CI, independent-review, cross-task and runtime evidence."""
 
     selected_task = task if isinstance(task, FleetTask) else FleetTask.from_dict(task)
     gaps: list[str] = []
+    contradictions: list[str] = []
     status = "WORKER_COMPLETED_UNVERIFIED"
     expected_head = selected_task.expected_head_revision
+    merge_revision = ""
+
+    def receipt_hash(receipt: Mapping[str, Any]) -> str:
+        return str(
+            receipt.get("receiptSha256")
+            or receipt.get("receipt_sha256")
+            or receipt.get("evidenceSha256")
+            or receipt.get("evidence_sha256")
+            or ""
+        ).strip().lower()
+
+    def receipt_head(receipt: Mapping[str, Any]) -> str:
+        return str(receipt.get("headSha") or receipt.get("head_sha") or "").strip().lower()
+
+    def receipt_success(receipt: Mapping[str, Any]) -> bool:
+        return str(receipt.get("status") or "").strip().lower() in {
+            "success", "passed", "approved", "accepted", "neutral"
+        }
+
     if not assignment:
         gaps.append("WORKER_ASSIGNMENT_MISSING")
     if _revision(observed_base_revision, "observed_base_revision") != selected_task.expected_base_revision:
@@ -595,8 +617,7 @@ def evaluate_fleet_verdict(
         missing = [gate for gate in selected_task.required_gates if gate not in by_gate]
         failed = [
             gate for gate, receipt in by_gate.items()
-            if str(receipt.get("status") or "").strip().lower() not in {"success", "passed", "neutral"}
-            or str(receipt.get("headSha") or receipt.get("head_sha") or "").strip().lower() != expected_head
+            if not receipt_success(receipt) or receipt_head(receipt) != expected_head
         ]
         if missing:
             status = "CI_WAITING"
@@ -605,31 +626,90 @@ def evaluate_fleet_verdict(
             status = "CI_FAILED"
             gaps.extend(f"CHECK_NOT_EXACT_SUCCESS:{gate}" for gate in sorted(failed))
         else:
-            status = "MERGE_CANDIDATE"
+            reviews = [item for item in review_receipts or () if isinstance(item, Mapping)]
+            if not reviews:
+                status = "REVIEW_WAITING"
+                gaps.append("INDEPENDENT_REVIEW_MISSING")
+            else:
+                valid_reviews = [
+                    item for item in reviews
+                    if item.get("independent") is True
+                    and bool(str(item.get("reviewerId") or item.get("reviewer_id") or "").strip())
+                    and receipt_success(item)
+                    and receipt_head(item) == expected_head
+                    and _REVISION_RE.fullmatch(receipt_hash(item)) is not None
+                ]
+                if not valid_reviews:
+                    status = "CONTRADICTED"
+                    contradictions.append("INDEPENDENT_REVIEW_NOT_EXACT_OR_NOT_PROVEN")
+                else:
+                    cross = [item for item in cross_task_receipts or () if isinstance(item, Mapping)]
+                    if not cross:
+                        status = "CROSS_TASK_WAITING"
+                        gaps.append("CROSS_TASK_CONFLICT_READBACK_MISSING")
+                    else:
+                        valid_cross = [
+                            item for item in cross
+                            if item.get("conflictsResolved") is True
+                            and receipt_success(item)
+                            and receipt_head(item) == expected_head
+                            and _REVISION_RE.fullmatch(receipt_hash(item)) is not None
+                        ]
+                        if not valid_cross:
+                            status = "CONTRADICTED"
+                            contradictions.append("CROSS_TASK_CONFLICT_READBACK_NOT_EXACT")
+                        else:
+                            status = "MERGE_CANDIDATE"
 
     if status == "MERGE_CANDIDATE" and isinstance(merge_readback, Mapping):
         merge_head = str(merge_readback.get("headSha") or merge_readback.get("head_sha") or "").strip().lower()
-        merged = bool(merge_readback.get("merged")) and bool(merge_readback.get("readbackVerified") or merge_readback.get("readback_verified"))
-        if merged and merge_head == expected_head and str(merge_readback.get("mergeCommitSha") or merge_readback.get("merge_commit_sha") or "").strip():
-            status = "MERGED"
+        merge_revision = str(
+            merge_readback.get("mergeCommitSha")
+            or merge_readback.get("merge_commit_sha")
+            or ""
+        ).strip().lower()
+        merged = bool(merge_readback.get("merged")) and bool(
+            merge_readback.get("readbackVerified") or merge_readback.get("readback_verified")
+        )
+        if merged and merge_head == expected_head and re.fullmatch(r"[0-9a-f]{40}", merge_revision):
+            status = "MERGED_UNVERIFIED"
         else:
-            gaps.append("GITHUB_MERGE_READBACK_REQUIRED")
+            status = "CONTRADICTED"
+            contradictions.append("GITHUB_MERGE_READBACK_CONTRADICTION")
 
-    if status == "MERGED" and isinstance(runtime_readback, Mapping):
-        runtime_revision = str(runtime_readback.get("deployedRevision") or runtime_readback.get("deployed_revision") or "").strip().lower()
-        runtime_ok = bool(runtime_readback.get("imageDigest")) and bool(runtime_readback.get("patchmonHealthy")) and bool(runtime_readback.get("functionVerified"))
-        if runtime_ok and runtime_revision == expected_head:
+    if status == "MERGED_UNVERIFIED" and isinstance(runtime_readback, Mapping):
+        runtime_revision = str(
+            runtime_readback.get("deployedRevision")
+            or runtime_readback.get("deployed_revision")
+            or ""
+        ).strip().lower()
+        image_digest = str(
+            runtime_readback.get("imageDigest")
+            or runtime_readback.get("image_digest")
+            or ""
+        ).strip().lower()
+        runtime_ok = bool(
+            re.fullmatch(r"sha256:[0-9a-f]{64}", image_digest)
+            and runtime_readback.get("patchmonHealthy") is True
+            and runtime_readback.get("functionVerified") is True
+        )
+        if runtime_ok and runtime_revision == merge_revision:
             status = "RUNTIME_VERIFIED"
         else:
-            gaps.append("RUNTIME_READBACK_REQUIRED")
+            status = "DEPLOYED_UNVERIFIED"
+            gaps.append("RUNTIME_READBACK_NOT_CAUSALLY_BOUND_TO_MERGE")
 
     payload = {
         "schemaVersion": SCHEMA_VERSION,
         "taskId": selected_task.task_id,
         "expectedBaseRevision": selected_task.expected_base_revision,
         "expectedHeadRevision": expected_head or None,
+        "mergeRevision": merge_revision or None,
         "status": status,
         "evidenceGaps": sorted(dict.fromkeys(gaps)),
+        "contradictions": sorted(dict.fromkeys(contradictions)),
+        "reviewEvidenceCount": len(review_receipts or ()),
+        "crossTaskEvidenceCount": len(cross_task_receipts or ()),
         "mergeAuthorized": False,
         "runtimeClaimed": status == "RUNTIME_VERIFIED",
     }

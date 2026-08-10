@@ -554,6 +554,47 @@ class GitHubAdminRuntime:
             "url": str(pull.get("html_url") or ""),
         }
 
+    def pr_changed_paths(self, *, pr_number: int, max_paths: int = 64) -> dict[str, Any]:
+        """Read exact-head PR changed paths and fail closed if the head moves mid-read."""
+        number = self._pr_number(pr_number)
+        limit = max(1, min(int(max_paths), 64))
+        before = self._pull(number)
+        before_head = str((before.get("head") or {}).get("sha") or "").strip().lower()
+        if not COMMIT_SHA_RE.fullmatch(before_head):
+            raise RuntimeError("GitHub lieferte vor dem Dateiread keinen vollständigen PR-Head")
+        files = self._changed_files(number)
+        after = self._pull(number)
+        after_head = str((after.get("head") or {}).get("sha") or "").strip().lower()
+        if after_head != before_head:
+            return {
+                "ok": False,
+                "status": "PR_HEAD_CHANGED_DURING_PATH_READ",
+                "failure_family": "REVISION_CONFLICT",
+                "pr_number": number,
+                "before_head_sha": before_head,
+                "after_head_sha": after_head,
+                "changed_paths": [],
+                "changed_file_count": len(files),
+                "paths_complete": False,
+                "readback_verified": False,
+                "mutationPerformed": False,
+                "secretValuesReturned": False,
+            }
+        normalized = [str(path or "").strip() for path in files if str(path or "").strip()]
+        complete = len(normalized) <= limit
+        return {
+            "ok": True,
+            "status": "PR_CHANGED_PATHS_VERIFIED" if complete else "PR_CHANGED_PATHS_TRUNCATED",
+            "pr_number": number,
+            "head_sha": before_head,
+            "changed_paths": normalized[:limit],
+            "changed_file_count": len(normalized),
+            "paths_complete": complete,
+            "readback_verified": True,
+            "mutationPerformed": False,
+            "secretValuesReturned": False,
+        }
+
     def rerun_failed_workflows(self, *, pr_number: int) -> dict[str, Any]:
         if not _enabled("SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL"):
             return {"ok": False, "status": "BLOCKED", "blocker": "Workflow-Steuerung ist nicht aktiviert"}

@@ -802,6 +802,32 @@ class JudgeVerdict(BaseModel):
     nullfind_confirmed: bool = False
 
 
+def _parse_text_contract_output(raw_output: object, model_type: type[BaseModel], *, stage: str) -> BaseModel:
+    """Parse one FreeLLM JSON text contract without treating prose as structured truth."""
+    if not isinstance(raw_output, str) or not raw_output.strip():
+        raise SwarmExecutionError(
+            stage=f"{stage}-output",
+            family="AGENTS_TEXT_CONTRACT_INVALID",
+            error_type=type(raw_output).__name__,
+            next_action="RETRY_WITH_STRICT_JSON_TEXT_CONTRACT",
+            retryable=True,
+        )
+    text = raw_output.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
+    try:
+        return model_type.model_validate_json(text)
+    except Exception as exc:
+        raise SwarmExecutionError(
+            stage=f"{stage}-output",
+            family="AGENTS_TEXT_CONTRACT_INVALID",
+            error_type=type(exc).__name__,
+            next_action="RETRY_WITH_STRICT_JSON_TEXT_CONTRACT",
+            retryable=True,
+        ) from exc
+
+
 def _resolved_swarm_status(final_verdict: JudgeVerdict) -> tuple[bool, str]:
     ready_for_draft_pr = final_verdict.draft_pr_ready and not final_verdict.blockers
     read_only_complete = final_verdict.mission_complete and not final_verdict.blockers
@@ -866,10 +892,12 @@ def build_cognitive_swarm(
     *,
     main_model: str | None = None,
     agent_model: str | None = None,
+    worker_models: dict[str, str] | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
     run_config: Any | None = None,
     main_run_config: Any | None = None,
     agent_run_config: Any | None = None,
+    text_contract: bool = False,
 ) -> CognitiveSwarm:
     selected_main_model = str(main_model or model or "").strip()
     selected_agent_model = str(agent_model or selected_main_model).strip()
@@ -881,8 +909,14 @@ def build_cognitive_swarm(
     )
     if resolved_main_config is None or resolved_agent_config is None:
         raise ValueError(
-            "Database-resolved direct OpenRouter RunConfig values are required for the paid swarm."
+            "Database-resolved direct route RunConfig values are required for the swarm."
         )
+    selected_worker_models = {
+        role: str((worker_models or {}).get(role) or selected_agent_model).strip()
+        for role in WORKER_ROLES
+    }
+    if any(not value for value in selected_worker_models.values()):
+        raise ValueError("Each fixed worker requires one database-resolved model identifier.")
     agent_class, _ = _require_agents_sdk()
 
     skill = _load_skill_instructions()
@@ -891,17 +925,20 @@ def build_cognitive_swarm(
     specialists: list[Any] = []
     specialist_tools: list[Any] = []
     for role in SPECIALIST_ROLES[:max_active_specialists()]:
-        specialist = agent_class(
-            name=f"Sovereign {role.replace('_', ' ').title()} Specialist",
-            model=selected_agent_model,
-            instructions=(
+        specialist_kwargs: dict[str, Any] = {
+            "name": f"Sovereign {role.replace('_', ' ').title()} Specialist",
+            "model": selected_agent_model,
+            "instructions": (
                 f"{base}\n\n"
                 f"You are the bounded {role} specialist. Work on exactly one assigned package. "
                 "Never spawn agents, merge, deploy, read secrets, change global state, or write outside assigned files. "
                 "Return evidence-backed findings and required actions only."
+                + (" Return exactly one JSON object matching WorkerReport fields, with no prose or markdown." if text_contract else "")
             ),
-            output_type=WorkerReport,
-        )
+        }
+        if not text_contract:
+            specialist_kwargs["output_type"] = WorkerReport
+        specialist = agent_class(**specialist_kwargs)
         specialists.append(specialist)
         specialist_tools.append(
             specialist.as_tool(
@@ -912,16 +949,19 @@ def build_cognitive_swarm(
             )
         )
 
-    dispatcher = agent_class(
-        name=AGENTS[0].name,
-        model=selected_main_model,
-        instructions=(
+    dispatcher_kwargs: dict[str, Any] = {
+        "name": AGENTS[0].name,
+        "model": selected_main_model,
+        "instructions": (
             f"{base}\n\n"
             "Create one ordered six-item plan, one item for each fixed core worker role in manifest order. "
             "Do not perform worker tasks yourself. Identify required evidence, initial blockers, and specialists needed."
+            + (" Return exactly one JSON object with mission, ordered_work, required_evidence and initial_blockers; no prose or markdown." if text_contract else "")
         ),
-        output_type=DispatchPlan,
-    )
+    }
+    if not text_contract:
+        dispatcher_kwargs["output_type"] = DispatchPlan
+    dispatcher = agent_class(**dispatcher_kwargs)
 
     workers: list[Any] = []
     for contract in AGENTS[1:7]:
@@ -936,10 +976,10 @@ def build_cognitive_swarm(
             if repository_tool_factory is not None
             else ""
         )
-        workers.append(agent_class(
-            name=contract.name,
-            model=selected_agent_model,
-            instructions=(
+        worker_kwargs: dict[str, Any] = {
+            "name": contract.name,
+            "model": selected_worker_models[contract.role],
+            "instructions": (
                 f"{base}\n\n"
                 f"Your fixed role is {contract.role}. Responsibility: {contract.responsibility} "
                 f"Allowed zones: {', '.join(contract.allowed_zones)}. "
@@ -948,15 +988,18 @@ def build_cognitive_swarm(
                 "Set blocked=true whenever evidence needed for a claim is absent. "
                 f"{repository_instruction}"
                 "You may recommend exact changes, but you may claim an action was applied only when a tool result confirms it."
+                + (" Return exactly one JSON object with role, loop, status, findings, required_actions, evidence_observed, evidence_missing and blocked; no prose or markdown." if text_contract else "")
             ),
-            tools=worker_tools,
-            output_type=WorkerReport,
-        ))
+            "tools": worker_tools,
+        }
+        if not text_contract:
+            worker_kwargs["output_type"] = WorkerReport
+        workers.append(agent_class(**worker_kwargs))
 
-    judge = agent_class(
-        name=AGENTS[-1].name,
-        model=selected_main_model,
-        instructions=(
+    judge_kwargs: dict[str, Any] = {
+        "name": AGENTS[-1].name,
+        "model": selected_main_model,
+        "instructions": (
             f"{base}\n\n"
             "You are the final evidence controller. You never edit files and never perform a release. "
             "Reject unsupported worker claims. draft_pr_ready may be true only when all required evidence "
@@ -966,9 +1009,12 @@ def build_cognitive_swarm(
             "current response; the host records that stage afterward. The first-loop verdict can never end the "
             "workflow; a second refinement loop is mandatory. For release-hunt missions, populate hunt_outcome, "
             "error_family, next_error_family and nullfind_confirmed exactly as the bundled release-hunt skill requires."
+            + (" Return exactly one JSON object matching JudgeVerdict fields, with no prose or markdown." if text_contract else "")
         ),
-        output_type=JudgeVerdict,
-    )
+    }
+    if not text_contract:
+        judge_kwargs["output_type"] = JudgeVerdict
+    judge = agent_class(**judge_kwargs)
 
     swarm = CognitiveSwarm(
         dispatcher=dispatcher,
@@ -1025,6 +1071,7 @@ async def run_cognitive_swarm(
     route: dict[str, Any] | None = None,
     main_route: dict[str, Any] | None = None,
     agent_route: dict[str, Any] | None = None,
+    worker_routes: dict[str, dict[str, Any]] | None = None,
     stage_observer: StageObserver | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
     stage_billing: AgentStageBilling | None = None,
@@ -1057,6 +1104,18 @@ async def run_cognitive_swarm(
                 output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT,
             )
         )
+        resolved_worker_routes = {
+            role: dict((worker_routes or {}).get(role) or resolved_agent_route)
+            for role in WORKER_ROLES
+        }
+        worker_runtimes = {
+            role: (
+                agent_runtime
+                if str(selected.get("id") or "") == str(resolved_agent_route.get("id") or "")
+                else build_route_run_config(selected, output_token_limit=_AGENT_OUTPUT_TOKEN_LIMIT)
+            )
+            for role, selected in resolved_worker_routes.items()
+        }
     except RouteRuntimeError as exc:
         raise SwarmExecutionError(
             stage="swarm-build",
@@ -1065,18 +1124,23 @@ async def run_cognitive_swarm(
             next_action=exc.next_action,
             retryable=False,
         ) from exc
-    if main_runtime.transport != "openrouter" or agent_runtime.transport != "openrouter":
-        raise ValueError("The paid swarm requires direct OpenRouter model routes.")
+    transports = {main_runtime.transport, agent_runtime.transport, *(runtime.transport for runtime in worker_runtimes.values())}
+    if transports not in ({"openrouter"}, {"freellm"}):
+        raise ValueError("A swarm requires one consistent direct transport across control and worker routes.")
+    text_contract = transports == {"freellm"}
     selected_main_model = main_runtime.model
     selected_agent_model = agent_runtime.model
+    selected_worker_models = {role: runtime.model for role, runtime in worker_runtimes.items()}
 
     try:
         _, runner_class = _require_agents_sdk()
         build_kwargs: dict[str, Any] = {
             "main_model": selected_main_model,
             "agent_model": selected_agent_model,
+            "worker_models": selected_worker_models,
             "main_run_config": main_runtime.run_config,
             "agent_run_config": agent_runtime.run_config,
+            "text_contract": text_contract,
         }
         if repository_tool_factory is not None:
             build_kwargs["repository_tool_factory"] = repository_tool_factory
@@ -1107,7 +1171,11 @@ async def run_cognitive_swarm(
         run_config=main_runtime.run_config,
         transport=main_runtime.transport,
     )
-    plan = plan_result.final_output
+    plan = (
+        _parse_text_contract_output(plan_result.final_output, DispatchPlan, stage="dispatcher")
+        if text_contract
+        else plan_result.final_output
+    )
     if not isinstance(plan, DispatchPlan):
         raise SwarmExecutionError(
             stage="dispatcher-output",
@@ -1152,10 +1220,14 @@ async def run_cognitive_swarm(
                 ),
                 stage=f"loop-{loop}:worker:{role}",
                 stage_billing=stage_billing,
-                run_config=agent_runtime.run_config,
-                transport=agent_runtime.transport,
+                run_config=worker_runtimes[role].run_config,
+                transport=worker_runtimes[role].transport,
             )
-            report = result.final_output
+            report = (
+                _parse_text_contract_output(result.final_output, WorkerReport, stage=f"loop-{loop}:worker:{role}")
+                if text_contract
+                else result.final_output
+            )
             if not isinstance(report, WorkerReport):
                 raise SwarmExecutionError(
                     stage=f"loop-{loop}:worker-output:{role}",
@@ -1210,7 +1282,11 @@ async def run_cognitive_swarm(
             run_config=main_runtime.run_config,
             transport=main_runtime.transport,
         )
-        verdict = judge_result.final_output
+        verdict = (
+            _parse_text_contract_output(judge_result.final_output, JudgeVerdict, stage=f"loop-{loop}:judge")
+            if text_contract
+            else judge_result.final_output
+        )
         if not isinstance(verdict, JudgeVerdict):
             raise SwarmExecutionError(
                 stage=f"loop-{loop}:judge-output",
@@ -1258,7 +1334,9 @@ async def run_cognitive_swarm(
         "activeSpecialists": len(swarm.specialists),
         "mainModel": selected_main_model,
         "agentModel": selected_agent_model,
-        "sixAgentModelShared": True,
+        "workerModels": selected_worker_models,
+        "sixAgentModelShared": len(set(selected_worker_models.values())) == 1,
+        "swarmTransport": main_runtime.transport,
         "repositoryToolMode": repository_tool_factory is not None,
         "approvalRequired": final_status == "READY_FOR_DRAFT_PR" and final_verdict.human_approval_required,
         "autoMerge": False,

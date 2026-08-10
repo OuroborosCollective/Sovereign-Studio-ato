@@ -506,6 +506,10 @@ class BrokerRuntime:
             "github_pr_status": lambda values: self.github.pr_status(
                 pr_number=int(values.get("pr_number") or 0),
             ),
+            "github_pr_changed_paths": lambda values: self.github.pr_changed_paths(
+                pr_number=int(values.get("pr_number") or 0),
+                max_paths=int(values.get("max_paths") or 64),
+            ),
             "github_rerun_failed_workflows": lambda values: self.github.rerun_failed_workflows(
                 pr_number=int(values.get("pr_number") or 0),
             ),
