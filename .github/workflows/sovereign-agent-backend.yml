@@ -87,3 +87,51 @@ jobs:
           path: agent-runtime-pytest.log
           if-no-files-found: error
           retention-days: 3
+
+  codespace-build:
+    name: Codespace Build Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js 22 for Dev Container CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned official Dev Container CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global @devcontainers/cli@0.88.0
+          devcontainer --version | tee devcontainer-cli-version.log
+          grep -F '0.88.0' devcontainer-cli-version.log
+
+      - name: Build and start Sovereign ATO devcontainer
+        shell: bash
+        run: |
+          set -euo pipefail
+          devcontainer up --workspace-folder "$GITHUB_WORKSPACE" 2>&1 | tee devcontainer-up.log
+
+      - name: Run Codespace smoke profile inside devcontainer
+        shell: bash
+        run: |
+          set -euo pipefail
+          devcontainer exec --workspace-folder "$GITHUB_WORKSPACE" \
+            bash .devcontainer/run-tests.sh smoke 2>&1 | tee devcontainer-smoke.log
+
+      - name: Upload bounded Codespace evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codespace-contract-${{ github.run_id }}
+          path: |
+            devcontainer-cli-version.log
+            devcontainer-up.log
+            devcontainer-smoke.log
+          if-no-files-found: warn
+          retention-days: 3
