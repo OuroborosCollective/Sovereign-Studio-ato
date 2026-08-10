@@ -10,13 +10,16 @@ RECONCILE = BACKEND / "migrations" / "037_reenable_verified_direct_freellm_route
 APP = BACKEND / "app.py"
 
 
-def test_legacy_replay_disable_has_a_later_evidence_bound_reconciliation() -> None:
+def test_legacy_replay_is_non_destructive_and_later_reconciliation_exists() -> None:
     legacy = LEGACY.read_text("utf-8")
     direct = DIRECT.read_text("utf-8")
     reconcile = RECONCILE.read_text("utf-8")
     app = APP.read_text("utf-8")
 
-    assert "WHERE lower(COALESCE(provider, '')) <> 'litellm'" in legacy
+    assert "SET disabled = true" not in legacy
+    assert "WHERE lower(COALESCE(provider, '')) <> 'litellm'" not in legacy
+    assert "Provider-specific migrations and runtime evidence own that state" in legacy
+    assert "api_key = NULL" in legacy
     assert "provider = 'freellm'" in direct
     assert "037_reenable_verified_direct_freellm_routes.sql" in app
     assert app.index('"036_llm_route_scanner_candidates.sql"') < app.index(

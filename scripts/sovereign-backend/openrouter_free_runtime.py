@@ -544,7 +544,7 @@ def _persist_route(
                        (id, model_id, model_name, provider, base_url,
                         credits_per_unit, disabled, priority, runtime_kind,
                         tier, config, updated_at)
-                   VALUES (%s::uuid,%s,'OpenRouter Free Router','openrouter',%s,
+                   VALUES (%s,%s,'OpenRouter Free Router','openrouter',%s,
                            0,false,5,'openrouter','free',%s::jsonb,NOW())
                    ON CONFLICT (id) DO UPDATE SET
                        model_id=EXCLUDED.model_id,
@@ -571,7 +571,7 @@ def _persist_route(
                            (purpose, upstream_key_hash, key_fingerprint_sha256,
                             key_name, status, route_id, metadata,
                             activated_at, last_verified_at, updated_at)
-                       VALUES ('free-revolver',%s,%s,%s,'active',%s::uuid,
+                       VALUES ('free-revolver',%s,%s,%s,'active',%s,
                                %s::jsonb,NOW(),NOW(),NOW())""",
                     (
                         managed_key["hash"],
@@ -707,11 +707,35 @@ def _retire_upstream_key(management_key: str, key_hash: str) -> bool:
             return False
 
 
+def _database_sqlstate(exc: BaseException) -> str:
+    """Return a bounded PostgreSQL SQLSTATE without exposing database details."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        code = getattr(current, "pgcode", None)
+        if not code:
+            diag = getattr(current, "diag", None)
+            code = getattr(diag, "sqlstate", None) if diag is not None else None
+        if code:
+            return str(code)[:5]
+        current = getattr(current, "__cause__", None) or getattr(
+            current, "__context__", None
+        )
+    return ""
+
+
+def _status_query_failure(exc: BaseException) -> tuple[bool | None, str]:
+    if _database_sqlstate(exc) == "42P01":
+        return False, "openrouter_management_migration_required"
+    return None, "openrouter_free_status_query_failed"
+
+
 def _route_status(query: Callable[..., Any]) -> dict[str, Any]:
     route = query(
         """SELECT id::text, model_id, disabled, priority, runtime_kind, config,
                   updated_at
-           FROM llm_routes WHERE id=%s::uuid LIMIT 1""",
+           FROM llm_routes WHERE id=%s LIMIT 1""",
         (OPENROUTER_FREE_ROUTE_ID,),
         one=True,
     ) or {}
@@ -799,14 +823,13 @@ def register_openrouter_free_runtime(
             route = _route_status(query)
             table_available = True
             table_blocker = None
-        except Exception:
+        except Exception as exc:
             route = {
                 "routeId": None,
                 "enabled": False,
                 "managedKeys": [],
             }
-            table_available = False
-            table_blocker = "openrouter_management_migration_required"
+            table_available, table_blocker = _status_query_failure(exc)
         return {
             "ok": True,
             "status": "OPENROUTER_FREE_RUNTIME_STATUS",

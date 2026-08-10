@@ -1,5 +1,6 @@
 -- 021_litellm_provider_registry.sql
--- One routing truth: every online model is exposed through private LiteLLM.
+-- Historical LiteLLM compatibility schema only.
+-- Current provider routing is owned by later direct-provider migrations/runtime evidence.
 
 CREATE TABLE IF NOT EXISTS llm_provider_deployments (
     deployment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,17 +32,9 @@ CREATE TABLE IF NOT EXISTS llm_provider_deployments (
 CREATE INDEX IF NOT EXISTS idx_llm_provider_deployments_status
     ON llm_provider_deployments (status, updated_at DESC);
 
--- Legacy direct providers are never a live route after this migration.
-UPDATE llm_routes
-SET disabled = true,
-    config = COALESCE(config, '{}'::jsonb) - 'fallback',
-    updated_at = NOW()
-WHERE lower(COALESCE(provider, '')) <> 'litellm';
-
-UPDATE llm_routes
-SET config = COALESCE(config, '{}'::jsonb) - 'fallback',
-    updated_at = NOW()
-WHERE lower(COALESCE(provider, '')) = 'litellm';
+-- Replay-safe contract: auto-migrate replays historical SQL on every backend start.
+-- This legacy migration must therefore never change current route activation or
+-- routing config. Provider-specific migrations and runtime evidence own that state.
 
 -- The Sovereign database never owns provider credentials.
 DO $$
