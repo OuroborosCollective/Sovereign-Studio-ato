@@ -343,6 +343,7 @@ class AgentStageBilling:
                     email=str(account.get("email") or ""),
                     role=str(account.get("role") or ""),
                     purchase_verified=purchase_verified,
+                    credit_balance=int(account["credits"] or 0),
                     configured_owner_id=os.getenv("SOVEREIGN_OWNER_ADMIN_ID", ""),
                     configured_owner_email=os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", ""),
                 )

@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
 import pytest
+
+RUNTIME_ROOT = Path(__file__).resolve().parents[1]
+if str(RUNTIME_ROOT) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_ROOT))
 
 from agent_runtime.fleet_supervisor import (
     FleetContractError,
@@ -174,7 +181,7 @@ def test_exact_head_verdict_requires_exact_ci_and_readback() -> None:
         workspace_head_revision=HEAD,
         check_receipts=[{"gate": "unit", "status": "success", "headSha": HEAD}],
     )
-    candidate = evaluate_fleet_verdict(
+    review_waiting = evaluate_fleet_verdict(
         selected,
         assignment=assignment,
         observed_base_revision=BASE,
@@ -185,10 +192,116 @@ def test_exact_head_verdict_requires_exact_ci_and_readback() -> None:
             {"gate": "lint", "status": "success", "headSha": HEAD},
         ],
     )
+    cross_waiting = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[
+            {"gate": "unit", "status": "success", "headSha": HEAD},
+            {"gate": "lint", "status": "success", "headSha": HEAD},
+        ],
+        review_receipts=[{
+            "reviewerId": "reviewer-independent",
+            "independent": True,
+            "status": "approved",
+            "headSha": HEAD,
+            "receiptSha256": RECEIPT,
+        }],
+    )
+    candidate = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[
+            {"gate": "unit", "status": "success", "headSha": HEAD},
+            {"gate": "lint", "status": "success", "headSha": HEAD},
+        ],
+        review_receipts=[{
+            "reviewerId": "reviewer-independent",
+            "independent": True,
+            "status": "approved",
+            "headSha": HEAD,
+            "receiptSha256": RECEIPT,
+        }],
+        cross_task_receipts=[{
+            "status": "passed",
+            "headSha": HEAD,
+            "conflictsResolved": True,
+            "receiptSha256": RECEIPT,
+        }],
+    )
 
     assert waiting["status"] == "CI_WAITING"
+    assert review_waiting["status"] == "REVIEW_WAITING"
+    assert cross_waiting["status"] == "CROSS_TASK_WAITING"
     assert candidate["status"] == "MERGE_CANDIDATE"
     assert candidate["mergeAuthorized"] is False
+
+
+def test_runtime_verification_binds_to_merge_commit_not_pr_head() -> None:
+    merge_sha = "d" * 40
+    selected = task(
+        "task-runtime",
+        expected_head_revision=HEAD,
+        required_gates=("unit",),
+    )
+    plan = build_fleet_plan(
+        integration_id="fleet-runtime",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        base_revision=BASE,
+        tasks=[selected],
+    )
+    assignment = create_worker_assignment(
+        plan,
+        lane_id="lane-01",
+        task_id="task-runtime",
+        controller_run_id="run-runtime",
+        workspace_id="job-runtime",
+        workspace_branch="sovereign/chatgpt/runtime",
+        run_envelope_hash=RECEIPT,
+        capability_manifest_hash=RECEIPT,
+    )
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "success", "headSha": HEAD}],
+        review_receipts=[{
+            "reviewerId": "reviewer-runtime",
+            "independent": True,
+            "status": "approved",
+            "headSha": HEAD,
+            "receiptSha256": RECEIPT,
+        }],
+        cross_task_receipts=[{
+            "status": "passed",
+            "headSha": HEAD,
+            "conflictsResolved": True,
+            "receiptSha256": RECEIPT,
+        }],
+        merge_readback={
+            "merged": True,
+            "readbackVerified": True,
+            "headSha": HEAD,
+            "mergeCommitSha": merge_sha,
+        },
+        runtime_readback={
+            "deployedRevision": merge_sha,
+            "imageDigest": "sha256:" + ("e" * 64),
+            "patchmonHealthy": True,
+            "functionVerified": True,
+        },
+    )
+
+    assert verdict["status"] == "RUNTIME_VERIFIED"
+    assert verdict["mergeRevision"] == merge_sha
+    assert verdict["runtimeClaimed"] is True
 
 
 def test_projection_marks_stale_main_as_command_blocker() -> None:

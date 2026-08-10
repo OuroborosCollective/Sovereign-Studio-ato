@@ -10,7 +10,9 @@ sys.path.insert(0, str(BACKEND))
 
 from llm_execution_resolver import (
     FREE_SINGLE_AGENT_PROFILE,
+    FREE_SWARM_PROFILE,
     PAID_SWARM_PROFILE,
+    ExecutionResolutionError,
     advance_free_revolver_resolution,
     build_paid_to_free_candidates,
     free_fallback_resolution,
@@ -75,6 +77,7 @@ def route(
             "transportCanaryVerified": not free,
             "selectable": not free,
             "supportedExecutionRoles": ["main", "swarm_agents"] if not free else ["free_single_agent"],
+            "repositoryExecutionAllowed": True,
             "providerPolicy": {
                 "require_parameters": True,
                 "allow_fallbacks": False,
@@ -136,7 +139,7 @@ def test_paid_purchase_selects_paid_swarm_and_keeps_free_fallbacks() -> None:
     ]
 
 
-def test_bonus_or_admin_credits_do_not_unlock_paid_swarm() -> None:
+def test_existing_credit_balance_unlocks_free_but_not_paid_provider() -> None:
     paid = route(
         "paid",
         category="standard",
@@ -156,7 +159,8 @@ def test_bonus_or_admin_credits_do_not_unlock_paid_swarm() -> None:
         routes=[paid, free],
         state_by_scope={},
         paid_purchase_verified=False,
-        provider_funded_credits=500,
+        provider_funded_credits=0,
+        credit_balance=500,
     )
 
     assert resolution is not None
@@ -164,6 +168,88 @@ def test_bonus_or_admin_credits_do_not_unlock_paid_swarm() -> None:
     assert resolution.max_background_agents == 0
     assert resolution.repository_execution_allowed is True
     assert resolution.primary_route["id"] == "free"
+
+
+def test_free_requires_purchase_or_existing_credit_entitlement() -> None:
+    free = route(
+        "free-no-entitlement",
+        category="free",
+        scope="free:no-entitlement",
+        priority=10,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+
+    try:
+        resolve_execution_profile(
+            routes=[free],
+            state_by_scope={},
+            paid_purchase_verified=False,
+            provider_funded_credits=0,
+            credit_balance=0,
+            requested_mode="free",
+        )
+    except ExecutionResolutionError as exc:
+        assert exc.failure_family == "execution_entitlement_required"
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("free execution must require purchase or persisted credits")
+
+
+def test_seven_verified_free_quota_scopes_unlock_free_swarm() -> None:
+    free_routes = [
+        route(
+            f"free-{index}",
+            category="free",
+            scope=f"free:key-{index}",
+            priority=index,
+            profile=FREE_SINGLE_AGENT_PROFILE,
+        )
+        for index in range(7)
+    ]
+
+    resolution = resolve_execution_profile(
+        routes=free_routes,
+        state_by_scope={},
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        credit_balance=25,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    assert resolution.profile_id == FREE_SWARM_PROFILE
+    assert resolution.max_background_agents == 6
+    assert resolution.primary_route["id"] == "free-0"
+    assert [item["id"] for item in resolution.candidate_routes[:7]] == [
+        f"free-{index}" for index in range(7)
+    ]
+
+
+def test_free_swarm_threshold_counts_only_routes_marked_for_repository_execution() -> None:
+    free_routes = [
+        route(
+            f"free-capable-{index}",
+            category="free",
+            scope=f"free:capable-{index}",
+            priority=index,
+            profile=FREE_SINGLE_AGENT_PROFILE,
+        )
+        for index in range(7)
+    ]
+    free_routes[-1]["config"]["repositoryExecutionAllowed"] = False
+
+    resolution = resolve_execution_profile(
+        routes=free_routes,
+        state_by_scope={},
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        credit_balance=25,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    assert resolution.profile_id == FREE_SINGLE_AGENT_PROFILE
+    assert resolution.max_background_agents == 0
 
 
 def test_paid_quota_cooldown_resolves_to_free_profile() -> None:
@@ -301,6 +387,7 @@ def test_free_revolver_advances_to_next_verified_quota_scope() -> None:
         state_by_scope={},
         paid_purchase_verified=False,
         provider_funded_credits=0,
+        credit_balance=25,
         requested_mode="free",
     )
 
@@ -331,6 +418,7 @@ def test_free_revolver_stops_after_last_verified_quota_scope() -> None:
         state_by_scope={},
         paid_purchase_verified=False,
         provider_funded_credits=0,
+        credit_balance=25,
         requested_mode="free",
     )
 

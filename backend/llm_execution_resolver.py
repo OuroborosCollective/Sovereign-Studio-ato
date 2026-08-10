@@ -29,7 +29,9 @@ from llm_transport import (
 from paid_execution_entitlement import resolve_paid_execution_entitlement
 
 FREE_SINGLE_AGENT_PROFILE = "free_single_agent"
+FREE_SWARM_PROFILE = "free_swarm_6"
 PAID_SWARM_PROFILE = "paid_swarm_6"
+FREE_SWARM_MIN_READY_ROUTES = 7
 AUTO_MODE = "auto"
 PAID_MODE = "paid"
 FREE_MODE = "free"
@@ -218,6 +220,22 @@ def _ordered_free_routes(routes: Iterable[dict[str, Any]]) -> list[dict[str, Any
     )
 
 
+def _free_swarm_route_capable(route: dict[str, Any]) -> bool:
+    """Require explicit persisted workspace/tool eligibility in addition to free-route canaries."""
+    config = _route_config(route)
+    return route_is_verified_free(route) and config.get("repositoryExecutionAllowed") is True
+
+
+def _free_swarm_candidate_order(candidates: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+    ordered = list(candidates)
+    capable = [route for route in ordered if _free_swarm_route_capable(route)]
+    ready = len(capable) >= FREE_SWARM_MIN_READY_ROUTES
+    if not ready:
+        return ordered, False
+    capable_ids = {_route_id(route) for route in capable}
+    return [*capable, *(route for route in ordered if _route_id(route) not in capable_ids)], True
+
+
 def build_paid_to_free_candidates(
     primary: dict[str, Any],
     routes: Iterable[dict[str, Any]],
@@ -266,6 +284,7 @@ def resolve_execution_profile(
     state_by_scope: dict[str, dict[str, Any]] | None,
     paid_purchase_verified: bool,
     provider_funded_credits: int,
+    credit_balance: int = 0,
     paid_entitlement_verified: bool | None = None,
     paid_entitlement_source: str = "",
     requested_model: str = "",
@@ -283,14 +302,21 @@ def resolve_execution_profile(
     main_requested = str(requested_main_model or legacy_requested).strip()
     agent_requested = str(requested_agent_model or legacy_requested).strip()
     funded = max(0, int(provider_funded_credits))
+    credits = max(0, int(credit_balance))
     entitlement_verified = (
-        bool(paid_purchase_verified)
+        bool(paid_purchase_verified or credits > 0)
         if paid_entitlement_verified is None
         else bool(paid_entitlement_verified)
     )
     entitlement_source = str(
         paid_entitlement_source
-        or ("verified_purchase" if paid_purchase_verified else "none")
+        or (
+            "verified_purchase"
+            if paid_purchase_verified
+            else "existing_credit_balance"
+            if credits > 0
+            else "none"
+        )
     ).strip()[:80]
 
     verified_paid_routes: list[dict[str, Any]] = []
@@ -388,6 +414,12 @@ def resolve_execution_profile(
     )
     if not free_routes:
         return None
+    if not entitlement_verified:
+        raise ExecutionResolutionError(
+            "execution_entitlement_required",
+            "agent execution requires an authenticated account with a verified purchase or positive persisted credit balance",
+            status_code=403,
+        )
     candidates = build_revolver_candidates(
         free_routes[0],
         free_routes,
@@ -396,13 +428,14 @@ def resolve_execution_profile(
     )
     if not candidates:
         return None
+    candidates, free_swarm_ready = _free_swarm_candidate_order(candidates)
     return ExecutionResolution(
-        profile_id=FREE_SINGLE_AGENT_PROFILE,
+        profile_id=FREE_SWARM_PROFILE if free_swarm_ready else FREE_SINGLE_AGENT_PROFILE,
         primary_route=candidates[0],
-        agent_route=candidates[0],
+        agent_route=candidates[1] if free_swarm_ready else candidates[0],
         candidate_routes=tuple(candidates),
         max_foreground_agents=1,
-        max_background_agents=0,
+        max_background_agents=6 if free_swarm_ready else 0,
         repository_execution_allowed=True,
         paid_purchase_verified=bool(paid_purchase_verified),
         paid_entitlement_verified=entitlement_verified,
@@ -410,7 +443,9 @@ def resolve_execution_profile(
         provider_funded_credits=funded,
         requested_mode=mode,
         reason=(
-            "paid_route_unavailable_resolved_to_free_revolver"
+            "free_swarm_ready_with_seven_independent_verified_quota_scopes"
+            if free_swarm_ready
+            else "paid_route_unavailable_resolved_to_free_revolver"
             if (
                 mode == AUTO_MODE
                 and entitlement_verified
@@ -447,13 +482,14 @@ def free_fallback_resolution(
         return None
     if not free_candidates:
         return None
+    ordered_free, free_swarm_ready = _free_swarm_candidate_order(free_candidates)
     return ExecutionResolution(
-        profile_id=FREE_SINGLE_AGENT_PROFILE,
-        primary_route=free_candidates[0],
-        agent_route=free_candidates[0],
-        candidate_routes=free_candidates,
+        profile_id=FREE_SWARM_PROFILE if free_swarm_ready else FREE_SINGLE_AGENT_PROFILE,
+        primary_route=ordered_free[0],
+        agent_route=ordered_free[1] if free_swarm_ready else ordered_free[0],
+        candidate_routes=tuple(ordered_free),
         max_foreground_agents=1,
-        max_background_agents=0,
+        max_background_agents=6 if free_swarm_ready else 0,
         repository_execution_allowed=True,
         paid_purchase_verified=resolution.paid_purchase_verified,
         paid_entitlement_verified=resolution.paid_entitlement_verified,
@@ -531,6 +567,7 @@ def load_execution_resolution(
         with connection.cursor() as cursor:
             cursor.execute(
                 """SELECT account.id::text AS id, account.email, account.role,
+                          account.credits::integer AS credits,
                           account.provider_funded_credits::integer AS provider_funded_credits,
                           EXISTS(
                             SELECT 1
@@ -593,6 +630,7 @@ def load_execution_resolution(
         email=str(account.get("email") or ""),
         role=str(account.get("role") or ""),
         purchase_verified=bool(account["paid_purchase_verified"]),
+        credit_balance=int(account["credits"] or 0),
         configured_owner_id=os.getenv("SOVEREIGN_OWNER_ADMIN_ID", ""),
         configured_owner_email=os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", ""),
     )
@@ -603,6 +641,7 @@ def load_execution_resolution(
         paid_entitlement_verified=entitlement.verified,
         paid_entitlement_source=entitlement.source,
         provider_funded_credits=int(account["provider_funded_credits"] or 0),
+        credit_balance=int(account["credits"] or 0),
         requested_model=requested_model,
         requested_main_model=requested_main_model,
         requested_agent_model=requested_agent_model,

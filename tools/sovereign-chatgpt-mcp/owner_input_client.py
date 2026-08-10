@@ -557,8 +557,6 @@ class ControllerRuntimeClient(OwnerInputClient):
             raise ValueError("mode muss paid oder free sein")
         if selected_intent_mode not in {"auto", "conversation", "read_only_analysis", "repository_execution"}:
             raise ValueError("intent_mode ist ungültig")
-        if selected_mode == "free" and selected_intent_mode == "auto":
-            selected_intent_mode = "conversation"
         payload = self._request(
             "POST",
             "/api/internal/controller/runs",
@@ -639,6 +637,21 @@ class ControllerRuntimeClient(OwnerInputClient):
         return {
             **response,
             "status": "FLEET_PROJECTION_PREVIEW",
+            "readOnly": True,
+            "mutationPerformed": False,
+            "protected_values_returned": False,
+        }
+
+    def fleet_verdict_preview(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._request(
+            "POST",
+            "/api/internal/controller/fleet/verdict-preview",
+            json_body=self._fleet_preview_payload(payload),
+            timeout=30,
+        )
+        return {
+            **response,
+            "status": "FLEET_VERDICT_PREVIEW",
             "readOnly": True,
             "mutationPerformed": False,
             "protected_values_returned": False,

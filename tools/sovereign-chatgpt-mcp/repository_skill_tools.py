@@ -162,6 +162,20 @@ _GATES_BY_DOMAIN: Final[dict[str, tuple[str, ...]]] = {
     "deployment": ("revision/digest binding", "new runtime identity", "health and capability probe", "known rollback digest"),
     "documentation": ("documentation-to-live-contract drift review",),
 }
+_FLEET_SAFETY_SCOPE_BY_DOMAIN: Final[dict[str, tuple[str, ...]]] = {
+    "chat_ui": ("frontend_contract",),
+    "frontend_runtime": ("frontend_contract", "runtime_projection"),
+    "github_toolchain": ("repository_mutation_contract",),
+    "agents_sdk": ("agent_runtime_contract",),
+    "backend": ("backend_runtime_contract",),
+    "database": ("database_contract",),
+    "mcp_broker": ("agent_runtime_contract", "mcp_protocol_contract"),
+    "widget": ("agent_runtime_contract", "widget_contract"),
+    "ci_release": ("release_contract",),
+    "android": ("android_release_contract",),
+    "deployment": ("release_contract", "runtime_deployment_contract"),
+    "documentation": ("documentation_contract",),
+}
 _FAILURE_FAMILIES_BY_DOMAIN: Final[dict[str, tuple[str, ...]]] = {
     "chat_ui": ("UI_RUNTIME_EVIDENCE_DRIFT", "CHAT_ACTION_STATE_PROJECTION"),
     "frontend_runtime": ("INTENT_ROUTE_RESULT_STATE_CHAIN", "PREDICTIVE_RUNTIME_CONTRADICTION"),
@@ -1207,6 +1221,49 @@ def _domains(path: str) -> list[str]:
     lowered = path.casefold()
     found = [domain for domain, patterns in _DOMAIN_PATTERNS if any(pattern in lowered for pattern in patterns)]
     return found or ["unclassified"]
+
+
+def classify_changed_paths(paths: list[str]) -> dict[str, Any]:
+    """Classify externally read changed paths using the canonical repository domain/gate map.
+
+    This helper performs no repository or network access. It is intentionally reusable by
+    Fleet planning after GitHub has supplied exact PR changed-file evidence, so Fleet does
+    not grow a second domain taxonomy beside the architecture radar.
+    """
+    changed = sorted({_safe_changed_path(path) for path in paths if str(path or "").strip()})[:500]
+    entries: list[dict[str, Any]] = []
+    all_domains: list[str] = []
+    for path in changed:
+        domains = _domains(path)
+        all_domains.extend(domains)
+        entries.append({"path": path, "domains": domains})
+    selected_domains = list(dict.fromkeys(all_domains))
+    gates = list(dict.fromkeys(gate for domain in selected_domains for gate in _GATES_BY_DOMAIN.get(domain, ())))
+    safety_scopes = list(dict.fromkeys(
+        scope
+        for domain in selected_domains
+        for scope in _FLEET_SAFETY_SCOPE_BY_DOMAIN.get(domain, ("unclassified",))
+    ))
+    classified = bool(changed) and "unclassified" not in selected_domains and "unclassified" not in safety_scopes
+    canonical = {
+        "changedPaths": changed,
+        "domains": selected_domains,
+        "requiredGates": gates,
+        "safetyScopes": safety_scopes,
+        "independenceClassifiable": classified,
+    }
+    return {
+        "schemaVersion": "sovereign.change-impact.external-paths.v1",
+        **canonical,
+        "files": entries,
+        "receiptSha256": hashlib.sha256(
+            json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "truthNotice": (
+            "This classifies exact changed-path evidence with the repository's canonical domain map; "
+            "it does not prove CI, runtime success, or semantic independence outside those declared scopes."
+        ),
+    }
 
 
 def _mirrors(repo: Path, path: str) -> list[dict[str, Any]]:

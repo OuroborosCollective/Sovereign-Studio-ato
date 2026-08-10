@@ -200,6 +200,61 @@ def test_governance_mode_uses_explicit_broker_path_and_fails_closed(monkeypatch,
         GitHubAdminRuntime._governance_mode()
 
 
+def test_pr_changed_paths_binds_files_to_same_head_before_and_after_read(monkeypatch) -> None:
+    head = "a" * 40
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(head)),
+                FakeResponse(200, _pull(head)),
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [
+                    {"filename": "backend/agent_runtime/fleet_supervisor.py"},
+                    {"filename": "backend/tests/test_fleet_supervisor.py"},
+                ])
+            ],
+        },
+    )
+
+    result = runtime.pr_changed_paths(pr_number=7)
+
+    assert result["ok"] is True
+    assert result["head_sha"] == head
+    assert result["paths_complete"] is True
+    assert result["readback_verified"] is True
+    assert result["changed_paths"] == [
+        "backend/agent_runtime/fleet_supervisor.py",
+        "backend/tests/test_fleet_supervisor.py",
+    ]
+
+
+def test_pr_changed_paths_fails_closed_when_head_moves_during_file_read(monkeypatch) -> None:
+    before = "a" * 40
+    after = "b" * 40
+    runtime, _update, _session = _runtime(
+        monkeypatch,
+        {
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+                FakeResponse(200, _pull(before)),
+                FakeResponse(200, _pull(after)),
+            ],
+            ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7/files"): [
+                FakeResponse(200, [{"filename": "src/app.tsx"}])
+            ],
+        },
+    )
+
+    result = runtime.pr_changed_paths(pr_number=7)
+
+    assert result["ok"] is False
+    assert result["status"] == "PR_HEAD_CHANGED_DURING_PATH_READ"
+    assert result["paths_complete"] is False
+    assert result["readback_verified"] is False
+    assert result["changed_paths"] == []
+
+
 def test_pr_status_requires_real_check_evidence(monkeypatch) -> None:
     head = "a" * 40
     runtime, _update, _session = _runtime(

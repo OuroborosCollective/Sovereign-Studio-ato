@@ -544,6 +544,7 @@ def resolve_account_entitlement(row: Mapping[str, Any]) -> PaidExecutionEntitlem
         email=str(row.get("email") or ""),
         role=str(row.get("role") or ""),
         purchase_verified=bool(row.get("paid_purchase_verified")),
+        credit_balance=int(row.get("credits") or 0),
         configured_owner_id=str(row.get("configured_owner_id") or ""),
         configured_owner_email=str(row.get("configured_owner_email") or ""),
     )
