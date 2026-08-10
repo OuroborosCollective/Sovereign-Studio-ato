@@ -186,6 +186,62 @@ class TestOAuthStateStore:
         # Verify alle weg
         assert len([s for s in [_generate_state()] if _get_oauth_state(s) is None]) == 1
 
+    def test_oauth_state_store_sweeps_expired_entries_when_large(self):
+        """OAuth state store must sweep expired entries when size exceeds 1000."""
+        from security_oauth import _oauth_state_store
+        _clear_all_oauth_states()
+
+        # Pre-populate store with 1005 expired entries (older than 600s)
+        now = time.time()
+        for i in range(1005):
+            _oauth_state_store[f"state_{i}"] = {
+                "id": i,
+                "created_at": now - 700,
+            }
+
+        assert len(_oauth_state_store) == 1005
+
+        # Store a new state - should trigger a sweep of expired entries
+        new_state = _generate_state()
+        _store_oauth_state(new_state, {"id": "new"})
+
+        # After sweep, only the new state should be in the store because all others were expired
+        assert len(_oauth_state_store) == 1
+        assert new_state in _oauth_state_store
+        _clear_all_oauth_states()
+
+    def test_oauth_state_store_evicts_oldest_active_entries_when_large(self):
+        """OAuth state store must evict oldest active entries to strictly cap size at 1000."""
+        from security_oauth import _oauth_state_store
+        _clear_all_oauth_states()
+
+        # Pre-populate store with 1005 active entries
+        now = time.time()
+        for i in range(1005):
+            _oauth_state_store[f"state_{i}"] = {
+                "id": i,
+                # Give them staggered times within 300 seconds so none are expired
+                "created_at": now - (1005 - i) * 0.1,
+            }
+
+        assert len(_oauth_state_store) == 1005
+
+        # Store a new state - should trigger eviction of the oldest active entries
+        new_state = _generate_state()
+        _store_oauth_state(new_state, {"id": "new"})
+
+        # The store size must be strictly capped at 1000
+        assert len(_oauth_state_store) == 1000
+
+        # The newest state must be present
+        assert new_state in _oauth_state_store
+
+        # The oldest entries (like state_0, state_1, up to state_5) should have been evicted
+        assert "state_0" not in _oauth_state_store
+        assert "state_1" not in _oauth_state_store
+        assert "state_5" not in _oauth_state_store
+        _clear_all_oauth_states()
+
 
 # ── PKCE Validation Tests ───────────────────────────────────────────────────────
 

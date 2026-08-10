@@ -95,11 +95,31 @@ _oauth_lock = threading.Lock()
 
 def _store_oauth_state(state: str, data: dict) -> None:
     """Speichert OAuth State mit zugehörigen Daten (PKCE, etc.)."""
+    now = time.time()
     with _oauth_lock:
         _oauth_state_store[state] = {
             **data,
-            "created_at": time.time(),
+            "created_at": now,
         }
+
+        # Sweeping store if it has grown too large to prevent DoS (memory exhaustion)
+        if len(_oauth_state_store) > 1000:
+            expired_keys = [
+                k for k, val in _oauth_state_store.items()
+                if now - val.get("created_at", 0) > 600
+            ]
+            for k in expired_keys:
+                del _oauth_state_store[k]
+
+            # If still over 1000, prune the oldest active states to cap memory usage
+            if len(_oauth_state_store) > 1000:
+                sorted_keys = sorted(
+                    _oauth_state_store.keys(),
+                    key=lambda k: _oauth_state_store[k].get("created_at", 0)
+                )
+                keys_to_evict = sorted_keys[:len(_oauth_state_store) - 1000]
+                for k in keys_to_evict:
+                    del _oauth_state_store[k]
 
 
 def _get_oauth_state(state: str) -> dict | None:
