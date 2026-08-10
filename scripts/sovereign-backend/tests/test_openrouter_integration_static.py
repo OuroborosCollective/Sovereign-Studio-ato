@@ -54,7 +54,9 @@ def test_paid_model_pair_and_free_forced_fallback_are_wired_through_user_routes(
     assert "agent_route=execution_resolution.agent_route" in routes
     assert '"resolvedMainModelId": resolved_model' in routes
     assert '"resolvedAgentModelId": resolved_agent_model' in routes
-    assert '"sixAgentModelShared": True' in routes
+    assert '"sixAgentModelShared": not free_swarm' in routes
+    assert '"freeSwarm": free_swarm' in routes
+    assert 'execution_resolution.candidate_routes[1:7]' in routes
 
 
 def test_secret_and_provider_boundaries_are_fail_closed() -> None:
