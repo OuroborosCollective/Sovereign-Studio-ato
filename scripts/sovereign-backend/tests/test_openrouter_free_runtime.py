@@ -138,6 +138,105 @@ def test_free_key_is_written_with_owner_only_permissions(
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
+def test_route_status_uses_persisted_text_route_id_contract() -> None:
+    calls: list[tuple[str, tuple, dict]] = []
+
+    def query(sql: str, params: tuple = (), **kwargs):
+        calls.append((sql, params, kwargs))
+        if "FROM llm_routes" in sql:
+            return {
+                "id": runtime.OPENROUTER_FREE_ROUTE_ID,
+                "model_id": runtime.OPENROUTER_FREE_ROUTE_ALIAS,
+                "disabled": False,
+                "priority": 5,
+                "runtime_kind": "openrouter",
+                "config": {},
+            }
+        return []
+
+    result = runtime._route_status(query)
+
+    route_sql = calls[0][0]
+    assert "id=%s::uuid" not in route_sql
+    assert "id=%s LIMIT 1" in route_sql
+    assert calls[0][1] == (runtime.OPENROUTER_FREE_ROUTE_ID,)
+    assert result["routeId"] == runtime.OPENROUTER_FREE_ROUTE_ID
+
+
+def test_status_query_failure_only_calls_missing_table_a_migration_gap() -> None:
+    class MissingTableError(Exception):
+        pgcode = "42P01"
+
+    class TypeContractError(Exception):
+        pgcode = "42883"
+
+    assert runtime._status_query_failure(MissingTableError()) == (
+        False,
+        "openrouter_management_migration_required",
+    )
+    assert runtime._status_query_failure(TypeContractError()) == (
+        None,
+        "openrouter_free_status_query_failed",
+    )
+
+
+def test_persist_route_never_casts_text_route_ids_to_uuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", REVISION)
+    monkeypatch.setenv("SOVEREIGN_IMAGE_DIGEST", DIGEST)
+
+    class Cursor:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def execute(self, sql: str, params=None) -> None:
+            del params
+            self.statements.append(sql)
+
+    class Connection:
+        def __init__(self) -> None:
+            self.cursor_instance = Cursor()
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self) -> None:
+            return None
+
+        def rollback(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    connection = Connection()
+    runtime._persist_route(
+        lambda: connection,
+        key_fingerprint="d" * 64,
+        key_source="test",
+        canary=_canary(),
+        managed_key={
+            "hash": "e" * 64,
+            "name": "test-free-key",
+            "limit": "0",
+            "limitReset": "daily",
+            "includeByokInLimit": True,
+        },
+    )
+
+    statements = "\n".join(connection.cursor_instance.statements)
+    assert "%s::uuid" not in statements
+    assert "VALUES (%s,%s,'OpenRouter Free Router'" in statements
+    assert "'active',%s," in statements
+
+
 class _Raw:
     def __init__(self, payload: bytes) -> None:
         self.buffer = io.BytesIO(payload)

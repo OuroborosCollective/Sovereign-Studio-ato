@@ -32,7 +32,8 @@ def test_legacy_provider_runtime_is_not_registered_or_owner_addressable() -> Non
     assert '"openai_api_key"' not in owner_input
     assert '"openrouter_api_key"' in owner_input
     assert "CREATE TABLE IF NOT EXISTS llm_provider_deployments" in migration
-    assert "lower(COALESCE(provider, '')) <> 'litellm'" in migration
+    assert "lower(COALESCE(provider, '')) <> 'litellm'" not in migration
+    assert "Provider-specific migrations and runtime evidence own that state" in migration
     assert "SET api_key = NULL" in migration
 
 
