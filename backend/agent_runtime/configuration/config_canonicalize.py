@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from typing import Any
 
 from .config_sources import RedactedSecret
@@ -32,6 +33,73 @@ def _is_plain_object(value: Any) -> bool:
     if is_redacted_secret(value):
         return False
     return True
+
+
+def _js_number_str(x: float) -> str:
+    """Format a float exactly like JS ``Number.prototype.toString``.
+
+    The TypeScript provenance canonicalizer uses ``String(value)`` (i.e. JS
+    ``Number.prototype.toString`` per ECMA-262 6.1.6.1.20). Python's ``str``
+    diverges for some floats (e.g. ``1.0`` -> ``"1.0"`` vs JS ``"1"``;
+    ``1e20`` -> ``"1e+20"`` vs JS ``"100000000000000000000"``), which breaks
+    cross-language provenance hash parity. This helper reproduces the JS
+    algorithm from the shortest round-trip digits Python's ``repr`` yields,
+    so identical input produces byte-identical canonical output in both
+    runtimes. ``str(int)`` already matches JS, so this is only needed for floats.
+    """
+    if x != x:  # NaN
+        return "null"
+    if x == math.inf or x == -math.inf:
+        return "null"
+    if x == 0:  # also covers -0.0
+        return "0"
+
+    neg = x < 0
+    if neg:
+        x = -x
+
+    # Shortest round-trip decimal representation (Python repr is shortest-form).
+    r = repr(x)
+    if "e" in r or "E" in r:
+        mant, exp_s = re.split("[eE]", r)
+        exp = int(exp_s)
+    else:
+        mant, exp = r, 0
+    if "." in mant:
+        int_part, frac_part = mant.split(".")
+    else:
+        int_part, frac_part = mant, ""
+    digits = int_part + frac_part
+    # n = position of the decimal point relative to the start of ``digits``.
+    n = len(int_part) + exp
+    k = len(digits)
+    # Trim trailing zeros (they carry no value); fractional zeros reduce k only.
+    s = digits
+    trim = len(s) - len(s.rstrip("0"))
+    if trim:
+        s = s[:-trim]
+        k -= trim
+    if s == "":
+        s = "0"
+        k = 1
+
+    # ECMA-262 6.1.6.1.20 number-to-string formatting (n is the decimal
+    # exponent, k is the minimal digit count).
+    if k <= n <= 21:
+        out = s + "0" * (n - k)
+    elif 0 < n <= 21:
+        out = s[:n] + "." + s[n:]
+    elif -6 < n <= 0:
+        out = "0." + ("0" * (-n)) + s
+    else:
+        first = s[0]
+        rest = s[1:]
+        mantissa = first if rest == "" else first + "." + rest
+        e = n - 1
+        esign = "+" if e >= 0 else "-"
+        out = mantissa + "e" + esign + str(abs(e))
+
+    return ("-" + out) if neg else out
 
 
 def canonical_json(value: Any) -> str:
@@ -52,7 +120,7 @@ def _serialize_stable(value: Any) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
-        return str(value) if math.isfinite(value) else "null"
+        return _js_number_str(value) if math.isfinite(value) else "null"
     if isinstance(value, RedactedSecret):
         return '{"kind":"secret","redactedId":' + json.dumps(value.redacted_id, ensure_ascii=True) + '}'
     if is_redacted_secret(value):
