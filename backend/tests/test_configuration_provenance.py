@@ -423,3 +423,45 @@ def test_float_nested_canonicalization_matches_js():
     value = {"a": 1.0, "b": [1e20, 2.5, 3], "c": {"d": 0.1, "e": 1e-7}}
     expected = '{"a":1,"b":[100000000000000000000,2.5,3],"c":{"d":0.1,"e":1e-7}}'
     assert canonical_json(value) == expected
+
+
+# ---------------------------------------------------------------------------
+# Cross-language unicode (non-ASCII) canonicalization parity.
+#
+# The TypeScript canonicalizer uses JSON.stringify, which emits raw UTF-8 and
+# does NOT escape non-ASCII characters. Python's json.dumps default escapes
+# non-ASCII (e.g. an accented Latin-1 letter becomes \uXXXX), which would
+# break provenance hash parity. The Python canonicalizer must therefore use
+# ensure_ascii=False. These cases exercise Latin, combining marks, CJK, an
+# astral-plane emoji surrogate pair, and a mixed float+unicode structure.
+# Expected values were produced by the TypeScript canonicalizer and asserted
+# byte-for-byte. Do NOT edit these by hand - regenerate from both runtimes
+# if unicode serialization changes.
+
+_JS_UNICODE_REFERENCE = [
+    # (input, expected canonical JSON string, expected sha256 of that string).
+    ("caf\u00e9", '"caf\u00e9"', "28380feb8724d669bc8d4cf5b5a5bb1adbdc61b81ebd06f3fabc567b4f3b0fc5"),
+    ({"label": "caf\u00e9"}, '{"label":"caf\u00e9"}', "2d7fba14f0a7cffed454bc268d791c0f32d11f62946998a323087ccf5df29075"),
+    ({"Gr\u00fc\u00dfe": "w\u00f6lf"}, '{"Gr\u00fc\u00dfe":"w\u00f6lf"}', "107de7f0d5679cfc705722041ce6e6fae1e5d3ed768d70d6941e312d3ac4bc94"),
+    ({"\u65e5\u672c\u8a9e": "\u30c6\u30b9\u30c8"}, '{"\u65e5\u672c\u8a9e":"\u30c6\u30b9\u30c8"}', "7d8d0e95787782b6ca50aaf6044f7ffbdb735f0b73b839cbc704b0453be65b4a"),
+    ({"emoji": "\U0001f6a1\ufe0f"}, '{"emoji":"\U0001f6a1\ufe0f"}', "47964b1ef75008da3f0dbd055e265f29865ac046899d1a1cd74c5aba19c89899"),
+    (
+        {"big": 1e20, "n": 1.0, "s": "caf\u00e9"},
+        '{"big":100000000000000000000,"n":1,"s":"caf\u00e9"}',
+        "0eb02611f05bdd7014c8dd481d241a756e80ef0354367911b21b7f2862d764d1",
+    ),
+]
+
+
+@pytest.mark.parametrize("value,expected_str,expected_hash", _JS_UNICODE_REFERENCE)
+def test_unicode_canonicalization_matches_js(value, expected_str, expected_hash):
+    assert canonical_json(value) == expected_str
+    assert hash_value(value) == expected_hash
+
+
+def test_unicode_escaped_ascii_diverges_from_canonical():
+    # Regression guard: Python's default json.dumps escapes non-ASCII, which the
+    # canonicalizer must NOT do. If ensure_ascii regresses to True, this fails
+    # because the escaped form differs from the canonical (raw UTF-8) form.
+    assert canonical_json("caf\u00e9") == '"caf\u00e9"'
+    assert canonical_json("caf\u00e9") != '"caf\\u00e9"'

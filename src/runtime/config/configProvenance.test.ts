@@ -144,6 +144,37 @@ describe('configCanonicalize - cross-language float parity', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Cross-language unicode (non-ASCII) canonicalization parity.
+//
+// JSON.stringify emits raw UTF-8 and does NOT escape non-ASCII characters. The
+// Python canonicalizer must use ensure_ascii=False to match (its default
+// escapes non-ASCII, e.g. cafe -> caf\u00e9, which would break hash parity).
+// The mirror parity test re-checks these values against the Python
+// implementation. If unicode serialization ever changes, regenerate both
+// sides together.
+// ---------------------------------------------------------------------------
+const JS_UNICODE_REFERENCE: ReadonlyArray<[unknown, string, string]> = [
+  ['caf\u00e9', '"caf\u00e9"', '28380feb8724d669bc8d4cf5b5a5bb1adbdc61b81ebd06f3fabc567b4f3b0fc5'],
+  [{ label: 'caf\u00e9' }, '{"label":"caf\u00e9"}', '2d7fba14f0a7cffed454bc268d791c0f32d11f62946998a323087ccf5df29075'],
+  [{ 'Gr\u00fc\u00dfe': 'w\u00f6lf' }, '{"Gr\u00fc\u00dfe":"w\u00f6lf"}', '107de7f0d5679cfc705722041ce6e6fae1e5d3ed768d70d6941e312d3ac4bc94'],
+  [{ '\u65e5\u672c\u8a9e': '\u30c6\u30b9\u30c8' }, '{"\u65e5\u672c\u8a9e":"\u30c6\u30b9\u30c8"}', '7d8d0e95787782b6ca50aaf6044f7ffbdb735f0b73b839cbc704b0453be65b4a'],
+  [{ emoji: '\uD83D\uDEA1\uFE0F' }, '{"emoji":"\uD83D\uDEA1\uFE0F"}', '47964b1ef75008da3f0dbd055e265f29865ac046899d1a1cd74c5aba19c89899'],
+  [{ big: 1e20, n: 1.0, s: 'caf\u00e9' }, '{"big":100000000000000000000,"n":1,"s":"caf\u00e9"}', '0eb02611f05bdd7014c8dd481d241a756e80ef0354367911b21b7f2862d764d1'],
+];
+
+describe('configCanonicalize - cross-language unicode parity', () => {
+  it.each(JS_UNICODE_REFERENCE)('serializes unicode value to JS-canonical string and hash', async (value, expectedStr, expectedHash) => {
+    expect(canonicalJson(value)).toBe(expectedStr);
+    expect(await hashValue(value)).toBe(expectedHash);
+  });
+
+  it('does not escape non-ASCII to \\uXXXX (regression guard for Python ensure_ascii)', () => {
+    expect(canonicalJson('caf\u00e9')).toBe('"caf\u00e9"');
+    expect(canonicalJson('caf\u00e9')).not.toBe('"caf\\u00e9"');
+  });
+});
+
 describe('resolveConfigSources - success path', () => {
   it('merges sources low->high and resolves', async () => {
     const res = await resolveConfigSources(baseSources);
