@@ -171,6 +171,25 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
       return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
     }
     if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+    if (url.includes('/api/user/agent/github-access/validate')) {
+      const first = queue[0];
+      const second = queue[1];
+      if (first instanceof Response && second instanceof Response) {
+        const firstPayload = await first.clone().json().catch(() => null) as Record<string, unknown> | null;
+        const secondPayload = await second.clone().json().catch(() => null) as { permissions?: { push?: boolean } } | null;
+        if (firstPayload && 'login' in firstPayload && secondPayload?.permissions) {
+          queue.splice(0, 2);
+          const canWrite = secondPayload.permissions.push === true;
+          return jsonResponse({
+            ok: canWrite,
+            canWrite,
+            code: canWrite ? 'ready' : 'write_permission_missing',
+            error: canWrite ? null : 'GitHub-Zugang hat keinen Schreibzugriff.',
+          });
+        }
+      }
+      return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
+    }
     if (url.includes('/api/llm/chat')) {
       const next = queue.shift();
       const userText = lastUserTextFromLiteLlmRequest(init);
@@ -219,6 +238,9 @@ function fakeGitHubPat(): string {
 
 function runtimeSupportResponse(url: string, init?: RequestInit): Response | null {
   if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+  if (url.includes('/api/user/agent/github-access/validate')) {
+    return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
+  }
   if (url.includes('/api/llm/chat')) {
     const userText = lastUserTextFromLiteLlmRequest(init);
     return jsonResponse({
@@ -1804,16 +1826,15 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("discards a GitHub validation result that finishes after the repo scope changed", async () => {
-    let resolveUser: ((response: Response) => void) | null = null;
-    const pendingUser = new Promise<Response>((resolve) => { resolveUser = resolve; });
+    let resolveValidation: ((response: Response) => void) | null = null;
+    const pendingValidation = new Promise<Response>((resolve) => { resolveValidation = resolve; });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
       const url = requestUrl(input);
-      if (url.endsWith('/user')) return pendingUser;
+      if (url.includes('/api/user/agent/github-access/validate')) return pendingValidation;
       if (url.includes('/git/trees/')) {
         return jsonResponse({ tree: [{ path: url.includes('Other-Studio') ? 'src/Other.tsx' : 'README.md', type: 'blob', size: 12 }], truncated: false });
       }
-      if (url.includes('/repos/') && url.includes('/collaborators/')) return jsonResponse({ permissions: { push: true } });
       return jsonResponse({ choices: [{ message: { content: 'unused' } }] });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -1830,7 +1851,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
 
     await loadRepoUrlFromChat(SECOND_REPO_URL);
-    resolveUser?.(jsonResponse({ login: 'octo' }));
+    resolveValidation?.(jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null }));
 
     await waitFor(() =>
       expect(screen.getByRole('log', { name: 'Sovereign Action Stream' })).toHaveTextContent('GitHub-Zugangsprüfung verworfen'),
