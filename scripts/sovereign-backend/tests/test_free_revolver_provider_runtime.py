@@ -759,3 +759,17 @@ def test_managed_status_exposes_secret_free_key_pool_and_upstream_assignment() -
     assert '"keylessMarkerCount": sum(' in runtime
     assert '"keyCount": int(state.get("keyCount") or 0)' in runtime
     assert '"protectedValuesReturned": False' in runtime
+
+
+def test_assert_public_https_host_scheme_validation() -> None:
+    # Scheme must be https for non-managed URLs
+    for bad_url in (
+        "http://api.example.test/v1/models",
+        "gopher://api.example.test",
+        "ftp://api.example.test",
+        "api.example.test",
+    ):
+        with pytest.raises(ValueError, match="Nur sichere HTTPS-Provider-Endpunkte sind erlaubt"):
+            assert_public_https_host(bad_url)
+        with pytest.raises(ValueError, match="Nur sichere HTTPS-Provider-Endpunkte sind erlaubt"):
+            assert_provider_target_allowed(bad_url)

@@ -244,6 +244,8 @@ def is_managed_internal_provider_url(url: str) -> bool:
 
 def assert_public_https_host(url: str) -> None:
     parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https":
+        raise ValueError("Nur sichere HTTPS-Provider-Endpunkte sind erlaubt")
     hostname = parsed.hostname or ""
     try:
         addresses = socket.getaddrinfo(hostname, 443, type=socket.SOCK_STREAM)
