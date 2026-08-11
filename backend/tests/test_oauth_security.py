@@ -186,6 +186,43 @@ class TestOAuthStateStore:
         # Verify alle weg
         assert len([s for s in [_generate_state()] if _get_oauth_state(s) is None]) == 1
 
+    def test_oauth_state_store_sweeps_expired_entries_when_large(self):
+        """Expired OAuth states are removed when the bounded store overflows."""
+        from security_oauth import _oauth_state_store
+
+        now = time.time()
+        for index in range(1005):
+            _oauth_state_store[f"expired_{index}"] = {
+                "created_at": now - 700,
+                "id": index,
+            }
+
+        new_state = _generate_state()
+        _store_oauth_state(new_state, {"id": "new"})
+
+        assert len(_oauth_state_store) == 1
+        assert new_state in _oauth_state_store
+
+    def test_oauth_state_store_evicts_only_oldest_live_entries_at_cap(self):
+        """Live OAuth state memory remains capped while preserving newest state."""
+        from security_oauth import _oauth_state_store
+
+        now = time.time()
+        for index in range(1005):
+            _oauth_state_store[f"active_{index}"] = {
+                "created_at": now - (1005 - index) * 0.1,
+                "id": index,
+            }
+
+        new_state = _generate_state()
+        _store_oauth_state(new_state, {"id": "new"})
+
+        assert len(_oauth_state_store) == 1000
+        assert new_state in _oauth_state_store
+        assert "active_0" not in _oauth_state_store
+        assert "active_5" not in _oauth_state_store
+        assert "active_1004" in _oauth_state_store
+
 
 # ── PKCE Validation Tests ───────────────────────────────────────────────────────
 
