@@ -47,10 +47,19 @@ from .receipt import (
     materialize_receipt,
     verify_receipt,
 )
+from .runtime_binding import (
+    AdvanceDecision,
+    ConfigFingerprintBinding,
+    advance_decision,
+    bind_config_fingerprint,
+    materialize_and_bind,
+)
 
 __all__ = [
     "ALLOWED_SOURCE_KINDS",
+    "AdvanceDecision",
     "ConfigDriftRecord",
+    "ConfigFingerprintBinding",
     "ConfigReceipt",
     "ConfigResolutionContract",
     "ConfigSchemaDescriptor",
@@ -67,6 +76,8 @@ __all__ = [
     "SOURCE_ORDER",
     "SOURCE_PRIORITY",
     "SourceHashRecord",
+    "advance_decision",
+    "bind_config_fingerprint",
     "canonical_json",
     "canonical_source_order",
     "compute_receipt_hash",
@@ -77,6 +88,7 @@ __all__ = [
     "is_allowed_source_kind",
     "is_redacted_secret",
     "is_safe_to_advance",
+    "materialize_and_bind",
     "materialize_receipt",
     "merge_values",
     "resolve_config_sources",

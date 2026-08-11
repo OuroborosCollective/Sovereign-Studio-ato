@@ -255,6 +255,7 @@ jobs:
           tests/test_a2a_adapter.py \
           tests/test_a2a_routes.py \
           tests/test_configuration_provenance.py \
+          tests/test_configuration_provenance_runtime_binding.py \
           tests/test_configuration_provenance_mirror.py \
           ../scripts/sovereign-backend/tests/test_controller_board_contract.py \
           -v \
