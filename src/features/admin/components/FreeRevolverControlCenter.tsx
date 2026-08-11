@@ -292,6 +292,7 @@ export function FreeRevolverControlCenter({
                       eligibilityEvidenceTtlHours,
                     );
                     const receiptVerified = hasRevisionBoundReceipt(model);
+                    const missingFromCatalog = model.lastErrorCode === 'model_missing_from_provider_catalog';
                     const effectiveReady = model.status === 'ready'
                       && model.enabled
                       && eligibilityFresh
@@ -301,15 +302,23 @@ export function FreeRevolverControlCenter({
                       <div>
                         <strong>{model.displayName || model.modelId}</strong>
                         <span>{model.modelId}</span>
-                        <span>{eligibilityEvidenceExpiry(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)}</span>
                         <span>
-                          {model.canaryReceipt.receiptSha256
+                          {missingFromCatalog
+                            ? 'Nicht mehr im aktuellen Provider-Katalog'
+                            : eligibilityEvidenceExpiry(model.eligibilityVerifiedAt, eligibilityEvidenceTtlHours)}
+                        </span>
+                        <span>
+                          {missingFromCatalog
+                            ? 'Kein aktuelles Modell – kein neues Receipt erwartet'
+                            : model.canaryReceipt.receiptSha256
                             ? `Receipt ${model.canaryReceipt.receiptSha256.slice(0, 16)}…`
                             : 'Revision-Receipt fehlt'}
                         </span>
                       </div>
                       <span className={`llm-badge llm-badge--${effectiveReady ? 'ok' : model.status === 'discovered' ? 'warn' : 'danger'}`}>
-                        {model.generalChatBlockVerified
+                        {missingFromCatalog
+                          ? 'nicht mehr im Provider-Katalog'
+                          : model.generalChatBlockVerified
                           ? model.generalChatBlocker ?? model.eligibilitySource
                           : !eligibilityFresh
                             ? 'Eligibility-Evidence abgelaufen'

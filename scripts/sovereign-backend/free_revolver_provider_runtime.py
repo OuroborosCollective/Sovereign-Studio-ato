@@ -1043,17 +1043,27 @@ class _FreeLlmEvidenceMaintainer:
             providers = payload.get("providers")
             if not isinstance(providers, list):
                 return False
-            for provider in providers:
-                if not isinstance(provider, dict):
+            managed_providers = [
+                provider
+                for provider in providers
+                if isinstance(provider, dict)
+                and str(provider.get("sourceId") or "")
+                and provider.get("enabled") is True
+                and provider.get("managedKeyAvailable") is True
+            ]
+            managed_providers.sort(
+                key=lambda provider: (
+                    0 if str(provider.get("sourceType") or "") == "freellmapi-direct" else 1,
+                    str(provider.get("sourceId") or ""),
+                )
+            )
+            for provider in managed_providers:
+                source_id = str(provider["sourceId"])
+                try:
+                    self._run_provider(source_id, force_discovery=force_discovery)
+                except (OSError, RuntimeError, ValueError, requests.RequestException):
+                    # One slow or unavailable managed source must not starve the others.
                     continue
-                source_id = str(provider.get("sourceId") or "")
-                if (
-                    not source_id
-                    or provider.get("enabled") is not True
-                    or provider.get("managedKeyAvailable") is not True
-                ):
-                    continue
-                self._run_provider(source_id, force_discovery=force_discovery)
             return True
         except (OSError, RuntimeError, ValueError, requests.RequestException):
             return False
