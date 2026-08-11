@@ -81,6 +81,7 @@ class FakeCursor:
                 "id": USER_ID,
                 "email": "owner@example.invalid",
                 "role": "owner",
+                "credits": 10_000,
                 "provider_funded_credits": 10_000,
                 "paid_purchase_verified": True,
             }

@@ -216,7 +216,7 @@ def test_admin_reservation_bypasses_purchase_only_and_debits_real_credits() -> N
     assert "entitlement=administrator" in params_text
 
 
-def test_normal_user_without_purchase_is_still_blocked_before_debit() -> None:
+def test_normal_user_with_persisted_credits_is_entitled_without_fake_purchase() -> None:
     connection = _BillingConnection([
         {
             "id": "00000000-0000-0000-0000-000000000004",
@@ -229,14 +229,17 @@ def test_normal_user_without_purchase_is_still_blocked_before_debit() -> None:
         {"purchased": False},
     ])
 
-    with pytest.raises(AgentBillingError) as raised:
-        _billing_for(connection).reserve(stage="dispatcher", prompt="bounded")
+    reservation = _billing_for(connection).reserve(stage="dispatcher", prompt="bounded")
 
-    assert raised.value.family == "PAID_CREDIT_PURCHASE_REQUIRED"
-    assert connection.commits == 0
-    assert connection.rollbacks == 1
+    assert reservation.paid_entitlement_source == "existing_credit_balance"
+    assert reservation.reserved_credits > 0
+    assert connection.commits == 1
+    assert connection.rollbacks == 0
     sql_text = "\n".join(sql for sql, _params in connection.cursor_instance.executions)
-    assert "INSERT INTO credit_ledger" not in sql_text
+    params_text = repr([params for _sql, params in connection.cursor_instance.executions])
+    assert "INSERT INTO llm_usage_settlements" in sql_text
+    assert "INSERT INTO credit_ledger" in sql_text
+    assert "entitlement=existing_credit_balance" in params_text
 
 
 def test_paid_entitlement_runtime_mirrors_remain_byte_equal() -> None:

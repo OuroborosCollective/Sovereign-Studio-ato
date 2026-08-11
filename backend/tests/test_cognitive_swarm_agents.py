@@ -77,7 +77,7 @@ def test_agents_sdk_topology_contains_eight_core_agents_plus_bounded_specialists
 
 
 def test_swarm_build_rejects_missing_database_resolved_run_config() -> None:
-    with pytest.raises(ValueError, match="Database-resolved direct OpenRouter RunConfig"):
+    with pytest.raises(ValueError, match="Database-resolved direct route RunConfig"):
         build_cognitive_swarm(model="openai/gpt-5.4-mini")
 
 
