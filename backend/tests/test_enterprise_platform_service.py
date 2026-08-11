@@ -184,7 +184,7 @@ def test_direct_route_probe_exposes_only_direct_counts_and_no_credentials() -> N
         "openrouterReadyRoutes": 4,
         "legacyLiteLlmActiveRoutes": 0,
         "legacyProviderProbePerformed": False,
-        "routingPolicy": "direct-freellm-free-and-direct-openrouter-paid-only",
+        "routingPolicy": "direct-freellm-quota-v3-chat-evidence-and-direct-openrouter-priced-only",
     }
     serialized = str(result).lower()
     assert "api_key" not in serialized
