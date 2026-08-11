@@ -7,11 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = ROOT / "cloudflare-worker-ai-proxy"
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy-worker.yml"
-BACKEND_EMBEDDING = ROOT / "backend" / "vector_embedding.py"
-FRONTEND_BRIDGE = ROOT / "src" / "features" / "product" / "runtime" / "devChatWorkerBridge.ts"
+FRONTEND_CONFIG = ROOT / "src" / "features" / "product" / "llm" / "primaryBridgeConfig.ts"
 
 
-def test_worker_toolchain_versions_are_exact_and_peer_compatible() -> None:
+def test_retired_worker_toolchain_remains_pinned_for_a_safe_tombstone() -> None:
     package = json.loads((WORKER / "package.json").read_text(encoding="utf-8"))
     dependencies = package["devDependencies"]
 
@@ -21,59 +20,36 @@ def test_worker_toolchain_versions_are_exact_and_peer_compatible() -> None:
     assert package["scripts"]["typecheck"] == "tsc --noEmit"
 
 
-def test_worker_workflow_does_not_float_wrangler_or_bypass_peer_resolution() -> None:
+def test_worker_workflow_is_a_read_only_tombstone() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "wrangler@4\n" not in workflow
-    assert "--legacy-peer-deps" not in workflow
-    assert "--force" not in workflow
-    assert "npm install --no-audit --no-fund" in workflow
-    assert "*4.110.0*)" in workflow
-    assert "npm run typecheck" in workflow
+    assert "Legacy Cloudflare Worker AI Proxy Disabled" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "App -> Sovereign Backend -> direct OpenRouter Paid or direct FreeLLM Free" in workflow
+    assert "wrangler" not in workflow
+    assert "workers.dev" not in workflow
+    assert "CF_AI_TOKEN" not in workflow
+    assert "CLOUDFLARE_API_TOKEN" not in workflow
 
 
-def test_worker_secrets_are_used_without_being_embedded_in_frontend() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+def test_worker_handler_and_package_are_fail_closed() -> None:
     worker_source = (WORKER / "src" / "index.ts").read_text(encoding="utf-8")
-    backend_embedding = BACKEND_EMBEDDING.read_text(encoding="utf-8")
-    frontend_bridge = FRONTEND_BRIDGE.read_text(encoding="utf-8")
+    package = json.loads((WORKER / "package.json").read_text(encoding="utf-8"))
+    frontend_config = FRONTEND_CONFIG.read_text(encoding="utf-8")
 
-    for name in (
-        "CF_AI_TOKEN",
-        "CF_ACCOUNT_ID",
-        "CLOUDFLARE_API_TOKEN",
-        "CLOUDFLARE_ACCOUNT_ID",
-    ):
-        assert name in workflow
-
-    assert "secret put CF_AI_TOKEN" in workflow
-    assert "secret put CF_ACCOUNT_ID" in workflow
-    assert 'env.CF_AI_TOKEN' in worker_source
-    assert 'env.CF_ACCOUNT_ID' in worker_source
-
-    assert 'os.getenv("WORKER_AI_PROXY_KEY"' in backend_embedding
-    assert 'headers["Authorization"] = f"Bearer {proxy_key}"' in backend_embedding
-
-    # The current Android/WebView direct bridge intentionally sends no shared
-    # system secret. PROXY_API_KEY therefore remains optional until chat traffic
-    # is moved behind the authenticated backend.
-    assert "Authorization" not in frontend_bridge
-    assert 'if [[ -n "${PROXY_API_KEY:-}" ]]' in workflow
+    assert "const LEGACY_WORKER_RETIRED = true" in worker_source
+    assert "status: 410" in worker_source
+    assert worker_source.index("LEGACY_WORKER_RETIRED") < worker_source.index("const url = new URL")
+    assert package["scripts"]["deploy"] != "wrangler deploy"
+    assert "workers.dev" not in frontend_config
 
 
-def test_worker_cors_and_embedding_runtime_contract_remain_explicit() -> None:
+def test_retired_worker_cannot_reactivate_an_embedding_runtime() -> None:
     worker_source = (WORKER / "src" / "index.ts").read_text(encoding="utf-8")
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    readme = (WORKER / "README.md").read_text(encoding="utf-8")
+    secrets_script = (WORKER / "scripts" / "setup-secrets.sh").read_text(encoding="utf-8")
 
-    assert "'Access-Control-Allow-Origin': '*'" in worker_source
-    assert "'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'" in worker_source
-    assert "Content-Type, Authorization, X-API-Key, X-Sovereign-Client" in worker_source
-    assert "url.pathname === '/v1/embeddings'" in worker_source
-    assert "embeddingDimensions: EMBEDDING_DIMENSIONS" in worker_source
-    assert "embeddingPath: '/v1/embeddings'" in worker_source
-
-    assert "EXPECTED_WORKER_VERSION: '1.2.0'" in workflow
-    assert "payload.providers?.embeddings !== true" in workflow
-    assert "payload.embeddingDimensions !== 768" in workflow
-    assert "payload.embeddingPath !== '/v1/embeddings'" in workflow
-    assert "vector.length !== 768" in workflow
+    assert "legacy_cloudflare_worker_retired" in worker_source
+    assert "Cache-Control': 'no-store'" in worker_source
+    assert "must not be deployed" in readme
+    assert "wrangler" not in secrets_script

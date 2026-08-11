@@ -1,4 +1,4 @@
-name: Test Primary LLM Proxy
+name: Test Sovereign Primary LLM Route Catalog
 
 on:
   workflow_dispatch:
@@ -10,66 +10,78 @@ on:
       - src/features/product/llm/adapters/primaryBridgeAdapter.ts
 
 env:
-  PRIMARY_LLM_PROXY_URL: https://sovereign-llm-proxy.projectouroboroscollective.workers.dev
-  PRIMARY_LLM_MODEL: deepseek-r1
+  SOVEREIGN_BACKEND_URL: https://sovereign-backend.arelorian.de
 
 jobs:
   smoke:
-    name: Smoke test hosted primary LLM proxy
+    name: Smoke test hosted Sovereign route catalog
     runs-on: ubuntu-latest
     timeout-minutes: 8
 
     steps:
-      - name: Health endpoint diagnostic
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert the app has no Worker proxy endpoint
+        shell: bash
         run: |
           set -euo pipefail
-          status=$(curl -sS -o health.json -w "%{http_code}" "$PRIMARY_LLM_PROXY_URL/health" || true)
+          test -f src/features/product/llm/primaryBridgeConfig.ts
+          if rg -n 'workers\.dev|cloudflare' src/features/product/llm/primaryBridgeConfig.ts; then
+            echo 'Primary app configuration must only point at the Sovereign Backend.' >&2
+            exit 1
+          fi
+
+      - name: Sovereign backend health diagnostic
+        run: |
+          set -euo pipefail
+          status=$(curl --retry 3 --retry-all-errors -sS -o health.json -w "%{http_code}" "$SOVEREIGN_BACKEND_URL/health" || true)
           echo "Health status: $status"
           cat health.json || true
           node - <<'NODE'
           const fs = require('fs');
           const body = fs.existsSync('health.json') ? fs.readFileSync('health.json', 'utf8').trim() : '';
           if (!body) {
-            console.log('Health diagnostic returned no body; continuing to POST smoke test.');
+            console.log('Health diagnostic returned no body; continuing to route-catalog smoke.');
             process.exit(0);
           }
           try {
             const payload = JSON.parse(body);
-            console.log('Health diagnostic:', JSON.stringify({ ok: payload.ok, gateway: payload.gateway, model: payload.model, secretConfigured: payload.secretConfigured }));
+            if (payload.ok !== true || payload.status !== 'live') {
+              throw new Error(`Backend health is not live: ${body.slice(0, 500)}`);
+            }
+            console.log('Hosted backend identity (diagnostic only):', JSON.stringify({ ok: payload.ok, status: payload.status, sourceRevision: payload.sourceRevision, imageDigest: payload.imageDigest }));
           } catch {
-            console.log('Health diagnostic was not JSON; continuing to POST smoke test.');
+            console.log('Health diagnostic was not JSON.');
+            process.exit(1);
           }
           NODE
 
-      - name: Chat completion endpoint
+      - name: Verified direct route catalog
         run: |
           set -euo pipefail
-          cat > payload.json <<JSON
-          {
-            "model": "$PRIMARY_LLM_MODEL",
-            "messages": [
-              { "role": "system", "content": "Reply with exactly one short sentence." },
-              { "role": "user", "content": "Say Sovereign proxy works." }
-            ],
-            "temperature": 0,
-            "max_tokens": 64,
-            "reasoning_format": "parsed"
-          }
-          JSON
-          http_status=$(curl -sS -X POST "$PRIMARY_LLM_PROXY_URL/v1/chat/completions" \
-            -H "Content-Type: application/json" \
-            --data @payload.json \
-            -o response.json \
-            -w "%{http_code}")
-          echo "POST status: $http_status"
-          cat response.json
-          test "$http_status" -ge 200 && test "$http_status" -lt 300
+          http_status=$(curl --retry 3 --retry-all-errors -sS -D routes.headers -o routes.json -w "%{http_code}" "$SOVEREIGN_BACKEND_URL/api/llm/routes")
+          echo "Route catalog status: $http_status"
+          test "$http_status" -eq 200
           node - <<'NODE'
           const fs = require('fs');
-          const payload = JSON.parse(fs.readFileSync('response.json', 'utf8'));
-          const text = payload?.choices?.[0]?.message?.content || payload?.output_text || payload?.response || '';
-          if (!text || typeof text !== 'string') {
-            throw new Error(`No assistant text returned: ${JSON.stringify(payload).slice(0, 500)}`);
+          const headers = fs.readFileSync('routes.headers', 'utf8').toLowerCase();
+          const payload = JSON.parse(fs.readFileSync('routes.json', 'utf8'));
+          const routes = payload?.routes;
+          if (!headers.includes('cache-control: no-store')) {
+            throw new Error('The executable route catalog must be non-cacheable.');
           }
-          console.log('LLM response text:', text.slice(0, 200));
+          if (!Array.isArray(routes) || routes.length === 0) {
+            throw new Error(`No executable LLM route returned: ${JSON.stringify(payload).slice(0, 500)}`);
+          }
+          const executableRoutes = routes.filter((route) => (
+            Boolean(route?.id && route?.defaultModelId)
+            && route.enabled === true
+            && String(route.provider || '').toLowerCase() !== 'cloudflare'
+          ));
+          if (executableRoutes.length === 0) {
+            throw new Error(`No enabled direct route returned: ${JSON.stringify(routes).slice(0, 500)}`);
+          }
+          console.log(`SOVEREIGN_PRIMARY_CATALOG=PASS routes=${executableRoutes.length}`);
+          console.log('This unauthenticated smoke validates the public catalog only; authenticated provider canaries remain an operator evidence step.');
           NODE
