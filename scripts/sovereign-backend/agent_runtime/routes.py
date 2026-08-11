@@ -31,6 +31,7 @@ from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signa
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .git_workspace import git_diff_full, normalize_ephemeral_github_token
+from .github_access import validate_github_access_for_repo
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import (
@@ -1068,6 +1069,27 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             }), status_code
         finally:
             _close(conn)
+
+    @app.route("/api/user/agent/github-access/validate", methods=["POST"])
+    @require_session
+    def user_validate_github_access():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        result = validate_github_access_for_repo(
+            body.get("githubAccessToken"),
+            owner=str(body.get("owner") or ""),
+            repo=str(body.get("repo") or ""),
+        )
+        # This is a nested external-credential verdict, not a failure of the
+        # authenticated Sovereign session. Keep expected GitHub rejections in a
+        # typed 200 envelope so the frontend cannot confuse them with logout.
+        return jsonify({
+            "ok": result.ok,
+            "canWrite": result.can_write,
+            "code": result.code,
+            "error": None if result.ok else result.message,
+        }), 200
 
     @app.route("/api/user/agent/validate-mission", methods=["POST"])
     @require_session
