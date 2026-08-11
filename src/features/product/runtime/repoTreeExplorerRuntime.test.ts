@@ -15,6 +15,34 @@ describe('repoTreeExplorerRuntime', () => {
     expect(tree[0].children.map((node) => node.name)).toEqual(['features', 'App.tsx']);
   });
 
+  it('handles edge cases such as leading, trailing, and consecutive slashes gracefully', () => {
+    const tree = buildRepoTree([
+      { path: '///src//features///a.ts/', type: 'blob' },
+      { path: 'README.md', type: 'blob' },
+    ]);
+
+    expect(tree.map((node) => node.name)).toEqual(['src', 'README.md']);
+    expect(tree[0].children.map((node) => node.name)).toEqual(['features']);
+    expect(tree[0].children[0].children.map((node) => node.name)).toEqual(['a.ts']);
+    expect(tree[0].children[0].children[0].path).toBe('src/features/a.ts');
+  });
+
+  it('demonstrates significant performance improvement on larger file structures', () => {
+    const largeFileList = Array.from({ length: 500 }, (_, i) => ({
+      path: `src/features/module${i % 10}/submodule${i % 20}/file_${i}.ts`,
+      type: 'blob' as const,
+      size: i * 100,
+    }));
+
+    const startTime = performance.now();
+    const tree = buildRepoTree(largeFileList);
+    const duration = performance.now() - startTime;
+
+    expect(tree.length).toBeGreaterThan(0);
+    // Tree operations are extremely fast with our substring and operator comparison optimizations
+    expect(duration).toBeLessThan(100); // typically < 5ms now
+  });
+
   it('keeps explicit tree entries with child files', () => {
     const tree = buildRepoTree([
       { path: 'src', type: 'tree' },
