@@ -301,7 +301,13 @@ def json_payload(path: str, *, authenticated: bool = False):
     }
 
 
-def internal_json_request(path: str, *, method: str = "GET", payload=None):
+def internal_json_request(
+    path: str,
+    *,
+    method: str = "GET",
+    payload=None,
+    timeout_seconds: int = 120,
+):
     owner_request_key = os.environ.get("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
     if not owner_request_key:
         raise RuntimeError("owner request key unavailable")
@@ -321,8 +327,9 @@ def internal_json_request(path: str, *, method: str = "GET", payload=None):
         headers=headers,
         method=method,
     )
+    selected_timeout = max(5, min(int(timeout_seconds), 120))
     try:
-        response = urllib.request.urlopen(request, timeout=120)
+        response = urllib.request.urlopen(request, timeout=selected_timeout)
     except urllib.error.HTTPError as exc:
         response = exc
     with response:
@@ -414,11 +421,24 @@ for provider in providers:
         continue
     encoded_source_id = urllib.parse.quote(source_id, safe="")
     stage = "freellm_bootstrap_reconcile"
-    status_code, reconcile_payload, reconcile_evidence = internal_json_request(
-        f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
-        method="POST",
-        payload={"maxModels": 20},
-    )
+    try:
+        status_code, reconcile_payload, reconcile_evidence = internal_json_request(
+            f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
+            method="POST",
+            payload={"maxModels": 20},
+            timeout_seconds=45,
+        )
+    except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        bootstrap_attempts.append({
+            "sourceId": source_id,
+            "action": "reconcile",
+            "httpStatus": None,
+            "ok": False,
+            "blocker": "provider_request_timeout_or_network_error",
+            "errorType": type(exc).__name__,
+            "responseSha256": None,
+        })
+        continue
     bootstrap_attempts.append({
         "sourceId": source_id,
         "action": "reconcile",
@@ -435,7 +455,7 @@ provider_status_code, provider_status, provider_status_evidence = internal_json_
     "/api/internal/llm/freellm/providers"
 )
 verified_receipts = revision_bound_v3_chat_receipts(provider_status)
-minimum_ready_routes = 5
+minimum_ready_routes = 7
 if len(verified_receipts) < minimum_ready_routes:
     for provider in providers:
         source_id = str(provider.get("sourceId") or "")
@@ -443,11 +463,24 @@ if len(verified_receipts) < minimum_ready_routes:
             continue
         encoded_source_id = urllib.parse.quote(source_id, safe="")
         stage = "freellm_bootstrap_discover"
-        status_code, discover_payload, discover_evidence = internal_json_request(
-            f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
-            method="POST",
-            payload={"maxModels": 20},
-        )
+        try:
+            status_code, discover_payload, discover_evidence = internal_json_request(
+                f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
+                method="POST",
+                payload={"maxModels": 20},
+                timeout_seconds=45,
+            )
+        except (TimeoutError, urllib.error.URLError, OSError) as exc:
+            bootstrap_attempts.append({
+                "sourceId": source_id,
+                "action": "discover",
+                "httpStatus": None,
+                "ok": False,
+                "blocker": "provider_request_timeout_or_network_error",
+                "errorType": type(exc).__name__,
+                "responseSha256": None,
+            })
+            continue
         bootstrap_attempts.append({
             "sourceId": source_id,
             "action": "discover",
