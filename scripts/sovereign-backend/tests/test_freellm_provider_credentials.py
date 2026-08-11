@@ -169,6 +169,95 @@ def test_react_admin_preserves_unknown_key_fallback_until_provider_selection() -
     assert "autoConfigureKey: (apiKey: string, providerId?: string)" in hook
 
 
+def test_evidence_maintainer_is_single_worker_and_selects_only_ready_managed_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Cursor:
+        def __init__(self) -> None:
+            self.statements: list[str] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def execute(self, sql: str, _params) -> None:
+            self.statements.append(sql)
+
+        def fetchone(self):
+            return {"acquired": True}
+
+    class Connection:
+        def __init__(self) -> None:
+            self.cursor_instance = Cursor()
+            self.closed = False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = Connection()
+    maintainer = provider_runtime._FreeLlmEvidenceMaintainer(lambda: connection)
+    monkeypatch.setenv("SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED", "1")
+    monkeypatch.setattr(
+        maintainer,
+        "_request_json",
+        lambda *_args, **_kwargs: (
+            200,
+            {
+                "ok": True,
+                "providers": [
+                    {"sourceId": "1a866402-68c4-4f40-8d09-55ed8deabf68", "enabled": True, "managedKeyAvailable": True},
+                    {"sourceId": "c79ff468-ee08-5686-97df-756fa58b74f0", "enabled": True, "managedKeyAvailable": False},
+                ],
+            },
+        ),
+    )
+    selected: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        maintainer,
+        "_run_provider",
+        lambda source_id, *, force_discovery: selected.append((source_id, force_discovery)),
+    )
+
+    assert maintainer.run_once(force_discovery=True) is True
+    assert selected == [("1a866402-68c4-4f40-8d09-55ed8deabf68", True)]
+    assert any("pg_try_advisory_lock" in sql for sql in connection.cursor_instance.statements)
+    assert any("pg_advisory_unlock" in sql for sql in connection.cursor_instance.statements)
+    assert connection.closed is True
+
+
+def test_evidence_maintainer_advances_bounded_batches_until_candidate_signature_repeats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    maintainer = provider_runtime._FreeLlmEvidenceMaintainer(lambda: None)
+    monkeypatch.setenv("SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS", "2")
+    monkeypatch.setenv("SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS", "6")
+    calls: list[tuple[str, dict | None]] = []
+    reconcile_results = iter([
+        (409, {"deferred": [{"modelId": "a"}, {"modelId": "b"}]}),
+        (409, {"deferred": [{"modelId": "c"}, {"modelId": "d"}]}),
+        (409, {"deferred": [{"modelId": "c"}, {"modelId": "d"}]}),
+    ])
+
+    def fake_request(path: str, *, method: str = "GET", payload=None, timeout_seconds: int = 120):
+        calls.append((path, payload))
+        if path.endswith("/discover"):
+            return 200, {"ok": True}
+        return next(reconcile_results)
+
+    monkeypatch.setattr(maintainer, "_request_json", fake_request)
+    maintainer._run_provider("1a866402-68c4-4f40-8d09-55ed8deabf68", force_discovery=True)
+
+    assert calls[0][0].endswith("/discover")
+    reconcile_calls = [item for item in calls if item[0].endswith("/reconcile")]
+    assert len(reconcile_calls) == 3
+    assert all(item[1] == {"maxModels": 2} for item in reconcile_calls)
+
+
 def test_bootstrap_reads_only_bounded_private_files_and_drops_privileges() -> None:
     bootstrap = (
         REPO

@@ -13,6 +13,7 @@ import math
 import os
 import re
 import stat
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -60,6 +61,12 @@ _IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _FREELLM_RECEIPT_SCHEMA = "sovereign.freellm-route-receipt.v3"
 _DEFAULT_MIN_READY_ROUTES = 5
 _DEFAULT_RECONCILE_PACE_SECONDS = 0.25
+_DEFAULT_EVIDENCE_MAINTENANCE_INTERVAL_SECONDS = 21_600
+_DEFAULT_EVIDENCE_MAINTENANCE_INITIAL_DELAY_SECONDS = 60
+_DEFAULT_EVIDENCE_MAINTENANCE_MAX_MODELS = 12
+_DEFAULT_EVIDENCE_MAINTENANCE_MAX_ROUNDS = 10
+_DEFAULT_EVIDENCE_MAINTENANCE_KEY_IMPORT_FOLLOWUP_SECONDS = 20
+_EVIDENCE_MAINTENANCE_ADVISORY_LOCK = (20_260_811, 1_179_405_637)
 _VERIFIED_GENERAL_CHAT_BLOCKERS = frozenset({
     "specialist-model-identifier",
     "explicit-non-chat-capability",
@@ -182,6 +189,22 @@ def _cleanup_orphaned_secret_files(query: Callable[..., Any]) -> int:
 def _minimum_ready_routes() -> int:
     """Return the fixed success threshold, never a ceiling for ready routes."""
     return _DEFAULT_MIN_READY_ROUTES
+
+
+def _eligibility_evidence_ttl_hours() -> int:
+    try:
+        value = int(os.getenv("FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS", "24"))
+    except ValueError:
+        value = 24
+    return max(1, min(value, 168))
+
+
+def _bounded_maintenance_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(minimum, min(value, maximum))
 
 
 def _reconcile_pace_seconds() -> float:
@@ -771,6 +794,9 @@ def _revision_bound_ready_model_ids(
              AND model.enabled=true
              AND model.free_eligible=true
              AND model.eligibility_verified_at IS NOT NULL
+             AND model.eligibility_verified_at >= NOW() - (%s * INTERVAL '1 hour')
+             AND model.last_canary_at IS NOT NULL
+             AND model.last_canary_at >= NOW() - (%s * INTERVAL '1 hour')
              AND route.disabled=false
              AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
              AND route.config->'runtimeIdentity'->>'imageDigest'=%s
@@ -782,6 +808,8 @@ def _revision_bound_ready_model_ids(
         (
             source_id,
             source_id,
+            _eligibility_evidence_ttl_hours(),
+            _eligibility_evidence_ttl_hours(),
             runtime_identity["sourceRevision"],
             runtime_identity["imageDigest"],
             _FREELLM_RECEIPT_SCHEMA,
@@ -867,6 +895,225 @@ def _blocked_general_chat_evidence(
     } for row in rows]
 
 
+class _FreeLlmEvidenceMaintainer:
+    """Keep managed FreeLLM route evidence fresh without blocking user requests."""
+
+    def __init__(self, get_connection: Callable[[], Any]) -> None:
+        self._get_connection = get_connection
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._state_lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._force_discovery = False
+
+    @staticmethod
+    def _enabled() -> bool:
+        return os.getenv(
+            "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED",
+            "0",
+        ).strip() == "1"
+
+    def request_maintenance(self, *, force_discovery: bool = False) -> None:
+        if force_discovery:
+            with self._state_lock:
+                self._force_discovery = True
+        self._wake.set()
+
+    def _consume_force_discovery(self) -> bool:
+        with self._state_lock:
+            value = self._force_discovery
+            self._force_discovery = False
+            return value
+
+    @staticmethod
+    def _request_json(
+        path: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+        timeout_seconds: int = 120,
+    ) -> tuple[int, dict[str, Any]]:
+        owner_key = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+        if not owner_key:
+            raise RuntimeError("freellm_evidence_maintainer_owner_key_missing")
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-Sovereign-Owner-Request-Key": owner_key,
+        }
+        with requests.Session() as session:
+            session.trust_env = False
+            response = session.request(
+                method,
+                f"http://127.0.0.1:8787{path}",
+                headers=headers,
+                json=payload,
+                timeout=max(5, min(int(timeout_seconds), 120)),
+                allow_redirects=False,
+            )
+            if len(response.content) > _MAX_MODELS_RESPONSE_BYTES:
+                raise ValueError("freellm_evidence_maintainer_response_too_large")
+            try:
+                decoded = response.json()
+            except ValueError as exc:
+                raise ValueError("freellm_evidence_maintainer_invalid_json") from exc
+        if not isinstance(decoded, dict):
+            raise ValueError("freellm_evidence_maintainer_invalid_payload")
+        return int(response.status_code), decoded
+
+    def _run_provider(self, source_id: str, *, force_discovery: bool) -> None:
+        max_models = _bounded_maintenance_env_int(
+            "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS",
+            _DEFAULT_EVIDENCE_MAINTENANCE_MAX_MODELS,
+            1,
+            100,
+        )
+        max_rounds = _bounded_maintenance_env_int(
+            "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS",
+            _DEFAULT_EVIDENCE_MAINTENANCE_MAX_ROUNDS,
+            1,
+            20,
+        )
+        encoded_source_id = normalize_provider_source_id(source_id)
+        if force_discovery:
+            self._request_json(
+                f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
+                method="POST",
+                payload={"maxModels": max_models},
+                timeout_seconds=120,
+            )
+        previous_attempt_signature: tuple[str, ...] | None = None
+        for _round in range(max_rounds):
+            status_code, result = self._request_json(
+                f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile",
+                method="POST",
+                payload={"maxModels": max_models},
+                timeout_seconds=120,
+            )
+            blocker = str(result.get("blocker") or "")
+            if status_code == 409 and blocker == "freellm_fresh_catalog_required":
+                self._request_json(
+                    f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover",
+                    method="POST",
+                    payload={"maxModels": max_models},
+                    timeout_seconds=120,
+                )
+                previous_attempt_signature = None
+                continue
+            if status_code not in {200, 409}:
+                return
+            attempted = []
+            for field in ("ready", "deferred", "blocked"):
+                values = result.get(field)
+                if not isinstance(values, list):
+                    continue
+                attempted.extend(
+                    str(item.get("modelId") or "")
+                    for item in values
+                    if isinstance(item, dict) and str(item.get("modelId") or "")
+                )
+            if not attempted:
+                return
+            signature = tuple(sorted(set(attempted)))
+            if signature == previous_attempt_signature:
+                return
+            previous_attempt_signature = signature
+
+    def run_once(self, *, force_discovery: bool = False) -> bool:
+        if not self._enabled():
+            return False
+        lease_connection = self._get_connection()
+        acquired = False
+        try:
+            with lease_connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_try_advisory_lock(%s,%s) AS acquired",
+                    _EVIDENCE_MAINTENANCE_ADVISORY_LOCK,
+                )
+                row = cursor.fetchone() or {}
+                acquired = bool(row.get("acquired"))
+            if not acquired:
+                return False
+            status_code, payload = self._request_json(
+                "/api/internal/llm/freellm/providers",
+                timeout_seconds=30,
+            )
+            if status_code != 200 or payload.get("ok") is not True:
+                return False
+            providers = payload.get("providers")
+            if not isinstance(providers, list):
+                return False
+            for provider in providers:
+                if not isinstance(provider, dict):
+                    continue
+                source_id = str(provider.get("sourceId") or "")
+                if (
+                    not source_id
+                    or provider.get("enabled") is not True
+                    or provider.get("managedKeyAvailable") is not True
+                ):
+                    continue
+                self._run_provider(source_id, force_discovery=force_discovery)
+            return True
+        except (OSError, RuntimeError, ValueError, requests.RequestException):
+            return False
+        finally:
+            if acquired:
+                try:
+                    with lease_connection.cursor() as cursor:
+                        cursor.execute(
+                            "SELECT pg_advisory_unlock(%s,%s)",
+                            _EVIDENCE_MAINTENANCE_ADVISORY_LOCK,
+                        )
+                except Exception:
+                    pass
+            lease_connection.close()
+
+    def _run_loop(self) -> None:
+        initial_delay = _bounded_maintenance_env_int(
+            "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INITIAL_DELAY_SECONDS",
+            _DEFAULT_EVIDENCE_MAINTENANCE_INITIAL_DELAY_SECONDS,
+            0,
+            600,
+        )
+        interval = _bounded_maintenance_env_int(
+            "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS",
+            _DEFAULT_EVIDENCE_MAINTENANCE_INTERVAL_SECONDS,
+            300,
+            86_400,
+        )
+        self._wake.wait(initial_delay)
+        self._wake.clear()
+        while not self._stop.is_set():
+            force_discovery = self._consume_force_discovery()
+            self.run_once(force_discovery=force_discovery)
+            if force_discovery:
+                followup_seconds = _bounded_maintenance_env_int(
+                    "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_KEY_IMPORT_FOLLOWUP_SECONDS",
+                    _DEFAULT_EVIDENCE_MAINTENANCE_KEY_IMPORT_FOLLOWUP_SECONDS,
+                    15,
+                    120,
+                )
+                if not self._stop.wait(followup_seconds):
+                    self.run_once(force_discovery=True)
+            self._wake.wait(interval)
+            self._wake.clear()
+
+    def start(self) -> bool:
+        if not self._enabled():
+            return False
+        with self._state_lock:
+            if self._thread and self._thread.is_alive():
+                return False
+            self._thread = threading.Thread(
+                target=self._run_loop,
+                daemon=True,
+                name="sovereign-freellm-evidence-maintainer",
+            )
+            self._thread.start()
+            return True
+
+
 def register_free_revolver_provider_runtime(
     app: Any,
     *,
@@ -876,6 +1123,8 @@ def register_free_revolver_provider_runtime(
     get_current_admin: Callable[[], dict[str, Any] | None],
     audit: Callable[..., Any],
 ) -> None:
+    evidence_maintainer = _FreeLlmEvidenceMaintainer(get_connection)
+
     @app.route("/freellm-provider-keys", methods=["GET"])
     def freellm_provider_credentials_page():
         response = make_response(_FREELLM_PROVIDER_KEYS_PAGE)
@@ -936,6 +1185,7 @@ def register_free_revolver_provider_runtime(
             state = _freellm_provider_credential_state(provider_id)
             if not bool(state.get("configured")) or state.get("permissionsValid") is not True:
                 raise OSError("freellm_provider_key_readback_failed")
+            evidence_maintainer.request_maintenance(force_discovery=True)
             audit("admin_freellm_provider_key_auto_configured", provider_id, {
                 "detectionMode": "explicit-fallback" if explicit_provider else "strong-key-signature",
                 "rawCredentialPersistedInDatabase": False,
@@ -1074,6 +1324,7 @@ def register_free_revolver_provider_runtime(
                 "error": "Keyless-Providerstatus konnte nicht sicher gespeichert werden.",
                 "blocker": "freellm_keyless_marker_write_failed",
             }), 500
+        evidence_maintainer.request_maintenance(force_discovery=True)
         audit("admin_freellm_keyless_provider_toggled", provider_id, {
             "enabled": enabled,
             "privacyNoticePresent": bool(spec.get("privacyNotice")),
@@ -1129,6 +1380,7 @@ def register_free_revolver_provider_runtime(
                 "providerId": provider_id,
                 "protectedValuesReturned": False,
             }), 500
+        evidence_maintainer.request_maintenance(force_discovery=True)
         audit("internal_freellm_keyless_provider_activated", provider_id, {
             "enabled": True,
             "privacyNoticePresent": bool(spec.get("privacyNotice")),
@@ -2680,6 +2932,10 @@ def register_free_revolver_provider_runtime(
                               AND route.config->'canaryReceipt'->>'schemaVersion'=%s
                               AND route.config->'canaryReceipt'->>'generalChatEvidenceVerified'='true'
                               AND route.config->'canaryReceipt'->>'receiptSha256' ~ '^[0-9a-f]{64}$'
+                              AND model.eligibility_verified_at IS NOT NULL
+                              AND model.eligibility_verified_at >= NOW() - (%s * INTERVAL '1 hour')
+                              AND model.last_canary_at IS NOT NULL
+                              AND model.last_canary_at >= NOW() - (%s * INTERVAL '1 hour')
                               AND route.disabled=false,
                               false
                           ) AS receipt_current
@@ -2736,6 +2992,8 @@ def register_free_revolver_provider_runtime(
                 runtime_identity["sourceRevision"],
                 runtime_identity["imageDigest"],
                 _FREELLM_RECEIPT_SCHEMA,
+                _eligibility_evidence_ttl_hours(),
+                _eligibility_evidence_ttl_hours(),
                 source_id,
                 source_id,
                 max_models,
@@ -2900,6 +3158,10 @@ def register_free_revolver_provider_runtime(
                            model.status='ready'
                            AND model.enabled=true
                            AND model.free_eligible=true
+                           AND model.eligibility_verified_at IS NOT NULL
+                           AND model.eligibility_verified_at >= NOW() - (%s * INTERVAL '1 hour')
+                           AND model.last_canary_at IS NOT NULL
+                           AND model.last_canary_at >= NOW() - (%s * INTERVAL '1 hour')
                            AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
                            AND route.config->'runtimeIdentity'->>'imageDigest'=%s
                            AND route.config->'runtimeIdentity'->>'sourceRevisionVerified'='true'
@@ -2916,6 +3178,8 @@ def register_free_revolver_provider_runtime(
                      AND route.model_id=model.litellm_alias
                      AND route.config->>'revolverProviderSourceId'=%s""",
                 (
+                    _eligibility_evidence_ttl_hours(),
+                    _eligibility_evidence_ttl_hours(),
                     runtime_identity["sourceRevision"],
                     runtime_identity["imageDigest"],
                     _FREELLM_RECEIPT_SCHEMA,
@@ -2930,6 +3194,10 @@ def register_free_revolver_provider_runtime(
                            WHERE model.status='ready'
                              AND model.enabled=true
                              AND model.free_eligible=true
+                             AND model.eligibility_verified_at IS NOT NULL
+                             AND model.eligibility_verified_at >= NOW() - (%s * INTERVAL '1 hour')
+                             AND model.last_canary_at IS NOT NULL
+                             AND model.last_canary_at >= NOW() - (%s * INTERVAL '1 hour')
                              AND route.disabled=false
                              AND route.config->'runtimeIdentity'->>'sourceRevision'=%s
                              AND route.config->'runtimeIdentity'->>'imageDigest'=%s
@@ -2950,6 +3218,8 @@ def register_free_revolver_provider_runtime(
                     AND route.config->>'revolverProviderSourceId'=%s
                    WHERE model.source_id=%s::uuid""",
                 (
+                    _eligibility_evidence_ttl_hours(),
+                    _eligibility_evidence_ttl_hours(),
                     runtime_identity["sourceRevision"],
                     runtime_identity["imageDigest"],
                     _FREELLM_RECEIPT_SCHEMA,
@@ -3343,4 +3613,8 @@ def register_free_revolver_provider_runtime(
         finally:
             connection.close()
         audit("admin_free_revolver_provider_toggled", source_id, {"enabled": enabled})
+        if enabled:
+            evidence_maintainer.request_maintenance(force_discovery=True)
         return jsonify({"ok": True, "sourceId": source_id, "enabled": enabled})
+
+    evidence_maintainer.start()

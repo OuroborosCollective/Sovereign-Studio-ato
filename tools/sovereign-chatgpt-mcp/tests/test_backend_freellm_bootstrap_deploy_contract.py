@@ -47,6 +47,11 @@ def test_backend_deploy_bootstraps_revision_bound_v3_chat_receipts_before_readin
     assert 'timeout_seconds=45' in deploy
     assert 'except (TimeoutError, urllib.error.URLError, OSError) as exc:' in deploy
     assert '"blocker": "provider_request_timeout_or_network_error"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED=1"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS=21600"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INITIAL_DELAY_SECONDS=60"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS=12"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS=10"' in deploy
 
     assert 'receipt.get("schemaVersion") == "sovereign.freellm-route-receipt.v3"' in deploy
     assert 'receipt.get("generalChatEvidenceVerified") is True' in deploy
