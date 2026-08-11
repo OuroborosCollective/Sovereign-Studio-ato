@@ -54,7 +54,11 @@ def test_container_and_workflow_bind_runtime_to_exact_source_revision() -> None:
     assert "cap_drop:" in compose and "- ALL" in compose
     assert "pids_limit: 256" in compose
     assert "SOVEREIGN_SOURCE_REVISION: ${SOVEREIGN_SOURCE_REVISION:-unverified}" in compose
-    assert "SOVEREIGN_SOURCE_REVISION=${{ github.sha }}" in workflow
+    # The workflow binds revision to github.sha indirectly through a top-level
+    # SOVEREIGN_REVISION env var, then forwards it as the Docker build-arg and
+    # checkout ref. This keeps a single revision source across the whole job.
+    assert "SOVEREIGN_REVISION: ${{ github.sha }}" in workflow
+    assert "SOVEREIGN_SOURCE_REVISION=${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "enterprise_platform/*.py" in workflow
 
 
