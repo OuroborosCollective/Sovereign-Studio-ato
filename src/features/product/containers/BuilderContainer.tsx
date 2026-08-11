@@ -6573,6 +6573,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                       token,
                       { owner: validationRepoSnapshot.owner, repo: validationRepoSnapshot.repo },
                       globalThis.fetch,
+                      SOVEREIGN_WORKER_BASE,
                     );
 
                     if (
@@ -6612,7 +6613,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                       kind: 'done',
                       route: 'github-access',
                       label: 'GitHub-Zugang bereit',
-                      detail: 'Schreibzugriff auf das geladene Repo wurde bestätigt.',
+                      detail: 'GitHub-Credential und effektiver Repo-Schreibzugriff wurden serverseitig für das geladene Repo bestätigt.',
                       state: 'done',
                     });
 
