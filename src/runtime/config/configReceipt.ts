@@ -114,6 +114,92 @@ export async function verifyReceipt(receipt: ConfigReceipt): Promise<boolean> {
 }
 
 /**
+ * Independent PatchMon readback of the actually-loaded config projection.
+ * PatchMon observes the running container and reports the identity fields it
+ * read back. These are compared against the materialized `ConfigReceipt` that
+ * RunEnvelope carries. Every bound (non-null) field must match exactly.
+ */
+export interface ConfigReadbackObservation {
+  readonly revision: string | null;
+  readonly imageDigest: string | null;
+  readonly schemaHash: string | null;
+  readonly resolvedHash: string | null;
+  /** Redacted config fingerprint both sides must agree on (#1169). */
+  readonly receiptHash: string | null;
+}
+
+/** Finding code explaining why a config readback was rejected. */
+export type ConfigReadbackBlocker =
+  | 'config_receipt_self_verification_failed'
+  | 'config_receipt_not_resolved'
+  | 'config_receipt_not_advanceable'
+  | 'config_readback_missing_bound_field'
+  | 'config_readback_contradicts_receipt';
+
+export interface ConfigReadbackAudit {
+  readonly accepted: boolean;
+  readonly blocker: ConfigReadbackBlocker | null;
+  /** A contradiction is a harder failure than missing evidence. */
+  readonly contradicted: boolean;
+}
+
+/**
+ * Confirm a PatchMon readback matches a bound config receipt.
+ *
+ * Fails closed: the receipt must self-verify (no tampering), then every bound
+ * field on the observation must equal the receipt's bound field. A mismatch on
+ * a populated field is a *contradiction* (the wrong config is loaded); a
+ * missing field (null on the observation while the receipt binds it) is a
+ * *blocker* (readback incomplete). Either blocks RUNTIME advancement per the
+ * #1169 DoD: RunEnvelope and PatchMon must read back the same redacted config
+ * fingerprint.
+ */
+export async function verifyConfigReadback(
+  receipt: ConfigReceipt,
+  observation: ConfigReadbackObservation,
+): Promise<ConfigReadbackAudit> {
+  if (!(await verifyReceipt(receipt))) {
+    return { accepted: false, blocker: 'config_receipt_self_verification_failed', contradicted: false };
+  }
+  if (receipt.status !== 'RESOLVED') {
+    return { accepted: false, blocker: 'config_receipt_not_resolved', contradicted: false };
+  }
+  if (receipt.drift !== null || receipt.errors.length > 0) {
+    return { accepted: false, blocker: 'config_receipt_not_advanceable', contradicted: false };
+  }
+
+  const pairs: ReadonlyArray<readonly [string, string | null, string | null]> = [
+    ['revision', receipt.revision, observation.revision],
+    ['imageDigest', receipt.imageDigest, observation.imageDigest],
+    ['schemaHash', receipt.schemaHash, observation.schemaHash],
+    ['resolvedHash', receipt.resolvedHash, observation.resolvedHash],
+  ];
+
+  for (const [_field, expected, actual] of pairs) {
+    const expectedNorm = (expected ?? '').trim().toLowerCase();
+    const actualNorm = (actual ?? '').trim().toLowerCase();
+    if (!expectedNorm) continue; // receipt does not bind this field
+    if (!actualNorm) {
+      return { accepted: false, blocker: 'config_readback_missing_bound_field', contradicted: false };
+    }
+    if (actualNorm !== expectedNorm) {
+      return { accepted: false, blocker: 'config_readback_contradicts_receipt', contradicted: true };
+    }
+  }
+
+  const reportedHash = (observation.receiptHash ?? '').trim().toLowerCase();
+  if (reportedHash) {
+    if (reportedHash !== (receipt.receiptHash ?? '').trim().toLowerCase()) {
+      return { accepted: false, blocker: 'config_readback_contradicts_receipt', contradicted: true };
+    }
+  } else {
+    return { accepted: false, blocker: 'config_readback_missing_bound_field', contradicted: false };
+  }
+
+  return { accepted: true, blocker: null, contradicted: false };
+}
+
+/**
  * Fixed epoch used as the default materialization timestamp so that receipt
  * hashes are deterministic across runs for identical input. Callers that need
  * a real wall-clock timestamp must pass `materializedAt` explicitly (which

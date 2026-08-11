@@ -97,6 +97,10 @@ EVIDENCE_KIND_RUNTIME_READBACK: Final[str] = "runtime_readback"
 EVIDENCE_KIND_CONTAINER_READBACK: Final[str] = "container_readback"
 EVIDENCE_KIND_PR_HEAD: Final[str] = "pr_head"
 EVIDENCE_KIND_LEDGER_HEAD: Final[str] = "ledger_head"
+# Configuration-provenance drift (#1169). A verified record of this kind
+# forces the owning phase to INVALIDATED: config drift invalidates active
+# action plans / run-permission bindings rather than silently continuing.
+EVIDENCE_KIND_CONFIG_DRIFT: Final[str] = "config_drift"
 
 _KNOWN_EVIDENCE_KINDS: Final[FrozenSet[str]] = frozenset(
     {
@@ -110,6 +114,7 @@ _KNOWN_EVIDENCE_KINDS: Final[FrozenSet[str]] = frozenset(
         EVIDENCE_KIND_CONTAINER_READBACK,
         EVIDENCE_KIND_PR_HEAD,
         EVIDENCE_KIND_LEDGER_HEAD,
+        EVIDENCE_KIND_CONFIG_DRIFT,
     }
 )
 
@@ -166,6 +171,15 @@ _PHASE_KIND_BINDING: Final[Mapping[str, Dict[str, Any]]] = {
         "content_sha256": 64,
         "source_pattern": _IDENTIFIER,
         "description": "Continuity ledger entry id.",
+    },
+    EVIDENCE_KIND_CONFIG_DRIFT: {
+        "content_sha256": 64,
+        "source_pattern": _SHA64,
+        "description": (
+            "Configuration provenance drift (#1169): the prior resolved "
+            "config receipt hash (64-hex) that no longer matches the "
+            "current projection."
+        ),
     },
 }
 
@@ -862,6 +876,13 @@ class IntegrationPlanLane:
             if r.is_verified and r.kind == EVIDENCE_KIND_LEDGER_HEAD
         ]
         if any(r.evidence_id.endswith(":invalidated") for r in invalidation_records):
+            return PhaseStatus.INVALIDATED
+
+        # Configuration-provenance drift (#1169): a verified config_drift
+        # record means the resolved config projection changed underneath an
+        # active action plan. Drift invalidates the phase rather than letting
+        # it silently continue on a stale config binding.
+        if any(r.kind == EVIDENCE_KIND_CONFIG_DRIFT and r.is_verified for r in phase_records):
             return PhaseStatus.INVALIDATED
 
         if required_kinds and required_kinds.issubset(verified_kinds):
