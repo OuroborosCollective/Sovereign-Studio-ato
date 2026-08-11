@@ -65,12 +65,34 @@ export function scanForSecret(input: string): SecretGuardResult {
   return { detected: false };
 }
 
+// ⚡ Bolt Optimization: Pre-compile regular expressions.
+// Impact: Bypasses expensive new RegExp() instantiation loops on every function call.
+// This provides a measurable CPU and Garbage Collection reduction during high-frequency
+// streaming/rendering paths where this function is executed repeatedly.
+const REDACT_REGEXES = SECRET_PATTERNS.map((entry) => {
+  const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
+  return new RegExp(entry.pattern.source, flags);
+});
+
+// ⚡ Bolt Optimization: 1-slot strict equality memoization cache.
+// Impact: O(1) fast return for consecutive calls with identical inputs,
+// bypassing string replacement completely.
+let lastRedactInput: string | null = null;
+let lastRedactOutput: string = '';
+
 export function redactSecret(input: string): string {
-  let redacted = input;
-  for (const entry of SECRET_PATTERNS) {
-    const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
-    redacted = redacted.replace(new RegExp(entry.pattern.source, flags), '[REDACTED]');
+  if (input === lastRedactInput) {
+    return lastRedactOutput;
   }
+
+  let redacted = input;
+  for (const regex of REDACT_REGEXES) {
+    redacted = redacted.replace(regex, '[REDACTED]');
+  }
+
+  lastRedactInput = input;
+  lastRedactOutput = redacted;
+
   return redacted;
 }
 
