@@ -1,0 +1,660 @@
+{
+  "allowedSourceKinds": [
+    "approved-runtime-overlay",
+    "compiled-defaults",
+    "deployment-config",
+    "environment-projection",
+    "image-manifest"
+  ],
+  "drift": [],
+  "envReferences": [
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "ADMIN_BOOTSTRAP_ADMIN_EMAIL"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "AI_GATEWAY_ACCOUNT"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "AI_GATEWAY_ID"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/free_revolver_runtime.py"
+      ],
+      "name": "FREE_REVOLVER_ELIGIBILITY_EVIDENCE_TTL_HOURS"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/github_app.py"
+      ],
+      "name": "GITHUB_APP_CLIENT_ID"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/github_app.py"
+      ],
+      "name": "GITHUB_APP_ID"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "GITHUB_CLIENT_ID"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "GITHUB_OAUTH_ALLOWED_OPENER_ORIGINS"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/skills/routes.py",
+        "scripts/sovereign-backend/agent_runtime/skills/routes.py"
+      ],
+      "name": "GIT_SHA"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "GOOGLE_CLIENT_ID"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/document_ingestion.py"
+      ],
+      "name": "GOTENBERG_API_BASIC_AUTH_USERNAME"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/litellm_runtime.py"
+      ],
+      "name": "LITELLM_BASE_URL"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/litellm_runtime.py"
+      ],
+      "name": "LITELLM_TIMEOUT_SECONDS"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/tools/shell_tool.py",
+        "backend/agent_runtime/tools/test_tool.py",
+        "scripts/sovereign-backend/agent_runtime/tools/shell_tool.py",
+        "scripts/sovereign-backend/agent_runtime/tools/test_tool.py"
+      ],
+      "name": "PATH"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/migrations/migrate.py"
+      ],
+      "name": "POSTGRES_DB"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/migrations/migrate.py"
+      ],
+      "name": "POSTGRES_HOST"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/migrations/migrate.py"
+      ],
+      "name": "POSTGRES_PORT"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/migrations/migrate.py"
+      ],
+      "name": "POSTGRES_USER"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/r2_storage.py"
+      ],
+      "name": "R2_ARTIFACTS_BUCKET"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/r2_storage.py"
+      ],
+      "name": "R2_ENDPOINT"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/r2_storage.py"
+      ],
+      "name": "R2_KNOWLEDGE_BUCKET"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/r2_storage.py"
+      ],
+      "name": "R2_REGION"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "RUNTIME_CONFIG_FILE"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/skills/routes.py",
+        "scripts/sovereign-backend/agent_runtime/skills/routes.py"
+      ],
+      "name": "SOURCE_REVISION"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ],
+      "name": "SOVEREIGN_A2A_POLL_SECONDS"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ],
+      "name": "SOVEREIGN_A2A_STREAM_WINDOW_SECONDS"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/controller_board.py"
+      ],
+      "name": "SOVEREIGN_AGENTS_MAX_ITERATIONS"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/controller_board.py"
+      ],
+      "name": "SOVEREIGN_AGENTS_RESUME_LEASE_SECONDS"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_policy.py"
+      ],
+      "name": "SOVEREIGN_AGENT_WORKSPACE_GID"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "backend/agent_runtime/routes.py",
+        "backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/controller_board.py"
+      ],
+      "name": "SOVEREIGN_AGENT_WORKSPACE_ROOT"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_policy.py"
+      ],
+      "name": "SOVEREIGN_AGENT_WORKSPACE_UID"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_editor.py"
+      ],
+      "name": "SOVEREIGN_CODE_SERVER_PUBLIC_URL"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_editor.py"
+      ],
+      "name": "SOVEREIGN_CODE_SERVER_WORKSPACE_MOUNT"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/document_ingestion.py"
+      ],
+      "name": "SOVEREIGN_DOCUMENT_PIPELINE_MODE"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/document_ingestion.py"
+      ],
+      "name": "SOVEREIGN_DOCUMENT_PIPELINE_TIMEOUT_SECONDS"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/document_ingestion.py"
+      ],
+      "name": "SOVEREIGN_GOTENBERG_USERNAME"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/enterprise_platform/service.py",
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py",
+        "scripts/sovereign-backend/llm_revolver.py",
+        "scripts/sovereign-backend/llm_route_scanner.py",
+        "scripts/sovereign-backend/openrouter_free_runtime.py",
+        "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
+        "scripts/sovereign-backend/tests/test_runtime_health_schema_contract.py"
+      ],
+      "name": "SOVEREIGN_IMAGE_DIGEST"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/llm_route_scanner.py"
+      ],
+      "name": "SOVEREIGN_LLM_ROUTE_SCANNER_ENABLED"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_swarm_manifest.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_manifest.py"
+      ],
+      "name": "SOVEREIGN_MAX_ACTIVE_AGENTS"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/enterprise_platform/routes.py"
+      ],
+      "name": "SOVEREIGN_MAX_REQUEST_BYTES"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/agent_run_receipts.py",
+        "scripts/sovereign-backend/agent_runtime/agent_run_receipts.py"
+      ],
+      "name": "SOVEREIGN_MCP_BROKER_SOCKET"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/direct_llm_runtime.py",
+        "scripts/sovereign-backend/openrouter_free_runtime.py",
+        "scripts/sovereign-backend/openrouter_provider_runtime.py"
+      ],
+      "name": "SOVEREIGN_OPENROUTER_APP_TITLE"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/direct_llm_runtime.py",
+        "scripts/sovereign-backend/openrouter_free_runtime.py",
+        "scripts/sovereign-backend/openrouter_provider_runtime.py"
+      ],
+      "name": "SOVEREIGN_OPENROUTER_HTTP_REFERER"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "backend/agent_runtime/cognitive_usage_billing.py",
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_usage_billing.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/controller_board.py",
+        "scripts/sovereign-backend/llm_execution_resolver.py",
+        "scripts/sovereign-backend/owner_input_runtime.py",
+        "scripts/sovereign-backend/tests/test_controller_board_contract.py"
+      ],
+      "name": "SOVEREIGN_OWNER_ADMIN_EMAIL"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "backend/agent_runtime/cognitive_usage_billing.py",
+        "backend/agent_runtime/routes.py",
+        "backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_usage_billing.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/controller_board.py",
+        "scripts/sovereign-backend/llm_execution_resolver.py",
+        "scripts/sovereign-backend/owner_input_runtime.py",
+        "scripts/sovereign-backend/tests/test_controller_board_contract.py"
+      ],
+      "name": "SOVEREIGN_OWNER_ADMIN_ID"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/cognitive_llm_transport.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
+        "scripts/sovereign-backend/direct_llm_runtime.py",
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py",
+        "scripts/sovereign-backend/llm_provider_runtime.py",
+        "scripts/sovereign-backend/openrouter_free_runtime.py",
+        "scripts/sovereign-backend/openrouter_provider_runtime.py",
+        "scripts/sovereign-backend/owner_input_runtime.py",
+        "scripts/sovereign-backend/proven_learning_runtime.py",
+        "scripts/sovereign-backend/vector_embedding.py"
+      ],
+      "name": "SOVEREIGN_OWNER_INPUT_ROOT"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/owner_input_runtime.py"
+      ],
+      "name": "SOVEREIGN_OWNER_INPUT_TARGETS_JSON"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ],
+      "name": "SOVEREIGN_PUBLIC_BASE_URL"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ],
+      "name": "SOVEREIGN_RELEASE_VERSION"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/enterprise_platform/service.py"
+      ],
+      "name": "SOVEREIGN_RUNTIME_ENVIRONMENT"
+    },
+    {
+      "files": [
+        "backend/agent_runtime/agent_run_receipts.py",
+        "backend/agent_runtime/cognitive_llm_transport.py",
+        "backend/agent_runtime/issue_closure_runtime.py",
+        "backend/agent_runtime/skills/routes.py",
+        "scripts/sovereign-backend/agent_runtime/agent_run_receipts.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
+        "scripts/sovereign-backend/agent_runtime/issue_closure_runtime.py",
+        "scripts/sovereign-backend/agent_runtime/skills/routes.py",
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/enterprise_platform/service.py",
+        "scripts/sovereign-backend/free_revolver_provider_runtime.py",
+        "scripts/sovereign-backend/llm_revolver.py",
+        "scripts/sovereign-backend/llm_route_scanner.py",
+        "scripts/sovereign-backend/openrouter_free_runtime.py",
+        "scripts/sovereign-backend/tests/test_canonical_react_admin_delivery.py",
+        "scripts/sovereign-backend/tests/test_free_revolver_provider_runtime.py",
+        "scripts/sovereign-backend/tests/test_runtime_health_schema_contract.py"
+      ],
+      "name": "SOVEREIGN_SOURCE_REVISION"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py",
+        "scripts/sovereign-backend/tests/test_canonical_react_admin_delivery.py"
+      ],
+      "name": "SOVEREIGN_USER_APP_DIST_DIR"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "TOOLCHAIN_ALLOWED_REPOS"
+    },
+    {
+      "files": [
+        "src/features/admin/api/adminApiClient.ts",
+        "src/features/billing/billingSlice.ts",
+        "src/features/billing/costConfig.ts",
+        "src/features/billing/useCreditGuard.ts",
+        "src/features/github/githubOAuthLogin.ts",
+        "src/features/inference/areInferenceApi.ts",
+        "src/features/knowledge/knowledgeApi.ts",
+        "src/features/product/llm/primaryBridgeConfig.ts",
+        "src/features/product/runtime/sovereignLiteLlmIntentRuntime.ts",
+        "src/features/security/securityApi.ts",
+        "src/features/toolchain/skillsApi.ts",
+        "src/features/toolchain/toolchainApi.ts",
+        "src/features/toolchain/toolchainClient.ts",
+        "src/features/user/useUserStore.ts"
+      ],
+      "name": "VITE_ADMIN_API_BASE"
+    },
+    {
+      "files": [
+        "src/features/product/runtime/sovereignAgentRuntime.ts"
+      ],
+      "name": "VITE_SOVEREIGN_AGENT_API_URL"
+    },
+    {
+      "files": [
+        "src/features/product/runtime/sovereignAgentRuntime.ts"
+      ],
+      "name": "VITE_SOVEREIGN_BACKEND_URL"
+    },
+    {
+      "files": [
+        "scripts/sovereign-backend/app.py"
+      ],
+      "name": "WORKER_AI_PROXY_URL"
+    }
+  ],
+  "generatedBy": "backend/agent_runtime/configuration_provenance_inventory.py",
+  "invariantStatements": [
+    "Configuration provenance is read-only resolution + provenance; mutation runs through #1119.",
+    "Secrets are projected only as redacted identities and never appear in this inventory.",
+    "The inventory is a projection of repository surfaces, not proof of deployed registry parity or runtime state.",
+    "A container may start only with a fully validated, reproducible configuration; RunEnvelope and PatchMon read back the same redacted config-fingerprint.",
+    "Drift against an expected binding invalidates the resolution (CONTRADICTED), blocking prior run/permission bindings and active action plans."
+  ],
+  "repositoryRootLabel": "Sovereign-Studio-ato",
+  "schemaVersion": "configuration-provenance-inventory/v1",
+  "snapshotSha256": "645ebe25fbc96fd0cda946799671d9a39a6dfd4dde3e1edf9ac2ea81181af813",
+  "sourceOrder": [
+    "compiled-defaults",
+    "image-manifest",
+    "deployment-config",
+    "environment-projection",
+    "approved-runtime-overlay"
+  ],
+  "sourcePriority": {
+    "approved-runtime-overlay": 40,
+    "compiled-defaults": 0,
+    "deployment-config": 20,
+    "environment-projection": 30,
+    "image-manifest": 10
+  },
+  "surfaces": [
+    {
+      "label": "env-example",
+      "present": true,
+      "priority": 0,
+      "relativePath": ".env.example",
+      "required": true,
+      "sha256": "c5ae59d8b44418e20c2e33edc26b7c5d17068fea42914affb7ed6b3501dcf815",
+      "sourceKind": "compiled-defaults",
+      "truthClass": "documentation"
+    },
+    {
+      "label": "env-sovereign-toolchain-example",
+      "present": true,
+      "priority": 0,
+      "relativePath": ".env.sovereign-toolchain.example",
+      "required": true,
+      "sha256": "63dc6763db54d104b95795e23b6406fbc9a6fa2531c49e4e1b04d2217d87e419",
+      "sourceKind": "compiled-defaults",
+      "truthClass": "documentation"
+    },
+    {
+      "label": "backend-compose",
+      "present": true,
+      "priority": 10,
+      "relativePath": "scripts/sovereign-backend/docker-compose.yml",
+      "required": true,
+      "sha256": "745341e76d1a34f50e99f177cc74a3600a81f8600b0e442d58686123de0dbfe3",
+      "sourceKind": "image-manifest",
+      "truthClass": "projection"
+    },
+    {
+      "label": "litellm-compose",
+      "present": true,
+      "priority": 10,
+      "relativePath": "deploy/sovereign-litellm/docker-compose.yml",
+      "required": false,
+      "sha256": "ab795f6f62df503ca3383b47c5f3e69f337097174d5d4c8bdcf2d44cfa8ec72c",
+      "sourceKind": "image-manifest",
+      "truthClass": "projection"
+    },
+    {
+      "label": "mcp-compose",
+      "present": true,
+      "priority": 20,
+      "relativePath": "tools/sovereign-chatgpt-mcp/docker-compose.yml",
+      "required": false,
+      "sha256": "f7bfe5e6143679b0852906540574e25dda2a6c58c0fd62d4a63defc609932f26",
+      "sourceKind": "deployment-config",
+      "truthClass": "projection"
+    },
+    {
+      "label": "vite-env-projection-src",
+      "present": true,
+      "priority": 30,
+      "relativePath": "src/runtime/config/configSources.ts",
+      "required": true,
+      "sha256": "3b888a6687d69e9b745ac14dcc3187d015ac0a562c90c7476f9446bb608546c8",
+      "sourceKind": "environment-projection",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "vite-env-projection-resolver",
+      "present": true,
+      "priority": 30,
+      "relativePath": "src/runtime/config/sovereignConfigResolver.ts",
+      "required": true,
+      "sha256": "9c2fa2db07f19fe420591942c466a0e81640dd19f4006dcd6a6778b8723bff6b",
+      "sourceKind": "environment-projection",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "vite-env-projection-receipt",
+      "present": true,
+      "priority": 30,
+      "relativePath": "src/runtime/config/configReceipt.ts",
+      "required": true,
+      "sha256": "013e8fe5ba412fcb60804f45447395966184be8a35bf17bd84e443d8b6a8cb24",
+      "sourceKind": "environment-projection",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "vite-env-projection-index",
+      "present": true,
+      "priority": 30,
+      "relativePath": "src/runtime/config/index.ts",
+      "required": true,
+      "sha256": "e4118ee01551a4a56a27d19179f9749d81f5865558b4c5b636e2ea2b57759887",
+      "sourceKind": "environment-projection",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provenance-config-sources",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/agent_runtime/configuration/config_sources.py",
+      "required": true,
+      "sha256": "668a4cd1242936d6e13c3c2188ca907f9a783f786f54a5fba4277950aed3c0c8",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provenance-canonicalize",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/agent_runtime/configuration/config_canonicalize.py",
+      "required": true,
+      "sha256": "1b0bd2cdcb42df26dddd0b8dbd26cae436491acfa387af823bf993ae8e9bd35a",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provenance-resolver",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/agent_runtime/configuration/resolver.py",
+      "required": true,
+      "sha256": "cf897136d8219f5d97ddef7e6caf2efab326e36a28f1d9496fa3317fb6678a80",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provenance-receipt",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/agent_runtime/configuration/receipt.py",
+      "required": true,
+      "sha256": "c8a4bcd26b9e448837bfc2cbe88296a63b2cd359798b5d841ffcbfa57461bba1",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provenance-tests",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/tests/test_configuration_provenance.py",
+      "required": true,
+      "sha256": "0729eed9041266673126ffa61c86df17edc1b37ec405720244e3fc876742ba65",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "provenance-mirror-tests",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/tests/test_configuration_provenance_mirror.py",
+      "required": true,
+      "sha256": "cb2866bd6259e80ec8dad554993d3964633d7cb26c4b4f0a1f1d23a8d4847735",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "provenance-architecture-doc",
+      "present": true,
+      "priority": 40,
+      "relativePath": "docs/architecture/CONFIGURATION_PROVENANCE.md",
+      "required": true,
+      "sha256": "186d08f39284377354a4baf16afab2645864d099b29f825398cedf17959e7364",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "documentation"
+    },
+    {
+      "label": "provenance-inventory-runner",
+      "present": true,
+      "priority": 40,
+      "relativePath": "backend/agent_runtime/configuration_provenance_inventory.py",
+      "required": true,
+      "sha256": "46b6eb7fdf4cf1e6ba22b500f73137837c4d16e789349d406cafb66e98c0dd17",
+      "sourceKind": "approved-runtime-overlay",
+      "truthClass": "projection"
+    }
+  ]
+}
