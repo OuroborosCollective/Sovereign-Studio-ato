@@ -21,8 +21,11 @@ import {
   hashValue,
   isRedactedSecret,
   schemaHashFromFields,
+  verifyConfigReadback,
+  isConfigReadbackConfirmed,
   type ConfigSourceContract,
   type ResolveOptions,
+  type PatchMonReadback,
 } from './index';
 
 async function sha256(s: string): Promise<string> {
@@ -384,6 +387,124 @@ describe('cross-environment safety (negative tests)', () => {
     expect((res.resolved as { url: string }).url).toBe('https://evil.example/cfg');
     // No remote readback recorded because it was not a bound remote source.
     expect(res.sourceHashes[0]?.remoteOrigin).toBeNull();
+  });
+});
+
+describe('configReadback - PatchMon confirms the actually loaded config', () => {
+  async function receiptWith(opts: {
+    revision?: string;
+    imageDigest?: string;
+  }) {
+    const res = await resolveConfigSources(baseSources);
+    return materializeReceipt(res, opts);
+  }
+
+  it('MATCHED when every bound field PatchMon observed equals the receipt', async () => {
+    const receipt = await receiptWith({ revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const readback: PatchMonReadback = {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('MATCHED');
+    expect(result.matched).toBe(true);
+    expect(isConfigReadbackConfirmed(result)).toBe(true);
+    expect(result.fields.revision).toBe('matched');
+    expect(result.fields.schemaHash).toBe('matched');
+    expect(result.fields.resolvedHash).toBe('matched');
+    expect(result.fields.imageDigest).toBe('matched');
+  });
+
+  it('MATCHED even when imageDigest was never bound (optional field skipped)', async () => {
+    const receipt = await receiptWith({ revision: 'rev-1' });
+    const readback: PatchMonReadback = {
+      revision: 'rev-1',
+      imageDigest: null,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('MATCHED');
+    expect(result.fields.imageDigest).toBe('unbound');
+    expect(isConfigReadbackConfirmed(result)).toBe(true);
+  });
+
+  it('MISMATCHED when resolvedHash differs (container loaded a different config)', async () => {
+    const receipt = await receiptWith({ revision: 'rev-1' });
+    const readback: PatchMonReadback = {
+      revision: 'rev-1',
+      imageDigest: null,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: 'deadbeef'.repeat(8),
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('MISMATCHED');
+    expect(result.matched).toBe(false);
+    expect(isConfigReadbackConfirmed(result)).toBe(false);
+    expect(result.fields.resolvedHash).toBe('mismatched');
+    expect(result.reason).toContain('resolvedHash');
+  });
+
+  it('MISMATCHED when revision differs', async () => {
+    const receipt = await receiptWith({ revision: 'rev-1' });
+    const readback: PatchMonReadback = {
+      revision: 'rev-other',
+      imageDigest: null,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('MISMATCHED');
+    expect(result.fields.revision).toBe('mismatched');
+  });
+
+  it('MISMATCHED when imageDigest was bound but container reports a different digest', async () => {
+    const receipt = await receiptWith({ revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const readback: PatchMonReadback = {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-tampered',
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('MISMATCHED');
+    expect(result.fields.imageDigest).toBe('mismatched');
+  });
+
+  it('UNVERIFIABLE when PatchMon did not observe a bound field', async () => {
+    const receipt = await receiptWith({ revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const readback: PatchMonReadback = {
+      revision: null,
+      imageDigest: null,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('UNVERIFIABLE');
+    expect(result.matched).toBe(false);
+    expect(isConfigReadbackConfirmed(result)).toBe(false);
+    expect(result.fields.revision).toBe('unobserved');
+    expect(result.fields.imageDigest).toBe('unobserved');
+    expect(result.reason).toContain('not observed');
+  });
+
+  it('UNVERIFIABLE for a non-RESOLVED (drifted/blocked) receipt regardless of observation', async () => {
+    const drifted = await resolveConfigSources(baseSources, {
+      expectedReceiptHash: 'definitely-not-the-real-hash',
+    });
+    expect(drifted.status).toBe('CONTRADICTED');
+    const receipt = await materializeReceipt(drifted, { revision: 'rev-1' });
+    const readback: PatchMonReadback = {
+      revision: 'rev-1',
+      imageDigest: null,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+    };
+    const result = verifyConfigReadback(receipt, readback);
+    expect(result.verdict).toBe('UNVERIFIABLE');
+    expect(result.reason).toContain('not RESOLVED');
   });
 });
 

@@ -47,6 +47,15 @@ from .receipt import (
     materialize_receipt,
     verify_receipt,
 )
+from .readback import (
+    ConfigReadbackResult,
+    PatchMonReadback,
+    ReadbackField,
+    ReadbackFieldState,
+    ReadbackVerdict,
+    is_config_readback_confirmed,
+    verify_config_readback,
+)
 
 __all__ = [
     "ALLOWED_SOURCE_KINDS",
@@ -75,11 +84,13 @@ __all__ = [
     "hash_string",
     "hash_value",
     "is_allowed_source_kind",
+    "is_config_readback_confirmed",
     "is_redacted_secret",
     "is_safe_to_advance",
     "materialize_receipt",
     "merge_values",
     "resolve_config_sources",
     "schema_hash_from_fields",
+    "verify_config_readback",
     "verify_receipt",
 ]

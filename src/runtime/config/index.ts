@@ -57,3 +57,16 @@ export {
 } from './configReceipt';
 
 export type { ConfigReceipt, ReceiptOptions } from './configReceipt';
+
+export {
+  verifyConfigReadback,
+  isConfigReadbackConfirmed,
+} from './configReadback';
+
+export type {
+  ReadbackVerdict,
+  ReadbackField,
+  ReadbackFieldState,
+  PatchMonReadback,
+  ConfigReadbackResult,
+} from './configReadback';

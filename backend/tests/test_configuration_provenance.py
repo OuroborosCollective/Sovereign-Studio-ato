@@ -23,14 +23,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent_runtime.configuration import (  # noqa: E402
     ConfigSourceContract,
     ConfigDriftRecord,
+    PatchMonReadback,
     RemoteBinding,
     ResolveOptions,
     default_priority_for,
     canonical_source_order,
     compute_receipt_hash,
+    is_config_readback_confirmed,
     is_safe_to_advance,
     materialize_receipt,
     resolve_config_sources,
+    verify_config_readback,
     verify_receipt,
 )
 from agent_runtime.configuration.config_canonicalize import (
@@ -374,3 +377,125 @@ def test_bare_url_value_is_not_a_remote_truth_path():
     assert res.status == "RESOLVED"
     assert res.resolved["url"] == "https://evil.example/cfg"
     assert res.source_hashes[0].remote_origin is None
+
+
+# ---------------------------------------------------------------------------
+# PatchMon readback verification (#1169 criterion #6)
+# PatchMon independently observes what a container actually loaded (bound
+# revision, image digest, schema hash, redacted resolved hash) and this is
+# compared against a materialized receipt. Mismatch must route to
+# BLOCKED/CONTRADICTED rather than silently continuing.
+# ---------------------------------------------------------------------------
+
+
+def _receipt_with(**opts: str) -> Any:
+    res = resolve_config_sources(BASE_SOURCES)
+    return materialize_receipt(res, opts)
+
+
+def test_readback_matched_when_every_bound_field_equals_receipt():
+    receipt = _receipt_with(revision="rev-1", image_digest="sha256:img-1")
+    readback = PatchMonReadback(
+        revision="rev-1",
+        image_digest="sha256:img-1",
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "MATCHED"
+    assert result.matched is True
+    assert is_config_readback_confirmed(result) is True
+    assert result.fields["revision"] == "matched"
+    assert result.fields["schemaHash"] == "matched"
+    assert result.fields["resolvedHash"] == "matched"
+    assert result.fields["imageDigest"] == "matched"
+
+
+def test_readback_matched_when_image_digest_never_bound():
+    receipt = _receipt_with(revision="rev-1")
+    readback = PatchMonReadback(
+        revision="rev-1",
+        image_digest=None,
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "MATCHED"
+    assert result.fields["imageDigest"] == "unbound"
+    assert is_config_readback_confirmed(result) is True
+
+
+def test_readback_mismatched_when_resolved_hash_differs():
+    receipt = _receipt_with(revision="rev-1")
+    readback = PatchMonReadback(
+        revision="rev-1",
+        image_digest=None,
+        schema_hash=receipt.schema_hash,
+        resolved_hash="deadbeef" * 8,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "MISMATCHED"
+    assert result.matched is False
+    assert is_config_readback_confirmed(result) is False
+    assert result.fields["resolvedHash"] == "mismatched"
+    assert "resolvedHash" in result.reason
+
+
+def test_readback_mismatched_when_revision_differs():
+    receipt = _receipt_with(revision="rev-1")
+    readback = PatchMonReadback(
+        revision="rev-other",
+        image_digest=None,
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "MISMATCHED"
+    assert result.fields["revision"] == "mismatched"
+
+
+def test_readback_mismatched_when_image_digest_was_bound_but_differs():
+    receipt = _receipt_with(revision="rev-1", image_digest="sha256:img-1")
+    readback = PatchMonReadback(
+        revision="rev-1",
+        image_digest="sha256:img-tampered",
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "MISMATCHED"
+    assert result.fields["imageDigest"] == "mismatched"
+
+
+def test_readback_unverifiable_when_bound_field_not_observed():
+    receipt = _receipt_with(revision="rev-1", image_digest="sha256:img-1")
+    readback = PatchMonReadback(
+        revision=None,
+        image_digest=None,
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "UNVERIFIABLE"
+    assert result.matched is False
+    assert is_config_readback_confirmed(result) is False
+    assert result.fields["revision"] == "unobserved"
+    assert result.fields["imageDigest"] == "unobserved"
+    assert "not observed" in result.reason
+
+
+def test_readback_unverifiable_for_non_resolved_receipt():
+    drifted = resolve_config_sources(
+        BASE_SOURCES, ResolveOptions(expected_receipt_hash="definitely-not-the-real-hash")
+    )
+    assert drifted.status == "CONTRADICTED"
+    receipt = materialize_receipt(drifted, {"revision": "rev-1"})
+    readback = PatchMonReadback(
+        revision="rev-1",
+        image_digest=None,
+        schema_hash=receipt.schema_hash,
+        resolved_hash=receipt.resolved_hash,
+    )
+    result = verify_config_readback(receipt, readback)
+    assert result.verdict == "UNVERIFIABLE"
+    assert "not RESOLVED" in result.reason

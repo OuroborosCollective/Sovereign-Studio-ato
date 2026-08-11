@@ -103,6 +103,30 @@ The resolved receipt exposes the fields PatchMon must read back independently:
 A container is considered configured only when PatchMon's independent readback
 matches the resolved receipt. Mismatch → `BLOCKED` / `CONTRADICTED`.
 
+### Readback verification primitive
+
+`verifyConfigReadback(receipt, readback)` performs the deterministic comparison
+that turns an independent PatchMon observation into a verdict. PatchMon passes
+its observed values (the revision, image digest, schema hash and redacted
+resolved hash that the running container actually reports) as a `PatchMonReadback`
+and the function returns a `ConfigReadbackResult` with verdict `MATCHED`,
+`MISMATCHED` or `UNVERIFIABLE` plus per-field detail.
+
+A field is *bound* when the receipt carries a value for it. A bound field that
+PatchMon did not observe yields `UNVERIFIABLE` (PatchMon cannot confirm
+something it did not read). A bound field whose observed value differs from the
+receipt yields `MISMATCHED` (the container loaded a different config than the
+receipt). All bound fields matching yields `MATCHED`. The optional `imageDigest`
+is skipped when it was never bound — PatchMon is not required to read back a
+digest that was never bound. A non-`RESOLVED` (drifted/blocked) receipt is
+always `UNVERIFIABLE` regardless of observation, so prior run/permission
+bindings are invalidated.
+
+`isConfigReadbackConfirmed(result)` is the runtime gate convenience: true only
+on `MATCHED`. This is the library-level half of acceptance criterion #6 — the
+runtime *wiring* that feeds PatchMon observations into this call is a separate,
+downstream integration step (see Truth class below).
+
 ## File map
 
 ### TypeScript (canonical frontend / runtime)
@@ -111,8 +135,9 @@ src/runtime/config/configSources.ts         # source contracts, kinds, priority
 src/runtime/config/configCanonicalize.ts    # stable serialization, redaction
 src/runtime/config/sovereignConfigResolver.ts  # merge + resolve + drift
 src/runtime/config/configReceipt.ts         # receipt shape + public hash
+src/runtime/config/configReadback.ts        # PatchMon readback verification
 src/runtime/config/index.ts                 # public surface
-src/runtime/config/configProvenance.test.ts # contract tests (36)
+src/runtime/config/configProvenance.test.ts # contract tests (43)
 ```
 
 ### Python (canonical backend)
@@ -121,8 +146,9 @@ backend/agent_runtime/configuration/config_sources.py
 backend/agent_runtime/configuration/config_canonicalize.py
 backend/agent_runtime/configuration/resolver.py
 backend/agent_runtime/configuration/receipt.py
+backend/agent_runtime/configuration/readback.py
 backend/agent_runtime/configuration/__init__.py
-backend/tests/test_configuration_provenance.py        # contract tests (29)
+backend/tests/test_configuration_provenance.py        # contract tests (36)
 backend/tests/test_configuration_provenance_mirror.py # cross-language parity (1)
 ```
 
@@ -140,11 +166,14 @@ scripts/sovereign-backend/agent_runtime/configuration/*  # parity verified
 
 ## Validation
 
-- TypeScript: 36/36 contract tests pass (`vitest run src/runtime/config/`).
-- Python: 30/30 contract + parity tests pass (`pytest`).
+- TypeScript: 43/43 contract tests pass (`vitest run src/runtime/config/`),
+  including 7 PatchMon readback verification cases (MATCHED/MISMATCHED/
+  UNVERIFIABLE).
+- Python: 36/36 contract + parity tests pass (`pytest`), including 7 PatchMon
+  readback verification cases mirroring the TypeScript suite.
 - Mirror parity: `backend/.../configuration` byte-identical to
-  `scripts/sovereign-backend/.../configuration`.
-- `pnpm run type-check`: PASS (6 config files).
+  `scripts/sovereign-backend/.../configuration` (now includes `readback.py`).
+- `pnpm run type-check`: PASS (7 config files).
 - `pnpm run build:web`: PASS.
 - Lint: pre-existing repo-wide failure (no `eslint.config` present); unrelated
   to this change.
