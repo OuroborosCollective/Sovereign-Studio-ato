@@ -33,4 +33,4 @@ include ':capgo-capacitor-native-biometric'
 project(':capgo-capacitor-native-biometric').projectDir = new File('../node_modules/.pnpm/@capgo+capacitor-native-biometric@8.4.5_@capacitor+core@6.2.1/node_modules/@capgo/capacitor-native-biometric/android')
 
 include ':codetrix-studio-capacitor-google-auth'
-project(':codetrix-studio-capacitor-google-auth').projectDir = new File('../node_modules/.pnpm/@codetrix-studio+capacitor-google-auth@3.3.6_@capacitor+core@6.2.1/node_modules/@codetrix-studio/capacitor-google-auth/android')
+project(':codetrix-studio-capacitor-google-auth').projectDir = new File('../node_modules/.pnpm/@codetrix-studio+capacitor-google-auth@3.3.6_patch_hash=3gjc3ddxdsf7zh24aorpnjbxp4_@capacitor+core@6.2.1/node_modules/@codetrix-studio/capacitor-google-auth/android')

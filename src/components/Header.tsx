@@ -17,20 +17,36 @@ export function Header({ loadingTree, setShowPrivacy, handleCleanup, fetchRepoTr
       </div>
       <div className="flex items-center gap-3">
         <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-[10px] font-black tracking-wider shadow-sm mr-2 transition-all hover:shadow-md hover:bg-emerald-100/80 cursor-default" title="Hybrid API Canvas Auto-Auth verbunden">
-           <div className="relative flex h-2 w-2">
+           <div className="relative flex h-2 w-2" aria-hidden="true">
              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
            </div>
            CANVAS AUTO-AUTH
         </div>
-        <button onClick={() => setShowPrivacy(true)} className="px-3 py-1.5 bg-stone-100 border border-stone-200 text-stone-600 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1">
-           <Info size={12} /> DATENSCHUTZ
+        <button
+          onClick={() => setShowPrivacy(true)}
+          aria-label="Datenschutzerklärung anzeigen"
+          title="Datenschutzerklärung anzeigen"
+          className="px-3 py-1.5 bg-stone-100 border border-stone-200 text-stone-600 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:outline-none"
+        >
+           <Info size={12} aria-hidden="true" /> DATENSCHUTZ
         </button>
-        <button onClick={handleCleanup} className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors flex items-center gap-1">
-          <Trash2 size={12} /> CLEANUP
+        <button
+          onClick={handleCleanup}
+          aria-label="Temporäre Workspace-Dateien bereinigen"
+          title="Temporäre Workspace-Dateien bereinigen"
+          className="px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-700 rounded text-[10px] font-bold hover:bg-rose-100 transition-colors flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
+        >
+          <Trash2 size={12} aria-hidden="true" /> CLEANUP
         </button>
-        <button onClick={fetchRepoTree} disabled={loadingTree} className="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1 disabled:opacity-50">
-          <RefreshCw size={12} className={loadingTree ? "animate-spin" : ""} /> {loadingTree ? "LADEN..." : "REFRESH"}
+        <button
+          onClick={fetchRepoTree}
+          disabled={loadingTree}
+          aria-label={loadingTree ? "Repository-Struktur wird geladen" : "Repository-Struktur aktualisieren"}
+          title={loadingTree ? "Repository-Struktur wird geladen" : "Repository-Struktur aktualisieren"}
+          className="px-3 py-1.5 bg-stone-100 border border-stone-200 rounded text-[10px] font-bold hover:bg-stone-200 transition-colors flex items-center gap-1 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:outline-none"
+        >
+          <RefreshCw size={12} className={loadingTree ? "animate-spin" : ""} aria-hidden="true" /> {loadingTree ? "LADEN..." : "REFRESH"}
         </button>
       </div>
     </header>
