@@ -1,17 +1,16 @@
 {
   "name": "sovereign-llm-proxy",
   "version": "1.2.0",
-  "description": "Cloudflare Workers AI Proxy with URL secret authentication",
+  "description": "Retired Cloudflare Worker AI proxy; do not deploy or configure secrets",
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "tail": "wrangler tail",
-    "login": "wrangler login",
-    "logout": "wrangler logout",
-    "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && bash scripts/test-proxy.sh"
+    "deploy": "node -e \"console.error('Cloudflare Worker AI proxy is retired; deploy is disabled.'); process.exit(1)\"",
+    "dev": "node -e \"console.error('Cloudflare Worker AI proxy is retired; dev is disabled.'); process.exit(1)\"",
+    "tail": "node -e \"console.error('Cloudflare Worker AI proxy is retired; tail is disabled.'); process.exit(1)\"",
+    "login": "node -e \"console.error('Cloudflare Worker AI proxy is retired; login is disabled.'); process.exit(1)\"",
+    "logout": "node -e \"console.error('Cloudflare Worker AI proxy is retired; logout is disabled.'); process.exit(1)\"",
+    "test": "npm run typecheck"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260712.1",

@@ -1,14 +1,12 @@
 /**
- * Sovereign LLM Proxy - Cloudflare Worker AI Router
- * 
- * Proxies requests to Cloudflare Workers AI.
- * Uses Cloudflare Service Token for authentication.
- * 
- * Usage:
- *   POST /v1/chat/completions
- *   POST /v1/embeddings
- *   Body: { "model": "@cf/meta/llama-3-8b-instruct", "messages": [...] }
+ * Retired Cloudflare Worker AI proxy.
+ *
+ * This source remains only as a fail-closed tombstone for any historical
+ * deployment. Sovereign runtime traffic uses the Sovereign Backend and direct
+ * FreeLLM/OpenRouter transports; this Worker must never contact a provider.
  */
+
+const LEGACY_WORKER_RETIRED = true;
 
 interface Env {
   // Cloudflare API Token for Workers AI
@@ -868,6 +866,23 @@ function handleRoot(): Response {
  */
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (LEGACY_WORKER_RETIRED) {
+      return new Response(JSON.stringify({
+        error: {
+          message: 'Cloudflare Worker AI proxy is retired. Use the Sovereign Backend.',
+          type: 'gone',
+          code: 'legacy_cloudflare_worker_retired',
+        },
+      }), {
+        status: 410,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/json',
+        },
+      });
+    }
+
     const url = new URL(request.url);
     
     // Handle CORS preflight
