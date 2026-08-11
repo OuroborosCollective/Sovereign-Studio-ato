@@ -20,6 +20,7 @@ import re
 from types import MappingProxyType
 from typing import Any, Callable, Literal, Mapping, Sequence
 
+from .configuration.runtime_binding import ConfigFingerprintBinding
 from .contracts import sanitize_agent_text
 
 ZERO_SHA256 = "0" * 64
@@ -310,6 +311,11 @@ class RuntimeInputPart:
 class RuntimeInputEnvelope:
     parts: tuple[RuntimeInputPart, ...]
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    # Configuration-provenance binding (#1116 / #1169). When present, the
+    # resolved config fingerprint is bound to this run envelope so a config
+    # change changes the run identity. Only redacted hashes travel here;
+    # never raw resolved config or secrets.
+    config_binding: ConfigFingerprintBinding | None = None
 
     def __post_init__(self) -> None:
         if not self.parts:
@@ -318,12 +324,35 @@ class RuntimeInputEnvelope:
             raise ProviderNeutralRuntimeError("runtime input exceeds 64 parts")
         object.__setattr__(self, "parts", tuple(self.parts))
         object.__setattr__(self, "metadata", _snapshot_mapping("metadata", self.metadata))
+        if self.config_binding is not None:
+            cb = self.config_binding
+            if not cb.verified or cb.status != "RESOLVED" or cb.drift_kind is not None:
+                raise ProviderNeutralRuntimeError(
+                    "config binding must be verified, RESOLVED and drift-free"
+                )
+            for label, value in (
+                ("config_binding.fingerprint_hash", cb.fingerprint_hash),
+                ("config_binding.receipt_hash", cb.receipt_hash),
+                ("config_binding.resolved_hash", cb.resolved_hash),
+            ):
+                if not _SHA256_RE.fullmatch(value):
+                    raise ProviderNeutralRuntimeError(f"invalid {label}: expected 64-hex sha256")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "parts": [part.to_dict() for part in self.parts],
             "metadata": _canonicalize(self.metadata),
         }
+        if self.config_binding is not None:
+            body["configBinding"] = {
+                "fingerprintHash": self.config_binding.fingerprint_hash,
+                "receiptHash": self.config_binding.receipt_hash,
+                "resolvedHash": self.config_binding.resolved_hash,
+                "schemaHash": self.config_binding.schema_hash,
+                "revision": self.config_binding.revision,
+                "imageDigest": self.config_binding.image_digest,
+            }
+        return body
 
     @property
     def sha256(self) -> str:
@@ -331,6 +360,45 @@ class RuntimeInputEnvelope:
             "parts": [part._binding_dict() for part in self.parts],
             "metadata": _canonicalize(self.metadata),
         })
+
+    @property
+    def config_fingerprint(self) -> str | None:
+        """Redacted resolved-config fingerprint bound to this run (#1116).
+
+        ``None`` when no config provenance is bound. When present, PatchMon
+        must read back this same fingerprint from the running container or
+        the run is contradicted/blocked (see ``compare_patchmon_readback``).
+        """
+        return self.config_binding.fingerprint_hash if self.config_binding else None
+
+    @property
+    def bound_sha256(self) -> str:
+        """Run identity hash folded with the bound config fingerprint (#1116).
+
+        Falls back to :attr:`sha256` when no config binding is present, so
+        existing callers are unaffected. When a binding is present the config
+        fingerprint becomes part of the run identity: a config change changes
+        the bound hash even if parts/metadata are identical.
+        """
+        base = self.sha256
+        if self.config_binding is None:
+            return base
+        return canonical_sha256({"envelope": base, "configFingerprintHash": self.config_fingerprint})
+
+    @classmethod
+    def with_config_binding(
+        cls,
+        parts: Sequence[RuntimeInputPart],
+        *,
+        metadata: Mapping[str, Any] | None = None,
+        config_binding: ConfigFingerprintBinding,
+    ) -> RuntimeInputEnvelope:
+        """Build an envelope whose run identity is bound to a config receipt."""
+        return cls(
+            parts=tuple(parts),
+            metadata=metadata if metadata is not None else {},
+            config_binding=config_binding,
+        )
 
 
 @dataclass(frozen=True)
@@ -1031,6 +1099,7 @@ class ProviderNeutralRuntimeKernel:
         tools: Sequence[ToolDescriptor],
     ) -> RuntimePreparation:
         registry = tool_registry_snapshot(tools)
+        input_sha256 = envelope.bound_sha256
         events: tuple[RuntimeStreamEvent, ...] = ()
         events = append_stream_event(
             events,
@@ -1040,7 +1109,8 @@ class ProviderNeutralRuntimeKernel:
                 "contextSha256": context.sha256,
                 "ownerId": context.owner_id,
                 "revision": context.revision,
-                "inputSha256": envelope.sha256,
+                "inputSha256": input_sha256,
+                "configFingerprintHash": envelope.config_fingerprint or "",
                 "registrySha256": registry["registrySha256"],
             },
         )
@@ -1048,7 +1118,8 @@ class ProviderNeutralRuntimeKernel:
             "BEFORE_RUN",
             context,
             {
-                "inputSha256": envelope.sha256,
+                "inputSha256": input_sha256,
+                "configFingerprintHash": envelope.config_fingerprint or "",
                 "registrySha256": registry["registrySha256"],
                 "toolCount": registry["toolCount"],
             },
@@ -1060,7 +1131,7 @@ class ProviderNeutralRuntimeKernel:
             before_input = self.hooks.run(
                 "BEFORE_INPUT",
                 context,
-                {"input": envelope.to_dict(), "inputSha256": envelope.sha256},
+                {"input": envelope.to_dict(), "inputSha256": input_sha256},
             )
             receipts += before_input.receipts
             decision = before_input.decision
@@ -1072,7 +1143,7 @@ class ProviderNeutralRuntimeKernel:
                 events,
                 kind="input_accepted",
                 context=context,
-                payload={"inputSha256": envelope.sha256, "partCount": len(envelope.parts)},
+                payload={"inputSha256": input_sha256, "partCount": len(envelope.parts)},
             )
         elif decision == "ASK_OWNER":
             status = "approval-required"
@@ -1093,7 +1164,7 @@ class ProviderNeutralRuntimeKernel:
         payload = {
             "status": status,
             "contextSha256": context.sha256,
-            "inputSha256": envelope.sha256,
+            "inputSha256": input_sha256,
             "registrySnapshot": registry,
             "hookReceipts": [item.to_dict() for item in receipts],
             "events": [event.to_dict() for event in events],
@@ -1102,7 +1173,7 @@ class ProviderNeutralRuntimeKernel:
         return RuntimePreparation(
             status=status,
             context_sha256=context.sha256,
-            input_sha256=envelope.sha256,
+            input_sha256=input_sha256,
             registry_snapshot=registry,
             hook_receipts=receipts,
             events=events,

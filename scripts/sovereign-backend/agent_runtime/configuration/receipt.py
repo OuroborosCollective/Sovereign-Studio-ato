@@ -144,6 +144,94 @@ def verify_receipt(receipt: ConfigReceipt) -> bool:
     return compute_receipt_hash(body) == receipt.receipt_hash
 
 
+@dataclass(frozen=True)
+class ConfigReadbackObservation:
+    """Independent PatchMon readback of the actually-loaded config projection.
+
+    PatchMon observes the running container and reports the identity fields
+    it read back. These are compared against the materialized
+    :class:`ConfigReceipt` that RunEnvelope carries. Every bound (non-empty)
+    field must match exactly. This is the readback side of the #1169
+    acceptance contract: RunEnvelope and PatchMon must read back the same
+    redacted config fingerprint; deviation blocks.
+    """
+
+    revision: Optional[str]
+    image_digest: Optional[str]
+    schema_hash: Optional[str]
+    resolved_hash: Optional[str]
+    receipt_hash: Optional[str]
+
+
+@dataclass(frozen=True)
+class ConfigReadbackAudit:
+    """Fail-closed audit of a config readback against a bound receipt.
+
+    ``accepted`` is ``True`` only when the receipt self-verifies and every
+    bound readback field matches the receipt exactly. Otherwise ``blocker``
+    names the precise finding code so the runtime can route to ``BLOCKED``
+    /``CONTRADICTED`` rather than advancing.
+    """
+
+    accepted: bool
+    blocker: Optional[str] = None
+
+    @property
+    def contradicted(self) -> bool:
+        """A contradiction is a harder failure than missing evidence."""
+        return self.blocker == "config_readback_contradicts_receipt"
+
+
+def verify_config_readback(
+    receipt: ConfigReceipt,
+    observation: ConfigReadbackObservation,
+) -> ConfigReadbackAudit:
+    """Confirm a PatchMon readback matches a bound config receipt.
+
+    Fails closed: the receipt must self-verify (no tampering), then every
+    bound field on the observation must equal the receipt's bound field.
+    A mismatch on a populated field is a *contradiction* (the wrong config
+    is loaded); a missing field (empty on the observation while the receipt
+    binds it) is a *blocker* (readback incomplete). Either blocks RUNTIME
+    advancement per the #1169 DoD.
+    """
+    if not verify_receipt(receipt):
+        return ConfigReadbackAudit(False, "config_receipt_self_verification_failed")
+    if receipt.status != "RESOLVED":
+        return ConfigReadbackAudit(False, "config_receipt_not_resolved")
+    if receipt.drift is not None or receipt.errors:
+        return ConfigReadbackAudit(False, "config_receipt_not_advanceable")
+
+    pairs = (
+        ("revision", receipt.revision, observation.revision),
+        ("imageDigest", receipt.image_digest, observation.image_digest),
+        ("schemaHash", receipt.schema_hash, observation.schema_hash),
+        ("resolvedHash", receipt.resolved_hash, observation.resolved_hash),
+    )
+
+    for _field, expected, actual in pairs:
+        expected_norm = str(expected or "").strip().lower()
+        actual_norm = str(actual or "").strip().lower()
+        if not expected_norm:
+            continue  # receipt does not bind this field; nothing to confirm
+        if not actual_norm:
+            return ConfigReadbackAudit(False, "config_readback_missing_bound_field")
+        if actual_norm != expected_norm:
+            return ConfigReadbackAudit(False, "config_readback_contradicts_receipt")
+
+    # The receipt hash itself is the redacted config fingerprint both sides
+    # must agree on. When PatchMon reports it, it must match byte-for-byte;
+    # when PatchMon omits it, readback is incomplete rather than contradictory.
+    reported_hash = str(observation.receipt_hash or "").strip().lower()
+    if reported_hash:
+        if reported_hash != str(receipt.receipt_hash or "").strip().lower():
+            return ConfigReadbackAudit(False, "config_readback_contradicts_receipt")
+    else:
+        return ConfigReadbackAudit(False, "config_readback_missing_bound_field")
+
+    return ConfigReadbackAudit(True, None)
+
+
 __all__ = [
     "ConfigReceipt",
     "ReceiptOptions",
@@ -151,4 +239,7 @@ __all__ = [
     "compute_receipt_hash",
     "verify_receipt",
     "DETERMINISTIC_EPOCH",
+    "ConfigReadbackObservation",
+    "ConfigReadbackAudit",
+    "verify_config_readback",
 ]
