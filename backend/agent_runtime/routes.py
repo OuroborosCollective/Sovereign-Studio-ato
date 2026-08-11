@@ -281,7 +281,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
     def _run_tool_route(job_id: str, action: str):
         user_id = _current_session_user_id()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         conn = _connection()
         try:
             job = _read_owned_job(conn, user_id, job_id)
@@ -491,7 +495,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @app.route("/api/user/agent/rescue/diagnose", methods=["POST"])
     @require_session
     def user_diagnose_sovereign_rescue():
-        body: dict[str, Any] = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         token, token_error = _rescue_token(body)
         if token_error:
             return token_error
@@ -938,7 +946,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_diagnose_with_embedded_toolchain():
         user_id = _current_session_user_id()
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         mission = str(body.get("mission") or "").strip()
         evidence_text = str(body.get("evidenceText") or body.get("logText") or "")
         diagnosis = runtime_failure_diagnose(evidence_text, mission=mission)
@@ -962,7 +974,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @app.route("/api/user/agent/toolchain/rollback-preview", methods=["POST"])
     @require_session
     def user_preview_toolchain_migration_rollback():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         migration_sql = str(body.get("migrationSql") or "")
         if not migration_sql:
             return jsonify({"error": "migrationSql is required"}), 400
@@ -981,7 +997,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_create_toolchain_agent_handoff():
         user_id = _current_session_user_id()
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         mission = str(body.get("mission") or "").strip()
         if not mission:
             return jsonify({"error": "mission is required"}), 400
@@ -1053,7 +1073,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_validate_agent_mission():
         user_id = _current_session_user_id()
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         mission = str(body.get("mission") or "").strip()
         if not mission:
             return jsonify({"error": "mission is required"}), 400
@@ -1084,7 +1108,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_create_sovereign_agent_job():
         user_id = _current_session_user_id()
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         provision_workspace = bool(body.get("provisionWorkspace", True))
         clone_repo = bool(body.get("cloneRepo", False))
         conn = _connection()
@@ -1123,7 +1151,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_open_sovereign_agent_workspace_editor(job_id: str):
         user_id = _current_session_user_id()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         conn = _connection()
         try:
             job = _read_owned_job(conn, user_id, job_id)
@@ -1290,7 +1322,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_generate_agent_job_changelog(job_id: str):
         user_id = _current_session_user_id()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         try:
             max_count = max(1, min(int(body.get("maxCount", 30)), 100))
         except (TypeError, ValueError):
@@ -1319,7 +1355,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_prepare_agent_draft_pr(job_id: str):
         user_id = _current_session_user_id()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         conn = _connection()
         try:
             job = _read_owned_job(conn, user_id, job_id)
@@ -1383,7 +1423,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_create_agent_draft_pr(job_id: str):
         user_id = _current_session_user_id()
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         raw_github_token = body.get("githubAccessToken")
         github_token = normalize_ephemeral_github_token(raw_github_token)
         if raw_github_token is not None and github_token is None:
@@ -1615,7 +1659,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_predict_agent_patterns():
         user_id = _current_session_user_id()
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         query_text = str(body.get("query") or "").strip()
         if not query_text:
             return jsonify({"error": "query is required"}), 400
@@ -1639,7 +1687,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     @require_session
     def user_search_reusable_memory():
         user_id = _current_session_user_id()
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
         query_text = str(body.get("query") or "").strip()
         if not query_text:
             return jsonify({"error": "query is required"}), 400
