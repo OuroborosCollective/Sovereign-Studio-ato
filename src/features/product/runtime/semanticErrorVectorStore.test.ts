@@ -93,4 +93,26 @@ describe('semanticErrorVectorStore', () => {
     expect(firstHash).toBe(secondHash);
     expect(firstHash).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it('nutzt den 1-slot Cache fuer classifyErrorFamily und classifyErrorFamiliesTopN', () => {
+    const input = '401 unauthorized bad_credentials';
+    const first = classifyErrorFamily(input);
+    const second = classifyErrorFamily(input);
+
+    // Strict reference equality check for the cached output object
+    expect(first).toBe(second);
+
+    // Verification of correct cache invalidation with different inputs
+    const different = classifyErrorFamily('404 not found');
+    expect(different.family).toBe('RepoSnapshotError');
+    expect(different).not.toBe(first);
+
+    // TopN caching verification
+    const topN1 = classifyErrorFamiliesTopN(input, 'stack', 2);
+    const topN2 = classifyErrorFamiliesTopN(input, 'stack', 2);
+    expect(topN1).toBe(topN2);
+
+    const topNDifferent = classifyErrorFamiliesTopN('404 not found', 'stack', 2);
+    expect(topNDifferent).not.toBe(topN1);
+  });
 });

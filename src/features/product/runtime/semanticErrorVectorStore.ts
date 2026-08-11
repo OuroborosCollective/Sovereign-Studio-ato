@@ -260,12 +260,28 @@ function buildMatch(
   };
 }
 
+// Bolt ⚡ Optimization: 1-slot cache for classifyErrorFamily to avoid redundant
+// string conversions, vector computations, and BigInt Newton-Raphson integer square roots.
+let lastFamilyMsg: string | undefined = undefined;
+let lastFamilyStack: string | undefined = undefined;
+let lastFamilyTraceId: string | undefined = undefined;
+let lastFamilyResult: ErrorMatch | null = null;
+
 /** Sichere Error-Klassifizierung mit deterministischer Kappa-Distanz. */
 export function classifyErrorFamily(
   errorMessage: string,
   errorStack?: string,
   traceId?: string,
 ): ErrorMatch {
+  if (
+    lastFamilyResult !== null &&
+    errorMessage === lastFamilyMsg &&
+    errorStack === lastFamilyStack &&
+    traceId === lastFamilyTraceId
+  ) {
+    return lastFamilyResult;
+  }
+
   const text = normalizeErrorText(errorMessage, errorStack);
   const queryVector = createErrorQueryVector(text);
   const resolvedTraceId = resolveTraceId(errorMessage, errorStack, traceId);
@@ -289,8 +305,21 @@ export function classifyErrorFamily(
     }
   }
 
+  lastFamilyMsg = errorMessage;
+  lastFamilyStack = errorStack;
+  lastFamilyTraceId = traceId;
+  lastFamilyResult = bestMatch;
+
   return bestMatch;
 }
+
+// Bolt ⚡ Optimization: 1-slot cache for classifyErrorFamiliesTopN to avoid redundant
+// evaluations and sorting overhead on identical consecutive list calls.
+let lastTopNMsg: string | undefined = undefined;
+let lastTopNStack: string | undefined = undefined;
+let lastTopNLimit: number | undefined = undefined;
+let lastTopNTraceId: string | undefined = undefined;
+let lastTopNResult: ErrorMatch[] | null = null;
 
 /** Multi-Match: alle wahrscheinlichen Fehlerfamilien in stabiler Reihenfolge. */
 export function classifyErrorFamiliesTopN(
@@ -301,6 +330,16 @@ export function classifyErrorFamiliesTopN(
 ): ErrorMatch[] {
   if (!Number.isSafeInteger(topN) || topN < 1) {
     return [];
+  }
+
+  if (
+    lastTopNResult !== null &&
+    errorMessage === lastTopNMsg &&
+    errorStack === lastTopNStack &&
+    topN === lastTopNLimit &&
+    traceId === lastTopNTraceId
+  ) {
+    return lastTopNResult;
   }
 
   const text = normalizeErrorText(errorMessage, errorStack);
@@ -321,7 +360,15 @@ export function classifyErrorFamiliesTopN(
     return left.family < right.family ? -1 : 1;
   });
 
-  return results.slice(0, topN);
+  const sliced = results.slice(0, topN);
+
+  lastTopNMsg = errorMessage;
+  lastTopNStack = errorStack;
+  lastTopNLimit = topN;
+  lastTopNTraceId = traceId;
+  lastTopNResult = sliced;
+
+  return sliced;
 }
 
 function uint32LittleEndian(value: number): Uint8Array {
