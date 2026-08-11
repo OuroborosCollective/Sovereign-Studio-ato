@@ -1,0 +1,433 @@
+{
+  "composeSurfaces": [
+    {
+      "relativePath": "deploy/sovereign-litellm/docker-compose.yml",
+      "sha256": "ab795f6f62df503ca3383b47c5f3e69f337097174d5d4c8bdcf2d44cfa8ec72c"
+    },
+    {
+      "relativePath": "scripts/sovereign-backend/docker-compose.yml",
+      "sha256": "745341e76d1a34f50e99f177cc74a3600a81f8600b0e442d58686123de0dbfe3"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/docker-compose.yml",
+      "sha256": "f7bfe5e6143679b0852906540574e25dda2a6c58c0fd62d4a63defc609932f26"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/code-server-46bq/docker-compose.yml",
+      "sha256": "1941085e00543651af5186e3b9678bfef4003a03b3afb8e3b4fbb37953aa078a"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/milvus-sovereign/docker-compose.yml",
+      "sha256": "ec9ea2f8cc72a49f119847871ddc356a86cca76aa965e7d9db3f14d7cff05ee8"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/patchmon-sovereign/docker-compose.yml",
+      "sha256": "b8066ece96b4fa44d1caa8ba566c224bd3149f3cf249e5de2feb53b4698f50b0"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/pgbackweb-wq5r/docker-compose.yml",
+      "sha256": "c580690b272dfafb32fa819e29be0eda411dabe41d731516b18eeac1098becd7"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/sovereign-freellmapi/docker-compose.yml",
+      "sha256": "6a94283b546a8c89cb17e4d54f597db5a3477e48a509cac2e7570f3763e4c924"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/docker-compose.yml",
+      "sha256": "a32f1ac6348794513abe308ac5d96791ab41b57b9cb2d179e81421e6b5d41b6a"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/templates/sovereign-litellm/docker-compose.yml",
+      "sha256": "ab795f6f62df503ca3383b47c5f3e69f337097174d5d4c8bdcf2d44cfa8ec72c"
+    }
+  ],
+  "drift": [],
+  "envExampleSurfaces": [
+    {
+      "relativePath": ".env.example",
+      "sha256": "c5ae59d8b44418e20c2e33edc26b7c5d17068fea42914affb7ed6b3501dcf815"
+    },
+    {
+      "relativePath": ".env.sovereign-toolchain.example",
+      "sha256": "63dc6763db54d104b95795e23b6406fbc9a6fa2531c49e4e1b04d2217d87e419"
+    },
+    {
+      "relativePath": "scripts/sovereign-backend/.env.example",
+      "sha256": "39c254c491b2aeda251e7a459540e7cd60c44923bbae5eaae7b1f634a94e8188"
+    },
+    {
+      "relativePath": "tools/sovereign-chatgpt-mcp/.env.example",
+      "sha256": "f9d7d6ccdc8a4dc1677ce0c75f5ea488b79bef530110982d0ad3f5f53962b978"
+    }
+  ],
+  "environmentFallbacks": [
+    {
+      "name": "GIT_SHA",
+      "sources": [
+        "backend/agent_runtime/skills/routes.py",
+        "scripts/sovereign-backend/agent_runtime/skills/routes.py"
+      ]
+    },
+    {
+      "name": "JWT_SECRET",
+      "sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ]
+    },
+    {
+      "name": "NAME",
+      "sources": [
+        "backend/agent_runtime/configuration/config_source_inventory.py",
+        "scripts/sovereign-backend/agent_runtime/configuration/config_source_inventory.py"
+      ]
+    },
+    {
+      "name": "SOURCE_REVISION",
+      "sources": [
+        "backend/agent_runtime/skills/routes.py",
+        "scripts/sovereign-backend/agent_runtime/skills/routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_A2A_POLL_SECONDS",
+      "sources": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_A2A_STREAM_WINDOW_SECONDS",
+      "sources": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_AGENTS_MAX_ITERATIONS",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_AGENTS_RESUME_LEASE_SECONDS",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_AGENT_WORKSPACE_GID",
+      "sources": [
+        "backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_policy.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_AGENT_WORKSPACE_ROOT",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "backend/agent_runtime/routes.py",
+        "backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_policy.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_AGENT_WORKSPACE_UID",
+      "sources": [
+        "backend/agent_runtime/workspace_policy.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_policy.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_CODE_SERVER_PUBLIC_URL",
+      "sources": [
+        "backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_editor.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_CODE_SERVER_WORKSPACE_MOUNT",
+      "sources": [
+        "backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_editor.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_CONTROLLER_REPOSITORY",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_IMAGE_DIGEST",
+      "sources": [
+        "backend/enterprise_platform/service.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_MAX_ACTIVE_AGENTS",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_manifest.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_manifest.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_MAX_REQUEST_BYTES",
+      "sources": [
+        "backend/enterprise_platform/routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_MCP_BROKER_SOCKET",
+      "sources": [
+        "backend/agent_runtime/agent_run_receipts.py",
+        "scripts/sovereign-backend/agent_runtime/agent_run_receipts.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_OWNER_ADMIN_EMAIL",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "backend/agent_runtime/cognitive_usage_billing.py",
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_usage_billing.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_OWNER_ADMIN_ID",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "backend/agent_runtime/cognitive_usage_billing.py",
+        "backend/agent_runtime/routes.py",
+        "backend/agent_runtime/workspace_editor.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_usage_billing.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/workspace_editor.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_OWNER_INPUT_ROOT",
+      "sources": [
+        "backend/agent_runtime/cognitive_llm_transport.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_OWNER_REQUEST_KEY",
+      "sources": [
+        "backend/agent_runtime/cognitive_swarm_routes.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_swarm_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_PUBLIC_BASE_URL",
+      "sources": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_RELEASE_VERSION",
+      "sources": [
+        "backend/agent_runtime/a2a_routes.py",
+        "scripts/sovereign-backend/agent_runtime/a2a_routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_RESCUE_CSRF_SECRET",
+      "sources": [
+        "backend/agent_runtime/routes.py",
+        "scripts/sovereign-backend/agent_runtime/routes.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_RUNTIME_ENVIRONMENT",
+      "sources": [
+        "backend/enterprise_platform/service.py"
+      ]
+    },
+    {
+      "name": "SOVEREIGN_SOURCE_REVISION",
+      "sources": [
+        "backend/agent_runtime/agent_run_receipts.py",
+        "backend/agent_runtime/cognitive_llm_transport.py",
+        "backend/agent_runtime/skills/routes.py",
+        "backend/enterprise_platform/service.py",
+        "scripts/sovereign-backend/agent_runtime/agent_run_receipts.py",
+        "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
+        "scripts/sovereign-backend/agent_runtime/skills/routes.py"
+      ]
+    }
+  ],
+  "generatedBy": "backend/agent_runtime/configuration/config_source_inventory.py",
+  "guardConfigs": [
+    {
+      "present": true,
+      "relativePath": "sovereign.guard.json",
+      "sha256": "6be975bdf81565e4aa4dd4d05858218b8bed4a962284c2fa8365a8e9a0617808"
+    },
+    {
+      "present": true,
+      "relativePath": "package.json",
+      "sha256": "6f3f5fa549e836055862b7b7b0c47d13d48811c7c18f0d273f77031823f34f4d"
+    },
+    {
+      "present": true,
+      "relativePath": "tsconfig.json",
+      "sha256": "05423f920b2002945057fc6f363b9176948afb77785d1ebe60438e0df1ad4628"
+    }
+  ],
+  "invariantStatements": [
+    "Configuration provenance is a read-only resolver; mutation stays under #1119.",
+    "Receipts contain only redacted identities and hash readback; never raw secret material.",
+    "A fail-closed state produces BLOCKED, never a partial green projection.",
+    "Canonical and deployment-mirror configuration packages must remain byte-identical.",
+    "Remote configuration is only accepted when pre-bound to a concrete origin, digest and hash."
+  ],
+  "repositoryRootLabel": "Sovereign-Studio-ato",
+  "schemaVersion": "sovereign.configuration-sources-snapshot.v1",
+  "snapshotSha256": "c697b7197866d154b81f88228db695aebb930213fc54be147b0f26135b67233f",
+  "surfaces": [
+    {
+      "label": "ts-config-sources",
+      "present": true,
+      "relativePath": "src/runtime/config/configSources.ts",
+      "sha256": "3b888a6687d69e9b745ac14dcc3187d015ac0a562c90c7476f9446bb608546c8",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "ts-config-canonicalize",
+      "present": true,
+      "relativePath": "src/runtime/config/configCanonicalize.ts",
+      "sha256": "742e7909cf23db2cd82c0c9275ce63b2f8ed5582083387eca3ab2a508e0e3369",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "ts-config-resolver",
+      "present": true,
+      "relativePath": "src/runtime/config/sovereignConfigResolver.ts",
+      "sha256": "9c2fa2db07f19fe420591942c466a0e81640dd19f4006dcd6a6778b8723bff6b",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "ts-config-receipt",
+      "present": true,
+      "relativePath": "src/runtime/config/configReceipt.ts",
+      "sha256": "013e8fe5ba412fcb60804f45447395966184be8a35bf17bd84e443d8b6a8cb24",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "ts-config-index",
+      "present": true,
+      "relativePath": "src/runtime/config/index.ts",
+      "sha256": "e4118ee01551a4a56a27d19179f9749d81f5865558b4c5b636e2ea2b57759887",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "ts-config-tests",
+      "present": true,
+      "relativePath": "src/runtime/config/configProvenance.test.ts",
+      "sha256": "b43b846e9dead464723708fd435bdd0ceb232311d6da04d722cc7d44673a3544",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-sources",
+      "present": true,
+      "relativePath": "backend/agent_runtime/configuration/config_sources.py",
+      "sha256": "668a4cd1242936d6e13c3c2188ca907f9a783f786f54a5fba4277950aed3c0c8",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-canonicalize",
+      "present": true,
+      "relativePath": "backend/agent_runtime/configuration/config_canonicalize.py",
+      "sha256": "1b0bd2cdcb42df26dddd0b8dbd26cae436491acfa387af823bf993ae8e9bd35a",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-resolver",
+      "present": true,
+      "relativePath": "backend/agent_runtime/configuration/resolver.py",
+      "sha256": "cf897136d8219f5d97ddef7e6caf2efab326e36a28f1d9496fa3317fb6678a80",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-receipt",
+      "present": true,
+      "relativePath": "backend/agent_runtime/configuration/receipt.py",
+      "sha256": "c8a4bcd26b9e448837bfc2cbe88296a63b2cd359798b5d841ffcbfa57461bba1",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-init",
+      "present": true,
+      "relativePath": "backend/agent_runtime/configuration/__init__.py",
+      "sha256": "ee1816e9b03573a2f2aed37ca3ba3c9713a6f6e4ba87d90783910fef7871d628",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-tests",
+      "present": true,
+      "relativePath": "backend/tests/test_configuration_provenance.py",
+      "sha256": "ba89f0f1571172adf1375eded464db3ecdc693a39661e453cc8cd559bfbefedd",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "py-config-mirror-tests",
+      "present": true,
+      "relativePath": "backend/tests/test_configuration_provenance_mirror.py",
+      "sha256": "19e6fb38b96144a6723aaff6909dbf81d1145ba6aea1e61e1a77326fd8906935",
+      "truthClass": "canonical-truth"
+    },
+    {
+      "label": "mirror-config-sources",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/configuration/config_sources.py",
+      "sha256": "668a4cd1242936d6e13c3c2188ca907f9a783f786f54a5fba4277950aed3c0c8",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "mirror-config-canonicalize",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/configuration/config_canonicalize.py",
+      "sha256": "1b0bd2cdcb42df26dddd0b8dbd26cae436491acfa387af823bf993ae8e9bd35a",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "mirror-config-resolver",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/configuration/resolver.py",
+      "sha256": "cf897136d8219f5d97ddef7e6caf2efab326e36a28f1d9496fa3317fb6678a80",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "mirror-config-receipt",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/configuration/receipt.py",
+      "sha256": "c8a4bcd26b9e448837bfc2cbe88296a63b2cd359798b5d841ffcbfa57461bba1",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "mirror-config-init",
+      "present": true,
+      "relativePath": "scripts/sovereign-backend/agent_runtime/configuration/__init__.py",
+      "sha256": "ee1816e9b03573a2f2aed37ca3ba3c9713a6f6e4ba87d90783910fef7871d628",
+      "truthClass": "mirror"
+    },
+    {
+      "label": "provenance-doc",
+      "present": true,
+      "relativePath": "docs/architecture/CONFIGURATION_PROVENANCE.md",
+      "sha256": "186d08f39284377354a4baf16afab2645864d099b29f825398cedf17959e7364",
+      "truthClass": "documentation"
+    }
+  ]
+}

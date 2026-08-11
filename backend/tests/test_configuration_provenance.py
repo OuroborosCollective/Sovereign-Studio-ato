@@ -374,3 +374,13 @@ def test_bare_url_value_is_not_a_remote_truth_path():
     assert res.status == "RESOLVED"
     assert res.resolved["url"] == "https://evil.example/cfg"
     assert res.source_hashes[0].remote_origin is None
+
+
+def test_environment_projection_not_silently_promoted_by_omitting_higher_sources():
+    # Only env present: it resolves, but source_order reflects it (no silent
+    # promotion claim). Mirrors the TypeScript cross-environment negative test.
+    res = resolve_config_sources(
+        [_src("env", "environment-projection", {"a": 1})]
+    )
+    assert res.status == "RESOLVED"
+    assert list(res.source_order) == ["environment-projection"]

@@ -20,6 +20,7 @@ _FILES = (
     "config_canonicalize.py",
     "resolver.py",
     "receipt.py",
+    "config_source_inventory.py",
 )
 
 
