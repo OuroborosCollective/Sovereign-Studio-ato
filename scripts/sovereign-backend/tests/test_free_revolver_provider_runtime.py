@@ -678,6 +678,28 @@ def test_reconcile_prioritizes_previous_zero_cost_canary_before_retry_failures()
     assert "END DESC NULLS LAST" in runtime
 
 
+def test_stale_receipts_and_key_changes_request_automatic_evidence_maintenance() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    deploy = (REPO / "tools" / "sovereign-chatgpt-mcp" / "deploy" / "deploy-sovereign-backend").read_text("utf-8")
+
+    assert "def _eligibility_evidence_ttl_hours()" in runtime
+    assert runtime.count("model.eligibility_verified_at >= NOW() - (%s * INTERVAL '1 hour')") >= 2
+    assert runtime.count("model.last_canary_at >= NOW() - (%s * INTERVAL '1 hour')") >= 2
+    assert "class _FreeLlmEvidenceMaintainer:" in runtime
+    assert "pg_try_advisory_lock" in runtime
+    assert "evidence_maintainer.request_maintenance(force_discovery=True)" in runtime
+    assert '"/api/internal/llm/freellm/providers"' in runtime
+    assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/reconcile"' in runtime
+    assert 'f"/api/internal/llm/freellm/providers/{encoded_source_id}/discover"' in runtime
+    assert '"SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED",\n            "0"' in runtime
+    assert '"SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_KEY_IMPORT_FOLLOWUP_SECONDS"' in runtime
+    assert "self._stop.wait(followup_seconds)" in runtime
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_ENABLED=1"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS=21600"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS=12"' in deploy
+    assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS=10"' in deploy
+
+
 def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> None:
     runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
 
