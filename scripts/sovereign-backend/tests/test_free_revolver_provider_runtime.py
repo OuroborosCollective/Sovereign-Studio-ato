@@ -698,6 +698,20 @@ def test_stale_receipts_and_key_changes_request_automatic_evidence_maintenance()
     assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_INTERVAL_SECONDS=21600"' in deploy
     assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_MODELS=12"' in deploy
     assert '--env "SOVEREIGN_FREELLM_EVIDENCE_MAINTAINER_MAX_ROUNDS=10"' in deploy
+    assert '0 if str(provider.get("sourceType") or "") == "freellmapi-direct" else 1' in runtime
+    assert "One slow or unavailable managed source must not starve the others." in runtime
+
+
+def test_admin_catalog_missing_models_do_not_masquerade_as_stale_receipts() -> None:
+    control_center = (
+        REPO / "src/features/admin/components/FreeRevolverControlCenter.tsx"
+    ).read_text("utf-8")
+
+    assert "model.lastErrorCode === 'model_missing_from_provider_catalog'" in control_center
+    assert "Nicht mehr im aktuellen Provider-Katalog" in control_center
+    assert "Kein aktuelles Modell – kein neues Receipt erwartet" in control_center
+    assert "nicht mehr im Provider-Katalog" in control_center
+    assert control_center.index("{missingFromCatalog") < control_center.index(": model.generalChatBlockVerified")
 
 
 def test_managed_reconcile_accepts_five_and_keeps_ready_routes_unbounded() -> None:

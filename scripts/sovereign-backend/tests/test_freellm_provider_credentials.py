@@ -210,8 +210,24 @@ def test_evidence_maintainer_is_single_worker_and_selects_only_ready_managed_sou
             {
                 "ok": True,
                 "providers": [
-                    {"sourceId": "1a866402-68c4-4f40-8d09-55ed8deabf68", "enabled": True, "managedKeyAvailable": True},
-                    {"sourceId": "c79ff468-ee08-5686-97df-756fa58b74f0", "enabled": True, "managedKeyAvailable": False},
+                    {
+                        "sourceId": "c79ff468-ee08-5686-97df-756fa58b74f0",
+                        "sourceType": "freellmpool-private",
+                        "enabled": True,
+                        "managedKeyAvailable": True,
+                    },
+                    {
+                        "sourceId": "1a866402-68c4-4f40-8d09-55ed8deabf68",
+                        "sourceType": "freellmapi-direct",
+                        "enabled": True,
+                        "managedKeyAvailable": True,
+                    },
+                    {
+                        "sourceId": "00000000-0000-0000-0000-000000000001",
+                        "sourceType": "external-free-provider",
+                        "enabled": True,
+                        "managedKeyAvailable": False,
+                    },
                 ],
             },
         ),
@@ -224,7 +240,10 @@ def test_evidence_maintainer_is_single_worker_and_selects_only_ready_managed_sou
     )
 
     assert maintainer.run_once(force_discovery=True) is True
-    assert selected == [("1a866402-68c4-4f40-8d09-55ed8deabf68", True)]
+    assert selected == [
+        ("1a866402-68c4-4f40-8d09-55ed8deabf68", True),
+        ("c79ff468-ee08-5686-97df-756fa58b74f0", True),
+    ]
     assert any("pg_try_advisory_lock" in sql for sql in connection.cursor_instance.statements)
     assert any("pg_advisory_unlock" in sql for sql in connection.cursor_instance.statements)
     assert connection.closed is True
