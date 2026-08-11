@@ -45,3 +45,7 @@
 ## 2025-08-02 - [Lazy-Loaded File Tree Accessibility]
 **Learning:** For dynamic, lazy-loading directory trees (such as remote file lists in a VPS Connector), interactive nodes need clear distinction between files and folders. Folders must expose their state via `aria-expanded` and stateful toggle actions to help screen readers understand current layout status.
 **Action:** Always assign dynamic, state-dependent `aria-label` and matching native `title` tooltips for folder trees, and explicitly manage `aria-expanded` attributes on directories.
+
+## 2025-08-03 - [Accessible Metric and Dashboard Panels]
+**Learning:** Relying on `aria-hidden` and custom `aria-label` tags on generic wrapper elements (like `div` or `span` with no semantic role) to describe statistics values hides them from screen readers entirely, since assistive technologies ignore `aria-label` attributes on non-semantic tags. Transforming statistical tables/grids into semantically meaningful layouts like unordered lists (`<ul>`/`<li>`) with native visual text keeps the data fully visible, accessible, and structured for linear screen reader flow.
+**Action:** Always structure sets of dashboard metrics or cards using semantic lists (`<ul>`/`<li>` with `list-none`), ensure visible text remains accessible to screen readers, and pair them with matching native hover `title` attributes on the parent items for clean, standard-compliant UX and accessibility.
