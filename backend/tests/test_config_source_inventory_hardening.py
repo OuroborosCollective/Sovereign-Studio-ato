@@ -75,4 +75,7 @@ def test_default_repo_root_resolves_to_actual_repo_root_no_false_drift() -> None
     present_required = {s["label"] for s in inventory["surfaces"] if s["present"]}
     assert set(csi.REQUIRED_LABELS) <= present_required
     # Sanity: the resolved root is the repository root, not a parent directory.
-    assert Path(csi.HERE.parents[2]).resolve() == repo_root.resolve()
+    # Use the same depth-independent resolver the CLI default relies on so this
+    # holds whether the canonical tree or the (one level deeper) mirror was
+    # imported first in the same test session.
+    assert csi._default_repo_root().resolve() == repo_root.resolve()
