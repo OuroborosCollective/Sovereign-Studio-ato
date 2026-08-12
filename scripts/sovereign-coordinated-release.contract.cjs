@@ -37,8 +37,11 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /publisherJob: 'Publish immutable backend image evidence'/);
   assert.match(workflow, /publisherJob: 'Verify published MCP digest'/);
   assert.match(workflow, /Number\(right\.id \|\| 0\) - Number\(left\.id \|\| 0\)/);
-  assert.match(workflow, /publisher\.status === 'completed'/);
-  assert.match(workflow, /publisher\.conclusion === 'success'/);
+  assert.match(workflow, /publisher\.status !== 'completed'/);
+  assert.match(workflow, /publisher\.conclusion !== 'success'/);
+  assert.match(workflow, /LATEST_EXACT_REVISION_PUBLISHER_FAILED/);
+  assert.match(workflow, /EXACT_REVISION_PUBLISHER_JOB_MISSING/);
+  assert.match(workflow, /publisher\.conclusion === 'skipped'/);
 });
 
 test('backend producer exposes an explicit publish-only evidence job', () => {

@@ -75,9 +75,6 @@ jobs:
                   ));
                 let accepted = null;
                 for (const run of runs) {
-                  if (run.status !== 'completed' || run.conclusion !== 'success') {
-                    continue;
-                  }
                   const jobsResponse = await github.rest.actions.listJobsForWorkflowRun({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
@@ -88,14 +85,24 @@ jobs:
                   const publisher = jobsResponse.data.jobs.find(
                     (job) => String(job.name || '') === requirement.publisherJob,
                   );
-                  if (
-                    publisher
-                    && publisher.status === 'completed'
-                    && publisher.conclusion === 'success'
-                  ) {
-                    accepted = { run, publisher };
+                  if (!publisher) {
+                    core.setFailed(`${requirement.workflow}:EXACT_REVISION_PUBLISHER_JOB_MISSING:${run.id}`);
+                    return;
+                  }
+                  if (publisher.conclusion === 'skipped') {
+                    // Explicitly non-producing dispatches may not replace a prior immutable image.
+                    continue;
+                  }
+                  if (run.status !== 'completed' || publisher.status !== 'completed') {
+                    waiting = true;
                     break;
                   }
+                  if (publisher.conclusion !== 'success') {
+                    core.setFailed(`${requirement.workflow}:LATEST_EXACT_REVISION_PUBLISHER_FAILED:${publisher.conclusion}`);
+                    return;
+                  }
+                  accepted = { run, publisher };
+                  break;
                 }
                 if (!accepted) {
                   waiting = true;
