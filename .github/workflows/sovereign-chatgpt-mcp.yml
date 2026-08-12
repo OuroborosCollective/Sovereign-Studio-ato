@@ -789,7 +789,7 @@ jobs:
     needs: validate
     outputs:
       digest: ${{ steps.publish.outputs.digest }}
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -827,7 +827,7 @@ jobs:
   verify-published-mcp-image:
     name: Verify published MCP digest
     needs: publish-mcp-image
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -861,9 +861,79 @@ jobs:
           test "$KAPPA_LABEL" = "$KAPPA_POS"
           test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
+  resolve-coordinated-release:
+    name: Resolve exact coordinated release evidence
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_vps_via_public_ssh == true && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      release_run_id: ${{ steps.release.outputs.release_run_id }}
+      mcp_digest: ${{ steps.manifest.outputs.mcp_digest }}
+      backend_digest: ${{ steps.manifest.outputs.backend_digest }}
+      manifest_evidence_sha256: ${{ steps.manifest.outputs.manifest_evidence_sha256 }}
+    steps:
+      - name: Resolve successful same-revision coordinated-release run
+        id: release
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'sovereign-coordinated-release.yml',
+              head_sha: context.sha,
+              status: 'completed',
+              per_page: 100,
+            });
+            const staged = runs.filter((run) => ['success', 'failure'].includes(run.conclusion));
+            if (staged.length !== 1) {
+              core.setFailed(`expected exactly one completed same-revision coordinated-release staging run; found ${staged.length}`);
+              return;
+            }
+            core.setOutput('release_run_id', String(staged[0].id));
+      - name: Download exact coordinated-release manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: sovereign-coordinated-release-${{ github.sha }}
+          run-id: ${{ steps.release.outputs.release_run_id }}
+          github-token: ${{ github.token }}
+          path: .sovereign-evidence
+      - name: Validate manifest and expose immutable digests
+        id: manifest
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          manifest = json.loads(Path('.sovereign-evidence/coordinated-release.json').read_text(encoding='utf-8'))
+          expected_revision = os.environ['GITHUB_SHA']
+          if manifest.get('revision') != expected_revision or manifest.get('authoritativeMainRevision') != expected_revision:
+              raise SystemExit('manifest revision is not the dispatch revision')
+          if manifest.get('runtimePromotionStatus') not in {'BLOCKED_PENDING_INDEPENDENT_TARGET_SYSTEM_READBACK', 'VERIFIED'}:
+              raise SystemExit('manifest has an invalid runtime-promotion status')
+          digest_re = re.compile(r'^sha256:[0-9a-f]{64}$')
+          backend = str((manifest.get('backend') or {}).get('digest') or '')
+          mcp = str((manifest.get('mcp') or {}).get('digest') or '')
+          evidence = str(manifest.get('evidenceSha256') or '')
+          evidence_re = re.compile(r'^[0-9a-f]{64}$')
+          if not all(digest_re.fullmatch(value) for value in (backend, mcp)) or not evidence_re.fullmatch(evidence):
+              raise SystemExit('manifest does not contain exact immutable digest evidence')
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as handle:
+              handle.write(f'mcp_digest={mcp}\n')
+              handle.write(f'backend_digest={backend}\n')
+              handle.write(f'manifest_evidence_sha256={evidence}\n')
+          PY
+
   deploy-vps:
     name: Bootstrap MCP on VPS
-    needs: [validate, publish-mcp-image, verify-published-mcp-image]
+    needs: [validate, resolve-coordinated-release]
     permissions:
       contents: read
       packages: read
@@ -881,7 +951,10 @@ jobs:
       VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
       RELEASE_RELATIVE_DIR: .sovereign-releases/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}
       EXPECTED_REVISION: ${{ github.sha }}
-      EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}
+      EXPECTED_IMAGE_DIGEST: ${{ needs.resolve-coordinated-release.outputs.mcp_digest }}
+      EXPECTED_BACKEND_DIGEST: ${{ needs.resolve-coordinated-release.outputs.backend_digest }}
+      EXPECTED_MANIFEST_EVIDENCE_SHA256: ${{ needs.resolve-coordinated-release.outputs.manifest_evidence_sha256 }}
+      EXPECTED_COORDINATED_RELEASE_RUN_ID: ${{ needs.resolve-coordinated-release.outputs.release_run_id }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -896,7 +969,10 @@ jobs:
           test -n "${VPS_PASSWORD:-}" || { echo 'VPS password secret is not configured.' >&2; exit 1; }
           [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]] || { echo 'VPS SSH port must be numeric.' >&2; exit 1; }
           [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected revision must be a full commit SHA.' >&2; exit 1; }
-          [[ "${EXPECTED_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Published image digest is missing or invalid.' >&2; exit 1; }
+          [[ "${EXPECTED_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Manifest-bound MCP digest is missing or invalid.' >&2; exit 1; }
+          [[ "${EXPECTED_BACKEND_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Manifest-bound backend digest is missing or invalid.' >&2; exit 1; }
+          [[ "${EXPECTED_MANIFEST_EVIDENCE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { echo 'Manifest evidence hash is missing or invalid.' >&2; exit 1; }
+          [[ "${EXPECTED_COORDINATED_RELEASE_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo 'Coordinated-release run id is missing or invalid.' >&2; exit 1; }
           test "${KAPPA_POS}" = '1000000' || { echo 'KAPPA_POS invariant mismatch.' >&2; exit 1; }
           case "${RELEASE_RELATIVE_DIR}" in
             .sovereign-releases/sovereign-chatgpt-mcp-*) ;;
