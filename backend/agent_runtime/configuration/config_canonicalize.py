@@ -153,28 +153,33 @@ def _serialize_stable(value: Any) -> str:
 def merge_values(
     base: dict[str, Any], overlay: dict[str, Any]
 ) -> dict[str, Any]:
-    result: dict[str, Any] = dict(base)
-    for key, overlay_value in overlay.items():
-        # Sanitize the property name: prototype-hijacking keys are never
-        # legitimate config fields and must never reach a dynamic write.
-        # Mirrors the TypeScript sanitizer for cross-language parity.
-        if _is_proto_pollution_key(key):
+    base_keys = [k for k in base.keys() if not _is_proto_pollution_key(k)]
+    overlay_keys = [k for k in overlay.keys() if not _is_proto_pollution_key(k)]
+    # Ordered de-duplicated union of sanitized keys from both sides.
+    result_keys = dict.fromkeys(base_keys + overlay_keys)
+
+    entries: list[tuple[str, Any]] = []
+    for key in result_keys:
+        has_overlay = key in overlay
+        if not has_overlay:
+            # Not overridden: keep the resolved base value.
+            entries.append((key, base[key]))
             continue
+        overlay_value = overlay[key]
+        # Explicit delete: None removes the key entirely (it is omitted from
+        # the result, so ``key not in result``).
         if overlay_value is None:
-            # Explicit delete.
-            result.pop(key, None)
             continue
-        base_value = result.get(key)
+        base_value = base.get(key)
         if (
             _is_plain_object(base_value)
             and _is_plain_object(overlay_value)
         ):
-            result[key] = merge_values(
-                base_value, overlay_value
-            )
+            entries.append((key, merge_values(base_value, overlay_value)))
         else:
-            result[key] = overlay_value
-    return result
+            # Arrays, scalars, redacted secrets: replace wholesale.
+            entries.append((key, overlay_value))
+    return dict(entries)
 
 
 def _short_hash(input_str: str) -> str:

@@ -97,47 +97,61 @@ function isPrototypePollutionKey(key: string): boolean {
  *
  * Returns a new object; inputs are not mutated. Keys that would hijack an
  * object/global prototype (`__proto__`, `constructor`, `prototype`) are
- * rejected rather than merged, so a remote or user-provided source cannot
- * pollute prototypes through the config merge path.
+ * rejected on both sides, so a remote or user-provided source cannot pollute
+ * prototypes through the config merge path.
+ *
+ * The result is assembled from filtered entries via `Object.fromEntries`
+ * rather than by dynamic `result[key] = ...` assignment / `delete`. A remote
+ * value therefore never reaches a dynamic property-write sink, breaking the
+ * remote property-injection data flow structurally (not just by blocklist).
  */
 export function mergeValues(
   base: Readonly<Record<string, unknown>>,
   overlay: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> {
-  const result: Record<string, unknown> = { ...base };
-  for (const key of Object.keys(overlay)) {
-    // Sanitize the property name first: prototype-hijacking keys are never
-    // legitimate config fields and must never reach a dynamic write sink.
-    if (isPrototypePollutionKey(key)) {
+  const baseKeys = Object.keys(base).filter((k) => !isPrototypePollutionKey(k));
+  const overlayKeys = Object.keys(overlay).filter((k) => !isPrototypePollutionKey(k));
+  const resultKeys = new Set<string>([...baseKeys, ...overlayKeys]);
+
+  const entries: Array<[string, unknown]> = [];
+  for (const key of resultKeys) {
+    const hasOverlay = Object.prototype.hasOwnProperty.call(overlay, key);
+    if (!hasOverlay) {
+      // Not overridden: keep the resolved base value.
+      entries.push([key, base[key]]);
       continue;
     }
     const overlayValue = overlay[key];
-    // Explicit delete: null removes the key entirely.
+    // Explicit delete: null removes the key entirely (it is omitted from the
+    // result, so `key in result === false`).
     if (overlayValue === null) {
-      delete result[key];
       continue;
     }
     if (overlayValue === undefined) {
-      // Missing / undefined: do not touch the resolved value.
+      // Present-but-undefined: do not touch the resolved value.
+      entries.push([key, base[key]]);
       continue;
     }
-    const baseValue = result[key];
+    const baseValue = base[key];
     if (
       isPlainObject(baseValue) &&
       isPlainObject(overlayValue) &&
       !isRedactedSecret(baseValue) &&
       !isRedactedSecret(overlayValue)
     ) {
-      result[key] = mergeValues(
-        baseValue as Readonly<Record<string, unknown>>,
-        overlayValue as Readonly<Record<string, unknown>>,
-      );
+      entries.push([
+        key,
+        mergeValues(
+          baseValue as Readonly<Record<string, unknown>>,
+          overlayValue as Readonly<Record<string, unknown>>,
+        ),
+      ]);
     } else {
       // Arrays, scalars, redacted secrets: replace wholesale.
-      result[key] = overlayValue;
+      entries.push([key, overlayValue]);
     }
   }
-  return result;
+  return Object.fromEntries(entries);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
