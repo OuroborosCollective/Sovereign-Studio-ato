@@ -24,6 +24,15 @@ from paid_execution_entitlement import (
 )
 
 from .agent_run_receipts import verify_agent_run_receipt_chain
+from .evidence_collectors import (
+    DEGRADED,
+    LOST,
+    PRESERVED,
+    REPLACED_WITH_VERIFIED_EQUIVALENT,
+    UNVERIFIABLE,
+    build_capability_delta,
+    build_observation,
+)
 from .mutation_evidence_layer import (
     build_mutation_proof_envelope,
     evaluate_mutation_evidence,
@@ -871,11 +880,17 @@ def build_proof_pack(
     if pr.get("ciGreen") is not True:
         blockers.append("ci_not_green")
 
+    def sha256_or_zero(value: Any) -> str:
+        candidate = str(value or "").strip().lower()
+        return candidate if _SHA256.fullmatch(candidate) else "0" * 64
+
     # Issue #1100: evidence is collected only from persisted reservation rows,
     # append-only Agent-Run receipts, and the live GitHub/CI readback. No caller
     # can satisfy this path with a supplied digest or Boolean assertion.
-    verified_receipt: Mapping[str, object] | None = None
-    receipt_body: Mapping[str, Any] = {}
+    mutation_receipt: Mapping[str, object] | None = None
+    final_readback_receipt: Mapping[str, object] | None = None
+    mutation_body: Mapping[str, Any] = {}
+    final_readback_body: Mapping[str, Any] = {}
     if not agent_receipts:
         blockers.append("agent_run_receipt_missing")
     else:
@@ -890,26 +905,35 @@ def build_proof_pack(
         if chain.get("ok") is not True:
             blockers.append("agent_run_receipt_chain_invalid")
         else:
-            for candidate in reversed(agent_receipts):
+            parsed_receipts: list[tuple[Mapping[str, object], Mapping[str, Any]]] = []
+            for candidate in agent_receipts:
                 body = candidate.get("body") if isinstance(candidate, Mapping) else None
-                if not isinstance(body, Mapping):
+                if isinstance(body, Mapping):
+                    parsed_receipts.append((candidate, body))
+            for index, (candidate, body) in enumerate(parsed_receipts):
+                if str(body.get("evidence_gate_result") or "").upper() != "PASS":
                     continue
-                if (
-                    body.get("mutation_performed") is True
-                    and str(body.get("evidence_gate_result") or "").upper() == "PASS"
-                    and str(body.get("observed_effect") or "") in {"workspace-write", "external-write"}
-                ):
-                    verified_receipt = candidate
-                    receipt_body = body
+                passed_diff_sha = sha256_or_zero(body.get("diff_sha256"))
+                passed_readback_sha = sha256_or_zero(body.get("authoritative_readback_sha256"))
+                if passed_diff_sha == "0" * 64 or passed_readback_sha == "0" * 64:
+                    continue
+                for prior_candidate, prior_body in reversed(parsed_receipts[:index]):
+                    if (
+                        prior_body.get("mutation_performed") is True
+                        and str(prior_body.get("observed_effect") or "") in {"workspace-write", "external-write"}
+                        and sha256_or_zero(prior_body.get("diff_sha256")) == passed_diff_sha
+                    ):
+                        mutation_receipt = prior_candidate
+                        mutation_body = prior_body
+                        final_readback_receipt = candidate
+                        final_readback_body = body
+                        break
+                if mutation_receipt is not None:
                     break
-            if verified_receipt is None:
-                blockers.append("verified_mutating_agent_receipt_missing")
+            if mutation_receipt is None:
+                blockers.append("causal_mutation_and_final_pass_readback_missing")
 
-    def sha256_or_zero(value: Any) -> str:
-        candidate = str(value or "").strip().lower()
-        return candidate if _SHA256.fullmatch(candidate) else "0" * 64
-
-    if verified_receipt is None:
+    if final_readback_receipt is None:
         envelope = build_mutation_proof_envelope(
             operation_family="sovereign_rescue_repair",
             operation_identity=repair_id or "rescue-repair-unavailable",
@@ -921,11 +945,11 @@ def build_proof_pack(
     else:
         envelope = build_mutation_proof_envelope(
             operation_family="sovereign_rescue_repair",
-            operation_identity=str(receipt_body.get("operation_identity") or ""),
+            operation_identity=str(final_readback_body.get("operation_identity") or ""),
             repository=repository,
             revision=base_sha,
-            input_sha256=sha256_or_zero(receipt_body.get("input_sha256")),
-            diff_sha256=sha256_or_zero(receipt_body.get("diff_sha256")),
+            input_sha256=sha256_or_zero(final_readback_body.get("input_sha256")),
+            diff_sha256=sha256_or_zero(final_readback_body.get("diff_sha256")),
         )
 
     def observation(
@@ -979,15 +1003,61 @@ def build_proof_pack(
         "headSha": head_sha,
         "publishedHeadSha": published_head_sha,
     })
-    authoritative_readback_sha = sha256_or_zero(receipt_body.get("authoritative_readback_sha256"))
-    capability_delta_sha = canonical_sha256({
-        "receiptSha256": sha256_or_zero(
-            dict(verified_receipt.get("header") or {}).get("hash") if verified_receipt else ""
+    authoritative_readback_sha = sha256_or_zero(final_readback_body.get("authoritative_readback_sha256"))
+    mutation_receipt_sha = sha256_or_zero(
+        dict(mutation_receipt.get("header") or {}).get("hash") if mutation_receipt else ""
+    )
+    final_readback_receipt_sha = sha256_or_zero(
+        dict(final_readback_receipt.get("header") or {}).get("hash") if final_readback_receipt else ""
+    )
+    capability_baseline = build_observation(
+        capability_id="rescue.repair_effect",
+        collector="agent_run_receipt",
+        status=PRESERVED,
+        cause="pre-mutation workspace readback",
+        source_revision=base_sha,
+        detail={
+            "diffSha256": sha256_or_zero(mutation_body.get("diff_sha256")),
+            "receiptSha256": mutation_receipt_sha,
+        },
+    )
+    capability_result_status = (
+        REPLACED_WITH_VERIFIED_EQUIVALENT
+        if mutation_receipt is not None and final_readback_receipt is not None
+        else UNVERIFIABLE
+    )
+    capability_result = build_observation(
+        capability_id="rescue.repair_effect",
+        collector="agent_run_receipt",
+        status=capability_result_status,
+        cause=(
+            "post-mutation exact diff and passing test readback"
+            if capability_result_status == REPLACED_WITH_VERIFIED_EQUIVALENT
+            else "causal mutation and passing post-mutation readback unavailable"
         ),
-        "mutationPerformed": receipt_body.get("mutation_performed") is True,
-        "observedEffect": str(receipt_body.get("observed_effect") or ""),
-        "evidenceGateResult": str(receipt_body.get("evidence_gate_result") or ""),
-    })
+        source_revision=head_sha if _SHA40.fullmatch(head_sha) else base_sha,
+        detail={
+            "diffSha256": sha256_or_zero(final_readback_body.get("diff_sha256")),
+            "finalReadbackReceiptSha256": final_readback_receipt_sha,
+            "mutationReceiptSha256": mutation_receipt_sha,
+            "readbackSha256": authoritative_readback_sha,
+        },
+    )
+    capability_delta = build_capability_delta(
+        operation_family="sovereign_rescue_repair",
+        baseline_revision=base_sha,
+        result_revision=head_sha if _SHA40.fullmatch(head_sha) else base_sha,
+        baseline_observations=(capability_baseline,),
+        result_observations=(capability_result,),
+    )
+    capability_delta_sha = capability_delta.delta_sha256
+    capability_statuses = {entry.status for entry in capability_delta.entries}
+    capability_delta_verified = bool(
+        final_readback_receipt is not None
+        and mutation_receipt is not None
+        and capability_statuses
+        and not capability_statuses.intersection({DEGRADED, LOST, UNVERIFIABLE})
+    )
 
     ci_assertion = (
         "OBSERVED" if pr.get("ciGreen") is True and pr.get("ciHeadShaMatch") is True
@@ -1000,8 +1070,8 @@ def build_proof_pack(
         else "UNAVAILABLE"
     )
     capability_assertion = (
-        "OBSERVED" if verified_receipt is not None
-        else "CONTRADICTED" if agent_receipts
+        "OBSERVED" if capability_delta_verified
+        else "CONTRADICTED" if capability_statuses.intersection({DEGRADED, LOST})
         else "UNAVAILABLE"
     )
     observations = [
@@ -1015,16 +1085,16 @@ def build_proof_pack(
         ),
         observation(
             "input_diff_identity", "input_diff_identity", "REPOSITORY_READBACK",
-            "OBSERVED" if verified_receipt is not None else "UNAVAILABLE", authoritative_readback_sha,
+            "OBSERVED" if final_readback_receipt is not None else "UNAVAILABLE", authoritative_readback_sha,
         ),
         observation("exact_head_ci", "exact_head_ci", "CI_READBACK", ci_assertion, ci_sha),
         observation("repair_readback", "repair_readback", "REPOSITORY_READBACK", readback_assertion, github_readback_sha),
         observation("capability_delta", "capability_delta", "RUNTIME_READBACK", capability_assertion, capability_delta_sha),
     ]
-    if verified_receipt is not None:
+    if final_readback_receipt is not None:
         try:
             observations.append(observation_from_agent_run_receipt(
-                verified_receipt,
+                final_readback_receipt,
                 observation_id=f"agent-run-receipt-{repair_id}",
                 requirement_id="agent_run_receipt",
                 operation_family="sovereign_rescue_repair",
@@ -1062,6 +1132,12 @@ def build_proof_pack(
             "checks": pr.get("checks") if isinstance(pr.get("checks"), list) else [],
         },
         "mutationEvidence": {
+            "causalReceiptReadback": {
+                "mutationReceiptSha256": mutation_receipt_sha if mutation_receipt else None,
+                "finalPassingReadbackReceiptSha256": final_readback_receipt_sha if final_readback_receipt else None,
+                "causallyBound": mutation_receipt is not None and final_readback_receipt is not None,
+            },
+            "capabilityDelta": capability_delta.as_dict(),
             "envelope": envelope.canonical_body(),
             "verdict": {
                 "status": verdict.status,

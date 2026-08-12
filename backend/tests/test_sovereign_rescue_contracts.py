@@ -34,9 +34,9 @@ def receipt(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def persisted_mutation_receipt() -> dict[str, object]:
-    """Canonical receipt shape returned by the append-only runtime collector."""
-    return build_agent_run_receipt(
+def persisted_repair_receipt_sequence() -> tuple[dict[str, object], dict[str, object]]:
+    """Canonical append-only write→PASS-test-readback sequence from the live tool flow."""
+    mutation = build_agent_run_receipt(
         sequence=0,
         repository="https://github.com/acme/app",
         base_commit_sha=BASE_SHA,
@@ -45,18 +45,40 @@ def persisted_mutation_receipt() -> dict[str, object]:
         mcp_revision_verified=True,
         agent_run_id="run-rescue-proof-pack",
         tool_name="write_file",
-        call_id="call-rescue-proof-pack",
+        call_id="call-rescue-write",
         operation_identity="agent-repository-tool:free_single_agent:write_file",
         input_sha256="1" * 64,
         output_sha256="2" * 64,
         diff_sha256="3" * 64,
         test_evidence_sha256="4" * 64,
-        evidence_gate_result="PASS",
+        evidence_gate_result="BLOCKED",
         mutation_performed=True,
         observed_effect="workspace-write",
         authoritative_readback_sha256="5" * 64,
         previous_receipt_sha256="0" * 64,
     )
+    readback = build_agent_run_receipt(
+        sequence=1,
+        repository="https://github.com/acme/app",
+        base_commit_sha=BASE_SHA,
+        mcp_revision=BASE_SHA,
+        mcp_image_digest="sha256:" + "c" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-rescue-proof-pack",
+        tool_name="test",
+        call_id="call-rescue-test",
+        operation_identity="agent-repository-tool:free_single_agent:test",
+        input_sha256="6" * 64,
+        output_sha256="7" * 64,
+        diff_sha256="3" * 64,
+        test_evidence_sha256="8" * 64,
+        evidence_gate_result="PASS",
+        mutation_performed=False,
+        observed_effect="read",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256=str(mutation["header"]["hash"]),
+    )
+    return mutation, readback
 
 
 def diagnose(evidence: str, requested_family: str = ""):
@@ -213,10 +235,12 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
                 }
                             ],
             },
-            agent_receipts=(persisted_mutation_receipt(),),
+            agent_receipts=persisted_repair_receipt_sequence(),
         )
 
     assert complete["ready"] is True
+    assert complete["mutationEvidence"]["causalReceiptReadback"]["causallyBound"] is True
+    assert complete["mutationEvidence"]["capabilityDelta"]["entries"][0]["status"] == "REPLACED_WITH_VERIFIED_EQUIVALENT"
     assert verify_proof_pack(complete) is True
 
 
