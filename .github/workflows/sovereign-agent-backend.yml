@@ -48,6 +48,7 @@ jobs:
             backend/tests/test_configuration_provenance_parity.py \
             backend/tests/test_configuration_provenance_unicode_parity.py \
             backend/tests/test_configuration_runtime_integration.py \
+            backend/tests/test_config_source_inventory_hardening.py \
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"

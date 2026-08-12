@@ -259,6 +259,7 @@ jobs:
           tests/test_configuration_provenance_parity.py \
           tests/test_configuration_provenance_unicode_parity.py \
           tests/test_configuration_runtime_integration.py \
+          tests/test_config_source_inventory_hardening.py \
           ../scripts/sovereign-backend/tests/test_controller_board_contract.py \
           -v \
           --junitxml=agent-test-results.xml
