@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -18,6 +19,7 @@ HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
 NAMESPACE = "sovereign-runtime-receipt"
 TOKEN_DIR = Path("/run/sovereign-release-reconciler")
 TOKEN_FILE = TOKEN_DIR / "github-token"
+DOCKER_CONFIG_DIR = TOKEN_DIR / "docker-config"
 RECEIPT_FILE = TOKEN_DIR / "receipt.json"
 ATTESTATION_KEY = Path("/etc/ssh/ssh_host_ed25519_key")
 RECONCILER = Path("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release")
@@ -28,10 +30,11 @@ class ReadbackError(RuntimeError):
     pass
 
 
-def _read_input() -> tuple[dict[str, Any], str]:
+def _read_input() -> tuple[dict[str, Any], str, str]:
     scope_line = sys.stdin.buffer.readline(4097)
     token_line = sys.stdin.buffer.readline(4097)
-    if not scope_line or not token_line or sys.stdin.buffer.read(1):
+    registry_username_line = sys.stdin.buffer.readline(257)
+    if not scope_line or not token_line or not registry_username_line or sys.stdin.buffer.read(1):
         raise ReadbackError("input framing is invalid")
     try:
         scope = json.loads(scope_line.decode("utf-8"))
@@ -58,13 +61,22 @@ def _read_input() -> tuple[dict[str, Any], str]:
     token = token_line.decode("utf-8").strip()
     if len(token) < 20 or len(token) > 4096 or "\n" in token or "\r" in token:
         raise ReadbackError("ephemeral credential is invalid")
+    registry_username = registry_username_line.decode("utf-8").strip()
+    if (
+        not registry_username
+        or len(registry_username) > 255
+        or "\n" in registry_username
+        or "\r" in registry_username
+        or registry_username.startswith("-")
+    ):
+        raise ReadbackError("registry username is invalid")
     return {
         "revision": str(scope["revision"]).lower(),
         "releaseGateRunId": scope["releaseGateRunId"],
         "backendDigest": str(scope["backendDigest"]).lower(),
         "mcpDigest": str(scope["mcpDigest"]).lower(),
         "manifestEvidenceSha256": str(scope["manifestEvidenceSha256"]).lower(),
-    }, token
+    }, token, registry_username
 
 
 def _assert_root_private(path: Path, *, regular: bool) -> None:
@@ -84,6 +96,67 @@ def _write_token(token: str) -> None:
     os.chmod(temporary, 0o600)
     temporary.replace(TOKEN_FILE)
     _assert_root_private(TOKEN_FILE, regular=True)
+
+
+def _classify_registry_error(output: str) -> str:
+    lowered = output.lower()
+    if "unauthorized" in lowered or "authentication required" in lowered:
+        return "UNAUTHORIZED"
+    if "forbidden" in lowered or "denied" in lowered or "permission_denied" in lowered:
+        return "FORBIDDEN"
+    if "not found" in lowered or "manifest unknown" in lowered or "name unknown" in lowered:
+        return "NOT_FOUND"
+    if any(marker in lowered for marker in ("timeout", "connection refused", "temporary failure", "network")):
+        return "NETWORK"
+    return "OTHER"
+
+
+def _prepare_registry_auth(token: str, username: str) -> None:
+    if DOCKER_CONFIG_DIR.is_symlink():
+        raise ReadbackError("registry credential directory is unsafe")
+    if DOCKER_CONFIG_DIR.exists():
+        if not DOCKER_CONFIG_DIR.is_dir():
+            raise ReadbackError("registry credential path is unsafe")
+        shutil.rmtree(DOCKER_CONFIG_DIR)
+    DOCKER_CONFIG_DIR.mkdir(mode=0o700, parents=True)
+    os.chmod(DOCKER_CONFIG_DIR, 0o700)
+    _assert_root_private(DOCKER_CONFIG_DIR, regular=False)
+    completed = subprocess.run(
+        [
+            "docker",
+            "--config",
+            str(DOCKER_CONFIG_DIR),
+            "login",
+            "ghcr.io",
+            "--username",
+            username,
+            "--password-stdin",
+        ],
+        input=token + "\n",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        error_class = _classify_registry_error(completed.stdout + completed.stderr)
+        raise ReadbackError(f"registry authentication failed:{error_class}")
+    config = DOCKER_CONFIG_DIR / "config.json"
+    if not config.is_file() or config.is_symlink():
+        raise ReadbackError("registry authentication produced no private Docker config")
+    os.chmod(config, 0o600)
+    _assert_root_private(config, regular=True)
+
+
+def _cleanup_registry_auth() -> None:
+    if DOCKER_CONFIG_DIR.is_dir() and not DOCKER_CONFIG_DIR.is_symlink():
+        subprocess.run(
+            ["docker", "--config", str(DOCKER_CONFIG_DIR), "logout", "ghcr.io"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        shutil.rmtree(DOCKER_CONFIG_DIR, ignore_errors=True)
 
 
 def _assert_root_runtime_status(path: Path) -> None:
@@ -150,8 +223,9 @@ def main() -> int:
         raise ReadbackError("root execution is required")
     scope: dict[str, Any] | None = None
     try:
-        scope, token = _read_input()
+        scope, token, registry_username = _read_input()
         _write_token(token)
+        _prepare_registry_auth(token, registry_username)
         environment = os.environ.copy()
         environment.update(
             {
@@ -161,6 +235,7 @@ def main() -> int:
                 "SOVEREIGN_EXPECTED_BACKEND_DIGEST": scope["backendDigest"],
                 "SOVEREIGN_EXPECTED_MCP_DIGEST": scope["mcpDigest"],
                 "SOVEREIGN_EXPECTED_MANIFEST_EVIDENCE_SHA256": scope["manifestEvidenceSha256"],
+                "DOCKER_CONFIG": str(DOCKER_CONFIG_DIR),
             }
         )
         completed = subprocess.run(
@@ -183,6 +258,7 @@ def main() -> int:
         }, sort_keys=True, separators=(",", ":")), file=sys.stderr)
         return 2
     finally:
+        _cleanup_registry_auth()
         for path in (TOKEN_FILE, TOKEN_FILE.with_suffix(".tmp"), RECEIPT_FILE, RECEIPT_FILE.with_suffix(".json.sig")):
             try:
                 path.unlink(missing_ok=True)
