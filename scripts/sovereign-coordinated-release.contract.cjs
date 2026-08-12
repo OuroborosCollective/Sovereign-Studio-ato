@@ -12,6 +12,10 @@ const backendImageWorkflow = fs.readFileSync(
   path.join(root, '.github/workflows/sovereign-backend-image.yml'),
   'utf8',
 );
+const mcpWorkflow = fs.readFileSync(
+  path.join(root, '.github/workflows/sovereign-chatgpt-mcp.yml'),
+  'utf8',
+);
 
 function count(source, fragment) {
   return source.split(fragment).length - 1;
@@ -101,6 +105,20 @@ test('independent target runtime receipt is manifest-bound, short-lived, host-pi
   assert.match(workflow, /name: sovereign-independent-runtime-receipt-\$\{\{ env\.EXPECTED_REVISION \}\}[\s\S]*include-hidden-files: true/);
   assert.doesNotMatch(workflow, /SOVEREIGN_RELEASE_GITHUB_TOKEN_FILE: \$\{\{ secrets\./);
   assert.doesNotMatch(workflow, /GITHUB_APP_INSTALLATION_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+});
+
+test('manual VPS bootstrap consumes one exact coordinated-release manifest instead of rebuilding the same revision', () => {
+  assert.match(mcpWorkflow, /publish-mcp-image:[\s\S]*if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(mcpWorkflow, /verify-published-mcp-image:[\s\S]*if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(mcpWorkflow, /resolve-coordinated-release:/);
+  assert.match(mcpWorkflow, /actions\/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b/);
+  assert.match(mcpWorkflow, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
+  assert.match(mcpWorkflow, /name: sovereign-coordinated-release-\$\{\{ github\.sha \}\}/);
+  assert.match(mcpWorkflow, /\['success', 'failure'\]\.includes\(run\.conclusion\)/);
+  assert.match(mcpWorkflow, /manifest revision is not the dispatch revision/);
+  assert.match(mcpWorkflow, /needs: \[validate, resolve-coordinated-release\]/);
+  assert.match(mcpWorkflow, /EXPECTED_IMAGE_DIGEST: \$\{\{ needs\.resolve-coordinated-release\.outputs\.mcp_digest \}\}/);
+  assert.doesNotMatch(mcpWorkflow, /needs: \[validate, publish-mcp-image, verify-published-mcp-image\]/);
 });
 
 test('Docker inspect templates use valid Go-template quotes', () => {
