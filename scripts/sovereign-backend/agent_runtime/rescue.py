@@ -23,6 +23,12 @@ from paid_execution_entitlement import (
     resolve_paid_execution_entitlement,
 )
 
+from .mutation_evidence_layer import (
+    build_mutation_proof_envelope,
+    evaluate_mutation_evidence,
+)
+from .proof_verdict import ProofObservation, ProofVerdict
+
 
 RESCUE_SCHEMA_VERSION = "sovereign.rescue.v1"
 REPAIR_PACK_ID = "rescue-repair-pack-v1"
@@ -33,6 +39,7 @@ MAX_REPAIR_CHANGED_FILES = 12
 RESCUE_CSRF_TTL_SECONDS = 600
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$")
 _FILE_PATH = re.compile(
     r"(?<![A-Za-z0-9_.-])"
@@ -760,6 +767,7 @@ def build_proof_pack(
     """Build a verifiable pack; missing evidence stays explicit and blocks ready."""
 
     pr = dict(pr_evidence or {})
+    repository = str(repair.get("repository") or "")
     base_sha = normalize_head_sha(repair.get("base_sha") or repair.get("baseSha"))
     head_sha = str(pr.get("headSha") or "").lower()
     changed_files = list(normalize_repair_changed_files(
@@ -773,6 +781,9 @@ def build_proof_pack(
     published_head_sha = str(
         repair.get("published_head_sha") or repair.get("publishedHeadSha") or ""
     ).strip().lower()
+    outcome_contract_sha256 = str(repair.get("outcome_contract_sha256") or "")
+    repair_id = str(repair.get("repair_id") or repair.get("repairId") or "")
+
     blockers: list[str] = []
     changed_file_blocker = repair_changed_file_limit_blocker(changed_files)
     if not changed_files:
@@ -796,11 +807,115 @@ def build_proof_pack(
     if pr.get("ciGreen") is not True:
         blockers.append("ci_not_green")
 
+    # Issue #1100: callers must supply independent receipts. This function never
+    # manufactures receipt hashes from descriptive inputs, test summaries, or IDs.
+    diff_sha256 = hashlib.sha256(json.dumps(changed_files, sort_keys=True).encode("utf-8")).hexdigest()
+    envelope = build_mutation_proof_envelope(
+        operation_family="sovereign_rescue_repair",
+        operation_identity=repair_id,
+        repository=repository,
+        revision=base_sha,
+        input_sha256=outcome_contract_sha256,
+        diff_sha256=diff_sha256,
+    )
+
+    def receipt_sha256(value: Any) -> str:
+        candidate = str(value or "").strip().lower()
+        return candidate if _SHA256.fullmatch(candidate) else ""
+
+    def observation(
+        requirement_id: str,
+        evidence_kind: str,
+        source_kind: str,
+        assertion: str,
+        evidence_sha256: str,
+    ) -> ProofObservation:
+        return ProofObservation(
+            observation_id=f"{requirement_id}-{repair_id}",
+            requirement_id=requirement_id,
+            evidence_kind=evidence_kind,
+            source_kind=source_kind,
+            assertion=assertion,
+            operation_family="sovereign_rescue_repair",
+            operation_identity=repair_id,
+            revision=base_sha,
+            input_sha256=outcome_contract_sha256,
+            diff_sha256=diff_sha256,
+            evidence_sha256=evidence_sha256 or "0" * 64,
+        )
+
+    authorization_sha = receipt_sha256(repair.get("authorization_receipt_sha256"))
+    diagnostic_sha = receipt_sha256(repair.get("diagnostic_evidence_sha256"))
+    agent_run_sha = receipt_sha256(job.get("agent_run_receipt_sha256"))
+    changed_path_sha = receipt_sha256(pr.get("changedPathSha256") or pr.get("changed_path_sha256"))
+    ci_sha = receipt_sha256(pr.get("ciReadbackSha256") or pr.get("ci_readback_sha256"))
+    github_readback_sha = receipt_sha256(pr.get("githubReadbackSha256") or pr.get("github_readback_sha256"))
+    capability_delta_sha = receipt_sha256(pr.get("capabilityDeltaSha256") or pr.get("capability_delta_sha256"))
+
+    if not authorization_sha:
+        blockers.append("owner_authorization_receipt_missing")
+    if not diagnostic_sha:
+        blockers.append("diagnostic_baseline_receipt_missing")
+    if not agent_run_sha:
+        blockers.append("agent_run_receipt_missing")
+    if changed_path_sha != diff_sha256:
+        blockers.append("changed_path_readback_missing_or_mismatched")
+    if not ci_sha:
+        blockers.append("ci_readback_receipt_missing")
+    if not github_readback_sha:
+        blockers.append("github_readback_receipt_missing")
+    if not capability_delta_sha or pr.get("capabilityDeltaVerified") is not True:
+        blockers.append("capability_delta_receipt_missing_or_unverified")
+
+    ci_assertion = (
+        "OBSERVED" if ci_sha and pr.get("ciGreen") is True and pr.get("ciHeadShaMatch") is True
+        else "CONTRADICTED" if pr.get("ciGreen") is False or pr.get("ciHeadShaMatch") is False
+        else "UNAVAILABLE"
+    )
+    readback_assertion = (
+        "OBSERVED" if github_readback_sha and head_sha and head_sha == published_head_sha
+        else "CONTRADICTED" if head_sha and published_head_sha and head_sha != published_head_sha
+        else "UNAVAILABLE"
+    )
+    observations = [
+        observation(
+            "owner_authorization", "owner_authorization", "AGENT_RUN_RECEIPT",
+            "OBSERVED" if authorization_sha else "UNAVAILABLE", authorization_sha,
+        ),
+        observation(
+            "diagnostic_baseline", "diagnostic_baseline", "AGENT_RUN_RECEIPT",
+            "OBSERVED" if diagnostic_sha else "UNAVAILABLE", diagnostic_sha,
+        ),
+        observation(
+            "agent_run_receipt", "agent_run_receipt", "AGENT_RUN_RECEIPT",
+            "OBSERVED" if agent_run_sha else "UNAVAILABLE", agent_run_sha,
+        ),
+        observation(
+            "input_diff_identity", "input_diff_identity", "REPOSITORY_READBACK",
+            "OBSERVED" if changed_path_sha == diff_sha256 else "UNAVAILABLE", changed_path_sha,
+        ),
+        observation("exact_head_ci", "exact_head_ci", "CI_READBACK", ci_assertion, ci_sha),
+        observation("repair_readback", "repair_readback", "REPOSITORY_READBACK", readback_assertion, github_readback_sha),
+        observation(
+            "capability_delta", "capability_delta", "REPOSITORY_READBACK",
+            "OBSERVED" if capability_delta_sha and pr.get("capabilityDeltaVerified") is True else "UNAVAILABLE",
+            capability_delta_sha,
+        ),
+    ]
+
+    verdict = evaluate_mutation_evidence(envelope, observations)
+    if verdict.status != "VERIFIED":
+        blockers.append(f"mutation_evidence_unverified: {verdict.status}")
+        for req in verdict.missing_requirements:
+            blockers.append(f"missing_evidence: {req}")
+        for req in verdict.contradictory_requirements:
+            blockers.append(f"contradictory_evidence: {req}")
+
     payload = {
         "schemaVersion": "sovereign.proof-pack.v1",
         "product": "sovereign-rescue",
-        "repairId": str(repair.get("repair_id") or repair.get("repairId") or ""),
-        "repository": str(repair.get("repository") or ""),
+        "repairId": repair_id,
+        "repository": repository,
         "failureFamily": str(repair.get("failure_family") or repair.get("failureFamily") or ""),
         "baseSha": base_sha,
         "headSha": head_sha or None,
@@ -814,6 +929,16 @@ def build_proof_pack(
             "headShaMatch": pr.get("ciHeadShaMatch") is True,
             "green": pr.get("ciGreen") is True,
             "checks": pr.get("checks") if isinstance(pr.get("checks"), list) else [],
+        },
+        "mutationEvidence": {
+            "envelope": envelope.canonical_body(),
+            "verdict": {
+                "status": verdict.status,
+                "satisfied": list(verdict.satisfied_requirements),
+                "missing": list(verdict.missing_requirements),
+                "contradictory": list(verdict.contradictory_requirements),
+                "findings": list(verdict.finding_codes),
+            },
         },
         "rollback": {
             "strategy": "close the Draft PR or revert its isolated commit",
@@ -829,9 +954,14 @@ def build_proof_pack(
 def verify_proof_pack(pack: Mapping[str, Any]) -> bool:
     proof_sha = str(pack.get("proofSha256") or "")
     payload = {key: value for key, value in pack.items() if key != "proofSha256"}
+
+    mutation_evidence = pack.get("mutationEvidence") or {}
+    verdict = mutation_evidence.get("verdict") or {}
+
     return bool(
         pack.get("ready") is True
         and not pack.get("blockers")
+        and verdict.get("status") == "VERIFIED"
         and _SHA40.fullmatch(str(pack.get("baseSha") or ""))
         and _SHA40.fullmatch(str(pack.get("headSha") or ""))
         and _SHA40.fullmatch(str(pack.get("publishedHeadSha") or ""))

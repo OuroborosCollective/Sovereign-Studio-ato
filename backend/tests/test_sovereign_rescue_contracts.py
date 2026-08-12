@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 import sys
 
@@ -24,6 +26,23 @@ from agent_runtime.rescue import (
 
 BASE_SHA = "a" * 40
 HEAD_SHA = "b" * 40
+
+
+def receipt(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def rescue_receipts(changed_files: list[str]) -> dict[str, object]:
+    return {
+        "authorization_receipt_sha256": receipt({"authorization": "verified_purchase"}),
+        "diagnostic_evidence_sha256": receipt({"diagnostic": "github_actions_ci", "baseSha": BASE_SHA}),
+        "agent_run_receipt_sha256": receipt({"agentRun": "repair", "baseSha": BASE_SHA}),
+        "changedPathSha256": receipt(changed_files),
+        "ciReadbackSha256": receipt({"headSha": HEAD_SHA, "ci": "success"}),
+        "githubReadbackSha256": receipt({"headSha": HEAD_SHA, "pr": "readback"}),
+        "capabilityDeltaSha256": receipt({"capabilityDelta": "no-unexpected-surface"}),
+        "capabilityDeltaVerified": True,
+    }
 
 
 def diagnose(evidence: str, requested_family: str = ""):
@@ -89,7 +108,7 @@ def test_outcome_contract_is_revision_bound_and_bounded() -> None:
     assert len(contract["contractSha256"]) == 64
 
 
-def test_entitlement_requires_verified_purchase_or_privileged_identity() -> None:
+def test_entitlement_accepts_verified_purchase_privilege_or_persisted_credit_balance() -> None:
     regular = {
         "id": "user-1",
         "email": "user@example.test",
@@ -98,7 +117,10 @@ def test_entitlement_requires_verified_purchase_or_privileged_identity() -> None
         "paid_purchase_verified": False,
     }
     regular_entitlement = resolve_account_entitlement(regular)
-    assert entitlement_payload(regular, regular_entitlement)["entitled"] is False
+    regular_payload = entitlement_payload(regular, regular_entitlement)
+    assert regular_payload["entitled"] is True
+    assert regular_payload["source"] == "existing_credit_balance"
+    assert regular_payload["purchaseVerified"] is False
 
     purchased = {**regular, "paid_purchase_verified": True}
     purchased_entitlement = resolve_account_entitlement(purchased)
@@ -113,16 +135,21 @@ def test_entitlement_requires_verified_purchase_or_privileged_identity() -> None
 
 def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
     repair = {
-        "repair_id": "repair-1",
+        "repair_id": "r" * 36,
         "repository": "https://github.com/acme/app",
         "failure_family": "github_actions_ci",
         "base_sha": BASE_SHA,
         "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+        "authorization_receipt_sha256": receipt({"authorization": "verified_purchase"}),
+        "diagnostic_evidence_sha256": receipt({"diagnostic": "github_actions_ci", "baseSha": BASE_SHA}),
     }
     job = {
         "changed_files": [".github/workflows/ci.yml"],
         "test_summary": "targeted test passed",
         "draft_pr_url": "https://github.com/acme/app/pull/7",
+        "agent_run_receipt_sha256": receipt({"agentRun": "repair", "baseSha": BASE_SHA}),
     }
     incomplete = build_proof_pack(repair=repair, job=job)
     assert incomplete["ready"] is False
@@ -145,6 +172,7 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
                     "headSha": HEAD_SHA,
                 }
             ],
+            **rescue_receipts(job["changed_files"]),
         },
     )
     assert complete["ready"] is True
@@ -154,11 +182,13 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
 def test_proof_pack_fails_closed_when_secret_material_was_redacted() -> None:
     pack = build_proof_pack(
         repair={
-            "repair_id": "repair-1",
+            "repair_id": "r" * 36,
             "repository": "https://github.com/acme/app",
             "failure_family": "github_actions_ci",
             "base_sha": BASE_SHA,
             "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
         },
         job={
             "changed_files": [".github/workflows/ci.yml"],
@@ -181,11 +211,13 @@ def test_proof_pack_keeps_the_full_changed_file_set_and_blocks_over_limit() -> N
     changed_files = [f"backend/change_{index}.py" for index in range(MAX_REPAIR_CHANGED_FILES + 1)]
     pack = build_proof_pack(
         repair={
-            "repair_id": "repair-limit",
+            "repair_id": "r" * 36,
             "repository": "https://github.com/acme/app",
             "failure_family": "github_actions_ci",
             "base_sha": BASE_SHA,
             "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
         },
         job={
             "changed_files": changed_files,
@@ -209,11 +241,13 @@ def test_proof_pack_keeps_the_full_changed_file_set_and_blocks_over_limit() -> N
 def test_proof_pack_requires_the_current_pr_head_to_match_published_commit() -> None:
     pack = build_proof_pack(
         repair={
-            "repair_id": "repair-head",
+            "repair_id": "r" * 36,
             "repository": "https://github.com/acme/app",
             "failure_family": "github_actions_ci",
             "base_sha": BASE_SHA,
             "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
         },
         job={
             "changed_files": [".github/workflows/ci.yml"],
