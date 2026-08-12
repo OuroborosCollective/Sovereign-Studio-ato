@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { maskSecrets } from './shared/utils/crypto';
+import { formatTime24h } from './shared/timeUtils';
 import { getSovereignContainerContract } from './features/product/runtime/sovereignContainerContracts';
 import { SOVEREIGN_ACTION_MONITOR_TOGGLE } from './features/product/runtime/sovereignActionContracts';
 import { deriveReleaseGuideState, type ReleaseGuideTab } from './features/product/runtime/sovereignReleaseGuide';
@@ -27,8 +28,7 @@ function defaultCoachState(): RuntimeCoachState {
 }
 
 function formatTime(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '--:--:--';
-  return new Date(value).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return formatTime24h(value, '--:--:--');
 }
 
 function lampClassName(lamp: CoachLamp): string {

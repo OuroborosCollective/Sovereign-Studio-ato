@@ -45,3 +45,28 @@ export const TICK_RATES = {
 // Default tick rate for coach (10Hz = 100ms)
 export const DEFAULT_TICK_HZ = HZ.NORMAL; // 10 Hz
 export const DEFAULT_TICK_MS = hzToMs(DEFAULT_TICK_HZ); // 100ms
+
+/**
+ * Highly optimized, locale-independent 24-hour time formatting (HH:MM:SS)
+ * that matches 'de-DE' 2-digit hour, minute, second representation.
+ * Bypasses slow Intl.DateTimeFormat / toLocaleTimeString overhead.
+ */
+export function formatTime24h(ts: number | Date, fallback: string = ''): string {
+  try {
+    const d = typeof ts === 'number' ? new Date(ts) : ts;
+    const timeVal = d.getTime();
+    if (!Number.isFinite(timeVal) || timeVal <= 0) return fallback;
+
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const s = d.getSeconds();
+
+    return (
+      (h < 10 ? '0' + h : h) + ':' +
+      (m < 10 ? '0' + m : m) + ':' +
+      (s < 10 ? '0' + s : s)
+    );
+  } catch {
+    return fallback;
+  }
+}

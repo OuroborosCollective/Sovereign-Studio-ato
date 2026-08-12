@@ -20,6 +20,7 @@ import {
   type SovereignActionStreamState,
 } from '../runtime/sovereignActionStreamRuntime';
 import { C } from './builderConstants';
+import { formatTime24h } from '../../../shared/timeUtils';
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -42,15 +43,7 @@ const STATE_COLOR: Record<SovereignActionEventState, string> = {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function formatTime(value: number): string {
-  try {
-    return new Date(value).toLocaleTimeString('de-DE', {
-      hour:   '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch {
-    return '';
-  }
+  return formatTime24h(value);
 }
 
 function workerTitle(stream: SovereignActionStreamState): string {

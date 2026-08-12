@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
 import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
+import { formatTime24h } from "../../../shared/timeUtils";
 
 interface StreamEvent {
   readonly id: string;
@@ -122,11 +123,7 @@ function buildStream(
 }
 
 function formatTime(ts: number): string {
-  try {
-    return new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch {
-    return '';
-  }
+  return formatTime24h(ts);
 }
 
 function EventRow({ event }: { event: StreamEvent }) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { maskSecrets } from '../../../shared/utils/crypto';
 import { RepoFileList } from '../../github/components/RepoFileList';
+import { formatTime24h } from '../../../shared/timeUtils';
 import type { RepoFile } from '../../github/types';
 import { buildRepoSnapshotSummary, getRepoSnapshotStatus } from '../runtime/sovereignFunctionalGuards';
 import { getSovereignContainerContract } from '../runtime/sovereignContainerContracts';
@@ -93,8 +94,7 @@ function publishRepoSetupState(input: {
 }
 
 function formatCoachTime(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '--:--:--';
-  return new Date(value).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return formatTime24h(value, '--:--:--');
 }
 
 function coachLampClassName(lamp: CoachLamp): string {
