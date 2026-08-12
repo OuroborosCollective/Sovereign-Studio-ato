@@ -3,8 +3,9 @@
  *
  * Deterministic, revisions/schema/source-bound configuration resolution with
  * redacted receipts and PatchMon readback. Clean-room core (no external
- * dependency such as zod) - see docs/architecture/CONFIGURATION_PROVENANCE.md
- * for the clean-room rationale and Zod-4 pilot assessment.
+ * dependency such as zod) - see the "Library pilot assessment" section of
+ * docs/architecture/CONFIGURATION_PROVENANCE.md for the clean-room rationale
+ * and the Zod-4 / @mrspartak/config pilot assessment.
  *
  * @module runtime/config
  */
