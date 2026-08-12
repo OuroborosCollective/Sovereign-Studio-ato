@@ -134,6 +134,12 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert "_schedule_self_update" not in reconciler
     assert "def _deploy_mcp_from_ci_scope" in reconciler
     assert '"SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"]' in reconciler
+    assert "def _refresh_operator_source" in reconciler
+    assert '"git", "-C", str(OPERATOR_SOURCE), "fetch", "--no-tags", "origin", "main"' in reconciler
+    assert '"git", "-C", str(OPERATOR_SOURCE), "checkout", "--detach", scope["revision"]' in reconciler
+    assert "origin/main differs from CI scope revision" in reconciler
+    assert "checked-out source revision differs from CI scope" in reconciler
+    assert "installer source revision is not CI-scoped" in reconciler
     assert "installer receipt violates CI scope or capability truth" in reconciler
     assert 'receipt.get("host_command_worker_active") is not True' in reconciler
     assert 'receipt.get("broker") != "active"' in reconciler

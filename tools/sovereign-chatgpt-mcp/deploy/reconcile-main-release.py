@@ -10,6 +10,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -63,6 +64,9 @@ BACKEND_ROLLBACK = os.getenv(
 MCP_INSTALLER = os.getenv(
     "SOVEREIGN_MCP_INSTALLER",
     "/opt/sovereign-operator-source/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh",
+)
+OPERATOR_SOURCE = Path(
+    os.getenv("SOVEREIGN_MCP_SOURCE_DIR", "/opt/sovereign-operator-source")
 )
 BROKER_SOCKET = Path(
     os.getenv(
@@ -226,6 +230,62 @@ def _run(
         raise ReconcileError("host_command", f"timeout:{Path(argv[0]).name}") from exc
 
 
+def _refresh_operator_source(scope: dict[str, Any]) -> dict[str, Any]:
+    git_directory = OPERATOR_SOURCE / ".git"
+    if not git_directory.is_dir() or git_directory.is_symlink():
+        raise ReconcileError("operator_source", "operator source repository is unavailable")
+    status = _run(
+        ["git", "-C", str(OPERATOR_SOURCE), "status", "--porcelain"], timeout=60
+    )
+    if status.returncode != 0 or status.stdout.strip():
+        raise ReconcileError("operator_source", "operator source worktree is not clean")
+    token = _github_token()
+    with tempfile.TemporaryDirectory(prefix="sovereign-git-askpass-") as directory:
+        askpass = Path(directory) / "askpass.sh"
+        askpass.write_text(
+            "#!/bin/sh\ncase \"$1\" in *Username*) printf %s x-access-token ;; *Password*) printf %s \"$GITHUB_TOKEN\" ;; esac\n",
+            encoding="utf-8",
+        )
+        os.chmod(askpass, 0o700)
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "GIT_ASKPASS": str(askpass),
+                "GIT_TERMINAL_PROMPT": "0",
+                "GITHUB_TOKEN": token,
+            }
+        )
+        fetch = _run(
+            ["git", "-C", str(OPERATOR_SOURCE), "fetch", "--no-tags", "origin", "main"],
+            timeout=600,
+            environment=environment,
+        )
+    combined = fetch.stdout + fetch.stderr
+    output_sha = hashlib.sha256(combined.encode("utf-8", errors="replace")).hexdigest()
+    if fetch.returncode != 0:
+        raise ReconcileError("operator_source", f"fetch-failed;outputSha256={output_sha}")
+    remote = _run(
+        ["git", "-C", str(OPERATOR_SOURCE), "rev-parse", "origin/main"], timeout=60
+    )
+    remote_revision = remote.stdout.strip().lower()
+    if remote.returncode != 0 or remote_revision != scope["revision"]:
+        raise ReconcileError("operator_source", "origin/main differs from CI scope revision")
+    checkout = _run(
+        ["git", "-C", str(OPERATOR_SOURCE), "checkout", "--detach", scope["revision"]], timeout=120
+    )
+    if checkout.returncode != 0:
+        raise ReconcileError("operator_source", "scoped source checkout failed")
+    head = _run(["git", "-C", str(OPERATOR_SOURCE), "rev-parse", "HEAD"], timeout=60)
+    checked_out_revision = head.stdout.strip().lower()
+    if head.returncode != 0 or checked_out_revision != scope["revision"]:
+        raise ReconcileError("operator_source", "checked-out source revision differs from CI scope")
+    return {
+        "path": str(OPERATOR_SOURCE),
+        "revision": checked_out_revision,
+        "fetchOutputSha256": output_sha,
+    }
+
+
 def _image_evidence(repository: str, revision: str) -> dict[str, str]:
     if not IMAGE_REPOSITORY_RE.fullmatch(repository):
         raise ReconcileError("image_contract", "image repository is invalid")
@@ -365,7 +425,11 @@ def _broker_call(action: str, arguments: dict[str, Any], *, timeout: int = 30) -
     return result
 
 
-def _deploy_mcp_from_ci_scope(revision: str, mcp: dict[str, str]) -> dict[str, Any]:
+def _deploy_mcp_from_ci_scope(
+    revision: str, mcp: dict[str, str], operator_source: dict[str, Any]
+) -> dict[str, Any]:
+    if str(operator_source.get("revision") or "").lower() != revision:
+        raise ReconcileError("operator_source", "installer source revision is not CI-scoped")
     environment = os.environ.copy()
     environment.update(
         {
@@ -399,6 +463,7 @@ def _deploy_mcp_from_ci_scope(revision: str, mcp: dict[str, str]) -> dict[str, A
         "status": "DEPLOYED",
         "revision": revision,
         "digest": mcp["digest"],
+        "operatorSource": operator_source,
         **result,
     }
 
@@ -481,6 +546,7 @@ def reconcile() -> dict[str, Any]:
         )
 
     _assert_expected_scope(scope, revision, gate)
+    operator_source = _refresh_operator_source(scope)
     backend_image = _image_evidence(BACKEND_REPOSITORY, revision)
     mcp_image = _image_evidence(MCP_REPOSITORY, revision)
     _assert_expected_scope(scope, revision, gate, backend_image, mcp_image)
@@ -514,7 +580,7 @@ def reconcile() -> dict[str, Any]:
     try:
         if mcp_changed:
             mcp_update = {
-                **_deploy_mcp_from_ci_scope(revision, mcp_image),
+                **_deploy_mcp_from_ci_scope(revision, mcp_image, operator_source),
                 "mutationPerformed": True,
             }
     except ReconcileError as exc:
@@ -567,6 +633,7 @@ def reconcile() -> dict[str, Any]:
         mutationPerformed=bool(backend_changed or mcp_changed),
         retryable=False,
         expectedScope=scope,
+        operatorSource=operator_source,
     )
 
 
