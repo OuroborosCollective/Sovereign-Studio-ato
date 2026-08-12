@@ -134,6 +134,7 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
             for path in (approved, unapproved):
                 path.write_text("VALUE=redacted\n", "utf-8")
                 os.chmod(path, 0o600)
+            control.write_text("SOVEREIGN_BACKEND_ENV_FILE=/dev/null\n", "utf-8")
             os.chmod(control, 0o600)
             module.CONTROL_PLANE_ENV = control
             module.ALLOWED_BACKEND_ENV_FILES = frozenset({approved})
