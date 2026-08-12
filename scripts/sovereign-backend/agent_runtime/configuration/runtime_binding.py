@@ -28,7 +28,13 @@ from typing import Any, Optional
 
 from .config_canonicalize import hash_value
 from .config_sources import ConfigResolutionContract
-from .receipt import ConfigReceipt, materialize_receipt, verify_receipt
+from .receipt import (
+    ConfigReceipt,
+    ConfigReadbackObservation,
+    materialize_receipt,
+    verify_receipt,
+    verify_config_readback,
+)
 
 
 _FINGERPRINT_VERSION = "sovereign.config.fingerprint.v1"
@@ -78,13 +84,22 @@ def _binding_body(receipt: ConfigReceipt) -> dict[str, Any]:
     }
 
 
-def bind_config_fingerprint(receipt: ConfigReceipt) -> ConfigFingerprintBinding:
+def bind_config_fingerprint(
+    receipt: ConfigReceipt,
+    options: Any = None,
+) -> ConfigFingerprintBinding:
     """Project only an advanceable receipt into the RunEnvelope fingerprint.
 
     Fail-closed at the binding boundary: an unverified, non-RESOLVED, drifted,
     or error-bearing receipt cannot become a run binding at all. Callers that
     need diagnostics can inspect the receipt or ``advance_decision`` result;
     they cannot accidentally attach unsafe configuration provenance to a run.
+
+    When a PatchMon ``readback`` observation is supplied (via
+    ``options["readback"]``), the bound receipt must additionally pass
+    ``verify_config_readback``: RunEnvelope and PatchMon must read back the
+    same redacted config fingerprint (#1169 DoD). A rejected readback fails
+    closed with the readback finding code rather than producing a binding.
     """
     if not verify_receipt(receipt):
         raise ValueError("config receipt failed integrity verification")
@@ -92,6 +107,11 @@ def bind_config_fingerprint(receipt: ConfigReceipt) -> ConfigFingerprintBinding:
         raise ValueError(f"config receipt is not RESOLVED: {receipt.status}")
     if receipt.drift is not None or receipt.errors:
         raise ValueError("config receipt is not advanceable")
+    readback = (options or {}).get("readback") if isinstance(options, dict) else None
+    if readback is not None:
+        audit = verify_config_readback(receipt, readback)
+        if not audit.accepted:
+            raise ValueError(f"config readback rejected: {audit.blocker}")
     body = _binding_body(receipt)
     fingerprint_hash = hash_value(body)
     return ConfigFingerprintBinding(
@@ -111,6 +131,7 @@ def bind_config_fingerprint(receipt: ConfigReceipt) -> ConfigFingerprintBinding:
 def advance_decision(
     contract: ConfigResolutionContract,
     receipt: Optional[ConfigReceipt] = None,
+    options: Any = None,
 ) -> AdvanceDecision:
     """Fail-closed drift gate for new mutations and active action plans.
 
@@ -118,6 +139,10 @@ def advance_decision(
     and no errors, AND the supplied receipt (if any) passes integrity
     verification and matches the contract. Any drift, error, status downgrade
     or receipt mismatch blocks advancement with an explicit reason.
+
+    When a PatchMon ``readback`` observation is supplied (via
+    ``options["readback"]``), the supplied receipt must additionally pass
+    ``verify_config_readback`` before advancement is authorized (#1169 DoD).
     """
     drift_kind = contract.drift.kind if contract.drift else None
 
@@ -189,6 +214,25 @@ def advance_decision(
                 drift_kind=drift_kind,
             )
 
+    readback = (options or {}).get("readback") if isinstance(options, dict) else None
+    if readback is not None:
+        advanceable_receipt = receipt if receipt is not None else None
+        if advanceable_receipt is None:
+            return AdvanceDecision(
+                safe=False,
+                reason="READBACK_NO_RECEIPT",
+                status=contract.status,
+                drift_kind=drift_kind,
+            )
+        audit = verify_config_readback(advanceable_receipt, readback)
+        if not audit.accepted:
+            return AdvanceDecision(
+                safe=False,
+                reason=audit.blocker or "READBACK_REJECTED",
+                status=contract.status,
+                drift_kind=drift_kind,
+            )
+
     return AdvanceDecision(
         safe=True,
         reason="RESOLVED",
@@ -201,9 +245,18 @@ def materialize_and_bind(
     contract: ConfigResolutionContract,
     options: Any = None,
 ) -> tuple[ConfigReceipt, ConfigFingerprintBinding]:
-    """Convenience: materialize a redacted receipt and bind its fingerprint."""
+    """Convenience: materialize a redacted receipt and bind its fingerprint.
+
+    When a PatchMon ``readback`` observation is supplied (via
+    ``options["readback"]``), the bound receipt must additionally pass
+    ``verify_config_readback`` before the fingerprint is bound, enforcing the
+    #1169 readback contract at the live binding path.
+    """
+    readback = None
+    if isinstance(options, dict):
+        readback = options.get("readback")
     receipt = materialize_receipt(contract, options)
-    binding = bind_config_fingerprint(receipt)
+    binding = bind_config_fingerprint(receipt, {"readback": readback} if readback is not None else None)
     return receipt, binding
 
 

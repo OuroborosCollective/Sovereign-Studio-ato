@@ -26,9 +26,9 @@
  */
 
 import type { ConfigResolutionContract } from './configSources';
-import type { ConfigReceipt } from './configReceipt';
+import type { ConfigReceipt, ConfigReadbackObservation } from './configReceipt';
 import { hashValue } from './configCanonicalize';
-import { materializeReceipt, verifyReceipt } from './configReceipt';
+import { materializeReceipt, verifyReceipt, verifyConfigReadback } from './configReceipt';
 
 const FINGERPRINT_VERSION = 'sovereign.config.fingerprint.v1';
 
@@ -84,9 +84,15 @@ async function bindingBody(receipt: ConfigReceipt): Promise<BindingBody> {
  * Project only an advanceable receipt into the RunEnvelope fingerprint.
  * Unverified, non-RESOLVED, drifted, or error-bearing receipts fail closed
  * before a run binding can be created.
+ *
+ * When a PatchMon `readback` observation is supplied, the bound receipt must
+ * additionally pass `verifyConfigReadback`: RunEnvelope and PatchMon must read
+ * back the same redacted config fingerprint (#1169 DoD). A rejected readback
+ * fails closed with the readback finding code rather than producing a binding.
  */
 export async function bindConfigFingerprint(
   receipt: ConfigReceipt,
+  options: { readback?: ConfigReadbackObservation } = {},
 ): Promise<ConfigFingerprintBinding> {
   if (!(await verifyReceipt(receipt))) {
     throw new Error('config receipt failed integrity verification');
@@ -96,6 +102,12 @@ export async function bindConfigFingerprint(
   }
   if (receipt.drift !== null || receipt.errors.length > 0) {
     throw new Error('config receipt is not advanceable');
+  }
+  if (options.readback !== undefined) {
+    const audit = await verifyConfigReadback(receipt, options.readback);
+    if (!audit.accepted) {
+      throw new Error(`config readback rejected: ${audit.blocker}`);
+    }
   }
   const body = await bindingBody(receipt);
   const fingerprintHash = await hashValue(body);
@@ -113,6 +125,7 @@ export async function bindConfigFingerprint(
 export async function advanceDecision(
   contract: ConfigResolutionContract,
   receipt?: ConfigReceipt | null,
+  options: { readback?: ConfigReadbackObservation } = {},
 ): Promise<AdvanceDecision> {
   const driftKind = contract.drift?.kind ?? null;
 
@@ -149,17 +162,33 @@ export async function advanceDecision(
     }
   }
 
+  if (options.readback !== undefined) {
+    const advanceableReceipt = receipt ?? null;
+    if (advanceableReceipt === null) {
+      return { safe: false, reason: 'READBACK_NO_RECEIPT', status: contract.status, driftKind };
+    }
+    const audit = await verifyConfigReadback(advanceableReceipt, options.readback);
+    if (!audit.accepted) {
+      return { safe: false, reason: audit.blocker ?? 'READBACK_REJECTED', status: contract.status, driftKind };
+    }
+  }
+
   return { safe: true, reason: 'RESOLVED', status: contract.status, driftKind: null };
 }
 
 /**
  * Convenience: materialize a redacted receipt and bind its fingerprint.
+ *
+ * When a PatchMon `readback` observation is supplied, the bound receipt must
+ * additionally pass `verifyConfigReadback` before the fingerprint is bound,
+ * enforcing the #1169 readback contract at the live binding path.
  */
 export async function materializeAndBind(
   contract: ConfigResolutionContract,
-  options: { revision?: string; imageDigest?: string; materializedAt?: string } = {},
+  options: { revision?: string; imageDigest?: string; materializedAt?: string; readback?: ConfigReadbackObservation } = {},
 ): Promise<{ receipt: ConfigReceipt; binding: ConfigFingerprintBinding }> {
-  const receipt = await materializeReceipt(contract, options);
-  const binding = await bindConfigFingerprint(receipt);
+  const { readback, ...receiptOptions } = options;
+  const receipt = await materializeReceipt(contract, receiptOptions);
+  const binding = await bindConfigFingerprint(receipt, { readback });
   return { receipt, binding };
 }

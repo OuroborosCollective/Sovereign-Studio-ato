@@ -54,10 +54,11 @@ export {
   computeReceiptHash,
   verifyReceipt,
   canonicalReceiptBody,
+  verifyConfigReadback,
   DETERMINISTIC_EPOCH,
 } from './configReceipt';
 
-export type { ConfigReceipt, ReceiptOptions } from './configReceipt';
+export type { ConfigReceipt, ReceiptOptions, ConfigReadbackObservation, ConfigReadbackBlocker, ConfigReadbackAudit } from './configReceipt';
 
 export {
   advanceDecision,
