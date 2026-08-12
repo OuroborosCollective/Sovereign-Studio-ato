@@ -32,13 +32,6 @@ MAX_TTL_SECONDS = 3600
 MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
-    "github_pat": {
-        "label": "GitHub Personal Access Token für Sovereign MCP und Broker",
-        "fieldLabel": "GitHub Personal Access Token",
-        "path": "/opt/sovereign-owner-managed/github_pat.txt",
-        "maxBytes": 8192,
-        "kind": "credential",
-    },
     "openrouter_api_key": {
         "label": "Direkter OpenRouter-Zugang für bezahlte Agenten",
         "fieldLabel": "OpenRouter API-Key",
@@ -93,7 +86,6 @@ def _root() -> Path:
 
 def _target_map() -> dict[str, dict[str, Any]]:
     targets = {key: dict(value) for key, value in DEFAULT_TARGETS.items()}
-    targets["github_pat"]["path"] = str(_root() / "github_pat.txt")
     targets["openrouter_api_key"]["path"] = str(_root() / "openrouter_api_key.txt")
     targets["openrouter_free_api_key"]["path"] = str(
         _root() / "openrouter_free_api_key.txt"

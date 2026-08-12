@@ -32,7 +32,7 @@ RUNTIME_EVIDENCE_DIR="$INSTALL_ROOT/runtime-evidence"
 MAINTENANCE_DIR="$INSTALL_ROOT/maintenance"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
-OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"
+RETIRED_OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
 BACKEND_WORKSPACE_UID="10001"
 BACKEND_WORKSPACE_GID="10001"
@@ -1075,7 +1075,13 @@ fi
 ensure_private_file_mode "$ENV_FILE" "base-env"
 ensure_managed_env "$MANAGED_ENV" "runtime-env"
 INSTALL_STAGE="remove_persistent_github_api_credentials"
+remove_value "$ENV_FILE" GITHUB_TOKEN
 remove_value "$MANAGED_ENV" GITHUB_TOKEN
+if [[ -e "$RETIRED_OWNER_GITHUB_PAT_FILE" || -L "$RETIRED_OWNER_GITHUB_PAT_FILE" ]]; then
+  [[ -f "$RETIRED_OWNER_GITHUB_PAT_FILE" && ! -L "$RETIRED_OWNER_GITHUB_PAT_FILE" ]] \
+    || fail "retired owner GitHub PAT path is not a regular file"
+  rm -f "$RETIRED_OWNER_GITHUB_PAT_FILE"
+fi
 
 INSTALL_STAGE="configure_private_owner_mode"
 PRIVATE_OWNER_MODE="$(read_mcp_value SOVEREIGN_MCP_PRIVATE_OWNER_MODE)"
@@ -1093,11 +1099,12 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_MAIN_PUSH \
     SOVEREIGN_MCP_ENABLE_PR_MERGE \
     SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \
-    SOVEREIGN_MCP_ENABLE_SELF_UPDATE \
     SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
 fi
+INSTALL_STAGE="disable_self_update_without_ephemeral_ci_scope"
+set_value "$MANAGED_ENV" SOVEREIGN_MCP_ENABLE_SELF_UPDATE "0"
 for GUARDED_CAPABILITY in \
   SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS \
   SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS \
