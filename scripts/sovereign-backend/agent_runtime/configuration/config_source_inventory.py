@@ -33,6 +33,22 @@ from typing import Mapping
 HERE = Path(__file__).resolve().parent
 
 
+def _default_repo_root() -> Path:
+    """Resolve the repository root from this module's location.
+
+    Depth-independent: works whether the module is imported from the canonical
+    ``backend/agent_runtime/...`` tree or the deployment mirror at
+    ``scripts/sovereign-backend/agent_runtime/...`` (one level deeper), both of
+    which must resolve to the same repository root. Walks up until a ``.git``
+    marker is found and falls back to a fixed ancestor only when no marker is
+    present (degenerate checkout without ``.git``).
+    """
+    for candidate in (HERE, *HERE.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return HERE.parents[2]
+
+
 # Canonical configuration provenance surfaces. Each entry maps a stable label
 # to a repository-relative path and a truth-class annotation, exactly like the
 # integration-plan lane inventory.
@@ -323,8 +339,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--repo-root",
-        default=str(HERE.parents[3]),
-        help="Repository root (defaults to four levels above this script)",
+        default=str(_default_repo_root()),
+        help="Repository root (auto-resolved from the nearest .git marker; canonical and mirror trees resolve identically).",
     )
     parser.add_argument(
         "--write",
