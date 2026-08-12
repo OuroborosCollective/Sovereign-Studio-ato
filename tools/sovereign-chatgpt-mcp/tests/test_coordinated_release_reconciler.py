@@ -67,6 +67,11 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     revision = "c" * 40
     monkeypatch.setattr(module, "STATE_DIR", tmp_path)
     monkeypatch.setattr(module, "STATUS_FILE", tmp_path / "status.json")
+    module.EXPECTED_REVISION = revision
+    module.EXPECTED_RELEASE_GATE_RUN_ID = "77"
+    module.EXPECTED_BACKEND_DIGEST = "sha256:" + "a" * 64
+    module.EXPECTED_MCP_DIGEST = "sha256:" + "b" * 64
+    module.EXPECTED_MANIFEST_EVIDENCE_SHA256 = "c" * 64
     monkeypatch.setattr(module, "_main_revision", lambda: revision)
     monkeypatch.setattr(
         module,
@@ -109,8 +114,9 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert "org.opencontainers.image.revision" in coordinated
     push_prefix = mcp_workflow.split("workflow_dispatch:", 1)[0]
     assert "paths:" not in push_prefix
-    assert 'PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)"' in installer
-    assert "printf 'GITHUB_TOKEN=%s\\n' \"$EFFECTIVE_GITHUB_TOKEN\"" in installer
+    assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
+    assert "printf 'GITHUB_TOKEN=%s\\n' \"$EFFECTIVE_GITHUB_TOKEN\"" not in installer
+    assert 'install_ci_runtime_readback_authorization' in installer
     assert "systemctl enable --now sovereign-release-reconciler.timer" in installer
     assert "ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release" in service
     assert "OnUnitActiveSec=2min" in timer

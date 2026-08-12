@@ -7,6 +7,7 @@ import json
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -24,7 +25,13 @@ REPOSITORY = os.getenv(
     "SOVEREIGN_MCP_REPOSITORY",
     "OuroborosCollective/Sovereign-Studio-ato",
 ).strip()
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+GITHUB_TOKEN_FILE_VALUE = os.getenv("SOVEREIGN_RELEASE_GITHUB_TOKEN_FILE", "").strip()
+GITHUB_TOKEN_FILE = Path(GITHUB_TOKEN_FILE_VALUE) if GITHUB_TOKEN_FILE_VALUE else None
+EXPECTED_REVISION = os.getenv("SOVEREIGN_EXPECTED_REVISION", "").strip().lower()
+EXPECTED_RELEASE_GATE_RUN_ID = os.getenv("SOVEREIGN_EXPECTED_RELEASE_GATE_RUN_ID", "").strip()
+EXPECTED_BACKEND_DIGEST = os.getenv("SOVEREIGN_EXPECTED_BACKEND_DIGEST", "").strip().lower()
+EXPECTED_MCP_DIGEST = os.getenv("SOVEREIGN_EXPECTED_MCP_DIGEST", "").strip().lower()
+EXPECTED_MANIFEST_EVIDENCE_SHA256 = os.getenv("SOVEREIGN_EXPECTED_MANIFEST_EVIDENCE_SHA256", "").strip().lower()
 BACKEND_REPOSITORY = os.getenv(
     "SOVEREIGN_BACKEND_IMAGE_REPOSITORY",
     "ghcr.io/ouroboroscollective/sovereign-backend",
@@ -115,14 +122,57 @@ def _write_status(status: str, *, ok: bool, revision: str = "", **evidence: Any)
     return payload
 
 
+def _github_token() -> str:
+    if GITHUB_TOKEN_FILE is None:
+        raise ReconcileError("github_auth", "ephemeral token file is not configured")
+    try:
+        metadata = GITHUB_TOKEN_FILE.lstat()
+    except OSError as exc:
+        raise ReconcileError("github_auth", "ephemeral token file is unreadable") from exc
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_size < 20
+        or metadata.st_size > 4096
+    ):
+        raise ReconcileError("github_auth", "ephemeral token file metadata is invalid")
+    try:
+        token = GITHUB_TOKEN_FILE.read_text("utf-8").strip()
+    except OSError as exc:
+        raise ReconcileError("github_auth", "ephemeral token file read failed") from exc
+    if not token or "\n" in token or "\r" in token:
+        raise ReconcileError("github_auth", "ephemeral token value is invalid")
+    return token
+
+
+def _expected_scope() -> dict[str, Any]:
+    if not SHA_RE.fullmatch(EXPECTED_REVISION):
+        raise ReconcileError("scope", "expected revision is invalid")
+    if not EXPECTED_RELEASE_GATE_RUN_ID.isdigit() or int(EXPECTED_RELEASE_GATE_RUN_ID) <= 0:
+        raise ReconcileError("scope", "expected release gate run id is invalid")
+    if not DIGEST_RE.fullmatch(EXPECTED_BACKEND_DIGEST):
+        raise ReconcileError("scope", "expected backend digest is invalid")
+    if not DIGEST_RE.fullmatch(EXPECTED_MCP_DIGEST):
+        raise ReconcileError("scope", "expected MCP digest is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", EXPECTED_MANIFEST_EVIDENCE_SHA256):
+        raise ReconcileError("scope", "expected manifest evidence hash is invalid")
+    return {
+        "revision": EXPECTED_REVISION,
+        "releaseGateRunId": int(EXPECTED_RELEASE_GATE_RUN_ID),
+        "backendDigest": EXPECTED_BACKEND_DIGEST,
+        "mcpDigest": EXPECTED_MCP_DIGEST,
+        "manifestEvidenceSha256": EXPECTED_MANIFEST_EVIDENCE_SHA256,
+    }
+
+
 def _github_json(path: str) -> Any:
-    if not GITHUB_TOKEN:
-        raise ReconcileError("github_auth", "GITHUB_TOKEN is missing")
+    token = _github_token()
     request = urllib.request.Request(
         f"https://api.github.com{path}",
         headers={
             "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Authorization": f"Bearer {token}",
             "User-Agent": "sovereign-coordinated-release-reconciler",
             "X-GitHub-Api-Version": "2026-03-10",
         },
@@ -417,6 +467,23 @@ def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str
     }
 
 
+def _assert_expected_scope(
+    scope: dict[str, Any],
+    revision: str,
+    gate: dict[str, Any],
+    backend: dict[str, str] | None = None,
+    mcp: dict[str, str] | None = None,
+) -> None:
+    if revision != scope["revision"]:
+        raise ReconcileError("scope", "authoritative main revision differs from expected revision")
+    if gate.get("ready") is not True or int(gate.get("runId") or 0) != scope["releaseGateRunId"]:
+        raise ReconcileError("scope", "release gate differs from expected gate")
+    if backend is not None and backend.get("digest") != scope["backendDigest"]:
+        raise ReconcileError("scope", "backend digest differs from expected manifest digest")
+    if mcp is not None and mcp.get("digest") != scope["mcpDigest"]:
+        raise ReconcileError("scope", "MCP digest differs from expected manifest digest")
+
+
 def reconcile() -> dict[str, Any]:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY):
         raise ReconcileError("configuration", "repository is invalid")
@@ -424,6 +491,7 @@ def reconcile() -> dict[str, Any]:
         if not IMAGE_REPOSITORY_RE.fullmatch(repository):
             raise ReconcileError("configuration", "image repository is invalid")
 
+    scope = _expected_scope()
     revision = _main_revision()
     gate = _release_gate(revision)
     if not gate.get("ready"):
@@ -436,8 +504,10 @@ def reconcile() -> dict[str, Any]:
             retryable=True,
         )
 
+    _assert_expected_scope(scope, revision, gate)
     backend_image = _image_evidence(BACKEND_REPOSITORY, revision)
     mcp_image = _image_evidence(MCP_REPOSITORY, revision)
+    _assert_expected_scope(scope, revision, gate, backend_image, mcp_image)
     previous_backend = _container_identity("sovereign-backend", BACKEND_REPOSITORY)
     current_mcp = _container_identity("sovereign-chatgpt-mcp", MCP_REPOSITORY)
     backend_changed = not (
@@ -520,10 +590,36 @@ def reconcile() -> dict[str, Any]:
         runtime=runtime,
         mutationPerformed=bool(backend_changed or mcp_changed),
         retryable=False,
+        expectedScope=scope,
     )
 
 
 def main() -> int:
+    scope_values = (
+        EXPECTED_REVISION,
+        EXPECTED_RELEASE_GATE_RUN_ID,
+        EXPECTED_BACKEND_DIGEST,
+        EXPECTED_MCP_DIGEST,
+        EXPECTED_MANIFEST_EVIDENCE_SHA256,
+    )
+    if not any(scope_values) and GITHUB_TOKEN_FILE is None:
+        _write_status(
+            "WAITING_FOR_CI_RUNTIME_READBACK_SCOPE",
+            ok=False,
+            mutationPerformed=False,
+            retryable=False,
+        )
+        return 0
+    if not all(scope_values) or GITHUB_TOKEN_FILE is None:
+        _write_status(
+            "RECONCILIATION_BLOCKED",
+            ok=False,
+            failureStage="scope",
+            failureSha256=hashlib.sha256(b"partial-or-missing-ci-runtime-readback-scope").hexdigest(),
+            mutationPerformed=False,
+            retryable=False,
+        )
+        return 1
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(STATE_DIR, 0o750)
     with LOCK_FILE.open("a+") as lock:
