@@ -1,6 +1,11 @@
 name: Sovereign Release Readback Bootstrap
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py'
+      - '.github/workflows/sovereign-release-readback-bootstrap.yml'
   workflow_dispatch:
     inputs:
       expected_revision:
@@ -12,7 +17,7 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_REVISION: ${{ inputs.expected_revision }}
+  EXPECTED_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_revision || github.sha }}
   READBACK_SOURCE: tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py
   READBACK_TARGET: /opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback
   KNOWN_PREVIOUS_REVISION: 738c0ac6616b2b2fadfd554706ac678c90e80e7a
