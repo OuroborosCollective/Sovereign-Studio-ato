@@ -20,7 +20,6 @@ env:
   EXPECTED_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_revision || github.sha }}
   READBACK_SOURCE: tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py
   READBACK_TARGET: /opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback
-  KNOWN_PREVIOUS_REVISION: 738c0ac6616b2b2fadfd554706ac678c90e80e7a
 
 jobs:
   bootstrap-readback-control-plane:
@@ -56,31 +55,47 @@ jobs:
               core.setFailed(`SOURCE_REVISION_IS_NOT_CURRENT_MAIN:${actual}`);
             }
 
-      - name: Checkout exact bootstrap revision and known previous revision
+      - name: Checkout exact bootstrap revision with bounded lineage
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.EXPECTED_REVISION }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Prepare bounded bootstrap evidence
+      - name: Prepare bounded bootstrap lineage evidence
         id: evidence
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
           [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$KNOWN_PREVIOUS_REVISION" =~ ^[0-9a-f]{40}$ ]]
           test -f "$READBACK_SOURCE"
           python3 -m py_compile "$READBACK_SOURCE"
+
+          PARENT1_REVISION="$(git rev-parse "${EXPECTED_REVISION}^")"
+          PARENT2_REVISION="$(git rev-parse "${EXPECTED_REVISION}^^")"
+          [[ "$PARENT1_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PARENT2_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          test "$PARENT1_REVISION" != "$EXPECTED_REVISION"
+          test "$PARENT2_REVISION" != "$PARENT1_REVISION"
+          git cat-file -e "$PARENT1_REVISION:$READBACK_SOURCE"
+          git cat-file -e "$PARENT2_REVISION:$READBACK_SOURCE"
+
           NEW_SHA256="$(sha256sum "$READBACK_SOURCE" | awk '{print $1}')"
-          PREVIOUS_SHA256="$(git show "$KNOWN_PREVIOUS_REVISION:$READBACK_SOURCE" | sha256sum | awk '{print $1}')"
-          [[ "$NEW_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          [[ "$PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
-          printf '%s\n' "$NEW_SHA256" > readback.new.sha256
-          printf '%s\n' "$PREVIOUS_SHA256" > readback.previous.sha256
+          PARENT1_SHA256="$(git show "$PARENT1_REVISION:$READBACK_SOURCE" | sha256sum | awk '{print $1}')"
+          PARENT2_SHA256="$(git show "$PARENT2_REVISION:$READBACK_SOURCE" | sha256sum | awk '{print $1}')"
+          for value in "$NEW_SHA256" "$PARENT1_SHA256" "$PARENT2_SHA256"; do
+            [[ "$value" =~ ^[0-9a-f]{64}$ ]]
+          done
+
+          printf '%s\n' "$NEW_SHA256" > readback.current.sha256
+          printf '%s\n' "$PARENT1_SHA256" > readback.parent1.sha256
+          printf '%s\n' "$PARENT2_SHA256" > readback.parent2.sha256
           echo "new_sha256=$NEW_SHA256" >> "$GITHUB_OUTPUT"
-          echo "previous_sha256=$PREVIOUS_SHA256" >> "$GITHUB_OUTPUT"
+          echo "parent1_revision=$PARENT1_REVISION" >> "$GITHUB_OUTPUT"
+          echo "parent1_sha256=$PARENT1_SHA256" >> "$GITHUB_OUTPUT"
+          echo "parent2_revision=$PARENT2_REVISION" >> "$GITHUB_OUTPUT"
+          echo "parent2_sha256=$PARENT2_SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Validate bootstrap transport parameters
         run: |
@@ -105,31 +120,34 @@ jobs:
             mkdir -p "$HOME/.sovereign-release-readback-bootstrap"
             chmod 0700 "$HOME/.sovereign-release-readback-bootstrap"
 
-      - name: Upload exact readback entrypoint and hash evidence
+      - name: Upload exact readback entrypoint and lineage hashes
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          source: 'tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py,readback.new.sha256,readback.previous.sha256'
+          source: 'tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py,readback.current.sha256,readback.parent1.sha256,readback.parent2.sha256'
           target: .sovereign-release-readback-bootstrap
           overwrite: true
 
-      - name: Install only the forced readback entrypoint with hash-bound preconditions
+      - name: Install only the forced readback entrypoint with bounded lineage preconditions
         uses: appleboy/ssh-action@v1.2.5
         env:
           SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
           EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
           EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
-          EXPECTED_PREVIOUS_SHA256: ${{ steps.evidence.outputs.previous_sha256 }}
+          EXPECTED_PARENT1_REVISION: ${{ steps.evidence.outputs.parent1_revision }}
+          EXPECTED_PARENT1_SHA256: ${{ steps.evidence.outputs.parent1_sha256 }}
+          EXPECTED_PARENT2_REVISION: ${{ steps.evidence.outputs.parent2_revision }}
+          EXPECTED_PARENT2_SHA256: ${{ steps.evidence.outputs.parent2_sha256 }}
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
           command_timeout: 8m
-          envs: SUDO_PASSWORD,EXPECTED_REVISION,EXPECTED_NEW_SHA256,EXPECTED_PREVIOUS_SHA256
+          envs: SUDO_PASSWORD,EXPECTED_REVISION,EXPECTED_NEW_SHA256,EXPECTED_PARENT1_REVISION,EXPECTED_PARENT1_SHA256,EXPECTED_PARENT2_REVISION,EXPECTED_PARENT2_SHA256
           script: |
             set -Eeuo pipefail
             umask 077
@@ -142,16 +160,24 @@ jobs:
             TARGET=/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback
             RECEIPT="$HOME/.sovereign-release-readback-bootstrap/bootstrap-receipt.json"
             [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]
-            [[ "$EXPECTED_NEW_SHA256" =~ ^[0-9a-f]{64}$ ]]
-            [[ "$EXPECTED_PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$EXPECTED_PARENT1_REVISION" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$EXPECTED_PARENT2_REVISION" =~ ^[0-9a-f]{40}$ ]]
+            for value in "$EXPECTED_NEW_SHA256" "$EXPECTED_PARENT1_SHA256" "$EXPECTED_PARENT2_SHA256"; do
+              [[ "$value" =~ ^[0-9a-f]{64}$ ]]
+            done
             test -f "$SOURCE" && test ! -L "$SOURCE"
             test "$(sha256sum "$SOURCE" | awk '{print $1}')" = "$EXPECTED_NEW_SHA256"
             python3 -m py_compile "$SOURCE"
+
             CURRENT_SHA256="$(run_root sha256sum "$TARGET" | awk '{print $1}')"
+            MATCHED_LINEAGE=""
             case "$CURRENT_SHA256" in
-              "$EXPECTED_PREVIOUS_SHA256"|"$EXPECTED_NEW_SHA256") ;;
+              "$EXPECTED_NEW_SHA256") MATCHED_LINEAGE=current ;;
+              "$EXPECTED_PARENT1_SHA256") MATCHED_LINEAGE=parent1 ;;
+              "$EXPECTED_PARENT2_SHA256") MATCHED_LINEAGE=parent2 ;;
               *) echo "UNEXPECTED_READBACK_ENTRYPOINT_HASH:$CURRENT_SHA256" >&2; exit 1 ;;
             esac
+
             MUTATION=false
             if [ "$CURRENT_SHA256" != "$EXPECTED_NEW_SHA256" ]; then
               TEMP_TARGET="${TARGET}.bootstrap.$$"
@@ -163,10 +189,10 @@ jobs:
             FINAL_SHA256="$(run_root sha256sum "$TARGET" | awk '{print $1}')"
             test "$FINAL_SHA256" = "$EXPECTED_NEW_SHA256"
             run_root python3 -m py_compile "$TARGET"
-            python3 - "$RECEIPT" "$EXPECTED_REVISION" "$CURRENT_SHA256" "$FINAL_SHA256" "$MUTATION" <<'PY'
+            python3 - "$RECEIPT" "$EXPECTED_REVISION" "$EXPECTED_PARENT1_REVISION" "$EXPECTED_PARENT2_REVISION" "$CURRENT_SHA256" "$FINAL_SHA256" "$MATCHED_LINEAGE" "$MUTATION" <<'PY'
             import json, sys
             from pathlib import Path
-            path, revision, before, after, mutation = sys.argv[1:]
+            path, revision, parent1, parent2, before, after, matched, mutation = sys.argv[1:]
             payload = {
                 'schemaVersion': 'sovereign.release-readback-bootstrap-receipt.v1',
                 'ok': True,
@@ -174,6 +200,10 @@ jobs:
                 'target': '/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback',
                 'beforeSha256': before,
                 'afterSha256': after,
+                'matchedLineage': matched,
+                'allowedPredecessorDepth': 2,
+                'parent1Revision': parent1,
+                'parent2Revision': parent2,
                 'mutationPerformed': mutation == 'true',
                 'containersChanged': False,
                 'servicesRestarted': False,
@@ -212,6 +242,8 @@ jobs:
         env:
           RECEIPT_HEX: ${{ steps.receipt.outputs.stdout }}
           EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
+          EXPECTED_PARENT1_REVISION: ${{ steps.evidence.outputs.parent1_revision }}
+          EXPECTED_PARENT2_REVISION: ${{ steps.evidence.outputs.parent2_revision }}
         run: |
           set -Eeuo pipefail
           mkdir -p .sovereign-bootstrap-evidence
@@ -230,6 +262,10 @@ jobs:
           assert receipt.get('ok') is True
           assert receipt.get('revision') == os.environ['EXPECTED_REVISION']
           assert receipt.get('afterSha256') == os.environ['EXPECTED_NEW_SHA256']
+          assert receipt.get('allowedPredecessorDepth') == 2
+          assert receipt.get('matchedLineage') in {'current', 'parent1', 'parent2'}
+          assert receipt.get('parent1Revision') == os.environ['EXPECTED_PARENT1_REVISION']
+          assert receipt.get('parent2Revision') == os.environ['EXPECTED_PARENT2_REVISION']
           assert receipt.get('containersChanged') is False
           assert receipt.get('servicesRestarted') is False
           assert receipt.get('authorizedKeysChanged') is False
