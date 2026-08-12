@@ -85,26 +85,36 @@ test('manifest records immutable identities but blocks runtime promotion without
   assert.match(workflow, /hashlib\.sha256\(canonical\)/);
 });
 
-test('independent target runtime receipt is manifest-bound, short-lived, host-pinned and CI-verified', () => {
+test('independent target runtime receipt uses a short-lived read-only Actions token and separates deployment authority', () => {
   assert.match(workflow, /independent-target-runtime-readback:/);
   assert.match(workflow, /needs: \[coordinated-release\]/);
   assert.match(workflow, /name: production-runtime-readback/);
-  assert.match(workflow, /actions\/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1/);
-  assert.match(workflow, /permission-actions: read/);
-  assert.match(workflow, /permission-contents: read/);
-  assert.match(workflow, /SOVEREIGN_RUNTIME_READBACK_APP_PRIVATE_KEY/);
   assert.match(workflow, /SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY/);
+  assert.match(workflow, /RUNTIME_READBACK_GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(workflow, /REGISTRY_USERNAME: \$\{\{ github\.actor \}\}/);
   assert.match(workflow, /StrictHostKeyChecking=yes/);
   assert.match(workflow, /HostKeyAlgorithms=ssh-ed25519/);
   assert.match(workflow, /verify_sovereign_runtime_receipt\.py/);
-  assert.match(workflow, /Publish verified production deployment verdict/);
-  assert.match(workflow, /deployments: write/);
+  assert.match(workflow, /publish-production-verdict:/);
+  assert.match(workflow, /name: Publish verified production deployment verdict/);
   assert.match(workflow, /manifestEvidenceSha256/);
   assert.match(workflow, /releaseGateRunId/);
   assert.match(workflow, /"\$GITHUB_RUN_ID"/);
   assert.match(workflow, /name: sovereign-independent-runtime-receipt-\$\{\{ env\.EXPECTED_REVISION \}\}[\s\S]*include-hidden-files: true/);
+  assert.doesNotMatch(workflow, /SOVEREIGN_RUNTIME_READBACK_APP_PRIVATE_KEY/);
+  assert.doesNotMatch(workflow, /actions\/create-github-app-token@/);
+
+  const targetStart = workflow.indexOf('  independent-target-runtime-readback:');
+  const verdictStart = workflow.indexOf('  publish-production-verdict:');
+  assert.ok(targetStart >= 0 && verdictStart > targetStart);
+  const targetJob = workflow.slice(targetStart, verdictStart);
+  const verdictJob = workflow.slice(verdictStart);
+  assert.match(targetJob, /permissions:[\s\S]*actions: read[\s\S]*contents: read[\s\S]*packages: read/);
+  assert.doesNotMatch(targetJob, /deployments: write/);
+  assert.match(verdictJob, /needs: \[independent-target-runtime-readback\]/);
+  assert.match(verdictJob, /permissions:[\s\S]*deployments: write/);
+  assert.doesNotMatch(verdictJob, /packages: read/);
   assert.doesNotMatch(workflow, /SOVEREIGN_RELEASE_GITHUB_TOKEN_FILE: \$\{\{ secrets\./);
-  assert.doesNotMatch(workflow, /GITHUB_APP_INSTALLATION_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 });
 
 test('manual VPS bootstrap consumes one exact coordinated-release manifest instead of rebuilding the same revision', () => {
