@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "704c72debf2cc8a8bf60ee38a96947f4a04b5764",
-  "rawCandidateCount": 96,
-  "canonicalCandidateCount": 76,
+  "sourceRevision": "0753070ebbb4928ac91317672588d5c08dfe0ce4",
+  "rawCandidateCount": 94,
+  "canonicalCandidateCount": 75,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -199,21 +199,6 @@
       "candidateId": "llm-boundary:8cc67a2868a47cd828e52335",
       "classification": "STRUCTURED_POLICY",
       "rationale": "build_repair_capsule_manifest compares a structured failure-family field only with the fixed supported-family enum; it does not infer semantic intent from free language or authorize execution."
-    },
-    {
-      "canonicalPath": "scripts/sovereign-backend/agent_runtime/rescue.py",
-      "mirrorPaths": [
-        "backend/agent_runtime/rescue.py"
-      ],
-      "symbol": "build_proof_pack.sha256_or_zero",
-      "line": 909,
-      "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "631d98afc1df402ef088b53e9b86be917975e6698c7e65e5b7d7fe3a30d32505",
-      "anchorSha256": "044bee10d86d6b2b993a6b74542c6c421febcf86b8c1b87578aa4762a6365da7",
-      "reopenOnChange": true,
-      "candidateId": "llm-boundary:113d6220219800c59f4138df",
-      "classification": "STRUCTURED_POLICY",
-      "rationale": "sha256_or_zero validates only an exact lowercase SHA-256 digest and substitutes the fixed zero digest for unavailable structured evidence; it neither interprets free user language nor selects or authorizes an effect."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/tool_policy.py",
@@ -1034,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "321ba6125bfdfb3f7fbb196dc70a2da3dddd3b6e4843a7f068a1707b721b5a5f"
+  "ledgerSha256": "a7b65d4d2c92ac0c07a10d869e2a09bb901f82482cb2ee4b4f59ca957d3a4348"
 }
