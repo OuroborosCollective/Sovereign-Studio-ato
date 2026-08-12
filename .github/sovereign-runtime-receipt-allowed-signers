@@ -1,0 +1,3 @@
+# Independent target-system Runtime-Receipt attestation key.
+# Rotation requires a separately reviewed, live target-system key readback.
+sovereign-runtime-receipt ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv root@srv1491137

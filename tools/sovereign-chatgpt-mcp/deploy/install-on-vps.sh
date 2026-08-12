@@ -48,6 +48,7 @@ COMMAND_WORKER_SERVICE="/etc/systemd/system/sovereign-chatgpt-command-worker.ser
 SELF_UPDATE_SERVICE="/etc/systemd/system/sovereign-chatgpt-mcp-self-update.service"
 SELF_UPDATE_BIN="$BIN_DIR/self-update-chatgpt-mcp"
 RELEASE_RECONCILER_BIN="$BIN_DIR/reconcile-main-release"
+RELEASE_READBACK_BIN="$BIN_DIR/run-coordinated-release-readback"
 RELEASE_RECONCILER_SERVICE="/etc/systemd/system/sovereign-release-reconciler.service"
 RELEASE_RECONCILER_TIMER="/etc/systemd/system/sovereign-release-reconciler.timer"
 TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
@@ -185,6 +186,43 @@ ensure_managed_env() {
       || fail "managed environment parent immutable-bit restore failed: label=$label parent=$parent"
   fi
 }
+
+install_ci_runtime_readback_authorization() {
+  local key_source="$SOURCE_DIR/deploy/ci-runtime-readback.pub"
+  local root_ssh_dir="/root/.ssh"
+  local authorized_keys="$root_ssh_dir/authorized_keys"
+  local temporary=""
+  INSTALL_STAGE="install_ci_runtime_readback_authorization"
+  [[ -f "$key_source" && ! -L "$key_source" ]] \
+    || fail "CI runtime readback public key is missing"
+  [[ "$(awk 'NF {count += 1} END {print count + 0}' "$key_source")" == "1" ]] \
+    || fail "CI runtime readback public key must contain exactly one line"
+  ssh-keygen -lf "$key_source" >/dev/null \
+    || fail "CI runtime readback public key is invalid"
+  install -d -m 0700 -o root -g root "$root_ssh_dir"
+  touch "$authorized_keys"
+  chown root:root "$authorized_keys"
+  chmod 0600 "$authorized_keys"
+  prepare_managed_private_file_mutation "$authorized_keys" "root-authorized-keys"
+  temporary="$(mktemp "$root_ssh_dir/.authorized_keys.XXXXXX")" \
+    || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization temporary file creation failed"; }
+  if ! {
+    grep -Fv 'sovereign-runtime-readback-ci' "$authorized_keys" || true
+    printf 'command="%s",restrict ' "$RELEASE_READBACK_BIN"
+    cat "$key_source"
+  } > "$temporary"; then
+    rm -f "$temporary"
+    restore_managed_private_file_mutation_best_effort "$authorized_keys"
+    fail "CI runtime readback authorization write failed"
+  fi
+  chown root:root "$temporary"
+  chmod 0600 "$temporary"
+  mv -f "$temporary" "$authorized_keys"
+  restore_managed_private_file_mutation "$authorized_keys" "root-authorized-keys"
+  grep -Fq 'command="/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback",restrict ssh-ed25519 ' "$authorized_keys" \
+    || fail "CI runtime readback forced-command authorization is missing"
+}
+
 
 ensure_private_file_mode() {
   local file="$1"
@@ -862,10 +900,13 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$SOURCE_DIR/continuity.py" ]] || fail "continuity runtime is missing"
 [[ -f "$SOURCE_DIR/continuity-data/CONTEXT.md" ]] || fail "runtime continuity context is missing"
 [[ -f "$SOURCE_DIR/continuity-data/LEDGER.jsonl" ]] || fail "runtime continuity ledger is missing"
+[[ -f "$SOURCE_DIR/deploy/ci-runtime-readback.pub" ]] || fail "CI runtime readback public key is missing"
 bash -n "$SOURCE_DIR/deploy/self-update-chatgpt-mcp.sh" \
   || fail "source self-update wrapper has invalid bash syntax"
 python3 -m py_compile "$SOURCE_DIR/deploy/reconcile-main-release.py" \
   || fail "source coordinated release reconciler has invalid Python syntax"
+python3 -m py_compile "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" \
+  || fail "source coordinated release readback entrypoint has invalid Python syntax"
 [[ -f "$SOURCE_DIR/deploy/sovereign-release-reconciler.service" ]] \
   || fail "coordinated release reconciler service is missing"
 [[ -f "$SOURCE_DIR/deploy/sovereign-release-reconciler.timer" ]] \
@@ -969,7 +1010,7 @@ backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" 
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
 backup_managed_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"
-for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release; do
+for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release run-coordinated-release-readback; do
   backup_managed_control_plane_file "$BIN_DIR/$file" "bin/$file"
 done
 
@@ -998,6 +1039,8 @@ install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/bootstrap-database.s
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/install-secure-tunnel.sh" "$BIN_DIR/install-secure-tunnel" "bin/install-secure-tunnel"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/validate-tunnel-doctor-report.py" "$BIN_DIR/validate-tunnel-doctor-report" "bin/validate-tunnel-doctor-report"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/reconcile-main-release.py" "$RELEASE_RECONCILER_BIN" "bin/reconcile-main-release"
+install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" "$RELEASE_READBACK_BIN" "bin/run-coordinated-release-readback"
+install_ci_runtime_readback_authorization
 install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-broker.service" "$BROKER_SERVICE" "systemd/sovereign-chatgpt-broker.service"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-command-worker.service" "$COMMAND_WORKER_SERVICE" "systemd/sovereign-chatgpt-command-worker.service"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/deploy/sovereign-chatgpt-mcp-self-update.service" "$SELF_UPDATE_SERVICE" "systemd/sovereign-chatgpt-mcp-self-update.service"
@@ -1031,32 +1074,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 ensure_private_file_mode "$ENV_FILE" "base-env"
 ensure_managed_env "$MANAGED_ENV" "runtime-env"
-OWNER_MANAGED_GITHUB_TOKEN=""
-if [[ -f "$OWNER_GITHUB_PAT_FILE" ]]; then
-  ensure_private_file_mode "$OWNER_GITHUB_PAT_FILE" "owner-github-pat"
-  INSTALL_STAGE="read_private_environment:owner-github-pat"
-  OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")" \
-    || fail "owner-managed GitHub token file read failed"
-fi
-PRESERVED_BROKER_GITHUB_TOKEN=""
-if [[ -f "$BROKER_ENV" ]]; then
-  ensure_private_file_mode "$BROKER_ENV" "broker-env"
-  INSTALL_STAGE="read_private_environment:broker-env"
-  PRESERVED_BROKER_GITHUB_TOKEN="$(read_value "$BROKER_ENV" GITHUB_TOKEN)" \
-    || fail "broker GitHub token metadata read failed"
-fi
-INSTALL_STAGE="read_private_environment:configured-github-token"
-CONFIGURED_GITHUB_TOKEN="$(read_mcp_value GITHUB_TOKEN)" \
-  || fail "configured GitHub token metadata read failed"
-if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then
-  EFFECTIVE_GITHUB_TOKEN="$OWNER_MANAGED_GITHUB_TOKEN"
-elif [[ -n "$PRESERVED_BROKER_GITHUB_TOKEN" ]]; then
-  EFFECTIVE_GITHUB_TOKEN="$PRESERVED_BROKER_GITHUB_TOKEN"
-else
-  EFFECTIVE_GITHUB_TOKEN="$CONFIGURED_GITHUB_TOKEN"
-fi
-[[ -n "$EFFECTIVE_GITHUB_TOKEN" ]] || fail "GITHUB_TOKEN is not configured in the protected owner file, canonical broker or MCP environment"
-set_value "$MANAGED_ENV" GITHUB_TOKEN "$EFFECTIVE_GITHUB_TOKEN"
+INSTALL_STAGE="remove_persistent_github_api_credentials"
+remove_value "$MANAGED_ENV" GITHUB_TOKEN
 
 INSTALL_STAGE="configure_private_owner_mode"
 PRIVATE_OWNER_MODE="$(read_mcp_value SOVEREIGN_MCP_PRIVATE_OWNER_MODE)"
@@ -1221,7 +1240,6 @@ INSTALL_STAGE="write_broker_environment"
 prepare_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
 INSTALL_STAGE="mutate_managed_private_file:broker-environment"
 if ! {
-  printf 'GITHUB_TOKEN=%s\n' "$EFFECTIVE_GITHUB_TOKEN"
   for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
     grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
   done

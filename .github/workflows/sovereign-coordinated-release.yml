@@ -8,6 +8,7 @@ on:
 permissions:
   actions: read
   contents: read
+  deployments: write
   packages: read
 
 concurrency:
@@ -293,3 +294,162 @@ jobs:
           path: .sovereign-evidence/coordinated-release.json
           if-no-files-found: error
           retention-days: 30
+
+
+  independent-target-runtime-readback:
+    name: Verify independent target-system runtime receipt
+    needs: [coordinated-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    environment:
+      name: production-runtime-readback
+    steps:
+      - name: Checkout exact coordinated release revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.EXPECTED_REVISION }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download exact coordinated release manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sovereign-coordinated-release-${{ env.EXPECTED_REVISION }}
+          path: .sovereign-evidence
+
+      - name: Assert exact manifest binding and prepare runtime scope
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+          import re
+
+          manifest_path = Path('.sovereign-evidence/coordinated-release.json')
+          manifest = json.loads(manifest_path.read_text('utf-8'))
+          expected_revision = os.environ['GITHUB_SHA'].lower()
+          expected_run_id = int(os.environ['EXPECTED_RUN_ID'])
+          canonical = json.dumps(
+              {key: value for key, value in manifest.items() if key != 'evidenceSha256'},
+              sort_keys=True,
+              separators=(',', ':'),
+          ).encode('utf-8')
+          assert manifest.get('schemaVersion') == 'sovereign.coordinated-release-manifest.v1'
+          assert manifest.get('revision') == expected_revision
+          assert manifest.get('authoritativeMainRevision') == expected_revision
+          assert manifest.get('deploymentPerformed') is False
+          assert manifest.get('runtimePromotionStatus') == 'BLOCKED_PENDING_INDEPENDENT_TARGET_SYSTEM_READBACK'
+          assert manifest.get('secretValuesReturned') is False
+          assert manifest.get('evidenceSha256') == hashlib.sha256(canonical).hexdigest()
+          backend_digest = str((manifest.get('backend') or {}).get('digest') or '').lower()
+          mcp_digest = str((manifest.get('mcp') or {}).get('digest') or '').lower()
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', backend_digest)
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', mcp_digest)
+          scope = {
+              'revision': expected_revision,
+              'releaseGateRunId': expected_run_id,
+              'backendDigest': backend_digest,
+              'mcpDigest': mcp_digest,
+              'manifestEvidenceSha256': manifest['evidenceSha256'],
+          }
+          Path('.sovereign-evidence/runtime-readback-scope.json').write_text(
+              json.dumps(scope, sort_keys=True, separators=(',', ':')) + '\n',
+              'utf-8',
+          )
+          PY
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Create short-lived read-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.0.0
+        with:
+          client-id: ${{ vars.SOVEREIGN_RUNTIME_READBACK_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: read
+          permission-contents: read
+
+      - name: Verify pinned VPS host and invoke forced runtime readback entrypoint
+        env:
+          RUNTIME_READBACK_SSH_PRIVATE_KEY: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY }}
+          GITHUB_APP_INSTALLATION_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -Eeuo pipefail
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          install -m 0600 /dev/null "$ssh_dir/id_ed25519"
+          printf '%s\n' "$RUNTIME_READBACK_SSH_PRIVATE_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          test "$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')" = 'SHA256:pskBohJoTx/V3iCPaD9m1sW1vchvhvGc89lKnX0RocQ'
+          { cat .sovereign-evidence/runtime-readback-scope.json; printf '%s\n' "$GITHUB_APP_INSTALLATION_TOKEN"; } \
+            | ssh \
+              -i "$ssh_dir/id_ed25519" \
+              -o BatchMode=yes \
+              -o ClearAllForwardings=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+              -o GlobalKnownHostsFile=/dev/null \
+              -o HostKeyAlgorithms=ssh-ed25519 \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=30 \
+              root@46.202.154.25 \
+              > .sovereign-evidence/independent-target-runtime-receipt.json
+
+      - name: Verify signed independent runtime receipt against manifest
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/verify_sovereign_runtime_receipt.py \
+            .sovereign-evidence/coordinated-release.json \
+            .sovereign-evidence/independent-target-runtime-receipt.json \
+            .github/sovereign-runtime-receipt-allowed-signers \
+            .sovereign-evidence/runtime-receipt-verdict.json \
+            "$GITHUB_RUN_ID"
+
+      - name: Upload independent runtime evidence
+        if: always()
+        uses: actions/upload-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sovereign-independent-runtime-receipt-${{ env.EXPECTED_REVISION }}
+          path: .sovereign-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish verified production deployment verdict
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.0.1
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const fs = require('fs');
+            const verdict = JSON.parse(fs.readFileSync('.sovereign-evidence/runtime-receipt-verdict.json', 'utf8'));
+            const expected = String(process.env.EXPECTED_REVISION || '').toLowerCase();
+            if (verdict.status !== 'VERIFIED' || verdict.revision !== expected) {
+              core.setFailed('RUNTIME_RECEIPT_VERDICT_NOT_VERIFIED');
+              return;
+            }
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: expected,
+              environment: 'Production',
+              description: `Independent target-system runtime receipt ${verdict.receiptSha256}`,
+              required_contexts: [],
+              auto_merge: false,
+              transient_environment: false,
+              production_environment: true,
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: 'success',
+              environment: 'Production',
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `VERIFIED ${expected} runtime receipt ${verdict.receiptSha256}`,
+            });

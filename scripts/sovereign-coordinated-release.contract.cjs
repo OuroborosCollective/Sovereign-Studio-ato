@@ -24,7 +24,7 @@ test('coordinated release is the single main-head image truth surface', () => {
   assert.match(workflow, /sovereign-backend-image\.yml/);
   assert.match(workflow, /sovereign-chatgpt-mcp\.yml/);
   assert.doesNotMatch(workflow, /synchronous-revision-control\.yml/);
-  assert.doesNotMatch(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
 });
 
 test('coordinated release waits for the full producer critical path and accepts exact-head refreshes', () => {
@@ -77,6 +77,27 @@ test('manifest records immutable identities but blocks runtime promotion without
   assert.match(workflow, /'runtimePromotionStatus': 'BLOCKED_PENDING_INDEPENDENT_TARGET_SYSTEM_READBACK'/);
   assert.match(workflow, /'authoritativeMainRevision': authoritative_revision/);
   assert.match(workflow, /hashlib\.sha256\(canonical\)/);
+});
+
+test('independent target runtime receipt is manifest-bound, short-lived, host-pinned and CI-verified', () => {
+  assert.match(workflow, /independent-target-runtime-readback:/);
+  assert.match(workflow, /needs: \[coordinated-release\]/);
+  assert.match(workflow, /name: production-runtime-readback/);
+  assert.match(workflow, /actions\/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1/);
+  assert.match(workflow, /permission-actions: read/);
+  assert.match(workflow, /permission-contents: read/);
+  assert.match(workflow, /SOVEREIGN_RUNTIME_READBACK_APP_PRIVATE_KEY/);
+  assert.match(workflow, /SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY/);
+  assert.match(workflow, /StrictHostKeyChecking=yes/);
+  assert.match(workflow, /HostKeyAlgorithms=ssh-ed25519/);
+  assert.match(workflow, /verify_sovereign_runtime_receipt\.py/);
+  assert.match(workflow, /Publish verified production deployment verdict/);
+  assert.match(workflow, /deployments: write/);
+  assert.match(workflow, /manifestEvidenceSha256/);
+  assert.match(workflow, /releaseGateRunId/);
+  assert.match(workflow, /\"\$GITHUB_RUN_ID\"/);
+  assert.doesNotMatch(workflow, /SOVEREIGN_RELEASE_GITHUB_TOKEN_FILE: \$\{\{ secrets\./);
+  assert.doesNotMatch(workflow, /GITHUB_APP_INSTALLATION_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 });
 
 test('Docker inspect templates use valid Go-template quotes', () => {
