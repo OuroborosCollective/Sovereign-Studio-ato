@@ -22,8 +22,7 @@ export interface GitHubAccessSnapshot {
 }
 
 export interface GitHubAccessRepositoryTarget {
-  readonly owner: string;
-  readonly repo: string;
+  readonly jobId: string;
 }
 
 export interface GitHubAccessApiValidationResult {
@@ -103,9 +102,8 @@ export async function validateGitHubTokenForRepo(
 ): Promise<GitHubAccessApiValidationResult> {
   const format = validateGitHubTokenFormat(token);
   if (!format.isValid) return { ok: false, error: format.error };
-  const owner = target.owner.trim();
-  const repo = target.repo.trim();
-  if (!owner || !repo) return { ok: false, error: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.' };
+  const jobId = target.jobId.trim();
+  if (!jobId) return { ok: false, canWrite: false, error: 'Serverbestätigter Agent-Job fehlt für GitHub-Zugangsprüfung.' };
 
   const base = backendBaseUrl.replace(/\/+$/, '');
   try {
@@ -114,8 +112,7 @@ export async function validateGitHubTokenForRepo(
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
-        owner,
-        repo,
+        jobId,
         githubAccessToken: token.trim(),
       }),
     });
@@ -133,7 +130,7 @@ export async function validateGitHubTokenForRepo(
       return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung lieferte keine gültige Antwort.' };
     }
     return {
-      ok: payload.ok === true,
+      ok: payload.ok === true && payload.canWrite === true,
       canWrite: payload.canWrite === true,
       error: typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim() : undefined,
     };

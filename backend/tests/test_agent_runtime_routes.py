@@ -196,8 +196,9 @@ def test_github_access_validation_requires_sovereign_session():
     assert response.get_json()["error"] == "Nicht eingeloggt"
 
 
-def test_github_access_validation_is_repo_scoped_and_never_echoes_token(monkeypatch):
+def test_github_access_validation_is_server_job_scoped_and_never_echoes_token(monkeypatch):
     conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-github-access")
     captured = {}
     token = "ghp_" + "a" * 40
 
@@ -217,8 +218,9 @@ def test_github_access_validation_is_repo_scoped_and_never_echoes_token(monkeypa
         "/api/user/agent/github-access/validate",
         headers={"X-Test-User": "user-1"},
         json={
-            "owner": "OuroborosCollective",
-            "repo": "Wasd",
+            "jobId": "agent-github-access",
+            "owner": "attacker-controlled-owner",
+            "repo": "attacker-controlled-repo",
             "githubAccessToken": token,
         },
     )
@@ -226,12 +228,33 @@ def test_github_access_validation_is_repo_scoped_and_never_echoes_token(monkeypa
     payload = response.get_json()
     assert response.status_code == 200
     assert payload == {"ok": True, "canWrite": True, "code": "ready", "error": None}
-    assert captured == {"token": token, "owner": "OuroborosCollective", "repo": "Wasd"}
+    assert captured == {"token": token, "owner": "OuroborosCollective", "repo": "Sovereign-Studio-ato"}
     assert token not in response.get_data(as_text=True)
+
+
+def test_github_access_validation_rejects_unowned_server_scope_before_external_validation():
+    conn = FakeConnection()
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "jobId": "agent-not-owned-by-session",
+            "githubAccessToken": "ghp_" + "a" * 40,
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 422
+    assert payload["ok"] is False
+    assert payload["canWrite"] is False
+    assert payload["code"] == "server_scope_unverified"
 
 
 def test_github_access_validation_preserves_typed_github_rejection_without_session_logout(monkeypatch):
     conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-github-access")
     token = "github_pat_" + "b" * 32
     monkeypatch.setattr(
         routes_module,
@@ -249,8 +272,7 @@ def test_github_access_validation_preserves_typed_github_rejection_without_sessi
         "/api/user/agent/github-access/validate",
         headers={"X-Test-User": "user-1"},
         json={
-            "owner": "OuroborosCollective",
-            "repo": "Wasd",
+            "jobId": "agent-github-access",
             "githubAccessToken": token,
         },
     )

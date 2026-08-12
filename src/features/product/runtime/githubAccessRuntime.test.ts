@@ -201,7 +201,7 @@ describe('GitHub Access Runtime', () => {
   });
 
   describe('server-bound GitHub access validation contract', () => {
-    const target = { owner: 'OuroborosCollective', repo: 'Sovereign-Studio-ato' };
+    const target = { jobId: 'agent-github-access-scope' };
     const token = 'ghp_' + 'a'.repeat(40);
     const backendBase = 'https://sovereign.example';
 
@@ -211,8 +211,7 @@ describe('GitHub Access Runtime', () => {
         expect(String(url)).not.toContain('api.github.com');
         expect(init?.credentials).toBe('include');
         expect(JSON.parse(String(init?.body))).toEqual({
-          owner: target.owner,
-          repo: target.repo,
+          jobId: target.jobId,
           githubAccessToken: token,
         });
         return new Response(JSON.stringify({ ok: true, canWrite: true }), { status: 200 });
@@ -246,6 +245,14 @@ describe('GitHub Access Runtime', () => {
       expect(result.ok).toBe(false);
       expect(result.canWrite).toBe(false);
       expect(result.error).toContain('Schreibzugriff');
+    });
+
+    it('fails closed when the backend omits or contradicts the write verdict', async () => {
+      const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true, canWrite: false }), { status: 200 })) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
+
+      expect(result).toEqual({ ok: false, canWrite: false, error: undefined });
     });
 
     it('distinguishes a Sovereign session failure from a rejected GitHub credential', async () => {

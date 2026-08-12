@@ -6545,14 +6545,15 @@ Das echte Repo-Setup wurde geöffnet.`,
                     const validationTargetKey = currentRepositoryTargetKey;
                     const validationRepoScopeKey = currentRepoScopeKey;
                     const validationRepoSnapshot = chatRepoSnapshot;
-                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                    const validationJobId = scopedAgentJob?.jobId ?? null;
+                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot || !validationJobId) {
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Ein serverbestätigter Agent-Job fehlt für GitHub-Zugangsprüfung.'));
                       setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
+                        detail: 'Ein serverbestätigter Agent-Job fehlt für GitHub-Zugangsprüfung.',
                         kind: 'failed',
                       }));
                       return;
@@ -6571,7 +6572,7 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                     const validation = await validateGitHubTokenForRepo(
                       token,
-                      { owner: validationRepoSnapshot.owner, repo: validationRepoSnapshot.repo },
+                      { jobId: validationJobId },
                       globalThis.fetch,
                       SOVEREIGN_WORKER_BASE,
                     );

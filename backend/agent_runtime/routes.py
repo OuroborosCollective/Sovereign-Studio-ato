@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 import uuid
 
 from flask import Response, jsonify, request
@@ -259,6 +260,20 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
     def _read_owned_job(conn, user_id: str, job_id: str):
         return read_agent_job(conn, user_id=user_id, job_id=job_id)
+
+    def _github_target_for_owned_job(conn, user_id: str, job_id: str) -> tuple[str, str] | None:
+        job = _read_owned_job(conn, user_id, job_id)
+        if job is None:
+            return None
+        parsed = urlparse(str(job.repo_url or "").strip())
+        if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+            return None
+        parts = [part for part in parsed.path.strip("/").split("/") if part]
+        if len(parts) != 2:
+            return None
+        owner, repo = parts
+        repo = repo.removesuffix(".git")
+        return (owner, repo) if owner and repo else None
 
     def _real_job_diff(job: Any) -> str:
         diff_result = run_agent_job_tool(job, "diff", {}, _workspace_root())
@@ -1076,19 +1091,41 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
+        job_id = str(body.get("jobId") or "").strip()
+        if not job_id:
+            return jsonify({
+                "ok": False,
+                "canWrite": False,
+                "code": "server_scope_required",
+                "error": "Ein serverbestätigter Agent-Job ist für die GitHub-Zugangsprüfung erforderlich.",
+            }), 422
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            target = _github_target_for_owned_job(conn, user_id, job_id)
+        finally:
+            _close(conn)
+        if target is None:
+            return jsonify({
+                "ok": False,
+                "canWrite": False,
+                "code": "server_scope_unverified",
+                "error": "Der servergebundene Repository-Scope konnte nicht bestätigt werden.",
+            }), 422
+        owner, repo = target
         result = validate_github_access_for_repo(
             body.get("githubAccessToken"),
-            owner=str(body.get("owner") or ""),
-            repo=str(body.get("repo") or ""),
+            owner=owner,
+            repo=repo,
         )
         # This is a nested external-credential verdict, not a failure of the
         # authenticated Sovereign session. Keep expected GitHub rejections in a
         # typed 200 envelope so the frontend cannot confuse them with logout.
         return jsonify({
-            "ok": result.ok,
+            "ok": result.ok and result.can_write,
             "canWrite": result.can_write,
             "code": result.code,
-            "error": None if result.ok else result.message,
+            "error": None if result.ok and result.can_write else result.message,
         }), 200
 
     @app.route("/api/user/agent/validate-mission", methods=["POST"])
