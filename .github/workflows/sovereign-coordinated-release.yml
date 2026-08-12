@@ -8,7 +8,6 @@ on:
 permissions:
   actions: read
   contents: read
-  deployments: write
   packages: read
 
 concurrency:
@@ -88,7 +87,7 @@ jobs:
                   );
                   if (!publisher) {
                     if (run.status !== 'completed') {
-                      // Downstream publisher jobs are absent until their producer prerequisite completes.
+                      // Downstream publisher jobs are absent until prerequisite completes.
                       waiting = true;
                       break;
                     }
@@ -301,6 +300,10 @@ jobs:
     needs: [coordinated-release]
     runs-on: ubuntu-latest
     timeout-minutes: 105
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     environment:
       name: production-runtime-readback
     steps:
@@ -363,21 +366,11 @@ jobs:
           PY
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
-      - name: Create short-lived read-only GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.0.0
-        with:
-          client-id: ${{ vars.SOVEREIGN_RUNTIME_READBACK_APP_CLIENT_ID }}
-          private-key: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-actions: read
-          permission-contents: read
-
       - name: Verify pinned VPS host and invoke forced runtime readback entrypoint
         env:
           RUNTIME_READBACK_SSH_PRIVATE_KEY: ${{ secrets.SOVEREIGN_RUNTIME_READBACK_SSH_PRIVATE_KEY }}
-          GITHUB_APP_INSTALLATION_TOKEN: ${{ steps.app-token.outputs.token }}
+          RUNTIME_READBACK_GITHUB_TOKEN: ${{ github.token }}
+          REGISTRY_USERNAME: ${{ github.actor }}
         run: |
           set -Eeuo pipefail
           ssh_dir="$(mktemp -d)"
@@ -387,7 +380,11 @@ jobs:
           printf '%s\n' '46.202.154.25 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIVZLyqUD5nlHXfk1sRA0v829TiZyxa5Bs4AS/G8eWLv' > "$ssh_dir/known_hosts"
           chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
           test "$(ssh-keygen -lf "$ssh_dir/known_hosts" | awk '{print $2}')" = 'SHA256:pskBohJoTx/V3iCPaD9m1sW1vchvhvGc89lKnX0RocQ'
-          { cat .sovereign-evidence/runtime-readback-scope.json; printf '%s\n' "$GITHUB_APP_INSTALLATION_TOKEN"; } \
+          {
+            cat .sovereign-evidence/runtime-readback-scope.json
+            printf '%s\n' "$RUNTIME_READBACK_GITHUB_TOKEN"
+            printf '%s\n' "$REGISTRY_USERNAME"
+          } \
             | ssh \
               -i "$ssh_dir/id_ed25519" \
               -o BatchMode=yes \
@@ -420,6 +417,23 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           include-hidden-files: true
+
+
+  publish-production-verdict:
+    name: Publish verified production deployment verdict
+    needs: [independent-target-runtime-readback]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+    steps:
+      - name: Download verified independent runtime evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sovereign-independent-runtime-receipt-${{ env.EXPECTED_REVISION }}
+          path: .sovereign-evidence
 
       - name: Publish verified production deployment verdict
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.0.1
