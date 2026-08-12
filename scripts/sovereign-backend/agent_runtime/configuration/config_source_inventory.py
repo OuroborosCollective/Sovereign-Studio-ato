@@ -323,8 +323,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--repo-root",
-        default=str(HERE.parents[3]),
-        help="Repository root (defaults to four levels above this script)",
+        default=str(HERE.parents[2]),
+        help="Repository root (defaults to two levels above this script's directory).",
     )
     parser.add_argument(
         "--write",

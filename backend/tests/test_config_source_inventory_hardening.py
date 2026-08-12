@@ -1,10 +1,14 @@
 from pathlib import Path
+import contextlib
+import io
+import json
 import sys
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from agent_runtime.configuration import config_source_inventory as csi
 from agent_runtime.configuration.config_source_inventory import build_inventory
 
 
@@ -49,3 +53,26 @@ def test_inventory_canonical_and_deployment_mirror_are_byte_identical() -> None:
     canonical = repo_root / "backend/agent_runtime/configuration/config_source_inventory.py"
     mirror = repo_root / "scripts/sovereign-backend/agent_runtime/configuration/config_source_inventory.py"
     assert canonical.read_bytes() == mirror.read_bytes()
+
+
+def test_default_repo_root_resolves_to_actual_repo_root_no_false_drift() -> None:
+    # Regression guard: the CLI default --repo-root must resolve to the actual
+    # repository root, not one level above it. An off-by-one here made every
+    # provenance surface report as missing and `--strict` exit non-zero on a
+    # healthy tree (false drift). The existing build_inventory() tests pass
+    # explicit paths and so never exercised the default; this invokes main()
+    # with no --repo-root and asserts honest, drift-free output.
+    repo_root = Path(__file__).resolve().parents[2]
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = csi.main(["--strict"])
+    assert rc == 0, "inventory --strict must pass on a healthy repo using the default repo-root"
+    inventory = json.loads(buf.getvalue())
+    assert inventory["drift"] == [], inventory["drift"]
+    # The default must have resolved to the real repo root, so every required
+    # provenance surface is present and the required-surface count is non-zero.
+    present_required = {s["label"] for s in inventory["surfaces"] if s["present"]}
+    assert set(csi.REQUIRED_LABELS) <= present_required
+    # Sanity: the resolved root is the repository root, not a parent directory.
+    assert Path(csi.HERE.parents[2]).resolve() == repo_root.resolve()
