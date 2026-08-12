@@ -37,6 +37,8 @@ def receipt(value: object) -> str:
 def persisted_repair_receipt_sequence(
     final_tool_name: str = "test",
     final_diff_sha256: str = "3" * 64,
+    final_test_execution_kind: str = "qualifying-test",
+    final_changed_paths: tuple[str, ...] = (".github/workflows/ci.yml",),
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Canonical append-only write→PASS-test-readback sequence from the live tool flow."""
     mutation = build_agent_run_receipt(
@@ -80,6 +82,8 @@ def persisted_repair_receipt_sequence(
         observed_effect="read",
         authoritative_readback_sha256="5" * 64,
         previous_receipt_sha256=str(mutation["header"]["hash"]),
+        test_execution_kind=final_test_execution_kind,
+        changed_paths=final_changed_paths,
     )
     return mutation, readback
 
@@ -227,6 +231,8 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
         pr_evidence={
             "url": job["draft_pr_url"],
             "headSha": HEAD_SHA,
+            "draft": True,
+            "state": "open",
             "ciHeadShaMatch": True,
             "ciGreen": True,
             "checks": [
@@ -268,6 +274,33 @@ def test_proof_pack_rejects_a_non_test_pass_receipt_after_mutation() -> None:
         job=job,
         pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
         agent_receipts=(mutation, non_test_readback),
+    )
+
+    assert pack["ready"] is False
+    assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
+
+
+def test_proof_pack_rejects_a_nonqualifying_diff_check_labeled_as_test() -> None:
+    mutation, diff_check = persisted_repair_receipt_sequence(final_test_execution_kind="nonqualifying-test")
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "a prior test failed but a later git diff --check passed",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, diff_check),
     )
 
     assert pack["ready"] is False
@@ -380,6 +413,7 @@ def test_proof_pack_fails_closed_when_secret_material_was_redacted() -> None:
 
 def test_proof_pack_keeps_the_full_changed_file_set_and_blocks_over_limit() -> None:
     changed_files = [f"backend/change_{index}.py" for index in range(MAX_REPAIR_CHANGED_FILES + 1)]
+    mutation, readback = persisted_repair_receipt_sequence(final_changed_paths=tuple(changed_files))
     pack = build_proof_pack(
         repair={
             "repair_id": "r" * 36,
@@ -391,22 +425,60 @@ def test_proof_pack_keeps_the_full_changed_file_set_and_blocks_over_limit() -> N
             "entitlement_source": "verified_purchase",
         },
         job={
-            "changed_files": changed_files,
+            "changed_files": [changed_files[-1]],
             "test_summary": "targeted tests passed",
             "draft_pr_url": "https://github.com/acme/app/pull/8",
         },
         pr_evidence={
+            "url": "https://github.com/acme/app/pull/8",
             "headSha": HEAD_SHA,
+            "draft": True,
+            "state": "open",
             "ciHeadShaMatch": True,
             "ciGreen": True,
             "checks": [],
         },
+        agent_receipts=(mutation, readback),
     )
-    assert pack["changedFiles"] == changed_files
+    assert pack["changedFiles"] == sorted(changed_files)
     assert pack["changedFileCount"] == MAX_REPAIR_CHANGED_FILES + 1
     assert f"changed_file_limit_exceeded:{MAX_REPAIR_CHANGED_FILES + 1}>{MAX_REPAIR_CHANGED_FILES}" in pack["blockers"]
     assert pack["ready"] is False
     assert verify_proof_pack(pack) is False
+
+
+def test_proof_pack_rejects_a_ready_or_closed_pr_after_draft_publication() -> None:
+    mutation, readback = persisted_repair_receipt_sequence()
+    pack = build_proof_pack(
+        repair={
+            "repair_id": "r" * 36,
+            "repository": "https://github.com/acme/app",
+            "failure_family": "github_actions_ci",
+            "base_sha": BASE_SHA,
+            "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
+        },
+        job={
+            "changed_files": [".github/workflows/ci.yml"],
+            "test_summary": "targeted tests passed",
+            "draft_pr_url": "https://github.com/acme/app/pull/9",
+        },
+        pr_evidence={
+            "url": "https://github.com/acme/app/pull/9",
+            "headSha": HEAD_SHA,
+            "draft": False,
+            "state": "open",
+            "ciHeadShaMatch": True,
+            "ciGreen": True,
+            "checks": [],
+        },
+        agent_receipts=(mutation, readback),
+    )
+
+    assert pack["ready"] is False
+    assert "draft_pr_only_boundary_violated" in pack["blockers"]
+    assert pack["mutationEvidence"]["verdict"]["status"] == "CONTRADICTED"
 
 
 def test_proof_pack_requires_the_current_pr_head_to_match_published_commit() -> None:

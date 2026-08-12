@@ -1502,6 +1502,8 @@ def finish_agent_tool_call(
     mutation_performed: bool,
     observed_effect: str,
     authoritative_readback_sha256: str,
+    test_execution_kind: str = "none",
+    changed_paths: Sequence[str] = (),
     failure_family: str | None = None,
 ) -> dict[str, object]:
     """Atomically finish one tool call and append its canonical receipt."""
@@ -1561,6 +1563,8 @@ def finish_agent_tool_call(
                 observed_effect=observed_effect,
                 authoritative_readback_sha256=authoritative_readback_sha256,
                 previous_receipt_sha256=previous_hash,
+                test_execution_kind=test_execution_kind,
+                changed_paths=changed_paths,
             )
             body = dict(receipt["body"])
             cur.execute(

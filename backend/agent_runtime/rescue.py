@@ -420,6 +420,7 @@ def read_github_pr_evidence(
         "url": f"https://github.com/{owner}/{repo}/pull/{number}",
         "headSha": head_sha,
         "draft": pr_body.get("draft") is True if isinstance(pr_body, dict) else False,
+        "state": str(pr_body.get("state") or "").lower() if isinstance(pr_body, dict) else "",
         "ciHeadShaMatch": head_match,
         "ciGreen": green and head_match,
         "checks": checks,
@@ -843,9 +844,10 @@ def build_proof_pack(
     repository = str(repair.get("repository") or "")
     base_sha = normalize_head_sha(repair.get("base_sha") or repair.get("baseSha"))
     head_sha = str(pr.get("headSha") or "").lower()
-    changed_files = list(normalize_repair_changed_files(
+    declared_changed_files = list(normalize_repair_changed_files(
         job.get("changed_files") or job.get("changedFiles") or []
     ))
+    changed_files: list[str] = []
     test_summary = redact_secret_text(
         job.get("test_summary") or job.get("testSummary") or "",
         4000,
@@ -858,17 +860,14 @@ def build_proof_pack(
     repair_id = str(repair.get("repair_id") or repair.get("repairId") or "")
 
     blockers: list[str] = []
-    changed_file_blocker = repair_changed_file_limit_blocker(changed_files)
-    if not changed_files:
-        blockers.append("changed_file_evidence_missing")
-    if changed_file_blocker:
-        blockers.append(changed_file_blocker)
     if not test_summary:
         blockers.append("test_evidence_missing")
     if "[REDACTED]" in test_summary:
         blockers.append("secret_material_redacted")
     if not pr_url.startswith("https://github.com/") or "/pull/" not in pr_url:
         blockers.append("draft_pr_evidence_missing")
+    if pr.get("draft") is not True or str(pr.get("state") or "").lower() != "open":
+        blockers.append("draft_pr_only_boundary_violated")
     if not _SHA40.fullmatch(head_sha):
         blockers.append("draft_pr_head_sha_missing")
     if not _SHA40.fullmatch(published_head_sha):
@@ -930,6 +929,8 @@ def build_proof_pack(
                     for test_candidate, test_body in parsed_receipts[terminal_mutation_index + 1:]:
                         if str(test_body.get("tool_name") or "").strip().lower() not in {"test", "run_tests"}:
                             continue
+                        if str(test_body.get("test_execution_kind") or "").strip().lower() != "qualifying-test":
+                            continue
                         if str(test_body.get("evidence_gate_result") or "").upper() != "PASS":
                             continue
                         if test_body.get("mutation_performed") is True:
@@ -950,6 +951,16 @@ def build_proof_pack(
                         break
                     if final_readback_receipt is None:
                         blockers.append("terminal_mutation_passing_test_receipt_missing")
+
+    verified_changed_files = normalize_repair_changed_files(
+        final_readback_body.get("changed_paths") if final_readback_receipt is not None else ()
+    )
+    changed_files = list(verified_changed_files)
+    changed_file_blocker = repair_changed_file_limit_blocker(changed_files)
+    if not changed_files:
+        blockers.append("verified_changed_path_evidence_missing")
+    if changed_file_blocker:
+        blockers.append(changed_file_blocker)
 
     if final_readback_receipt is None:
         envelope = build_mutation_proof_envelope(
@@ -1085,8 +1096,8 @@ def build_proof_pack(
         else "UNAVAILABLE"
     )
     readback_assertion = (
-        "OBSERVED" if final_readback_receipt is not None and head_sha and head_sha == published_head_sha
-        else "CONTRADICTED" if terminal_test_diff_mismatch or (head_sha and published_head_sha and head_sha != published_head_sha)
+        "OBSERVED" if final_readback_receipt is not None and head_sha and head_sha == published_head_sha and pr.get("draft") is True and str(pr.get("state") or "").lower() == "open"
+        else "CONTRADICTED" if terminal_test_diff_mismatch or pr.get("draft") is not True or str(pr.get("state") or "").lower() not in {"", "open"} or (head_sha and published_head_sha and head_sha != published_head_sha)
         else "UNAVAILABLE"
     )
     capability_assertion = (
@@ -1143,6 +1154,7 @@ def build_proof_pack(
         "publishedHeadSha": published_head_sha or None,
         "draftPrUrl": pr_url or None,
         "changedFiles": changed_files,
+        "declaredChangedFiles": declared_changed_files,
         "changedFileCount": len(changed_files),
         "maxChangedFiles": MAX_REPAIR_CHANGED_FILES,
         "testSummary": test_summary or None,

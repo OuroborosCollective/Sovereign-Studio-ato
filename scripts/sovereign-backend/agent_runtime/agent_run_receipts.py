@@ -303,6 +303,8 @@ def build_agent_run_receipt(
     observed_effect: str,
     authoritative_readback_sha256: str,
     previous_receipt_sha256: str,
+    test_execution_kind: str = "none",
+    changed_paths: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Build one canonical receipt. Timestamp observations remain outside the hash."""
 
@@ -312,7 +314,17 @@ def build_agent_run_receipt(
     effect = str(observed_effect or "").strip().lower()
     if effect not in {"read", "workspace-write", "external-write", "none"}:
         raise ReceiptContractError("unsupported observed effect")
+    test_kind = str(test_execution_kind or "").strip().lower()
+    if test_kind not in {"none", "qualifying-test", "nonqualifying-test"}:
+        raise ReceiptContractError("unsupported test execution kind")
     previous = str(previous_receipt_sha256 or "").strip().lower() or _ZERO_SHA256
+    normalized_changed_paths: list[str] = []
+    for raw_path in changed_paths:
+        path = PurePosixPath(str(raw_path or "").strip())
+        if not path.parts or path.is_absolute() or ".." in path.parts:
+            raise ReceiptContractError("changed path is invalid")
+        normalized_changed_paths.append(path.as_posix())
+    canonical_changed_paths = tuple(sorted(set(normalized_changed_paths)))
     digests = {
         "input_sha256": input_sha256,
         "output_sha256": output_sha256,
@@ -352,6 +364,8 @@ def build_agent_run_receipt(
         "output_sha256": str(output_sha256).lower(),
         "diff_sha256": str(diff_sha256).lower(),
         "test_evidence_sha256": str(test_evidence_sha256).lower(),
+        "test_execution_kind": test_kind,
+        "changed_paths": list(canonical_changed_paths),
         "evidence_gate_result": gate,
         "mutation_performed": bool(mutation_performed),
         "observed_effect": effect,
