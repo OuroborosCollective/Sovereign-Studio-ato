@@ -6545,15 +6545,14 @@ Das echte Repo-Setup wurde geöffnet.`,
                     const validationTargetKey = currentRepositoryTargetKey;
                     const validationRepoScopeKey = currentRepoScopeKey;
                     const validationRepoSnapshot = chatRepoSnapshot;
-                    const validationJobId = scopedAgentJob?.jobId ?? null;
-                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot || !validationJobId) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Ein serverbestätigter Agent-Job fehlt für GitHub-Zugangsprüfung.'));
+                    if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.'));
                       setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Ein serverbestätigter Agent-Job fehlt für GitHub-Zugangsprüfung.',
+                        detail: 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.',
                         kind: 'failed',
                       }));
                       return;
@@ -6572,7 +6571,11 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                     const validation = await validateGitHubTokenForRepo(
                       token,
-                      { jobId: validationJobId },
+                      {
+                        repository: validationRepoSnapshot.repoUrl,
+                        branch: validationRepoSnapshot.branch,
+                        expectedBaseSha: validationRepoSnapshot.headSha,
+                      },
                       globalThis.fetch,
                       SOVEREIGN_WORKER_BASE,
                     );

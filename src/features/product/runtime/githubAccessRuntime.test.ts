@@ -201,17 +201,25 @@ describe('GitHub Access Runtime', () => {
   });
 
   describe('server-bound GitHub access validation contract', () => {
-    const target = { jobId: 'agent-github-access-scope' };
+    const target = {
+      repository: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      expectedBaseSha: 'a'.repeat(40),
+    };
     const token = 'ghp_' + 'a'.repeat(40);
     const backendBase = 'https://sovereign.example';
 
     it('validates the exact repo through Sovereign backend instead of GitHub from the browser', async () => {
       const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-        expect(String(url)).toBe(`${backendBase}/api/user/agent/github-access/validate`);
         expect(String(url)).not.toContain('api.github.com');
         expect(init?.credentials).toBe('include');
+        if (String(url).endsWith('/api/user/agent/github-access/scope')) {
+          expect(JSON.parse(String(init?.body))).toEqual(target);
+          return new Response(JSON.stringify({ ok: true, scope: 'v1.test-scope.signature' }), { status: 200 });
+        }
+        expect(String(url)).toBe(`${backendBase}/api/user/agent/github-access/validate`);
         expect(JSON.parse(String(init?.body))).toEqual({
-          jobId: target.jobId,
+          scope: 'v1.test-scope.signature',
           githubAccessToken: token,
         });
         return new Response(JSON.stringify({ ok: true, canWrite: true }), { status: 200 });
@@ -220,25 +228,33 @@ describe('GitHub Access Runtime', () => {
       const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
 
       expect(result).toEqual({ ok: true, canWrite: true, error: undefined });
-      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher).toHaveBeenCalledTimes(2);
     });
 
     it('accepts github_pat_ candidates through the same backend contract', async () => {
-      const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true, canWrite: true }), { status: 200 })) as unknown as typeof fetch;
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
+        String(url).endsWith('/scope')
+          ? { ok: true, scope: 'v1.test-scope.signature' }
+          : { ok: true, canWrite: true },
+      ), { status: 200 })) as unknown as typeof fetch;
 
       const result = await validateGitHubTokenForRepo(FINE_GRAINED_PAT_CANDIDATE, target, fetcher, backendBase);
 
       expect(result.ok).toBe(true);
-      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher).toHaveBeenCalledTimes(2);
     });
 
     it('preserves a typed repo permission failure returned by the backend', async () => {
-      const fetcher = vi.fn(async () => new Response(JSON.stringify({
-        ok: false,
-        canWrite: false,
-        code: 'write_permission_missing',
-        error: 'GitHub akzeptiert den Zugang für dieses Repository, meldet aber keinen effektiven Schreibzugriff.',
-      }), { status: 200 })) as unknown as typeof fetch;
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
+        String(url).endsWith('/scope')
+          ? { ok: true, scope: 'v1.test-scope.signature' }
+          : {
+              ok: false,
+              canWrite: false,
+              code: 'write_permission_missing',
+              error: 'GitHub akzeptiert den Zugang für dieses Repository, meldet aber keinen effektiven Schreibzugriff.',
+            },
+      ), { status: 200 })) as unknown as typeof fetch;
 
       const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
 
@@ -248,7 +264,11 @@ describe('GitHub Access Runtime', () => {
     });
 
     it('fails closed when the backend omits or contradicts the write verdict', async () => {
-      const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true, canWrite: false }), { status: 200 })) as unknown as typeof fetch;
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
+        String(url).endsWith('/scope')
+          ? { ok: true, scope: 'v1.test-scope.signature' }
+          : { ok: true, canWrite: false },
+      ), { status: 200 })) as unknown as typeof fetch;
 
       const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
 

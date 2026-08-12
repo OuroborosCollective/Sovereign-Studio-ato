@@ -8,7 +8,11 @@ from urllib.error import HTTPError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_runtime.github_access import validate_github_access_for_repo  # noqa: E402
+from agent_runtime.github_access import (  # noqa: E402
+    issue_github_access_scope,
+    validate_github_access_for_repo,
+    verify_github_access_scope,
+)
 
 
 class FakeResponse:
@@ -88,6 +92,28 @@ def test_repo_scoped_github_access_blocks_missing_effective_write_permission():
     assert result.ok is False
     assert result.can_write is False
     assert result.code == "write_permission_missing"
+
+
+def test_server_issued_github_access_scope_is_user_and_revision_bound():
+    secret = "s" * 32
+    scope = issue_github_access_scope(
+        user_id="user-1",
+        repository="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+        branch="main",
+        revision="a" * 40,
+        secret=secret,
+        now=1_000,
+    )
+
+    verified = verify_github_access_scope(scope, user_id="user-1", secret=secret, now=1_100)
+
+    assert verified is not None
+    assert (verified.owner, verified.repo, verified.branch, verified.revision) == (
+        "OuroborosCollective", "Sovereign-Studio-ato", "main", "a" * 40,
+    )
+    assert verify_github_access_scope(scope, user_id="user-2", secret=secret, now=1_100) is None
+    assert verify_github_access_scope(scope + "x", user_id="user-1", secret=secret, now=1_100) is None
+    assert verify_github_access_scope(scope, user_id="user-1", secret=secret, now=1_601) is None
 
 
 def test_repo_scoped_github_access_rejects_invalid_target_before_network():

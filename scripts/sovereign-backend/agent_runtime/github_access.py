@@ -9,10 +9,15 @@ creation remains the authoritative mutation check.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
+import hashlib
+import hmac
 import json
+import re
+import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 from .git_workspace import normalize_ephemeral_github_token
@@ -24,6 +29,111 @@ class GitHubAccessValidation:
     can_write: bool
     code: str
     message: str
+
+
+@dataclass(frozen=True)
+class GitHubAccessScope:
+    owner: str
+    repo: str
+    branch: str
+    revision: str
+
+
+_SCOPE_REVISION = re.compile(r"^[0-9a-f]{40}$")
+_SCOPE_TTL_SECONDS = 600
+
+
+def _scope_target(repository: object) -> tuple[str, str] | None:
+    parsed = urlparse(str(repository or "").strip())
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+        return None
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) != 2:
+        return None
+    owner, repo = parts
+    repo = repo.removesuffix(".git")
+    if not owner or not repo or "/" in owner or "/" in repo:
+        return None
+    return owner, repo
+
+
+def _scope_message(payload: dict[str, object]) -> bytes:
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def issue_github_access_scope(
+    *,
+    user_id: object,
+    repository: object,
+    branch: object,
+    revision: object,
+    secret: object,
+    now: int | None = None,
+) -> str:
+    """Issue a short-lived, signed GitHub repository scope without storing the credential."""
+
+    target = _scope_target(repository)
+    normalized_user = str(user_id or "").strip()
+    normalized_branch = str(branch or "").strip()
+    normalized_revision = str(revision or "").strip().lower()
+    secret_bytes = str(secret or "").encode("utf-8")
+    if target is None or not normalized_user or not normalized_branch or "\n" in normalized_branch:
+        raise ValueError("github_access_scope_target_invalid")
+    if not _SCOPE_REVISION.fullmatch(normalized_revision):
+        raise ValueError("github_access_scope_revision_invalid")
+    if len(secret_bytes) < 32:
+        raise RuntimeError("github_access_scope_secret_unavailable")
+    owner, repo = target
+    payload: dict[str, object] = {
+        "branch": normalized_branch,
+        "iat": int(time.time() if now is None else now),
+        "owner": owner,
+        "repo": repo,
+        "revision": normalized_revision,
+        "userId": normalized_user,
+    }
+    encoded = base64.urlsafe_b64encode(_scope_message(payload)).decode("ascii").rstrip("=")
+    signature = hmac.new(secret_bytes, encoded.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"v1.{encoded}.{signature}"
+
+
+def verify_github_access_scope(
+    scope: object,
+    *,
+    user_id: object,
+    secret: object,
+    now: int | None = None,
+    ttl_seconds: int = _SCOPE_TTL_SECONDS,
+) -> GitHubAccessScope | None:
+    """Verify scope signature, short expiry and session identity before credential validation."""
+
+    try:
+        version, encoded, supplied_signature = str(scope or "").split(".", 2)
+        secret_bytes = str(secret or "").encode("utf-8")
+        if version != "v1" or len(secret_bytes) < 32 or not re.fullmatch(r"[0-9a-f]{64}", supplied_signature):
+            return None
+        expected_signature = hmac.new(secret_bytes, encoded.encode("ascii"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(supplied_signature, expected_signature):
+            return None
+        decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        payload = json.loads(decoded.decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        issued_at = payload.get("iat")
+        current = int(time.time() if now is None else now)
+        if not isinstance(issued_at, int) or issued_at > current + 30 or current - issued_at > max(1, int(ttl_seconds)):
+            return None
+        if not hmac.compare_digest(str(payload.get("userId") or ""), str(user_id or "").strip()):
+            return None
+        repository = f"https://github.com/{payload.get('owner')}/{payload.get('repo')}"
+        target = _scope_target(repository)
+        revision = str(payload.get("revision") or "").lower()
+        branch = str(payload.get("branch") or "").strip()
+        if target is None or not _SCOPE_REVISION.fullmatch(revision) or not branch or "\n" in branch:
+            return None
+        return GitHubAccessScope(owner=target[0], repo=target[1], branch=branch, revision=revision)
+    except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
 
 
 def _has_effective_write_permission(payload: Any) -> bool:

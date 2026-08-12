@@ -196,6 +196,55 @@ def test_github_access_validation_requires_sovereign_session():
     assert response.get_json()["error"] == "Nicht eingeloggt"
 
 
+def test_github_access_scope_bootstraps_revision_bound_validation_without_an_agent_job(monkeypatch):
+    conn = FakeConnection()
+    token = "ghp_" + "a" * 40
+    captured = {}
+    monkeypatch.setenv("JWT_SECRET", "s" * 32)
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_github_head",
+        lambda repository, branch, token=None: {
+            "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "baseBranch": "main",
+            "baseSha": "c" * 40,
+        },
+    )
+
+    def fake_validate(raw_token, *, owner, repo):
+        captured.update(token=raw_token, owner=owner, repo=repo)
+        return SimpleNamespace(ok=True, can_write=True, code="ready", message="GitHub-Zugang wurde serverseitig bestätigt.")
+
+    monkeypatch.setattr(routes_module, "validate_github_access_for_repo", fake_validate)
+    app = create_test_app(conn)
+    client = app.test_client()
+
+    scope_response = client.post(
+        "/api/user/agent/github-access/scope",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "branch": "main",
+            "expectedBaseSha": "c" * 40,
+        },
+    )
+
+    assert scope_response.status_code == 200
+    scope = scope_response.get_json()["scope"]
+    assert isinstance(scope, str)
+    validation_response = client.post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={"scope": scope, "githubAccessToken": token},
+    )
+
+    assert validation_response.status_code == 200
+    assert validation_response.get_json() == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    assert captured == {"token": token, "owner": "OuroborosCollective", "repo": "Sovereign-Studio-ato"}
+    assert token not in scope_response.get_data(as_text=True)
+    assert token not in validation_response.get_data(as_text=True)
+
+
 def test_github_access_validation_is_server_job_scoped_and_never_echoes_token(monkeypatch):
     conn = FakeConnection()
     seed_job(conn, "user-1", "agent-github-access")

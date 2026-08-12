@@ -22,7 +22,9 @@ export interface GitHubAccessSnapshot {
 }
 
 export interface GitHubAccessRepositoryTarget {
-  readonly jobId: string;
+  readonly repository: string;
+  readonly branch: string;
+  readonly expectedBaseSha: string;
 }
 
 export interface GitHubAccessApiValidationResult {
@@ -102,17 +104,37 @@ export async function validateGitHubTokenForRepo(
 ): Promise<GitHubAccessApiValidationResult> {
   const format = validateGitHubTokenFormat(token);
   if (!format.isValid) return { ok: false, error: format.error };
-  const jobId = target.jobId.trim();
-  if (!jobId) return { ok: false, canWrite: false, error: 'Serverbestätigter Agent-Job fehlt für GitHub-Zugangsprüfung.' };
+  const repository = target.repository.trim();
+  const branch = target.branch.trim();
+  const expectedBaseSha = target.expectedBaseSha.trim().toLowerCase();
+  if (!repository || !branch || !/^[0-9a-f]{40}$/.test(expectedBaseSha)) {
+    return { ok: false, canWrite: false, error: 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.' };
+  }
 
   const base = backendBaseUrl.replace(/\/+$/, '');
   try {
+    const scopeResponse = await fetcher(`${base}/api/user/agent/github-access/scope`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ repository, branch, expectedBaseSha }),
+    });
+    const scopePayload = await safeReadJson(scopeResponse);
+    if (!scopeResponse.ok || !isObject(scopePayload) || scopePayload.ok !== true || typeof scopePayload.scope !== 'string' || !scopePayload.scope.trim()) {
+      return {
+        ok: false,
+        canWrite: false,
+        error: scopeResponse.status === 401
+          ? 'Sovereign-Session ist nicht mehr bestätigt. Bitte erneut anmelden.'
+          : 'Sovereign konnte keinen revisionsgebundenen Repository-Scope bestätigen.',
+      };
+    }
     const response = await fetcher(`${base}/api/user/agent/github-access/validate`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
-        jobId,
+        scope: scopePayload.scope,
         githubAccessToken: token.trim(),
       }),
     });

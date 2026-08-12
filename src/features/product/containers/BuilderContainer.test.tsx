@@ -238,6 +238,9 @@ function fakeGitHubPat(): string {
 
 function runtimeSupportResponse(url: string, init?: RequestInit): Response | null {
   if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+  if (url.includes('/api/user/agent/github-access/scope')) {
+    return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
+  }
   if (url.includes('/api/user/agent/github-access/validate')) {
     return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
   }
@@ -818,11 +821,15 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.includes('/git/trees/')) {
-        return jsonResponse({ sha: 'tree-sha', tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
+        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
       }
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
       if (url === 'https://api.github.com/user') return jsonResponse({ login: 'octo' });
       if (url === 'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato') {
         return jsonResponse({ permissions: { push: true } });
+      }
+      if (url.includes('/api/user/agent/github-access/scope')) {
+        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
       }
       return runtimeSupportResponse(url, init)
         ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
@@ -1833,10 +1840,14 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
       const url = requestUrl(input);
+      if (url.includes('/api/user/agent/github-access/scope')) {
+        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
+      }
       if (url.includes('/api/user/agent/github-access/validate')) return pendingValidation;
       if (url.includes('/git/trees/')) {
-        return jsonResponse({ tree: [{ path: url.includes('Other-Studio') ? 'src/Other.tsx' : 'README.md', type: 'blob', size: 12 }], truncated: false });
+        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: url.includes('Other-Studio') ? 'src/Other.tsx' : 'README.md', type: 'blob', size: 12 }], truncated: false });
       }
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
       return jsonResponse({ choices: [{ message: { content: 'unused' } }] });
     });
     vi.stubGlobal('fetch', fetchMock);
