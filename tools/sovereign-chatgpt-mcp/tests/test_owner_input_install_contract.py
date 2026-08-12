@@ -71,13 +71,17 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
-    assert 'OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"' in installer
+    assert 'RETIRED_OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"' in installer
+    assert 'rm -f "$RETIRED_OWNER_GITHUB_PAT_FILE"' in installer
     assert 'OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"' not in installer
     assert 'if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then' not in installer
     assert 'EFFECTIVE_GITHUB_TOKEN="' not in installer
     assert 'set_value "$MANAGED_ENV" GITHUB_TOKEN' not in installer
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
+    assert 'remove_value "$ENV_FILE" GITHUB_TOKEN' in installer
     assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' in installer
+    assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert '/opt/secure/owner-managed' not in installer
 
@@ -142,10 +146,12 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "secret" not in open_signature.lower()
     assert 'target_id: str = "openai_api_key"' in signature
     assert '"openai_api_key": "OpenAI API-Key"' in client
-    assert '"github_pat": "GitHub Personal Access Token für MCP und Broker"' in client
-    assert '"github_pat": {' in backend_owner_input
-    assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' in backend_owner_input
-    assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' in backend_owner_input
+    assert '"github_pat": "GitHub Personal Access Token für MCP und Broker"' not in client
+    assert '"github_pat": {' not in backend_owner_input
+    assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' not in backend_owner_input
+    assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' not in backend_owner_input
+    assert 'RETIRED_TARGET_IDS = frozenset({"github_pat"})' in backend_owner_input
+    assert 'Owner input target configuration restores a retired target' in backend_owner_input
     assert '"openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle"' in client
     assert '"openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle"' in client
     assert '"openrouter_management_api_key": "OpenRouter Management API Key"' in client
@@ -239,3 +245,11 @@ def test_controller_operator_tools_are_owner_scoped_and_secret_bounded() -> None
     assert '"/api/internal/controller/runs"' in client
     assert '"/api/internal/controller/runs/{selected}/resume"' in client
     assert "timeout=1200" in client
+
+
+def test_self_update_blocks_before_credential_read_without_ephemeral_ci_scope() -> None:
+    updater = (ROOT / "deploy" / "self-update-chatgpt-mcp.sh").read_text("utf-8")
+
+    assert 'SELF_UPDATE_ENABLED="${SOVEREIGN_MCP_ENABLE_SELF_UPDATE:-0}"' in updater
+    assert 'write_status BLOCKED "" "self-update is disabled until a CI-mediated ephemeral credential scope is implemented"' in updater
+    assert updater.index('[[ "$SELF_UPDATE_ENABLED" == "1" ]]') < updater.index('TOKEN="$(sed -n \'s/^GITHUB_TOKEN=//p\' "$BROKER_ENV" | tail -n 1)"')

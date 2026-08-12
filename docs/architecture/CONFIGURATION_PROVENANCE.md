@@ -1,6 +1,6 @@
 # Configuration Provenance
 
-> Baseline revision: `313bc910` (main, 2026-08-08) · Status: `IMPLEMENTED_IN_REPOSITORY` / `TESTED_AT_REVISION`
+> Baseline revision: `5fe70b1` (main, 2026-08-12) · Status: `IMPLEMENTED_IN_REPOSITORY` / `TESTED_AT_REVISION`
 > Parent issue: #1169 · Owner boundary: read-only resolution + provenance; mutation stays under #1119.
 
 ## Purpose
@@ -103,16 +103,68 @@ The resolved receipt exposes the fields PatchMon must read back independently:
 A container is considered configured only when PatchMon's independent readback
 matches the resolved receipt. Mismatch → `BLOCKED` / `CONTRADICTED`.
 
+## Library pilot assessment (Zod-4 / @mrspartak/config)
+
+Issue #1169 acceptance criterion #4 required that the candidate pilot library
+be vetted and either adopted or a clean-room core justified. The clean-room
+core (`src/runtime/config/**`) already exists and ships. This section records
+the evidence-based assessment of the candidate, so the clean-room decision is
+traceable rather than asserted.
+
+### Verified package facts (npm registry, `@mrspartak/config@1.0.0`)
+
+- License: MIT. Single maintainer (Spartak Kagramanyan). Description: "Config
+  facade for TS".
+- `dependencies`: empty. `peerDependencies`: empty. The package advertises
+  zero runtime dependencies; it pulls no validator into the dependency graph
+  of a consumer that does not opt into one.
+- `zod` appears only as a `^3.23.8` **devDependency** (Zod 3, not Zod 4).
+  `zod@latest` is `4.4.3` at the time of writing; the package does not pin or
+  exercise Zod 4. It additionally vendors `yup`, `myzod`, `valibot` and
+  `superstruct` as devDependencies, i.e. it is a multi-validator comparison
+  surface, not a Zod-4 binding.
+- Public API (from the package README): `fromJSONFile` / `fromObject` /
+  `fromURL`, each taking an optional `schema` from a supported validator. The
+  surface is **load + validate only**.
+
+### Requirement-by-requirement gap against #1169
+
+| #1169 requirement | Pilot capability | Verdict |
+|---|---|---|
+| Source binding (`id`/`kind`/`revision`/`digest`/`contentHash`/`schemaHash`/`priority`) | None — loads JSON/URL/object, no source-identity contract | gap |
+| Deterministic, priority-ordered deep merge with `null`-delete and stable output | Wholesale overwrite only; no priority model, no `null`-delete | gap |
+| Redacted receipts (`{"__redacted__": "<sha256-prefix>"}`, never raw secrets) | None — no receipt shape, no redaction | gap |
+| Cross-language (TS ↔ Python) hash parity | None — TS-only; no Python counterpart | gap |
+| Drift invalidation of run/permission bindings | None | gap |
+| PatchMon independent readback fields | None | gap |
+
+### Conclusion
+
+The pilot is a capable load+validate facade, but it provides none of the
+provenance surface #1169 requires (source identity, deterministic merge,
+redacted receipts, cross-language parity, drift gating, PatchMon readback).
+Adopting it would add a third-party, single-maintainer dependency that
+**still** needs a clean-room layer on top to satisfy #1169, with no net
+reduction in surface and a new supply-chain obligation (provenance, pinning,
+audit) under the repository security rules.
+
+The clean-room core is therefore justified. The pilot is **not** added as an
+unvetted central dependency. If a future owner wants the pilot for ergonomic
+JSON/env loading only (validate-at-the-edge), that must be a separately
+approved design that does not promote the pilot into the provenance truth
+layer.
+
 ## File map
 
 ### TypeScript (canonical frontend / runtime)
 ```
-src/runtime/config/configSources.ts         # source contracts, kinds, priority
-src/runtime/config/configCanonicalize.ts    # stable serialization, redaction
-src/runtime/config/sovereignConfigResolver.ts  # merge + resolve + drift
-src/runtime/config/configReceipt.ts         # receipt shape + public hash
-src/runtime/config/index.ts                 # public surface
-src/runtime/config/configProvenance.test.ts # contract tests (36)
+src/runtime/config/configSources.ts            # source contracts, kinds, priority
+src/runtime/config/configCanonicalize.ts       # stable serialization, redaction
+src/runtime/config/sovereignConfigResolver.ts # merge + resolve + drift
+src/runtime/config/configReceipt.ts           # receipt shape + public hash
+src/runtime/config/index.ts                    # public surface
+src/runtime/config/configProvenance.test.ts    # contract tests (51)
+src/runtime/config/configProvenanceParity.test.ts # cross-language parity (4)
 ```
 
 ### Python (canonical backend)
@@ -122,8 +174,10 @@ backend/agent_runtime/configuration/config_canonicalize.py
 backend/agent_runtime/configuration/resolver.py
 backend/agent_runtime/configuration/receipt.py
 backend/agent_runtime/configuration/__init__.py
-backend/tests/test_configuration_provenance.py        # contract tests (29)
-backend/tests/test_configuration_provenance_mirror.py # cross-language parity (1)
+backend/tests/test_configuration_provenance.py              # contract tests (44)
+backend/tests/test_configuration_provenance_mirror.py       # cross-language parity (1)
+backend/tests/test_configuration_provenance_parity.py       # cross-language parity (4)
+backend/tests/test_configuration_provenance_unicode_parity.py  # unicode canonicalization (2)
 ```
 
 ### Deployment mirror (byte-equivalent)
@@ -140,8 +194,14 @@ scripts/sovereign-backend/agent_runtime/configuration/*  # parity verified
 
 ## Validation
 
-- TypeScript: 36/36 contract tests pass (`vitest run src/runtime/config/`).
-- Python: 30/30 contract + parity tests pass (`pytest`).
+- TypeScript: 55/55 contract + parity tests pass
+  (`vitest run src/runtime/config/`; 51 in `configProvenance.test.ts` + 4 in
+  `configProvenanceParity.test.ts`).
+- Python: 51/51 contract + parity tests pass (`pytest`): 44 in
+  `test_configuration_provenance.py`, 1 in `_mirror.py`, 4 in `_parity.py`,
+  2 in `_unicode_parity.py`.
+- Config-source inventory: `python3 backend/agent_runtime/configuration/config_source_inventory.py
+  --strict` exits 0 (all declared surfaces present).
 - Mirror parity: `backend/.../configuration` byte-identical to
   `scripts/sovereign-backend/.../configuration`.
 - `pnpm run type-check`: PASS (6 config files).

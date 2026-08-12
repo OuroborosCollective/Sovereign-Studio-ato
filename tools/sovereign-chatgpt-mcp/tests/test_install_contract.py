@@ -397,7 +397,8 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"operating_profile_enforced":true' in installer
     assert '"continuity_enforced":true' in installer
     assert '"repository_revision_resolver":true' in installer
-    assert '"workspace_pr_head_sync_available":true' in installer
+    assert '"workspace_pr_head_sync_available":false' in installer
+    assert '"workspace_pr_head_sync_available":true' not in installer
     assert 'callable(server.repository_sync_workspace_to_pr_head)' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer

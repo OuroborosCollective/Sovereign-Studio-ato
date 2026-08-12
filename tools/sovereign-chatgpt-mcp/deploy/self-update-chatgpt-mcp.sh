@@ -10,6 +10,7 @@ INSTALLER="$SOURCE_DIR/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
 BROKER_ENV="/opt/sovereign-chatgpt-tools/broker.env"
 GHCR_ENV="${SOVEREIGN_MCP_GHCR_ENV:-/opt/sovereign-chatgpt-tools/.ghcr.env}"
 SELF_UPDATE_TUNNEL_MODE="${SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE:-disabled}"
+SELF_UPDATE_ENABLED="${SOVEREIGN_MCP_ENABLE_SELF_UPDATE:-0}"
 BROKER_READY_ATTEMPTS="${SOVEREIGN_MCP_BROKER_READY_ATTEMPTS:-90}"
 
 mkdir -p "$STATE_DIR"
@@ -105,6 +106,10 @@ on_error() {
 trap on_error ERR
 
 [[ -f "$REQUEST_FILE" ]] || { write_status FAILED "" "request file missing"; exit 1; }
+[[ "$SELF_UPDATE_ENABLED" == "1" ]] || {
+  write_status BLOCKED "" "self-update is disabled until a CI-mediated ephemeral credential scope is implemented"
+  exit 1
+}
 [[ -d "$SOURCE_DIR/.git" ]] || { write_status FAILED "" "source repository missing"; exit 1; }
 [[ -f "$BROKER_ENV" ]] || { write_status FAILED "" "broker environment missing"; exit 1; }
 [[ "$SELF_UPDATE_TUNNEL_MODE" =~ ^(disabled|required)$ ]] || {

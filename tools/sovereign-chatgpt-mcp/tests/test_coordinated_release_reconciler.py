@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 from types import ModuleType
 from typing import Any
 
@@ -91,6 +94,50 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     assert json.loads((tmp_path / "status.json").read_text("utf-8"))["revision"] == revision
 
 
+def _git(*arguments: str, cwd: Path) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def test_operator_source_refresh_binds_a_real_git_checkout_and_blocks_stale_main(
+    monkeypatch, tmp_path
+) -> None:
+    upstream = tmp_path / "upstream"
+    source = tmp_path / "source"
+    upstream.mkdir()
+    _git("init", "-b", "main", cwd=upstream)
+    _git("config", "user.email", "contract@example.invalid", cwd=upstream)
+    _git("config", "user.name", "Source Contract", cwd=upstream)
+    (upstream / "revision.txt").write_text("first\n", "utf-8")
+    _git("add", "revision.txt", cwd=upstream)
+    _git("commit", "-m", "first", cwd=upstream)
+    first_revision = _git("rev-parse", "HEAD", cwd=upstream)
+    subprocess.run(["git", "clone", str(upstream), str(source)], check=True, capture_output=True, text=True)
+
+    module = _load()
+    monkeypatch.setattr(module, "OPERATOR_SOURCE", source)
+    monkeypatch.setattr(module, "_github_token", lambda: "synthetic-external-adapter-token")
+    scope = {"revision": first_revision}
+
+    refreshed = module._refresh_operator_source(scope)
+
+    assert refreshed["revision"] == first_revision
+    assert _git("rev-parse", "HEAD", cwd=source) == first_revision
+
+    (upstream / "revision.txt").write_text("second\n", "utf-8")
+    _git("add", "revision.txt", cwd=upstream)
+    _git("commit", "-m", "second", cwd=upstream)
+
+    with pytest.raises(module.ReconcileError, match="origin/main differs from CI scope revision"):
+        module._refresh_operator_source(scope)
+
+
 def test_candidate_failure_is_not_a_global_series_rollback_contract() -> None:
     source = (ROOT / "github_admin.py").read_text("utf-8")
     assert "PR_SERIES_COMPLETED_WITH_SKIPS" in source
@@ -114,9 +161,36 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert "org.opencontainers.image.revision" in coordinated
     push_prefix = mcp_workflow.split("workflow_dispatch:", 1)[0]
     assert "paths:" not in push_prefix
+    assert 'remove_value "$ENV_FILE" GITHUB_TOKEN' in installer
     assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
     assert "printf 'GITHUB_TOKEN=%s\\n' \"$EFFECTIVE_GITHUB_TOKEN\"" not in installer
+    assert 'SOVEREIGN_MCP_EXPECTED_DIGEST' in installer
+    assert 'MCP image digest differs from CI-bound expected digest' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_MAIN_PUSH \\' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_PR_MERGE \\' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \\' in installer
+    assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
+    assert '"self_update_available":false' in installer
+    assert '"pr_lifecycle_available":false' in installer
+    assert '"workflow_dispatch_available":false' in installer
     assert 'install_ci_runtime_readback_authorization' in installer
     assert "systemctl enable --now sovereign-release-reconciler.timer" in installer
     assert "ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release" in service
     assert "OnUnitActiveSec=2min" in timer
+    reconciler = SCRIPT.read_text("utf-8")
+    assert "_schedule_self_update" not in reconciler
+    assert "def _deploy_mcp_from_ci_scope" in reconciler
+    assert '"SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"]' in reconciler
+    assert "def _refresh_operator_source" in reconciler
+    assert '"git", "-C", str(OPERATOR_SOURCE), "fetch", "--no-tags", "origin", "main"' in reconciler
+    assert '"git", "-C", str(OPERATOR_SOURCE), "checkout", "--detach", scope["revision"]' in reconciler
+    assert "origin/main differs from CI scope revision" in reconciler
+    assert "checked-out source revision differs from CI scope" in reconciler
+    assert "installer source revision is not CI-scoped" in reconciler
+    assert "installer receipt violates CI scope or capability truth" in reconciler
+    assert 'receipt.get("host_command_worker_active") is not True' in reconciler
+    assert 'receipt.get("broker") != "active"' in reconciler
+    assert 'receipt.get("broker_rpc_ready") is not True' in reconciler
+    assert 'receipt.get("broker_socket_host_visible") is not True' in reconciler
+    assert 'receipt.get("broker_socket_container_visible") is not True' in reconciler
+    assert 'receipt.get("mcp_protocol_ready") is not True' in reconciler
