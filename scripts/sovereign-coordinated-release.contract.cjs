@@ -58,7 +58,7 @@ test('coordinated release waits for the full producer critical path and accepts 
   const producerWait = workflow.indexOf("if (run.status !== 'completed')", publisherMissing);
   const missingFailure = workflow.indexOf('EXACT_REVISION_PUBLISHER_JOB_MISSING', publisherMissing);
   assert.ok(publisherMissing >= 0 && producerWait > publisherMissing && missingFailure > producerWait);
-  assert.match(workflow, /Downstream publisher jobs are absent until their producer prerequisite completes/);
+  assert.match(workflow, /Downstream publisher jobs are absent until prerequisite completes/);
 });
 
 test('backend producer exposes an explicit publish-only evidence job', () => {
