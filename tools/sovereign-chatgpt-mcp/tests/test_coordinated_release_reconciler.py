@@ -114,30 +114,46 @@ def _git(*arguments: str, cwd: Path) -> str:
     return completed.stdout.strip()
 
 
-def test_operator_source_refresh_binds_a_real_git_checkout_and_blocks_stale_main(
+def test_operator_source_refresh_uses_a_real_isolated_git_worktree_and_blocks_stale_main(
     monkeypatch, tmp_path
 ) -> None:
     upstream = tmp_path / "upstream"
     source = tmp_path / "source"
+    checkouts = tmp_path / "checkouts"
     upstream.mkdir()
     _git("init", "-b", "main", cwd=upstream)
     _git("config", "user.email", "contract@example.invalid", cwd=upstream)
     _git("config", "user.name", "Source Contract", cwd=upstream)
+    installer = upstream / "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+    installer.parent.mkdir(parents=True)
+    installer.write_text("#!/bin/sh\nexit 0\n", "utf-8")
+    installer.chmod(0o700)
     (upstream / "revision.txt").write_text("first\n", "utf-8")
-    _git("add", "revision.txt", cwd=upstream)
+    _git("add", ".", cwd=upstream)
     _git("commit", "-m", "first", cwd=upstream)
     first_revision = _git("rev-parse", "HEAD", cwd=upstream)
     subprocess.run(["git", "clone", str(upstream), str(source)], check=True, capture_output=True, text=True)
 
+    # This simulates the live installer-modified source root. The actual refresh
+    # must leave this tree untouched and build its CI-scoped worktree separately.
+    (source / "revision.txt").write_text("local-installer-mutation\n", "utf-8")
+    assert _git("status", "--porcelain", cwd=source)
+
     module = _load()
     monkeypatch.setattr(module, "OPERATOR_SOURCE", source)
-    monkeypatch.setattr(module, "_github_token", lambda: "synthetic-external-adapter-token")
+    monkeypatch.setattr(module, "OPERATOR_SOURCE_CHECKOUTS", checkouts)
+    monkeypatch.setattr(module, "_github_token", lambda: "external-adapter-token-for-local-git-contract")
     scope = {"revision": first_revision}
 
     refreshed = module._refresh_operator_source(scope)
+    checkout = checkouts / first_revision
 
     assert refreshed["revision"] == first_revision
-    assert _git("rev-parse", "HEAD", cwd=source) == first_revision
+    assert Path(refreshed["path"]) == checkout
+    assert Path(refreshed["installer"]) == checkout / "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+    assert _git("rev-parse", "HEAD", cwd=checkout) == first_revision
+    assert _git("status", "--porcelain", cwd=checkout) == ""
+    assert _git("status", "--porcelain", cwd=source)
 
     (upstream / "revision.txt").write_text("second\n", "utf-8")
     _git("add", "revision.txt", cwd=upstream)
@@ -192,10 +208,14 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert '"SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"]' in reconciler
     assert "def _refresh_operator_source" in reconciler
     assert '"git", "-C", str(OPERATOR_SOURCE), "fetch", "--no-tags", "origin", "main"' in reconciler
-    assert '"git", "-C", str(OPERATOR_SOURCE), "checkout", "--detach", scope["revision"]' in reconciler
+    assert '"git", "-C", str(OPERATOR_SOURCE), "worktree", "add", "--detach", str(checkout), revision' in reconciler
+    assert "OPERATOR_SOURCE_CHECKOUTS" in reconciler
     assert "origin/main differs from CI scope revision" in reconciler
-    assert "checked-out source revision differs from CI scope" in reconciler
+    assert "scoped operator worktree is not clean" in reconciler
+    assert "scoped operator worktree revision differs from CI scope" in reconciler
+    assert "operator source worktree is not clean" not in reconciler
     assert "installer source revision is not CI-scoped" in reconciler
+    assert "installer path is not CI-scoped" in reconciler
     assert "installer receipt violates CI scope or capability truth" in reconciler
     assert 'receipt.get("host_command_worker_active") is not True' in reconciler
     assert 'receipt.get("broker") != "active"' in reconciler
