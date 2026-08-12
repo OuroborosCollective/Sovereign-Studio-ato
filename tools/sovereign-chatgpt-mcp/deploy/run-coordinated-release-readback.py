@@ -16,6 +16,7 @@ from typing import Any
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
+REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 NAMESPACE = "sovereign-runtime-receipt"
 TOKEN_DIR = Path("/run/sovereign-release-reconciler")
 TOKEN_FILE = TOKEN_DIR / "github-token"
@@ -24,17 +25,23 @@ RECEIPT_FILE = TOKEN_DIR / "receipt.json"
 ATTESTATION_KEY = Path("/etc/ssh/ssh_host_ed25519_key")
 RECONCILER = Path("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release")
 STATUS_FILE = Path("/var/lib/sovereign-release-reconciler/status.json")
+REPOSITORY = os.getenv(
+    "SOVEREIGN_MCP_REPOSITORY",
+    "OuroborosCollective/Sovereign-Studio-ato",
+).strip()
 
 
 class ReadbackError(RuntimeError):
     pass
 
 
-def _read_input() -> tuple[dict[str, Any], str, str]:
+def _read_input() -> tuple[dict[str, Any], str]:
+    # This two-line stdin framing is the stable forced-command wire contract.
+    # Do not add fields after the token line: the VPS may still execute an older
+    # installed entrypoint while a new exact revision is being promoted.
     scope_line = sys.stdin.buffer.readline(4097)
     token_line = sys.stdin.buffer.readline(4097)
-    registry_username_line = sys.stdin.buffer.readline(257)
-    if not scope_line or not token_line or not registry_username_line or sys.stdin.buffer.read(1):
+    if not scope_line or not token_line or sys.stdin.buffer.read(1):
         raise ReadbackError("input framing is invalid")
     try:
         scope = json.loads(scope_line.decode("utf-8"))
@@ -61,22 +68,22 @@ def _read_input() -> tuple[dict[str, Any], str, str]:
     token = token_line.decode("utf-8").strip()
     if len(token) < 20 or len(token) > 4096 or "\n" in token or "\r" in token:
         raise ReadbackError("ephemeral credential is invalid")
-    registry_username = registry_username_line.decode("utf-8").strip()
-    if (
-        not registry_username
-        or len(registry_username) > 255
-        or "\n" in registry_username
-        or "\r" in registry_username
-        or registry_username.startswith("-")
-    ):
-        raise ReadbackError("registry username is invalid")
     return {
         "revision": str(scope["revision"]).lower(),
         "releaseGateRunId": scope["releaseGateRunId"],
         "backendDigest": str(scope["backendDigest"]).lower(),
         "mcpDigest": str(scope["mcpDigest"]).lower(),
         "manifestEvidenceSha256": str(scope["manifestEvidenceSha256"]).lower(),
-    }, token, registry_username
+    }, token
+
+
+def _registry_username() -> str:
+    if not REPOSITORY_RE.fullmatch(REPOSITORY):
+        raise ReadbackError("repository identity is invalid")
+    owner = REPOSITORY.split("/", 1)[0]
+    if owner.startswith("-") or len(owner) > 255:
+        raise ReadbackError("registry username is invalid")
+    return owner
 
 
 def _assert_root_private(path: Path, *, regular: bool) -> None:
@@ -223,7 +230,8 @@ def main() -> int:
         raise ReadbackError("root execution is required")
     scope: dict[str, Any] | None = None
     try:
-        scope, token, registry_username = _read_input()
+        scope, token = _read_input()
+        registry_username = _registry_username()
         _write_token(token)
         _prepare_registry_auth(token, registry_username)
         environment = os.environ.copy()
