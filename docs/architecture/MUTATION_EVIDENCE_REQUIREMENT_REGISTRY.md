@@ -29,17 +29,25 @@ Each family is versioned independently through an immutable `ProofRequirementSet
 - Mirror and ownership checks are repository readbacks, not runtime capability claims.
 - A proof verdict never authorizes an automatic merge, deployment, migration, provider activation or permission change by itself.
 
-## Deferred integrations
+## Active and deferred integrations
 
-The following remain explicitly outside this registry PR:
+The registry remains a pure verdict boundary. The following Rescue enforcement is
+active in the #1100 runtime adapter: a server-side, persisted entitlement and
+Outcome-Contract gate runs before the isolated workspace executor; ProofPack
+collects the append-only Agent-Run receipt chain from the database and reads the
+Draft-PR head and CI state directly from GitHub. Missing, stale or contradicted
+readbacks block completion; neither client-submitted digests nor UI flags are
+accepted as evidence.
 
-- evidence collectors and `CapabilityDelta` production: #1099
-- Rescue and GitHub write-path enforcement: #1100
+The following integrations remain deferred:
+
+- evidence collectors and `CapabilityDelta` production beyond the Rescue adapter: #1099
+- GitHub write-path enforcement: #1100
 - MCP, Docker, PatchMon and deployment enforcement: #1101
 - PostgreSQL and provider enforcement: #1102
 - exact-head observe/enforce rollout and runtime certification: #1103
 
-No collector or protected mutation path is enabled by the registry alone.
+No pure registry verdict authorizes a protected mutation by itself.
 
 ## Canonical ownership
 

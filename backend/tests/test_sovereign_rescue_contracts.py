@@ -10,6 +10,7 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+from agent_runtime.agent_run_receipts import build_agent_run_receipt
 from agent_runtime.rescue import (
     MAX_REPAIR_CHANGED_FILES,
     REPAIR_PACK_CREDITS,
@@ -33,17 +34,29 @@ def receipt(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def rescue_receipts(changed_files: list[str]) -> dict[str, object]:
-    return {
-        "authorization_receipt_sha256": receipt({"authorization": "verified_purchase"}),
-        "diagnostic_evidence_sha256": receipt({"diagnostic": "github_actions_ci", "baseSha": BASE_SHA}),
-        "agent_run_receipt_sha256": receipt({"agentRun": "repair", "baseSha": BASE_SHA}),
-        "changedPathSha256": receipt(changed_files),
-        "ciReadbackSha256": receipt({"headSha": HEAD_SHA, "ci": "success"}),
-        "githubReadbackSha256": receipt({"headSha": HEAD_SHA, "pr": "readback"}),
-        "capabilityDeltaSha256": receipt({"capabilityDelta": "no-unexpected-surface"}),
-        "capabilityDeltaVerified": True,
-    }
+def persisted_mutation_receipt() -> dict[str, object]:
+    """Canonical receipt shape returned by the append-only runtime collector."""
+    return build_agent_run_receipt(
+        sequence=0,
+        repository="https://github.com/acme/app",
+        base_commit_sha=BASE_SHA,
+        mcp_revision=BASE_SHA,
+        mcp_image_digest="sha256:" + "c" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-rescue-proof-pack",
+        tool_name="write_file",
+        call_id="call-rescue-proof-pack",
+        operation_identity="agent-repository-tool:free_single_agent:write_file",
+        input_sha256="1" * 64,
+        output_sha256="2" * 64,
+        diff_sha256="3" * 64,
+        test_evidence_sha256="4" * 64,
+        evidence_gate_result="PASS",
+        mutation_performed=True,
+        observed_effect="workspace-write",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256="0" * 64,
+    )
 
 
 def diagnose(evidence: str, requested_family: str = ""):
@@ -172,14 +185,11 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
         "published_head_sha": HEAD_SHA,
         "outcome_contract_sha256": "0" * 64,
         "entitlement_source": "verified_purchase",
-        "authorization_receipt_sha256": receipt({"authorization": "verified_purchase"}),
-        "diagnostic_evidence_sha256": receipt({"diagnostic": "github_actions_ci", "baseSha": BASE_SHA}),
     }
     job = {
         "changed_files": [".github/workflows/ci.yml"],
         "test_summary": "targeted test passed",
         "draft_pr_url": "https://github.com/acme/app/pull/7",
-        "agent_run_receipt_sha256": receipt({"agentRun": "repair", "baseSha": BASE_SHA}),
     }
     incomplete = build_proof_pack(repair=repair, job=job)
     assert incomplete["ready"] is False
@@ -201,10 +211,11 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
                     "conclusion": "success",
                     "headSha": HEAD_SHA,
                 }
-            ],
-            **rescue_receipts(job["changed_files"]),
-        },
-    )
+                            ],
+            },
+            agent_receipts=(persisted_mutation_receipt(),),
+        )
+
     assert complete["ready"] is True
     assert verify_proof_pack(complete) is True
 

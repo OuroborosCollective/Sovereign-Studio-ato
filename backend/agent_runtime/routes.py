@@ -27,6 +27,7 @@ from .productivity_insights import (
     validate_mission,
 )
 from .contracts import SovereignAgentEvent, normalize_agent_job_result
+from .cognitive_run_store import read_agent_run_receipts
 from .cognitive_swarm_routes import start_cognitive_swarm_run
 from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signal
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
@@ -848,6 +849,18 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             job = _read_owned_job(conn, user_id, str(repair.get("job_id") or ""))
             if not job:
                 return jsonify({"error": "Repair job not found"}), 404
+            agent_receipts: tuple[dict[str, object], ...] = ()
+            repair_run_id = str(repair.get("run_id") or "")
+            if repair_run_id:
+                try:
+                    agent_receipts = read_agent_run_receipts(conn, run_id=repair_run_id)
+                except (LookupError, ValueError, TypeError) as exc:
+                    agent_receipts = ()
+                    pr_evidence_error = redact_secret_text(exc, 400)
+                else:
+                    pr_evidence_error = ""
+            else:
+                pr_evidence_error = "agent_run_receipts_unavailable"
             pr_evidence: dict[str, Any] = {}
             if job.draft_pr_url:
                 try:
@@ -864,7 +877,8 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "test_summary": job.test_summary,
                     "draft_pr_url": job.draft_pr_url,
                 },
-                pr_evidence=pr_evidence,
+                pr_evidence={**pr_evidence, "agentReceiptReadbackError": pr_evidence_error or None},
+                agent_receipts=agent_receipts,
             )
             if pack["ready"]:
                 update_repair_execution(

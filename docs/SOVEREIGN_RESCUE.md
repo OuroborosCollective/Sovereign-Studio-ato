@@ -27,14 +27,19 @@ The user-facing promise is:
 5. Start one Repair Pack. The backend verifies a real purchase receipt or a
    privileged internal entitlement, locks the account, reserves the pack once,
    writes the append-only credit ledger and records the idempotency key.
-6. The existing `free_single_agent` execution profile uses the verified direct
+6. Before the executor starts, Rescue evaluates a server-side pre-mutation
+   gate over the persisted entitlement reservation, the deterministic diagnosis
+   and the exact Outcome Contract. A missing or contradictory value returns
+   HTTP 409 and no workspace mutation begins.
+7. The `free_single_agent` execution profile uses the verified direct
    FreeLLM/Revolver route. It clones only the diagnosed revision into the
-   isolated Code-Server workspace, applies a bounded repair and records changed
-   files, diff and tests.
-7. The existing evidence gate prepares and creates a Draft PR. Rescue-reserved
+   isolated Code-Server workspace, applies a bounded repair and appends canonical
+   Agent-Run receipts for actual tool calls, changed content and tests.
+8. The existing evidence gate prepares and creates a Draft PR. Rescue-reserved
    jobs do not receive the legacy Draft-PR credit charge a second time.
-8. The ProofPack reads the real Draft PR and check runs from GitHub. It is ready
-   only when the check-run head SHA equals the Draft PR head, all required
+9. The ProofPack reads the persisted append-only Agent-Run receipt chain, the
+   server-bound published Draft-PR head, and the live GitHub check runs. It is
+   ready only when those readbacks bind to the same exact revision, all required
    evidence is present and CI is green.
 
 ## Freemium and paid boundary
@@ -101,13 +106,16 @@ trusts a client-provided contract hash.
 - Rescue repair ID and repository;
 - base and Draft PR head SHA;
 - changed paths and test summary from the persisted agent job;
-- exact-head GitHub check runs;
+- a verified, append-only Agent-Run receipt from the persisted execution run;
+- exact-head GitHub check runs and server-bound published head;
+- the persisted entitlement and Outcome-Contract binding;
 - rollback plan;
 - blockers and a canonical proof SHA-256.
 
 It remains incomplete when any of these are missing, when CI is pending or red,
-or when check runs do not refer to the same head SHA. A mock, stale deployment,
-UI-only flag or old runtime cannot satisfy it.
+or when check runs do not refer to the same head SHA. Client-supplied receipt
+hashes, mocks, stale deployments, UI-only flags or an old runtime cannot satisfy
+it.
 
 ## Zero-Trust Repair Capsule core
 
