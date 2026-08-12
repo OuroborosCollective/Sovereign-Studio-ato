@@ -76,6 +76,26 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ReadbackError, "input framing is invalid"):
                 module._read_input()
 
+    def test_target_reconcile_environment_binds_canonical_backend_repository(self) -> None:
+        module = _load_entrypoint()
+        source = ENTRYPOINT.read_text("utf-8")
+        self.assertEqual(
+            module.BACKEND_IMAGE_REPOSITORY,
+            "ghcr.io/ouroboroscollective/sovereign-backend",
+        )
+        self.assertRegex(module.BACKEND_IMAGE_REPOSITORY, module.IMAGE_REPOSITORY_RE)
+        self.assertIn(
+            '"SOVEREIGN_BACKEND_IMAGE_REPOSITORY": BACKEND_IMAGE_REPOSITORY',
+            source,
+        )
+        self.assertIn('"SOVEREIGN_EXPECTED_BACKEND_DIGEST": scope["backendDigest"]', source)
+        self.assertIn('"SOVEREIGN_EXPECTED_MCP_DIGEST": scope["mcpDigest"]', source)
+        self.assertIn(
+            '"SOVEREIGN_EXPECTED_MANIFEST_EVIDENCE_SHA256": scope["manifestEvidenceSha256"]',
+            source,
+        )
+        self.assertNotIn('SOVEREIGN_BACKEND_IMAGE_REPOSITORY": "latest"', source)
+
     def test_control_plane_bootstrap_is_exact_main_path_scoped_hash_bound_and_container_free(self) -> None:
         workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
         self.assertIn("push:", workflow)
@@ -96,7 +116,11 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         self.assertIn("servicesRestarted': False", workflow)
         self.assertIn("authorizedKeysChanged': False", workflow)
         self.assertIn("capture_stdout: true", workflow)
-        self.assertIn("RECEIPT_BASE64: ${{ steps.receipt.outputs.stdout }}", workflow)
+        self.assertIn("RECEIPT_HEX: ${{ steps.receipt.outputs.stdout }}", workflow)
+        self.assertIn("print(payload.hex())", workflow)
+        self.assertIn("raw = bytes.fromhex(encoded)", workflow)
+        self.assertNotIn("RECEIPT_BASE64:", workflow)
+        self.assertNotIn("base64.b64decode", workflow)
         self.assertNotIn("source: .sovereign-release-readback-bootstrap/bootstrap-receipt.json", workflow)
         self.assertNotIn("deploy/install-on-vps.sh", workflow)
         self.assertNotIn("docker restart", workflow)

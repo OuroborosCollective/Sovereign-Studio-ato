@@ -200,29 +200,31 @@ jobs:
             test -f "$RECEIPT" && test ! -L "$RECEIPT"
             test "$(stat -c '%a' "$RECEIPT")" = 600
             python3 - "$RECEIPT" <<'PY'
-            import base64, sys
+            import sys
             from pathlib import Path
             payload = Path(sys.argv[1]).read_bytes()
             if len(payload) < 64 or len(payload) > 16384:
                 raise SystemExit('bootstrap receipt size is invalid')
-            print(base64.b64encode(payload).decode('ascii'))
+            print(payload.hex())
             PY
 
       - name: Normalize and verify bootstrap receipt
         env:
-          RECEIPT_BASE64: ${{ steps.receipt.outputs.stdout }}
+          RECEIPT_HEX: ${{ steps.receipt.outputs.stdout }}
           EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
         run: |
           set -Eeuo pipefail
           mkdir -p .sovereign-bootstrap-evidence
           python3 - <<'PY'
-          import base64
           import json
           import os
+          import re
           from pathlib import Path
 
-          encoded = os.environ['RECEIPT_BASE64'].strip()
-          raw = base64.b64decode(encoded, validate=True)
+          encoded = os.environ['RECEIPT_HEX'].strip().lower()
+          if not re.fullmatch(r'[0-9a-f]{128,32768}', encoded) or len(encoded) % 2:
+              raise SystemExit('bootstrap receipt hex transport is invalid')
+          raw = bytes.fromhex(encoded)
           receipt = json.loads(raw.decode('utf-8'))
           assert receipt.get('schemaVersion') == 'sovereign.release-readback-bootstrap-receipt.v1'
           assert receipt.get('ok') is True
