@@ -1,0 +1,158 @@
+{
+  "schema_version": "sovereign.config-provenance-readback-parity.v1",
+  "issue": 1169,
+  "description": "Cross-language (Python/TypeScript) PatchMon readback parity golden vector for issue #1169 acceptance criterion #6: RunEnvelope and PatchMon must read back the same redacted config fingerprint, and the readback audit must make byte-identical fail-closed decisions on both sides. The sources/options are the same inputs as config_provenance_parity.v1.json, so the materialized receiptHash is the same frozen golden value. Each scenario feeds an independent PatchMon observation to the readback audit and freezes the expected (accepted, blocker, contradicted) outcome. The same fixture is consumed by src/runtime/config/configReadbackParity.test.ts and backend/tests/test_configuration_readback_parity.py, so any divergence in the readback audit reason codes between TypeScript and Python breaks the gate on the offending side. The fixture is the single source of truth for scenario observations and expected audit outcomes.",
+  "sources": [
+    {
+      "id": "defaults",
+      "kind": "compiled-defaults",
+      "revision": "sha-defaults-0000000000000000000000000000000000000000",
+      "content_hash": "ch-defaults",
+      "schema_hash": "sch-a5c28a8409179d35",
+      "priority": 0,
+      "values": {
+        "model": "llama-3",
+        "temperature": 0.5,
+        "maxTokens": 100,
+        "label": "café",
+        "emoji": "🛡️",
+        "features": {
+          "streaming": true,
+          "tools": false
+        },
+        "tags": [
+          "alpha",
+          "beta"
+        ],
+        "apiKey": {
+          "kind": "secret",
+          "redactedId": "r-defaults"
+        }
+      }
+    },
+    {
+      "id": "image",
+      "kind": "image-manifest",
+      "revision": "sha-image-1111111111111111111111111111111111111111",
+      "content_hash": "ch-image",
+      "schema_hash": "sch-a5c28a8409179d35",
+      "priority": 10,
+      "values": {
+        "temperature": 0.7,
+        "features": {
+          "tools": true
+        },
+        "tags": [
+          "alpha"
+        ]
+      }
+    },
+    {
+      "id": "deploy",
+      "kind": "deployment-config",
+      "revision": "sha-deploy-2222222222222222222222222222222222222222",
+      "content_hash": "ch-deploy",
+      "schema_hash": "sch-a5c28a8409179d35",
+      "priority": 20,
+      "values": {
+        "maxTokens": 200,
+        "label": "Grüße",
+        "features": {
+          "streaming": null
+        }
+      }
+    }
+  ],
+  "options": {
+    "schemaFields": [
+      { "name": "model", "kind": "string" },
+      { "name": "temperature", "kind": "number" },
+      { "name": "maxTokens", "kind": "number" },
+      { "name": "label", "kind": "string" },
+      { "name": "emoji", "kind": "string" },
+      { "name": "features", "kind": "object" },
+      { "name": "tags", "kind": "array" },
+      { "name": "apiKey", "kind": "secret" }
+    ],
+    "revision": "sha-receipt-revision-33333333333333333333333333333333",
+    "imageDigest": "sha256:image-digest-4444444444444444444444444444444444"
+  },
+  "expected": {
+    "status": "RESOLVED",
+    "resolved_hash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+    "receipt_hash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d"
+  },
+  "scenarios": [
+    {
+      "name": "accepted_exact_readback",
+      "description": "PatchMon reads back every bound identity field plus the redacted receipt hash exactly. The loaded config projection matches the bound receipt; advancement may proceed.",
+      "observation": {
+        "revision": "sha-receipt-revision-33333333333333333333333333333333",
+        "imageDigest": "sha256:image-digest-4444444444444444444444444444444444",
+        "schemaHash": "sch-a5c28a8409179d35",
+        "resolvedHash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+        "receiptHash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d"
+      },
+      "expected": { "accepted": true, "blocker": null, "contradicted": false }
+    },
+    {
+      "name": "missing_bound_revision",
+      "description": "PatchMon did not read back the bound revision (null). Readback is incomplete rather than contradictory; advancement is blocked.",
+      "observation": {
+        "revision": null,
+        "imageDigest": "sha256:image-digest-4444444444444444444444444444444444",
+        "schemaHash": "sch-a5c28a8409179d35",
+        "resolvedHash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+        "receiptHash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d"
+      },
+      "expected": { "accepted": false, "blocker": "config_readback_missing_bound_field", "contradicted": false }
+    },
+    {
+      "name": "contradicts_revision",
+      "description": "PatchMon read back a different revision than the receipt binds: the wrong config is loaded. This is a contradiction (harder failure than missing evidence).",
+      "observation": {
+        "revision": "sha-receipt-revision-99999999999999999999999999999999",
+        "imageDigest": "sha256:image-digest-4444444444444444444444444444444444",
+        "schemaHash": "sch-a5c28a8409179d35",
+        "resolvedHash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+        "receiptHash": "5458b301474ae6ca59dd8957fdcd07b5a8a8f922a8968af666d10140a6108c6d"
+      },
+      "expected": { "accepted": false, "blocker": "config_readback_contradicts_receipt", "contradicted": true }
+    },
+    {
+      "name": "contradicts_receipt_hash",
+      "description": "PatchMon read back the identity fields but a different redacted config fingerprint (receiptHash). The loaded config projection disagrees with the bound receipt.",
+      "observation": {
+        "revision": "sha-receipt-revision-33333333333333333333333333333333",
+        "imageDigest": "sha256:image-digest-4444444444444444444444444444444444",
+        "schemaHash": "sch-a5c28a8409179d35",
+        "resolvedHash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+        "receiptHash": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead"
+      },
+      "expected": { "accepted": false, "blocker": "config_readback_contradicts_receipt", "contradicted": true }
+    },
+    {
+      "name": "missing_receipt_hash",
+      "description": "PatchMon omitted the redacted receipt hash entirely (empty). Readback of the fingerprint is incomplete rather than contradictory; advancement is blocked.",
+      "observation": {
+        "revision": "sha-receipt-revision-33333333333333333333333333333333",
+        "imageDigest": "sha256:image-digest-4444444444444444444444444444444444",
+        "schemaHash": "sch-a5c28a8409179d35",
+        "resolvedHash": "9cfd0c8e6c1f0ae05de2170f535da5637dfa08dba983e35c586462d5f0819ace",
+        "receiptHash": null
+      },
+      "expected": { "accepted": false, "blocker": "config_readback_missing_bound_field", "contradicted": false }
+    }
+  ],
+  "parity_verified": {
+    "python_audit_blocker_codes": [
+      "config_readback_missing_bound_field",
+      "config_readback_contradicts_receipt"
+    ],
+    "typescript_audit_blocker_codes": [
+      "config_readback_missing_bound_field",
+      "config_readback_contradicts_receipt"
+    ],
+    "identical_fail_closed_decisions": true
+  }
+}
