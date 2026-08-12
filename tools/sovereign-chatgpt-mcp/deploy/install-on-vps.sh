@@ -1286,7 +1286,15 @@ chown root:root "$BROKER_ENV" \
   || { restore_managed_private_file_mutation_best_effort "$BROKER_ENV"; fail "managed broker environment ownership update failed: file=$BROKER_ENV"; }
 restore_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
 unset OWNER_MANAGED_GITHUB_TOKEN PRESERVED_BROKER_GITHUB_TOKEN CONFIGURED_GITHUB_TOKEN EFFECTIVE_GITHUB_TOKEN
-
+# CI-only release credentials are accepted exclusively as a temporary file
+# under /run by the scoped reconciler entrypoint. They must never persist in
+# a broker or Compose environment source.
+remove_value "$BROKER_ENV" GITHUB_TOKEN
+for PERSISTENT_ENVIRONMENT_SOURCE in "$ENV_FILE" "$MANAGED_ENV" "$BROKER_ENV"; do
+  ! grep -q '^GITHUB_TOKEN=' "$PERSISTENT_ENVIRONMENT_SOURCE" \
+    || fail "persistent GitHub API credential remains in $PERSISTENT_ENVIRONMENT_SOURCE"
+done
+unset PERSISTENT_ENVIRONMENT_SOURCE
 INSTALL_STAGE="compose_preflight"
 BROKER_GID="$(getent group sovereign-mcp | cut -d: -f3)"
 [[ "$BROKER_GID" =~ ^[0-9]+$ ]] || fail "could not resolve sovereign-mcp group id"
@@ -1358,7 +1366,21 @@ fi
 INSTALL_STAGE="verify_broker_socket_visibility"
 [[ -S /run/sovereign-chatgpt-broker/operator.sock ]] || fail "host broker socket disappeared after MCP recreation"
 docker exec sovereign-chatgpt-mcp test -S /run/sovereign-chatgpt-broker/operator.sock || fail "broker socket is not visible inside the recreated MCP container"
-
+INSTALL_STAGE="verify_no_persistent_github_token_runtime"
+for PERSISTENT_ENVIRONMENT_SOURCE in "$ENV_FILE" "$MANAGED_ENV" "$BROKER_ENV"; do
+  ! grep -q '^GITHUB_TOKEN=' "$PERSISTENT_ENVIRONMENT_SOURCE" \
+    || fail "persistent GitHub API credential remains in $PERSISTENT_ENVIRONMENT_SOURCE after restart"
+done
+unset PERSISTENT_ENVIRONMENT_SOURCE
+docker exec sovereign-chatgpt-mcp python - <<'PY'
+import os
+assert "GITHUB_TOKEN" not in os.environ
+PY
+BROKER_MAIN_PID="$(systemctl show --property MainPID --value sovereign-chatgpt-broker.service)"
+[[ "$BROKER_MAIN_PID" =~ ^[1-9][0-9]*$ ]] || fail "broker service has no main process id"
+! tr '\0' '\n' < "/proc/$BROKER_MAIN_PID/environ" | grep -q '^GITHUB_TOKEN=' \
+  || fail "broker process inherited a persistent GitHub API credential"
+unset BROKER_MAIN_PID
 INSTALL_STAGE="verify_inbound_mutation_boundary"
 docker exec -i sovereign-chatgpt-mcp python - <<'PY'
 import json

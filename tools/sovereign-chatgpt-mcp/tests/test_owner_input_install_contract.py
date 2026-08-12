@@ -80,6 +80,12 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert 'remove_value "$ENV_FILE" GITHUB_TOKEN' in installer
     assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
+    assert 'remove_value "$BROKER_ENV" GITHUB_TOKEN' in installer
+    assert 'persistent GitHub API credential remains in $PERSISTENT_ENVIRONMENT_SOURCE' in installer
+    assert 'docker exec sovereign-chatgpt-mcp python - <<\'PY\'' in installer
+    assert 'assert "GITHUB_TOKEN" not in os.environ' in installer
+    assert 'systemctl show --property MainPID --value sovereign-chatgpt-broker.service' in installer
+    assert 'broker process inherited a persistent GitHub API credential' in installer
     assert 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' in installer
     assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
