@@ -114,9 +114,24 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert "org.opencontainers.image.revision" in coordinated
     push_prefix = mcp_workflow.split("workflow_dispatch:", 1)[0]
     assert "paths:" not in push_prefix
+    assert 'remove_value "$ENV_FILE" GITHUB_TOKEN' in installer
     assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
     assert "printf 'GITHUB_TOKEN=%s\\n' \"$EFFECTIVE_GITHUB_TOKEN\"" not in installer
+    assert 'SOVEREIGN_MCP_EXPECTED_DIGEST' in installer
+    assert 'MCP image digest differs from CI-bound expected digest' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_MAIN_PUSH \\' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_PR_MERGE \\' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \\' in installer
+    assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
+    assert '"self_update_available":false' in installer
+    assert '"pr_lifecycle_available":false' in installer
+    assert '"workflow_dispatch_available":false' in installer
     assert 'install_ci_runtime_readback_authorization' in installer
     assert "systemctl enable --now sovereign-release-reconciler.timer" in installer
     assert "ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release" in service
     assert "OnUnitActiveSec=2min" in timer
+    reconciler = SCRIPT.read_text("utf-8")
+    assert "_schedule_self_update" not in reconciler
+    assert "def _deploy_mcp_from_ci_scope" in reconciler
+    assert '"SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"]' in reconciler
+    assert "installer receipt violates CI scope or capability truth" in reconciler

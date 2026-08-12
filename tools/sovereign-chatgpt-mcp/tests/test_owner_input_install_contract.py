@@ -80,7 +80,8 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert 'remove_value "$ENV_FILE" GITHUB_TOKEN' in installer
     assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
-    assert 'set_value "$MANAGED_ENV" SOVEREIGN_MCP_ENABLE_SELF_UPDATE "0"' in installer
+    assert 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' in installer
+    assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert '/opt/secure/owner-managed' not in installer
 
@@ -149,6 +150,8 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"github_pat": {' not in backend_owner_input
     assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' not in backend_owner_input
     assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' not in backend_owner_input
+    assert 'RETIRED_TARGET_IDS = frozenset({"github_pat"})' in backend_owner_input
+    assert 'Owner input target configuration restores a retired target' in backend_owner_input
     assert '"openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle"' in client
     assert '"openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle"' in client
     assert '"openrouter_management_api_key": "OpenRouter Management API Key"' in client

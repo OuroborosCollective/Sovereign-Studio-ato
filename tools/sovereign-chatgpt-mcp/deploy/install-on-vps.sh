@@ -57,6 +57,7 @@ MCP_GID="10001"
 MCP_HOST_PORT="8090"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
+EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
 EXPECTED_CROSS_RUNTIME_PARITY="true"
 MCP_IMAGE_PULL_ATTEMPTS="${SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS:-36}"
 MCP_IMAGE_PULL_DELAY_SECONDS="${SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS:-10}"
@@ -869,6 +870,8 @@ wait_for_broker_ready() {
 INSTALL_STAGE="preflight"
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run as root on the VPS"
 [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "SOVEREIGN_MCP_EXPECTED_REVISION must be a full commit SHA"
+[[ -z "$EXPECTED_MCP_DIGEST" || "$EXPECTED_MCP_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] \
+  || fail "SOVEREIGN_MCP_EXPECTED_DIGEST must be an immutable SHA-256 digest when set"
 [[ "$REQUIRE_TUNNEL" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_REQUIRE_TUNNEL must be 0 or 1"
 [[ "$TUNNEL_MODE" =~ ^(auto|required|disabled)$ ]] || fail "SOVEREIGN_MCP_TUNNEL_MODE must be auto, required or disabled"
 [[ "$MCP_IMAGE_PULL_ATTEMPTS" =~ ^[0-9]+$ ]] && (( MCP_IMAGE_PULL_ATTEMPTS >= 1 && MCP_IMAGE_PULL_ATTEMPTS <= 120 )) \
@@ -1103,8 +1106,16 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
 fi
-INSTALL_STAGE="disable_self_update_without_ephemeral_ci_scope"
-set_value "$MANAGED_ENV" SOVEREIGN_MCP_ENABLE_SELF_UPDATE "0"
+INSTALL_STAGE="disable_token_dependent_github_capabilities_without_ephemeral_ci_scope"
+for TOKEN_DEPENDENT_CAPABILITY in \
+  SOVEREIGN_MCP_ENABLE_MAIN_PUSH \
+  SOVEREIGN_MCP_ENABLE_PR_MERGE \
+  SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \
+  SOVEREIGN_MCP_ENABLE_SELF_UPDATE; do
+  set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"
+done
+set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE "0"
+unset TOKEN_DEPENDENT_CAPABILITY
 for GUARDED_CAPABILITY in \
   SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS \
   SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS \
@@ -1240,6 +1251,10 @@ MCP_IMAGE_DIGEST="$(docker image inspect --format '{{json .RepoDigests}}' "$MCP_
   | python3 -c 'import json,sys; repo=sys.argv[1]+"@"; values=json.load(sys.stdin); print(next((item for item in values if isinstance(item,str) and item.startswith(repo)), ""))' "$MCP_IMAGE_REPOSITORY")"
 [[ "$MCP_IMAGE_DIGEST" == "$MCP_IMAGE_REPOSITORY"@sha256:* ]] || fail "MCP image digest repository does not match"
 [[ "${MCP_IMAGE_DIGEST#*@}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "MCP image has no immutable repository digest"
+if [[ -n "$EXPECTED_MCP_DIGEST" ]]; then
+  [[ "$MCP_IMAGE_DIGEST" == "$MCP_IMAGE_REPOSITORY@$EXPECTED_MCP_DIGEST" ]] \
+    || fail "MCP image digest differs from CI-bound expected digest"
+fi
 set_value "$MANAGED_ENV" SOVEREIGN_MCP_IMAGE "$MCP_IMAGE_DIGEST"
 export SOVEREIGN_MCP_IMAGE="$MCP_IMAGE_DIGEST"
 
@@ -1562,4 +1577,4 @@ systemctl is-active --quiet sovereign-release-reconciler.timer \
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"continuity_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":false,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"continuity_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":false,"workspace_pr_head_sync_available":false,"workflow_dispatch_available":false,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"

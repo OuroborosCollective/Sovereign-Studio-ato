@@ -31,6 +31,7 @@ DEFAULT_TTL_SECONDS = 900
 MAX_TTL_SECONDS = 3600
 MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
+RETIRED_TARGET_IDS = frozenset({"github_pat"})
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
     "openrouter_api_key": {
         "label": "Direkter OpenRouter-Zugang für bezahlte Agenten",
@@ -112,9 +113,12 @@ def _target_map() -> dict[str, dict[str, Any]]:
         if not isinstance(parsed, dict):
             raise RuntimeError("SOVEREIGN_OWNER_INPUT_TARGETS_JSON must be an object")
         for target_id, raw in parsed.items():
-            if not re.fullmatch(r"[a-z][a-z0-9_]{2,63}", str(target_id)) or not isinstance(raw, dict):
+            normalized_target_id = str(target_id)
+            if normalized_target_id in RETIRED_TARGET_IDS:
+                raise RuntimeError("Owner input target configuration restores a retired target")
+            if not re.fullmatch(r"[a-z][a-z0-9_]{2,63}", normalized_target_id) or not isinstance(raw, dict):
                 raise RuntimeError("Owner input target configuration is invalid")
-            targets[str(target_id)] = dict(raw)
+            targets[normalized_target_id] = dict(raw)
 
     root = _root()
     validated: dict[str, dict[str, Any]] = {}

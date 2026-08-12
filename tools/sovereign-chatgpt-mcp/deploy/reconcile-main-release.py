@@ -60,33 +60,16 @@ BACKEND_ROLLBACK = os.getenv(
     "SOVEREIGN_MCP_ROLLBACK_SCRIPT",
     "/opt/sovereign-chatgpt-tools/bin/rollback-sovereign-backend",
 )
-SELF_UPDATE_REQUEST = Path(
-    os.getenv(
-        "SOVEREIGN_MCP_SELF_UPDATE_REQUEST",
-        "/run/sovereign-chatgpt-broker/self-update.request.json",
-    )
+MCP_INSTALLER = os.getenv(
+    "SOVEREIGN_MCP_INSTALLER",
+    "/opt/sovereign-operator-source/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh",
 )
-SELF_UPDATE_STATUS = Path(
-    os.getenv(
-        "SOVEREIGN_MCP_SELF_UPDATE_STATUS",
-        "/var/lib/sovereign-chatgpt-self-update/status.json",
-    )
-)
-SELF_UPDATE_SERVICE = os.getenv(
-    "SOVEREIGN_MCP_SELF_UPDATE_SERVICE",
-    "sovereign-chatgpt-mcp-self-update.service",
-).strip()
 BROKER_SOCKET = Path(
     os.getenv(
         "SOVEREIGN_MCP_BROKER_SOCKET",
         "/run/sovereign-chatgpt-broker/operator.sock",
     )
 )
-MAX_SELF_UPDATE_SECONDS = max(
-    120,
-    min(int(os.getenv("SOVEREIGN_RELEASE_SELF_UPDATE_TIMEOUT_SECONDS", "1800")), 3600),
-)
-
 
 class ReconcileError(RuntimeError):
     def __init__(self, stage: str, detail: str) -> None:
@@ -227,7 +210,9 @@ def _release_gate(revision: str) -> dict[str, Any]:
     return {"ready": True, "status": "RELEASE_GATE_VERIFIED", **evidence}
 
 
-def _run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+def _run(
+    argv: list[str], *, timeout: int, environment: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             argv,
@@ -235,7 +220,7 @@ def _run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
             text=True,
             timeout=timeout,
             check=False,
-            env=os.environ.copy(),
+            env=environment if environment is not None else os.environ.copy(),
         )
     except subprocess.TimeoutExpired as exc:
         raise ReconcileError("host_command", f"timeout:{Path(argv[0]).name}") from exc
@@ -327,8 +312,10 @@ def _container_identity(container: str, repository: str) -> dict[str, Any]:
     }
 
 
-def _command_json(argv: list[str], *, timeout: int, stage: str) -> dict[str, Any]:
-    completed = _run(argv, timeout=timeout)
+def _command_json(
+    argv: list[str], *, timeout: int, stage: str, environment: dict[str, str] | None = None
+) -> dict[str, Any]:
+    completed = _run(argv, timeout=timeout, environment=environment)
     combined = completed.stdout + completed.stderr
     output_sha = hashlib.sha256(combined.encode("utf-8", errors="replace")).hexdigest()
     if completed.returncode != 0:
@@ -378,53 +365,36 @@ def _broker_call(action: str, arguments: dict[str, Any], *, timeout: int = 30) -
     return result
 
 
-def _schedule_self_update(revision: str) -> dict[str, Any]:
-    started_at = int(time.time())
-    SELF_UPDATE_REQUEST.parent.mkdir(parents=True, exist_ok=True)
-    temporary = SELF_UPDATE_REQUEST.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps(
-            {
-                "expected_revision": revision,
-                "reason": "coordinated-main-release-reconciler",
-            },
-            sort_keys=True,
-        )
-        + "\n",
-        "utf-8",
+def _deploy_mcp_from_ci_scope(revision: str, mcp: dict[str, str]) -> dict[str, Any]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "SOVEREIGN_MCP_EXPECTED_REVISION": revision,
+            "SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"],
+        }
     )
-    os.chmod(temporary, 0o600)
-    temporary.replace(SELF_UPDATE_REQUEST)
-    start = _run(["systemctl", "start", "--no-block", SELF_UPDATE_SERVICE], timeout=30)
-    if start.returncode != 0:
-        raise ReconcileError("mcp_self_update", "self-update service did not start")
-    deadline = time.monotonic() + MAX_SELF_UPDATE_SECONDS
-    latest: dict[str, Any] = {}
-    while time.monotonic() < deadline:
-        if SELF_UPDATE_STATUS.is_file():
-            try:
-                payload = json.loads(SELF_UPDATE_STATUS.read_text("utf-8"))
-            except (OSError, json.JSONDecodeError):
-                payload = {}
-            if isinstance(payload, dict):
-                latest = payload
-                if (
-                    str(payload.get("revision") or "").lower() == revision
-                    and int(payload.get("updated_at") or payload.get("updatedAtEpoch") or 0) >= started_at
-                ):
-                    if payload.get("ok") is True and payload.get("status") == "UPDATED":
-                        return {
-                            "status": "UPDATED",
-                            "revision": revision,
-                            "evidenceSha256": _canonical_sha256(payload),
-                        }
-                    if payload.get("status") in {"FAILED", "BLOCKED"}:
-                        raise ReconcileError("mcp_self_update", str(payload.get("detail") or payload.get("status")))
-        time.sleep(5)
-    raise ReconcileError(
-        "mcp_self_update",
-        f"timeout;statusSha256={_canonical_sha256(latest) if latest else 'none'}",
+    result = _command_json(
+        [MCP_INSTALLER],
+        timeout=1800,
+        stage="mcp_deploy",
+        environment=environment,
     )
+    receipt = result["receipt"]
+    expected_reference = f"{MCP_REPOSITORY}@{mcp['digest']}"
+    if (
+        str(receipt.get("mcp_revision") or "").lower() != revision
+        or str(receipt.get("mcp_image") or "") != expected_reference
+        or receipt.get("self_update_available") is not False
+        or receipt.get("pr_lifecycle_available") is not False
+        or receipt.get("workflow_dispatch_available") is not False
+    ):
+        raise ReconcileError("mcp_deploy", "installer receipt violates CI scope or capability truth")
+    return {
+        "status": "DEPLOYED",
+        "revision": revision,
+        "digest": mcp["digest"],
+        **result,
+    }
 
 
 def _runtime_readback(revision: str, backend: dict[str, str], mcp: dict[str, str]) -> dict[str, Any]:
@@ -538,7 +508,7 @@ def reconcile() -> dict[str, Any]:
     try:
         if mcp_changed:
             mcp_update = {
-                **_schedule_self_update(revision),
+                **_deploy_mcp_from_ci_scope(revision, mcp_image),
                 "mutationPerformed": True,
             }
     except ReconcileError as exc:
