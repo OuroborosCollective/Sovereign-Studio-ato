@@ -16,11 +16,18 @@ interface MutableRepoTreeNode {
   size?: number;
 }
 
+/**
+ * Recursively sorts tree nodes first by type (folders first) and then lexicographically.
+ * Optimized by replacing slow localeCompare with native lexicographical string comparison operators.
+ * This completely avoids V8's slow internationalization/collation overhead.
+ */
 function sortNodes(nodes: MutableRepoTreeNode[]): RepoTreeNode[] {
   return nodes
     .sort((a, b) => {
       if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      if (a.name < b.name) return -1;
+      if (a.name > b.name) return 1;
+      return 0;
     })
     .map((node) => ({
       name: node.name,
@@ -31,6 +38,11 @@ function sortNodes(nodes: MutableRepoTreeNode[]): RepoTreeNode[] {
     }));
 }
 
+/**
+ * Builds a folder/file hierarchy tree from a flat list of files.
+ * Highly optimized by using native string methods (lastIndexOf, substring) for path decomposition
+ * and local map/regex-less fast normalization instead of repeated split(), filter(), slice(), and join().
+ */
 export function buildRepoTree(files: readonly DevChatRepoTreeFile[]): readonly RepoTreeNode[] {
   const roots: MutableRepoTreeNode[] = [];
   const folders = new Map<string, MutableRepoTreeNode>();
@@ -39,9 +51,10 @@ export function buildRepoTree(files: readonly DevChatRepoTreeFile[]): readonly R
     const existing = folders.get(path);
     if (existing) return existing;
 
-    const parts = path.split('/').filter(Boolean);
-    const name = parts[parts.length - 1] || path;
-    const parentPath = parts.slice(0, -1).join('/');
+    const lastSlash = path.lastIndexOf('/');
+    const name = lastSlash === -1 ? path : path.substring(lastSlash + 1);
+    const parentPath = lastSlash === -1 ? '' : path.substring(0, lastSlash);
+
     const folder: MutableRepoTreeNode = { name, path, type: 'folder', children: [] };
     folders.set(path, folder);
 
@@ -52,18 +65,31 @@ export function buildRepoTree(files: readonly DevChatRepoTreeFile[]): readonly R
   }
 
   for (const file of files) {
-    const cleanPath = file.path.trim();
+    let cleanPath = file.path.trim();
     if (!cleanPath) continue;
-    const parts = cleanPath.split('/').filter(Boolean);
-    if (!parts.length) continue;
+
+    // Fast path normalization: strip leading and trailing slashes
+    while (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.slice(1);
+    }
+    while (cleanPath.endsWith('/')) {
+      cleanPath = cleanPath.slice(0, -1);
+    }
+    // Clean up internal consecutive slashes (e.g. "src//features") if present
+    if (cleanPath.includes('//')) {
+      cleanPath = cleanPath.replace(/\/+/g, '/');
+    }
+    if (!cleanPath) continue;
 
     if (file.type === 'tree') {
       ensureFolder(cleanPath);
       continue;
     }
 
-    const fileName = parts[parts.length - 1];
-    const parentPath = parts.slice(0, -1).join('/');
+    const lastSlash = cleanPath.lastIndexOf('/');
+    const fileName = lastSlash === -1 ? cleanPath : cleanPath.substring(lastSlash + 1);
+    const parentPath = lastSlash === -1 ? '' : cleanPath.substring(0, lastSlash);
+
     const node: MutableRepoTreeNode = {
       name: fileName,
       path: cleanPath,
