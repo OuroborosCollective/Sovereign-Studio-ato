@@ -1921,6 +1921,32 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText("Zugang eingeben")).toBeNull();
   });
 
+  it("uses the configured Sovereign Agent API for the GitHub scope preflight", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentConfig={{
+          enabled: true,
+          deploymentMode: 'sovereign-agent-backend',
+          agentApiUrl: 'https://agent.example.test',
+          ready: true,
+          reason: 'test agent backend',
+        }}
+      />,
+    );
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    const calls = fetchMock.mock.calls.map(([input]) => requestUrl(input as RequestInfo | URL));
+    expect(calls).toContain('https://agent.example.test/api/user/agent/github-access/scope');
+    expect(calls).toContain('https://agent.example.test/api/user/agent/github-access/validate');
+  });
+
   it("blocks a Draft-PR execution request when no product executor is connected", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),

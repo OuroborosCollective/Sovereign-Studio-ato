@@ -163,9 +163,10 @@ import {
   buildOfflineCapabilityLanguageEvidence,
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
-import type {
-  SovereignAgentConfig,
-  SovereignAgentJobSnapshot,
+import {
+  resolveSovereignAgentConfig,
+  type SovereignAgentConfig,
+  type SovereignAgentJobSnapshot,
 } from "../runtime/sovereignAgentRuntime";
 import type { SovereignPatternLearningEvidence } from "../runtime/sovereignAgentClient";
 import {
@@ -2758,6 +2759,10 @@ export function BuilderContainer({
   const scopedAgentJob = useMemo(
     () => selectRepoScopedAgentJob(agentJob, chatRepoSnapshot),
     [chatRepoSnapshot, agentJob],
+  );
+  const githubAccessApiBase = useMemo(
+    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
+    [agentConfig],
   );
   const scopedAgentIsRunning = Boolean(
     scopedAgentJob
@@ -6577,7 +6582,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                         expectedBaseSha: validationRepoSnapshot.headSha,
                       },
                       globalThis.fetch,
-                      SOVEREIGN_WORKER_BASE,
+                      githubAccessApiBase,
                     );
 
                     if (
