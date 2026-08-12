@@ -512,6 +512,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const props = {
       ...baseProps(),
       agentReady: true,
+      agentJob: repoScopedJob({ status: 'completed' }),
       onStartAgent: vi.fn(),
     };
     mockFetchSequence(
@@ -565,7 +566,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("does not duplicate an already analysed mission when Sovereign Agent execution is requested", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -813,7 +814,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
       () => new Promise<AreInferenceResult>((resolve) => { resolveInference = resolve; }),
     );
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.includes('/git/trees/')) {
@@ -916,7 +917,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("starts the external agent only for explicit code or Draft-PR execution intent", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -978,7 +979,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("resumes one blocked Sovereign Agent request after GitHub access becomes ready", async () => {
     const originalText = "Sovereign Agent soll Feature X implementieren";
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
@@ -1006,7 +1007,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("resumes one repo-blocked Agent request through repo load and GitHub validation", async () => {
     const originalText = "Sovereign Agent soll Feature X implementieren";
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
@@ -1396,7 +1397,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("requests Sovereign Agent job start without claiming a confirmed running job", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -1422,7 +1423,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         resolveStart = resolve;
       }),
     );
-    const props = { ...baseProps(), agentReady: true, onStartAgent };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -1461,6 +1462,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const props = {
       ...baseProps(),
       agentReady: true,
+      agentJob: repoScopedJob({ status: 'completed' }),
       onStartAgent: vi.fn(async () => {
         throw new Error("Backend session missing");
       }),
@@ -1807,7 +1809,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ permissions: { push: true } }),
       jsonResponse({ tree: [{ path: "src/Other.tsx", type: "blob", size: 21 }], truncated: false }),
     );
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
     await loadRepoFromChat();
     await validateGitHubAccessFromLauncher();
 
@@ -1839,7 +1841,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
     await loadRepoFromChat();
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
     fireEvent.click(screen.getByLabelText('GitHub Access'));
@@ -1915,7 +1917,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ permissions: { push: true } }),
     );
 
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
     fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());
