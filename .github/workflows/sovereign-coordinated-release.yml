@@ -89,9 +89,27 @@ jobs:
                     core.setFailed(`${requirement.workflow}:EXACT_REVISION_PUBLISHER_JOB_MISSING:${run.id}`);
                     return;
                   }
+                  const jobByName = (name) => jobsResponse.data.jobs.find(
+                    (job) => String(job.name || '') === name,
+                  );
+                  const isBackendPrValidation = (
+                    requirement.workflow === 'sovereign-backend-image.yml'
+                    && run.event === 'workflow_dispatch'
+                    && jobByName('Build immutable backend image')?.conclusion === 'success'
+                  );
+                  const isMcpBranchUpdate = (
+                    requirement.workflow === 'sovereign-chatgpt-mcp.yml'
+                    && run.event === 'workflow_dispatch'
+                    && jobByName('Boundary ledger drift preflight')?.conclusion === 'skipped'
+                    && jobByName('Validate MCP operator')?.conclusion === 'skipped'
+                  );
                   if (publisher.conclusion === 'skipped') {
-                    // Explicitly non-producing dispatches may not replace a prior immutable image.
-                    continue;
+                    if (isBackendPrValidation || isMcpBranchUpdate) {
+                      // Only explicitly non-producing dispatch modes may be bypassed.
+                      continue;
+                    }
+                    core.setFailed(`${requirement.workflow}:LATEST_EXACT_REVISION_PUBLISHER_SKIPPED_UNEXPECTEDLY:${run.id}`);
+                    return;
                   }
                   if (run.status !== 'completed' || publisher.status !== 'completed') {
                     waiting = true;

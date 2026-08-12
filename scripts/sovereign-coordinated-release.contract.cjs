@@ -42,6 +42,12 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /LATEST_EXACT_REVISION_PUBLISHER_FAILED/);
   assert.match(workflow, /EXACT_REVISION_PUBLISHER_JOB_MISSING/);
   assert.match(workflow, /publisher\.conclusion === 'skipped'/);
+  assert.match(workflow, /LATEST_EXACT_REVISION_PUBLISHER_SKIPPED_UNEXPECTEDLY/);
+  assert.match(workflow, /isBackendPrValidation/);
+  assert.match(workflow, /isMcpBranchUpdate/);
+  assert.match(workflow, /Build immutable backend image/);
+  assert.match(workflow, /Boundary ledger drift preflight/);
+  assert.match(workflow, /Validate MCP operator/);
 });
 
 test('backend producer exposes an explicit publish-only evidence job', () => {
@@ -49,6 +55,8 @@ test('backend producer exposes an explicit publish-only evidence job', () => {
   assert.match(backendImageWorkflow, /name: Publish immutable backend image evidence/);
   assert.match(backendImageWorkflow, /if: \$\{\{ github\.event_name != 'workflow_dispatch' \|\| inputs\.pr_validation != true \}\}/);
   assert.match(backendImageWorkflow, /docker buildx imagetools inspect/);
+  assert.match(backendImageWorkflow, /docker\/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f/);
+  assert.match(backendImageWorkflow, /docker\/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9/);
 });
 
 test('coordinated release revalidates current main before registry work and before upload', () => {
