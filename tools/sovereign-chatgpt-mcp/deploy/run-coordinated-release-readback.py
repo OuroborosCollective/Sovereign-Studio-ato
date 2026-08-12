@@ -17,6 +17,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+IMAGE_REPOSITORY_RE = re.compile(r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$")
 NAMESPACE = "sovereign-runtime-receipt"
 TOKEN_DIR = Path("/run/sovereign-release-reconciler")
 TOKEN_FILE = TOKEN_DIR / "github-token"
@@ -28,6 +29,10 @@ STATUS_FILE = Path("/var/lib/sovereign-release-reconciler/status.json")
 REPOSITORY = os.getenv(
     "SOVEREIGN_MCP_REPOSITORY",
     "OuroborosCollective/Sovereign-Studio-ato",
+).strip()
+BACKEND_IMAGE_REPOSITORY = os.getenv(
+    "SOVEREIGN_BACKEND_IMAGE_REPOSITORY",
+    "ghcr.io/ouroboroscollective/sovereign-backend",
 ).strip()
 
 
@@ -255,6 +260,8 @@ def main() -> int:
     scope: dict[str, Any] | None = None
     try:
         scope, token, registry_username = _read_input()
+        if not IMAGE_REPOSITORY_RE.fullmatch(BACKEND_IMAGE_REPOSITORY):
+            raise ReadbackError("backend image repository is invalid")
         _write_token(token)
         _prepare_registry_auth(token, registry_username)
         environment = os.environ.copy()
@@ -266,6 +273,7 @@ def main() -> int:
                 "SOVEREIGN_EXPECTED_BACKEND_DIGEST": scope["backendDigest"],
                 "SOVEREIGN_EXPECTED_MCP_DIGEST": scope["mcpDigest"],
                 "SOVEREIGN_EXPECTED_MANIFEST_EVIDENCE_SHA256": scope["manifestEvidenceSha256"],
+                "SOVEREIGN_BACKEND_IMAGE_REPOSITORY": BACKEND_IMAGE_REPOSITORY,
                 "DOCKER_CONFIG": str(DOCKER_CONFIG_DIR),
             }
         )
