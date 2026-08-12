@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "sovereign.architecture-truth-policy.v1",
+  "policyId": "sovereign-architecture-truth",
+  "policyVersion": 1,
+  "repository": "OuroborosCollective/Sovereign-Studio-ato",
+  "requiredEvidenceKinds": [
+    "architecture_inventory",
+    "architecture_drift_report",
+    "backend_assessment",
+    "repository_snapshot"
+  ],
+  "invariants": [
+    {
+      "invariantId": "canonical-effect-owner",
+      "version": 1,
+      "domain": "mutation",
+      "requiredEvidenceKinds": [
+        "architecture_inventory",
+        "repository_snapshot"
+      ],
+      "requiresRuntimeEvidence": false,
+      "failureMode": "DENY"
+    },
+    {
+      "invariantId": "runtime-revision-binding",
+      "version": 1,
+      "domain": "deployment",
+      "requiredEvidenceKinds": [
+        "architecture_inventory",
+        "architecture_drift_report",
+        "backend_assessment",
+        "repository_snapshot"
+      ],
+      "requiresRuntimeEvidence": true,
+      "failureMode": "REQUIRE_REVALIDATION"
+    }
+  ]
+}
