@@ -76,11 +76,18 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ReadbackError, "input framing is invalid"):
                 module._read_input()
 
-    def test_control_plane_bootstrap_is_manual_hash_bound_and_container_free(self) -> None:
+    def test_control_plane_bootstrap_is_exact_main_path_scoped_hash_bound_and_container_free(self) -> None:
         workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
+        self.assertIn("push:", workflow)
+        self.assertIn("branches: [main]", workflow)
         self.assertIn("workflow_dispatch:", workflow)
-        self.assertNotIn("push:", workflow)
-        self.assertIn("EXPECTED_REVISION: ${{ inputs.expected_revision }}", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertIn("tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py", workflow)
+        self.assertIn(".github/workflows/sovereign-release-readback-bootstrap.yml", workflow)
+        self.assertIn(
+            "EXPECTED_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_revision || github.sha }}",
+            workflow,
+        )
         self.assertIn("SOURCE_REVISION_IS_NOT_CURRENT_MAIN", workflow)
         self.assertIn("KNOWN_PREVIOUS_REVISION: 738c0ac6616b2b2fadfd554706ac678c90e80e7a", workflow)
         self.assertIn("UNEXPECTED_READBACK_ENTRYPOINT_HASH", workflow)
