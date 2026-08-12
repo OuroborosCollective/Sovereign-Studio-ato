@@ -127,6 +127,7 @@ jobs:
           envs: SUDO_PASSWORD,EXPECTED_REVISION,EXPECTED_NEW_SHA256,EXPECTED_PREVIOUS_SHA256
           script: |
             set -Eeuo pipefail
+            umask 077
             run_root() {
               if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
               if sudo -n true >/dev/null 2>&1; then sudo -n "$@"; return; fi
@@ -176,37 +177,71 @@ jobs:
             }
             Path(path).write_text(json.dumps(payload, sort_keys=True, separators=(',', ':')) + '\n', 'utf-8')
             PY
+            chmod 0600 "$RECEIPT"
 
-      - name: Download bounded bootstrap receipt
-        uses: appleboy/scp-action@v1.0.0
+      - name: Read bounded bootstrap receipt over SSH stdout
+        id: receipt
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ env.VPS_HOST }}
           username: ${{ env.VPS_USER }}
           password: ${{ env.VPS_PASSWORD }}
           port: ${{ env.VPS_SSH_PORT }}
-          source: .sovereign-release-readback-bootstrap/bootstrap-receipt.json
-          target: .sovereign-bootstrap-evidence
-          overwrite: true
-          rm: false
+          command_timeout: 5m
+          capture_stdout: true
+          script: |
+            set -Eeuo pipefail
+            RECEIPT="$HOME/.sovereign-release-readback-bootstrap/bootstrap-receipt.json"
+            test -f "$RECEIPT" && test ! -L "$RECEIPT"
+            test "$(stat -c '%a' "$RECEIPT")" = 600
+            python3 - "$RECEIPT" <<'PY'
+            import base64, sys
+            from pathlib import Path
+            payload = Path(sys.argv[1]).read_bytes()
+            if len(payload) < 64 or len(payload) > 16384:
+                raise SystemExit('bootstrap receipt size is invalid')
+            print(base64.b64encode(payload).decode('ascii'))
+            PY
 
       - name: Normalize and verify bootstrap receipt
+        env:
+          RECEIPT_BASE64: ${{ steps.receipt.outputs.stdout }}
+          EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
         run: |
           set -Eeuo pipefail
-          RECEIPT=".sovereign-bootstrap-evidence/.sovereign-release-readback-bootstrap/bootstrap-receipt.json"
-          test -f "$RECEIPT"
-          python3 - "$RECEIPT" "${{ steps.evidence.outputs.new_sha256 }}" "$EXPECTED_REVISION" <<'PY'
-          import json, sys
+          mkdir -p .sovereign-bootstrap-evidence
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
           from pathlib import Path
-          receipt = json.loads(Path(sys.argv[1]).read_text('utf-8'))
+
+          encoded = os.environ['RECEIPT_BASE64'].strip()
+          raw = base64.b64decode(encoded, validate=True)
+          receipt = json.loads(raw.decode('utf-8'))
           assert receipt.get('schemaVersion') == 'sovereign.release-readback-bootstrap-receipt.v1'
           assert receipt.get('ok') is True
-          assert receipt.get('revision') == sys.argv[3]
-          assert receipt.get('afterSha256') == sys.argv[2]
+          assert receipt.get('revision') == os.environ['EXPECTED_REVISION']
+          assert receipt.get('afterSha256') == os.environ['EXPECTED_NEW_SHA256']
           assert receipt.get('containersChanged') is False
           assert receipt.get('servicesRestarted') is False
           assert receipt.get('authorizedKeysChanged') is False
           assert receipt.get('secretValuesReturned') is False
+          Path('.sovereign-bootstrap-evidence/bootstrap-receipt.json').write_bytes(raw)
           PY
+
+      - name: Remove remote bootstrap staging directory
+        if: always()
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 5m
+          script: |
+            set -eu
+            rm -rf "$HOME/.sovereign-release-readback-bootstrap"
 
       - name: Upload bounded control-plane bootstrap evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
