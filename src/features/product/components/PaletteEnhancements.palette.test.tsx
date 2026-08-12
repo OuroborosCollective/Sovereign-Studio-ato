@@ -406,6 +406,69 @@ describe('Palette Accessibility Enhancements', () => {
       );
       expect(sendButton).toHaveAttribute('title', 'Rückfrage bereits beantwortet');
     });
+
+    it('supports keyboard navigation via ArrowDown and ArrowUp and dynamically sets tabIndex', async () => {
+      const options = [
+        { id: 'opt1', label: 'Option 1' },
+        { id: 'opt2', label: 'Option 2' },
+        { id: 'opt3', label: 'Option 3' },
+      ];
+      const handleAnswer = vi.fn();
+
+      const { container } = render(
+        <AgentQuestionCard
+          question="Test Question"
+          options={options}
+          onAnswer={handleAnswer}
+        />
+      );
+
+      const radio1 = screen.getByRole('radio', { name: 'Option 1' });
+      const radio2 = screen.getByRole('radio', { name: 'Option 2' });
+      const radio3 = screen.getByRole('radio', { name: 'Option 3' });
+
+      // Initially, only the first option is focusable since nothing is selected
+      expect(radio1).toHaveAttribute('tabIndex', '0');
+      expect(radio2).toHaveAttribute('tabIndex', '-1');
+      expect(radio3).toHaveAttribute('tabIndex', '-1');
+
+      // Click option 2 manually
+      fireEvent.click(radio2);
+      expect(radio1).toHaveAttribute('tabIndex', '-1');
+      expect(radio2).toHaveAttribute('tabIndex', '0');
+      expect(radio3).toHaveAttribute('tabIndex', '-1');
+
+      // Focus option 2 and press ArrowDown
+      radio2.focus();
+
+      await vi.waitFor(async () => {
+        fireEvent.keyDown(radio2, { key: 'ArrowDown' });
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      });
+
+      // Expect Option 3 to be selected, focused, and have tabIndex=0
+      expect(radio1).toHaveAttribute('tabIndex', '-1');
+      expect(radio2).toHaveAttribute('tabIndex', '-1');
+      expect(radio3).toHaveAttribute('tabIndex', '0');
+
+      // Press ArrowDown again to wrap around to Option 1
+      await vi.waitFor(async () => {
+        fireEvent.keyDown(radio3, { key: 'ArrowDown' });
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      });
+      expect(radio1).toHaveAttribute('tabIndex', '0');
+      expect(radio2).toHaveAttribute('tabIndex', '-1');
+      expect(radio3).toHaveAttribute('tabIndex', '-1');
+
+      // Press ArrowUp to go back to Option 3
+      await vi.waitFor(async () => {
+        fireEvent.keyDown(radio1, { key: 'ArrowUp' });
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      });
+      expect(radio1).toHaveAttribute('tabIndex', '-1');
+      expect(radio2).toHaveAttribute('tabIndex', '-1');
+      expect(radio3).toHaveAttribute('tabIndex', '0');
+    });
   });
 
   describe('AutoCodeReviewCard Enhancements', () => {

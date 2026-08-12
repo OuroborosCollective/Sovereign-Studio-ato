@@ -36,12 +36,39 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
   disabled = false,
 }) => {
   const [selected, setSelected] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [confirmFocused, setConfirmFocused] = useState(false);
 
   function handleConfirm() {
     if (selected && !disabled) {
       onAnswer(selected);
     }
   }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (disabled) return;
+
+    let nextIndex = index;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      nextIndex = (index + 1) % options.length;
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      nextIndex = (index - 1 + options.length) % options.length;
+    } else {
+      return;
+    }
+
+    const targetOption = options[nextIndex];
+    if (targetOption) {
+      setSelected(targetOption.id);
+      setFocusedId(targetOption.id);
+      setTimeout(() => {
+        const btn = document.querySelector(`[data-option-id="${targetOption.id}"]`) as HTMLElement;
+        if (btn) btn.focus();
+      }, 0);
+    }
+  };
 
   return (
     <div
@@ -77,16 +104,24 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
         aria-label="Optionen"
         style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
       >
-        {options.map((option) => {
+        {options.map((option, index) => {
           const isSelected = selected === option.id;
+          const isFocused = focusedId === option.id;
+          const tabIndex = isSelected || (selected === null && index === 0) ? 0 : -1;
+
           return (
             <button
               key={option.id}
               type="button"
               role="radio"
               aria-checked={isSelected}
+              tabIndex={tabIndex}
+              data-option-id={option.id}
               disabled={disabled}
               onClick={() => setSelected(option.id)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
+              onFocus={() => setFocusedId(option.id)}
+              onBlur={() => setFocusedId(null)}
               title={option.label}
               style={{
                 display: 'flex',
@@ -96,6 +131,8 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
                 borderRadius: 8,
                 background: isSelected ? `${C.accent}15` : 'transparent',
                 border: `1px solid ${isSelected ? C.accent : C.border}`,
+                outline: isFocused ? `2px solid ${C.accent}` : 'none',
+                outlineOffset: isFocused ? '2px' : undefined,
                 cursor: disabled ? 'not-allowed' : 'pointer',
                 textAlign: 'left',
                 opacity: disabled ? 0.5 : 1,
@@ -138,12 +175,16 @@ export const AgentQuestionCard: React.FC<AgentQuestionCardProps> = ({
         type="button"
         disabled={!selected || disabled}
         onClick={handleConfirm}
+        onFocus={() => setConfirmFocused(true)}
+        onBlur={() => setConfirmFocused(false)}
         title={disabled ? 'Rückfrage bereits beantwortet' : !selected ? 'Bitte wählen Sie zuerst eine Option aus' : 'Ausgewählte Antwort an den Agenten senden'}
         style={{
           padding: '9px 16px',
           borderRadius: 8,
           background: selected && !disabled ? C.accent : C.border,
           border: 'none',
+          outline: confirmFocused ? `2px solid ${C.accent}` : 'none',
+          outlineOffset: confirmFocused ? '2px' : undefined,
           color: selected && !disabled ? '#0e1116' : C.textSub,
           fontSize: 13,
           fontWeight: 600,
