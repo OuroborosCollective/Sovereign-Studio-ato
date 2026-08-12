@@ -324,50 +324,55 @@ describe('createLatentSpace factory', () => {
   });
 });
 
-describe('LatentSpaceNavigator Performance Benchmark', () => {
-  it('should measure 1-slot cache speedup and lexicographical comparison speedup', () => {
+describe('LatentSpaceNavigator query cache contract', () => {
+  it('records a deterministic 1-slot cache hit for an identical query and resets its evidence on clear', () => {
     const ls = createLatentSpace({
       dimension: 64,
       maxPatterns: 500,
     });
 
-    // Populate with 100 patterns
-    for (let i = 0; i < 100; i++) {
+    for (let patternIndex = 0; patternIndex < 100; patternIndex++) {
       ls.addPattern({
-        id: `pat-${i.toString().padStart(4, '0')}`,
-        embedding: new Array(64).fill(0).map(() => Math.random()),
+        id: `pat-${patternIndex.toString().padStart(4, '0')}`,
+        embedding: Array.from(
+          { length: 64 },
+          (_, dimensionIndex) => (patternIndex + dimensionIndex + 1) / 164,
+        ),
         norm: 1,
-        signalValue: Math.random(),
+        signalValue: patternIndex / 100,
         node: 'runtime.decision',
-        createdAt: Date.now(),
+        createdAt: patternIndex,
         matchCount: 0,
         avgConfidence: 0,
       });
     }
 
-    // Warmup V8 JIT compiler
-    for (let i = 0; i < 500; i++) {
-      ls.findTopK(0.5 + (i % 2 === 0 ? 0.00001 : -0.00001), 'runtime.decision', 5);
-    }
+    const before = ls.getQueryCacheStats();
+    const first = ls.findTopK(0.5, 'runtime.decision', 5);
+    const afterMiss = ls.getQueryCacheStats();
+    const second = ls.findTopK(0.5, 'runtime.decision', 5);
+    const afterHit = ls.getQueryCacheStats();
 
-    const startCached = performance.now();
-    // 1000 consecutive queries with the exact same value (fully cached)
-    for (let i = 0; i < 1000; i++) {
-      ls.findTopK(0.5, 'runtime.decision', 5);
-    }
-    const durationCached = performance.now() - startCached;
+    expect(afterMiss).toEqual({
+      hits: before.hits,
+      misses: before.misses + 1,
+      lastValue: 0.5,
+    });
+    expect(afterHit).toEqual({
+      hits: afterMiss.hits + 1,
+      misses: afterMiss.misses,
+      lastValue: 0.5,
+    });
+    expect(second).toEqual(first);
 
-    const startUncached = performance.now();
-    // 1000 queries with slightly different values (bypass cache)
-    for (let i = 0; i < 1000; i++) {
-      ls.findTopK(0.5 + (i % 2 === 0 ? 0.00001 : -0.00001), 'runtime.decision', 5);
-    }
-    const durationUncached = performance.now() - startUncached;
+    ls.findTopK(0.50001, 'runtime.decision', 5);
+    expect(ls.getQueryCacheStats()).toEqual({
+      hits: afterHit.hits,
+      misses: afterHit.misses + 1,
+      lastValue: 0.50001,
+    });
 
-    console.log(`[BENCHMARK] Cached queries: ${durationCached.toFixed(2)}ms`);
-    console.log(`[BENCHMARK] Uncached queries: ${durationUncached.toFixed(2)}ms`);
-    console.log(`[BENCHMARK] Speedup Factor: ${(durationUncached / durationCached).toFixed(2)}x`);
-
-    expect(durationCached).toBeLessThan(durationUncached * 2.0);
+    ls.clear();
+    expect(ls.getQueryCacheStats()).toEqual({ hits: 0, misses: 0, lastValue: null });
   });
 });

@@ -49,6 +49,8 @@ export class LatentSpaceNavigator {
   private lastQueryValue: number | null = null;
   private lastQueryEmbedding: number[] = [];
   private lastQueryNorm: number = 0;
+  private queryCacheHits = 0;
+  private queryCacheMisses = 0;
 
   constructor(config: Partial<LatentSpaceConfig> = {}) {
     this.dimension = config.dimension ?? DEFAULT_DIMENSION;
@@ -67,6 +69,14 @@ export class LatentSpaceNavigator {
       maxPatterns: this.maxPatterns,
       similarityThreshold: this.similarityThreshold,
       kNeighbors: this.kNeighbors,
+    };
+  }
+
+  getQueryCacheStats(): { hits: number; misses: number; lastValue: number | null } {
+    return {
+      hits: this.queryCacheHits,
+      misses: this.queryCacheMisses,
+      lastValue: this.lastQueryValue,
     };
   }
 
@@ -215,8 +225,10 @@ export class LatentSpaceNavigator {
   private getQueryEmbeddingAndNorm(value: number): { embedding: number[]; norm: number } {
     // Return cached query embedding and norm if value is identical
     if (this.lastQueryValue === value) {
+      this.queryCacheHits += 1;
       return { embedding: this.lastQueryEmbedding, norm: this.lastQueryNorm };
     }
+    this.queryCacheMisses += 1;
     const embedding: number[] = [];
     let sum = 0;
     for (let index = 0; index < this.dimension; index += 1) {
@@ -269,6 +281,8 @@ export class LatentSpaceNavigator {
     this.lastQueryValue = null;
     this.lastQueryEmbedding = [];
     this.lastQueryNorm = 0;
+    this.queryCacheHits = 0;
+    this.queryCacheMisses = 0;
   }
 
   estimateMemoryUsage(): number {
