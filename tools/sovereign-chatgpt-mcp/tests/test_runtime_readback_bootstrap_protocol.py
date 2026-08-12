@@ -3,7 +3,10 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
+import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -36,6 +39,10 @@ def _scope() -> dict[str, object]:
 
 def _stdin(payload: bytes) -> io.TextIOWrapper:
     return io.TextIOWrapper(io.BytesIO(payload), encoding="utf-8")
+
+
+def _receipt_markers(stdout: str) -> list[str]:
+    return re.findall(r"SOVEREIGN_BOOTSTRAP_RECEIPT_HEX=([0-9a-fA-F]+)", stdout)
 
 
 class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
@@ -96,6 +103,69 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         )
         self.assertNotIn('SOVEREIGN_BACKEND_IMAGE_REPOSITORY": "latest"', source)
 
+    def test_backend_env_pointer_uses_only_managed_allowlisted_path_without_reading_secret_contents(self) -> None:
+        module = _load_entrypoint()
+        source = ENTRYPOINT.read_text("utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = root / "runtime.env"
+            backend = root / "backend.env"
+            backend.write_text("TOP_SECRET_VALUE=must-not-be-read-by-pointer-resolution\n", "utf-8")
+            control.write_text(f"SOVEREIGN_BACKEND_ENV_FILE={backend}\n", "utf-8")
+            os.chmod(control, 0o600)
+            os.chmod(backend, 0o600)
+            module.CONTROL_PLANE_ENV = control
+            module.ALLOWED_BACKEND_ENV_FILES = frozenset({backend})
+            with patch.object(module, "_assert_root_private", return_value=None):
+                selected = module._backend_env_file()
+            self.assertEqual(selected, backend)
+        self.assertIn('"SOVEREIGN_BACKEND_ENV_FILE": str(backend_env_file)', source)
+        self.assertIn('CONTROL_PLANE_ENV.read_text("utf-8")', source)
+        self.assertNotIn('selected.read_text(', source)
+        self.assertNotIn('backend_env_file.read_text(', source)
+
+    def test_backend_env_pointer_rejects_unapproved_and_ambiguous_paths(self) -> None:
+        module = _load_entrypoint()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = root / "runtime.env"
+            approved = root / "approved.env"
+            unapproved = root / "unapproved.env"
+            for path in (approved, unapproved):
+                path.write_text("VALUE=redacted\n", "utf-8")
+                os.chmod(path, 0o600)
+            os.chmod(control, 0o600)
+            module.CONTROL_PLANE_ENV = control
+            module.ALLOWED_BACKEND_ENV_FILES = frozenset({approved})
+            with patch.object(module, "_assert_root_private", return_value=None):
+                control.write_text(f"SOVEREIGN_BACKEND_ENV_FILE={unapproved}\n", "utf-8")
+                with self.assertRaisesRegex(module.ReadbackError, "outside the canonical allowlist"):
+                    module._backend_env_file()
+                control.write_text(
+                    f"SOVEREIGN_BACKEND_ENV_FILE={approved}\nSOVEREIGN_BACKEND_ENV_FILE={approved}\n",
+                    "utf-8",
+                )
+                with self.assertRaisesRegex(module.ReadbackError, "missing or ambiguous"):
+                    module._backend_env_file()
+
+    def test_backend_env_pointer_rejects_symlink_target(self) -> None:
+        module = _load_entrypoint()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = root / "runtime.env"
+            actual = root / "actual.env"
+            linked = root / "linked.env"
+            actual.write_text("VALUE=redacted\n", "utf-8")
+            os.chmod(actual, 0o600)
+            linked.symlink_to(actual)
+            control.write_text(f"SOVEREIGN_BACKEND_ENV_FILE={linked}\n", "utf-8")
+            os.chmod(control, 0o600)
+            module.CONTROL_PLANE_ENV = control
+            module.ALLOWED_BACKEND_ENV_FILES = frozenset({linked})
+            with patch.object(module, "_assert_root_private", return_value=None):
+                with self.assertRaisesRegex(module.ReadbackError, "not a regular file"):
+                    module._backend_env_file()
+
     def test_control_plane_bootstrap_uses_exact_two_parent_source_lineage(self) -> None:
         workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
         self.assertIn("push:", workflow)
@@ -126,7 +196,21 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         self.assertNotIn("for revision in", workflow)
         self.assertNotIn("while read", workflow)
 
-    def test_control_plane_bootstrap_remains_container_free_and_hex_receipted(self) -> None:
+    def test_bootstrap_receipt_marker_survives_realistic_ssh_wrapper_text_and_rejects_ambiguity(self) -> None:
+        payload = json.dumps({"ok": True, "secretValuesReturned": False}, separators=(",", ":")).encode("utf-8")
+        encoded = payload.hex()
+        wrapper = (
+            "======CMD======\n"
+            f"out: SOVEREIGN_BOOTSTRAP_RECEIPT_HEX={encoded}\n"
+            "===============================================\n"
+            "✅ Successfully executed commands to all hosts.\n"
+            "===============================================\n"
+        )
+        self.assertEqual(_receipt_markers(wrapper), [encoded])
+        duplicated = wrapper + f"SOVEREIGN_BOOTSTRAP_RECEIPT_HEX={encoded}\n"
+        self.assertEqual(len(_receipt_markers(duplicated)), 2)
+
+    def test_control_plane_bootstrap_remains_container_free_and_marked_hex_receipted(self) -> None:
         workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
         self.assertIn("UNEXPECTED_READBACK_ENTRYPOINT_HASH", workflow)
         self.assertIn("/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback", workflow)
@@ -134,11 +218,11 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         self.assertIn("servicesRestarted': False", workflow)
         self.assertIn("authorizedKeysChanged': False", workflow)
         self.assertIn("capture_stdout: true", workflow)
-        self.assertIn("RECEIPT_HEX: ${{ steps.receipt.outputs.stdout }}", workflow)
-        self.assertIn("print(payload.hex())", workflow)
+        self.assertIn("RECEIPT_STDOUT: ${{ steps.receipt.outputs.stdout }}", workflow)
+        self.assertIn("SOVEREIGN_BOOTSTRAP_RECEIPT_HEX=", workflow)
+        self.assertIn("len(matches) != 1", workflow)
         self.assertIn("raw = bytes.fromhex(encoded)", workflow)
         self.assertNotIn("RECEIPT_BASE64:", workflow)
-        self.assertNotIn("base64.b64decode", workflow)
         self.assertNotIn("source: .sovereign-release-readback-bootstrap/bootstrap-receipt.json", workflow)
         self.assertNotIn("deploy/install-on-vps.sh", workflow)
         self.assertNotIn("docker restart", workflow)
