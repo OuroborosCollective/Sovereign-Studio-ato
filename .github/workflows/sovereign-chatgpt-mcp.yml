@@ -448,7 +448,11 @@ jobs:
           grep -q '^ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release$' deploy/sovereign-release-reconciler.service
           grep -q '^EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env$' deploy/sovereign-release-reconciler.service
           grep -q '^OnUnitActiveSec=2min$' deploy/sovereign-release-reconciler.timer
-          grep -q 'PRESERVED_BROKER_GITHUB_TOKEN=' deploy/install-on-vps.sh
+          ! grep -q 'PRESERVED_BROKER_GITHUB_TOKEN=' deploy/install-on-vps.sh
+          grep -q 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' deploy/install-on-vps.sh
+          grep -q 'install_ci_runtime_readback_authorization' deploy/install-on-vps.sh
+          test -f deploy/run-coordinated-release-readback.py
+          test -f deploy/ci-runtime-readback.pub
           grep -q 'systemctl enable --now sovereign-release-reconciler.timer' deploy/install-on-vps.sh
           grep -q '^StateDirectory=sovereign-chatgpt-self-update$' deploy/sovereign-chatgpt-mcp-self-update.service
           grep -q '^ExecStartPre=/usr/bin/python3 /opt/sovereign-chatgpt-tools/mcp_protocol_health.py ' deploy/sovereign-openai-tunnel.service
