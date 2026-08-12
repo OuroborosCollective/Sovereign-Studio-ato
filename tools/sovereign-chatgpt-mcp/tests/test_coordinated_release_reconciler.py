@@ -79,7 +79,7 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     monkeypatch.setattr(
         module,
         "_release_gate",
-        lambda _revision: {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", "runId": 77},
+        lambda _revision, **_kwargs: {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", "runId": 77},
     )
     monkeypatch.setattr(
         module,
@@ -92,6 +92,15 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     assert result["status"] == "WAITING_FOR_RELEASE_GATE"
     assert result["mutationPerformed"] is False
     assert json.loads((tmp_path / "status.json").read_text("utf-8"))["revision"] == revision
+
+
+def test_self_runtime_readback_accepts_only_the_expected_in_progress_release_run_contract() -> None:
+    source = SCRIPT.read_text("utf-8")
+    assert "expected_runtime_readback_run_id: int | None = None" in source
+    assert 'evidence["runId"] == expected_runtime_readback_run_id' in source
+    assert '"status": "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE"' in source
+    assert "expected_runtime_readback_run_id=scope[\"releaseGateRunId\"]" in source
+    assert 'return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **evidence}' in source
 
 
 def _git(*arguments: str, cwd: Path) -> str:
