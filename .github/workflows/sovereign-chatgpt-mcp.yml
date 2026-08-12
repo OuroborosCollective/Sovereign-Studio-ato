@@ -922,7 +922,8 @@ jobs:
           backend = str((manifest.get('backend') or {}).get('digest') or '')
           mcp = str((manifest.get('mcp') or {}).get('digest') or '')
           evidence = str(manifest.get('evidenceSha256') or '')
-          if not all(digest_re.fullmatch(value) for value in (backend, mcp, evidence)):
+          evidence_re = re.compile(r'^[0-9a-f]{64}$')
+          if not all(digest_re.fullmatch(value) for value in (backend, mcp)) or not evidence_re.fullmatch(evidence):
               raise SystemExit('manifest does not contain exact immutable digest evidence')
           with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as handle:
               handle.write(f'mcp_digest={mcp}\n')
@@ -970,7 +971,7 @@ jobs:
           [[ "${EXPECTED_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected revision must be a full commit SHA.' >&2; exit 1; }
           [[ "${EXPECTED_IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Manifest-bound MCP digest is missing or invalid.' >&2; exit 1; }
           [[ "${EXPECTED_BACKEND_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Manifest-bound backend digest is missing or invalid.' >&2; exit 1; }
-          [[ "${EXPECTED_MANIFEST_EVIDENCE_SHA256}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Manifest evidence hash is missing or invalid.' >&2; exit 1; }
+          [[ "${EXPECTED_MANIFEST_EVIDENCE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { echo 'Manifest evidence hash is missing or invalid.' >&2; exit 1; }
           [[ "${EXPECTED_COORDINATED_RELEASE_RUN_ID}" =~ ^[1-9][0-9]*$ ]] || { echo 'Coordinated-release run id is missing or invalid.' >&2; exit 1; }
           test "${KAPPA_POS}" = '1000000' || { echo 'KAPPA_POS invariant mismatch.' >&2; exit 1; }
           case "${RELEASE_RELATIVE_DIR}" in

@@ -116,6 +116,8 @@ test('manual VPS bootstrap consumes one exact coordinated-release manifest inste
   assert.match(mcpWorkflow, /name: sovereign-coordinated-release-\$\{\{ github\.sha \}\}/);
   assert.match(mcpWorkflow, /\['success', 'failure'\]\.includes\(run\.conclusion\)/);
   assert.match(mcpWorkflow, /manifest revision is not the dispatch revision/);
+  assert.match(mcpWorkflow, /evidence_re = re\.compile\(r'\^\[0-9a-f\]\{64\}\$'\)/);
+  assert.match(mcpWorkflow, /EXPECTED_MANIFEST_EVIDENCE_SHA256\}" =~ \^\[0-9a-f\]\{64\}\$/);
   assert.match(mcpWorkflow, /needs: \[validate, resolve-coordinated-release\]/);
   assert.match(mcpWorkflow, /EXPECTED_IMAGE_DIGEST: \$\{\{ needs\.resolve-coordinated-release\.outputs\.mcp_digest \}\}/);
   assert.doesNotMatch(mcpWorkflow, /needs: \[validate, publish-mcp-image, verify-published-mcp-image\]/);
