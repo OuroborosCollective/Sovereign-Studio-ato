@@ -603,10 +603,12 @@ def test_rescue_paid_repair_reuses_free_executor_at_exact_head(monkeypatch):
         routes_module,
         "reserve_repair_pack",
         lambda connection, **kwargs: {
+            "ok": True,
             "repairId": repair_id,
             "jobId": job_id,
             "state": "reserved",
             "chargedCredits": 10,
+            "entitlementSource": "verified_purchase",
             "duplicate": False,
         },
     )

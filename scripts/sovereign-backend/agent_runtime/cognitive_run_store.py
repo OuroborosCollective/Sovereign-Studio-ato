@@ -1444,6 +1444,46 @@ def start_agent_tool_call(
     return tool_call_id
 
 
+def read_agent_run_receipts(
+    conn: Any,
+    *,
+    run_id: str,
+) -> tuple[dict[str, object], ...]:
+    """Read persisted canonical receipts without accepting caller-supplied hashes."""
+
+    normalized_run_id = _validated_id(str(run_id or ""), "run_id")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT receipt_sha256, canonical_body
+            FROM agent_run_receipts
+            WHERE agent_run_id = %s
+            ORDER BY sequence ASC
+            """,
+            (normalized_run_id,),
+        )
+        rows = cur.fetchall()
+    receipts: list[dict[str, object]] = []
+    for row in rows:
+        body = row.get("canonical_body") if isinstance(row, Mapping) else None
+        if isinstance(body, str):
+            body = json.loads(body)
+        if not isinstance(body, Mapping):
+            raise ValueError("persisted agent receipt body is invalid")
+        receipt_sha256 = str(row.get("receipt_sha256") or "").strip().lower()
+        if str(body.get("receipt_sha256") or "").strip().lower() != receipt_sha256:
+            raise ValueError("persisted agent receipt hash does not match its canonical body")
+        receipts.append({
+            "header": {
+                "algorithm": "sha256",
+                "canonicalization": "json-nfc-sorted-keys-no-floats-v1",
+                "hash": receipt_sha256,
+            },
+            "body": dict(body),
+        })
+    return tuple(receipts)
+
+
 def finish_agent_tool_call(
     conn: Any,
     *,
@@ -1462,6 +1502,8 @@ def finish_agent_tool_call(
     mutation_performed: bool,
     observed_effect: str,
     authoritative_readback_sha256: str,
+    test_execution_kind: str = "none",
+    changed_paths: Sequence[str] = (),
     failure_family: str | None = None,
 ) -> dict[str, object]:
     """Atomically finish one tool call and append its canonical receipt."""
@@ -1521,6 +1563,8 @@ def finish_agent_tool_call(
                 observed_effect=observed_effect,
                 authoritative_readback_sha256=authoritative_readback_sha256,
                 previous_receipt_sha256=previous_hash,
+                test_execution_kind=test_execution_kind,
+                changed_paths=changed_paths,
             )
             body = dict(receipt["body"])
             cur.execute(

@@ -156,6 +156,31 @@ def _redact(text: str, limit: int = 40_000) -> str:
     return bounded
 
 
+def _qualified_test_execution_kind(action: str, result: ToolResult) -> str:
+    if str(action or "").strip().lower() != "test":
+        return "none"
+    metadata = dict(result.metadata or {})
+    command = str(metadata.get("command") or "").strip().lower()
+    framework = str(metadata.get("framework") or "").strip().lower()
+    qualifying_prefixes = (
+        "python -m pytest",
+        "python3 -m pytest",
+        "pytest",
+        "pnpm test",
+        "pnpm run test",
+        "pnpm exec vitest run",
+        "npm test",
+        "npm run test",
+        "npx vitest run",
+        "npx jest",
+        "go test",
+        "cargo test",
+    )
+    if command.startswith(qualifying_prefixes) or framework in {"pytest", "jest", "vitest", "go test", "cargo test", "npm"}:
+        return "qualifying-test"
+    return "nonqualifying-test"
+
+
 def _merge_job_evidence(job: Any, result: ToolResult) -> ToolResult:
     return ToolResult(
         tool=result.tool,
@@ -463,6 +488,8 @@ class BoundRepositoryToolset:
                     else "none"
                 ),
                 authoritative_readback_sha256=after_git.authoritative_readback_sha256,
+                test_execution_kind=_qualified_test_execution_kind(action, result),
+                changed_paths=after_git.changed_paths,
                 failure_family=(
                     None if result.status == "done" else "AGENT_REPOSITORY_TOOL_BLOCKED"
                     if result.status == "blocked" else "AGENT_REPOSITORY_TOOL_FAILED"

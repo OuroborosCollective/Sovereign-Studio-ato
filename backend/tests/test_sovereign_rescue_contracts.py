@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 import sys
 
@@ -8,12 +10,14 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+from agent_runtime.agent_run_receipts import build_agent_run_receipt
 from agent_runtime.rescue import (
     MAX_REPAIR_CHANGED_FILES,
     REPAIR_PACK_CREDITS,
     build_free_diagnosis,
     build_proof_pack,
     entitlement_payload,
+    evaluate_rescue_pre_mutation_gate,
     issue_rescue_csrf_token,
     redact_secret_text,
     resolve_account_entitlement,
@@ -24,6 +28,64 @@ from agent_runtime.rescue import (
 
 BASE_SHA = "a" * 40
 HEAD_SHA = "b" * 40
+
+
+def receipt(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def persisted_repair_receipt_sequence(
+    final_tool_name: str = "test",
+    final_diff_sha256: str = "3" * 64,
+    final_test_execution_kind: str = "qualifying-test",
+    final_changed_paths: tuple[str, ...] = (".github/workflows/ci.yml",),
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Canonical append-only write→PASS-test-readback sequence from the live tool flow."""
+    mutation = build_agent_run_receipt(
+        sequence=0,
+        repository="https://github.com/acme/app",
+        base_commit_sha=BASE_SHA,
+        mcp_revision=BASE_SHA,
+        mcp_image_digest="sha256:" + "c" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-rescue-proof-pack",
+        tool_name="write_file",
+        call_id="call-rescue-write",
+        operation_identity="agent-repository-tool:free_single_agent:write_file",
+        input_sha256="1" * 64,
+        output_sha256="2" * 64,
+        diff_sha256="3" * 64,
+        test_evidence_sha256="4" * 64,
+        evidence_gate_result="BLOCKED",
+        mutation_performed=True,
+        observed_effect="workspace-write",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256="0" * 64,
+    )
+    readback = build_agent_run_receipt(
+        sequence=1,
+        repository="https://github.com/acme/app",
+        base_commit_sha=BASE_SHA,
+        mcp_revision=BASE_SHA,
+        mcp_image_digest="sha256:" + "c" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-rescue-proof-pack",
+        tool_name=final_tool_name,
+        call_id="call-rescue-test",
+        operation_identity="agent-repository-tool:free_single_agent:test",
+        input_sha256="6" * 64,
+        output_sha256="7" * 64,
+        diff_sha256=final_diff_sha256,
+        test_evidence_sha256="8" * 64,
+        evidence_gate_result="PASS",
+        mutation_performed=False,
+        observed_effect="read",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256=str(mutation["header"]["hash"]),
+        test_execution_kind=final_test_execution_kind,
+        changed_paths=final_changed_paths,
+    )
+    return mutation, readback
 
 
 def diagnose(evidence: str, requested_family: str = ""):
@@ -89,7 +151,36 @@ def test_outcome_contract_is_revision_bound_and_bounded() -> None:
     assert len(contract["contractSha256"]) == 64
 
 
-def test_entitlement_requires_verified_purchase_or_privileged_identity() -> None:
+def test_rescue_pre_mutation_gate_requires_persisted_authorization_and_exact_contract() -> None:
+    diagnosis = diagnose("GitHub Actions workflow failed in .github/workflows/ci.yml")
+    contract = diagnosis["outcomeContract"]
+    reservation = {
+        "ok": True,
+        "duplicate": False,
+        "repairId": "r" * 36,
+        "entitlementSource": "verified_purchase",
+    }
+    allowed = evaluate_rescue_pre_mutation_gate(
+        reservation=reservation,
+        diagnosis=diagnosis,
+        outcome_contract=contract,
+        resolved_base_sha=BASE_SHA,
+    )
+    assert allowed["allowed"] is True
+    assert allowed["mutationPerformed"] is False
+
+    mismatched = evaluate_rescue_pre_mutation_gate(
+        reservation=reservation,
+        diagnosis=diagnosis,
+        outcome_contract={**contract, "baseSha": HEAD_SHA},
+        resolved_base_sha=BASE_SHA,
+    )
+    assert mismatched["allowed"] is False
+    assert "outcome_contract_hash_mismatch" in mismatched["blockers"]
+    assert "outcome_contract_revision_mismatch" in mismatched["blockers"]
+
+
+def test_entitlement_accepts_verified_purchase_privilege_or_persisted_credit_balance() -> None:
     regular = {
         "id": "user-1",
         "email": "user@example.test",
@@ -98,7 +189,10 @@ def test_entitlement_requires_verified_purchase_or_privileged_identity() -> None
         "paid_purchase_verified": False,
     }
     regular_entitlement = resolve_account_entitlement(regular)
-    assert entitlement_payload(regular, regular_entitlement)["entitled"] is False
+    regular_payload = entitlement_payload(regular, regular_entitlement)
+    assert regular_payload["entitled"] is True
+    assert regular_payload["source"] == "existing_credit_balance"
+    assert regular_payload["purchaseVerified"] is False
 
     purchased = {**regular, "paid_purchase_verified": True}
     purchased_entitlement = resolve_account_entitlement(purchased)
@@ -113,11 +207,13 @@ def test_entitlement_requires_verified_purchase_or_privileged_identity() -> None
 
 def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
     repair = {
-        "repair_id": "repair-1",
+        "repair_id": "r" * 36,
         "repository": "https://github.com/acme/app",
         "failure_family": "github_actions_ci",
         "base_sha": BASE_SHA,
         "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
     }
     job = {
         "changed_files": [".github/workflows/ci.yml"],
@@ -135,6 +231,8 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
         pr_evidence={
             "url": job["draft_pr_url"],
             "headSha": HEAD_SHA,
+            "draft": True,
+            "state": "open",
             "ciHeadShaMatch": True,
             "ciGreen": True,
             "checks": [
@@ -144,21 +242,157 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
                     "conclusion": "success",
                     "headSha": HEAD_SHA,
                 }
-            ],
-        },
-    )
+                            ],
+            },
+            agent_receipts=persisted_repair_receipt_sequence(),
+        )
+
     assert complete["ready"] is True
+    assert complete["mutationEvidence"]["causalReceiptReadback"]["causallyBound"] is True
+    assert complete["mutationEvidence"]["capabilityDelta"]["entries"][0]["status"] == "REPLACED_WITH_VERIFIED_EQUIVALENT"
     assert verify_proof_pack(complete) is True
+
+
+def test_proof_pack_rejects_a_non_test_pass_receipt_after_mutation() -> None:
+    mutation, non_test_readback = persisted_repair_receipt_sequence(final_tool_name="git_diff")
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "stale test summary must not satisfy a later diff receipt",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, non_test_readback),
+    )
+
+    assert pack["ready"] is False
+    assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
+
+
+def test_proof_pack_rejects_a_nonqualifying_diff_check_labeled_as_test() -> None:
+    mutation, diff_check = persisted_repair_receipt_sequence(final_test_execution_kind="nonqualifying-test")
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "a prior test failed but a later git diff --check passed",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, diff_check),
+    )
+
+    assert pack["ready"] is False
+    assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
+
+
+def test_proof_pack_classifies_a_mismatched_terminal_test_diff_as_contradicted() -> None:
+    mutation, mismatched_test = persisted_repair_receipt_sequence(final_diff_sha256="9" * 64)
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "the terminal test ran against a conflicting diff",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, mismatched_test),
+    )
+
+    assert pack["ready"] is False
+    assert pack["mutationEvidence"]["verdict"]["status"] == "CONTRADICTED"
+    assert "contradictory_evidence: input_diff_identity" in pack["blockers"]
+
+
+def test_proof_pack_requires_a_passing_test_after_the_last_mutation() -> None:
+    mutation, passing_test = persisted_repair_receipt_sequence()
+    later_mutation = build_agent_run_receipt(
+        sequence=2,
+        repository="https://github.com/acme/app",
+        base_commit_sha=BASE_SHA,
+        mcp_revision=BASE_SHA,
+        mcp_image_digest="sha256:" + "c" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-rescue-proof-pack",
+        tool_name="write_file",
+        call_id="call-rescue-later-write",
+        operation_identity="agent-repository-tool:free_single_agent:write_file",
+        input_sha256="9" * 64,
+        output_sha256="a" * 64,
+        diff_sha256="b" * 64,
+        test_evidence_sha256="c" * 64,
+        evidence_gate_result="BLOCKED",
+        mutation_performed=True,
+        observed_effect="workspace-write",
+        authoritative_readback_sha256="d" * 64,
+        previous_receipt_sha256=str(passing_test["header"]["hash"]),
+    )
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "the earlier test passed but the terminal write remains untested",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, passing_test, later_mutation),
+    )
+
+    assert pack["ready"] is False
+    assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
 
 
 def test_proof_pack_fails_closed_when_secret_material_was_redacted() -> None:
     pack = build_proof_pack(
         repair={
-            "repair_id": "repair-1",
+            "repair_id": "r" * 36,
             "repository": "https://github.com/acme/app",
             "failure_family": "github_actions_ci",
             "base_sha": BASE_SHA,
             "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
         },
         job={
             "changed_files": [".github/workflows/ci.yml"],
@@ -179,41 +413,84 @@ def test_proof_pack_fails_closed_when_secret_material_was_redacted() -> None:
 
 def test_proof_pack_keeps_the_full_changed_file_set_and_blocks_over_limit() -> None:
     changed_files = [f"backend/change_{index}.py" for index in range(MAX_REPAIR_CHANGED_FILES + 1)]
+    mutation, readback = persisted_repair_receipt_sequence(final_changed_paths=tuple(changed_files))
     pack = build_proof_pack(
         repair={
-            "repair_id": "repair-limit",
+            "repair_id": "r" * 36,
             "repository": "https://github.com/acme/app",
             "failure_family": "github_actions_ci",
             "base_sha": BASE_SHA,
             "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
         },
         job={
-            "changed_files": changed_files,
+            "changed_files": [changed_files[-1]],
             "test_summary": "targeted tests passed",
             "draft_pr_url": "https://github.com/acme/app/pull/8",
         },
         pr_evidence={
+            "url": "https://github.com/acme/app/pull/8",
             "headSha": HEAD_SHA,
+            "draft": True,
+            "state": "open",
             "ciHeadShaMatch": True,
             "ciGreen": True,
             "checks": [],
         },
+        agent_receipts=(mutation, readback),
     )
-    assert pack["changedFiles"] == changed_files
+    assert pack["changedFiles"] == sorted(changed_files)
     assert pack["changedFileCount"] == MAX_REPAIR_CHANGED_FILES + 1
     assert f"changed_file_limit_exceeded:{MAX_REPAIR_CHANGED_FILES + 1}>{MAX_REPAIR_CHANGED_FILES}" in pack["blockers"]
     assert pack["ready"] is False
     assert verify_proof_pack(pack) is False
 
 
-def test_proof_pack_requires_the_current_pr_head_to_match_published_commit() -> None:
+def test_proof_pack_rejects_a_ready_or_closed_pr_after_draft_publication() -> None:
+    mutation, readback = persisted_repair_receipt_sequence()
     pack = build_proof_pack(
         repair={
-            "repair_id": "repair-head",
+            "repair_id": "r" * 36,
             "repository": "https://github.com/acme/app",
             "failure_family": "github_actions_ci",
             "base_sha": BASE_SHA,
             "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
+        },
+        job={
+            "changed_files": [".github/workflows/ci.yml"],
+            "test_summary": "targeted tests passed",
+            "draft_pr_url": "https://github.com/acme/app/pull/9",
+        },
+        pr_evidence={
+            "url": "https://github.com/acme/app/pull/9",
+            "headSha": HEAD_SHA,
+            "draft": False,
+            "state": "open",
+            "ciHeadShaMatch": True,
+            "ciGreen": True,
+            "checks": [],
+        },
+        agent_receipts=(mutation, readback),
+    )
+
+    assert pack["ready"] is False
+    assert "draft_pr_only_boundary_violated" in pack["blockers"]
+    assert pack["mutationEvidence"]["verdict"]["status"] == "CONTRADICTED"
+
+
+def test_proof_pack_requires_the_current_pr_head_to_match_published_commit() -> None:
+    pack = build_proof_pack(
+        repair={
+            "repair_id": "r" * 36,
+            "repository": "https://github.com/acme/app",
+            "failure_family": "github_actions_ci",
+            "base_sha": BASE_SHA,
+            "published_head_sha": HEAD_SHA,
+            "outcome_contract_sha256": "0" * 64,
+            "entitlement_source": "verified_purchase",
         },
         job={
             "changed_files": [".github/workflows/ci.yml"],
