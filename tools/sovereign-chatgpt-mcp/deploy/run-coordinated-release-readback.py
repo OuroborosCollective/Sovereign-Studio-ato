@@ -16,6 +16,7 @@ from typing import Any
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
+REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 NAMESPACE = "sovereign-runtime-receipt"
 TOKEN_DIR = Path("/run/sovereign-release-reconciler")
 TOKEN_FILE = TOKEN_DIR / "github-token"
@@ -24,17 +25,51 @@ RECEIPT_FILE = TOKEN_DIR / "receipt.json"
 ATTESTATION_KEY = Path("/etc/ssh/ssh_host_ed25519_key")
 RECONCILER = Path("/opt/sovereign-chatgpt-tools/bin/reconcile-main-release")
 STATUS_FILE = Path("/var/lib/sovereign-release-reconciler/status.json")
+REPOSITORY = os.getenv(
+    "SOVEREIGN_MCP_REPOSITORY",
+    "OuroborosCollective/Sovereign-Studio-ato",
+).strip()
 
 
 class ReadbackError(RuntimeError):
     pass
 
 
+def _registry_username() -> str:
+    if not REPOSITORY_RE.fullmatch(REPOSITORY):
+        raise ReadbackError("repository identity is invalid")
+    owner = REPOSITORY.split("/", 1)[0]
+    if owner.startswith("-") or len(owner) > 255:
+        raise ReadbackError("registry username is invalid")
+    return owner
+
+
+def _validate_registry_username(raw: bytes) -> str:
+    try:
+        username = raw.decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise ReadbackError("registry username is invalid") from exc
+    if (
+        not username
+        or len(username) > 255
+        or "\n" in username
+        or "\r" in username
+        or username.startswith("-")
+    ):
+        raise ReadbackError("registry username is invalid")
+    return username
+
+
 def _read_input() -> tuple[dict[str, Any], str, str]:
+    # Wire-compatibility rule: scope + token are the stable mandatory framing.
+    # A third registry-username line is optional so the forced command accepts
+    # both the legacy two-line client and the current three-line Actions client.
     scope_line = sys.stdin.buffer.readline(4097)
     token_line = sys.stdin.buffer.readline(4097)
+    if not scope_line or not token_line:
+        raise ReadbackError("input framing is invalid")
     registry_username_line = sys.stdin.buffer.readline(257)
-    if not scope_line or not token_line or not registry_username_line or sys.stdin.buffer.read(1):
+    if sys.stdin.buffer.read(1):
         raise ReadbackError("input framing is invalid")
     try:
         scope = json.loads(scope_line.decode("utf-8"))
@@ -61,15 +96,11 @@ def _read_input() -> tuple[dict[str, Any], str, str]:
     token = token_line.decode("utf-8").strip()
     if len(token) < 20 or len(token) > 4096 or "\n" in token or "\r" in token:
         raise ReadbackError("ephemeral credential is invalid")
-    registry_username = registry_username_line.decode("utf-8").strip()
-    if (
-        not registry_username
-        or len(registry_username) > 255
-        or "\n" in registry_username
-        or "\r" in registry_username
-        or registry_username.startswith("-")
-    ):
-        raise ReadbackError("registry username is invalid")
+    registry_username = (
+        _validate_registry_username(registry_username_line)
+        if registry_username_line
+        else _registry_username()
+    )
     return {
         "revision": str(scope["revision"]).lower(),
         "releaseGateRunId": scope["releaseGateRunId"],

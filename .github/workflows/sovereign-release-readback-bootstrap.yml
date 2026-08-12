@@ -1,0 +1,258 @@
+name: Sovereign Release Readback Bootstrap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py'
+      - '.github/workflows/sovereign-release-readback-bootstrap.yml'
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact current main revision whose readback entrypoint will be installed
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_revision || github.sha }}
+  READBACK_SOURCE: tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py
+  READBACK_TARGET: /opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback
+  KNOWN_PREVIOUS_REVISION: 738c0ac6616b2b2fadfd554706ac678c90e80e7a
+
+jobs:
+  bootstrap-readback-control-plane:
+    name: Bootstrap forced runtime readback control plane
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+    steps:
+      - name: Validate exact main scope
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.0.1
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const expected = String(process.env.EXPECTED_REVISION || '').toLowerCase();
+            if (!/^[0-9a-f]{40}$/.test(expected)) {
+              core.setFailed('EXPECTED_REVISION_INVALID');
+              return;
+            }
+            const { data: currentMain } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
+            const actual = String(currentMain.object?.sha || '').toLowerCase();
+            if (actual !== expected) {
+              core.setFailed(`SOURCE_REVISION_IS_NOT_CURRENT_MAIN:${actual}`);
+            }
+
+      - name: Checkout exact bootstrap revision and known previous revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.EXPECTED_REVISION }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare bounded bootstrap evidence
+        id: evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
+          [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$KNOWN_PREVIOUS_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          test -f "$READBACK_SOURCE"
+          python3 -m py_compile "$READBACK_SOURCE"
+          NEW_SHA256="$(sha256sum "$READBACK_SOURCE" | awk '{print $1}')"
+          PREVIOUS_SHA256="$(git show "$KNOWN_PREVIOUS_REVISION:$READBACK_SOURCE" | sha256sum | awk '{print $1}')"
+          [[ "$NEW_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s\n' "$NEW_SHA256" > readback.new.sha256
+          printf '%s\n' "$PREVIOUS_SHA256" > readback.previous.sha256
+          echo "new_sha256=$NEW_SHA256" >> "$GITHUB_OUTPUT"
+          echo "previous_sha256=$PREVIOUS_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Validate bootstrap transport parameters
+        run: |
+          set -Eeuo pipefail
+          test -n "${VPS_HOST:-}"
+          test -n "${VPS_USER:-}"
+          test -n "${VPS_PASSWORD:-}"
+          [[ "$VPS_SSH_PORT" =~ ^[0-9]+$ ]]
+
+      - name: Prepare remote bootstrap directory
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 5m
+          script: |
+            set -eu
+            umask 077
+            rm -rf "$HOME/.sovereign-release-readback-bootstrap"
+            mkdir -p "$HOME/.sovereign-release-readback-bootstrap"
+            chmod 0700 "$HOME/.sovereign-release-readback-bootstrap"
+
+      - name: Upload exact readback entrypoint and hash evidence
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          source: 'tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py,readback.new.sha256,readback.previous.sha256'
+          target: .sovereign-release-readback-bootstrap
+          overwrite: true
+
+      - name: Install only the forced readback entrypoint with hash-bound preconditions
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+          EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
+          EXPECTED_PREVIOUS_SHA256: ${{ steps.evidence.outputs.previous_sha256 }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 8m
+          envs: SUDO_PASSWORD,EXPECTED_REVISION,EXPECTED_NEW_SHA256,EXPECTED_PREVIOUS_SHA256
+          script: |
+            set -Eeuo pipefail
+            umask 077
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then "$@"; return; fi
+              if sudo -n true >/dev/null 2>&1; then sudo -n "$@"; return; fi
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+            SOURCE="$HOME/.sovereign-release-readback-bootstrap/tools/sovereign-chatgpt-mcp/deploy/run-coordinated-release-readback.py"
+            TARGET=/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback
+            RECEIPT="$HOME/.sovereign-release-readback-bootstrap/bootstrap-receipt.json"
+            [[ "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$EXPECTED_NEW_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$EXPECTED_PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            test -f "$SOURCE" && test ! -L "$SOURCE"
+            test "$(sha256sum "$SOURCE" | awk '{print $1}')" = "$EXPECTED_NEW_SHA256"
+            python3 -m py_compile "$SOURCE"
+            CURRENT_SHA256="$(run_root sha256sum "$TARGET" | awk '{print $1}')"
+            case "$CURRENT_SHA256" in
+              "$EXPECTED_PREVIOUS_SHA256"|"$EXPECTED_NEW_SHA256") ;;
+              *) echo "UNEXPECTED_READBACK_ENTRYPOINT_HASH:$CURRENT_SHA256" >&2; exit 1 ;;
+            esac
+            MUTATION=false
+            if [ "$CURRENT_SHA256" != "$EXPECTED_NEW_SHA256" ]; then
+              TEMP_TARGET="${TARGET}.bootstrap.$$"
+              run_root install -o root -g root -m 0750 "$SOURCE" "$TEMP_TARGET"
+              test "$(run_root sha256sum "$TEMP_TARGET" | awk '{print $1}')" = "$EXPECTED_NEW_SHA256"
+              run_root mv -f "$TEMP_TARGET" "$TARGET"
+              MUTATION=true
+            fi
+            FINAL_SHA256="$(run_root sha256sum "$TARGET" | awk '{print $1}')"
+            test "$FINAL_SHA256" = "$EXPECTED_NEW_SHA256"
+            run_root python3 -m py_compile "$TARGET"
+            python3 - "$RECEIPT" "$EXPECTED_REVISION" "$CURRENT_SHA256" "$FINAL_SHA256" "$MUTATION" <<'PY'
+            import json, sys
+            from pathlib import Path
+            path, revision, before, after, mutation = sys.argv[1:]
+            payload = {
+                'schemaVersion': 'sovereign.release-readback-bootstrap-receipt.v1',
+                'ok': True,
+                'revision': revision,
+                'target': '/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback',
+                'beforeSha256': before,
+                'afterSha256': after,
+                'mutationPerformed': mutation == 'true',
+                'containersChanged': False,
+                'servicesRestarted': False,
+                'authorizedKeysChanged': False,
+                'secretValuesReturned': False,
+            }
+            Path(path).write_text(json.dumps(payload, sort_keys=True, separators=(',', ':')) + '\n', 'utf-8')
+            PY
+            chmod 0600 "$RECEIPT"
+
+      - name: Read bounded bootstrap receipt over SSH stdout
+        id: receipt
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 5m
+          capture_stdout: true
+          script: |
+            set -Eeuo pipefail
+            RECEIPT="$HOME/.sovereign-release-readback-bootstrap/bootstrap-receipt.json"
+            test -f "$RECEIPT" && test ! -L "$RECEIPT"
+            test "$(stat -c '%a' "$RECEIPT")" = 600
+            python3 - "$RECEIPT" <<'PY'
+            import base64, sys
+            from pathlib import Path
+            payload = Path(sys.argv[1]).read_bytes()
+            if len(payload) < 64 or len(payload) > 16384:
+                raise SystemExit('bootstrap receipt size is invalid')
+            print(base64.b64encode(payload).decode('ascii'))
+            PY
+
+      - name: Normalize and verify bootstrap receipt
+        env:
+          RECEIPT_BASE64: ${{ steps.receipt.outputs.stdout }}
+          EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .sovereign-bootstrap-evidence
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          encoded = os.environ['RECEIPT_BASE64'].strip()
+          raw = base64.b64decode(encoded, validate=True)
+          receipt = json.loads(raw.decode('utf-8'))
+          assert receipt.get('schemaVersion') == 'sovereign.release-readback-bootstrap-receipt.v1'
+          assert receipt.get('ok') is True
+          assert receipt.get('revision') == os.environ['EXPECTED_REVISION']
+          assert receipt.get('afterSha256') == os.environ['EXPECTED_NEW_SHA256']
+          assert receipt.get('containersChanged') is False
+          assert receipt.get('servicesRestarted') is False
+          assert receipt.get('authorizedKeysChanged') is False
+          assert receipt.get('secretValuesReturned') is False
+          Path('.sovereign-bootstrap-evidence/bootstrap-receipt.json').write_bytes(raw)
+          PY
+
+      - name: Remove remote bootstrap staging directory
+        if: always()
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 5m
+          script: |
+            set -eu
+            rm -rf "$HOME/.sovereign-release-readback-bootstrap"
+
+      - name: Upload bounded control-plane bootstrap evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sovereign-release-readback-bootstrap-${{ env.EXPECTED_REVISION }}
+          path: .sovereign-bootstrap-evidence
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30

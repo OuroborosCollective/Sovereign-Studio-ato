@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const childProcess = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -131,6 +132,23 @@ test('manual VPS bootstrap consumes one exact coordinated-release manifest inste
   assert.match(mcpWorkflow, /needs: \[validate, resolve-coordinated-release\]/);
   assert.match(mcpWorkflow, /EXPECTED_IMAGE_DIGEST: \$\{\{ needs\.resolve-coordinated-release\.outputs\.mcp_digest \}\}/);
   assert.doesNotMatch(mcpWorkflow, /needs: \[validate, publish-mcp-image, verify-published-mcp-image\]/);
+});
+
+test('forced readback bootstrap protocol regression runs inside the existing required release gate', () => {
+  const regression = path.join(
+    root,
+    'tools/sovereign-chatgpt-mcp/tests/test_runtime_readback_bootstrap_protocol.py',
+  );
+  const result = childProcess.spawnSync('python3', [regression], {
+    cwd: root,
+    encoding: 'utf8',
+    env: process.env,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `forced readback bootstrap regression failed\nstdout:\n${result.stdout || ''}\nstderr:\n${result.stderr || ''}`,
+  );
 });
 
 test('Docker inspect templates use valid Go-template quotes', () => {
