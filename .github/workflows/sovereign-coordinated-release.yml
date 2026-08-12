@@ -86,6 +86,11 @@ jobs:
                     (job) => String(job.name || '') === requirement.publisherJob,
                   );
                   if (!publisher) {
+                    if (run.status !== 'completed') {
+                      // Downstream publisher jobs are absent until their producer prerequisite completes.
+                      waiting = true;
+                      break;
+                    }
                     core.setFailed(`${requirement.workflow}:EXACT_REVISION_PUBLISHER_JOB_MISSING:${run.id}`);
                     return;
                   }
