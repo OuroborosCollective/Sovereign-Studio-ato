@@ -68,6 +68,12 @@ MCP_INSTALLER = os.getenv(
 OPERATOR_SOURCE = Path(
     os.getenv("SOVEREIGN_MCP_SOURCE_DIR", "/opt/sovereign-operator-source")
 )
+OPERATOR_SOURCE_CHECKOUTS = Path(
+    os.getenv(
+        "SOVEREIGN_MCP_SOURCE_CHECKOUTS_DIR",
+        "/var/lib/sovereign-release-reconciler/operator-source-checkouts",
+    )
+)
 BROKER_SOCKET = Path(
     os.getenv(
         "SOVEREIGN_MCP_BROKER_SOCKET",
@@ -241,11 +247,6 @@ def _refresh_operator_source(scope: dict[str, Any]) -> dict[str, Any]:
     git_directory = OPERATOR_SOURCE / ".git"
     if not git_directory.is_dir() or git_directory.is_symlink():
         raise ReconcileError("operator_source", "operator source repository is unavailable")
-    status = _run(
-        ["git", "-C", str(OPERATOR_SOURCE), "status", "--porcelain"], timeout=60
-    )
-    if status.returncode != 0 or status.stdout.strip():
-        raise ReconcileError("operator_source", "operator source worktree is not clean")
     token = _github_token()
     with tempfile.TemporaryDirectory(prefix="sovereign-git-askpass-") as directory:
         askpass = Path(directory) / "askpass.sh"
@@ -277,17 +278,35 @@ def _refresh_operator_source(scope: dict[str, Any]) -> dict[str, Any]:
     remote_revision = remote.stdout.strip().lower()
     if remote.returncode != 0 or remote_revision != scope["revision"]:
         raise ReconcileError("operator_source", "origin/main differs from CI scope revision")
-    checkout = _run(
-        ["git", "-C", str(OPERATOR_SOURCE), "checkout", "--detach", scope["revision"]], timeout=120
-    )
-    if checkout.returncode != 0:
-        raise ReconcileError("operator_source", "scoped source checkout failed")
-    head = _run(["git", "-C", str(OPERATOR_SOURCE), "rev-parse", "HEAD"], timeout=60)
+
+    revision = str(scope["revision"])
+    checkout = OPERATOR_SOURCE_CHECKOUTS / revision
+    OPERATOR_SOURCE_CHECKOUTS.mkdir(parents=True, exist_ok=True)
+    os.chmod(OPERATOR_SOURCE_CHECKOUTS, 0o700)
+    if checkout.exists():
+        checkout_git = checkout / ".git"
+        if not checkout_git.exists() or checkout_git.is_symlink():
+            raise ReconcileError("operator_source", "scoped operator worktree is invalid")
+        status = _run(["git", "-C", str(checkout), "status", "--porcelain"], timeout=60)
+        if status.returncode != 0 or status.stdout.strip():
+            raise ReconcileError("operator_source", "scoped operator worktree is not clean")
+    else:
+        created = _run(
+            ["git", "-C", str(OPERATOR_SOURCE), "worktree", "add", "--detach", str(checkout), revision],
+            timeout=180,
+        )
+        if created.returncode != 0:
+            raise ReconcileError("operator_source", "scoped operator worktree creation failed")
+    head = _run(["git", "-C", str(checkout), "rev-parse", "HEAD"], timeout=60)
     checked_out_revision = head.stdout.strip().lower()
-    if head.returncode != 0 or checked_out_revision != scope["revision"]:
-        raise ReconcileError("operator_source", "checked-out source revision differs from CI scope")
+    if head.returncode != 0 or checked_out_revision != revision:
+        raise ReconcileError("operator_source", "scoped operator worktree revision differs from CI scope")
+    installer = checkout / "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+    if not installer.is_file() or installer.is_symlink():
+        raise ReconcileError("operator_source", "scoped operator installer is unavailable")
     return {
-        "path": str(OPERATOR_SOURCE),
+        "path": str(checkout),
+        "installer": str(installer),
         "revision": checked_out_revision,
         "fetchOutputSha256": output_sha,
     }
@@ -437,6 +456,10 @@ def _deploy_mcp_from_ci_scope(
 ) -> dict[str, Any]:
     if str(operator_source.get("revision") or "").lower() != revision:
         raise ReconcileError("operator_source", "installer source revision is not CI-scoped")
+    installer = Path(str(operator_source.get("installer") or ""))
+    expected_installer = Path(str(operator_source.get("path") or "")) / "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+    if installer != expected_installer or not installer.is_file() or installer.is_symlink():
+        raise ReconcileError("operator_source", "installer path is not CI-scoped")
     environment = os.environ.copy()
     environment.update(
         {
@@ -445,7 +468,7 @@ def _deploy_mcp_from_ci_scope(
         }
     )
     result = _command_json(
-        [MCP_INSTALLER],
+        [str(installer)],
         timeout=1800,
         stage="mcp_deploy",
         environment=environment,
