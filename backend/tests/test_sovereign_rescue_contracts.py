@@ -34,7 +34,10 @@ def receipt(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def persisted_repair_receipt_sequence(final_tool_name: str = "test") -> tuple[dict[str, object], dict[str, object]]:
+def persisted_repair_receipt_sequence(
+    final_tool_name: str = "test",
+    final_diff_sha256: str = "3" * 64,
+) -> tuple[dict[str, object], dict[str, object]]:
     """Canonical append-only write→PASS-test-readback sequence from the live tool flow."""
     mutation = build_agent_run_receipt(
         sequence=0,
@@ -70,7 +73,7 @@ def persisted_repair_receipt_sequence(final_tool_name: str = "test") -> tuple[di
         operation_identity="agent-repository-tool:free_single_agent:test",
         input_sha256="6" * 64,
         output_sha256="7" * 64,
-        diff_sha256="3" * 64,
+        diff_sha256=final_diff_sha256,
         test_evidence_sha256="8" * 64,
         evidence_gate_result="PASS",
         mutation_performed=False,
@@ -269,6 +272,34 @@ def test_proof_pack_rejects_a_non_test_pass_receipt_after_mutation() -> None:
 
     assert pack["ready"] is False
     assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
+
+
+def test_proof_pack_classifies_a_mismatched_terminal_test_diff_as_contradicted() -> None:
+    mutation, mismatched_test = persisted_repair_receipt_sequence(final_diff_sha256="9" * 64)
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "the terminal test ran against a conflicting diff",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, mismatched_test),
+    )
+
+    assert pack["ready"] is False
+    assert pack["mutationEvidence"]["verdict"]["status"] == "CONTRADICTED"
+    assert "contradictory_evidence: input_diff_identity" in pack["blockers"]
 
 
 def test_proof_pack_requires_a_passing_test_after_the_last_mutation() -> None:

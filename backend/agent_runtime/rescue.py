@@ -891,6 +891,7 @@ def build_proof_pack(
     final_readback_receipt: Mapping[str, object] | None = None
     mutation_body: Mapping[str, Any] = {}
     final_readback_body: Mapping[str, Any] = {}
+    terminal_test_diff_mismatch = False
     if not agent_receipts:
         blockers.append("agent_run_receipt_missing")
     else:
@@ -936,6 +937,7 @@ def build_proof_pack(
                         if str(test_body.get("observed_effect") or "") != "read":
                             continue
                         if sha256_or_zero(test_body.get("diff_sha256")) != terminal_diff_sha:
+                            terminal_test_diff_mismatch = True
                             continue
                         if sha256_or_zero(test_body.get("test_evidence_sha256")) == "0" * 64:
                             continue
@@ -1040,7 +1042,7 @@ def build_proof_pack(
     capability_result_status = (
         REPLACED_WITH_VERIFIED_EQUIVALENT
         if mutation_receipt is not None and final_readback_receipt is not None
-        else UNVERIFIABLE
+        else DEGRADED if terminal_test_diff_mismatch else UNVERIFIABLE
     )
     capability_result = build_observation(
         capability_id="rescue.repair_effect",
@@ -1049,6 +1051,8 @@ def build_proof_pack(
         cause=(
             "post-mutation exact diff and passing test readback"
             if capability_result_status == REPLACED_WITH_VERIFIED_EQUIVALENT
+            else "terminal passing test readback has a conflicting diff identity"
+            if capability_result_status == DEGRADED
             else "causal mutation and passing post-mutation readback unavailable"
         ),
         source_revision=head_sha if _SHA40.fullmatch(head_sha) else base_sha,
@@ -1081,8 +1085,8 @@ def build_proof_pack(
         else "UNAVAILABLE"
     )
     readback_assertion = (
-        "OBSERVED" if head_sha and head_sha == published_head_sha
-        else "CONTRADICTED" if head_sha and published_head_sha and head_sha != published_head_sha
+        "OBSERVED" if final_readback_receipt is not None and head_sha and head_sha == published_head_sha
+        else "CONTRADICTED" if terminal_test_diff_mismatch or (head_sha and published_head_sha and head_sha != published_head_sha)
         else "UNAVAILABLE"
     )
     capability_assertion = (
@@ -1101,7 +1105,7 @@ def build_proof_pack(
         ),
         observation(
             "input_diff_identity", "input_diff_identity", "REPOSITORY_READBACK",
-            "OBSERVED" if final_readback_receipt is not None else "UNAVAILABLE", authoritative_readback_sha,
+            "OBSERVED" if final_readback_receipt is not None else "CONTRADICTED" if terminal_test_diff_mismatch else "UNAVAILABLE", authoritative_readback_sha,
         ),
         observation("exact_head_ci", "exact_head_ci", "CI_READBACK", ci_assertion, ci_sha),
         observation("repair_readback", "repair_readback", "REPOSITORY_READBACK", readback_assertion, github_readback_sha),
