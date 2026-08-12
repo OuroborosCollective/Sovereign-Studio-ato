@@ -581,6 +581,63 @@ def entitlement_payload(
     }
 
 
+def evaluate_rescue_pre_mutation_gate(
+    *,
+    reservation: Mapping[str, Any],
+    diagnosis: Mapping[str, Any],
+    outcome_contract: Mapping[str, Any],
+    resolved_base_sha: str,
+) -> dict[str, Any]:
+    """Fail closed before a Rescue executor can mutate an isolated workspace.
+
+    This is intentionally based on the just-persisted entitlement reservation and
+    the deterministic diagnosis/contract, rather than client-submitted receipt
+    hashes. Post-mutation proof still requires independent runtime and GitHub
+    readbacks.
+    """
+
+    blockers: list[str] = []
+    expected_contract = {
+        key: value
+        for key, value in dict(outcome_contract).items()
+        if key != "contractSha256"
+    }
+    expected_contract_sha256 = canonical_sha256(expected_contract)
+    actual_contract_sha256 = str(outcome_contract.get("contractSha256") or "").lower()
+    normalized_base_sha = normalize_head_sha(resolved_base_sha)
+    reservation_source = str(reservation.get("entitlementSource") or "").strip()
+
+    if reservation.get("ok") is not True:
+        blockers.append("reservation_not_persisted")
+    if reservation.get("duplicate") is True:
+        blockers.append("reservation_recovery_required")
+    if not reservation_source:
+        blockers.append("entitlement_reservation_evidence_missing")
+    if actual_contract_sha256 != expected_contract_sha256:
+        blockers.append("outcome_contract_hash_mismatch")
+    if str(diagnosis.get("baseSha") or "").lower() != normalized_base_sha:
+        blockers.append("diagnosis_revision_mismatch")
+    if str(outcome_contract.get("baseSha") or "").lower() != normalized_base_sha:
+        blockers.append("outcome_contract_revision_mismatch")
+    if str(diagnosis.get("repository") or "") != str(outcome_contract.get("repository") or ""):
+        blockers.append("diagnosis_repository_mismatch")
+    if str(diagnosis.get("failureFamily") or "") != str(outcome_contract.get("failureFamily") or ""):
+        blockers.append("diagnosis_failure_family_mismatch")
+
+    return {
+        "allowed": not blockers,
+        "schemaVersion": "sovereign.rescue-pre-mutation-gate.v1",
+        "repairId": str(reservation.get("repairId") or ""),
+        "repository": str(outcome_contract.get("repository") or ""),
+        "baseSha": normalized_base_sha,
+        "outcomeContractSha256": actual_contract_sha256,
+        "entitlementSource": reservation_source or None,
+        "blockers": blockers,
+        "mutationPerformed": False,
+        "secretValuesReturned": False,
+    }
+
+
 def reserve_repair_pack(
     conn: Any,
     *,

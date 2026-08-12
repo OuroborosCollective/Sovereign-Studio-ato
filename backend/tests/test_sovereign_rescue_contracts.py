@@ -16,6 +16,7 @@ from agent_runtime.rescue import (
     build_free_diagnosis,
     build_proof_pack,
     entitlement_payload,
+    evaluate_rescue_pre_mutation_gate,
     issue_rescue_csrf_token,
     redact_secret_text,
     resolve_account_entitlement,
@@ -106,6 +107,35 @@ def test_outcome_contract_is_revision_bound_and_bounded() -> None:
     assert contract["repairPack"]["draftPrOnly"] is True
     assert contract["repairPack"]["autoMerge"] is False
     assert len(contract["contractSha256"]) == 64
+
+
+def test_rescue_pre_mutation_gate_requires_persisted_authorization_and_exact_contract() -> None:
+    diagnosis = diagnose("GitHub Actions workflow failed in .github/workflows/ci.yml")
+    contract = diagnosis["outcomeContract"]
+    reservation = {
+        "ok": True,
+        "duplicate": False,
+        "repairId": "r" * 36,
+        "entitlementSource": "verified_purchase",
+    }
+    allowed = evaluate_rescue_pre_mutation_gate(
+        reservation=reservation,
+        diagnosis=diagnosis,
+        outcome_contract=contract,
+        resolved_base_sha=BASE_SHA,
+    )
+    assert allowed["allowed"] is True
+    assert allowed["mutationPerformed"] is False
+
+    mismatched = evaluate_rescue_pre_mutation_gate(
+        reservation=reservation,
+        diagnosis=diagnosis,
+        outcome_contract={**contract, "baseSha": HEAD_SHA},
+        resolved_base_sha=BASE_SHA,
+    )
+    assert mismatched["allowed"] is False
+    assert "outcome_contract_hash_mismatch" in mismatched["blockers"]
+    assert "outcome_contract_revision_mismatch" in mismatched["blockers"]
 
 
 def test_entitlement_accepts_verified_purchase_privilege_or_persisted_credit_balance() -> None:

@@ -62,6 +62,7 @@ from .rescue import (
     build_free_diagnosis,
     build_proof_pack,
     entitlement_payload,
+    evaluate_rescue_pre_mutation_gate,
     issue_rescue_csrf_token,
     normalize_head_sha,
     normalize_repair_changed_files,
@@ -714,6 +715,34 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 implementation_job_id = str(reservation.get("jobId") or "")
         finally:
             _close(conn)
+
+        pre_mutation_gate = evaluate_rescue_pre_mutation_gate(
+            reservation=reservation,
+            diagnosis=diagnosis,
+            outcome_contract=contract,
+            resolved_base_sha=revision["baseSha"],
+        )
+        if not pre_mutation_gate["allowed"]:
+            conn = _connection()
+            try:
+                update_repair_execution(
+                    conn,
+                    user_id=user_id,
+                    repair_id=str(reservation.get("repairId") or repair_id),
+                    run_id=str(reservation.get("runId") or "") or None,
+                    job_id=str(reservation.get("jobId") or implementation_job_id) or None,
+                    state="blocked",
+                    blocker=",".join(pre_mutation_gate["blockers"]),
+                )
+            finally:
+                _close(conn)
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-rescue",
+                "blocker": "rescue_pre_mutation_evidence_unverified",
+                "preMutationGate": pre_mutation_gate,
+                "mutationPerformed": False,
+            }), 409
 
         mission = (
             "Sovereign Rescue Repair Pack. "
