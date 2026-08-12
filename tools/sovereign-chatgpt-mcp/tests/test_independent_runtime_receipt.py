@@ -5,6 +5,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 
@@ -114,6 +115,43 @@ def test_runtime_receipt_validator_blocks_a_real_signed_receipt_with_wrong_gate_
     )
     assert completed.returncode == 2
     assert json.loads(report.read_text("utf-8"))["status"] == "BLOCKED_BY_MISSING_OR_CONTRADICTED_EVIDENCE"
+
+
+def test_runtime_readback_accepts_root_owned_systemd_0640_status_and_blocks_world_readable_status() -> None:
+    entrypoint = ROOT / "deploy/run-coordinated-release-readback.py"
+    script = textwrap.dedent(
+        f"""
+        import importlib.util
+        import json
+        import os
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        source = Path({str(entrypoint)!r})
+        spec = importlib.util.spec_from_file_location("runtime_receipt_entrypoint", source)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            status = Path(directory) / "status.json"
+            payload = {{"secretValuesReturned": False, "status": "COORDINATED_RELEASE_DEPLOYED"}}
+            status.write_text(json.dumps(payload), encoding="utf-8")
+            os.chmod(status, 0o640)
+            module.STATUS_FILE = status
+            assert module._read_status() == status.read_bytes()
+            os.chmod(status, 0o644)
+            try:
+                module._read_status()
+            except module.ReadbackError:
+                pass
+            else:
+                raise AssertionError("world-readable runtime status was accepted")
+        """
+    )
+    completed = subprocess.run(["sudo", "-n", sys.executable, "-c", script], capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_runtime_readback_contract_does_not_persist_api_tokens_or_accept_unscoped_timer_runs() -> None:

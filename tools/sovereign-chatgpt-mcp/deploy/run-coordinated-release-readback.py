@@ -86,8 +86,19 @@ def _write_token(token: str) -> None:
     _assert_root_private(TOKEN_FILE, regular=True)
 
 
+def _assert_root_runtime_status(path: Path) -> None:
+    metadata = path.lstat()
+    if (
+        metadata.st_uid != 0
+        or metadata.st_gid != 0
+        or stat.S_IMODE(metadata.st_mode) not in {0o600, 0o640}
+        or not stat.S_ISREG(metadata.st_mode)
+    ):
+        raise ReadbackError("runtime receipt metadata is unsafe")
+
+
 def _read_status() -> bytes:
-    _assert_root_private(STATUS_FILE, regular=True)
+    _assert_root_runtime_status(STATUS_FILE)
     receipt = STATUS_FILE.read_bytes()
     if len(receipt) < 32 or len(receipt) > 1_000_000:
         raise ReadbackError("runtime receipt size is invalid")
