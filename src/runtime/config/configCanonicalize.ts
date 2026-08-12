@@ -75,10 +75,30 @@ function serializeStable(value: unknown): string {
 }
 
 /**
+ * Property names that, when assigned dynamically, can hijack object or global
+ * prototypes. Such keys are never legitimate configuration field names; they
+ * are rejected here so a remote/user-provided source cannot use the merge
+ * path to pollute prototypes. This is the fail-closed sanitizer that breaks
+ * the remote property-injection data flow at every dynamic write sink below.
+ */
+const PROTOTYPE_POLLUTION_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+function isPrototypePollutionKey(key: string): boolean {
+  return PROTOTYPE_POLLUTION_KEYS.has(key);
+}
+
+/**
  * Deep-merge a higher-priority source onto an accumulator, honoring the
  * explicit-delete (null) and array-replace semantics.
  *
- * Returns a new object; inputs are not mutated.
+ * Returns a new object; inputs are not mutated. Keys that would hijack an
+ * object/global prototype (`__proto__`, `constructor`, `prototype`) are
+ * rejected rather than merged, so a remote or user-provided source cannot
+ * pollute prototypes through the config merge path.
  */
 export function mergeValues(
   base: Readonly<Record<string, unknown>>,
@@ -86,6 +106,11 @@ export function mergeValues(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { ...base };
   for (const key of Object.keys(overlay)) {
+    // Sanitize the property name first: prototype-hijacking keys are never
+    // legitimate config fields and must never reach a dynamic write sink.
+    if (isPrototypePollutionKey(key)) {
+      continue;
+    }
     const overlayValue = overlay[key];
     // Explicit delete: null removes the key entirely.
     if (overlayValue === null) {

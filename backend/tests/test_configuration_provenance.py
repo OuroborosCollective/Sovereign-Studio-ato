@@ -213,6 +213,55 @@ def test_reject_remote_missing_digest():
     assert "without digest" in "|".join(res.errors)
 
 
+# ---------------------------------------------------------------------------
+# Prototype-pollution hardening parity.
+#
+# merge_values must reject property names that would hijack an object or global
+# prototype (`__proto__`, `constructor`, `prototype`). Python dicts do not
+# expose prototype pollution the way JS objects do, but the *rejection
+# behavior* must be byte-identical to the TypeScript implementation so that a
+# remote/user-provided source is canonicalized the same way on both runtimes.
+# These tests exercise the real merge_values path and assert the dangerous
+# keys are dropped (never stored) symmetrically with the TS implementation.
+# ---------------------------------------------------------------------------
+def test_merge_rejects_proto_key():
+    import json as _json
+
+    overlay = _json.loads('{"__proto__": {"polluted": true}}')
+    merged = merge_values({"a": 1}, overlay)
+    assert merged == {"a": 1}
+    assert "__proto__" not in merged
+    assert "polluted" not in merged
+
+
+def test_merge_rejects_constructor_and_prototype_keys():
+    import json as _json
+
+    overlay = _json.loads(
+        '{"constructor": {"prototype": {"polluted": "yes"}}, "prototype": {"x": 9}}'
+    )
+    merged = merge_values({"a": 1}, overlay)
+    assert merged == {"a": 1}
+    assert "constructor" not in merged
+    assert "prototype" not in merged
+    assert "polluted" not in merged
+
+
+def test_merge_rejects_dangerous_keys_at_nested_depth():
+    import json as _json
+
+    overlay = _json.loads('{"b": {"__proto__": {"deep": true}}}')
+    merged = merge_values({"b": {"x": 1}}, overlay)
+    assert merged == {"b": {"x": 1}}
+    assert "deep" not in merged
+
+
+def test_merge_still_allows_safe_lookalike_keys():
+    # A normal field name is unaffected by the sanitizer.
+    merged = merge_values({"a": 1}, {"protoSafe": 2})
+    assert merged == {"a": 1, "protoSafe": 2}
+
+
 def test_accept_remote_when_pre_bound():
     opts = ResolveOptions(
         allowed_remote_origins=frozenset({"https://trusted.example/cfg"})

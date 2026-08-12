@@ -21,6 +21,18 @@ from typing import Any
 from .config_sources import RedactedSecret
 
 
+# Property names that, when assigned dynamically, can hijack object or global
+# prototypes. Such keys are never legitimate configuration field names; they
+# are rejected in ``merge_values`` so a remote/user-provided source cannot use
+# the merge path to pollute prototypes. Mirrors the TypeScript sanitizer in
+# ``configCanonicalize.ts`` for cross-language provenance parity.
+_PROTO_POLLUTION_KEYS = frozenset({"__proto__", "constructor", "prototype"})
+
+
+def _is_proto_pollution_key(key: str) -> bool:
+    return key in _PROTO_POLLUTION_KEYS
+
+
 def is_redacted_secret(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
@@ -143,6 +155,11 @@ def merge_values(
 ) -> dict[str, Any]:
     result: dict[str, Any] = dict(base)
     for key, overlay_value in overlay.items():
+        # Sanitize the property name: prototype-hijacking keys are never
+        # legitimate config fields and must never reach a dynamic write.
+        # Mirrors the TypeScript sanitizer for cross-language parity.
+        if _is_proto_pollution_key(key):
+            continue
         if overlay_value is None:
             # Explicit delete.
             result.pop(key, None)

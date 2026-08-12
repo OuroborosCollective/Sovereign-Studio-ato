@@ -453,3 +453,68 @@ describe('cross-language hash parity (TS vs Python)', () => {
     expect(await hashValue(parityInput)).toBe(expected);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Prototype-pollution hardening.
+//
+// mergeValues must fail closed for property names that would hijack an object
+// or global prototype (`__proto__`, `constructor`, `prototype`). These keys
+// are never legitimate configuration field names and must not flow through to
+// a dynamic write. The assertions below exercise the real mergeValues path
+// against a fresh Object.prototype baseline so any regression is caught.
+// ---------------------------------------------------------------------------
+describe('configCanonicalize - prototype-pollution rejection', () => {
+  // NOTE on `in` vs `hasOwnProperty`: `__proto__` and `constructor` are
+  // inherited from `Object.prototype`, so `'__proto__' in {}` is `true`
+  // regardless of pollution. The security guarantee is therefore asserted via
+  // *own* property checks (`hasOwnProperty`) and by proving a fresh object's
+  // prototype is unchanged after the merge.
+  const hasOwn = (o: object, k: string) =>
+    Object.prototype.hasOwnProperty.call(o, k);
+
+  it('does not set __proto__ as an own property and leaves the global prototype clean', () => {
+    const baselinePolluted = ({} as any).polluted;
+    const merged = mergeValues({ a: 1 }, JSON.parse('{"__proto__": {"polluted": true}}'));
+    // The dangerous key never becomes an own property of the merged object.
+    expect(hasOwn(merged, '__proto__')).toBe(false);
+    expect(Object.keys(merged)).toEqual(['a']);
+    expect((merged as any).polluted).toBeUndefined();
+    // A *fresh* object's prototype must be unchanged: no global pollution.
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect(({} as any).polluted).toBe(baselinePolluted);
+    expect(({} as any).polluted).toBeUndefined();
+    // Sanity: the legitimate key is still merged.
+    expect(merged).toEqual({ a: 1 });
+  });
+
+  it('does not pollute through constructor or prototype keys', () => {
+    const overlay = JSON.parse('{"constructor": {"prototype": {"polluted": "yes"}}, "prototype": {"x": 9}}');
+    const merged = mergeValues({ a: 1 }, overlay);
+    expect(hasOwn(merged, 'constructor')).toBe(false);
+    expect(hasOwn(merged, 'prototype')).toBe(false);
+    expect(Object.keys(merged)).toEqual(['a']);
+    expect((merged as any).polluted).toBeUndefined();
+    expect(({} as any).polluted).toBeUndefined();
+    expect(merged).toEqual({ a: 1 });
+    // Object.prototype.constructor is still the real constructor (not overwritten).
+    expect(Object.prototype.constructor).toBe(Object);
+  });
+
+  it('rejects dangerous keys at nested merge depth', () => {
+    const overlay = JSON.parse('{"b": {"__proto__": {"deep": true}}}');
+    const merged = mergeValues({ b: { x: 1 } }, overlay);
+    expect(hasOwn(merged, 'b')).toBe(true);
+    expect(hasOwn((merged as any).b, '__proto__')).toBe(false);
+    expect(Object.keys((merged as any).b)).toEqual(['x']);
+    expect((merged as any).deep).toBeUndefined();
+    expect(({} as any).deep).toBeUndefined();
+    expect((merged as any).b).toEqual({ x: 1 });
+  });
+
+  it('still merges a legitimate key that collides superficially in spelling', () => {
+    // A normal field name is unaffected by the sanitizer.
+    const merged = mergeValues({ a: 1 }, { protoSafe: 2 });
+    expect(merged).toEqual({ a: 1, protoSafe: 2 });
+  });
+});
