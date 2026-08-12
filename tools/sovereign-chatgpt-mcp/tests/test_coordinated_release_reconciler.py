@@ -135,3 +135,9 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert "def _deploy_mcp_from_ci_scope" in reconciler
     assert '"SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"]' in reconciler
     assert "installer receipt violates CI scope or capability truth" in reconciler
+    assert 'receipt.get("host_command_worker_active") is not True' in reconciler
+    assert 'receipt.get("broker") != "active"' in reconciler
+    assert 'receipt.get("broker_rpc_ready") is not True' in reconciler
+    assert 'receipt.get("broker_socket_host_visible") is not True' in reconciler
+    assert 'receipt.get("broker_socket_container_visible") is not True' in reconciler
+    assert 'receipt.get("mcp_protocol_ready") is not True' in reconciler

@@ -384,6 +384,12 @@ def _deploy_mcp_from_ci_scope(revision: str, mcp: dict[str, str]) -> dict[str, A
     if (
         str(receipt.get("mcp_revision") or "").lower() != revision
         or str(receipt.get("mcp_image") or "") != expected_reference
+        or receipt.get("host_command_worker_active") is not True
+        or receipt.get("broker") != "active"
+        or receipt.get("broker_rpc_ready") is not True
+        or receipt.get("broker_socket_host_visible") is not True
+        or receipt.get("broker_socket_container_visible") is not True
+        or receipt.get("mcp_protocol_ready") is not True
         or receipt.get("self_update_available") is not False
         or receipt.get("pr_lifecycle_available") is not False
         or receipt.get("workflow_dispatch_available") is not False
