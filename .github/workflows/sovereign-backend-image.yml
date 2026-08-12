@@ -151,7 +151,7 @@ jobs:
   publish-evidence:
     name: Publish immutable backend image evidence
     needs: build
-    if: env.PR_VALIDATION != 'true'
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.pr_validation != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

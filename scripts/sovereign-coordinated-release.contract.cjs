@@ -44,7 +44,7 @@ test('coordinated release waits for the full producer critical path and accepts 
 test('backend producer exposes an explicit publish-only evidence job', () => {
   assert.match(backendImageWorkflow, /publish-evidence:/);
   assert.match(backendImageWorkflow, /name: Publish immutable backend image evidence/);
-  assert.match(backendImageWorkflow, /if: env\.PR_VALIDATION != 'true'/);
+  assert.match(backendImageWorkflow, /if: \$\{\{ github\.event_name != 'workflow_dispatch' \|\| inputs\.pr_validation != true \}\}/);
   assert.match(backendImageWorkflow, /docker buildx imagetools inspect/);
 });
 
