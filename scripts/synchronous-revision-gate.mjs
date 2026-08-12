@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const SHA40 = /^[0-9a-f]{40}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const ALLOWED_ARGUMENTS = new Set(['mode', 'head', 'backend', 'mcp', 'runtime', 'report']);
 
 function fail(message) {
   throw new Error(message);
@@ -27,10 +28,11 @@ function parseArgs(argv) {
   for (let index = 2; index < argv.length; index += 2) {
     const key = argv[index];
     const value = argv[index + 1];
-    if (!key?.startsWith('--') || value === undefined) {
+    const name = key?.startsWith('--') ? key.slice(2) : '';
+    if (!ALLOWED_ARGUMENTS.has(name) || value === undefined || Object.hasOwn(values, name)) {
       fail('usage: --mode ci|release --head <sha> --backend <json> --mcp <json> [--runtime <json>] [--report <json>]');
     }
-    values[key.slice(2)] = value;
+    values[name] = value;
   }
   return values;
 }

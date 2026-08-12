@@ -22,7 +22,7 @@ function image(repository, digest, revision = head) {
   };
 }
 
-function run(mode, backend, mcp, runtime) {
+function run(mode, backend, mcp, runtime, extraArgs = []) {
   const dir = mkdtempSync(join(tmpdir(), 'sync-revision-gate-'));
   try {
     const backendPath = join(dir, 'backend.json');
@@ -35,7 +35,7 @@ function run(mode, backend, mcp, runtime) {
       writeFileSync(runtimePath, JSON.stringify(runtime));
       args.push('--runtime', runtimePath);
     }
-    return spawnSync('node', args, { encoding: 'utf8' });
+    return spawnSync('node', [...args, ...extraArgs], { encoding: 'utf8' });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -54,6 +54,16 @@ test('blocks a backend image bound to a different source head', () => {
   const result = run('ci', image(backend.imageRepository, backendDigest, '2b3fcc4eadf4d1fc98a73adf74fcadb73951c6d2'), mcp);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /backend_revision_contradicted/);
+});
+
+test('blocks unknown or duplicate CLI evidence keys before file access', () => {
+  const unknown = run('ci', backend, mcp, null, ['--__proto__', 'polluted']);
+  assert.equal(unknown.status, 2);
+  assert.match(unknown.stderr, /usage:/);
+
+  const duplicate = run('ci', backend, mcp, null, ['--head', head]);
+  assert.equal(duplicate.status, 2);
+  assert.match(duplicate.stderr, /usage:/);
 });
 
 test('blocks release mode without a coordinated runtime readback', () => {
