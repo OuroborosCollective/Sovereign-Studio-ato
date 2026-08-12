@@ -148,32 +148,11 @@ def test_tunnel_is_restarted_after_the_new_mcp_passes_protocol_health() -> None:
     assert 'MALFORMED_MCP_REQUESTS >= 2 && SUCCESSFUL_MCP_REQUESTS == 0' in full_installer
 
 
-def test_github_actions_builds_image_before_vps_bootstrap() -> None:
+def test_main_push_publishes_and_verifies_the_immutable_mcp_image() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
 
-    assert 'name: Bootstrap MCP on VPS' in workflow
-    assert "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'" in workflow
-    assert "KAPPA_POS: '1000000'" in workflow
-    assert "CROSS_RUNTIME_PARITY: 'true'" in workflow
-    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
-    assert '--sort=name' in workflow
-    assert '--mtime="@${COMMIT_EPOCH}"' in workflow
-    assert '| gzip -n > sovereign-chatgpt-mcp.tar.gz' in workflow
-    assert 'sha256sum --check sovereign-chatgpt-mcp.sha256' in workflow
-    assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
-    assert 'EXPECTED_IMAGE_DIGEST: ${{ needs.publish-mcp-image.outputs.digest }}' in workflow
-    assert 'RELEASE_RELATIVE_DIR: .sovereign-releases/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}' in workflow
-    assert 'RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-' not in workflow
-    assert 'RELEASE_DIR="$HOME/$RELEASE_RELATIVE_DIR"' in workflow
-    assert 'target: ${{ env.RELEASE_RELATIVE_DIR }}' in workflow
-    assert 'Release directory traversal is forbidden.' in workflow
-    assert '/opt/sovereign-chatgpt-mcp/releases/' not in workflow
-    assert 'envs: SUDO_PASSWORD' in workflow
-    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION"' in workflow
-    assert 'SOVEREIGN_MCP_TUNNEL_MODE=disabled' in workflow
-    assert 'bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
-    assert 'run_root docker inspect sovereign-chatgpt-mcp' in workflow
     assert 'name: Publish immutable MCP image' in workflow
+    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in workflow
     assert 'digest: ${{ steps.publish.outputs.digest }}' in workflow
     assert 'packages: write' in workflow
     assert 'docker/build-push-action@v6' in workflow
@@ -190,7 +169,43 @@ def test_github_actions_builds_image_before_vps_bootstrap() -> None:
     assert 'test "$REVISION_LABEL" = "$GITHUB_SHA"' in workflow
     assert 'test "$KAPPA_LABEL" = "$KAPPA_POS"' in workflow
     assert 'test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"' in workflow
-    assert 'needs: [validate, publish-mcp-image, verify-published-mcp-image]' in workflow
+
+
+def test_vps_bootstrap_consumes_the_exact_coordinated_release_manifest() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+
+    assert 'name: Bootstrap MCP on VPS' in workflow
+    assert (
+        "if: github.event_name == 'workflow_dispatch' "
+        "&& inputs.deploy_vps_via_public_ssh == true "
+        "&& github.ref == 'refs/heads/main'"
+    ) in workflow
+    assert 'needs: [validate, resolve-coordinated-release]' in workflow
+    assert 'resolve-coordinated-release:' in workflow
+    assert 'EXPECTED_IMAGE_DIGEST: ${{ needs.resolve-coordinated-release.outputs.mcp_digest }}' in workflow
+    assert 'EXPECTED_BACKEND_DIGEST: ${{ needs.resolve-coordinated-release.outputs.backend_digest }}' in workflow
+    assert 'EXPECTED_MANIFEST_EVIDENCE_SHA256: ${{ needs.resolve-coordinated-release.outputs.manifest_evidence_sha256 }}' in workflow
+    assert 'EXPECTED_COORDINATED_RELEASE_RUN_ID: ${{ needs.resolve-coordinated-release.outputs.release_run_id }}' in workflow
+    assert 'needs: [validate, publish-mcp-image, verify-published-mcp-image]' not in workflow
+    assert "KAPPA_POS: '1000000'" in workflow
+    assert "CROSS_RUNTIME_PARITY: 'true'" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
+    assert '--sort=name' in workflow
+    assert '--mtime="@${COMMIT_EPOCH}"' in workflow
+    assert '| gzip -n > sovereign-chatgpt-mcp.tar.gz' in workflow
+    assert 'sha256sum --check sovereign-chatgpt-mcp.sha256' in workflow
+    assert 'EXPECTED_REVISION: ${{ github.sha }}' in workflow
+    assert 'RELEASE_RELATIVE_DIR: .sovereign-releases/sovereign-chatgpt-mcp-${{ github.run_id }}-${{ github.run_attempt }}' in workflow
+    assert 'RELEASE_DIR: /tmp/sovereign-chatgpt-mcp-' not in workflow
+    assert 'RELEASE_DIR="$HOME/$RELEASE_RELATIVE_DIR"' in workflow
+    assert 'target: ${{ env.RELEASE_RELATIVE_DIR }}' in workflow
+    assert 'Release directory traversal is forbidden.' in workflow
+    assert '/opt/sovereign-chatgpt-mcp/releases/' not in workflow
+    assert 'envs: SUDO_PASSWORD' in workflow
+    assert 'SOVEREIGN_MCP_EXPECTED_REVISION="$EXPECTED_REVISION"' in workflow
+    assert 'SOVEREIGN_MCP_TUNNEL_MODE=disabled' in workflow
+    assert 'bash "$SOURCE_DIR/deploy/install-on-vps.sh"' in workflow
+    assert 'run_root docker inspect sovereign-chatgpt-mcp' in workflow
     assert 'test "$CONTAINER_IMAGE_REFERENCE" = "$EXPECTED_IMAGE_REFERENCE"' in workflow
     assert 'test "$INSTALLED_REVISION" = "$EXPECTED_REVISION"' in workflow
     assert 'test "$INSTALLED_KAPPA_POS" = "$KAPPA_POS"' in workflow
