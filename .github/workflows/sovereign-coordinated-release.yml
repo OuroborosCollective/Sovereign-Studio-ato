@@ -44,18 +44,24 @@ jobs:
               return;
             }
             const required = [
-              'sovereign-backend-image.yml',
-              'sovereign-chatgpt-mcp.yml',
+              {
+                workflow: 'sovereign-backend-image.yml',
+                publisherJob: 'Publish immutable backend image evidence',
+              },
+              {
+                workflow: 'sovereign-chatgpt-mcp.yml',
+                publisherJob: 'Verify published MCP digest',
+              },
             ];
             const evidence = {};
             const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
             for (let attempt = 1; attempt <= 540; attempt += 1) {
               let waiting = false;
-              for (const workflow of required) {
+              for (const requirement of required) {
                 const response = await github.rest.actions.listWorkflowRuns({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  workflow_id: workflow,
+                  workflow_id: requirement.workflow,
                   branch: 'main',
                   head_sha: expected,
                   per_page: 20,
@@ -64,29 +70,48 @@ jobs:
                   .filter((run) => String(run.head_sha || '').toLowerCase() === expected)
                   .filter((run) => ['push', 'workflow_dispatch'].includes(String(run.event || '')))
                   .sort((left, right) => (
-                    Number(right.run_attempt || 0) - Number(left.run_attempt || 0)
-                    || Number(right.id || 0) - Number(left.id || 0)
+                    Number(right.id || 0) - Number(left.id || 0)
+                    || Number(right.run_attempt || 0) - Number(left.run_attempt || 0)
                   ));
-                const run = runs[0];
-                if (!run) {
+                let accepted = null;
+                for (const run of runs) {
+                  if (run.status !== 'completed' || run.conclusion !== 'success') {
+                    continue;
+                  }
+                  const jobsResponse = await github.rest.actions.listJobsForWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: Number(run.id),
+                    filter: 'latest',
+                    per_page: 100,
+                  });
+                  const publisher = jobsResponse.data.jobs.find(
+                    (job) => String(job.name || '') === requirement.publisherJob,
+                  );
+                  if (
+                    publisher
+                    && publisher.status === 'completed'
+                    && publisher.conclusion === 'success'
+                  ) {
+                    accepted = { run, publisher };
+                    break;
+                  }
+                }
+                if (!accepted) {
                   waiting = true;
                   continue;
                 }
-                evidence[workflow] = {
+                const { run, publisher } = accepted;
+                evidence[requirement.workflow] = {
                   runId: Number(run.id),
                   runAttempt: Number(run.run_attempt || 0),
                   status: String(run.status || ''),
                   conclusion: run.conclusion ? String(run.conclusion) : null,
                   headSha: String(run.head_sha || '').toLowerCase(),
                   url: String(run.html_url || ''),
+                  publisherJob: String(publisher.name || ''),
+                  publisherJobId: Number(publisher.id || 0),
                 };
-                if (run.status === 'completed' && run.conclusion !== 'success') {
-                  core.setFailed(`${workflow}:EXACT_REVISION_WORKFLOW_FAILED:${run.conclusion}`);
-                  return;
-                }
-                if (run.status !== 'completed') {
-                  waiting = true;
-                }
               }
               if (!waiting && Object.keys(evidence).length === required.length) {
                 core.setOutput('evidence', JSON.stringify(evidence));
@@ -201,6 +226,10 @@ jobs:
           assert re.fullmatch(r'sha256:[0-9a-f]{64}', mcp_digest)
           assert set(workflows) == {'sovereign-backend-image.yml', 'sovereign-chatgpt-mcp.yml'}
           assert all(item.get('headSha') == revision for item in workflows.values())
+          assert all(int(item.get('runId') or 0) > 0 for item in workflows.values())
+          assert all(int(item.get('publisherJobId') or 0) > 0 for item in workflows.values())
+          assert workflows['sovereign-backend-image.yml'].get('publisherJob') == 'Publish immutable backend image evidence'
+          assert workflows['sovereign-chatgpt-mcp.yml'].get('publisherJob') == 'Verify published MCP digest'
           assert all(item.get('status') == 'completed' and item.get('conclusion') == 'success' for item in workflows.values())
           payload = {
               'schemaVersion': 'sovereign.coordinated-release-manifest.v1',

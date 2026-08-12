@@ -8,6 +8,10 @@ const workflow = fs.readFileSync(
   path.join(root, '.github/workflows/sovereign-coordinated-release.yml'),
   'utf8',
 );
+const backendImageWorkflow = fs.readFileSync(
+  path.join(root, '.github/workflows/sovereign-backend-image.yml'),
+  'utf8',
+);
 
 function count(source, fragment) {
   return source.split(fragment).length - 1;
@@ -29,6 +33,19 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /\['push', 'workflow_dispatch'\]/);
   assert.match(workflow, /String\(run\.head_sha \|\| ''\)\.toLowerCase\(\) === expected/);
   assert.match(workflow, /EXACT_REVISION_IMAGE_WORKFLOWS_TIMEOUT/);
+  assert.match(workflow, /listJobsForWorkflowRun/);
+  assert.match(workflow, /publisherJob: 'Publish immutable backend image evidence'/);
+  assert.match(workflow, /publisherJob: 'Verify published MCP digest'/);
+  assert.match(workflow, /Number\(right\.id \|\| 0\) - Number\(left\.id \|\| 0\)/);
+  assert.match(workflow, /publisher\.status === 'completed'/);
+  assert.match(workflow, /publisher\.conclusion === 'success'/);
+});
+
+test('backend producer exposes an explicit publish-only evidence job', () => {
+  assert.match(backendImageWorkflow, /publish-evidence:/);
+  assert.match(backendImageWorkflow, /name: Publish immutable backend image evidence/);
+  assert.match(backendImageWorkflow, /if: env\.PR_VALIDATION != 'true'/);
+  assert.match(backendImageWorkflow, /docker buildx imagetools inspect/);
 });
 
 test('coordinated release revalidates current main before registry work and before upload', () => {
