@@ -35,13 +35,41 @@ class ReadbackError(RuntimeError):
     pass
 
 
-def _read_input() -> tuple[dict[str, Any], str]:
-    # This two-line stdin framing is the stable forced-command wire contract.
-    # Do not add fields after the token line: the VPS may still execute an older
-    # installed entrypoint while a new exact revision is being promoted.
+def _registry_username() -> str:
+    if not REPOSITORY_RE.fullmatch(REPOSITORY):
+        raise ReadbackError("repository identity is invalid")
+    owner = REPOSITORY.split("/", 1)[0]
+    if owner.startswith("-") or len(owner) > 255:
+        raise ReadbackError("registry username is invalid")
+    return owner
+
+
+def _validate_registry_username(raw: bytes) -> str:
+    try:
+        username = raw.decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise ReadbackError("registry username is invalid") from exc
+    if (
+        not username
+        or len(username) > 255
+        or "\n" in username
+        or "\r" in username
+        or username.startswith("-")
+    ):
+        raise ReadbackError("registry username is invalid")
+    return username
+
+
+def _read_input() -> tuple[dict[str, Any], str, str]:
+    # Wire-compatibility rule: scope + token are the stable mandatory framing.
+    # A third registry-username line is optional so the forced command accepts
+    # both the legacy two-line client and the current three-line Actions client.
     scope_line = sys.stdin.buffer.readline(4097)
     token_line = sys.stdin.buffer.readline(4097)
-    if not scope_line or not token_line or sys.stdin.buffer.read(1):
+    if not scope_line or not token_line:
+        raise ReadbackError("input framing is invalid")
+    registry_username_line = sys.stdin.buffer.readline(257)
+    if sys.stdin.buffer.read(1):
         raise ReadbackError("input framing is invalid")
     try:
         scope = json.loads(scope_line.decode("utf-8"))
@@ -68,22 +96,18 @@ def _read_input() -> tuple[dict[str, Any], str]:
     token = token_line.decode("utf-8").strip()
     if len(token) < 20 or len(token) > 4096 or "\n" in token or "\r" in token:
         raise ReadbackError("ephemeral credential is invalid")
+    registry_username = (
+        _validate_registry_username(registry_username_line)
+        if registry_username_line
+        else _registry_username()
+    )
     return {
         "revision": str(scope["revision"]).lower(),
         "releaseGateRunId": scope["releaseGateRunId"],
         "backendDigest": str(scope["backendDigest"]).lower(),
         "mcpDigest": str(scope["mcpDigest"]).lower(),
         "manifestEvidenceSha256": str(scope["manifestEvidenceSha256"]).lower(),
-    }, token
-
-
-def _registry_username() -> str:
-    if not REPOSITORY_RE.fullmatch(REPOSITORY):
-        raise ReadbackError("repository identity is invalid")
-    owner = REPOSITORY.split("/", 1)[0]
-    if owner.startswith("-") or len(owner) > 255:
-        raise ReadbackError("registry username is invalid")
-    return owner
+    }, token, registry_username
 
 
 def _assert_root_private(path: Path, *, regular: bool) -> None:
@@ -230,8 +254,7 @@ def main() -> int:
         raise ReadbackError("root execution is required")
     scope: dict[str, Any] | None = None
     try:
-        scope, token = _read_input()
-        registry_username = _registry_username()
+        scope, token, registry_username = _read_input()
         _write_token(token)
         _prepare_registry_auth(token, registry_username)
         environment = os.environ.copy()
