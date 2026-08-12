@@ -16,13 +16,9 @@ on:
       - '.github/workflows/sovereign-continuity-gate.yml'
       - '.github/workflows/supplemental-check-coordinator.yml'
       - '.github/workflows/sovereign-agent-supplemental.yml'
-      - '.github/workflows/synchronous-revision-control.yml'
-      - '.github/workflows/sovereign-backend-image.yml'
-      - '.github/workflows/sovereign-chatgpt-mcp.yml'
-      - 'scripts/synchronous-revision-gate.mjs'
-      - 'scripts/synchronous-revision-gate.contract.mjs'
-      - 'scripts/synchronous-revision-workflow.contract.cjs'
+      - '.github/workflows/sovereign-coordinated-release.yml'
       - 'scripts/required-gate-priority.contract.test.cjs'
+      - 'scripts/sovereign-coordinated-release.contract.cjs'
       - 'scripts/revision-guardian.cjs'
       - 'scripts/revision-guardian.contract.test.cjs'
       - 'playwright.config.ts'
@@ -169,12 +165,7 @@ jobs:
       - name: Required Gate Priority Contract Tests
         id: required_gate_priority
         shell: bash
-        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs
-
-      - name: Synchronous Revision Gate Contracts
-        id: synchronous_revision_contract
-        shell: bash
-        run: node --test scripts/synchronous-revision-gate.contract.mjs scripts/synchronous-revision-workflow.contract.cjs
+        run: node --test scripts/required-gate-priority.contract.test.cjs scripts/revision-guardian.contract.test.cjs scripts/sovereign-coordinated-release.contract.cjs
 
       - name: Neuro Architecture Graph Node Test Suite
         id: neuro_architecture_graph_node_tests
@@ -253,8 +244,7 @@ jobs:
             echo "| Revision Integrity | ${{ steps.revision_integrity.outcome }} |"
             echo "| Canary Matrix Contract | ${{ steps.runtime_canary_contract.outcome }} |"
             echo "| Canary Matrix Tests | ${{ steps.runtime_canary_tests.outcome }} |"
-            echo "| Required Gate Priority Contract | ${{ steps.required_gate_priority.outcome }} |"
-            echo "| Synchronous Revision Contract | ${{ steps.synchronous_revision_contract.outcome }} |"
+            echo "| Required Gate and Coordinated Release Contracts | ${{ steps.required_gate_priority.outcome }} |"
             echo "| Neuro Architecture Graph Node Tests | ${{ steps.neuro_architecture_graph_node_tests.outcome }} |"
             echo "| Canary Release Evidence | ${{ steps.runtime_canary_release.outcome }} |"
             echo "| Type Check | ${{ steps.type_check.outcome }} |"

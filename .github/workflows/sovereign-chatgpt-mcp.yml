@@ -857,41 +857,6 @@ jobs:
           test "$KAPPA_LABEL" = "$KAPPA_POS"
           test "$PARITY_LABEL" = "$CROSS_RUNTIME_PARITY"
 
-      - name: Write immutable MCP evidence
-        env:
-          SOURCE_REVISION: ${{ github.sha }}
-          IMAGE_REPOSITORY: ${{ env.IMAGE_REPOSITORY }}
-        run: |
-          set -Eeuo pipefail
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const revision = process.env.SOURCE_REVISION;
-          const repository = process.env.IMAGE_REPOSITORY;
-          const digest = process.env.EXPECTED_IMAGE_DIGEST;
-          if (!/^[0-9a-f]{40}$/.test(revision) || !/^ghcr\.io\/ouroboroscollective\/[a-z0-9._-]+$/.test(repository) || !/^sha256:[0-9a-f]{64}$/.test(digest)) {
-            throw new Error('MCP immutable evidence inputs are invalid');
-          }
-          fs.writeFileSync('sovereign-mcp-immutable-image-evidence.json', `${JSON.stringify({
-            schemaVersion: 'sovereign.immutable-image-evidence.v1',
-            component: 'mcp',
-            sourceRevision: revision,
-            imageRepository: repository,
-            imageDigest: digest,
-            immutablePublished: true,
-            ociRevisionLabelVerified: true,
-            sourceRunId: process.env.GITHUB_RUN_ID,
-            secretValuesReturned: false,
-          }, null, 2)}\n`);
-          NODE
-
-      - name: Upload immutable MCP evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: sovereign-mcp-immutable-image-evidence-${{ github.sha }}
-          path: sovereign-mcp-immutable-image-evidence.json
-          if-no-files-found: error
-          retention-days: 30
-
   deploy-vps:
     name: Bootstrap MCP on VPS
     needs: [validate, publish-mcp-image, verify-published-mcp-image]

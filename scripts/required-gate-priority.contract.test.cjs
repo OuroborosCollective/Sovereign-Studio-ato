@@ -43,12 +43,10 @@ test('only required workflows receive direct pull_request runners', () => {
     'release-verification.yml',
     'sovereign-agent-backend.yml',
     'sovereign-continuity-gate.yml',
-    'synchronous-revision-control.yml',
   ]);
   const releaseWorkflow = read('.github/workflows/release-verification.yml');
   const boundaryWorkflow = read('.github/workflows/boundary-ledger-drift.yml');
   const continuityWorkflow = read('.github/workflows/sovereign-continuity-gate.yml');
-  const synchronousWorkflow = read('.github/workflows/synchronous-revision-control.yml');
   assert.match(releaseWorkflow, /types: \[opened, synchronize, reopened\]/);
   assert.doesNotMatch(releaseWorkflow, /ready_for_review|converted_to_draft/);
   assert.match(continuityWorkflow, /name: continuity-ledger/);
@@ -56,9 +54,6 @@ test('only required workflows receive direct pull_request runners', () => {
   assert.match(continuityWorkflow, /validate_continuity\.py/);
   assert.match(boundaryWorkflow, /Fail closed before the MCP full suite/);
   assert.match(boundaryWorkflow, /Upload bounded drift evidence/);
-  assert.match(synchronousWorkflow, /name: Synchronous Revision Contract/);
-  assert.match(synchronousWorkflow, /node --test scripts\/synchronous-revision-gate\.contract\.mjs/);
-  assert.doesNotMatch(synchronousWorkflow, /contents: write|pull-requests: write|packages: write/);
 });
 
 test('Agent Runtime Tests is the only direct backend PR job', () => {

@@ -23,7 +23,7 @@ jobs:
   coordinated-release:
     name: Verify coordinated immutable release
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 105
     steps:
       - name: Checkout exact main revision
         uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
             ];
             const evidence = {};
             const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-            for (let attempt = 1; attempt <= 240; attempt += 1) {
+            for (let attempt = 1; attempt <= 540; attempt += 1) {
               let waiting = false;
               for (const workflow of required) {
                 const response = await github.rest.actions.listWorkflowRuns({
@@ -57,12 +57,12 @@ jobs:
                   repo: context.repo.repo,
                   workflow_id: workflow,
                   branch: 'main',
-                  event: 'push',
                   head_sha: expected,
                   per_page: 20,
                 });
                 const runs = response.data.workflow_runs
                   .filter((run) => String(run.head_sha || '').toLowerCase() === expected)
+                  .filter((run) => ['push', 'workflow_dispatch'].includes(String(run.event || '')))
                   .sort((left, right) => (
                     Number(right.run_attempt || 0) - Number(left.run_attempt || 0)
                     || Number(right.id || 0) - Number(left.id || 0)
@@ -102,6 +102,26 @@ jobs:
             }
             core.setFailed('EXACT_REVISION_IMAGE_WORKFLOWS_TIMEOUT');
 
+      - name: Revalidate current main before registry verification
+        id: authoritative_main
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const expected = String(process.env.EXPECTED_REVISION || '').toLowerCase();
+            const { data: currentMain } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
+            const actual = String(currentMain.object?.sha || '').toLowerCase();
+            if (actual !== expected) {
+              core.setFailed(`SOURCE_REVISION_IS_NOT_CURRENT_MAIN:${actual}`);
+              return;
+            }
+            core.setOutput('head', actual);
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -134,11 +154,32 @@ jobs:
           echo "backend_digest=$backend_digest" >> "$GITHUB_OUTPUT"
           echo "mcp_digest=$mcp_digest" >> "$GITHUB_OUTPUT"
 
+      - name: Revalidate current main before manifest and upload
+        id: authoritative_main_final
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_REVISION: ${{ env.EXPECTED_REVISION }}
+        with:
+          script: |
+            const expected = String(process.env.EXPECTED_REVISION || '').toLowerCase();
+            const { data: currentMain } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
+            const actual = String(currentMain.object?.sha || '').toLowerCase();
+            if (actual !== expected) {
+              core.setFailed(`SOURCE_REVISION_IS_NOT_CURRENT_MAIN_AT_UPLOAD:${actual}`);
+              return;
+            }
+            core.setOutput('head', actual);
+
       - name: Create bounded coordinated release manifest
         env:
           WORKFLOW_EVIDENCE: ${{ steps.workflows.outputs.evidence }}
           BACKEND_DIGEST: ${{ steps.images.outputs.backend_digest }}
           MCP_DIGEST: ${{ steps.images.outputs.mcp_digest }}
+          AUTHORITATIVE_REVISION: ${{ steps.authoritative_main_final.outputs.head }}
         run: |
           set -Eeuo pipefail
           mkdir -p .sovereign-evidence
@@ -150,10 +191,12 @@ jobs:
           import re
 
           revision = os.environ['EXPECTED_REVISION'].lower()
+          authoritative_revision = os.environ['AUTHORITATIVE_REVISION'].lower()
           backend_digest = os.environ['BACKEND_DIGEST'].lower()
           mcp_digest = os.environ['MCP_DIGEST'].lower()
           workflows = json.loads(os.environ['WORKFLOW_EVIDENCE'])
           assert re.fullmatch(r'[0-9a-f]{40}', revision)
+          assert authoritative_revision == revision
           assert re.fullmatch(r'sha256:[0-9a-f]{64}', backend_digest)
           assert re.fullmatch(r'sha256:[0-9a-f]{64}', mcp_digest)
           assert set(workflows) == {'sovereign-backend-image.yml', 'sovereign-chatgpt-mcp.yml'}
@@ -172,6 +215,8 @@ jobs:
               },
               'workflows': workflows,
               'deploymentPerformed': False,
+              'runtimePromotionStatus': 'BLOCKED_PENDING_INDEPENDENT_TARGET_SYSTEM_READBACK',
+              'authoritativeMainRevision': authoritative_revision,
               'secretValuesReturned': False,
           }
           canonical = json.dumps(payload, sort_keys=True, separators=(',', ':')).encode('utf-8')
