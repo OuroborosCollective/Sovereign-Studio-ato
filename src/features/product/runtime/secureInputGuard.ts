@@ -65,11 +65,17 @@ export function scanForSecret(input: string): SecretGuardResult {
   return { detected: false };
 }
 
+// ⚡ Bolt: Hoisting regex compilation out of the high-frequency redactSecret function.
+// Compiling RegEx objects inside a loop or frequently called function incurs unnecessary CPU overhead.
+const COMPILED_SECRET_PATTERNS = SECRET_PATTERNS.map((entry) => {
+  const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
+  return new RegExp(entry.pattern.source, flags);
+});
+
 export function redactSecret(input: string): string {
   let redacted = input;
-  for (const entry of SECRET_PATTERNS) {
-    const flags = entry.pattern.flags.includes('g') ? entry.pattern.flags : `${entry.pattern.flags}g`;
-    redacted = redacted.replace(new RegExp(entry.pattern.source, flags), '[REDACTED]');
+  for (const pattern of COMPILED_SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, '[REDACTED]');
   }
   return redacted;
 }
