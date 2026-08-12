@@ -75,6 +75,10 @@ test('supplemental coordinator script is syntactically valid and revision-bound'
   assert.doesNotThrow(() => new AsyncFunction('github', 'context', 'core', script));
   assert.match(script, /head_sha: headSha/);
   assert.match(script, /event: 'pull_request'/);
+  assert.match(script, /String\(run\?\.head_sha \|\| ''\)\.toLowerCase\(\) !== headSha/,
+    'the coordinator must locally recheck the exact workflow head instead of trusting a paginated API projection');
+  assert.match(script, /run\.event !== 'pull_request'/,
+    'the coordinator must ignore non-PR workflow runs even when an API filter returns them');
   assert.match(script, /Supplemental Checks Dispatch/);
   assert.match(
     script,

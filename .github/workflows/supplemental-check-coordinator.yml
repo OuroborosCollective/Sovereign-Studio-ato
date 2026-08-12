@@ -53,6 +53,8 @@ jobs:
             const latestRequired = new Map();
             for (const run of allRuns) {
               if (!requiredWorkflowNames.includes(run.name)) continue;
+              if (String(run?.head_sha || '').toLowerCase() !== headSha) continue;
+              if (run.event !== 'pull_request') continue;
               const current = latestRequired.get(run.name);
               if (!current || Number(run.id) > Number(current.id)) {
                 latestRequired.set(run.name, run);
