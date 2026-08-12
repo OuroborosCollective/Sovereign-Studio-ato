@@ -20,8 +20,8 @@ on:
       - '.github/workflows/sovereign-backend-image.yml'
       - '.github/workflows/sovereign-chatgpt-mcp.yml'
       - 'scripts/synchronous-revision-gate.mjs'
-      - 'scripts/synchronous-revision-gate.test.mjs'
-      - 'scripts/synchronous-revision-workflow.contract.test.cjs'
+      - 'scripts/synchronous-revision-gate.contract.mjs'
+      - 'scripts/synchronous-revision-workflow.contract.cjs'
       - 'scripts/required-gate-priority.contract.test.cjs'
       - 'scripts/revision-guardian.cjs'
       - 'scripts/revision-guardian.contract.test.cjs'
@@ -174,7 +174,7 @@ jobs:
       - name: Synchronous Revision Gate Contracts
         id: synchronous_revision_contract
         shell: bash
-        run: node --test scripts/synchronous-revision-gate.test.mjs scripts/synchronous-revision-workflow.contract.test.cjs
+        run: node --test scripts/synchronous-revision-gate.contract.mjs scripts/synchronous-revision-workflow.contract.cjs
 
       - name: Neuro Architecture Graph Node Test Suite
         id: neuro_architecture_graph_node_tests

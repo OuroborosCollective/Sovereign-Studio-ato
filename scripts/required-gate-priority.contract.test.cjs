@@ -57,7 +57,7 @@ test('only required workflows receive direct pull_request runners', () => {
   assert.match(boundaryWorkflow, /Fail closed before the MCP full suite/);
   assert.match(boundaryWorkflow, /Upload bounded drift evidence/);
   assert.match(synchronousWorkflow, /name: Synchronous Revision Contract/);
-  assert.match(synchronousWorkflow, /node --test scripts\/synchronous-revision-gate\.test\.mjs/);
+  assert.match(synchronousWorkflow, /node --test scripts\/synchronous-revision-gate\.contract\.mjs/);
   assert.doesNotMatch(synchronousWorkflow, /contents: write|pull-requests: write|packages: write/);
 });
 

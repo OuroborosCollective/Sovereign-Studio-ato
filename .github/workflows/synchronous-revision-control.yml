@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/synchronous-revision-gate.mjs'
-      - 'scripts/synchronous-revision-gate.test.mjs'
+      - 'scripts/synchronous-revision-gate.contract.mjs'
       - '.github/workflows/synchronous-revision-control.yml'
       - '.github/workflows/sovereign-backend-image.yml'
       - '.github/workflows/sovereign-chatgpt-mcp.yml'
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test scripts/synchronous-revision-gate.test.mjs
+      - run: node --test scripts/synchronous-revision-gate.contract.mjs
 
   image-synchronization:
     name: Synchronous Backend and MCP Images

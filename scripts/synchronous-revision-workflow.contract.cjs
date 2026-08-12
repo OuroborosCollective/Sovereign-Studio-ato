@@ -39,7 +39,7 @@ test('synchronous gate waits for exact-head backend and MCP images and rejects a
 
 test('release verification executes synchronous revision contract tests when gate-relevant files change', () => {
   assert.match(releaseWorkflow, /scripts\/synchronous-revision-gate\.mjs/);
-  assert.match(releaseWorkflow, /scripts\/synchronous-revision-gate\.test\.mjs/);
-  assert.match(releaseWorkflow, /scripts\/synchronous-revision-workflow\.contract\.test\.cjs/);
+  assert.match(releaseWorkflow, /scripts\/synchronous-revision-gate\.contract\.mjs/);
+  assert.match(releaseWorkflow, /scripts\/synchronous-revision-workflow\.contract\.cjs/);
   assert.match(releaseWorkflow, /Synchronous Revision Gate Contracts/);
 });
