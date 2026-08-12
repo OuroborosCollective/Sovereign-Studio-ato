@@ -13,6 +13,7 @@ import {
   computeResolvedHash,
   materializeReceipt,
   verifyReceipt,
+  verifyConfigReadback,
   defaultPriorityFor,
   canonicalSourceOrder,
   isSafeToAdvance,
@@ -22,6 +23,7 @@ import {
   isRedactedSecret,
   schemaHashFromFields,
   type ConfigSourceContract,
+  type ConfigReadbackObservation,
   type ResolveOptions,
 } from './index';
 
@@ -451,5 +453,76 @@ describe('cross-language hash parity (TS vs Python)', () => {
     // sha256 of the canonical JSON above, hex lowercase.
     const expected = '490e12734026df474ee4de8ce1d5d891cf1e702b14f038ca4174ddd64ed6731c';
     expect(await hashValue(parityInput)).toBe(expected);
+  });
+});
+
+// PatchMon readback audit (#1169 acceptance criterion #6). Mirrors the Python
+// test `test_patchmon_readback_requires_integrity_resolved_state_and_receipt_hash`
+// in backend/tests/test_configuration_runtime_integration.py so the fail-closed
+// readback decision is byte-identical across both languages: RunEnvelope and
+// PatchMon must read back the same redacted config fingerprint.
+describe('verifyConfigReadback - PatchMon readback audit (#1169 criterion #6)', () => {
+  async function receiptFixture() {
+    const res = await resolveConfigSources(baseSources);
+    return materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' });
+  }
+
+  function matchingObservation(receipt: {
+    revision: string | null;
+    imageDigest: string | null;
+    schemaHash: string;
+    resolvedHash: string;
+    receiptHash: string;
+  }): ConfigReadbackObservation {
+    return {
+      revision: receipt.revision,
+      imageDigest: receipt.imageDigest,
+      schemaHash: receipt.schemaHash,
+      resolvedHash: receipt.resolvedHash,
+      receiptHash: receipt.receiptHash,
+    };
+  }
+
+  it('accepts when PatchMon reports every bound field and the receipt hash matches', async () => {
+    const receipt = await receiptFixture();
+    const audit = await verifyConfigReadback(receipt, matchingObservation(receipt));
+    expect(audit.accepted).toBe(true);
+    expect(audit.blocker).toBeNull();
+    expect(audit.contradicted).toBe(false);
+  });
+
+  it('blocks (incomplete, not contradicted) when PatchMon omits the bound receipt hash', async () => {
+    const receipt = await receiptFixture();
+    const observation = matchingObservation(receipt);
+    const audit = await verifyConfigReadback(receipt, { ...observation, receiptHash: null });
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_missing_bound_field');
+    expect(audit.contradicted).toBe(false);
+  });
+
+  it('blocks (contradicted) when PatchMon reports a wrong receipt hash', async () => {
+    const receipt = await receiptFixture();
+    const observation = matchingObservation(receipt);
+    const audit = await verifyConfigReadback(receipt, { ...observation, receiptHash: '0'.repeat(64) });
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('blocks (contradicted) when a bound identity field contradicts the receipt', async () => {
+    const receipt = await receiptFixture();
+    const observation = matchingObservation(receipt);
+    const audit = await verifyConfigReadback(receipt, { ...observation, revision: 'rev-other' });
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_readback_contradicts_receipt');
+    expect(audit.contradicted).toBe(true);
+  });
+
+  it('fails closed on a tampered (non-self-verifying) receipt', async () => {
+    const receipt = await receiptFixture();
+    const tampered = { ...receipt, revision: 'rev-tampered' };
+    const audit = await verifyConfigReadback(tampered, matchingObservation(receipt));
+    expect(audit.accepted).toBe(false);
+    expect(audit.blocker).toBe('config_receipt_self_verification_failed');
   });
 });
