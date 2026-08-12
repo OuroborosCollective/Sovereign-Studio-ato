@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -16,6 +17,16 @@ VALIDATOR = REPOSITORY_ROOT / "scripts/verify_sovereign_runtime_receipt.py"
 
 def _sha256(payload: dict[str, object]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _load_readback_module():
+    source = ROOT / "deploy/run-coordinated-release-readback.py"
+    spec = importlib.util.spec_from_file_location("runtime_receipt_entrypoint_test", source)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _write_signed_fixture(directory: Path) -> tuple[Path, Path, Path, int]:
@@ -154,6 +165,45 @@ def test_runtime_readback_accepts_root_owned_systemd_0640_status_and_blocks_worl
     assert completed.returncode == 0, completed.stderr
 
 
+def test_runtime_readback_registry_auth_uses_stdin_and_cleans_private_docker_config(tmp_path: Path, monkeypatch) -> None:
+    module = _load_readback_module()
+    docker_config = tmp_path / "docker-config"
+    module.DOCKER_CONFIG_DIR = docker_config
+    monkeypatch.setattr(module, "_assert_root_private", lambda *_args, **_kwargs: None)
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(argv, **kwargs):
+        arguments = [str(item) for item in argv]
+        calls.append((arguments, kwargs))
+        if "login" in arguments:
+            docker_config.mkdir(parents=True, exist_ok=True)
+            (docker_config / "config.json").write_text('{"auths":{"ghcr.io":{}}}\n', "utf-8")
+        return subprocess.CompletedProcess(arguments, 0, "Login Succeeded\n", "")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    token = "ghs_test_ephemeral_runtime_token_1234567890"
+    module._prepare_registry_auth(token, "OuroborosCollective")
+    assert docker_config.is_dir()
+    login_args, login_kwargs = calls[0]
+    assert login_args[:4] == ["docker", "--config", str(docker_config), "login"]
+    assert "--password-stdin" in login_args
+    assert token not in login_args
+    assert login_kwargs["input"] == token + "\n"
+
+    module._cleanup_registry_auth()
+    assert not docker_config.exists()
+    assert any("logout" in arguments for arguments, _kwargs in calls)
+
+
+def test_runtime_readback_classifies_registry_failures_without_returning_raw_output() -> None:
+    module = _load_readback_module()
+    assert module._classify_registry_error("unauthorized: authentication required") == "UNAUTHORIZED"
+    assert module._classify_registry_error("denied: permission_denied: read_package") == "FORBIDDEN"
+    assert module._classify_registry_error("manifest unknown") == "NOT_FOUND"
+    assert module._classify_registry_error("connection refused") == "NETWORK"
+    assert module._classify_registry_error("unexpected registry response") == "OTHER"
+
+
 def test_runtime_readback_contract_does_not_persist_api_tokens_or_accept_unscoped_timer_runs() -> None:
     reconciler = (ROOT / "deploy/reconcile-main-release.py").read_text("utf-8")
     installer = (ROOT / "deploy/install-on-vps.sh").read_text("utf-8")
@@ -166,7 +216,13 @@ def test_runtime_readback_contract_does_not_persist_api_tokens_or_accept_unscope
     assert "printf 'GITHUB_TOKEN=%s\\n'" not in installer
     assert 'command="/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback",restrict' in installer
     assert 'SOVEREIGN_RELEASE_GITHUB_TOKEN_FILE' in entrypoint
-    assert 'actions/create-github-app-token@' in workflow
+    assert 'DOCKER_CONFIG' in entrypoint
+    assert '--password-stdin' in entrypoint
+    assert '_cleanup_registry_auth()' in entrypoint
+    assert 'RUNTIME_READBACK_GITHUB_TOKEN: ${{ github.token }}' in workflow
+    assert 'REGISTRY_USERNAME: ${{ github.actor }}' in workflow
+    assert 'actions/create-github-app-token@' not in workflow
     assert 'StrictHostKeyChecking=yes' in workflow
     assert 'verify_sovereign_runtime_receipt.py' in workflow
+    assert 'publish-production-verdict:' in workflow
     assert 'Publish verified production deployment verdict' in workflow
