@@ -235,12 +235,12 @@ jobs:
             payload = Path(sys.argv[1]).read_bytes()
             if len(payload) < 64 or len(payload) > 16384:
                 raise SystemExit('bootstrap receipt size is invalid')
-            print(payload.hex())
+            print('SOVEREIGN_BOOTSTRAP_RECEIPT_HEX=' + payload.hex())
             PY
 
       - name: Normalize and verify bootstrap receipt
         env:
-          RECEIPT_HEX: ${{ steps.receipt.outputs.stdout }}
+          RECEIPT_STDOUT: ${{ steps.receipt.outputs.stdout }}
           EXPECTED_NEW_SHA256: ${{ steps.evidence.outputs.new_sha256 }}
           EXPECTED_PARENT1_REVISION: ${{ steps.evidence.outputs.parent1_revision }}
           EXPECTED_PARENT2_REVISION: ${{ steps.evidence.outputs.parent2_revision }}
@@ -253,7 +253,11 @@ jobs:
           import re
           from pathlib import Path
 
-          encoded = os.environ['RECEIPT_HEX'].strip().lower()
+          stdout = os.environ['RECEIPT_STDOUT']
+          matches = re.findall(r'SOVEREIGN_BOOTSTRAP_RECEIPT_HEX=([0-9a-fA-F]+)', stdout)
+          if len(matches) != 1:
+              raise SystemExit('bootstrap receipt marker count is invalid')
+          encoded = matches[0].lower()
           if not re.fullmatch(r'[0-9a-f]{128,32768}', encoded) or len(encoded) % 2:
               raise SystemExit('bootstrap receipt hex transport is invalid')
           raw = bytes.fromhex(encoded)
