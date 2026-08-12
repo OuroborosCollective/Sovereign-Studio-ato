@@ -117,7 +117,7 @@ export async function validateGitHubTokenForRepo(
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ repository, branch, expectedBaseSha }),
+      body: JSON.stringify({ repository, branch, expectedBaseSha, githubAccessToken: token.trim() }),
     });
     const scopePayload = await safeReadJson(scopeResponse);
     if (!scopeResponse.ok || !isObject(scopePayload) || scopePayload.ok !== true || typeof scopePayload.scope !== 'string' || !scopePayload.scope.trim()) {

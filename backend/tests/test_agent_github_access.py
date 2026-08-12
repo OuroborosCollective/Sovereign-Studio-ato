@@ -95,7 +95,7 @@ def test_repo_scoped_github_access_blocks_missing_effective_write_permission():
 
 
 def test_server_issued_github_access_scope_is_user_and_revision_bound():
-    secret = "s" * 32
+    secret = "short-existing-jwt-secret"
     scope = issue_github_access_scope(
         user_id="user-1",
         repository="https://github.com/OuroborosCollective/Sovereign-Studio-ato",

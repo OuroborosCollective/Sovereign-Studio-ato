@@ -61,6 +61,13 @@ def _scope_message(payload: dict[str, object]) -> bytes:
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
+def _scope_signing_key(secret: object) -> bytes | None:
+    source = str(secret or "").encode("utf-8")
+    if not source:
+        return None
+    return hashlib.sha256(b"sovereign-github-access-scope-v1\\x00" + source).digest()
+
+
 def issue_github_access_scope(
     *,
     user_id: object,
@@ -76,12 +83,12 @@ def issue_github_access_scope(
     normalized_user = str(user_id or "").strip()
     normalized_branch = str(branch or "").strip()
     normalized_revision = str(revision or "").strip().lower()
-    secret_bytes = str(secret or "").encode("utf-8")
+    signing_key = _scope_signing_key(secret)
     if target is None or not normalized_user or not normalized_branch or "\n" in normalized_branch:
         raise ValueError("github_access_scope_target_invalid")
     if not _SCOPE_REVISION.fullmatch(normalized_revision):
         raise ValueError("github_access_scope_revision_invalid")
-    if len(secret_bytes) < 32:
+    if signing_key is None:
         raise RuntimeError("github_access_scope_secret_unavailable")
     owner, repo = target
     payload: dict[str, object] = {
@@ -93,7 +100,7 @@ def issue_github_access_scope(
         "userId": normalized_user,
     }
     encoded = base64.urlsafe_b64encode(_scope_message(payload)).decode("ascii").rstrip("=")
-    signature = hmac.new(secret_bytes, encoded.encode("ascii"), hashlib.sha256).hexdigest()
+    signature = hmac.new(signing_key, encoded.encode("ascii"), hashlib.sha256).hexdigest()
     return f"v1.{encoded}.{signature}"
 
 
@@ -109,10 +116,10 @@ def verify_github_access_scope(
 
     try:
         version, encoded, supplied_signature = str(scope or "").split(".", 2)
-        secret_bytes = str(secret or "").encode("utf-8")
-        if version != "v1" or len(secret_bytes) < 32 or not re.fullmatch(r"[0-9a-f]{64}", supplied_signature):
+        signing_key = _scope_signing_key(secret)
+        if version != "v1" or signing_key is None or not re.fullmatch(r"[0-9a-f]{64}", supplied_signature):
             return None
-        expected_signature = hmac.new(secret_bytes, encoded.encode("ascii"), hashlib.sha256).hexdigest()
+        expected_signature = hmac.new(signing_key, encoded.encode("ascii"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(supplied_signature, expected_signature):
             return None
         decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))

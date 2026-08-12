@@ -201,15 +201,15 @@ def test_github_access_scope_bootstraps_revision_bound_validation_without_an_age
     token = "ghp_" + "a" * 40
     captured = {}
     monkeypatch.setenv("JWT_SECRET", "s" * 32)
-    monkeypatch.setattr(
-        routes_module,
-        "resolve_github_head",
-        lambda repository, branch, token=None: {
+    def fake_readback(repository, branch, token=None):
+        captured["scopeToken"] = token
+        return {
             "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
             "baseBranch": "main",
             "baseSha": "c" * 40,
-        },
-    )
+        }
+
+    monkeypatch.setattr(routes_module, "resolve_github_head", fake_readback)
 
     def fake_validate(raw_token, *, owner, repo):
         captured.update(token=raw_token, owner=owner, repo=repo)
@@ -226,6 +226,7 @@ def test_github_access_scope_bootstraps_revision_bound_validation_without_an_age
             "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
             "branch": "main",
             "expectedBaseSha": "c" * 40,
+            "githubAccessToken": token,
         },
     )
 
@@ -240,7 +241,12 @@ def test_github_access_scope_bootstraps_revision_bound_validation_without_an_age
 
     assert validation_response.status_code == 200
     assert validation_response.get_json() == {"ok": True, "canWrite": True, "code": "ready", "error": None}
-    assert captured == {"token": token, "owner": "OuroborosCollective", "repo": "Sovereign-Studio-ato"}
+    assert captured == {
+        "scopeToken": token,
+        "token": token,
+        "owner": "OuroborosCollective",
+        "repo": "Sovereign-Studio-ato",
+    }
     assert token not in scope_response.get_data(as_text=True)
     assert token not in validation_response.get_data(as_text=True)
 

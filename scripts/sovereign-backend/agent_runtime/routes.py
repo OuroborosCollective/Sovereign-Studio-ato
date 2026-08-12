@@ -379,7 +379,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         account["configured_owner_email"] = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "")
         return account
 
-    def _rescue_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
+    def _ephemeral_github_access_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
         raw_token = body.get("githubAccessToken")
         token = normalize_ephemeral_github_token(raw_token)
         if raw_token is not None and token is None:
@@ -527,7 +527,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        token, token_error = _rescue_token(body)
+        token, token_error = _ephemeral_github_access_token(body)
         if token_error:
             return token_error
         try:
@@ -568,7 +568,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _rescue_token(body)
+        token, token_error = _ephemeral_github_access_token(body)
         if token_error:
             return token_error
         try:
@@ -804,7 +804,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _rescue_token(body)
+        token, token_error = _ephemeral_github_access_token(body)
         if token_error:
             return token_error
         try:
@@ -1103,12 +1103,15 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         user_id = _current_session_user_id()
+        github_token, token_error = _ephemeral_github_access_token(body)
+        if token_error is not None:
+            return token_error
         try:
             expected_revision = normalize_head_sha(body.get("expectedBaseSha"))
             revision = resolve_github_head(
                 body.get("repository") or body.get("repoUrl"),
                 body.get("baseBranch") or body.get("branch") or "main",
-                token=None,
+                token=github_token,
             )
             if revision["baseSha"] != expected_revision:
                 return jsonify({

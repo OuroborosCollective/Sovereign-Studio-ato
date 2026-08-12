@@ -214,7 +214,7 @@ describe('GitHub Access Runtime', () => {
         expect(String(url)).not.toContain('api.github.com');
         expect(init?.credentials).toBe('include');
         if (String(url).endsWith('/api/user/agent/github-access/scope')) {
-          expect(JSON.parse(String(init?.body))).toEqual(target);
+          expect(JSON.parse(String(init?.body))).toEqual({ ...target, githubAccessToken: token });
           return new Response(JSON.stringify({ ok: true, scope: 'v1.test-scope.signature' }), { status: 200 });
         }
         expect(String(url)).toBe(`${backendBase}/api/user/agent/github-access/validate`);
