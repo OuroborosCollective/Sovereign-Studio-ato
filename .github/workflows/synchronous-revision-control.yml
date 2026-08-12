@@ -173,7 +173,38 @@ jobs:
           name: sovereign-mcp-immutable-image-evidence-${{ steps.revision.outputs.head }}
           path: evidence/mcp
 
+      - name: Validate resolved revision is trusted (reachable from main)
+        id: trust_check
+        uses: actions/github-script@v7
+        env:
+          HEAD: ${{ steps.revision.outputs.head }}
+        with:
+          script: |
+            const head = process.env.HEAD;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = 'main';
+
+            const compare = await github.rest.repos.compareCommitsWithBasehead({
+              owner,
+              repo,
+              basehead: `${branch}...${head}`,
+            });
+
+            const trusted = compare.data.status === 'ahead' || compare.data.status === 'identical';
+            core.setOutput('trusted', trusted ? 'true' : 'false');
+            if (!trusted) {
+              core.warning(`Resolved revision ${head} is not trusted: not reachable from ${branch}.`);
+            }
+
+      - name: Stop on untrusted revision
+        if: steps.trust_check.outputs.trusted != 'true'
+        run: |
+          echo "Refusing to checkout untrusted revision: ${{ steps.revision.outputs.head }}" >&2
+          exit 1
+
       - uses: actions/checkout@v4
+        if: steps.trust_check.outputs.trusted == 'true'
         with:
           ref: ${{ steps.revision.outputs.head }}
           fetch-depth: 1
