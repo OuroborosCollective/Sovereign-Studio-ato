@@ -72,10 +72,13 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
     assert 'OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"' in installer
-    assert 'OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"' in installer
-    assert 'if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then' in installer
-    assert 'set_value "$MANAGED_ENV" GITHUB_TOKEN "$EFFECTIVE_GITHUB_TOKEN"' in installer
-    assert 'printf \'GITHUB_TOKEN=%s\\n\' "$EFFECTIVE_GITHUB_TOKEN"' in installer
+    assert 'OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"' not in installer
+    assert 'if [[ -n "$OWNER_MANAGED_GITHUB_TOKEN" ]]; then' not in installer
+    assert 'EFFECTIVE_GITHUB_TOKEN="' not in installer
+    assert 'set_value "$MANAGED_ENV" GITHUB_TOKEN' not in installer
+    assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
+    assert 'remove_value "$MANAGED_ENV" GITHUB_TOKEN' in installer
+    assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert '/opt/secure/owner-managed' not in installer
 
 
