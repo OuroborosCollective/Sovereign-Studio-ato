@@ -76,6 +76,11 @@ test('supplemental coordinator script is syntactically valid and revision-bound'
   assert.match(script, /head_sha: headSha/);
   assert.match(script, /event: 'pull_request'/);
   assert.match(script, /Supplemental Checks Dispatch/);
+  assert.match(
+    script,
+    /existingChecks\.some\(\(check\) => \(\s*check\s*&& check\.status === 'completed'/,
+    'check projections may be absent and must not crash the coordinator',
+  );
   assert.match(script, /workflow_id: 'sovereign-pr-review-evidence\.yml'/);
   assert.match(script, /workflow_id: 'sovereign-agent-supplemental\.yml'/);
   assert.match(script, /workflow_id: 'android\.yml'/);

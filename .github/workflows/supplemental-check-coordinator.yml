@@ -89,7 +89,11 @@ jobs:
               },
               (response) => response.data.check_runs,
             );
-            if (existingChecks.some((check) => check.status === 'completed' && check.conclusion === 'success')) {
+            if (existingChecks.some((check) => (
+              check
+              && check.status === 'completed'
+              && check.conclusion === 'success'
+            ))) {
               core.info('Supplemental workflows were already dispatched for this exact head SHA.');
               return;
             }
