@@ -22,8 +22,9 @@ export interface GitHubAccessSnapshot {
 }
 
 export interface GitHubAccessRepositoryTarget {
-  readonly owner: string;
-  readonly repo: string;
+  readonly repository: string;
+  readonly branch: string;
+  readonly expectedBaseSha: string;
 }
 
 export interface GitHubAccessApiValidationResult {
@@ -79,13 +80,6 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function hasWritePermission(payload: unknown): boolean {
-  if (!isObject(payload)) return false;
-  const permissions = payload.permissions;
-  if (!isObject(permissions)) return false;
-  return permissions.push === true || permissions.admin === true || permissions.maintain === true;
-}
-
 async function safeReadJson(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text.trim()) return null;
@@ -97,66 +91,74 @@ async function safeReadJson(response: Response): Promise<unknown> {
 }
 
 /**
- * Validate a GitHub token against the real GitHub API without storing it.
- * The caller must pass the raw token only for this one-shot check and discard it immediately.
+ * Validate one ephemeral GitHub credential through the authenticated Sovereign
+ * backend. This intentionally does not call api.github.com from the browser:
+ * validation and the later clone/push/PR operation must share one runtime
+ * boundary and one token-normalization contract.
  */
 export async function validateGitHubTokenForRepo(
   token: string,
   target: GitHubAccessRepositoryTarget,
   fetcher: typeof fetch = fetch,
+  backendBaseUrl = '',
 ): Promise<GitHubAccessApiValidationResult> {
   const format = validateGitHubTokenFormat(token);
   if (!format.isValid) return { ok: false, error: format.error };
-  const normalizedToken = token.trim();
-  const isInstallationToken = normalizedToken.startsWith('ghs_');
-  const owner = target.owner.trim();
-  const repo = target.repo.trim();
-  if (!owner || !repo) return { ok: false, error: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.' };
+  const repository = target.repository.trim();
+  const branch = target.branch.trim();
+  const expectedBaseSha = target.expectedBaseSha.trim().toLowerCase();
+  if (!repository || !branch || !/^[0-9a-f]{40}$/.test(expectedBaseSha)) {
+    return { ok: false, canWrite: false, error: 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.' };
+  }
 
-  const authHeaders: HeadersInit = {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${normalizedToken}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
-
-  // Installation tokens are repository-scoped server identities. Some user endpoints
-  // do not accept them, so their truth comes from the real target-repository response.
-  if (!isInstallationToken) {
-    const userResponse = await fetcher('https://api.github.com/user', { headers: authHeaders });
-    if (!userResponse.ok) {
+  const base = backendBaseUrl.replace(/\/+$/, '');
+  try {
+    const scopeResponse = await fetcher(`${base}/api/user/agent/github-access/scope`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ repository, branch, expectedBaseSha, githubAccessToken: token.trim() }),
+    });
+    const scopePayload = await safeReadJson(scopeResponse);
+    if (!scopeResponse.ok || !isObject(scopePayload) || scopePayload.ok !== true || typeof scopePayload.scope !== 'string' || !scopePayload.scope.trim()) {
       return {
         ok: false,
-        error: userResponse.status === 401
-          ? 'GitHub-Token wurde abgelehnt.'
-          : `GitHub-User-Prüfung fehlgeschlagen: HTTP ${userResponse.status}`,
+        canWrite: false,
+        error: scopeResponse.status === 401
+          ? 'Sovereign-Session ist nicht mehr bestätigt. Bitte erneut anmelden.'
+          : 'Sovereign konnte keinen revisionsgebundenen Repository-Scope bestätigen.',
       };
     }
-  }
-
-  const repoResponse = await fetcher(
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-    { headers: authHeaders },
-  );
-  const repoPayload = await safeReadJson(repoResponse);
-  if (!repoResponse.ok) {
+    const response = await fetcher(`${base}/api/user/agent/github-access/validate`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        scope: scopePayload.scope,
+        githubAccessToken: token.trim(),
+      }),
+    });
+    const payload = await safeReadJson(response);
+    if (!response.ok) {
+      return {
+        ok: false,
+        canWrite: false,
+        error: response.status === 401
+          ? 'Sovereign-Session ist nicht mehr bestätigt. Bitte erneut anmelden.'
+          : `Sovereign GitHub-Zugangsprüfung fehlgeschlagen: HTTP ${response.status}`,
+      };
+    }
+    if (!isObject(payload)) {
+      return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung lieferte keine gültige Antwort.' };
+    }
     return {
-      ok: false,
-      error: repoResponse.status === 404
-        ? 'GitHub-Token hat keinen Zugriff auf dieses Repository.'
-        : `GitHub-Repo-Prüfung fehlgeschlagen: HTTP ${repoResponse.status}`,
+      ok: payload.ok === true && payload.canWrite === true,
+      canWrite: payload.canWrite === true,
+      error: typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim() : undefined,
     };
+  } catch {
+    return { ok: false, canWrite: false, error: 'Sovereign GitHub-Zugangsprüfung ist momentan nicht erreichbar.' };
   }
-
-  const canWrite = hasWritePermission(repoPayload);
-  if (!canWrite) {
-    return {
-      ok: false,
-      canWrite: false,
-      error: 'GitHub-Token ist gültig, hat aber keinen Schreibzugriff auf dieses Repository.',
-    };
-  }
-
-  return { ok: true, canWrite: true };
 }
 
 /**

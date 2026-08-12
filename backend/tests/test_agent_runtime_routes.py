@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 import zipfile
 
 # Füge Backend zum Python Path hinzu
@@ -176,6 +177,168 @@ def test_routes_require_session():
 
     assert response.status_code == 401
     assert response.get_json()["error"] == "Nicht eingeloggt"
+
+
+def test_github_access_validation_requires_sovereign_session():
+    conn = FakeConnection()
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/github-access/validate",
+        json={
+            "owner": "OuroborosCollective",
+            "repo": "Wasd",
+            "githubAccessToken": "ghp_" + "a" * 40,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Nicht eingeloggt"
+
+
+def test_github_access_scope_bootstraps_revision_bound_validation_without_an_agent_job(monkeypatch):
+    conn = FakeConnection()
+    token = "ghp_" + "a" * 40
+    captured = {}
+    monkeypatch.setenv("JWT_SECRET", "s" * 32)
+    def fake_readback(repository, branch, token=None):
+        captured["scopeToken"] = token
+        return {
+            "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "baseBranch": "main",
+            "baseSha": "c" * 40,
+        }
+
+    monkeypatch.setattr(routes_module, "resolve_github_head", fake_readback)
+
+    def fake_validate(raw_token, *, owner, repo):
+        captured.update(token=raw_token, owner=owner, repo=repo)
+        return SimpleNamespace(ok=True, can_write=True, code="ready", message="GitHub-Zugang wurde serverseitig bestätigt.")
+
+    monkeypatch.setattr(routes_module, "validate_github_access_for_repo", fake_validate)
+    app = create_test_app(conn)
+    client = app.test_client()
+
+    scope_response = client.post(
+        "/api/user/agent/github-access/scope",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repository": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "branch": "main",
+            "expectedBaseSha": "c" * 40,
+            "githubAccessToken": token,
+        },
+    )
+
+    assert scope_response.status_code == 200
+    scope = scope_response.get_json()["scope"]
+    assert isinstance(scope, str)
+    validation_response = client.post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={"scope": scope, "githubAccessToken": token},
+    )
+
+    assert validation_response.status_code == 200
+    assert validation_response.get_json() == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    assert captured == {
+        "scopeToken": token,
+        "token": token,
+        "owner": "OuroborosCollective",
+        "repo": "Sovereign-Studio-ato",
+    }
+    assert token not in scope_response.get_data(as_text=True)
+    assert token not in validation_response.get_data(as_text=True)
+
+
+def test_github_access_validation_is_server_job_scoped_and_never_echoes_token(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-github-access")
+    captured = {}
+    token = "ghp_" + "a" * 40
+
+    def fake_validate(raw_token, *, owner, repo):
+        captured.update(token=raw_token, owner=owner, repo=repo)
+        return SimpleNamespace(
+            ok=True,
+            can_write=True,
+            code="ready",
+            message="GitHub-Zugang wurde serverseitig bestätigt.",
+        )
+
+    monkeypatch.setattr(routes_module, "validate_github_access_for_repo", fake_validate)
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "jobId": "agent-github-access",
+            "owner": "attacker-controlled-owner",
+            "repo": "attacker-controlled-repo",
+            "githubAccessToken": token,
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload == {"ok": True, "canWrite": True, "code": "ready", "error": None}
+    assert captured == {"token": token, "owner": "OuroborosCollective", "repo": "Sovereign-Studio-ato"}
+    assert token not in response.get_data(as_text=True)
+
+
+def test_github_access_validation_rejects_unowned_server_scope_before_external_validation():
+    conn = FakeConnection()
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "jobId": "agent-not-owned-by-session",
+            "githubAccessToken": "ghp_" + "a" * 40,
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 422
+    assert payload["ok"] is False
+    assert payload["canWrite"] is False
+    assert payload["code"] == "server_scope_unverified"
+
+
+def test_github_access_validation_preserves_typed_github_rejection_without_session_logout(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-github-access")
+    token = "github_pat_" + "b" * 32
+    monkeypatch.setattr(
+        routes_module,
+        "validate_github_access_for_repo",
+        lambda raw_token, *, owner, repo: SimpleNamespace(
+            ok=False,
+            can_write=False,
+            code="credential_rejected",
+            message="GitHub hat diesen Zugang nicht authentifiziert.",
+        ),
+    )
+    app = create_test_app(conn)
+
+    response = app.test_client().post(
+        "/api/user/agent/github-access/validate",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "jobId": "agent-github-access",
+            "githubAccessToken": token,
+        },
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is False
+    assert payload["canWrite"] is False
+    assert payload["code"] == "credential_rejected"
+    assert "nicht authentifiziert" in payload["error"]
+    assert token not in response.get_data(as_text=True)
 
 
 def test_list_jobs_is_user_scoped():

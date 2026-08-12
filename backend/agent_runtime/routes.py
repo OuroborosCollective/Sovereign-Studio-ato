@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 import uuid
 
 from flask import Response, jsonify, request
@@ -31,6 +32,11 @@ from .draft_pr_create_gate import create_draft_pr_for_job, draft_pr_create_signa
 from .draft_pr_gate import draft_pr_preparation_signal, prepare_draft_pr, draft_pr_input_from_job
 from .evidence_gate import EvidenceGateResult, evidence_gate_signal
 from .git_workspace import git_diff_full, normalize_ephemeral_github_token
+from .github_access import (
+    issue_github_access_scope,
+    validate_github_access_for_repo,
+    verify_github_access_scope,
+)
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import (
@@ -259,6 +265,27 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
     def _read_owned_job(conn, user_id: str, job_id: str):
         return read_agent_job(conn, user_id=user_id, job_id=job_id)
 
+    def _github_target_for_owned_job(conn, user_id: str, job_id: str) -> tuple[str, str] | None:
+        job = _read_owned_job(conn, user_id, job_id)
+        if job is None:
+            return None
+        parsed = urlparse(str(job.repo_url or "").strip())
+        if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+            return None
+        parts = [part for part in parsed.path.strip("/").split("/") if part]
+        if len(parts) != 2:
+            return None
+        owner, repo = parts
+        repo = repo.removesuffix(".git")
+        return (owner, repo) if owner and repo else None
+
+    def _github_access_scope_secret() -> str:
+        return str(
+            os.getenv("SOVEREIGN_GITHUB_ACCESS_SCOPE_SECRET")
+            or os.getenv("JWT_SECRET")
+            or ""
+        )
+
     def _real_job_diff(job: Any) -> str:
         diff_result = run_agent_job_tool(job, "diff", {}, _workspace_root())
         if diff_result.status != "done":
@@ -352,7 +379,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         account["configured_owner_email"] = os.getenv("SOVEREIGN_OWNER_ADMIN_EMAIL", "")
         return account
 
-    def _rescue_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
+    def _ephemeral_github_access_token(body: dict[str, Any]) -> tuple[str | None, tuple[Any, int] | None]:
         raw_token = body.get("githubAccessToken")
         token = normalize_ephemeral_github_token(raw_token)
         if raw_token is not None and token is None:
@@ -500,7 +527,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             body = {}
         if not isinstance(body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
-        token, token_error = _rescue_token(body)
+        token, token_error = _ephemeral_github_access_token(body)
         if token_error:
             return token_error
         try:
@@ -541,7 +568,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _rescue_token(body)
+        token, token_error = _ephemeral_github_access_token(body)
         if token_error:
             return token_error
         try:
@@ -777,7 +804,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         if not isinstance(parsed_body, dict):
             return jsonify({"error": "A JSON object is required"}), 400
         body: dict[str, Any] = parsed_body
-        token, token_error = _rescue_token(body)
+        token, token_error = _ephemeral_github_access_token(body)
         if token_error:
             return token_error
         try:
@@ -1068,6 +1095,100 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             }), status_code
         finally:
             _close(conn)
+
+    @app.route("/api/user/agent/github-access/scope", methods=["POST"])
+    @require_session
+    def user_issue_github_access_scope():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        user_id = _current_session_user_id()
+        github_token, token_error = _ephemeral_github_access_token(body)
+        if token_error is not None:
+            return token_error
+        try:
+            expected_revision = normalize_head_sha(body.get("expectedBaseSha"))
+            revision = resolve_github_head(
+                body.get("repository") or body.get("repoUrl"),
+                body.get("baseBranch") or body.get("branch") or "main",
+                token=github_token,
+            )
+            if revision["baseSha"] != expected_revision:
+                return jsonify({
+                    "ok": False,
+                    "code": "repository_head_changed",
+                    "error": "Die serverbestätigte Repository-Revision hat sich geändert.",
+                }), 409
+            scope = issue_github_access_scope(
+                user_id=user_id,
+                repository=revision["repository"],
+                branch=revision["baseBranch"],
+                revision=revision["baseSha"],
+                secret=_github_access_scope_secret(),
+            )
+        except RuntimeError as exc:
+            return jsonify({
+                "ok": False,
+                "code": "server_scope_unavailable",
+                "error": redact_secret_text(exc, 240),
+            }), 503
+        except (ValueError, HTTPError, URLError, TimeoutError) as exc:
+            return jsonify({
+                "ok": False,
+                "code": "server_scope_unverified",
+                "error": redact_secret_text(exc, 240),
+            }), 422
+        return jsonify({
+            "ok": True,
+            "scope": scope,
+            "repository": revision["repository"],
+            "baseBranch": revision["baseBranch"],
+            "baseSha": revision["baseSha"],
+        }), 200
+
+    @app.route("/api/user/agent/github-access/validate", methods=["POST"])
+    @require_session
+    def user_validate_github_access():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        user_id = _current_session_user_id()
+        scope = verify_github_access_scope(
+            body.get("scope"),
+            user_id=user_id,
+            secret=_github_access_scope_secret(),
+        )
+        target = (scope.owner, scope.repo) if scope else None
+        if target is None:
+            job_id = str(body.get("jobId") or "").strip()
+            if job_id:
+                conn = _connection()
+                try:
+                    target = _github_target_for_owned_job(conn, user_id, job_id)
+                finally:
+                    _close(conn)
+        if target is None:
+            return jsonify({
+                "ok": False,
+                "canWrite": False,
+                "code": "server_scope_unverified",
+                "error": "Der servergebundene Repository-Scope konnte nicht bestätigt werden.",
+            }), 422
+        owner, repo = target
+        result = validate_github_access_for_repo(
+            body.get("githubAccessToken"),
+            owner=owner,
+            repo=repo,
+        )
+        # This is a nested external-credential verdict, not a failure of the
+        # authenticated Sovereign session. Keep expected GitHub rejections in a
+        # typed 200 envelope so the frontend cannot confuse them with logout.
+        return jsonify({
+            "ok": result.ok and result.can_write,
+            "canWrite": result.can_write,
+            "code": result.code,
+            "error": None if result.ok and result.can_write else result.message,
+        }), 200
 
     @app.route("/api/user/agent/validate-mission", methods=["POST"])
     @require_session

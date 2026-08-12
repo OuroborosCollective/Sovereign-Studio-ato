@@ -200,76 +200,97 @@ describe('GitHub Access Runtime', () => {
     });
   });
 
-  describe('real GitHub API validation contract', () => {
-    const target = { owner: 'OuroborosCollective', repo: 'Sovereign-Studio-ato' };
+  describe('server-bound GitHub access validation contract', () => {
+    const target = {
+      repository: 'https://github.com/OuroborosCollective/Sovereign-Studio-ato',
+      branch: 'main',
+      expectedBaseSha: 'a'.repeat(40),
+    };
     const token = 'ghp_' + 'a'.repeat(40);
+    const backendBase = 'https://sovereign.example';
 
-    it('requires real repo write permission before reporting ready capability', async () => {
-      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-        const value = String(url);
-        if (value.endsWith('/user')) {
-          return new Response(JSON.stringify({ login: 'tester' }), { status: 200 });
+    it('validates the exact repo through Sovereign backend instead of GitHub from the browser', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(url)).not.toContain('api.github.com');
+        expect(init?.credentials).toBe('include');
+        if (String(url).endsWith('/api/user/agent/github-access/scope')) {
+          expect(JSON.parse(String(init?.body))).toEqual({ ...target, githubAccessToken: token });
+          return new Response(JSON.stringify({ ok: true, scope: 'v1.test-scope.signature' }), { status: 200 });
         }
-        return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
+        expect(String(url)).toBe(`${backendBase}/api/user/agent/github-access/validate`);
+        expect(JSON.parse(String(init?.body))).toEqual({
+          scope: 'v1.test-scope.signature',
+          githubAccessToken: token,
+        });
+        return new Response(JSON.stringify({ ok: true, canWrite: true }), { status: 200 });
       }) as unknown as typeof fetch;
 
-      const result = await validateGitHubTokenForRepo(token, target, fetcher);
+      const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
 
-      expect(result).toEqual({ ok: true, canWrite: true });
+      expect(result).toEqual({ ok: true, canWrite: true, error: undefined });
       expect(fetcher).toHaveBeenCalledTimes(2);
     });
 
-    it('validates an installation token through the real target repository without requiring a user endpoint', async () => {
-      const installationToken = ['g', 'h', 's', '_', 'b'.repeat(40)].join('');
-      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-        expect(String(url)).toContain('/repos/OuroborosCollective/Sovereign-Studio-ato');
-        return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
-      }) as unknown as typeof fetch;
+    it('accepts github_pat_ candidates through the same backend contract', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
+        String(url).endsWith('/scope')
+          ? { ok: true, scope: 'v1.test-scope.signature' }
+          : { ok: true, canWrite: true },
+      ), { status: 200 })) as unknown as typeof fetch;
 
-      const result = await validateGitHubTokenForRepo(installationToken, target, fetcher);
+      const result = await validateGitHubTokenForRepo(FINE_GRAINED_PAT_CANDIDATE, target, fetcher, backendBase);
 
-      expect(result).toEqual({ ok: true, canWrite: true });
-      expect(fetcher).toHaveBeenCalledTimes(1);
-    });
-
-    it('validates github_pat_ candidates through the real GitHub API path after format preflight', async () => {
-      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-        const value = String(url);
-        if (value.endsWith('/user')) {
-          return new Response(JSON.stringify({ login: 'tester' }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
-      }) as unknown as typeof fetch;
-
-      const result = await validateGitHubTokenForRepo(FINE_GRAINED_PAT_CANDIDATE, target, fetcher);
-
-      expect(result).toEqual({ ok: true, canWrite: true });
+      expect(result.ok).toBe(true);
       expect(fetcher).toHaveBeenCalledTimes(2);
     });
 
-    it('rejects a valid token without repo write permission', async () => {
-      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-        const value = String(url);
-        if (value.endsWith('/user')) {
-          return new Response(JSON.stringify({ login: 'tester' }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ permissions: { pull: true } }), { status: 200 });
-      }) as unknown as typeof fetch;
+    it('preserves a typed repo permission failure returned by the backend', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
+        String(url).endsWith('/scope')
+          ? { ok: true, scope: 'v1.test-scope.signature' }
+          : {
+              ok: false,
+              canWrite: false,
+              code: 'write_permission_missing',
+              error: 'GitHub akzeptiert den Zugang für dieses Repository, meldet aber keinen effektiven Schreibzugriff.',
+            },
+      ), { status: 200 })) as unknown as typeof fetch;
 
-      const result = await validateGitHubTokenForRepo(token, target, fetcher);
+      const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
 
       expect(result.ok).toBe(false);
       expect(result.canWrite).toBe(false);
       expect(result.error).toContain('Schreibzugriff');
     });
 
-    it('does not accept token format alone as API validation success', async () => {
-      const fetcher = vi.fn(async () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })) as unknown as typeof fetch;
+    it('fails closed when the backend omits or contradicts the write verdict', async () => {
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(JSON.stringify(
+        String(url).endsWith('/scope')
+          ? { ok: true, scope: 'v1.test-scope.signature' }
+          : { ok: true, canWrite: false },
+      ), { status: 200 })) as unknown as typeof fetch;
 
-      const result = await validateGitHubTokenForRepo(token, target, fetcher);
+      const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
+
+      expect(result).toEqual({ ok: false, canWrite: false, error: undefined });
+    });
+
+    it('distinguishes a Sovereign session failure from a rejected GitHub credential', async () => {
+      const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })) as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo(token, target, fetcher, backendBase);
 
       expect(result.ok).toBe(false);
-      expect(result.error).toContain('abgelehnt');
+      expect(result.error).toContain('Sovereign-Session');
+    });
+
+    it('does not perform any network request when token format is invalid', async () => {
+      const fetcher = vi.fn() as unknown as typeof fetch;
+
+      const result = await validateGitHubTokenForRepo('not-a-valid-token-format', target, fetcher, backendBase);
+
+      expect(result.ok).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
     });
   });
 

@@ -28,7 +28,7 @@ from .workspace_policy import (
 )
 
 GitOperationStatus = Literal["done", "blocked", "failed"]
-_GITHUB_EPHEMERAL_TOKEN = re.compile(r"^(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{8,255}$")
+_GITHUB_EPHEMERAL_TOKEN = re.compile(r"^(?:(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{8,255}|[A-Za-z0-9]{40,255})$")
 
 
 @dataclass(frozen=True)

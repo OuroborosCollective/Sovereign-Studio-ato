@@ -171,6 +171,25 @@ function mockFetchSequence(...responses: Array<Response | (() => Response | Prom
       return runtimeSupportResponse(url, init) ?? jsonResponse({ ok: true });
     }
     if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+    if (url.includes('/api/user/agent/github-access/validate')) {
+      const first = queue[0];
+      const second = queue[1];
+      if (first instanceof Response && second instanceof Response) {
+        const firstPayload = await first.clone().json().catch(() => null) as Record<string, unknown> | null;
+        const secondPayload = await second.clone().json().catch(() => null) as { permissions?: { push?: boolean } } | null;
+        if (firstPayload && 'login' in firstPayload && secondPayload?.permissions) {
+          queue.splice(0, 2);
+          const canWrite = secondPayload.permissions.push === true;
+          return jsonResponse({
+            ok: canWrite,
+            canWrite,
+            code: canWrite ? 'ready' : 'write_permission_missing',
+            error: canWrite ? null : 'GitHub-Zugang hat keinen Schreibzugriff.',
+          });
+        }
+      }
+      return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
+    }
     if (url.includes('/api/llm/chat')) {
       const next = queue.shift();
       const userText = lastUserTextFromLiteLlmRequest(init);
@@ -219,6 +238,12 @@ function fakeGitHubPat(): string {
 
 function runtimeSupportResponse(url: string, init?: RequestInit): Response | null {
   if (url.includes('/api/llm/routes')) return liteLlmRouteCatalogResponse();
+  if (url.includes('/api/user/agent/github-access/scope')) {
+    return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
+  }
+  if (url.includes('/api/user/agent/github-access/validate')) {
+    return jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null });
+  }
   if (url.includes('/api/llm/chat')) {
     const userText = lastUserTextFromLiteLlmRequest(init);
     return jsonResponse({
@@ -490,6 +515,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const props = {
       ...baseProps(),
       agentReady: true,
+      agentJob: repoScopedJob({ status: 'completed' }),
       onStartAgent: vi.fn(),
     };
     mockFetchSequence(
@@ -543,7 +569,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("does not duplicate an already analysed mission when Sovereign Agent execution is requested", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -791,15 +817,19 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const inferenceSpy = vi.spyOn(areInferenceApi, 'evaluateAreInference').mockImplementation(
       () => new Promise<AreInferenceResult>((resolve) => { resolveInference = resolve; }),
     );
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.includes('/git/trees/')) {
-        return jsonResponse({ sha: 'tree-sha', tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
+        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: 'src/App.tsx', type: 'blob', size: 42 }] });
       }
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
       if (url === 'https://api.github.com/user') return jsonResponse({ login: 'octo' });
       if (url === 'https://api.github.com/repos/OuroborosCollective/Sovereign-Studio-ato') {
         return jsonResponse({ permissions: { push: true } });
+      }
+      if (url.includes('/api/user/agent/github-access/scope')) {
+        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
       }
       return runtimeSupportResponse(url, init)
         ?? jsonResponse({ choices: [{ message: { content: 'Worker response.' } }] });
@@ -894,7 +924,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("starts the external agent only for explicit code or Draft-PR execution intent", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -956,7 +986,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("resumes one blocked Sovereign Agent request after GitHub access becomes ready", async () => {
     const originalText = "Sovereign Agent soll Feature X implementieren";
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
@@ -984,7 +1014,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
   it("resumes one repo-blocked Agent request through repo load and GitHub validation", async () => {
     const originalText = "Sovereign Agent soll Feature X implementieren";
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ choices: [{ message: { content: 'Ich habe den Ausführungsauftrag verstanden.' } }] }),
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
@@ -1374,7 +1404,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("requests Sovereign Agent job start without claiming a confirmed running job", async () => {
-    const props = { ...baseProps(), agentReady: true, onStartAgent: vi.fn() };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent: vi.fn() };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -1400,7 +1430,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
         resolveStart = resolve;
       }),
     );
-    const props = { ...baseProps(), agentReady: true, onStartAgent };
+    const props = { ...baseProps(), agentReady: true, agentJob: repoScopedJob({ status: 'completed' }), onStartAgent };
     mockFetchSequence(
       jsonResponse({ tree: [{ path: "src/App.tsx", type: "blob", size: 42 }], truncated: false }),
       jsonResponse({ login: "octo" }),
@@ -1439,6 +1469,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     const props = {
       ...baseProps(),
       agentReady: true,
+      agentJob: repoScopedJob({ status: 'completed' }),
       onStartAgent: vi.fn(async () => {
         throw new Error("Backend session missing");
       }),
@@ -1785,7 +1816,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ permissions: { push: true } }),
       jsonResponse({ tree: [{ path: "src/Other.tsx", type: "blob", size: 21 }], truncated: false }),
     );
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
     await loadRepoFromChat();
     await validateGitHubAccessFromLauncher();
 
@@ -1804,21 +1835,24 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
   });
 
   it("discards a GitHub validation result that finishes after the repo scope changed", async () => {
-    let resolveUser: ((response: Response) => void) | null = null;
-    const pendingUser = new Promise<Response>((resolve) => { resolveUser = resolve; });
+    let resolveValidation: ((response: Response) => void) | null = null;
+    const pendingValidation = new Promise<Response>((resolve) => { resolveValidation = resolve; });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (isAuthBootstrapRequest(input)) return authBootstrapResponse();
       const url = requestUrl(input);
-      if (url.endsWith('/user')) return pendingUser;
-      if (url.includes('/git/trees/')) {
-        return jsonResponse({ tree: [{ path: url.includes('Other-Studio') ? 'src/Other.tsx' : 'README.md', type: 'blob', size: 12 }], truncated: false });
+      if (url.includes('/api/user/agent/github-access/scope')) {
+        return jsonResponse({ ok: true, scope: 'v1.test-scope.signature' });
       }
-      if (url.includes('/repos/') && url.includes('/collaborators/')) return jsonResponse({ permissions: { push: true } });
+      if (url.includes('/api/user/agent/github-access/validate')) return pendingValidation;
+      if (url.includes('/git/trees/')) {
+        return jsonResponse({ sha: 'a'.repeat(40), tree: [{ path: url.includes('Other-Studio') ? 'src/Other.tsx' : 'README.md', type: 'blob', size: 12 }], truncated: false });
+      }
+      if (url.includes('/commits/')) return jsonResponse({ sha: 'c'.repeat(40) });
       return jsonResponse({ choices: [{ message: { content: 'unused' } }] });
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
     await loadRepoFromChat();
     fireEvent.click(screen.getByLabelText('Tool Launcher öffnen'));
     fireEvent.click(screen.getByLabelText('GitHub Access'));
@@ -1830,7 +1864,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
 
     await loadRepoUrlFromChat(SECOND_REPO_URL);
-    resolveUser?.(jsonResponse({ login: 'octo' }));
+    resolveValidation?.(jsonResponse({ ok: true, canWrite: true, code: 'ready', error: null }));
 
     await waitFor(() =>
       expect(screen.getByRole('log', { name: 'Sovereign Action Stream' })).toHaveTextContent('GitHub-Zugangsprüfung verworfen'),
@@ -1887,6 +1921,32 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     expect(screen.queryByText("Zugang eingeben")).toBeNull();
   });
 
+  it("uses the configured Sovereign Agent API for the GitHub scope preflight", async () => {
+    const fetchMock = mockFetchSequence(
+      jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
+    );
+    renderWithProviders(
+      <BuilderContainer
+        {...baseProps()}
+        mission=""
+        repoReady={false}
+        agentConfig={{
+          enabled: true,
+          deploymentMode: 'sovereign-agent-backend',
+          agentApiUrl: 'https://agent.example.test',
+          ready: true,
+          reason: 'test agent backend',
+        }}
+      />,
+    );
+    await loadRepoFromChat();
+    await validateGitHubAccessFromLauncher();
+
+    const calls = fetchMock.mock.calls.map(([input]) => requestUrl(input as RequestInfo | URL));
+    expect(calls).toContain('https://agent.example.test/api/user/agent/github-access/scope');
+    expect(calls).toContain('https://agent.example.test/api/user/agent/github-access/validate');
+  });
+
   it("blocks a Draft-PR execution request when no product executor is connected", async () => {
     const fetchMock = mockFetchSequence(
       jsonResponse({ tree: [{ path: "README.md", type: "blob", size: 42 }], truncated: false }),
@@ -1894,7 +1954,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       jsonResponse({ permissions: { push: true } }),
     );
 
-    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} />);
+    renderWithProviders(<BuilderContainer {...baseProps()} mission="" repoReady={false} agentReady={false} agentJob={repoScopedJob({ status: 'completed' })} />);
     fireEvent.change(chatField(), { target: { value: "https://github.com/OuroborosCollective/Sovereign-Studio-ato" } });
     fireEvent.click(sendButton());
     await waitFor(() => expect(screen.getByText(/Repo geladen/)).toBeDefined());

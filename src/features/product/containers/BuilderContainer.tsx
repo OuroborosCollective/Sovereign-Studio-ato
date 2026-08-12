@@ -163,9 +163,10 @@ import {
   buildOfflineCapabilityLanguageEvidence,
 } from "../runtime/sovereignCapabilityRouter";
 import type { CapabilityRouterInput } from "../runtime/sovereignCapabilityRouter";
-import type {
-  SovereignAgentConfig,
-  SovereignAgentJobSnapshot,
+import {
+  resolveSovereignAgentConfig,
+  type SovereignAgentConfig,
+  type SovereignAgentJobSnapshot,
 } from "../runtime/sovereignAgentRuntime";
 import type { SovereignPatternLearningEvidence } from "../runtime/sovereignAgentClient";
 import {
@@ -2758,6 +2759,10 @@ export function BuilderContainer({
   const scopedAgentJob = useMemo(
     () => selectRepoScopedAgentJob(agentJob, chatRepoSnapshot),
     [chatRepoSnapshot, agentJob],
+  );
+  const githubAccessApiBase = useMemo(
+    () => agentConfig?.agentApiUrl || resolveSovereignAgentConfig().agentApiUrl || SOVEREIGN_WORKER_BASE,
+    [agentConfig],
   );
   const scopedAgentIsRunning = Boolean(
     scopedAgentJob
@@ -6546,13 +6551,13 @@ Das echte Repo-Setup wurde geöffnet.`,
                     const validationRepoScopeKey = currentRepoScopeKey;
                     const validationRepoSnapshot = chatRepoSnapshot;
                     if (!validationTargetKey || !validationRepoScopeKey || !validationRepoSnapshot) {
-                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.'));
+                      setGitHubAccessState(failGitHubAccessValidation(formatResult.maskedToken, 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.'));
                       setValidatedGitHubTargetKey(null);
                       githubTokenRef.current = null;
                       appendActionEvent(buildBlockedActionEvent({
                         route: 'github-access',
                         label: 'GitHub-Zugang fehlgeschlagen',
-                        detail: 'Repo-Ziel fehlt für GitHub-Zugangsprüfung.',
+                        detail: 'Revisionsgebundener Repository-Scope fehlt für GitHub-Zugangsprüfung.',
                         kind: 'failed',
                       }));
                       return;
@@ -6571,8 +6576,13 @@ Das echte Repo-Setup wurde geöffnet.`,
 
                     const validation = await validateGitHubTokenForRepo(
                       token,
-                      { owner: validationRepoSnapshot.owner, repo: validationRepoSnapshot.repo },
+                      {
+                        repository: validationRepoSnapshot.repoUrl,
+                        branch: validationRepoSnapshot.branch,
+                        expectedBaseSha: validationRepoSnapshot.headSha,
+                      },
                       globalThis.fetch,
+                      githubAccessApiBase,
                     );
 
                     if (
@@ -6612,7 +6622,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                       kind: 'done',
                       route: 'github-access',
                       label: 'GitHub-Zugang bereit',
-                      detail: 'Schreibzugriff auf das geladene Repo wurde bestätigt.',
+                      detail: 'GitHub-Credential und effektiver Repo-Schreibzugriff wurden serverseitig für das geladene Repo bestätigt.',
                       state: 'done',
                     });
 
