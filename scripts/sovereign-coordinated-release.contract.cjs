@@ -25,6 +25,8 @@ test('coordinated release is the single main-head image truth surface', () => {
   assert.match(workflow, /sovereign-chatgpt-mcp\.yml/);
   assert.doesNotMatch(workflow, /synchronous-revision-control\.yml/);
   assert.match(workflow, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
+  assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+  assert.doesNotMatch(workflow, /actions\/upload-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
 });
 
 test('coordinated release waits for the full producer critical path and accepts exact-head refreshes', () => {
