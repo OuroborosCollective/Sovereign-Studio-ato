@@ -96,7 +96,7 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
         )
         self.assertNotIn('SOVEREIGN_BACKEND_IMAGE_REPOSITORY": "latest"', source)
 
-    def test_control_plane_bootstrap_is_exact_main_path_scoped_hash_bound_and_container_free(self) -> None:
+    def test_control_plane_bootstrap_uses_exact_two_parent_source_lineage(self) -> None:
         workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
         self.assertIn("push:", workflow)
         self.assertIn("branches: [main]", workflow)
@@ -109,7 +109,25 @@ class RuntimeReadbackBootstrapProtocolTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("SOURCE_REVISION_IS_NOT_CURRENT_MAIN", workflow)
-        self.assertIn("KNOWN_PREVIOUS_REVISION: 738c0ac6616b2b2fadfd554706ac678c90e80e7a", workflow)
+        self.assertNotIn("KNOWN_PREVIOUS_REVISION", workflow)
+        self.assertNotIn("738c0ac6616b2b2fadfd554706ac678c90e80e7a", workflow)
+        self.assertIn('PARENT1_REVISION="$(git rev-parse "${EXPECTED_REVISION}^")"', workflow)
+        self.assertIn('PARENT2_REVISION="$(git rev-parse "${EXPECTED_REVISION}^^")"', workflow)
+        self.assertIn('git cat-file -e "$PARENT1_REVISION:$READBACK_SOURCE"', workflow)
+        self.assertIn('git cat-file -e "$PARENT2_REVISION:$READBACK_SOURCE"', workflow)
+        self.assertIn('PARENT1_SHA256="$(git show "$PARENT1_REVISION:$READBACK_SOURCE"', workflow)
+        self.assertIn('PARENT2_SHA256="$(git show "$PARENT2_REVISION:$READBACK_SOURCE"', workflow)
+        self.assertIn('"$EXPECTED_PARENT1_SHA256") MATCHED_LINEAGE=parent1', workflow)
+        self.assertIn('"$EXPECTED_PARENT2_SHA256") MATCHED_LINEAGE=parent2', workflow)
+        self.assertIn("'allowedPredecessorDepth': 2", workflow)
+        self.assertIn("receipt.get('allowedPredecessorDepth') == 2", workflow)
+        self.assertNotIn("git log", workflow)
+        self.assertNotIn("git rev-list", workflow)
+        self.assertNotIn("for revision in", workflow)
+        self.assertNotIn("while read", workflow)
+
+    def test_control_plane_bootstrap_remains_container_free_and_hex_receipted(self) -> None:
+        workflow = BOOTSTRAP_WORKFLOW.read_text("utf-8")
         self.assertIn("UNEXPECTED_READBACK_ENTRYPOINT_HASH", workflow)
         self.assertIn("/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback", workflow)
         self.assertIn("containersChanged': False", workflow)
