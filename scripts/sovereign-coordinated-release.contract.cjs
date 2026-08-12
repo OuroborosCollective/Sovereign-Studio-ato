@@ -48,6 +48,11 @@ test('coordinated release waits for the full producer critical path and accepts 
   assert.match(workflow, /Build immutable backend image/);
   assert.match(workflow, /Boundary ledger drift preflight/);
   assert.match(workflow, /Validate MCP operator/);
+  const publisherMissing = workflow.indexOf('if (!publisher) {');
+  const producerWait = workflow.indexOf("if (run.status !== 'completed')", publisherMissing);
+  const missingFailure = workflow.indexOf('EXACT_REVISION_PUBLISHER_JOB_MISSING', publisherMissing);
+  assert.ok(publisherMissing >= 0 && producerWait > publisherMissing && missingFailure > producerWait);
+  assert.match(workflow, /Downstream publisher jobs are absent until their producer prerequisite completes/);
 });
 
 test('backend producer exposes an explicit publish-only evidence job', () => {
