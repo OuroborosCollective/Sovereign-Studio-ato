@@ -34,7 +34,7 @@ def receipt(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def persisted_repair_receipt_sequence() -> tuple[dict[str, object], dict[str, object]]:
+def persisted_repair_receipt_sequence(final_tool_name: str = "test") -> tuple[dict[str, object], dict[str, object]]:
     """Canonical append-only write→PASS-test-readback sequence from the live tool flow."""
     mutation = build_agent_run_receipt(
         sequence=0,
@@ -65,7 +65,7 @@ def persisted_repair_receipt_sequence() -> tuple[dict[str, object], dict[str, ob
         mcp_image_digest="sha256:" + "c" * 64,
         mcp_revision_verified=True,
         agent_run_id="run-rescue-proof-pack",
-        tool_name="test",
+        tool_name=final_tool_name,
         call_id="call-rescue-test",
         operation_identity="agent-repository-tool:free_single_agent:test",
         input_sha256="6" * 64,
@@ -242,6 +242,81 @@ def test_proof_pack_is_incomplete_until_exact_head_ci_is_green() -> None:
     assert complete["mutationEvidence"]["causalReceiptReadback"]["causallyBound"] is True
     assert complete["mutationEvidence"]["capabilityDelta"]["entries"][0]["status"] == "REPLACED_WITH_VERIFIED_EQUIVALENT"
     assert verify_proof_pack(complete) is True
+
+
+def test_proof_pack_rejects_a_non_test_pass_receipt_after_mutation() -> None:
+    mutation, non_test_readback = persisted_repair_receipt_sequence(final_tool_name="git_diff")
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "stale test summary must not satisfy a later diff receipt",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, non_test_readback),
+    )
+
+    assert pack["ready"] is False
+    assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
+
+
+def test_proof_pack_requires_a_passing_test_after_the_last_mutation() -> None:
+    mutation, passing_test = persisted_repair_receipt_sequence()
+    later_mutation = build_agent_run_receipt(
+        sequence=2,
+        repository="https://github.com/acme/app",
+        base_commit_sha=BASE_SHA,
+        mcp_revision=BASE_SHA,
+        mcp_image_digest="sha256:" + "c" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-rescue-proof-pack",
+        tool_name="write_file",
+        call_id="call-rescue-later-write",
+        operation_identity="agent-repository-tool:free_single_agent:write_file",
+        input_sha256="9" * 64,
+        output_sha256="a" * 64,
+        diff_sha256="b" * 64,
+        test_evidence_sha256="c" * 64,
+        evidence_gate_result="BLOCKED",
+        mutation_performed=True,
+        observed_effect="workspace-write",
+        authoritative_readback_sha256="d" * 64,
+        previous_receipt_sha256=str(passing_test["header"]["hash"]),
+    )
+    repair = {
+        "repair_id": "r" * 36,
+        "repository": "https://github.com/acme/app",
+        "failure_family": "github_actions_ci",
+        "base_sha": BASE_SHA,
+        "published_head_sha": HEAD_SHA,
+        "outcome_contract_sha256": "0" * 64,
+        "entitlement_source": "verified_purchase",
+    }
+    job = {
+        "changed_files": [".github/workflows/ci.yml"],
+        "test_summary": "the earlier test passed but the terminal write remains untested",
+        "draft_pr_url": "https://github.com/acme/app/pull/7",
+    }
+    pack = build_proof_pack(
+        repair=repair,
+        job=job,
+        pr_evidence={"url": job["draft_pr_url"], "headSha": HEAD_SHA, "ciHeadShaMatch": True, "ciGreen": True},
+        agent_receipts=(mutation, passing_test, later_mutation),
+    )
+
+    assert pack["ready"] is False
+    assert "terminal_mutation_passing_test_receipt_missing" in pack["blockers"]
 
 
 def test_proof_pack_fails_closed_when_secret_material_was_redacted() -> None:

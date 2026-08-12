@@ -910,28 +910,44 @@ def build_proof_pack(
                 body = candidate.get("body") if isinstance(candidate, Mapping) else None
                 if isinstance(body, Mapping):
                     parsed_receipts.append((candidate, body))
-            for index, (candidate, body) in enumerate(parsed_receipts):
-                if str(body.get("evidence_gate_result") or "").upper() != "PASS":
-                    continue
-                passed_diff_sha = sha256_or_zero(body.get("diff_sha256"))
-                passed_readback_sha = sha256_or_zero(body.get("authoritative_readback_sha256"))
-                if passed_diff_sha == "0" * 64 or passed_readback_sha == "0" * 64:
-                    continue
-                for prior_candidate, prior_body in reversed(parsed_receipts[:index]):
-                    if (
-                        prior_body.get("mutation_performed") is True
-                        and str(prior_body.get("observed_effect") or "") in {"workspace-write", "external-write"}
-                        and sha256_or_zero(prior_body.get("diff_sha256")) == passed_diff_sha
-                    ):
-                        mutation_receipt = prior_candidate
-                        mutation_body = prior_body
-                        final_readback_receipt = candidate
-                        final_readback_body = body
-                        break
-                if mutation_receipt is not None:
-                    break
-            if mutation_receipt is None:
+            mutation_indices = [
+                index for index, (_, body) in enumerate(parsed_receipts)
+                if (
+                    body.get("mutation_performed") is True
+                    and str(body.get("observed_effect") or "") in {"workspace-write", "external-write"}
+                )
+            ]
+            if not mutation_indices:
                 blockers.append("causal_mutation_and_final_pass_readback_missing")
+            else:
+                terminal_mutation_index = mutation_indices[-1]
+                candidate, body = parsed_receipts[terminal_mutation_index]
+                terminal_diff_sha = sha256_or_zero(body.get("diff_sha256"))
+                if terminal_diff_sha == "0" * 64:
+                    blockers.append("terminal_mutation_diff_missing")
+                else:
+                    for test_candidate, test_body in parsed_receipts[terminal_mutation_index + 1:]:
+                        if str(test_body.get("tool_name") or "").strip().lower() not in {"test", "run_tests"}:
+                            continue
+                        if str(test_body.get("evidence_gate_result") or "").upper() != "PASS":
+                            continue
+                        if test_body.get("mutation_performed") is True:
+                            continue
+                        if str(test_body.get("observed_effect") or "") != "read":
+                            continue
+                        if sha256_or_zero(test_body.get("diff_sha256")) != terminal_diff_sha:
+                            continue
+                        if sha256_or_zero(test_body.get("test_evidence_sha256")) == "0" * 64:
+                            continue
+                        if sha256_or_zero(test_body.get("authoritative_readback_sha256")) == "0" * 64:
+                            continue
+                        mutation_receipt = candidate
+                        mutation_body = body
+                        final_readback_receipt = test_candidate
+                        final_readback_body = test_body
+                        break
+                    if final_readback_receipt is None:
+                        blockers.append("terminal_mutation_passing_test_receipt_missing")
 
     if final_readback_receipt is None:
         envelope = build_mutation_proof_envelope(
