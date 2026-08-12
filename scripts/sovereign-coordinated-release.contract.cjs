@@ -97,7 +97,8 @@ test('independent target runtime receipt is manifest-bound, short-lived, host-pi
   assert.match(workflow, /deployments: write/);
   assert.match(workflow, /manifestEvidenceSha256/);
   assert.match(workflow, /releaseGateRunId/);
-  assert.match(workflow, /\"\$GITHUB_RUN_ID\"/);
+  assert.match(workflow, /"\$GITHUB_RUN_ID"/);
+  assert.match(workflow, /name: sovereign-independent-runtime-receipt-\$\{\{ env\.EXPECTED_REVISION \}\}[\s\S]*include-hidden-files: true/);
   assert.doesNotMatch(workflow, /SOVEREIGN_RELEASE_GITHUB_TOKEN_FILE: \$\{\{ secrets\./);
   assert.doesNotMatch(workflow, /GITHUB_APP_INSTALLATION_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 });

@@ -181,7 +181,7 @@ def _main_revision() -> str:
     return revision
 
 
-def _release_gate(revision: str) -> dict[str, Any]:
+def _release_gate(revision: str, *, expected_runtime_readback_run_id: int | None = None) -> dict[str, Any]:
     workflow = urllib.parse.quote(WORKFLOW, safe="")
     payload = _github_json(
         f"/repos/{REPOSITORY}/actions/workflows/{workflow}/runs"
@@ -208,6 +208,13 @@ def _release_gate(revision: str) -> dict[str, Any]:
         "headSha": str(run.get("head_sha") or "").lower(),
     }
     if run_status != "completed":
+        if expected_runtime_readback_run_id is not None and evidence["runId"] == expected_runtime_readback_run_id:
+            return {
+                "ready": True,
+                "status": "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE",
+                "selfRuntimeReadback": True,
+                **evidence,
+            }
         return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **evidence}
     if conclusion != "success":
         return {"ready": False, "status": "RELEASE_GATE_FAILED", **evidence}
@@ -534,7 +541,10 @@ def reconcile() -> dict[str, Any]:
 
     scope = _expected_scope()
     revision = _main_revision()
-    gate = _release_gate(revision)
+    gate = _release_gate(
+        revision,
+        expected_runtime_readback_run_id=scope["releaseGateRunId"],
+    )
     if not gate.get("ready"):
         return _write_status(
             str(gate.get("status") or "WAITING_FOR_RELEASE_GATE"),
