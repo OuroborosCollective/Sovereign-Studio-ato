@@ -21,6 +21,7 @@ import {
   hashValue,
   isRedactedSecret,
   schemaHashFromFields,
+  bindConfigFingerprint,
   type ConfigSourceContract,
   type ResolveOptions,
 } from './index';
@@ -453,3 +454,64 @@ describe('cross-language hash parity (TS vs Python)', () => {
     expect(await hashValue(parityInput)).toBe(expected);
   });
 });
+
+
+/**
+ * RunEnvelope binding safety (negative tests) — issue #1169 criterion #7.
+ *
+ * The `ConfigFingerprintBinding` is the redacted projection that actually
+ * crosses into the RunEnvelope and is read back by PatchMon. Unlike the
+ * resolved projection (already asserted secret-free), the *binding* must
+ * carry zero raw secret material: only hashes and derived identities. It must
+ * also be environment-distinct, so a binding resolved from env-A's config can
+ * never be silently reused to attest env-B's runtime.
+ */
+describe('configBinding - secret-free RunEnvelope fingerprint (negative tests)', () => {
+  it('raw secret material never appears in the bound fingerprint', async () => {
+    const SECRET = 'super-secret-value-do-not-leak';
+    const redactedId = await sha256(SECRET);
+    const sources: ConfigSourceContract[] = [
+      src({
+        id: 'env',
+        kind: 'environment-projection',
+        values: { apiKey: { kind: 'secret', redactedId }, public: 'visible' },
+      }),
+    ];
+    const res = await resolveConfigSources(sources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const binding = await bindConfigFingerprint(receipt);
+
+    const serialized = JSON.stringify(binding);
+    expect(serialized).not.toContain(SECRET);
+    expect(binding.fingerprintHash).toMatch(/^[0-9a-f]{64}$/);
+    // The binding exposes only derived hashes, never the resolved secret shape.
+    expect(serialized).not.toContain('redactedId');
+  });
+
+  it('identical resolved config yields a byte-identical fingerprint hash', async () => {
+    const sources: ConfigSourceContract[] = [
+      src({ id: 'defaults', kind: 'compiled-defaults', values: { a: 1 } }),
+    ];
+    const res = await resolveConfigSources(sources);
+    const r1 = await materializeReceipt(res, { revision: 'rev-1' });
+    const r2 = await materializeReceipt(res, { revision: 'rev-1' });
+    const b1 = await bindConfigFingerprint(r1);
+    const b2 = await bindConfigFingerprint(r2);
+    expect(b1.fingerprintHash).toBe(b2.fingerprintHash);
+  });
+
+  it('a binding resolved from env-A cannot silently attest env-B (cross-environment distinctness)', async () => {
+    const envA = await resolveConfigSources([
+      src({ id: 'defaults', kind: 'compiled-defaults', values: { region: 'eu' } }),
+    ]);
+    const envB = await resolveConfigSources([
+      src({ id: 'defaults', kind: 'compiled-defaults', values: { region: 'us' } }),
+    ]);
+    expect(envA.resolvedHash).not.toBe(envB.resolvedHash);
+    const bA = await bindConfigFingerprint(await materializeReceipt(envA, { revision: 'rev-1' }));
+    const bB = await bindConfigFingerprint(await materializeReceipt(envB, { revision: 'rev-1' }));
+    expect(bA.fingerprintHash).not.toBe(bB.fingerprintHash);
+    expect(bA.resolvedHash).not.toBe(bB.resolvedHash);
+  });
+});
+
