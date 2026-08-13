@@ -136,3 +136,95 @@ def test_run_preparation_identity_is_bound_to_verified_config_fingerprint():
     assert prepared.input_sha256 == bound.bound_sha256
     assert prepared.events[0].payload["inputSha256"] == bound.bound_sha256
     assert prepared.events[0].payload["configFingerprintHash"] == binding.fingerprint_hash
+
+
+def _matching_observation(binding):
+    return ConfigReadbackObservation(
+        revision=binding.revision,
+        image_digest=binding.image_digest,
+        schema_hash=binding.schema_hash,
+        resolved_hash=binding.resolved_hash,
+        receipt_hash=binding.receipt_hash,
+    )
+
+
+def test_runenvelope_readback_accepts_matching_patchmon_observation():
+    """#1169 DoD: RunEnvelope and PatchMon read back the same redacted fingerprint."""
+    binding = bind_config_fingerprint(_receipt())
+    envelope = RuntimeInputEnvelope.with_config_binding(
+        parts=(RuntimeInputPart(kind="text", text="hello"),),
+        config_binding=binding,
+    )
+    audit = envelope.compare_patchmon_readback(_matching_observation(binding))
+    assert audit.accepted is True
+    assert audit.blocker is None
+
+
+def test_runenvelope_readback_blocks_when_receipt_hash_missing():
+    binding = bind_config_fingerprint(_receipt())
+    envelope = RuntimeInputEnvelope.with_config_binding(
+        parts=(RuntimeInputPart(kind="text", text="hello"),),
+        config_binding=binding,
+    )
+    missing = dataclasses.replace(_matching_observation(binding), receipt_hash=None)
+    audit = envelope.compare_patchmon_readback(missing)
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_missing_bound_field"
+
+
+def test_runenvelope_readback_contradicts_wrong_receipt_hash():
+    binding = bind_config_fingerprint(_receipt())
+    envelope = RuntimeInputEnvelope.with_config_binding(
+        parts=(RuntimeInputPart(kind="text", text="hello"),),
+        config_binding=binding,
+    )
+    wrong = dataclasses.replace(_matching_observation(binding), receipt_hash="0" * 64)
+    audit = envelope.compare_patchmon_readback(wrong)
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_runenvelope_readback_contradicts_wrong_resolved_hash():
+    binding = bind_config_fingerprint(_receipt())
+    envelope = RuntimeInputEnvelope.with_config_binding(
+        parts=(RuntimeInputPart(kind="text", text="hello"),),
+        config_binding=binding,
+    )
+    wrong = dataclasses.replace(_matching_observation(binding), resolved_hash="0" * 64)
+    audit = envelope.compare_patchmon_readback(wrong)
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_contradicts_receipt"
+    assert audit.contradicted is True
+
+
+def test_runenvelope_readback_blocks_when_no_binding_bound():
+    """No bound truth -> readback is incomplete, never silently accepted."""
+    plain = RuntimeInputEnvelope(parts=(RuntimeInputPart(kind="text", text="hello"),))
+    audit = plain.compare_patchmon_readback(
+        ConfigReadbackObservation(
+            revision=None,
+            image_digest=None,
+            schema_hash=None,
+            resolved_hash=None,
+            receipt_hash=None,
+        )
+    )
+    assert audit.accepted is False
+    assert audit.blocker == "config_readback_missing_bound_field"
+
+
+def test_runenvelope_readback_matches_receipt_side_reason_codes():
+    """The envelope-side audit reuses the receipt-side reason codes (#1169 parity)."""
+    binding = bind_config_fingerprint(_receipt())
+    envelope = RuntimeInputEnvelope.with_config_binding(
+        parts=(RuntimeInputPart(kind="text", text="hello"),),
+        config_binding=binding,
+    )
+    wrong = dataclasses.replace(_matching_observation(binding), receipt_hash="0" * 64)
+    envelope_audit = envelope.compare_patchmon_readback(wrong)
+    receipt_audit = verify_config_readback(_receipt(), wrong)
+    assert envelope_audit.blocker == receipt_audit.blocker
+    assert envelope_audit.accepted == receipt_audit.accepted
+    assert envelope_audit.contradicted == receipt_audit.contradicted
+

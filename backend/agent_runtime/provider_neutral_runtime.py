@@ -20,6 +20,7 @@ import re
 from types import MappingProxyType
 from typing import Any, Callable, Literal, Mapping, Sequence
 
+from .configuration.receipt import ConfigReadbackAudit, ConfigReadbackObservation
 from .configuration.runtime_binding import ConfigFingerprintBinding
 from .contracts import sanitize_agent_text
 
@@ -367,9 +368,60 @@ class RuntimeInputEnvelope:
 
         ``None`` when no config provenance is bound. When present, PatchMon
         must read back this same fingerprint from the running container or
-        the run is contradicted/blocked (see ``compare_patchmon_readback``).
+        the run is contradicted/blocked (see :meth:`compare_patchmon_readback`).
         """
         return self.config_binding.fingerprint_hash if self.config_binding else None
+
+    def compare_patchmon_readback(
+        self,
+        observation: ConfigReadbackObservation,
+    ) -> ConfigReadbackAudit:
+        """Fail-closed PatchMon readback check at the RunEnvelope seam (#1169 DoD).
+
+        This is the live enforcement point referenced by
+        :attr:`config_fingerprint`: the run only advances while a PatchMon
+        readback of the actually-loaded container configuration agrees with the
+        redacted config fingerprint bound into this envelope.
+
+        The envelope's ``__post_init__`` already guarantees any bound binding
+        is verified, ``RESOLVED`` and drift-free, so this method only has to
+        compare the bound identity fields against the independent PatchMon
+        observation. It reuses the exact reason codes of
+        :func:`verify_config_readback`
+        (``config_readback_missing_bound_field`` /
+        ``config_readback_contradicts_receipt``) so the RunEnvelope-side and
+        receipt-side audits make byte-identical fail-closed decisions and the
+        cross-language parity golden vector stays meaningful.
+
+        With no binding bound (``config_fingerprint is None``) there is no
+        bound truth to read back against, so the readback is treated as
+        incomplete rather than silently accepted.
+        """
+        if self.config_binding is None:
+            return ConfigReadbackAudit(False, "config_readback_missing_bound_field")
+        binding = self.config_binding
+        pairs = (
+            ("revision", binding.revision, observation.revision),
+            ("imageDigest", binding.image_digest, observation.image_digest),
+            ("schemaHash", binding.schema_hash, observation.schema_hash),
+            ("resolvedHash", binding.resolved_hash, observation.resolved_hash),
+        )
+        for _field, expected, actual in pairs:
+            expected_norm = str(expected or "").strip().lower()
+            actual_norm = str(actual or "").strip().lower()
+            if not expected_norm:
+                continue  # binding does not bind this field; nothing to confirm
+            if not actual_norm:
+                return ConfigReadbackAudit(False, "config_readback_missing_bound_field")
+            if actual_norm != expected_norm:
+                return ConfigReadbackAudit(False, "config_readback_contradicts_receipt")
+        reported_hash = str(observation.receipt_hash or "").strip().lower()
+        if reported_hash:
+            if reported_hash != str(binding.receipt_hash or "").strip().lower():
+                return ConfigReadbackAudit(False, "config_readback_contradicts_receipt")
+        else:
+            return ConfigReadbackAudit(False, "config_readback_missing_bound_field")
+        return ConfigReadbackAudit(True, None)
 
     @property
     def bound_sha256(self) -> str:
