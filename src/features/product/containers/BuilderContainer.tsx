@@ -1099,7 +1099,8 @@ function Bubble({
     [],
   );
 
-  if (msg.role === "system")
+  if (msg.role === "system") {
+    const isRestore = msg.id === "system:restore-age";
     return (
       <div style={{ padding: "4px 16px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
         <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
@@ -1110,15 +1111,16 @@ function Bubble({
             fontSize: 10,
             padding: "3px 12px",
             borderRadius: 20,
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            color: C.textMuted,
+            background: isRestore ? `${C.green}18` : C.surface,
+            border: `1px solid ${isRestore ? `${C.green}44` : C.border}`,
+            color: isRestore ? C.green : C.textMuted,
           }}
         >
-          {msg.text}
+          {isRestore ? `↻ ${msg.text}` : msg.text}
         </span>
       </div>
     );
+  }
   if (msg.role === "thought") return <ThoughtBubble text={msg.text} />;
 
   // ── Issue #429: Long-press for copy/follow-up using runtime helpers
