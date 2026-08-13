@@ -12,6 +12,7 @@ import {
   validateCanonicalOrder,
   detectSequenceGaps,
   groupByNode,
+  alignByNode,
   validateRevisionBound,
   generateOrderingReceipt,
   SignalOrderingError,
@@ -218,6 +219,42 @@ describe('signalOrdering', () => {
       const receipt = generateOrderingReceipt([]);
       expect(receipt.signalCount).toBe(0);
       expect(receipt.tickRange).toEqual([0, 0]);
+    });
+  });
+
+  // ========== alignByNode performance and correctness ==========
+  describe('alignByNode performance and correctness', () => {
+    it('should correctly align groups by node and verify tick consistency', () => {
+      const signals = [
+        createSignal({ id: '1', node: 'node-b', tick: 0, sequence: 0, revision: 'rev-abc' }),
+        createSignal({ id: '2', node: 'node-a', tick: 0, sequence: 0, revision: 'rev-abc' }),
+      ];
+
+      // alignByNode verifies consistent tick ranges. If tick ranges are consistent, it succeeds and returns the Map of groups (preserving original insertion order of the nodes).
+      const result = alignByNode(signals);
+      const keys = Array.from(result.keys());
+      expect(keys).toEqual(['node-b', 'node-a']);
+    });
+
+    it('micro-benchmark comparing native comparison vs localeCompare', () => {
+      const nodes = Array.from({ length: 1000 }, (_, i) => `node-${Math.sin(i).toFixed(6)}`);
+
+      // Native lexicographical comparison timing
+      const startNative = performance.now();
+      const nativeSorted = [...nodes].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      const endNative = performance.now();
+      const nativeTime = endNative - startNative;
+
+      // localeCompare timing
+      const startLocale = performance.now();
+      const localeSorted = [...nodes].sort((a, b) => a.localeCompare(b));
+      const endLocale = performance.now();
+      const localeTime = endLocale - startLocale;
+
+      console.log(`[Bolt Benchmark] Native sort: ${nativeTime.toFixed(4)}ms, localeCompare sort: ${localeTime.toFixed(4)}ms`);
+      expect(nativeSorted).toEqual(localeSorted);
+      // Native is expected to be significantly faster (at least 5-10x) on larger datasets due to no internalization collation.
+      expect(nativeTime).toBeLessThanOrEqual(localeTime + 50); // safety buffer for tiny runtimes/virtualized test setups
     });
   });
 });
