@@ -62,10 +62,12 @@ export type { ConfigReceipt, ReceiptOptions } from './configReceipt';
 export {
   advanceDecision,
   bindConfigFingerprint,
+  bindingLiveness,
   materializeAndBind,
 } from './runtimeBinding';
 
 export type {
   AdvanceDecision,
+  BindingLivenessDecision,
   ConfigFingerprintBinding,
 } from './runtimeBinding';

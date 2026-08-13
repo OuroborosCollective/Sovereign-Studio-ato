@@ -64,6 +64,21 @@ class AdvanceDecision:
     drift_kind: Optional[str]
 
 
+@dataclass(frozen=True)
+class BindingLivenessDecision:
+    """Verdict on whether a previously-bound binding remains valid.
+
+    Drift, status downgrade, errors or an identity mismatch mean the binding
+    no longer reflects live runtime configuration and must be treated as
+    invalidated (#1169 criterion #5).
+    """
+
+    valid: bool
+    reason: str
+    status: str
+    drift_kind: Optional[str]
+
+
 def _binding_body(receipt: ConfigReceipt) -> dict[str, Any]:
     return {
         "version": _FINGERPRINT_VERSION,
@@ -197,6 +212,90 @@ def advance_decision(
     )
 
 
+def binding_liveness(
+    binding: ConfigFingerprintBinding,
+    contract: ConfigResolutionContract,
+) -> BindingLivenessDecision:
+    """Fail-closed liveness gate for a previously-bound run/permission binding.
+
+    A binding created from an earlier resolution remains valid only while the
+    live contract is still ``RESOLVED`` with no drift, no errors, and the same
+    resolved/schema identity the binding was minted from. Any drift, status
+    downgrade, error, or identity mismatch invalidates the binding so the stale
+    run/permission grant is no longer authoritative (#1169 criterion #5).
+
+    The verdict mirrors ``advance_decision`` for the drift/status/error cases
+    so a binding can never stay valid for a contract that would not be allowed
+    to advance in the first place.
+    """
+    drift_kind = contract.drift.kind if contract.drift else None
+
+    if contract.status == "CONTRADICTED":
+        return BindingLivenessDecision(
+            valid=False,
+            reason=f"BINDING_CONTRADICTED:{drift_kind or 'content-drift'}",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+    if contract.status == "BLOCKED":
+        return BindingLivenessDecision(
+            valid=False,
+            reason=f"BINDING_BLOCKED:{drift_kind or 'resolution-error'}",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+    if contract.status == "DEGRADED":
+        return BindingLivenessDecision(
+            valid=False,
+            reason=f"BINDING_DEGRADED:{drift_kind or 'degraded'}",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+    if contract.errors:
+        return BindingLivenessDecision(
+            valid=False,
+            reason=f"BINDING_ERRORS:{len(contract.errors)}",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+    if contract.drift is not None:
+        return BindingLivenessDecision(
+            valid=False,
+            reason=f"BINDING_DRIFT:{drift_kind or 'unknown'}",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+    if contract.status != "RESOLVED":
+        return BindingLivenessDecision(
+            valid=False,
+            reason=f"BINDING_NOT_RESOLVED:{contract.status}",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+
+    if binding.resolved_hash != contract.resolved_hash:
+        return BindingLivenessDecision(
+            valid=False,
+            reason="BINDING_RESOLVED_HASH_MISMATCH",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+    if binding.schema_hash != contract.schema_hash:
+        return BindingLivenessDecision(
+            valid=False,
+            reason="BINDING_SCHEMA_HASH_MISMATCH",
+            status=contract.status,
+            drift_kind=drift_kind,
+        )
+
+    return BindingLivenessDecision(
+        valid=True,
+        reason="RESOLVED",
+        status=contract.status,
+        drift_kind=None,
+    )
+
+
 def materialize_and_bind(
     contract: ConfigResolutionContract,
     options: Any = None,
@@ -210,7 +309,9 @@ def materialize_and_bind(
 __all__ = [
     "ConfigFingerprintBinding",
     "AdvanceDecision",
+    "BindingLivenessDecision",
     "bind_config_fingerprint",
     "advance_decision",
+    "binding_liveness",
     "materialize_and_bind",
 ]

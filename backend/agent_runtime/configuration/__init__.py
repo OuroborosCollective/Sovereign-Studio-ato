@@ -52,15 +52,18 @@ from .receipt import (
 )
 from .runtime_binding import (
     AdvanceDecision,
+    BindingLivenessDecision,
     ConfigFingerprintBinding,
     advance_decision,
     bind_config_fingerprint,
+    binding_liveness,
     materialize_and_bind,
 )
 
 __all__ = [
     "ALLOWED_SOURCE_KINDS",
     "AdvanceDecision",
+    "BindingLivenessDecision",
     "ConfigDriftRecord",
     "ConfigFingerprintBinding",
     "ConfigReadbackAudit",
@@ -83,6 +86,7 @@ __all__ = [
     "SourceHashRecord",
     "advance_decision",
     "bind_config_fingerprint",
+    "binding_liveness",
     "canonical_json",
     "canonical_source_order",
     "compute_receipt_hash",

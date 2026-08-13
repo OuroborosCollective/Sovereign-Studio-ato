@@ -54,6 +54,19 @@ export interface AdvanceDecision {
   readonly driftKind: string | null;
 }
 
+/**
+ * Verdict on whether a previously-bound run/permission binding remains valid
+ * against the current resolution contract. Drift, status downgrade, errors or
+ * an identity mismatch mean the binding no longer reflects live runtime
+ * configuration and must be treated as invalidated (#1169 criterion #5).
+ */
+export interface BindingLivenessDecision {
+  readonly valid: boolean;
+  readonly reason: string;
+  readonly status: ConfigResolutionContract['status'];
+  readonly driftKind: string | null;
+}
+
 interface BindingBody {
   readonly version: string;
   readonly status: ConfigResolutionContract['status'];
@@ -150,6 +163,54 @@ export async function advanceDecision(
   }
 
   return { safe: true, reason: 'RESOLVED', status: contract.status, driftKind: null };
+}
+
+/**
+ * Fail-closed liveness gate for a previously-bound run/permission binding.
+ *
+ * A binding created from an earlier resolution remains valid only while the
+ * live contract is still `RESOLVED` with no drift, no errors, and the same
+ * resolved/schema identity the binding was minted from. Any drift, status
+ * downgrade, error, or identity mismatch invalidates the binding so the stale
+ * run/permission grant is no longer authoritative (#1169 criterion #5).
+ *
+ * The verdict mirrors `advanceDecision` for the drift/status/error cases so a
+ * binding can never stay valid for a contract that would not be allowed to
+ * advance in the first place.
+ */
+export async function bindingLiveness(
+  binding: ConfigFingerprintBinding,
+  contract: ConfigResolutionContract,
+): Promise<BindingLivenessDecision> {
+  const driftKind = contract.drift?.kind ?? null;
+
+  if (contract.status === 'CONTRADICTED') {
+    return { valid: false, reason: `BINDING_CONTRADICTED:${driftKind ?? 'content-drift'}`, status: contract.status, driftKind };
+  }
+  if (contract.status === 'BLOCKED') {
+    return { valid: false, reason: `BINDING_BLOCKED:${driftKind ?? 'resolution-error'}`, status: contract.status, driftKind };
+  }
+  if (contract.status === 'DEGRADED') {
+    return { valid: false, reason: `BINDING_DEGRADED:${driftKind ?? 'degraded'}`, status: contract.status, driftKind };
+  }
+  if (contract.errors.length > 0) {
+    return { valid: false, reason: `BINDING_ERRORS:${contract.errors.length}`, status: contract.status, driftKind };
+  }
+  if (contract.drift !== null) {
+    return { valid: false, reason: `BINDING_DRIFT:${driftKind ?? 'unknown'}`, status: contract.status, driftKind };
+  }
+  if (contract.status !== 'RESOLVED') {
+    return { valid: false, reason: `BINDING_NOT_RESOLVED:${contract.status}`, status: contract.status, driftKind };
+  }
+
+  if (binding.resolvedHash !== contract.resolvedHash) {
+    return { valid: false, reason: 'BINDING_RESOLVED_HASH_MISMATCH', status: contract.status, driftKind };
+  }
+  if (binding.schemaHash !== contract.schemaHash) {
+    return { valid: false, reason: 'BINDING_SCHEMA_HASH_MISMATCH', status: contract.status, driftKind };
+  }
+
+  return { valid: true, reason: 'RESOLVED', status: contract.status, driftKind: null };
 }
 
 /**

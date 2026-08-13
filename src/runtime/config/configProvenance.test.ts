@@ -21,7 +21,13 @@ import {
   hashValue,
   isRedactedSecret,
   schemaHashFromFields,
+  advanceDecision,
+  bindConfigFingerprint,
+  bindingLiveness,
+  materializeAndBind,
   type ConfigSourceContract,
+  type ConfigResolutionContract,
+  type ConfigFingerprintBinding,
   type ResolveOptions,
 } from './index';
 
@@ -451,5 +457,76 @@ describe('cross-language hash parity (TS vs Python)', () => {
     // sha256 of the canonical JSON above, hex lowercase.
     const expected = '490e12734026df474ee4de8ce1d5d891cf1e702b14f038ca4174ddd64ed6731c';
     expect(await hashValue(parityInput)).toBe(expected);
+  });
+});
+
+// #1169 criterion #5: config drift invalidates previously-bound run/permission
+// bindings. A binding minted from an earlier RESOLVED contract must become
+// invalid when the live contract drifts, degrades, errors, or resolves to a
+// different identity. The verdict mirrors advanceDecision for the drift/status
+// cases so a binding can never stay valid for a contract that would not
+// advance.
+describe('bindingLiveness - drift invalidates existing bindings (#1169 #5)', () => {
+  async function baselineBinding(): Promise<{ contract: ConfigResolutionContract; binding: ConfigFingerprintBinding }> {
+    const contract = await resolveConfigSources(baseSources);
+    const { binding } = await materializeAndBind(contract);
+    return { contract, binding };
+  }
+
+  it('valid binding stays valid against an unchanged RESOLVED contract', async () => {
+    const { binding } = await baselineBinding();
+    const live = await resolveConfigSources(baseSources);
+    const verdict = await bindingLiveness(binding, live);
+    expect(verdict.valid).toBe(true);
+    expect(verdict.reason).toBe('RESOLVED');
+    expect(verdict.status).toBe('RESOLVED');
+  });
+
+  it('content drift invalidates the binding (mirrors advanceDecision)', async () => {
+    const { binding } = await baselineBinding();
+    const drifted = await resolveConfigSources(baseSources, { expectedReceiptHash: 'deadbeef' });
+    expect(drifted.status).toBe('CONTRADICTED');
+    const verdict = await bindingLiveness(binding, drifted);
+    expect(verdict.valid).toBe(false);
+    expect(verdict.reason).toContain('BINDING_CONTRADICTED:content-drift');
+    expect(verdict.driftKind).toBe('content-drift');
+  });
+
+  it('schema disagreement invalidates the binding as BLOCKED', async () => {
+    const { binding } = await baselineBinding();
+    const blocked = await resolveConfigSources([
+      src({ id: 'a', kind: 'compiled-defaults', values: { a: 1 }, schemaHash: 'sch-1' }),
+      src({ id: 'b', kind: 'deployment-config', values: { b: 2 }, schemaHash: 'sch-2' }),
+    ]);
+    expect(blocked.status).toBe('BLOCKED');
+    const verdict = await bindingLiveness(binding, blocked);
+    expect(verdict.valid).toBe(false);
+    expect(verdict.reason).toContain('BINDING_BLOCKED:schema-drift');
+  });
+
+  it('a binding minted from a different resolved identity is invalidated by hash mismatch', async () => {
+    const { binding } = await baselineBinding();
+    const other = await resolveConfigSources([
+      src({ id: 'defaults', kind: 'compiled-defaults', values: { a: 1, b: { x: 1 }, arr: [1, 2] } }),
+      src({ id: 'deploy', kind: 'deployment-config', values: { b: { y: 999 }, c: 3 } }),
+    ]);
+    expect(other.status).toBe('RESOLVED');
+    expect(other.resolvedHash).not.toBe(binding.resolvedHash);
+    const verdict = await bindingLiveness(binding, other);
+    expect(verdict.valid).toBe(false);
+    expect(verdict.reason).toBe('BINDING_RESOLVED_HASH_MISMATCH');
+  });
+
+  it('a binding with a stale schema hash is invalidated even if the contract is RESOLVED', async () => {
+    const { binding } = await baselineBinding();
+    const live = await resolveConfigSources(baseSources);
+    expect(live.status).toBe('RESOLVED');
+    const staleSchemaBinding: ConfigFingerprintBinding = {
+      ...binding,
+      schemaHash: 'stale-schema-hash',
+    };
+    const verdict = await bindingLiveness(staleSchemaBinding, live);
+    expect(verdict.valid).toBe(false);
+    expect(verdict.reason).toBe('BINDING_SCHEMA_HASH_MISMATCH');
   });
 });
