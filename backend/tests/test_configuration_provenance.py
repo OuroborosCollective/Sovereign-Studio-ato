@@ -9,8 +9,10 @@ redaction, and PatchMon readback fields. Mirrors the TypeScript tests in
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import os
+import re
 import sys
 from typing import Any
 
@@ -32,6 +34,7 @@ from agent_runtime.configuration import (  # noqa: E402
     materialize_receipt,
     resolve_config_sources,
     verify_receipt,
+    bind_config_fingerprint,
 )
 from agent_runtime.configuration.config_canonicalize import (
     canonical_json,
@@ -423,3 +426,54 @@ def test_float_nested_canonicalization_matches_js():
     value = {"a": 1.0, "b": [1e20, 2.5, 3], "c": {"d": 0.1, "e": 1e-7}}
     expected = '{"a":1,"b":[100000000000000000000,2.5,3],"c":{"d":0.1,"e":1e-7}}'
     assert canonical_json(value) == expected
+
+
+# ---------------------------------------------------------------------------
+# RunEnvelope binding safety (negative tests) — issue #1169 criterion #7.
+#
+# The ``ConfigFingerprintBinding`` is the redacted projection that crosses into
+# the RunEnvelope and is read back by PatchMon. Unlike the resolved projection
+# (already asserted secret-free), the *binding* must carry zero raw secret
+# material: only hashes and derived identities. It must also be
+# environment-distinct, so a binding resolved from env-A's config can never be
+# silently reused to attest env-B's runtime. Mirrors the TypeScript tests.
+# ---------------------------------------------------------------------------
+
+
+def test_bound_fingerprint_never_leaks_raw_secret():
+    secret = "super-secret-value-do-not-leak"
+    redacted_id = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    sources = [
+        _src(
+            "env",
+            "environment-projection",
+            {"apiKey": {"kind": "secret", "redactedId": redacted_id}, "public": "visible"},
+        )
+    ]
+    res = resolve_config_sources(sources)
+    receipt = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    binding = bind_config_fingerprint(receipt)
+
+    serialized = str(dataclasses.asdict(binding))
+    assert secret not in serialized
+    assert re.fullmatch(r"[0-9a-f]{64}", binding.fingerprint_hash)
+    # The binding exposes only derived hashes, never the resolved secret shape.
+    assert "redactedId" not in serialized
+
+
+def test_identical_resolved_config_yields_byte_identical_fingerprint_hash():
+    sources = [_src("defaults", "compiled-defaults", {"a": 1})]
+    res = resolve_config_sources(sources)
+    r1 = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    r2 = materialize_receipt(res, {"revision": "rev-1"})  # type: ignore[arg-type]
+    assert bind_config_fingerprint(r1).fingerprint_hash == bind_config_fingerprint(r2).fingerprint_hash
+
+
+def test_binding_is_cross_environment_distinct():
+    env_a = resolve_config_sources([_src("defaults", "compiled-defaults", {"region": "eu"})])
+    env_b = resolve_config_sources([_src("defaults", "compiled-defaults", {"region": "us"})])
+    assert env_a.resolved_hash != env_b.resolved_hash
+    b_a = bind_config_fingerprint(materialize_receipt(env_a, {"revision": "rev-1"}))  # type: ignore[arg-type]
+    b_b = bind_config_fingerprint(materialize_receipt(env_b, {"revision": "rev-1"}))  # type: ignore[arg-type]
+    assert b_a.fingerprint_hash != b_b.fingerprint_hash
+    assert b_a.resolved_hash != b_b.resolved_hash
