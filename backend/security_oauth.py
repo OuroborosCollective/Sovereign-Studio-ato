@@ -238,6 +238,14 @@ def _check_rate_limit(identifier: str, max_requests: int = RATE_LIMIT_MAX_REQUES
             for k in expired_keys:
                 del _rate_limit_store[k]
 
+            if len(_rate_limit_store) > 1000:
+                oldest_keys = sorted(
+                    _rate_limit_store.keys(),
+                    key=lambda k: max(_rate_limit_store[k]) if _rate_limit_store[k] else 0.0,
+                )[: len(_rate_limit_store) - 999]
+                for k in oldest_keys:
+                    del _rate_limit_store[k]
+
         # Clean old entries
         if identifier in _rate_limit_store:
             active = [t for t in _rate_limit_store[identifier] if t > cutoff]

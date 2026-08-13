@@ -491,6 +491,31 @@ class TestRateLimiting:
         assert len(_rate_limit_store) == 1 # Only "new_ip" exists
         assert "new_ip" in _rate_limit_store
 
+    def test_rate_limit_evicts_oldest_live_entries_when_large(self):
+        """Rate limit store must cap live entries at 1000 by evicting oldest requests."""
+        now = time.time()
+        # Pre-populate store with 1005 live (non-expired) identifiers with sorted timestamps
+        for i in range(1005):
+            # Timestamps are within the window (60s), from oldest to newest:
+            # i=0 -> now - 50 (oldest), i=1004 -> now - 10 (newest)
+            _rate_limit_store[f"live_ip_{i}"] = [now - 50 + (i * 0.01)]
+
+        assert len(_rate_limit_store) == 1005
+
+        # Making a rate limit check on a new ip should trigger a sweep and then evict oldest live ones
+        allowed, remaining = _check_rate_limit("new_live_ip", max_requests=10)
+        assert allowed is True
+
+        # Assert store size is exactly capped at 1000
+        assert len(_rate_limit_store) == 1000
+        assert "new_live_ip" in _rate_limit_store
+
+        # Oldest live identifiers (like live_ip_0, live_ip_1, etc.) should have been evicted
+        assert "live_ip_0" not in _rate_limit_store
+        assert "live_ip_4" not in _rate_limit_store
+        # Newer live identifiers (like live_ip_1004) must still be present
+        assert "live_ip_1004" in _rate_limit_store
+
 
 class TestAuditLogging:
     """Tests für Audit-Logging Funktion."""
