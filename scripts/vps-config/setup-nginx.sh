@@ -1,112 +1,87 @@
-#!/bin/bash
-# Install the nginx configuration for openhands.arelorian.de per issue #1187.
-# Run as: sudo bash setup-nginx.sh
-#
-# Routing contract:
-#   /         → 127.0.0.1:3000 (existing local service / Browserless UI)
-#   /mcp      → 127.0.0.1:8090 (MCP, requires X-API-Key header)
-#   all other → 403 (fail-closed)
-#
-# API key sourced from owner-managed file (must exist with mode 0600):
-#   /opt/sovereign-owner-managed/openhands_mcp_api_key.txt
+#!/usr/bin/env bash
+# Install the canonical openhands.arelorian.de nginx contract for issue #1187.
+# Run only as root on the VPS from the checked-out repository tree.
 
-set -e
+set -Eeuo pipefail
 
 CONFIG_FILE="/etc/nginx/sites-available/openhands.arelorian.de"
 SYM_LINK="/etc/nginx/conf.d/openhands.arelorian.de.conf"
 KEY_FILE="/opt/sovereign-owner-managed/openhands_mcp_api_key.txt"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SOURCE_CONFIG="$SCRIPT_DIR/nginx/openhands.arelorian.de.conf"
+BACKUP_DIR="/var/backups/sovereign-nginx"
+BACKUP_FILE=""
+PREVIOUS_LINK_TARGET=""
+HAD_CONFIG=0
 
-echo "Setting up nginx for openhands.arelorian.de (issue #1187)..."
-
-# Verify owner-managed API key file exists with correct permissions
-if [ ! -f "$KEY_FILE" ]; then
-    echo "ERROR: Owner-managed API key file not found: $KEY_FILE"
-    echo "Create it with: echo 'set \$mcp_api_key \"YOUR_KEY_HERE\";' > $KEY_FILE && chmod 0600 $KEY_FILE"
+fail() {
+    echo "ERROR: $*" >&2
     exit 1
-fi
-
-KEY_PERMS=$(stat -c "%a" "$KEY_FILE" 2>/dev/null || stat -f "%Lp" "$KEY_FILE" 2>/dev/null)
-if [ "$KEY_PERMS" != "600" ]; then
-    echo "ERROR: API key file has permissions $KEY_PERMS, expected 0600"
-    echo "Fix with: chmod 0600 $KEY_FILE"
-    exit 1
-fi
-
-    # Create the same server blocks committed in nginx/openhands.arelorian.de.conf.
-cat > "$CONFIG_FILE" << 'NGINXCONF'
-server {
-    listen 80;
-    server_name openhands.arelorian.de;
-    return 301 https://$host$request_uri;
 }
 
-server {
-    listen 443 ssl http2;
-    server_name openhands.arelorian.de;
+if [ "$(id -u)" -ne 0 ]; then
+    fail "run this installer as root"
+fi
 
-    ssl_certificate /etc/letsencrypt/live/openhands.arelorian.de/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/openhands.arelorian.de/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
+[ -f "$SOURCE_CONFIG" ] || fail "canonical nginx config is missing: $SOURCE_CONFIG"
+[ -f "$KEY_FILE" ] || fail "owner-managed MCP key file is missing: $KEY_FILE"
+[ ! -L "$KEY_FILE" ] || fail "owner-managed MCP key file must not be a symlink"
 
-    # Load MCP API key from owner-managed file
-    # The file must exist with mode 0600 on the VPS before running setup-nginx.sh
-    # Key value is not committed to the repository.
-    # Fail-closed: if file is missing or unreadable, no authentication succeeds.
-    set $mcp_api_key "";
-    set $mcp_authorized 0;
-    # Load key into nginx variable; fails silently if file missing (fail-closed)
-    include /opt/sovereign-owner-managed/openhands_mcp_api_key.txt;
+KEY_PERMS="$(stat -c "%a" "$KEY_FILE")"
+KEY_OWNER="$(stat -c "%u:%g" "$KEY_FILE")"
+[ "$KEY_PERMS" = "600" ] || fail "owner-managed MCP key file must have mode 0600"
+[ "$KEY_OWNER" = "0:0" ] || fail "owner-managed MCP key file must be owned by root:root"
 
-    # MCP route: authenticated Streamable-HTTP proxy to MCP at port 8090
-    # Only exact-match /mcp is proxied; /mcp/* falls through to the catch-all 403.
-    location = /mcp {
-        # Require X-API-Key header; fail-closed without it
-        if ($http_x_api_key != $mcp_api_key) {
-            return 401;
-        }
+if [ -L "$SYM_LINK" ]; then
+    PREVIOUS_LINK_TARGET="$(readlink "$SYM_LINK")"
+fi
 
-        proxy_pass http://127.0.0.1:8090/mcp;
-        proxy_http_version 1.1;
-        proxy_set_header Content-Type "application/json";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_buffering off;
-        proxy_cache off;
-    }
+rollback() {
+    echo "Rolling back nginx configuration..." >&2
+    if [ "$HAD_CONFIG" -eq 1 ]; then
+        install -m 0644 "$BACKUP_FILE" "$CONFIG_FILE"
+    else
+        rm -f "$CONFIG_FILE"
+    fi
 
-    # Root route: existing local service at port 3000 (Browserless/OpenHands UI)
-    # Unchanged from previous configuration per issue #1187 acceptance criterion 1.
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 86400;
-    }
+    if [ -n "$PREVIOUS_LINK_TARGET" ]; then
+        ln -sfn "$PREVIOUS_LINK_TARGET" "$SYM_LINK"
+    else
+        rm -f "$SYM_LINK"
+    fi
 
-    access_log /var/log/nginx/openhands.arelorian.de.access.log;
-    error_log /var/log/nginx/openhands.arelorian.de.error.log;
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1 || true
 }
-NGINXCONF
 
-echo "Config created: $CONFIG_FILE"
+install -d -m 0755 "$(dirname "$CONFIG_FILE")" "$BACKUP_DIR"
+if [ -f "$CONFIG_FILE" ]; then
+    HAD_CONFIG=1
+    BACKUP_FILE="$BACKUP_DIR/openhands.arelorian.de.$(date -u +%Y%m%dT%H%M%SZ).conf"
+    install -m 0600 "$CONFIG_FILE" "$BACKUP_FILE"
+fi
 
-# Create symlink
-ln -sf "$CONFIG_FILE" "$SYM_LINK"
-echo "Symlink created: $SYM_LINK"
+install -m 0644 "$SOURCE_CONFIG" "$CONFIG_FILE"
+ln -sfn "$CONFIG_FILE" "$SYM_LINK"
 
-# Test nginx
-nginx -t
+if ! nginx -t; then
+    rollback
+    fail "nginx configuration validation failed; previous configuration was restored"
+fi
 
-# Reload nginx
-pkill -HUP nginx || nginx
+if ! systemctl reload nginx; then
+    rollback
+    fail "nginx reload failed; previous configuration was restored"
+fi
 
-echo "Nginx reloaded. openhands.arelorian.de configured per issue #1187:"
-echo "  /     → 127.0.0.1:3000 (root, unchanged)"
-echo "  /mcp  → 127.0.0.1:8090 (MCP, requires X-API-Key header)"
-echo "  other → 403 (fail-closed)"
+if ! systemctl is-active --quiet nginx; then
+    rollback
+    fail "nginx is not active after reload; previous configuration was restored"
+fi
+
+echo "Nginx contract installed for openhands.arelorian.de"
+echo "  /       → existing root service"
+echo "  /mcp    → authenticated loopback MCP upstream"
+echo "  /mcp/*  → 404"
+if [ -n "$BACKUP_FILE" ]; then
+    echo "  backup  → $BACKUP_FILE"
+fi
