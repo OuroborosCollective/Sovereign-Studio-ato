@@ -22,6 +22,9 @@ import {
   hashValue,
   isRedactedSecret,
   schemaHashFromFields,
+  advanceDecision,
+  bindConfigFingerprint,
+  materializeAndBind,
   type ConfigSourceContract,
   type ConfigReadbackObservation,
   type ResolveOptions,
@@ -425,6 +428,136 @@ describe('cross-environment safety (negative tests)', () => {
     expect((res.resolved as { url: string }).url).toBe('https://evil.example/cfg');
     // No remote readback recorded because it was not a bound remote source.
     expect(res.sourceHashes[0]?.remoteOrigin).toBeNull();
+  });
+});
+
+// Runtime binding & advance gate (#1169 criteria #5 and #6). Mirrors the
+// Python `backend/tests/test_configuration_runtime_integration.py` coverage
+// (`test_runtime_binding_rejects_tampered_and_non_resolved_receipts` and
+// `test_run_preparation_identity_is_bound_to_verified_config_fingerprint`):
+// the redacted config fingerprint bound into a RunEnvelope must be byte-
+// identical for the same resolved config, and config drift / a tampered or
+// non-RESOLVED receipt must block advancement (fail closed) instead of
+// silently continuing.
+describe('runtimeBinding - redacted fingerprint & fail-closed advance gate (#1169)', () => {
+  it('binds a RESOLVED receipt to a deterministic, byte-identical fingerprint', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const r1 = await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const r2 = await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' });
+    const b1 = await bindConfigFingerprint(r1);
+    const b2 = await bindConfigFingerprint(r2);
+    expect(b1.fingerprintHash).toBe(b2.fingerprintHash);
+    expect(b1.fingerprintHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(b1.verified).toBe(true);
+    expect(b1.status).toBe('RESOLVED');
+    expect(b1.receiptHash).toBe(r1.receiptHash);
+    expect(b1.schemaHash).toBe(res.schemaHash);
+    expect(b1.resolvedHash).toBe(res.resolvedHash);
+    expect(b1.driftKind).toBeNull();
+  });
+
+  it('a fingerprint bound from different resolved/digest inputs differs', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const a = await bindConfigFingerprint(
+      await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' }),
+    );
+    const b = await bindConfigFingerprint(
+      await materializeReceipt(res, { revision: 'rev-2', imageDigest: 'sha256:img-1' }),
+    );
+    expect(a.fingerprintHash).not.toBe(b.fingerprintHash);
+  });
+
+  it('materializeAndBind yields a self-verifying receipt and matching binding', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const { receipt, binding } = await materializeAndBind(res, {
+      revision: 'rev-1',
+      imageDigest: 'sha256:img-1',
+    });
+    expect(await verifyReceipt(receipt)).toBe(true);
+    expect(binding.verified).toBe(true);
+    expect(binding.receiptHash).toBe(receipt.receiptHash);
+    expect(binding.resolvedHash).toBe(res.resolvedHash);
+  });
+
+  it('bindConfigFingerprint rejects a tampered (non-self-verifying) receipt', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const tampered = { ...receipt, revision: 'rev-tampered' };
+    await expect(bindConfigFingerprint(tampered)).rejects.toThrow(/integrity verification/);
+  });
+
+  it('bindConfigFingerprint rejects a CONTRADICTED (drifted) receipt', async () => {
+    const contradicted = await resolveConfigSources(baseSources, {
+      expectedReceiptHash: '0'.repeat(64),
+    });
+    expect(contradicted.status).toBe('CONTRADICTED');
+    const receipt = await materializeReceipt(contradicted, { revision: 'rev-1' });
+    await expect(bindConfigFingerprint(receipt)).rejects.toThrow(/not RESOLVED|not advanceable/);
+  });
+
+  it('advanceDecision allows advancement only for a RESOLVED, drift-free contract', async () => {
+    const res = await resolveConfigSources(baseSources);
+    expect(res.status).toBe('RESOLVED');
+    const decision = await advanceDecision(res);
+    expect(decision.safe).toBe(true);
+    expect(decision.reason).toBe('RESOLVED');
+    expect(decision.driftKind).toBeNull();
+  });
+
+  it('advanceDecision blocks (fail closed) on a CONTRADICTED contract', async () => {
+    const contradicted = await resolveConfigSources(baseSources, {
+      expectedReceiptHash: 'deadbeef',
+    });
+    expect(contradicted.status).toBe('CONTRADICTED');
+    const receipt = await materializeReceipt(contradicted, { revision: 'rev-1' });
+    const decision = await advanceDecision(contradicted, receipt);
+    expect(decision.safe).toBe(false);
+    expect(decision.reason).toContain('CONFIG_CONTRADICTED');
+    expect(decision.driftKind).toBe('content-drift');
+  });
+
+  it('advanceDecision blocks on a BLOCKED (schema-drift) contract', async () => {
+    const blocked = await resolveConfigSources([
+      src({ id: 'a', kind: 'compiled-defaults', values: { a: 1 }, schemaHash: 'sch-1' }),
+      src({ id: 'b', kind: 'deployment-config', values: { b: 2 }, schemaHash: 'sch-2' }),
+    ]);
+    expect(blocked.status).toBe('BLOCKED');
+    const decision = await advanceDecision(blocked);
+    expect(decision.safe).toBe(false);
+    expect(decision.reason).toContain('CONFIG_BLOCKED');
+    expect(decision.driftKind).toBe('schema-drift');
+  });
+
+  it('advanceDecision blocks when a stale receipt does not match the contract', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const otherSources = [src({ id: 'other', kind: 'compiled-defaults', values: { z: 9 } })];
+    const stale = await materializeReceipt(await resolveConfigSources(otherSources), {
+      revision: 'rev-stale',
+    });
+    const decision = await advanceDecision(res, stale);
+    expect(decision.safe).toBe(false);
+    expect(decision.reason).toBe('RECEIPT_MISMATCH');
+  });
+
+  it('advanceDecision blocks when the supplied receipt fails integrity verification', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const receipt = await materializeReceipt(res, { revision: 'rev-1' });
+    const tampered = { ...receipt, revision: 'rev-tampered' };
+    const decision = await advanceDecision(res, tampered);
+    expect(decision.safe).toBe(false);
+    expect(decision.reason).toBe('RECEIPT_UNVERIFIED');
+  });
+
+  it('bindConfigFingerprint + advanceDecision agree: an advanceable config binds and advances', async () => {
+    const res = await resolveConfigSources(baseSources);
+    const binding = await bindConfigFingerprint(
+      await materializeReceipt(res, { revision: 'rev-1', imageDigest: 'sha256:img-1' }),
+    );
+    const decision = await advanceDecision(res);
+    expect(binding.verified).toBe(true);
+    expect(decision.safe).toBe(true);
+    // The fingerprint carries the same redacted resolved hash the gate advanced on.
+    expect(binding.resolvedHash).toBe(res.resolvedHash);
   });
 });
 
