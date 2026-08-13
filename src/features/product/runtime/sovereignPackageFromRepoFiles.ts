@@ -118,11 +118,18 @@ function isSoftPlaceholderSovereignMission(mission: string): boolean {
   return EXACT_PLACEHOLDER_MISSIONS.has(normalizeMissionText(mission));
 }
 
+// ⚡ Bolt: Hoisting and combining hard placeholders into a single regex to avoid O(N) string includes iteration
+// Strings must be regex-escaped to prevent accidental regex injection from placeholder array values
+const HARD_PLACEHOLDER_SUBSTRINGS_REGEX = new RegExp(
+  `(${HARD_PLACEHOLDER_SUBSTRINGS.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+  'i'
+);
+
 function isHardPlaceholderSovereignMission(mission: string): boolean {
   const normalized = normalizeMissionText(mission);
   if (isSoftPlaceholderSovereignMission(normalized)) return false;
   if (normalized.length < 12) return true;
-  return HARD_PLACEHOLDER_SUBSTRINGS.some((placeholder) => normalized.includes(placeholder));
+  return HARD_PLACEHOLDER_SUBSTRINGS_REGEX.test(normalized);
 }
 
 function isPlaceholderSovereignMission(mission: string): boolean {
@@ -142,14 +149,28 @@ function existingTargets(repoFiles: RepoFile[]): string[] {
   return fallback.length > 0 ? fallback : ['README.md', 'docs/SOVEREIGN_RUNTIME.md'];
 }
 
+// ⚡ Bolt: Hoisting and combining mission verbs into a single regex to avoid O(N) array iteration and RegExp recompilation
+const CONCRETE_MISSION_VERBS_REGEX = new RegExp(
+  `(^|[^a-z0-9_-])(${CONCRETE_MISSION_VERBS.join('|')})($|[^a-z0-9_-])`,
+  'i'
+);
+
 function hasConcreteMissionVerb(mission: string): boolean {
   const normalized = normalizeMissionText(mission);
-  return CONCRETE_MISSION_VERBS.some((verb) => new RegExp(`(^|[^a-z0-9_-])${verb}($|[^a-z0-9_-])`, 'i').test(normalized));
+  return CONCRETE_MISSION_VERBS_REGEX.test(normalized);
 }
 
+// ⚡ Bolt: Hoisting and combining documentation tokens into a single regex to avoid O(N) string includes iteration
+const DOCUMENTATION_TOKENS_REGEX = new RegExp(
+  `(${['readme', 'documentation', 'dokumentation', 'docs', 'update history', 'changelog'].join('|')})`,
+  'i'
+);
+
 function isDocumentationSovereignMission(mission: string): boolean {
+  // `normalizeMissionText` is not strictly necessary anymore for this since we use 'i' flag
+  // but we keep it to match original behavior entirely
   const normalized = normalizeMissionText(mission);
-  return ['readme', 'documentation', 'dokumentation', 'docs', 'update history', 'changelog'].some((token) => normalized.includes(token));
+  return DOCUMENTATION_TOKENS_REGEX.test(normalized);
 }
 
 function runtimeUserKeys(_input: BuildSovereignPackageFromRepoFilesInput): undefined {

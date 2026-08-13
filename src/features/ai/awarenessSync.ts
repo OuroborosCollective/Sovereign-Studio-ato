@@ -192,8 +192,17 @@ VERBESSERUNGSVORSCHLÄGE:
   };
 }
 
+// ⚡ Bolt: Hoisting and precompiling common section extraction regexes to avoid
+// expensive RegExp recompilation in the extraction utility.
+const PRECOMPILED_SECTION_REGEXES: Record<string, RegExp> = {
+  ZUSAMMENFASSUNG: new RegExp(`ZUSAMMENFASSUNG:\\s*([\\s\\S]*?)(?=\\n[A-ZÄÖÜ]+:|$)`, "i"),
+  TECHNOLOGIEN: new RegExp(`TECHNOLOGIEN:\\s*([\\s\\S]*?)(?=\\n[A-ZÄÖÜ]+:|$)`, "i"),
+  STRUKTUR: new RegExp(`STRUKTUR:\\s*([\\s\\S]*?)(?=\\n[A-ZÄÖÜ]+:|$)`, "i"),
+  VERBESSERUNGSVORSCHLÄGE: new RegExp(`VERBESSERUNGSVORSCHLÄGE:\\s*([\\s\\S]*?)(?=\\n[A-ZÄÖÜ]+:|$)`, "i"),
+};
+
 function extractSection(text: string, heading: string): string {
-  const regex = new RegExp(`${heading}:\\s*([\\s\\S]*?)(?=\\n[A-ZÄÖÜ]+:|$)`, "i");
+  const regex = PRECOMPILED_SECTION_REGEXES[heading] || new RegExp(`${heading}:\\s*([\\s\\S]*?)(?=\\n[A-ZÄÖÜ]+:|$)`, "i");
   const match = text.match(regex);
   return match ? match[1].trim() : "";
 }
