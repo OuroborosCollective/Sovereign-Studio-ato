@@ -53,3 +53,7 @@
 ## 2025-08-04 - [WAI-ARIA Radiogroup Keyboard Model]
 **Learning:** For choice cards/dialogues containing lists of options acting like a radio group (such as asking for user decisions), mouse-only accessibility is insufficient. Standard-compliant keyboard-only navigation requires capturing Arrow keys (`ArrowUp`/`ArrowDown`/`ArrowLeft`/`ArrowRight`), roving `tabIndex` parameters (`tabIndex={0}` on the active/first option, and `-1` on others), and managing dynamic focus to allow screen reader and keyboard users to naturally cycle between options.
 **Action:** Always implement the WAI-ARIA Radio Group pattern for button lists acting as mutual choices, pair with high-visibility dynamic outline styles on focus, and test arrow key wrapping behavior.
+
+## 2025-08-13 - [Overriding Visible Buttons via ARIA Labels]
+**Learning:** Overriding a button's visible text (e.g., 'Repo-Snapshot laden') with an 'aria-label' that does not match or include that exact text violates the WCAG 'Label in Name' requirement. It also disrupts testing frameworks and standard selectors looking for the visible text.
+**Action:** For buttons with descriptive, dynamic text content, rely on the visible text for the accessible name, and use the 'title' attribute exclusively for stateful hover descriptions rather than using aria-label overrides.
