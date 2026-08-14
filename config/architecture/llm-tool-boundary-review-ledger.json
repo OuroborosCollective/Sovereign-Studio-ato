@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "e3a188a046d3f9ec90d50e057798904b2875b869",
-  "rawCandidateCount": 94,
-  "canonicalCandidateCount": 75,
+  "sourceRevision": "b0cde15b2fa2ba9d68b6097fd19e6f8a132c179b",
+  "rawCandidateCount": 96,
+  "canonicalCandidateCount": 76,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -176,12 +176,12 @@
         "backend/agent_runtime/repair_capsule.py"
       ],
       "symbol": "_changed_files",
-      "line": 176,
+      "line": 178,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "98a36461121b738652122047b5c15ee38ee1a344d4f6e7e1fce4270b6587ae8c",
+      "fileSha256": "d04251bf8b4330179f1e0f29f7528e617946f78e477d9c5906cf0d0bc6eac230",
       "anchorSha256": "b9e5d7b9dffab05422bf61ec246517701a7c802c6203fca6efac75f595600050",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:357d220600970fd506f45736",
+      "candidateId": "llm-boundary:d283c03009a6bba655c49776",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_changed_files normalizes only a persisted changed-file list through bounded path validation and exact deduplication; it does not interpret free user language or authorize any effect."
     },
@@ -190,13 +190,28 @@
       "mirrorPaths": [
         "backend/agent_runtime/repair_capsule.py"
       ],
+      "symbol": "_receipt_head_sha",
+      "line": 208,
+      "patternFamily": "javascript_keyword_intent",
+      "fileSha256": "d04251bf8b4330179f1e0f29f7528e617946f78e477d9c5906cf0d0bc6eac230",
+      "anchorSha256": "884c39e66e6e59c8089679d672a77183d9d2666f02256da962adeee8c5073bf2",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:943ef44cf008adbdf26109e0",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "_receipt_head_sha reads one receipt header hash, validates it against a precompiled lowercase SHA-256 regex via fullmatch, and returns either that value or a fixed all-zero fallback; it performs no network, subprocess, dispatch, merge, or file mutation and cannot select a repair, route user intent, or authorize an effect."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/repair_capsule.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/repair_capsule.py"
+      ],
       "symbol": "build_repair_capsule_manifest",
-      "line": 217,
+      "line": 233,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "98a36461121b738652122047b5c15ee38ee1a344d4f6e7e1fce4270b6587ae8c",
+      "fileSha256": "d04251bf8b4330179f1e0f29f7528e617946f78e477d9c5906cf0d0bc6eac230",
       "anchorSha256": "cc22ba87ff96d8ba72a9b3811824b44d98d24b3ef7bf8af7968e3a4cfc96a302",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:8cc67a2868a47cd828e52335",
+      "candidateId": "llm-boundary:7d3ece5b907193a8b7be1d3a",
       "classification": "STRUCTURED_POLICY",
       "rationale": "build_repair_capsule_manifest compares a structured failure-family field only with the fixed supported-family enum; it does not infer semantic intent from free language or authorize execution."
     },
@@ -1019,5 +1034,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "3dc3453dc15bdeda03b60c0ebc3b8f3ab05720880f1d5b6912a2e8cb629bd7bf"
+  "ledgerSha256": "d45a614c47d197f79837e6b316996357f461ec90755bb3f6af8dbf345127188f"
 }
