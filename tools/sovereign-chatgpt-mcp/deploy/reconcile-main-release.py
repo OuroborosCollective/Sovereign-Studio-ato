@@ -719,7 +719,7 @@ def _deploy_mcp_from_ci_scope(
         }
     )
     result = _command_json(
-        [str(installer)],
+        ["/bin/bash", str(installer)],
         timeout=1800,
         stage="mcp_deploy",
         environment=environment,
