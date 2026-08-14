@@ -114,3 +114,20 @@ def test_live_and_deploy_predictive_modules_remain_exact_mirrors():
         assert (BACKEND / name).read_text(encoding="utf-8") == (
             DEPLOY / name
         ).read_text(encoding="utf-8")
+
+
+def test_live_and_deploy_predictive_subdir_remain_exact_mirrors():
+    predictive_names = [
+        "__init__.py",
+        "signal_pipeline.py",
+        "action_policy.py",
+        "causal_readback.py",
+    ]
+    for name in predictive_names:
+        live = BACKEND / "predictive" / name
+        deploy = DEPLOY / "predictive" / name
+        assert live.exists(), f"canonical predictive module missing: {name}"
+        assert deploy.exists(), f"deploy mirror predictive module missing: {name}"
+        assert live.read_text(encoding="utf-8") == deploy.read_text(encoding="utf-8"), (
+            f"predictive mirror drift for {name}"
+        )
