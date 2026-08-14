@@ -967,6 +967,17 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "mutationPerformed": False,
                 }), 409
 
+            # Issue #1122: bind the Capsule to the real targeted test evidence
+            # persisted as append-only Agent-Run receipts. No caller can satisfy
+            # this path with a supplied digest or Boolean assertion.
+            agent_receipts: tuple[dict[str, object], ...] = ()
+            repair_run_id = str(repair.get("run_id") or "")
+            if repair_run_id:
+                try:
+                    agent_receipts = read_agent_run_receipts(conn, run_id=repair_run_id)
+                except (LookupError, ValueError, TypeError):
+                    agent_receipts = ()
+
             capsule = build_repair_capsule(
                 repair=repair,
                 job={
@@ -974,6 +985,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                     "test_summary": job.test_summary,
                 },
                 patch_value=patch,
+                agent_receipts=agent_receipts,
             )
             manifest = capsule.get("manifest", {})
             if capsule.get("ready") is not True:

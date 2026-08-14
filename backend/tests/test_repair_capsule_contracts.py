@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import zipfile
+from typing import Mapping
 
 import pytest
 
@@ -25,18 +26,21 @@ from agent_runtime.repair_capsule import (
     parse_repair_patch_paths,
     verify_repair_capsule_manifest,
 )
+from agent_runtime.agent_run_receipts import build_agent_run_receipt
+from agent_runtime.rescue import extract_terminal_passing_test_readback
 
 
 BASE_SHA = "a" * 40
 OTHER_SHA = "b" * 40
 OUTCOME_SHA = "c" * 64
 REPAIR_ID = "00000000-0000-4000-8000-000000000123"
+REPOSITORY = "https://github.com/Acme/Example"
 
 
 def repair(*, base_sha: str = BASE_SHA) -> dict[str, str]:
     return {
         "repair_id": REPAIR_ID,
-        "repository": "https://github.com/Acme/Example",
+        "repository": REPOSITORY,
         "base_sha": base_sha,
         "failure_family": "github_actions_ci",
         "outcome_contract_sha256": OUTCOME_SHA,
@@ -48,6 +52,72 @@ def job(paths: list[str], summary: str = "targeted tests passed") -> dict[str, o
         "changed_files": paths,
         "test_summary": summary,
     }
+
+
+def _mutation_receipt(*, base_sha: str = BASE_SHA, diff_sha: str = "3" * 64) -> dict[str, object]:
+    return build_agent_run_receipt(
+        sequence=0,
+        repository=REPOSITORY,
+        base_commit_sha=base_sha,
+        mcp_revision=base_sha,
+        mcp_image_digest="sha256:" + "e" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-capsule",
+        tool_name="write_file",
+        call_id="call-capsule-write",
+        operation_identity="agent-repository-tool:free_single_agent:write_file",
+        input_sha256="1" * 64,
+        output_sha256="2" * 64,
+        diff_sha256=diff_sha,
+        test_evidence_sha256="4" * 64,
+        evidence_gate_result="BLOCKED",
+        mutation_performed=True,
+        observed_effect="workspace-write",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256="0" * 64,
+    )
+
+
+def _passing_test_receipt(
+    mutation: Mapping[str, object],
+    *,
+    diff_sha: str = "3" * 64,
+    changed_paths: tuple[str, ...] = ("backend/app.py",),
+) -> dict[str, object]:
+    return build_agent_run_receipt(
+        sequence=1,
+        repository=REPOSITORY,
+        base_commit_sha=str(mutation["body"]["base_commit_sha"]),
+        mcp_revision=str(mutation["body"]["base_commit_sha"]),
+        mcp_image_digest="sha256:" + "e" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-capsule",
+        tool_name="test",
+        call_id="call-capsule-test",
+        operation_identity="agent-repository-tool:free_single_agent:test",
+        input_sha256="6" * 64,
+        output_sha256="7" * 64,
+        diff_sha256=diff_sha,
+        test_evidence_sha256="8" * 64,
+        evidence_gate_result="PASS",
+        mutation_performed=False,
+        observed_effect="read",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256=str(mutation["header"]["hash"]),
+        test_execution_kind="qualifying-test",
+        changed_paths=changed_paths,
+    )
+
+
+def passing_receipts(
+    *,
+    base_sha: str = BASE_SHA,
+    diff_sha: str = "3" * 64,
+    changed_paths: tuple[str, ...] = ("backend/app.py",),
+) -> tuple[dict[str, object], ...]:
+    mutation = _mutation_receipt(base_sha=base_sha, diff_sha=diff_sha)
+    test = _passing_test_receipt(mutation, diff_sha=diff_sha, changed_paths=changed_paths)
+    return (mutation, test)
 
 
 def patch_for(path: str = "backend/app.py", before: str = "old", after: str = "new") -> bytes:
@@ -64,15 +134,18 @@ def patch_for(path: str = "backend/app.py", before: str = "old", after: str = "n
 
 def test_capsule_manifest_is_deterministic_and_contains_only_bound_identities() -> None:
     patch = patch_for()
+    receipts = passing_receipts()
     first = build_repair_capsule_manifest(
         repair=repair(),
         job=job(["backend/app.py"]),
         patch_value=patch,
+        agent_receipts=receipts,
     )
     second = build_repair_capsule_manifest(
         repair=repair(),
         job=job(["backend/app.py"]),
         patch_value=patch,
+        agent_receipts=receipts,
     )
     assert first == second
     assert first["schemaVersion"] == REPAIR_CAPSULE_SCHEMA_VERSION
@@ -85,6 +158,8 @@ def test_capsule_manifest_is_deterministic_and_contains_only_bound_identities() 
     assert "repository" not in first
     assert len(first["repositoryIdentitySha256"]) == 64
     assert len(first["capsuleSha256"]) == 64
+    assert first["mutationReceiptSha256"] == receipts[0]["header"]["hash"]
+    assert first["finalPassingReadbackReceiptSha256"] == receipts[1]["header"]["hash"]
     assert verify_repair_capsule_manifest(first, patch) is True
 
 
@@ -93,16 +168,19 @@ def test_patch_or_revision_change_changes_capsule_identity() -> None:
         repair=repair(),
         job=job(["backend/app.py"]),
         patch_value=patch_for(after="new"),
+        agent_receipts=passing_receipts(),
     )
     changed_patch = build_repair_capsule_manifest(
         repair=repair(),
         job=job(["backend/app.py"]),
         patch_value=patch_for(after="newer"),
+        agent_receipts=passing_receipts(),
     )
     changed_base = build_repair_capsule_manifest(
         repair=repair(base_sha=OTHER_SHA),
         job=job(["backend/app.py"]),
         patch_value=patch_for(after="new"),
+        agent_receipts=passing_receipts(base_sha=OTHER_SHA),
     )
     assert original["patchSha256"] != changed_patch["patchSha256"]
     assert original["capsuleSha256"] != changed_patch["capsuleSha256"]
@@ -117,6 +195,7 @@ def test_patch_paths_are_derived_sorted_and_must_match_persisted_evidence() -> N
         repair=repair(),
         job=job(["src/zeta.py", "backend/alpha.py"]),
         patch_value=combined,
+        agent_receipts=passing_receipts(changed_paths=("backend/alpha.py", "src/zeta.py")),
     )
     assert ready["ready"] is True
     assert ready["changedFiles"] == ["backend/alpha.py", "src/zeta.py"]
@@ -125,6 +204,7 @@ def test_patch_paths_are_derived_sorted_and_must_match_persisted_evidence() -> N
         repair=repair(),
         job=job(["src/zeta.py"]),
         patch_value=combined,
+        agent_receipts=passing_receipts(),
     )
     assert mismatch["ready"] is False
     assert "capsule_changed_file_identity_mismatch" in mismatch["blockers"]
@@ -209,6 +289,7 @@ def test_unicode_paths_are_supported_but_whitespace_paths_are_not() -> None:
         repair=repair(),
         job=job(["backend/über.py"]),
         patch_value=patch,
+        agent_receipts=passing_receipts(changed_paths=("backend/über.py",)),
     )
     assert manifest["ready"] is True
     assert manifest["changedFiles"] == ["backend/über.py"]
@@ -255,6 +336,7 @@ def test_capsule_archive_is_deterministic_and_contains_only_canonical_files() ->
         repair=repair(),
         job=job(["backend/app.py"]),
         patch_value=patch_for(),
+        agent_receipts=passing_receipts(),
     )
     first = build_repair_capsule_archive(capsule)
     second = build_repair_capsule_archive(capsule)
@@ -300,6 +382,7 @@ def test_generated_verifier_is_offline_checks_head_and_never_applies(
         repair=repair(base_sha=base_sha),
         job=job(["backend/app.py"]),
         patch_value=patch,
+        agent_receipts=passing_receipts(base_sha=base_sha),
     )
     assert capsule["ready"] is True
     package = tmp_path / "capsule"
@@ -354,6 +437,7 @@ def test_generated_verifier_rejects_rehashed_unsafe_mode_patch(tmp_path: Path) -
         repair=repair(base_sha=base_sha),
         job=job(["backend/app.py"]),
         patch_value=patch_for(),
+        agent_receipts=passing_receipts(base_sha=base_sha),
     )
     package = tmp_path / "capsule"
     package.mkdir()
@@ -388,3 +472,95 @@ def test_generated_verifier_rejects_rehashed_unsafe_mode_patch(tmp_path: Path) -
     )
     assert result.returncode == 1
     assert json.loads(result.stdout)["status"] == "BLOCKED"
+
+
+
+def _failing_test_receipt(mutation: Mapping[str, object]) -> dict[str, object]:
+    """A qualifying-test receipt whose evidence gate is FAIL, not PASS."""
+    return build_agent_run_receipt(
+        sequence=1,
+        repository=REPOSITORY,
+        base_commit_sha=str(mutation["body"]["base_commit_sha"]),
+        mcp_revision=str(mutation["body"]["base_commit_sha"]),
+        mcp_image_digest="sha256:" + "e" * 64,
+        mcp_revision_verified=True,
+        agent_run_id="run-capsule",
+        tool_name="test",
+        call_id="call-capsule-test-fail",
+        operation_identity="agent-repository-tool:free_single_agent:test",
+        input_sha256="6" * 64,
+        output_sha256="7" * 64,
+        diff_sha256="3" * 64,
+        test_evidence_sha256="8" * 64,
+        evidence_gate_result="FAIL",
+        mutation_performed=False,
+        observed_effect="read",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256=str(mutation["header"]["hash"]),
+        test_execution_kind="qualifying-test",
+        changed_paths=("backend/app.py",),
+    )
+
+
+def test_capsule_blocks_unsupported_application_bug_case() -> None:
+    """Issue #1122: an unsupported application-bug case (targeted tests did not
+    pass in the repair workspace) must not produce a successful Capsule."""
+    patch = patch_for()
+    mutation = _mutation_receipt()
+    failing_chain = (mutation, _failing_test_receipt(mutation))
+
+    manifest = build_repair_capsule_manifest(
+        repair=repair(),
+        job=job(["backend/app.py"]),
+        patch_value=patch,
+        agent_receipts=failing_chain,
+    )
+    assert manifest["ready"] is False
+    assert "capsule_targeted_tests_not_passed" in manifest["blockers"]
+    assert manifest["mutationReceiptSha256"] == "0" * 64
+    assert manifest["finalPassingReadbackReceiptSha256"] == "0" * 64
+
+    capsule = build_repair_capsule(
+        repair=repair(),
+        job=job(["backend/app.py"]),
+        patch_value=patch,
+        agent_receipts=failing_chain,
+    )
+    assert capsule["ready"] is False
+    assert capsule["files"] == {}
+
+
+def test_capsule_blocks_when_no_agent_run_receipts_exist() -> None:
+    """Issue #1122: without persisted Agent-Run receipts there is no causal
+    proof the targeted tests passed, so the Capsule must fail closed."""
+    patch = patch_for()
+    manifest = build_repair_capsule_manifest(
+        repair=repair(),
+        job=job(["backend/app.py"]),
+        patch_value=patch,
+        agent_receipts=(),
+    )
+    assert manifest["ready"] is False
+    assert "capsule_targeted_tests_not_passed" in manifest["blockers"]
+    assert manifest["mutationReceiptSha256"] == "0" * 64
+    assert manifest["finalPassingReadbackReceiptSha256"] == "0" * 64
+
+
+def test_capsule_blocks_when_readback_diff_does_not_match_terminal_mutation() -> None:
+    """Issue #1122: a passing test readback that is not causally bound to the
+    terminal mutation diff cannot satisfy the Capsule contract."""
+    patch = patch_for()
+    mutation = _mutation_receipt(diff_sha="3" * 64)
+    # Passing test but bound to a different diff than the terminal mutation.
+    mismatched_pass = _passing_test_receipt(mutation, diff_sha="9" * 64)
+    mismatched_chain = (mutation, mismatched_pass)
+
+    manifest = build_repair_capsule_manifest(
+        repair=repair(),
+        job=job(["backend/app.py"]),
+        patch_value=patch,
+        agent_receipts=mismatched_chain,
+    )
+    assert manifest["ready"] is False
+    assert "capsule_targeted_tests_not_passed" in manifest["blockers"]
+

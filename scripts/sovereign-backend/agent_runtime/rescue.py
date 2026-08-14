@@ -13,7 +13,7 @@ import hmac
 import json
 import re
 import time
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 import uuid
@@ -831,6 +831,104 @@ def update_repair_execution(
     conn.commit()
 
 
+def _sha256_or_zero(value: Any) -> str:
+    candidate = str(value or "").strip().lower()
+    return candidate if _SHA256.fullmatch(candidate) else "0" * 64
+
+
+def extract_terminal_passing_test_readback(
+    agent_receipts: Sequence[Mapping[str, object]],
+    *,
+    repository: str,
+    base_sha: str,
+) -> dict[str, Any]:
+    """Extract the terminal mutation receipt and its causally-bound passing
+    qualifying-test readback from a verified append-only receipt chain.
+
+    Pure contract: no network, no database, no writes. Returns a dict with
+    keys: ``ok`` (bool), ``blockers`` (list[str]), ``mutation_receipt``,
+    ``mutation_body``, ``final_readback_receipt``, ``final_readback_body``,
+    ``terminal_test_diff_mismatch`` (bool). When no verified passing test
+    readback exists, ``ok`` is False and the receipts/bodies are empty.
+    """
+
+    blockers: list[str] = []
+    mutation_receipt: Mapping[str, object] | None = None
+    final_readback_receipt: Mapping[str, object] | None = None
+    mutation_body: Mapping[str, Any] = {}
+    final_readback_body: Mapping[str, Any] = {}
+    terminal_test_diff_mismatch = False
+    if not agent_receipts:
+        blockers.append("agent_run_receipt_missing")
+    else:
+        try:
+            chain = verify_agent_run_receipt_chain(
+                agent_receipts,
+                expected_repository=repository,
+                expected_base_commit_sha=base_sha,
+            )
+        except Exception:
+            chain = {"ok": False}
+        if chain.get("ok") is not True:
+            blockers.append("agent_run_receipt_chain_invalid")
+        else:
+            parsed_receipts: list[tuple[Mapping[str, object], Mapping[str, Any]]] = []
+            for candidate in agent_receipts:
+                body = candidate.get("body") if isinstance(candidate, Mapping) else None
+                if isinstance(body, Mapping):
+                    parsed_receipts.append((candidate, body))
+            mutation_indices = [
+                index for index, (_, body) in enumerate(parsed_receipts)
+                if (
+                    body.get("mutation_performed") is True
+                    and str(body.get("observed_effect") or "") in {"workspace-write", "external-write"}
+                )
+            ]
+            if not mutation_indices:
+                blockers.append("causal_mutation_and_final_pass_readback_missing")
+            else:
+                terminal_mutation_index = mutation_indices[-1]
+                candidate, body = parsed_receipts[terminal_mutation_index]
+                terminal_diff_sha = _sha256_or_zero(body.get("diff_sha256"))
+                if terminal_diff_sha == "0" * 64:
+                    blockers.append("terminal_mutation_diff_missing")
+                else:
+                    for test_candidate, test_body in parsed_receipts[terminal_mutation_index + 1:]:
+                        if str(test_body.get("tool_name") or "").strip().lower() not in {"test", "run_tests"}:
+                            continue
+                        if str(test_body.get("test_execution_kind") or "").strip().lower() != "qualifying-test":
+                            continue
+                        if str(test_body.get("evidence_gate_result") or "").upper() != "PASS":
+                            continue
+                        if test_body.get("mutation_performed") is True:
+                            continue
+                        if str(test_body.get("observed_effect") or "") != "read":
+                            continue
+                        if _sha256_or_zero(test_body.get("diff_sha256")) != terminal_diff_sha:
+                            terminal_test_diff_mismatch = True
+                            continue
+                        if _sha256_or_zero(test_body.get("test_evidence_sha256")) == "0" * 64:
+                            continue
+                        if _sha256_or_zero(test_body.get("authoritative_readback_sha256")) == "0" * 64:
+                            continue
+                        mutation_receipt = candidate
+                        mutation_body = body
+                        final_readback_receipt = test_candidate
+                        final_readback_body = test_body
+                        break
+                    if final_readback_receipt is None:
+                        blockers.append("terminal_mutation_passing_test_receipt_missing")
+    return {
+        "ok": not blockers,
+        "blockers": blockers,
+        "mutation_receipt": mutation_receipt,
+        "mutation_body": mutation_body,
+        "final_readback_receipt": final_readback_receipt,
+        "final_readback_body": final_readback_body,
+        "terminal_test_diff_mismatch": terminal_test_diff_mismatch,
+    }
+
+
 def build_proof_pack(
     *,
     repair: Mapping[str, Any],
@@ -880,77 +978,22 @@ def build_proof_pack(
         blockers.append("ci_not_green")
 
     def sha256_or_zero(value: Any) -> str:
-        candidate = str(value or "").strip().lower()
-        return candidate if _SHA256.fullmatch(candidate) else "0" * 64
+        return _sha256_or_zero(value)
 
     # Issue #1100: evidence is collected only from persisted reservation rows,
     # append-only Agent-Run receipts, and the live GitHub/CI readback. No caller
     # can satisfy this path with a supplied digest or Boolean assertion.
-    mutation_receipt: Mapping[str, object] | None = None
-    final_readback_receipt: Mapping[str, object] | None = None
-    mutation_body: Mapping[str, Any] = {}
-    final_readback_body: Mapping[str, Any] = {}
-    terminal_test_diff_mismatch = False
-    if not agent_receipts:
-        blockers.append("agent_run_receipt_missing")
-    else:
-        try:
-            chain = verify_agent_run_receipt_chain(
-                agent_receipts,
-                expected_repository=repository,
-                expected_base_commit_sha=base_sha,
-            )
-        except Exception:
-            chain = {"ok": False}
-        if chain.get("ok") is not True:
-            blockers.append("agent_run_receipt_chain_invalid")
-        else:
-            parsed_receipts: list[tuple[Mapping[str, object], Mapping[str, Any]]] = []
-            for candidate in agent_receipts:
-                body = candidate.get("body") if isinstance(candidate, Mapping) else None
-                if isinstance(body, Mapping):
-                    parsed_receipts.append((candidate, body))
-            mutation_indices = [
-                index for index, (_, body) in enumerate(parsed_receipts)
-                if (
-                    body.get("mutation_performed") is True
-                    and str(body.get("observed_effect") or "") in {"workspace-write", "external-write"}
-                )
-            ]
-            if not mutation_indices:
-                blockers.append("causal_mutation_and_final_pass_readback_missing")
-            else:
-                terminal_mutation_index = mutation_indices[-1]
-                candidate, body = parsed_receipts[terminal_mutation_index]
-                terminal_diff_sha = sha256_or_zero(body.get("diff_sha256"))
-                if terminal_diff_sha == "0" * 64:
-                    blockers.append("terminal_mutation_diff_missing")
-                else:
-                    for test_candidate, test_body in parsed_receipts[terminal_mutation_index + 1:]:
-                        if str(test_body.get("tool_name") or "").strip().lower() not in {"test", "run_tests"}:
-                            continue
-                        if str(test_body.get("test_execution_kind") or "").strip().lower() != "qualifying-test":
-                            continue
-                        if str(test_body.get("evidence_gate_result") or "").upper() != "PASS":
-                            continue
-                        if test_body.get("mutation_performed") is True:
-                            continue
-                        if str(test_body.get("observed_effect") or "") != "read":
-                            continue
-                        if sha256_or_zero(test_body.get("diff_sha256")) != terminal_diff_sha:
-                            terminal_test_diff_mismatch = True
-                            continue
-                        if sha256_or_zero(test_body.get("test_evidence_sha256")) == "0" * 64:
-                            continue
-                        if sha256_or_zero(test_body.get("authoritative_readback_sha256")) == "0" * 64:
-                            continue
-                        mutation_receipt = candidate
-                        mutation_body = body
-                        final_readback_receipt = test_candidate
-                        final_readback_body = test_body
-                        break
-                    if final_readback_receipt is None:
-                        blockers.append("terminal_mutation_passing_test_receipt_missing")
+    readback = extract_terminal_passing_test_readback(
+        agent_receipts,
+        repository=repository,
+        base_sha=base_sha,
+    )
+    blockers.extend(readback["blockers"])
+    mutation_receipt = readback["mutation_receipt"]
+    final_readback_receipt = readback["final_readback_receipt"]
+    mutation_body = readback["mutation_body"]
+    final_readback_body = readback["final_readback_body"]
+    terminal_test_diff_mismatch = readback["terminal_test_diff_mismatch"]
 
     verified_changed_files = normalize_repair_changed_files(
         final_readback_body.get("changed_paths") if final_readback_receipt is not None else ()

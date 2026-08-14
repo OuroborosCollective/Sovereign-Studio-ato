@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, request, jsonify  # noqa: E402
 
+from agent_runtime.agent_run_receipts import build_agent_run_receipt  # noqa: E402
 from agent_runtime.contracts import (  # noqa: E402
     SovereignAgentEvent,
     SovereignAgentJobRequest,
@@ -96,6 +97,9 @@ class FakeCursor:
         elif normalized.startswith("SELECT * FROM SOVEREIGN_AGENT_JOBS"):
             user_id = params[0]
             self.last_result = [row for row in self.conn.jobs.values() if row["user_id"] == user_id]
+        elif normalized.startswith("SELECT RECEIPT_SHA256, CANONICAL_BODY") and "AGENT_RUN_RECEIPTS" in normalized:
+            run_id = params[0]
+            self.last_result = list(self.conn.receipts.get(run_id, []))
 
     def fetchone(self):
         return self.last_result if isinstance(self.last_result, dict) else None
@@ -116,6 +120,7 @@ class FakeConnection:
         self.jobs = {}
         self.rescues = {}
         self.events = []
+        self.receipts: dict[str, list[dict[str, object]]] = {}
         self.commits = 0
         self.closed = False
 
@@ -786,16 +791,73 @@ def seed_capsule_evidence(
     conn.jobs[job_id]["workspace_id"] = job_id
     conn.jobs[job_id]["changed_files"] = ["README.md"]
     conn.jobs[job_id]["test_summary"] = "targeted capsule route tests passed"
+    run_id = "run-capsule-route"
     conn.rescues[repair_id] = {
         "user_id": user_id,
         "repair_id": repair_id,
         "job_id": job_id,
+        "run_id": run_id,
         "state": "draft_pr_ready",
         "failure_family": "github_actions_ci",
         "base_sha": base_sha,
         "repository": "https://github.com/example/broken-app",
         "outcome_contract_sha256": "c" * 64,
     }
+    repository = conn.rescues[repair_id]["repository"]
+    mutation = build_agent_run_receipt(
+        sequence=0,
+        repository=repository,
+        base_commit_sha=base_sha,
+        mcp_revision=base_sha,
+        mcp_image_digest="sha256:" + "e" * 64,
+        mcp_revision_verified=True,
+        agent_run_id=run_id,
+        tool_name="write_file",
+        call_id="call-capsule-write",
+        operation_identity="agent-repository-tool:free_single_agent:write_file",
+        input_sha256="1" * 64,
+        output_sha256="2" * 64,
+        diff_sha256="3" * 64,
+        test_evidence_sha256="4" * 64,
+        evidence_gate_result="BLOCKED",
+        mutation_performed=True,
+        observed_effect="workspace-write",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256="0" * 64,
+    )
+    readback = build_agent_run_receipt(
+        sequence=1,
+        repository=repository,
+        base_commit_sha=base_sha,
+        mcp_revision=base_sha,
+        mcp_image_digest="sha256:" + "e" * 64,
+        mcp_revision_verified=True,
+        agent_run_id=run_id,
+        tool_name="test",
+        call_id="call-capsule-test",
+        operation_identity="agent-repository-tool:free_single_agent:test",
+        input_sha256="6" * 64,
+        output_sha256="7" * 64,
+        diff_sha256="3" * 64,
+        test_evidence_sha256="8" * 64,
+        evidence_gate_result="PASS",
+        mutation_performed=False,
+        observed_effect="read",
+        authoritative_readback_sha256="5" * 64,
+        previous_receipt_sha256=str(mutation["header"]["hash"]),
+        test_execution_kind="qualifying-test",
+        changed_paths=("README.md",),
+    )
+    conn.receipts[run_id] = [
+        {
+            "receipt_sha256": str(mutation["header"]["hash"]),
+            "canonical_body": json.dumps(mutation["body"]),
+        },
+        {
+            "receipt_sha256": str(readback["header"]["hash"]),
+            "canonical_body": json.dumps(readback["body"]),
+        },
+    ]
     return user_id, repair_id, base_sha
 
 

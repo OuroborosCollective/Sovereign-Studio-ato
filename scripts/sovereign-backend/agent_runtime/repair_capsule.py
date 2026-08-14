@@ -15,6 +15,7 @@ try:
         FAILURE_FAMILIES,
         MAX_REPAIR_CHANGED_FILES,
         canonical_sha256,
+        extract_terminal_passing_test_readback,
         github_owner_repo,
         normalize_head_sha,
         normalize_repair_changed_files,
@@ -25,6 +26,7 @@ except ImportError:
         FAILURE_FAMILIES,
         MAX_REPAIR_CHANGED_FILES,
         canonical_sha256,
+        extract_terminal_passing_test_readback,
         github_owner_repo,
         normalize_head_sha,
         normalize_repair_changed_files,
@@ -199,7 +201,21 @@ def build_repair_capsule_verifier() -> str:
     return REPAIR_CAPSULE_VERIFIER_SOURCE
 
 
-def build_repair_capsule_manifest(*, repair: Mapping[str, Any], job: Mapping[str, Any], patch_value: Any) -> dict[str, Any]:
+def _receipt_head_sha(receipt: Mapping[str, object] | None) -> str:
+    if not isinstance(receipt, Mapping):
+        return "0" * 64
+    header = receipt.get("header")
+    candidate = str(header.get("hash") if isinstance(header, Mapping) else "").strip().lower()
+    return candidate if _SHA256.fullmatch(candidate) else "0" * 64
+
+
+def build_repair_capsule_manifest(
+    *,
+    repair: Mapping[str, Any],
+    job: Mapping[str, Any],
+    patch_value: Any,
+    agent_receipts: tuple[Mapping[str, object], ...] = (),
+) -> dict[str, Any]:
     blockers: list[str] = []
     try:
         repair_id = str(uuid.UUID(str(repair.get("repair_id") or repair.get("repairId") or "")))
@@ -247,6 +263,21 @@ def build_repair_capsule_manifest(*, repair: Mapping[str, Any], job: Mapping[str
         blockers.append("capsule_test_evidence_missing")
     if "[REDACTED]" in summary or (len(raw_summary) <= 4000 and summary != raw_summary):
         blockers.append("capsule_test_evidence_secret_material")
+
+    # Issue #1122: bind the Capsule to the same causal terminal passing-test
+    # readback the ProofPack uses. An unsupported application-bug case (targeted
+    # tests did not pass in the repair workspace) must not produce a Capsule.
+    repository = str(repair.get("repository") or "")
+    readback = extract_terminal_passing_test_readback(
+        agent_receipts,
+        repository=repository,
+        base_sha=base_sha,
+    )
+    if not readback["ok"]:
+        blockers.append("capsule_targeted_tests_not_passed")
+    mutation_receipt_sha = _receipt_head_sha(readback["mutation_receipt"])
+    final_passing_readback_sha = _receipt_head_sha(readback["final_readback_receipt"])
+
     verifier = build_repair_capsule_verifier(); readme = _readme(base_sha, parsed)
     blockers = list(dict.fromkeys(blockers))
     payload = {
@@ -261,6 +292,8 @@ def build_repair_capsule_manifest(*, repair: Mapping[str, Any], job: Mapping[str
         "patchSha256": hashlib.sha256(patch).hexdigest(),
         "patchByteCount": len(patch),
         "testEvidenceSha256": hashlib.sha256(summary.encode()).hexdigest(),
+        "mutationReceiptSha256": mutation_receipt_sha,
+        "finalPassingReadbackReceiptSha256": final_passing_readback_sha,
         "verifierSha256": hashlib.sha256(verifier.encode()).hexdigest(),
         "readmeSha256": hashlib.sha256(readme.encode()).hexdigest(),
         "maxChangedFiles": MAX_REPAIR_CHANGED_FILES,
@@ -284,6 +317,8 @@ def verify_repair_capsule_manifest(manifest: Mapping[str, Any], patch_value: Any
             and _SHA40.fullmatch(str(manifest.get("baseSha") or ""))
             and _SHA256.fullmatch(str(manifest.get("repositoryIdentitySha256") or ""))
             and _SHA256.fullmatch(str(manifest.get("outcomeContractSha256") or ""))
+            and _SHA256.fullmatch(str(manifest.get("mutationReceiptSha256") or ""))
+            and _SHA256.fullmatch(str(manifest.get("finalPassingReadbackReceiptSha256") or ""))
             and tuple(manifest.get("changedFiles") or ()) == paths and len(paths) <= MAX_REPAIR_CHANGED_FILES
             and manifest.get("patchByteCount") == len(patch) and manifest.get("patchSha256") == hashlib.sha256(patch).hexdigest()
             and manifest.get("verifierSha256") == hashlib.sha256(verifier.encode()).hexdigest()
@@ -294,8 +329,16 @@ def verify_repair_capsule_manifest(manifest: Mapping[str, Any], patch_value: Any
         return False
 
 
-def build_repair_capsule(*, repair: Mapping[str, Any], job: Mapping[str, Any], patch_value: Any) -> dict[str, Any]:
-    manifest = build_repair_capsule_manifest(repair=repair, job=job, patch_value=patch_value)
+def build_repair_capsule(
+    *,
+    repair: Mapping[str, Any],
+    job: Mapping[str, Any],
+    patch_value: Any,
+    agent_receipts: tuple[Mapping[str, object], ...] = (),
+) -> dict[str, Any]:
+    manifest = build_repair_capsule_manifest(
+        repair=repair, job=job, patch_value=patch_value, agent_receipts=agent_receipts
+    )
     if manifest.get("ready") is not True:
         return {"manifest": manifest, "files": {}, "ready": False}
     patch = _patch_bytes(patch_value)
