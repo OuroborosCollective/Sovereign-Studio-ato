@@ -773,3 +773,19 @@ def test_assert_public_https_host_scheme_validation() -> None:
             assert_public_https_host(bad_url)
         with pytest.raises(ValueError, match="Nur sichere HTTPS-Provider-Endpunkte sind erlaubt"):
             assert_provider_target_allowed(bad_url)
+
+
+def test_free_revolver_endpoints_reject_non_dict_json_payloads() -> None:
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+
+    assert "def admin_toggle_freellm_keyless_provider(" in runtime
+    assert "def internal_activate_freellm_keyless_provider(" in runtime
+    assert "def admin_create_free_revolver_provider(" in runtime
+    assert "def admin_discover_free_revolver_provider(" in runtime
+    assert "def internal_discover_managed_freellm_provider(" in runtime
+    assert "def internal_reconcile_freellm_provider(" in runtime
+    assert "def admin_update_free_revolver_provider(" in runtime
+
+    # Verify that all 7 endpoints validate dictionary type explicitly
+    assert runtime.count('if not isinstance(body, dict):') == 7
+    assert runtime.count('"blocker": "invalid_json_body"') == 7

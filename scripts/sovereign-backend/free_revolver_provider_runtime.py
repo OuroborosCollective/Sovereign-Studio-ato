@@ -1320,7 +1320,11 @@ def register_free_revolver_provider_runtime(
                 "error": "Dieser Provider benötigt einen eigenen API-Key.",
                 "blocker": "freellm_provider_key_required",
             }), 409
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "Ungültiges JSON-Payload", "blocker": "invalid_json_body"}), 400
         enabled = bool(body.get("enabled", True))
         if not enabled:
             return jsonify({
@@ -1372,7 +1376,15 @@ def register_free_revolver_provider_runtime(
                 "providerId": provider_id,
                 "protectedValuesReturned": False,
             }), 409
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({
+                "error": "Ungültiges JSON-Payload",
+                "blocker": "invalid_json_body",
+                "protectedValuesReturned": False,
+            }), 400
         if body.get("enabled", True) is not True:
             return jsonify({
                 "error": "Keyless-Deaktivierung ist über diesen bounded Toolpfad nicht erlaubt.",
@@ -1466,7 +1478,14 @@ def register_free_revolver_provider_runtime(
     @app.route("/api/admin/llm/revolver-v3/providers", methods=["POST"])
     @require_admin
     def admin_create_free_revolver_provider():
-        body = request.get_json(force=True) or {}
+        try:
+            body = request.get_json(force=True, silent=True)
+        except Exception:
+            body = None
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "Ungültiges JSON-Payload", "blocker": "invalid_json_body"}), 400
         label = str(body.get("label") or "").strip()[:120]
         auth_mode = str(body.get("authMode") or "bearer").strip().lower()
         if not label:
@@ -1900,7 +1919,11 @@ def register_free_revolver_provider_runtime(
     @app.route("/api/admin/llm/revolver-v3/providers/<source_id>/discover", methods=["POST"])
     @require_admin
     def admin_discover_free_revolver_provider(source_id: str):
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "Ungültiges JSON-Payload", "blocker": "invalid_json_body"}), 400
         try:
             source_id = normalize_provider_source_id(source_id)
             max_auto = normalize_max_auto_activate(body.get("maxAutoActivate", 20))
@@ -2303,7 +2326,15 @@ def register_free_revolver_provider_runtime(
         """Bootstrap one managed source from a real authenticated catalog and canaries."""
         if not _internal_owner_authorized():
             return jsonify({"error": "forbidden", "protectedValuesReturned": False}), 403
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({
+                "error": "Ungültiges JSON-Payload",
+                "blocker": "invalid_json_body",
+                "protectedValuesReturned": False,
+            }), 400
         try:
             source_id = normalize_provider_source_id(source_id)
             max_models = normalize_max_auto_activate(body.get("maxModels", 20))
@@ -2878,7 +2909,15 @@ def register_free_revolver_provider_runtime(
     def internal_reconcile_freellm_provider(source_id: str):
         if not _internal_owner_authorized():
             return jsonify({"error": "forbidden", "protectedValuesReturned": False}), 403
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({
+                "error": "Ungültiges JSON-Payload",
+                "blocker": "invalid_json_body",
+                "protectedValuesReturned": False,
+            }), 400
         try:
             source_id = normalize_provider_source_id(source_id)
             max_models = normalize_max_auto_activate(body.get("maxModels", 20))
@@ -3585,7 +3624,14 @@ def register_free_revolver_provider_runtime(
             source_id = normalize_provider_source_id(source_id)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        body = request.get_json(force=True) or {}
+        try:
+            body = request.get_json(force=True, silent=True)
+        except Exception:
+            body = None
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "Ungültiges JSON-Payload", "blocker": "invalid_json_body"}), 400
         if "enabled" not in body:
             return jsonify({"error": "Nur enabled kann hier geändert werden"}), 400
         enabled = bool(body["enabled"])
