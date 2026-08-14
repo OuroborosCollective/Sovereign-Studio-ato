@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "e3a188a046d3f9ec90d50e057798904b2875b869",
+  "sourceRevision": "34d26b2411a9d44cb984aa7abd671d6686650c20",
   "rawCandidateCount": 94,
   "canonicalCandidateCount": 75,
   "entries": [
@@ -725,7 +725,7 @@
       "symbol": "dynamic_execution_containment_audit",
       "line": 1191,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "2667ea628ae0a2a9d23f9984e8a062c3da4901e49da849cefb5aa9724b2b2700",
+      "fileSha256": "20eae5e78ee55ddf0de4e4a6bc124955fcb5710255b17a8c671eb79a3276ca21",
       "anchorSha256": "16dc240a74167a3c40217562ca69d333413f5dc0988d99bab3341e3c112d60b2",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:d5f9a0a09d29a3ab6c6c50ff",
@@ -738,7 +738,7 @@
       "symbol": "dynamic_execution_containment_audit",
       "line": 1200,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "2667ea628ae0a2a9d23f9984e8a062c3da4901e49da849cefb5aa9724b2b2700",
+      "fileSha256": "20eae5e78ee55ddf0de4e4a6bc124955fcb5710255b17a8c671eb79a3276ca21",
       "anchorSha256": "1691d7c6f878c986585e88fa703e0880e9b7cb3d6db6eb4955cfaa645bbbf7a9",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:3bd4cbbeb9882f92d6ef4b23",
@@ -749,12 +749,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_assurance_tools.py",
       "mirrorPaths": [],
       "symbol": "_classify_secret_literal",
-      "line": 1521,
+      "line": 1578,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "2667ea628ae0a2a9d23f9984e8a062c3da4901e49da849cefb5aa9724b2b2700",
+      "fileSha256": "20eae5e78ee55ddf0de4e4a6bc124955fcb5710255b17a8c671eb79a3276ca21",
       "anchorSha256": "62b1dbbc20d2c228fee1ba1a88580f0cacd8036dc5b624c517fb7b5771fc0d89",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:184464acbc6933752012045f",
+      "candidateId": "llm-boundary:15c5016c08c2d7b07d52c516",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "_classify_secret_literal scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
@@ -1019,5 +1019,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "3dc3453dc15bdeda03b60c0ebc3b8f3ab05720880f1d5b6912a2e8cb629bd7bf"
+  "ledgerSha256": "ddc8b11ea167b432d65cf0c975671845b2d3107dde21e4810141ec34e1586904"
 }
