@@ -288,6 +288,9 @@ def test_launcher_image_installer_and_ci_include_freemium_product_module() -> No
     dockerfile = (root / "Dockerfile").read_text("utf-8")
     installer = (root / "deploy" / "install-on-vps.sh").read_text("utf-8")
     workflow = (root.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+    workflow += "\n" + (
+        root / "deploy" / "install-and-verify-private-mcp-on-vps.sh"
+    ).read_text("utf-8")
 
     assert "import freemium_product_architect_tools" in launcher
     assert "freemium_product_architect_tools.register(server.mcp)" in launcher

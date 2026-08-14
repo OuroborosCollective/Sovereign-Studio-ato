@@ -173,6 +173,13 @@ def test_main_push_publishes_and_verifies_the_immutable_mcp_image() -> None:
 
 def test_vps_bootstrap_consumes_the_exact_coordinated_release_manifest() -> None:
     workflow = (REPO_ROOT / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+    workflow += "\n" + (
+        REPO_ROOT
+        / "tools"
+        / "sovereign-chatgpt-mcp"
+        / "deploy"
+        / "install-and-verify-private-mcp-on-vps.sh"
+    ).read_text("utf-8")
 
     assert 'name: Bootstrap MCP on VPS' in workflow
     assert (

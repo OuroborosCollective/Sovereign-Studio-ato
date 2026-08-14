@@ -2,35 +2,43 @@
   "pages": [
     {
       "git_blob_sha1": "31fa62c6eef92a053f80eb8bc18edb5daad3d208",
-      "path": "BRAIN.md"
+      "path": "BRAIN.md",
+      "sha256": "0b26d3ce83ac4621069f47499df577904dd2da883b331f794c1737af1b2b63cf"
     },
     {
       "git_blob_sha1": "135ff9d85e11cda76d5740ff1b48c78a3b2a826d",
-      "path": "brain/architecture.md"
+      "path": "brain/architecture.md",
+      "sha256": "47d0a3b3fd8de93f30878ac107f7d1404b91e8f7fba28c33309dabe7262b5a36"
     },
     {
       "git_blob_sha1": "0918f92781af699d2d4dd0669c7ced7869bd85ec",
-      "path": "brain/current-state.md"
+      "path": "brain/current-state.md",
+      "sha256": "8daa4410dc663e5643c481ebbb2e334e49c16a770325f54f0d28840850957938"
     },
     {
       "git_blob_sha1": "1dffbfc44a2dbd2e4c65035561976609ff712392",
-      "path": "brain/decisions.md"
+      "path": "brain/decisions.md",
+      "sha256": "40ace455bf4f4ad3eb128cb8ea6400a8474ef60861b29d3f9401a57257e161e1"
     },
     {
       "git_blob_sha1": "0cc3b3d019a1ccb41423c0a2fa354a2475a162be",
-      "path": "brain/runtime-truth.md"
+      "path": "brain/runtime-truth.md",
+      "sha256": "19f52d6514031a437ab5f8beb37d2e1b8f20d90d0f0d268a28b5635e16dc973d"
     },
     {
       "git_blob_sha1": "35b967b78bb0d395fdd6ef0e8172ee92478fe116",
-      "path": "brain/workflows.md"
+      "path": "brain/workflows.md",
+      "sha256": "86472a814c61af34df303d8b45ffa8a84b22046604508d7a2b6e18a07e4bad5d"
     },
     {
       "git_blob_sha1": "5bf99d8088a0cd05abc8d3139b023b64f54ee3e8",
-      "path": "brain/roadmap.md"
+      "path": "brain/roadmap.md",
+      "sha256": "c8df42ce55843e9994b935bd3282ffd8f40a49f6cb30598c19d18d74f10c9d61"
     },
     {
       "git_blob_sha1": "2db4285b4f150a3e3ed48fbd47677167ba605607",
-      "path": "brain/continuity.md"
+      "path": "brain/continuity.md",
+      "sha256": "f74c6ea853dd7039841242db21e189cf33b5dd064e600ff44f9289b6812cf847"
     }
   ],
   "purpose": "Git-native derived projection for coding-agent orientation",
@@ -39,23 +47,28 @@
   "sources": [
     {
       "git_blob_sha1": "c69bd2fd90d63d5765b0d24b1aba21b50f17d45e",
-      "path": "AGENTS.md"
+      "path": "AGENTS.md",
+      "sha256": "308b80ac020dd37ce0b91cf71fef4f7f51dfe8593b56ee118103119c1d4349db"
     },
     {
       "git_blob_sha1": "a3569b071d014e6346aa8a17c8c3313e04cdeab0",
-      "path": "docs/CURRENT_STATE_2026-08-03.md"
+      "path": "docs/CURRENT_STATE_2026-08-03.md",
+      "sha256": "bba7c89c790c96df3f65a0fb28e398ae4fbb111b60564cac445a8024c1748a81"
     },
     {
-      "git_blob_sha1": "d1683d80ff58378e6c999d64d0bd0c7f626585e7",
-      "path": "docs/SOVEREIGN_PRODUCT_TRUTH.md"
+      "git_blob_sha1": "c5f76bbea22293add76eab8634280666d162cafe",
+      "path": "docs/SOVEREIGN_PRODUCT_TRUTH.md",
+      "sha256": "ce83643ad42b653855184bf778ff66b5bb5155b112a5b95a77c5fb6b0ffbfbcf"
     },
     {
       "git_blob_sha1": "bdf64add39067dbbb2579e7a60869f606e24fd0a",
-      "path": "docs/sovereign-continuity/CONTEXT.md"
+      "path": "docs/sovereign-continuity/CONTEXT.md",
+      "sha256": "76dfe66cd4d835331cd591c3e2294fc796e768c62741b973e744947d290318e3"
     },
     {
       "git_blob_sha1": "81671b6a24f908ed529ae79a5c69187e91a1773e",
-      "path": ".github/workflows/sovereign-continuity-gate.yml"
+      "path": ".github/workflows/sovereign-continuity-gate.yml",
+      "sha256": "7084b93aface080f251f705bb2c00509075ae6e14ef623fc13ddf47ac6316fd6"
     }
   ],
   "truthBoundary": {

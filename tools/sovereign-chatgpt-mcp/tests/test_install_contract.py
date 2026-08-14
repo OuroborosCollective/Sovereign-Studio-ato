@@ -530,6 +530,9 @@ def test_main_workflow_runs_real_gotenberg_to_tika_post_install_canary() -> None
     workflow = (
         ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
     ).read_text("utf-8")
+    workflow += "\n" + (
+        ROOT / "deploy" / "install-and-verify-private-mcp-on-vps.sh"
+    ).read_text("utf-8")
 
     assert "Verify Gotenberg to Tika live canary" in workflow
     assert "document_pipeline.py" in workflow

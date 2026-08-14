@@ -227,6 +227,9 @@ def test_github_vps_release_directory_uses_portable_bounded_creation() -> None:
 
 def test_github_vps_pull_uses_ephemeral_package_read_auth() -> None:
     workflow = (ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
+    remote_install = (
+        ROOT / "deploy" / "install-and-verify-private-mcp-on-vps.sh"
+    ).read_text("utf-8")
     deploy_job = workflow.split("  deploy-vps:", 1)[1]
     before_install, install_and_after = deploy_job.split("- name: Install and verify private MCP on VPS", 1)
     install_step = install_and_after.split(
@@ -239,30 +242,42 @@ def test_github_vps_pull_uses_ephemeral_package_read_auth() -> None:
     assert "GHCR_TOKEN:" not in before_install
     assert "GHCR_USERNAME: ${{ github.actor }}" in install_step
     assert "GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in install_step
-    assert "envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,KAPPA_POS,CROSS_RUNTIME_PARITY" in install_step
-    assert 'DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"' in install_step
-    assert "json.dumps({'auths': {'ghcr.io': {'auth': encoded}}}" in install_step
-    assert 'chmod 0600 "$DOCKER_AUTH_DIR/config.json"' in install_step
-    assert "unset GHCR_TOKEN" in install_step
-    assert 'DOCKER_CONFIG="$DOCKER_AUTH_DIR"' in install_step
-    assert 'run_root rm -rf "$RELEASE_DIR"' in install_step
-    assert "docker login" not in install_step
+    assert (
+        "envs: SUDO_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,KAPPA_POS,"
+        "CROSS_RUNTIME_PARITY,RELEASE_RELATIVE_DIR,EXPECTED_REVISION,"
+        "EXPECTED_IMAGE_DIGEST,IMAGE_REPOSITORY"
+    ) in install_step
+    assert (
+        "script_path: "
+        "tools/sovereign-chatgpt-mcp/deploy/"
+        "install-and-verify-private-mcp-on-vps.sh"
+    ) in install_step
+    assert "script: |" not in install_step
+    assert 'DOCKER_AUTH_DIR="$RELEASE_DIR/docker-auth"' in remote_install
+    assert "json.dumps({'auths': {'ghcr.io': {'auth': encoded}}}" in remote_install
+    assert 'chmod 0600 "$DOCKER_AUTH_DIR/config.json"' in remote_install
+    assert "unset GHCR_TOKEN" in remote_install
+    assert 'DOCKER_CONFIG="$DOCKER_AUTH_DIR"' in remote_install
+    assert 'run_root rm -rf "$RELEASE_DIR"' in remote_install
+    assert "docker login" not in remote_install
 
 
 def test_github_vps_runtime_canaries_keep_socket_and_host_worker_contracts_separate() -> None:
     workflow = (ROOT.parents[1] / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml").read_text("utf-8")
     installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
-    install_step = workflow.split("- name: Install and verify private MCP on VPS", 1)[1].split(
-        "- name: Reverify deployed evidence in fresh SSH session",
-        1,
-    )[0]
+    remote_install = (
+        ROOT / "deploy" / "install-and-verify-private-mcp-on-vps.sh"
+    ).read_text("utf-8")
 
     assert 'failure_family") == "INBOUND_MUTATION_FORBIDDEN"' in installer
     assert 'worker.get("status") == "HOST_WORKER_READY"' in installer
     assert 'worker.get("execution_origin") == "host_worker"' in installer
-    assert "canary.get('status') == 'HOST_WORKER_READY'" in install_step
-    assert "canary.get('execution_origin') == 'host_worker'" in install_step
-    assert "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'" not in install_step
+    assert "canary.get('status') == 'HOST_WORKER_READY'" in remote_install
+    assert "canary.get('execution_origin') == 'host_worker'" in remote_install
+    assert (
+        "canary.get('failure_family') == 'INBOUND_MUTATION_FORBIDDEN'"
+        not in remote_install
+    )
 
 
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
