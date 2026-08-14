@@ -521,37 +521,180 @@ def create_worker_assignment(
     )
 
 
+# Worker push-event vocabulary for Fleet 2/4 (#1307). Events are observability/coordination
+# only; no event may produce VERIFIED, merge, or runtime success. ``WORKER_READY`` is kept
+# as a backward-compatible alias of ``WORKER_STARTED``.
+WORKER_EVENT_TYPES: frozenset[str] = frozenset({
+    "WORKER_STARTED",
+    "WORKER_READY",
+    "WORKSPACE_BOUND",
+    "PATCH_PREPARED",
+    "TEST_RESULT_RECORDED",
+    "BLOCKED",
+    "STALE_BASE_DETECTED",
+    "PR_READY_UNVERIFIED",
+    "EVIDENCE_REFERENCE_ADDED",
+    "WORKER_COMPLETED_UNVERIFIED",
+    "WORKER_FAILED",
+})
+
+# Map each worker event to its projected lifecycle status. Terminal or authoritative
+# runtime/merge states are deliberately absent: a worker event can never produce them.
+# ``WORKER_STARTED`` advances the lifecycle to ``RUNNING`` and ``PR_READY_UNVERIFIED``
+# hands off to ``VERIFYING`` (arbitrated by #1308); both stop short of an authoritative result.
+_WORKER_EVENT_STATUS: dict[str, str] = {
+    "WORKER_READY": "READY",
+    "WORKSPACE_BOUND": "WORKSPACE_BOUND",
+    "WORKER_STARTED": "RUNNING",
+    "PATCH_PREPARED": "RUNNING",
+    "TEST_RESULT_RECORDED": "RUNNING",
+    "BLOCKED": "BLOCKED",
+    "STALE_BASE_DETECTED": "STALE",
+    "EVIDENCE_REFERENCE_ADDED": "RUNNING",
+    "PR_READY_UNVERIFIED": "VERIFYING",
+    "WORKER_COMPLETED_UNVERIFIED": "COMPLETED_UNVERIFIED",
+    "WORKER_FAILED": "FAILED",
+}
+
+
+def _sequence(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):  # bool is an int subclass
+        raise FleetContractError("sequence must be a non-negative integer")
+    if value < 0:
+        raise FleetContractError("sequence must be a non-negative integer")
+    return value
+
+
 def validate_worker_event(
     assignment: FleetWorkerAssignment | Mapping[str, Any],
     *,
     event_type: str,
     summary: str,
     evidence_refs: Sequence[str] | None = None,
+    sequence: int | None = None,
+    base_revision: str = "",
+    head_revision: str = "",
+    predecessor_hash: str = "",
 ) -> dict[str, Any]:
-    """Validate a report without turning worker completion into verification."""
+    """Validate a push-event report without turning worker completion into verification.
+
+    Events are observability/coordination only. Optional ``sequence``, ``base_revision``,
+    ``head_revision`` and ``predecessor_hash`` bind the event into an ordered, revision-bound
+    stream per the controller event contract (the event hash chains the predecessor when
+    supplied). They are added to the payload only when supplied so existing callers keep a
+    deterministic identity.
+    """
 
     raw_assignment = assignment.to_dict() if isinstance(assignment, FleetWorkerAssignment) else dict(assignment)
     assignment_hash = _revision(_field(raw_assignment, "assignment_hash", "assignmentHash"), "assignment_hash")
     normalized_type = _text(event_type, "event_type", maximum=120).upper()
-    allowed = {
-        "WORKER_READY",
-        "WORKER_STARTED",
-        "WORKER_BLOCKED",
-        "WORKER_FAILED",
-        "WORKER_COMPLETED_UNVERIFIED",
-    }
-    if normalized_type not in allowed or ("VERIFIED" in normalized_type and normalized_type != "WORKER_COMPLETED_UNVERIFIED"):
+    if normalized_type not in WORKER_EVENT_TYPES:
+        raise FleetContractError("unknown worker event type")
+    # The closed allowlist above already excludes authoritative results. This guard is a
+    # belt-and-suspenders check: even a future allowlist entry that literally claims a
+    # verified/merged/deployed state is rejected. "..._UNVERIFIED" events are handoffs, not
+    # claims, so they pass.
+    if normalized_type.endswith("_VERIFIED") or normalized_type in {"MERGED", "DEPLOYED"}:
         raise FleetContractError("worker events cannot claim verification, merge, or runtime success")
-    payload = {
+    payload: dict[str, Any] = {
         "schemaVersion": SCHEMA_VERSION,
         "assignmentHash": assignment_hash,
         "taskId": _text(_field(raw_assignment, "task_id", "taskId"), "task_id", maximum=120),
         "eventType": normalized_type,
-        "status": "COMPLETED_UNVERIFIED" if normalized_type == "WORKER_COMPLETED_UNVERIFIED" else normalized_type.removeprefix("WORKER_"),
+        "status": _WORKER_EVENT_STATUS[normalized_type],
         "summary": _text(summary, "summary", maximum=2000),
         "evidenceRefs": list(_revisions(evidence_refs or (), "evidence_refs", maximum_items=20)),
     }
-    return {**payload, "eventId": f"fleet-event-{stable_hash(payload)[:24]}", "eventHash": stable_hash(payload)}
+    if sequence is not None:
+        payload["sequence"] = _sequence(sequence)
+    # Bind the event to the exact base/head revisions it observes. Empty means unreported;
+    # a reported value must be an exact revision. This is what makes head/base drift detectable
+    # from the event stream alone.
+    base = _revision(base_revision, "base_revision", optional=True)
+    head = _revision(head_revision, "head_revision", optional=True)
+    if base:
+        payload["baseRevision"] = base
+    if head:
+        payload["headRevision"] = head
+    predecessor = _revision(predecessor_hash, "predecessor_hash", optional=True)
+    if predecessor:
+        payload["predecessorHash"] = predecessor
+    event_hash = stable_hash(payload)
+    return {**payload, "eventId": f"fleet-event-{event_hash[:24]}", "eventHash": event_hash}
+
+
+# Worker lifecycle states for Fleet 2/4 (#1307). These are derived projections of the
+# canonical #1113 task states; the worker cannot reach an authoritative terminal on its own.
+WORKER_LIFECYCLE_STATES: frozenset[str] = frozenset({
+    "PLANNED",
+    "READY",
+    "ASSIGNED",
+    "WORKSPACE_BOUND",
+    "RUNNING",
+    "BLOCKED",
+    "STALE",
+    "VERIFYING",
+    "COMPLETED_UNVERIFIED",
+    "FAILED",
+})
+
+# Explicit, fail-closed transition table keyed by lifecycle state to the worker *events*
+# that may legally follow it. Any event not listed here is rejected (inert side-effect
+# events are handled separately in :func:`transition_worker_lifecycle`). The table never
+# admits a path to a VERIFIED/merged state; VERIFYING is the furthest the worker may reach
+# before #1308 arbitration takes over.
+_WORKER_TRANSITIONS: dict[str, frozenset[str]] = {
+    "PLANNED": frozenset({"WORKER_READY"}),
+    "READY": frozenset({"WORKER_STARTED", "WORKER_FAILED"}),
+    "ASSIGNED": frozenset({"WORKSPACE_BOUND", "BLOCKED", "STALE_BASE_DETECTED", "WORKER_FAILED"}),
+    "WORKSPACE_BOUND": frozenset({"WORKER_STARTED", "BLOCKED", "STALE_BASE_DETECTED", "WORKER_FAILED"}),
+    "RUNNING": frozenset({
+        "WORKER_STARTED",
+        "BLOCKED",
+        "STALE_BASE_DETECTED",
+        "PR_READY_UNVERIFIED",
+        "WORKER_COMPLETED_UNVERIFIED",
+        "WORKER_FAILED",
+    }),
+    "BLOCKED": frozenset({"WORKER_STARTED", "WORKER_FAILED"}),
+    "STALE": frozenset({"WORKER_READY", "WORKER_FAILED"}),
+    "VERIFYING": frozenset({"WORKER_COMPLETED_UNVERIFIED", "WORKER_FAILED"}),
+    "COMPLETED_UNVERIFIED": frozenset(),
+    "FAILED": frozenset(),
+}
+
+
+def transition_worker_lifecycle(current: str, event_type: str) -> str:
+    """Project a worker event onto the next lifecycle state, fail-closed.
+
+    Returns the next state or raises :class:`FleetContractError` when the event cannot legally
+    follow the current state. Terminal states (``COMPLETED_UNVERIFIED``/``FAILED``) admit no
+    further transition. Side-effect events (``PATCH_PREPARED``, ``TEST_RESULT_RECORDED``,
+    ``EVIDENCE_REFERENCE_ADDED``) are legal only while ``RUNNING`` and leave the state unchanged.
+    """
+
+    current_state = _text(current, "current_state", maximum=120).upper()
+    if current_state not in WORKER_LIFECYCLE_STATES:
+        raise FleetContractError(f"unknown worker lifecycle state: {current_state}")
+    normalized_event = _text(event_type, "event_type", maximum=120).upper()
+    if normalized_event not in WORKER_EVENT_TYPES:
+        raise FleetContractError("unknown worker event type")
+    inert_while_running = {
+        "PATCH_PREPARED",
+        "TEST_RESULT_RECORDED",
+        "EVIDENCE_REFERENCE_ADDED",
+    }
+    if normalized_event in inert_while_running:
+        if current_state == "RUNNING":
+            return current_state
+        raise FleetContractError(
+            f"worker event {normalized_event} is only allowed while RUNNING"
+        )
+    if normalized_event not in _WORKER_TRANSITIONS.get(current_state, frozenset()):
+        raise FleetContractError(
+            f"worker event {normalized_event} is not allowed from lifecycle state {current_state}"
+        )
+    return _WORKER_EVENT_STATUS[normalized_event]
 
 
 def evaluate_fleet_verdict(
