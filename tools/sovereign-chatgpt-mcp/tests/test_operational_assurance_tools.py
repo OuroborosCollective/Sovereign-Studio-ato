@@ -576,6 +576,142 @@ def test_skill_idempotency_approval_secret_supply_chain_and_auth(registered) -> 
     assert trigger_benchmark_fail.ok is False
     assert trigger_benchmark_fail.findings[0]["family"] == "SKILL_TRIGGER_PRECISION_MISMATCH"
 
+
+def test_skill_trigger_quality_benchmark_aggregates_green() -> None:
+    # Three passing missions: 2 expected-selected, 1 expected-not-selected.
+    result = tools.skill_trigger_quality_benchmark(
+        [
+            tools.TriggerMission(
+                mission_id="select-a",
+                skill_id="sovereign.release-readiness",
+                request_text="Please assess release readiness for the current branch",
+                expected_triggers=["release readiness"],
+                expected_anti_triggers=[],
+                expected_selection=True,
+                manifest_triggers=["release readiness"],
+                manifest_anti_triggers=["bypass checks"],
+            ),
+            tools.TriggerMission(
+                mission_id="select-b",
+                skill_id="sovereign.release-readiness",
+                request_text="Help me repair ci for the failing build",
+                expected_triggers=["repair ci"],
+                expected_anti_triggers=[],
+                expected_selection=True,
+                manifest_triggers=["repair ci"],
+                manifest_anti_triggers=[],
+            ),
+            tools.TriggerMission(
+                mission_id="no-match",
+                skill_id="sovereign.release-readiness",
+                request_text="Just do some general cleanup",
+                expected_triggers=[],
+                expected_anti_triggers=[],
+                expected_selection=False,
+                manifest_triggers=["release readiness", "repair ci"],
+                manifest_anti_triggers=[],
+            ),
+        ]
+    )
+    assert result.ok is True
+    agg = result.evidence["aggregates"]
+    assert agg["missionCount"] == 3
+    assert agg["passCount"] == 3
+    assert agg["failCount"] == 0
+    assert agg["passRate"] == 1.0
+    assert agg["expectedSelectionCount"] == 2
+    assert agg["expectedNoSelectionCount"] == 1
+    assert agg["falsePositiveTriggerCount"] == 0
+    assert agg["falsePositiveTriggerRate"] == 0.0
+    assert agg["falseNegativeTriggerCount"] == 0
+    assert agg["falseNegativeTriggerRate"] == 0.0
+    assert agg["precisionMismatchCount"] == 0
+    assert agg["antiTriggerMismatchCount"] == 0
+    # The benchmark evaluates traces; it cannot produce canonical verification.
+    assert agg["verifiedByBenchmark"] == 0
+    assert result.runtimeVerified is False
+
+
+def test_skill_trigger_quality_benchmark_aggregates_fp_and_fn() -> None:
+    # False positive: expected NOT selected but a trigger matches anyway.
+    # False negative: expected selected but no trigger matches.
+    result = tools.skill_trigger_quality_benchmark(
+        [
+            tools.TriggerMission(
+                mission_id="false-positive",
+                skill_id="sovereign.release-readiness",
+                request_text="Please assess release readiness now",
+                expected_triggers=[],
+                expected_anti_triggers=[],
+                expected_selection=False,
+                manifest_triggers=["release readiness"],
+                manifest_anti_triggers=[],
+            ),
+            tools.TriggerMission(
+                mission_id="false-negative",
+                skill_id="sovereign.release-readiness",
+                request_text="Just do some general cleanup",
+                expected_triggers=["release readiness"],
+                expected_anti_triggers=[],
+                expected_selection=True,
+                manifest_triggers=["release readiness"],
+                manifest_anti_triggers=[],
+            ),
+        ]
+    )
+    assert result.ok is False
+    agg = result.evidence["aggregates"]
+    assert agg["missionCount"] == 2
+    assert agg["passCount"] == 0
+    assert agg["failCount"] == 2
+    assert agg["passRate"] == 0.0
+    assert agg["expectedSelectionCount"] == 1
+    assert agg["expectedNoSelectionCount"] == 1
+    assert agg["falsePositiveTriggerCount"] == 1
+    assert agg["falsePositiveTriggerRate"] == 1.0
+    assert agg["falseNegativeTriggerCount"] == 1
+    assert agg["falseNegativeTriggerRate"] == 1.0
+    # Both failures are precision mismatches (observed != expected triggers).
+    assert agg["precisionMismatchCount"] == 2
+    assert agg["antiTriggerMismatchCount"] == 0
+
+
+def test_skill_trigger_quality_benchmark_aggregates_rate_is_deterministic_fraction() -> None:
+    # 4 expected-not-selected missions with 1 false positive => rate 0.25.
+    missions = [
+        tools.TriggerMission(
+            mission_id=f"anti-{i}",
+            skill_id="sovereign.release-readiness",
+            request_text="unrelated cleanup task number " + str(i),
+            expected_triggers=[],
+            expected_anti_triggers=[],
+            expected_selection=False,
+            manifest_triggers=["release readiness"],
+            manifest_anti_triggers=[],
+        )
+        for i in range(4)
+    ]
+    # Force exactly one to falsely trigger by giving it the matching phrase.
+    missions[0] = tools.TriggerMission(
+        mission_id="anti-triggered",
+        skill_id="sovereign.release-readiness",
+        request_text="assess release readiness please",
+        expected_triggers=[],
+        expected_anti_triggers=[],
+        expected_selection=False,
+        manifest_triggers=["release readiness"],
+        manifest_anti_triggers=[],
+    )
+    result = tools.skill_trigger_quality_benchmark(missions)
+    agg = result.evidence["aggregates"]
+    assert agg["expectedNoSelectionCount"] == 4
+    assert agg["falsePositiveTriggerCount"] == 1
+    assert agg["falsePositiveTriggerRate"] == 0.25
+    assert agg["expectedSelectionCount"] == 0
+    # No expected-selected missions => false negative rate defined as 0.0, not a div-by-zero.
+    assert agg["falseNegativeTriggerRate"] == 0.0
+    assert result.ok is False
+
     idempotency = tools.tool_idempotency_verify(
         [
             tools.IdempotencyObservation(

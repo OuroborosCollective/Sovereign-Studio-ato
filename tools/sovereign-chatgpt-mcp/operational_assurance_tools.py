@@ -1352,6 +1352,15 @@ def skill_trigger_quality_benchmark(
     findings: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
 
+    pass_count = 0
+    fail_count = 0
+    expected_selection_count = 0
+    expected_no_selection_count = 0
+    false_positive_trigger_count = 0
+    false_negative_trigger_count = 0
+    precision_mismatch_count = 0
+    anti_trigger_mismatch_count = 0
+
     for item in payload:
         normalized = _normalized_text(item["request_text"])
 
@@ -1385,12 +1394,28 @@ def skill_trigger_quality_benchmark(
             "selectionOk": selection_ok,
         })
 
+        if passed:
+            pass_count += 1
+        else:
+            fail_count += 1
+
+        if item["expected_selection"]:
+            expected_selection_count += 1
+            if not selected:
+                false_negative_trigger_count += 1
+        else:
+            expected_no_selection_count += 1
+            if selected:
+                false_positive_trigger_count += 1
+
         if not passed:
             family = "SKILL_TRIGGER_SELECTION_MISMATCH"
             if not trigger_precision_ok:
                 family = "SKILL_TRIGGER_PRECISION_MISMATCH"
+                precision_mismatch_count += 1
             elif not anti_trigger_ok:
                 family = "SKILL_ANTI_TRIGGER_MISMATCH"
+                anti_trigger_mismatch_count += 1
             findings.append({
                 "severity": "P0",
                 "family": family,
@@ -1398,20 +1423,52 @@ def skill_trigger_quality_benchmark(
                 "skillId": item["skill_id"],
             })
 
+    mission_count = len(results)
+    pass_rate = round(pass_count / mission_count, 6) if mission_count else 0.0
+    false_positive_trigger_rate = (
+        round(false_positive_trigger_count / expected_no_selection_count, 6)
+        if expected_no_selection_count else 0.0
+    )
+    false_negative_trigger_rate = (
+        round(false_negative_trigger_count / expected_selection_count, 6)
+        if expected_selection_count else 0.0
+    )
+
+    aggregates = {
+        "missionCount": mission_count,
+        "passCount": pass_count,
+        "failCount": fail_count,
+        "passRate": pass_rate,
+        "expectedSelectionCount": expected_selection_count,
+        "expectedNoSelectionCount": expected_no_selection_count,
+        "falsePositiveTriggerCount": false_positive_trigger_count,
+        "falsePositiveTriggerRate": false_positive_trigger_rate,
+        "falseNegativeTriggerCount": false_negative_trigger_count,
+        "falseNegativeTriggerRate": false_negative_trigger_rate,
+        "precisionMismatchCount": precision_mismatch_count,
+        "antiTriggerMismatchCount": anti_trigger_mismatch_count,
+        # The benchmark only evaluates supplied traces; it never executes skills,
+        # so it cannot produce canonical verification. Verification is owned by
+        # external canonical readbacks (see sovereign-target-readback). Every
+        # passing mission here is therefore SUCCEEDED_UNVERIFIED from this surface.
+        "verifiedByBenchmark": 0,
+    }
+
     ok = not findings
     return _result(
         schema="sovereign.skill-trigger-quality-benchmark.v1",
         ok=ok,
         status="SKILL_TRIGGER_BENCHMARK_GREEN" if ok else "SKILL_TRIGGER_BENCHMARK_FAILED",
-        evidence={"results": results, "missionCount": len(results)},
+        evidence={"results": results, "aggregates": aggregates},
         findings=findings,
         next_actions=[
             "fix trigger patterns that do not match expected phrases",
             "verify anti-triggers correctly block selection",
             "block skill updates when trigger benchmarks regress",
+            "track aggregate passRate, falsePositiveTriggerRate and falseNegativeTriggerRate across MCP updates to detect regression drift",
         ],
         runtime_verified=False,
-        truth_notice="The benchmark evaluates supplied trigger patterns against request text. It does not execute skills or create side effects.",
+        truth_notice="The benchmark evaluates supplied trigger patterns against request text. It does not execute skills or create side effects. Aggregate rates are derived deterministically from observed per-mission results; no token consumption is measured here.",
     )
 
 
