@@ -98,6 +98,38 @@ Important rules:
 
 See [`architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md`](architecture/REPOSITORY_INTELLIGENCE_EVIDENCE_LANE.v1.md).
 
+## Neuro-inspired MCP verification lane
+
+The clean-room lane under `tools/sovereign-chatgpt-mcp/` is additive to the
+existing control plane. It registers exactly five tools on the existing
+FastMCP instance and consumes the live registry and predictive router; it does
+not create another server, registry, router, code server or execution path.
+
+Its deterministic flow is:
+
+```text
+canonical ChangeEvent + temporal envelope
+→ relevance and optional bounded spike filter
+→ sparse selection from the live MCP registry
+→ proposal-only candidate
+→ Foundation verification
+→ idempotent, hash-chained admission evidence
+```
+
+Unknown event or Foundation kinds, stale revision/policy bindings, registry
+drift, source-head conflicts, invalid teaching provenance and incomplete
+cross-ledger admissions fail closed. The Foundation and neuromorphic ledgers
+are evidence stores, not an alternative source of tool authority. Persistent
+outcome tracking is limited to mutating tools; read-only tools do not write
+ranking or neuromorphic state. Tracking is a best-effort side channel and must
+never change the primary tool result or exception.
+
+Repository presence is `IMPLEMENTED_IN_REPOSITORY`, not deployment proof. A
+live claim additionally requires exact-head CI, an immutable revision-labelled
+image, five-tool registry readback, protocol/container identity and PatchMon
+verification. See
+[`architecture/NEURO_ARCHITECTURE_FOUNDATION.v1.md`](architecture/NEURO_ARCHITECTURE_FOUNDATION.v1.md).
+
 ## Backend and mirror ownership
 
 Before changing backend agent code:

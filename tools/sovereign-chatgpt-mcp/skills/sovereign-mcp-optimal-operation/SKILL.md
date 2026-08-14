@@ -43,7 +43,7 @@ Any failed check blocks the mutation before the original tool function is called
 - Natural-language understanding belongs to the online LLM. Runtime code enforces actions, policy, permissions, state and evidence; it does not imitate semantic understanding through keyword rules.
 - No generic shell, arbitrary SQL surface, Docker socket or invented tool contract may be introduced as an operational shortcut.
 - No mock, stub, facade, cached UI projection or unchecked return value may be called live truth.
-- FreeLLM and Paid OpenRouter/LiteLLM routes stay separate. There is no automatic Free-to-Paid or Paid-to-Free fallback.
+- Direct FreeLLM and direct Paid OpenRouter routes stay separate. Legacy LiteLLM transport remains retired, and there is no automatic Free-to-Paid or Paid-to-Free fallback.
 - Protected values never enter chat, MCP arguments, logs, repository files or database rows. They use the authenticated owner-input path only.
 - A release claim requires exact revision, required CI on that revision, immutable digest, deployment readback and a runtime protocol canary.
 - Learning is written only after a proven result and remains bounded, secret-free and revision-linked.

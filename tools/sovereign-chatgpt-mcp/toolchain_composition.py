@@ -61,6 +61,8 @@ Capability = Literal[
     "supply-chain",
     "authentication",
     "tenant",
+    "teaching",
+    "neuro",
 ]
 PredicateOperator = Literal[
     "exists",
@@ -264,6 +266,8 @@ _CATEGORY_BY_CAPABILITY: dict[str, SemanticCategory] = {
     "supply-chain": "security",
     "authentication": "security",
     "tenant": "security",
+    "teaching": "learning",
+    "neuro": "deterministic",
 }
 
 

@@ -9,6 +9,8 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
     monkeypatch.setenv("SOVEREIGN_MCP_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato")
     monkeypatch.setenv("SOVEREIGN_MCP_HOST", "127.0.0.1")
     monkeypatch.setenv("SOVEREIGN_MCP_PORT", "8090")
+    ranking_root = tmp_path / "ranking-state"
+    monkeypatch.setenv("SOVEREIGN_TOOL_RANKING_STATE_ROOT", str(ranking_root))
     monkeypatch.setenv("SOVEREIGN_KAPPA_POS", "1000000")
     os.environ.pop("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", None)
 
@@ -28,6 +30,11 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
         "mcp_toolchain_validate",
         "mcp_toolchain_next_step",
         "mcp_diagnostic_chain_plan",
+        "neuro_runtime_contract_status",
+        "neuro_event_route_preview",
+        "neuro_event_commit",
+        "teaching_package_assess",
+        "teaching_lesson_simulate",
         "sovereign_operating_profile_status",
         "sovereign_mission_preflight",
         "operational_assurance_skill_inventory",
@@ -61,10 +68,41 @@ def test_launcher_registers_combined_governance_and_assurance_registry(monkeypat
         "authentication_chaos_negative_test_assess",
     }
     assert required.issubset(names), sorted(required - names)
+    tools_by_name = {tool.name: tool for tool in server.mcp._tool_manager.list_tools()}
+    expected_opt_out = sum(
+        bool(getattr(tool.annotations, "readOnlyHint", False))
+        or bool(getattr(tool.fn, "__sovereign_success_tracking_opt_out__", False))
+        for tool in tools_by_name.values()
+        if callable(getattr(tool, "fn", None))
+    )
+    assert launcher.TOOL_SUCCESS_TRACKING["optedOutToolCount"] == expected_opt_out
+    assert launcher.TOOL_SUCCESS_TRACKING["telemetryScope"] == "mutable-tool-outcomes-only"
+    assert launcher.TOOL_SUCCESS_TRACKING["readOnlyCallsPersisted"] is False
+    for name in {
+        "neuro_runtime_contract_status",
+        "neuro_event_route_preview",
+        "teaching_package_assess",
+        "teaching_lesson_simulate",
+    }:
+        assert getattr(
+            tools_by_name[name].fn,
+            "__sovereign_success_tracking_opt_out__",
+            False,
+        ) is True
+        assert getattr(tools_by_name[name].fn, "__sovereign_success_tracking__", False) is False
+    assert getattr(tools_by_name["neuro_event_commit"].fn, "__sovereign_success_tracking__", False) is True
+    assert getattr(
+        tools_by_name["sovereign_continuity_status"].fn,
+        "__sovereign_success_tracking__",
+        False,
+    ) is False
+    tools_by_name["neuro_runtime_contract_status"].fn()
+    tools_by_name["sovereign_continuity_status"].fn()
+    assert not ranking_root.exists()
 
     inventory = governance.operational_skill_inventory()
-    assert inventory.skillCount == 45
-    assert inventory.toolCount == 52
+    assert inventory.skillCount == 46
+    assert inventory.toolCount == 57
     assurance_inventory = assurance.operational_assurance_skill_inventory()
     assert assurance_inventory.evidence["newTools"] == 28
     assert assurance_inventory.evidence["existingReusedTools"] == ["mcp_tool_contract_registry"]

@@ -59,6 +59,8 @@ Capability = Literal[
     "supply-chain",
     "authentication",
     "tenant",
+    "teaching",
+    "neuro",
 ]
 EffectClass = Literal["read", "workspace-write", "external-write"]
 EvidenceStatus = Literal["success", "failure", "pending", "unknown"]
@@ -192,6 +194,8 @@ _INTENT_CONTEXT_RE: Final[re.Pattern[str]] = re.compile(
 _QUOTED_KEYWORD_RE: Final[re.Pattern[str]] = re.compile(r"['\"][^'\"]{1,120}['\"]")
 
 _PREFIX_CAPABILITIES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    ("neuro_", ("neuro", "deterministic", "runtime")),
+    ("teaching_", ("teaching", "learning", "mcp")),
     ("repository_", ("repository", "ci")),
     ("android_", ("android", "release")),
     ("postgres_", ("database", "migration")),
@@ -256,6 +260,17 @@ _PREFIX_CAPABILITIES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 )
 
 _SKILL_PROFILES: Final[dict[str, dict[str, Any]]] = {
+    "sovereign-neuro-teaching-runtime": {
+        "priority": "P0",
+        "tools": [
+            "neuro_runtime_contract_status",
+            "neuro_event_route_preview",
+            "neuro_event_commit",
+            "teaching_package_assess",
+            "teaching_lesson_simulate",
+        ],
+        "purpose": "Run the canonical temporal event, sparse proposal, authoritative Foundation, evidence and live-registry teaching lanes without creating a second control plane.",
+    },
     "sovereign-mcp-optimal-operation": {
         "priority": "P0",
         "tools": ["sovereign_operating_profile_status", "sovereign_mission_preflight"],
@@ -646,9 +661,14 @@ def _annotation_payload(annotations: Any) -> dict[str, bool]:
 
 
 def _effect_from_annotations(annotations: dict[str, bool]) -> str:
+    # Destructive contradicts read-only and therefore wins fail-closed.
+    # openWorldHint is orthogonal: a tool may read an external system without
+    # writing it, so a genuine read-only contract must remain routable as read.
+    if annotations["destructiveHint"]:
+        return "external-write"
     if annotations["readOnlyHint"]:
         return "read"
-    if annotations["openWorldHint"] or annotations["destructiveHint"]:
+    if annotations["openWorldHint"]:
         return "external-write"
     return "workspace-write"
 

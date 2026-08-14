@@ -88,6 +88,24 @@ At the documented baseline, the repository contains:
 - schema, toolchain, deployment and context-drift diagnostics;
 - revision- or digest-bound fleet rollback evidence.
 
+### Neuro-inspired MCP verification lane
+
+The MCP repository also contains an additive, clean-room verification lane that
+keeps the existing FastMCP server, live tool registry, predictive router and
+plugin endpoint authoritative. Its current truth class is
+`IMPLEMENTED_IN_REPOSITORY`; exact-head CI, immutable-image and runtime
+readbacks are still required before it may be called live.
+
+The lane provides five tools for contract status, event preview, idempotent
+event admission and evidence-bound teaching simulation. It combines canonical
+change/delta events, temporal ordering, sparse capability selection and a
+separate deterministic Foundation decision. Candidates are proposal-only:
+they cannot execute tools, promote lessons or perform external effects. Local
+SQLite ledgers are revision/policy/hash bound, replay-safe and independently
+verified; the existing MCP registry remains the only tool authority.
+
+See [`docs/architecture/NEURO_ARCHITECTURE_FOUNDATION.v1.md`](docs/architecture/NEURO_ARCHITECTURE_FOUNDATION.v1.md).
+
 See [`docs/CURRENT_STATE_2026-08-03.md`](docs/CURRENT_STATE_2026-08-03.md) for the exact distinction between repository implementation, tests, CI, artifacts, deployment and runtime verification.
 
 ## Planned work is not active functionality

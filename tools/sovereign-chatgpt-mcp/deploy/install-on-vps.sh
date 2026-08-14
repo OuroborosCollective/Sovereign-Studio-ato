@@ -55,6 +55,8 @@ TUNNEL_SERVICE="/etc/systemd/system/sovereign-openai-tunnel.service"
 MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
+NEURO_RUNTIME_STATE_HOST_DIR="$INSTALL_ROOT/tool-routing-state/neuro-runtime"
+EXPECTED_MCP_TOOL_COUNT="249"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
@@ -64,6 +66,7 @@ MCP_IMAGE_PULL_DELAY_SECONDS="${SOVEREIGN_MCP_IMAGE_PULL_DELAY_SECONDS:-10}"
 BROKER_READY_ATTEMPTS="${SOVEREIGN_MCP_BROKER_READY_ATTEMPTS:-90}"
 REQUIRE_TUNNEL="${SOVEREIGN_MCP_REQUIRE_TUNNEL:-0}"
 TUNNEL_MODE="${SOVEREIGN_MCP_TUNNEL_MODE:-auto}"
+ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR="${SOVEREIGN_MCP_ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR:-0}"
 INSTALL_STAGE="initializing"
 INSTALL_FAILURE_REASON=""
 INSTALL_COMPLETED=0
@@ -71,6 +74,10 @@ ROLLBACK_ARMED=0
 ROLLBACK_DIR=""
 ROLLBACK_MANIFEST=""
 PREVIOUS_MCP_IMAGE_DIGEST=""
+PREVIOUS_MCP_REGISTRY_FILE=""
+PREVIOUS_MCP_TOOL_SURFACE_CAPTURED=0
+PREVIOUS_MCP_CONTAINER_PRESENT=0
+PREVIOUS_MCP_REGISTRY_CAPTURE_MODE="attested-first-install-no-predecessor"
 
 fail() {
   INSTALL_FAILURE_REASON="$*"
@@ -462,6 +469,40 @@ valid_mcp_image_digest() {
   local value="$1"
   [[ "$value" == "$MCP_IMAGE_REPOSITORY"@sha256:* ]] \
     && [[ "${value#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
+}
+
+resolve_previous_mcp_registry_capture_mode() {
+  local container_names=""
+  local running_state=""
+  container_names="$(
+    docker container ls --all \
+      --filter 'name=^/sovereign-chatgpt-mcp$' \
+      --format '{{.Names}}' 2>/dev/null
+  )" || fail "could not enumerate predecessor MCP containers"
+  if [[ -z "$container_names" ]]; then
+    [[ "$ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR" == "1" ]] \
+      || fail "no predecessor MCP container exists; explicit first-install attestation is required"
+    printf '%s\n' "attested-first-install-no-predecessor"
+    return 0
+  fi
+  [[ "$container_names" == "sovereign-chatgpt-mcp" ]] \
+    || fail "predecessor MCP container discovery returned an ambiguous result"
+  running_state="$(
+    docker container inspect sovereign-chatgpt-mcp --format '{{.State.Running}}' 2>/dev/null
+  )" || fail "could not inspect the existing predecessor MCP container state"
+  case "$running_state" in
+    true)
+      # Health may be healthy, starting, or unhealthy.  A running process can
+      # still expose its exact registered contract surface through docker exec.
+      printf '%s\n' "running-container"
+      ;;
+    false)
+      printf '%s\n' "immutable-image-offline"
+      ;;
+    *)
+      fail "existing predecessor MCP container returned an invalid running state"
+      ;;
+  esac
 }
 
 classify_mcp_image_pull_failure() {
@@ -874,6 +915,8 @@ INSTALL_STAGE="preflight"
   || fail "SOVEREIGN_MCP_EXPECTED_DIGEST must be an immutable SHA-256 digest when set"
 [[ "$REQUIRE_TUNNEL" =~ ^[01]$ ]] || fail "SOVEREIGN_MCP_REQUIRE_TUNNEL must be 0 or 1"
 [[ "$TUNNEL_MODE" =~ ^(auto|required|disabled)$ ]] || fail "SOVEREIGN_MCP_TUNNEL_MODE must be auto, required or disabled"
+[[ "$ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR" =~ ^[01]$ ]] \
+  || fail "SOVEREIGN_MCP_ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR must be 0 or 1"
 [[ "$MCP_IMAGE_PULL_ATTEMPTS" =~ ^[0-9]+$ ]] && (( MCP_IMAGE_PULL_ATTEMPTS >= 1 && MCP_IMAGE_PULL_ATTEMPTS <= 120 )) \
   || fail "SOVEREIGN_MCP_IMAGE_PULL_ATTEMPTS must be between 1 and 120"
 [[ "$MCP_IMAGE_PULL_DELAY_SECONDS" =~ ^[0-9]+$ ]] && (( MCP_IMAGE_PULL_DELAY_SECONDS >= 1 && MCP_IMAGE_PULL_DELAY_SECONDS <= 60 )) \
@@ -881,7 +924,7 @@ INSTALL_STAGE="preflight"
 [[ "$BROKER_READY_ATTEMPTS" =~ ^[0-9]+$ ]] && (( BROKER_READY_ATTEMPTS >= 30 && BROKER_READY_ATTEMPTS <= 180 )) \
   || fail "SOVEREIGN_MCP_BROKER_READY_ATTEMPTS must be between 30 and 180"
 [[ "$MCP_IMAGE_REPOSITORY" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$ ]] || fail "SOVEREIGN_MCP_IMAGE_REPOSITORY is invalid"
-for command in docker systemctl python3 git ss openssl sha256sum stat lsattr chattr; do
+for command in docker systemctl python3 git ss openssl sha256sum stat lsattr chattr timeout; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is not installed"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not installed"
@@ -938,6 +981,16 @@ install -d -m 0770 -o "$MCP_UID" -g "$MCP_GID" "$WORKSPACE_DIR"
 install -d -m 0750 -o "$MCP_UID" -g "$MCP_GID" "$INSTALL_ROOT/tool-routing-state"
 chown -R "$MCP_UID:$MCP_GID" "$WORKSPACE_DIR" "$INSTALL_ROOT/tool-routing-state"
 chmod 0770 "$WORKSPACE_DIR"
+if [[ -e "$NEURO_RUNTIME_STATE_HOST_DIR" || -L "$NEURO_RUNTIME_STATE_HOST_DIR" ]]; then
+  [[ -d "$NEURO_RUNTIME_STATE_HOST_DIR" && ! -L "$NEURO_RUNTIME_STATE_HOST_DIR" ]] \
+    || fail "neuro runtime state root is not a regular directory"
+else
+  install -d -m 0700 -o "$MCP_UID" -g "$MCP_GID" "$NEURO_RUNTIME_STATE_HOST_DIR"
+fi
+chown "$MCP_UID:$MCP_GID" "$NEURO_RUNTIME_STATE_HOST_DIR"
+chmod 0700 "$NEURO_RUNTIME_STATE_HOST_DIR"
+[[ -w "$NEURO_RUNTIME_STATE_HOST_DIR" && -x "$NEURO_RUNTIME_STATE_HOST_DIR" ]] \
+  || fail "neuro runtime state root is not writable and searchable"
 if [[ -e "$OWNER_INPUT_HOST_ROOT" || -L "$OWNER_INPUT_HOST_ROOT" ]]; then
   [[ -d "$OWNER_INPUT_HOST_ROOT" && ! -L "$OWNER_INPUT_HOST_ROOT" ]] \
     || fail "owner input host root is not a regular directory"
@@ -989,7 +1042,7 @@ fi
 ROLLBACK_ARMED=1
 
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py patchmon_operator.py patchmon_fleet.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py launcher.py docker-compose.yml; do
   install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
 done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
@@ -1244,6 +1297,10 @@ MCP_TAGGED_IMAGE="$MCP_IMAGE_REPOSITORY:$EXPECTED_REVISION"
 wait_for_exact_mcp_image
 MCP_IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MCP_TAGGED_IMAGE")"
 [[ "$MCP_IMAGE_REVISION" == "$EXPECTED_REVISION" ]] || fail "MCP image revision label does not match expected revision"
+set_value "$MANAGED_ENV" SOVEREIGN_SOURCE_REVISION "$EXPECTED_REVISION"
+NEURO_POLICY_SHA256="$(sha256sum "$SOURCE_DIR/config/sovereign-continuity-policy.json" | awk '{print $1}')"
+[[ "$NEURO_POLICY_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "could not bind the embedded neuro policy SHA-256"
+set_value "$MANAGED_ENV" SOVEREIGN_NEURO_POLICY_SHA256 "$NEURO_POLICY_SHA256"
 MCP_IMAGE_CROSS_RUNTIME_PARITY="$(docker image inspect --format '{{index .Config.Labels "io.ouroboros.sovereign.cross-runtime-parity"}}' "$MCP_TAGGED_IMAGE")"
 [[ "$MCP_IMAGE_CROSS_RUNTIME_PARITY" == "$EXPECTED_CROSS_RUNTIME_PARITY" ]] || fail "MCP image does not carry verified cross-runtime parity evidence"
 set_value "$MANAGED_ENV" SOVEREIGN_CROSS_RUNTIME_PARITY_PROVEN "1"
@@ -1326,6 +1383,144 @@ wait_for_broker_ready || {
 # The image is built and dependency-resolved in GitHub Actions. The VPS only
 # pulls and verifies the immutable revision before touching the running container.
 
+INSTALL_STAGE="capture_previous_mcp_tool_surface"
+PREVIOUS_MCP_REGISTRY_FILE="$ROLLBACK_DIR/previous-mcp-registry-contracts.json"
+PREVIOUS_MCP_REGISTRY_CAPTURE_MODE="$(resolve_previous_mcp_registry_capture_mode)"
+PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND=()
+PREVIOUS_MCP_INTROSPECTION_CONTAINER=""
+case "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" in
+  attested-first-install-no-predecessor)
+    ;;
+  running-container)
+    PREVIOUS_MCP_CONTAINER_PRESENT=1
+    PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND=(
+      timeout --signal=TERM --kill-after=10s 120s
+      docker exec -i sovereign-chatgpt-mcp python -
+    )
+    ;;
+  immutable-image-offline)
+    PREVIOUS_MCP_CONTAINER_PRESENT=1
+    PREVIOUS_MCP_IMAGE_ID="$(
+      docker container inspect sovereign-chatgpt-mcp --format '{{.Image}}' 2>/dev/null
+    )" || fail "could not resolve the stopped predecessor MCP image"
+    [[ "$PREVIOUS_MCP_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+      || fail "stopped predecessor MCP does not reference a local immutable image id"
+    PREVIOUS_MCP_INTROSPECTION_CONTAINER="sovereign-mcp-predecessor-introspection-$$"
+    if docker container inspect "$PREVIOUS_MCP_INTROSPECTION_CONTAINER" >/dev/null 2>&1; then
+      fail "bounded predecessor introspection container name already exists"
+    fi
+    PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND=(
+      timeout --signal=TERM --kill-after=10s 120s
+      docker run --rm -i
+      --name "$PREVIOUS_MCP_INTROSPECTION_CONTAINER"
+      --pull never
+      --no-healthcheck
+      --network none
+      --read-only
+      --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777
+      --pids-limit 256
+      --memory 536870912
+      --cpus 1.0
+      --user 10001:10001
+      --cap-drop ALL
+      --security-opt no-new-privileges
+      --env HOME=/tmp/home
+      --env PYTHONDONTWRITEBYTECODE=1
+      --env SOVEREIGN_MCP_HOST=127.0.0.1
+      --env SOVEREIGN_MCP_PORT=8090
+      --env SOVEREIGN_MCP_WORKSPACE_ROOT=/tmp/workspaces
+      --env SOVEREIGN_TOOL_RANKING_STATE_ROOT=/tmp/tool-ranking
+      --env SOVEREIGN_NEURO_RUNTIME_STATE_ROOT=/tmp/neuro-runtime
+      --env SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED=0
+      --env SOVEREIGN_ANDROID_NATIVE_BUILD_MODE=github_actions
+      --entrypoint python
+      "$PREVIOUS_MCP_IMAGE_ID"
+      -
+    )
+    ;;
+  *)
+    fail "invalid predecessor MCP registry capture mode"
+    ;;
+esac
+if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
+  if ! "${PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND[@]}" <<'PY' > "$PREVIOUS_MCP_REGISTRY_FILE"
+from dataclasses import asdict
+import json
+
+import launcher
+import operational_governance_tools
+
+registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
+payload = asdict(registry)
+tools = sorted(payload.get("tools") or [], key=lambda item: str(item.get("name") or ""))
+names = [item.get("name") for item in tools]
+if (
+    registry.ok is not True
+    or registry.status != "MCP_TOOL_REGISTRY_READY"
+    or registry.runtimeVerified is not True
+    or registry.truncated is True
+    or registry.toolCount != len(tools)
+    or not tools
+    or any(not isinstance(name, str) or not name for name in names)
+    or names != sorted(set(names))
+):
+    raise SystemExit("predecessor MCP returned an invalid complete contract registry")
+print(
+    json.dumps(
+        {
+            "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
+            "registrySnapshotSha256": registry.registrySnapshotSha256,
+            "toolCount": len(tools),
+            "tools": tools,
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+)
+PY
+  then
+    if [[ -n "$PREVIOUS_MCP_INTROSPECTION_CONTAINER" ]]; then
+      docker rm -f "$PREVIOUS_MCP_INTROSPECTION_CONTAINER" >/dev/null 2>&1 || true
+    fi
+    fail "could not capture the predecessor MCP complete contract registry before replacement: mode=$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE"
+  fi
+  if [[ -n "$PREVIOUS_MCP_INTROSPECTION_CONTAINER" ]] \
+    && docker container inspect "$PREVIOUS_MCP_INTROSPECTION_CONTAINER" >/dev/null 2>&1; then
+    docker rm -f "$PREVIOUS_MCP_INTROSPECTION_CONTAINER" >/dev/null 2>&1 || true
+    fail "bounded predecessor introspection container was not cleaned"
+  fi
+  chmod 0600 "$PREVIOUS_MCP_REGISTRY_FILE"
+  python3 - "$PREVIOUS_MCP_REGISTRY_FILE" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+value = json.loads(Path(sys.argv[1]).read_text("utf-8"))
+tools = value.get("tools") if isinstance(value, dict) else None
+if (
+    value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
+    or not isinstance(tools, list)
+    or not tools
+    or value.get("toolCount") != len(tools)
+):
+    raise SystemExit("captured predecessor MCP complete contract registry is invalid")
+names = [item.get("name") for item in tools if isinstance(item, dict)]
+if len(names) != len(tools) or names != sorted(set(names)):
+    raise SystemExit("captured predecessor MCP complete contract registry is not canonical")
+for item in tools:
+    if (
+        not isinstance(item.get("capabilities"), list)
+        or not isinstance(item.get("effect"), str)
+        or not isinstance(item.get("annotations"), dict)
+        or not isinstance(item.get("parameters"), dict)
+        or not isinstance(item.get("outputSchema"), dict)
+    ):
+        raise SystemExit(f"captured predecessor MCP contract is incomplete: {item.get('name')}")
+PY
+  PREVIOUS_MCP_TOOL_SURFACE_CAPTURED=1
+fi
+
 INSTALL_STAGE="replace_mcp_container"
 # Stop only the known tunnel and MCP container before claiming the host port.
 # Unknown listeners are never killed: they block deployment with bounded evidence.
@@ -1405,11 +1600,14 @@ INSTALL_STAGE="verify_runtime_import_contracts"
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-governance/SKILL.md || fail "operational governance skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-operational-assurance/SKILL.md || fail "operational assurance skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-mcp-optimal-operation/SKILL.md || fail "optimal operation skill manifest is missing from the MCP image"
+docker exec sovereign-chatgpt-mcp test -f /app/skills/sovereign-neuro-teaching-runtime/SKILL.md || fail "neuro teaching skill manifest is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-mcp-operating-profile.json || fail "versioned MCP operating profile is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/config/sovereign-continuity-policy.json || fail "versioned continuity policy is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/CONTEXT.md || fail "continuity context is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp test -f /app/continuity-data/LEDGER.jsonl || fail "continuity ledger is missing from the MCP image"
 docker exec sovereign-chatgpt-mcp python -c 'import continuity; import launcher; import server; import self_heal; import android_hardening; import android_validation_router; import a2a_runtime_client; import document_pipeline; import github_knowledge_canary; import issue_closure_canary; import programming_language_catalog_runtime; import owner_input_widget; import tool_extensions; import repository_skill_tools; import repository_intelligence_tools; import proven_learning_tools; import skill_supply_chain_tools; import deterministic_contract; import deterministic_architecture_tools; import database_evidence_tools; import enterprise_backend_tools; import freemium_product_architect_tools; import openai_project_access_tools; import operating_profile; import predictive_tool_router; import tool_success_ranking; import operational_governance_tools; import operational_assurance_tools; import output_contracts; import toolchain_composition; import patchmon_operator; import patchmon_fleet; assert launcher.mcp is server.mcp; assert launcher.TOOL_SUCCESS_TRACKING.get("ok") is True, launcher.TOOL_SUCCESS_TRACKING; output_contract_report=launcher.OUTPUT_CONTRACT_INSTALLATION; assert output_contract_report.get("ok") is True, output_contract_report; assert output_contract_report.get("missingOutputSchemaCount") == 0, output_contract_report; operating_profile_report=launcher.OPERATING_PROFILE_ENFORCEMENT; assert operating_profile_report.ok is True, operating_profile_report; assert operating_profile_report.enforcedToolCount == operating_profile_report.mutableToolCount, operating_profile_report; assert self_heal.REPAIR_ENGINE is not None; assert android_hardening.AndroidHardeningRuntime is not None; assert getattr(server.android, "_native_validation_router_installed", False) is True; assert callable(tool_extensions.repository_dispatch_workflow); assert callable(tool_extensions.repository_workflow_run_status); assert callable(repository_skill_tools.repository_knowledge_surface_scan); assert callable(repository_skill_tools.repository_product_logic_map); assert callable(repository_skill_tools.repository_change_impact_manifest); assert callable(repository_skill_tools.repository_architecture_snapshot); assert callable(repository_skill_tools.repository_architecture_drift_report); assert callable(repository_skill_tools.repository_architecture_runtime_drift_evidence); assert callable(repository_skill_tools.repository_mirror_diff_report); assert callable(repository_skill_tools.repository_endpoint_reference); assert callable(repository_skill_tools.repository_learning_records_normalize_preview); assert callable(repository_skill_tools.repository_release_hunt_manifest); assert callable(repository_intelligence_tools.repository_intelligence_index_build); assert callable(repository_intelligence_tools.repository_hash_bound_replace); assert callable(repository_intelligence_tools.repository_schema_diagnostics); assert callable(repository_intelligence_tools.deployment_evidence_session_capture); assert callable(repository_intelligence_tools.sovereign_resource_explorer); assert callable(proven_learning_tools.proven_learning_pattern_plan); assert callable(proven_learning_tools.proven_learning_owner_approval_request); assert callable(proven_learning_tools.proven_learning_pattern_apply); assert callable(proven_learning_tools.repository_learning_logbook_update); assert callable(skill_supply_chain_tools.skill_supply_chain_inventory); assert callable(skill_supply_chain_tools.skill_archive_inspect); assert callable(skill_supply_chain_tools.goal_transition_preview); assert callable(skill_supply_chain_tools.template_generation_plan); assert deterministic_contract.KAPPA_SCALE == 1000000; inventory=deterministic_architecture_tools.deterministic_tool_inventory(); assert inventory.get("crossRuntimeParityProven") is True, inventory; assert callable(deterministic_architecture_tools.deterministic_tool_inventory); assert callable(deterministic_architecture_tools.deterministic_architecture_inventory); assert callable(deterministic_architecture_tools.deterministic_nondeterminism_scan); assert callable(deterministic_architecture_tools.deterministic_kappa_contract_audit); assert callable(deterministic_architecture_tools.deterministic_sql_contract_audit); assert callable(deterministic_architecture_tools.deterministic_transition_validate); assert callable(deterministic_architecture_tools.deterministic_replay_verify); assert callable(deterministic_architecture_tools.deterministic_transformation_plan); assert callable(database_evidence_tools.database_evidence_skill_inventory); assert callable(database_evidence_tools.database_evidence_architecture_inventory); assert callable(database_evidence_tools.postgres_evidence_read); assert callable(database_evidence_tools.postgres_evidence_migration_preview); assert callable(database_evidence_tools.database_evidence_receipt_verify); db_evidence_names={"database_evidence_skill_inventory","database_evidence_architecture_inventory","postgres_evidence_read","postgres_evidence_migration_preview","database_evidence_receipt_verify"}; registered_names={tool.name for tool in launcher.mcp._tool_manager.list_tools()}; assert db_evidence_names <= registered_names, db_evidence_names - registered_names; assert callable(enterprise_backend_tools.backend_engineering_tool_inventory); assert callable(enterprise_backend_tools.backend_architecture_assess); assert callable(enterprise_backend_tools.backend_stack_select); assert callable(enterprise_backend_tools.backend_delivery_plan); assert callable(enterprise_backend_tools.backend_api_security_plan); assert callable(enterprise_backend_tools.repository_revision_resolve); assert callable(freemium_product_architect_tools.freemium_product_tool_inventory); assert callable(freemium_product_architect_tools.freemium_market_opportunity_score); assert callable(freemium_product_architect_tools.freemium_offer_contract_build); assert callable(freemium_product_architect_tools.freemium_product_contract_validate); assert callable(freemium_product_architect_tools.freemium_product_bundle_manifest); assert callable(openai_project_access_tools.openai_project_access_plan); assert callable(openai_project_access_tools.openai_project_access_runtime_evidence); assert callable(operating_profile.sovereign_operating_profile_status); assert callable(operating_profile.sovereign_mission_preflight); profile_status=operating_profile.sovereign_operating_profile_status(); assert profile_status.status == "OPERATING_PROFILE_ENFORCED", profile_status; assert callable(operational_governance_tools.operational_skill_inventory); assert callable(operational_governance_tools.mcp_tool_contract_registry); assert callable(operational_governance_tools.tool_recommend_for_mission); assert callable(operational_governance_tools.tool_success_ranking); assert callable(operational_governance_tools.mcp_registry_snapshot_verify); assert callable(operational_governance_tools.evidence_graph_build); assert callable(operational_governance_tools.schema_migration_reconcile); assert callable(operational_governance_tools.llm_route_reliability_assess); assert callable(operational_governance_tools.agent_run_liveness_assess); assert callable(operational_governance_tools.semantic_intent_boundary_audit); assert callable(operational_governance_tools.cost_credit_settlement_reconcile); assert callable(operational_governance_tools.backup_restore_evidence_verify); assert callable(operational_governance_tools.slo_error_budget_assess); assert callable(operational_governance_tools.configuration_drift_assess); assert callable(operational_governance_tools.runtime_runbook_generate); assert callable(operational_governance_tools.ownership_codeowners_guard); assert callable(operational_governance_tools.compliance_evidence_export); assert callable(operational_assurance_tools.operational_assurance_skill_inventory); assert callable(operational_assurance_tools.vps_capacity_resource_pressure_assess); assert callable(operational_assurance_tools.runtime_dependency_health_matrix); assert callable(operational_assurance_tools.outbox_queue_liveness_assess); assert callable(operational_assurance_tools.scheduled_maintenance_coordinate); assert callable(operational_assurance_tools.runtime_topology_change_audit); assert callable(operational_assurance_tools.postgres_query_index_performance_assess); assert callable(operational_assurance_tools.data_integrity_invariant_audit); assert callable(operational_assurance_tools.data_repair_plan_build); assert callable(operational_assurance_tools.vector_memory_consistency_assess); assert callable(operational_assurance_tools.memory_poisoning_provenance_guard); assert callable(operational_assurance_tools.learning_pattern_lifecycle_preview); assert callable(operational_assurance_tools.data_retention_privacy_audit); assert callable(operational_assurance_tools.multi_tenant_isolation_verify); assert callable(operational_assurance_tools.mcp_schema_compatibility_audit); assert callable(operational_assurance_tools.mcp_protocol_conformance_fuzz_plan); assert callable(operational_assurance_tools.tool_permission_minimize); assert callable(operational_assurance_tools.dynamic_execution_containment_audit); assert callable(operational_assurance_tools.skill_capability_coverage_map); assert callable(operational_assurance_tools.skill_lifecycle_deprecation_preview); assert callable(operational_assurance_tools.skill_regression_benchmark); assert callable(operational_assurance_tools.tool_idempotency_verify); assert callable(operational_assurance_tools.owner_approval_policy_evaluate); assert callable(operational_assurance_tools.secret_lifecycle_rotation_assess); assert callable(operational_assurance_tools.secret_literal_triage); assert callable(operational_assurance_tools.sbom_provenance_image_signing_verify); assert callable(operational_assurance_tools.dependency_vulnerability_remediation_plan); assert callable(operational_assurance_tools.authentication_chaos_negative_test_assess); assert output_contracts.ToolOutputEnvelope is not None; assert callable(toolchain_composition.mcp_toolchain_contract_inventory); assert callable(toolchain_composition.mcp_toolchain_compile); assert callable(toolchain_composition.mcp_toolchain_validate); assert callable(toolchain_composition.mcp_toolchain_next_step); assert callable(toolchain_composition.mcp_diagnostic_chain_plan); assert all(getattr(tool, "output_schema", None) for tool in launcher.mcp._tool_manager.list_tools()); assurance=operational_assurance_tools.operational_assurance_skill_inventory(); assert assurance.status == "OPERATIONAL_ASSURANCE_SKILLS_READY", assurance; registry=operational_governance_tools.mcp_tool_contract_registry(include_schemas=False); assert registry.status == "MCP_TOOL_REGISTRY_READY", registry; assert registry.toolCount >= 43, registry; assert callable(server.repository_sync_workspace_to_pr_head); assert callable(server.repository_merge_pr_series); assert callable(server.postgres_schema_inventory); assert callable(server.managed_compose_stack_plan); assert callable(server.deploy_managed_compose_stack); assert callable(server.memory_gateway_collection_canary); assert callable(server.patchmon_tool_inventory); assert callable(server.patchmon_runtime_inventory); assert callable(server.patchmon_database_inventory); assert callable(server.patchmon_query); assert callable(server.patchmon_brain_snapshot); assert callable(server.patchmon_patch_action_plan); assert callable(server.patchmon_patch_action_apply); assert callable(server.patchmon_fleet_bootstrap_plan); assert callable(server.patchmon_fleet_bootstrap_apply); assert callable(server.patchmon_fleet_orchestrator_status); assert patchmon_operator.PatchmonOperatorRuntime is not None; assert patchmon_fleet.PatchmonFleetRuntime is not None; assert callable(server.a2a_live_canary); assert callable(server.controller_run_external_event); assert callable(server.document_pipeline_live_canary); assert callable(server.github_knowledge_live_canary); assert callable(server.issue_closure_runtime_canary); assert callable(server.programming_language_catalog_persistent_import); assert a2a_runtime_client.A2A_VERSION == "1.0"; assert document_pipeline.DocumentPipelineRuntime is not None; assert github_knowledge_canary.GitHubKnowledgeCanaryRuntime is not None; assert issue_closure_canary.IssueClosureCanaryRuntime is not None; assert programming_language_catalog_runtime.ProgrammingLanguageCatalogRuntime is not None; assert owner_input_widget.WIDGET_URI in {str(item.uri) for item in server.mcp._resource_manager.list_resources()}; status=server.broker.status(); assert status.get("status") == "BROKER_READY", status'
+
+docker exec sovereign-chatgpt-mcp python -c 'import neuro_architecture_contract; import neuromorphic_runtime; import foundation_runtime; import neuro_teaching_tools; assert callable(neuro_teaching_tools.neuro_runtime_contract_status); assert callable(neuro_teaching_tools.neuro_event_route_preview); assert callable(neuro_teaching_tools.neuro_event_commit); assert callable(neuro_teaching_tools.teaching_package_assess); assert callable(neuro_teaching_tools.teaching_lesson_simulate)'
 
 INSTALL_STAGE="verify_live_tool_surface_and_widget_domain"
 docker exec -i sovereign-chatgpt-mcp python - <<'PY'
@@ -1422,15 +1620,29 @@ required_tools = {
     "backend_architecture_assess",
     "deterministic_architecture_inventory",
     "mcp_tool_contract_registry",
+    "neuro_event_commit",
+    "neuro_event_route_preview",
+    "neuro_runtime_contract_status",
     "operational_assurance_skill_inventory",
     "patchmon_tool_inventory",
     "repository_architecture_drift_report",
     "repository_architecture_snapshot",
+    "teaching_lesson_simulate",
+    "teaching_package_assess",
 }
 tools = asyncio.run(launcher.mcp.list_tools())
 tool_names = {tool.name for tool in tools}
+neuro_tools = {
+    "neuro_event_commit",
+    "neuro_event_route_preview",
+    "neuro_runtime_contract_status",
+    "teaching_lesson_simulate",
+    "teaching_package_assess",
+}
 missing_tools = sorted(required_tools - tool_names)
 assert not missing_tools, {"missingRequiredTools": missing_tools, "toolCount": len(tool_names)}
+assert len(tool_names) == 249, {"expectedToolCount": 249, "actualToolCount": len(tool_names)}
+assert neuro_tools <= tool_names, sorted(neuro_tools - tool_names)
 registry = server._live_mcp_registry_evidence()
 assert registry.get("registry_runtime_verified") is True, registry
 assert registry.get("registry_tool_count") == len(tool_names), (registry, len(tool_names))
@@ -1452,6 +1664,1054 @@ print(
         "widgetDomain": expected_domain,
         "widgetUri": str(cognitive_resource.uri),
     }
+)
+PY
+
+INSTALL_STAGE="verify_mcp_tool_surface_preservation"
+NEW_MCP_REGISTRY_FILE="$ROLLBACK_DIR/new-mcp-registry-contracts.json"
+docker exec -i sovereign-chatgpt-mcp python - <<'PY' > "$NEW_MCP_REGISTRY_FILE"
+from dataclasses import asdict
+import json
+
+import launcher
+import operational_governance_tools
+
+registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
+payload = asdict(registry)
+tools = sorted(payload.get("tools") or [], key=lambda item: str(item.get("name") or ""))
+names = [item.get("name") for item in tools]
+if (
+    registry.ok is not True
+    or registry.status != "MCP_TOOL_REGISTRY_READY"
+    or registry.runtimeVerified is not True
+    or registry.truncated is True
+    or registry.toolCount != len(tools)
+    or any(not isinstance(name, str) or not name for name in names)
+    or names != sorted(set(names))
+):
+    raise SystemExit("replacement MCP returned an invalid complete contract registry")
+print(
+    json.dumps(
+        {
+            "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
+            "registrySnapshotSha256": registry.registrySnapshotSha256,
+            "toolCount": len(tools),
+            "tools": tools,
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+)
+PY
+chmod 0600 "$NEW_MCP_REGISTRY_FILE"
+python3 - "$PREVIOUS_MCP_REGISTRY_FILE" "$NEW_MCP_REGISTRY_FILE" "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" "$EXPECTED_MCP_TOOL_COUNT" <<'PY'
+from decimal import Decimal, InvalidOperation
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+previous_path = Path(sys.argv[1])
+new_path = Path(sys.argv[2])
+predecessor_captured = sys.argv[3] == "1"
+expected_count = int(sys.argv[4])
+expected_additions = {
+    "neuro_event_commit",
+    "neuro_event_route_preview",
+    "neuro_runtime_contract_status",
+    "teaching_lesson_simulate",
+    "teaching_package_assess",
+}
+
+
+def canonical(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def registry_tools(path: Path, *, expected_tool_count: int | None = None) -> list[dict[str, Any]]:
+    value = json.loads(path.read_text("utf-8"))
+    if not isinstance(value, dict):
+        raise SystemExit(f"invalid complete MCP contract registry: {path.name}")
+    tools = value.get("tools")
+    if (
+        value.get("schemaVersion") != "sovereign.mcp-deployment-contract-surface.v1"
+        or not isinstance(tools, list)
+        or value.get("toolCount") != len(tools)
+        or (expected_tool_count is not None and len(tools) != expected_tool_count)
+    ):
+        raise SystemExit(f"invalid complete MCP contract registry: {path.name}")
+    names = [item.get("name") for item in tools if isinstance(item, dict)]
+    if len(names) != len(tools) or names != sorted(set(names)):
+        raise SystemExit(f"non-canonical complete MCP contract registry: {path.name}")
+    for item in tools:
+        if (
+            not isinstance(item.get("capabilities"), list)
+            or any(not isinstance(capability, str) or not capability for capability in item["capabilities"])
+            or not isinstance(item.get("effect"), str)
+            or not isinstance(item.get("annotations"), dict)
+            or not isinstance(item.get("parameters"), dict)
+            or not isinstance(item.get("outputSchema"), dict)
+        ):
+            raise SystemExit(f"incomplete MCP contract: {item.get('name')}")
+    return tools
+
+
+ANNOTATION_KEYWORDS = {
+    "$comment",
+    "$id",
+    "$schema",
+    "default",
+    "deprecated",
+    "description",
+    "examples",
+    "readOnly",
+    "title",
+    "writeOnly",
+}
+LOWER_BOUNDS = {
+    "exclusiveMinimum",
+    "minContains",
+    "minItems",
+    "minLength",
+    "minProperties",
+    "minimum",
+}
+UPPER_BOUNDS = {
+    "exclusiveMaximum",
+    "maxContains",
+    "maxItems",
+    "maxLength",
+    "maxProperties",
+    "maximum",
+}
+EXACT_ASSERTIONS = {
+    "$ref",
+    "contentEncoding",
+    "contentMediaType",
+    "format",
+    "pattern",
+}
+HANDLED_KEYWORDS = {
+    "additionalProperties",
+    "allOf",
+    "anyOf",
+    "const",
+    "contains",
+    "dependentRequired",
+    "enum",
+    "items",
+    "multipleOf",
+    "not",
+    "oneOf",
+    "prefixItems",
+    "properties",
+    "propertyNames",
+    "required",
+    "type",
+    "uniqueItems",
+    *LOWER_BOUNDS,
+    *UPPER_BOUNDS,
+    *EXACT_ASSERTIONS,
+}
+
+
+def type_set(value: Any) -> set[str] | None:
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return set(value)
+    return None
+
+
+def input_enum_widening_proof_errors(old: Any, new: Any, *, path: str) -> list[str]:
+    """Prove old inputs remain accepted using the sole approved schema evolution.
+
+    The replacement release changes five predecessor parameter schemas only by
+    extending one nested capability enum.  JSON Schema applicators interact in
+    ways that make a general structural subset checker unsafe (especially
+    oneOf, contains/prefixItems, and unevaluated*).  Keep this release gate
+    deliberately conservative: structure and every constraint must be exact;
+    the only admitted delta is an enum superset reached through an unchanged
+    properties/items path.
+    """
+    if canonical(old) == canonical(new):
+        return []
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return [f"{path}: schema structure changed outside the approved input enum widening"]
+    if set(old) != set(new):
+        return [f"{path}: schema keywords changed outside the approved input enum widening"]
+
+    errors: list[str] = []
+    for keyword in sorted(old):
+        old_value = old[keyword]
+        new_value = new[keyword]
+        if canonical(old_value) == canonical(new_value):
+            continue
+        if keyword == "enum":
+            if not isinstance(old_value, list) or not isinstance(new_value, list):
+                errors.append(f"{path}.enum: enum declarations must be lists")
+                continue
+            old_values = [canonical(item) for item in old_value]
+            new_values = [canonical(item) for item in new_value]
+            if len(set(old_values)) != len(old_values) or len(set(new_values)) != len(new_values):
+                errors.append(f"{path}.enum: enum declarations must contain unique values")
+            elif not set(old_values) <= set(new_values):
+                errors.append(f"{path}.enum: replacement removed predecessor enum values")
+            continue
+        if keyword == "properties":
+            if not isinstance(old_value, dict) or not isinstance(new_value, dict):
+                errors.append(f"{path}.properties: property maps must remain objects")
+                continue
+            if set(old_value) != set(new_value):
+                errors.append(
+                    f"{path}.properties: property set changed outside the approved input enum widening"
+                )
+                continue
+            for name in sorted(old_value):
+                errors.extend(
+                    input_enum_widening_proof_errors(
+                        old_value[name],
+                        new_value[name],
+                        path=f"{path}.properties.{name}",
+                    )
+                )
+            continue
+        if keyword == "items":
+            errors.extend(
+                input_enum_widening_proof_errors(
+                    old_value,
+                    new_value,
+                    path=f"{path}.items",
+                )
+            )
+            continue
+        errors.append(f"{path}.{keyword}: constraint changed outside the approved input enum widening")
+    return errors
+
+
+def schema_compatibility_errors(
+    old: Any,
+    new: Any,
+    *,
+    path: str,
+    allow_input_enum_widening: bool = True,
+) -> list[str]:
+    if canonical(old) == canonical(new):
+        return []
+    if not allow_input_enum_widening:
+        return [f"{path}: schema must remain exact for predecessor output compatibility"]
+    proof_errors = input_enum_widening_proof_errors(old, new, path=path)
+    if proof_errors:
+        return proof_errors
+    if isinstance(old, bool):
+        if old is False:
+            return []
+        return [] if new is True or new == {} else [f"{path}: previously unconstrained schema became restrictive"]
+    if not isinstance(old, dict):
+        return [f"{path}: predecessor schema is not an object or boolean"]
+    if new is True or new == {}:
+        return []
+    if not isinstance(new, dict):
+        return [f"{path}: replacement schema is not an object"]
+
+    errors: list[str] = []
+    old_types = type_set(old.get("type")) if "type" in old else None
+    new_types = type_set(new.get("type")) if "type" in new else None
+    if old_types is None and "type" in old:
+        errors.append(f"{path}.type: predecessor type declaration is invalid")
+    elif new_types is not None and old_types is None:
+        errors.append(f"{path}.type: replacement added a type restriction")
+    elif old_types is not None and new_types is not None and not old_types <= new_types:
+        errors.append(f"{path}.type: replacement removed predecessor types {sorted(old_types - new_types)}")
+
+    old_required = old.get("required", [])
+    new_required = new.get("required", [])
+    if not isinstance(old_required, list) or not all(isinstance(item, str) for item in old_required):
+        errors.append(f"{path}.required: predecessor declaration is invalid")
+        old_required = []
+    if not isinstance(new_required, list) or not all(isinstance(item, str) for item in new_required):
+        errors.append(f"{path}.required: replacement declaration is invalid")
+        new_required = []
+    newly_required = sorted(set(new_required) - set(old_required))
+    if newly_required:
+        errors.append(f"{path}.required: replacement added required fields {newly_required}")
+
+    old_properties = old.get("properties", {})
+    new_properties = new.get("properties", {})
+    old_additional = old.get("additionalProperties", True)
+    new_additional = new.get("additionalProperties", True)
+    if not isinstance(old_properties, dict) or not isinstance(new_properties, dict):
+        errors.append(f"{path}.properties: property maps must remain objects")
+    else:
+        for name, old_property in old_properties.items():
+            if name not in new_properties:
+                errors.append(f"{path}.properties.{name}: predecessor property was removed")
+                continue
+            errors.extend(
+                schema_compatibility_errors(
+                    old_property,
+                    new_properties[name],
+                    path=f"{path}.properties.{name}",
+                )
+            )
+        for name, new_property in new_properties.items():
+            if name in old_properties or old_additional is False:
+                continue
+            if old.get("patternProperties") or "unevaluatedProperties" in old:
+                errors.append(
+                    f"{path}.properties.{name}: replacement property interacts with an unverified predecessor property domain"
+                )
+                continue
+            if old_additional is True:
+                errors.extend(
+                    schema_compatibility_errors(
+                        True,
+                        new_property,
+                        path=f"{path}.properties.{name}",
+                    )
+                )
+            elif isinstance(old_additional, dict):
+                errors.extend(
+                    schema_compatibility_errors(
+                        old_additional,
+                        new_property,
+                        path=f"{path}.properties.{name}",
+                    )
+                )
+            else:
+                errors.append(f"{path}.additionalProperties: predecessor declaration is invalid")
+
+    if "enum" in new:
+        if "enum" not in old:
+            errors.append(f"{path}.enum: replacement added an enum restriction")
+        elif not isinstance(old["enum"], list) or not isinstance(new["enum"], list):
+            errors.append(f"{path}.enum: enum declarations must be lists")
+        else:
+            old_values = {canonical(item) for item in old["enum"]}
+            new_values = {canonical(item) for item in new["enum"]}
+            if not old_values <= new_values:
+                errors.append(f"{path}.enum: replacement removed predecessor enum values")
+    if "const" in new and ("const" not in old or canonical(old["const"]) != canonical(new["const"])):
+        errors.append(f"{path}.const: replacement added or changed a const restriction")
+
+    if canonical(old.get("oneOf")) != canonical(new.get("oneOf")):
+        errors.append(f"{path}.oneOf: replacement changed an exclusive alternative set")
+
+    for keyword in ("anyOf",):
+        old_alternatives = old.get(keyword)
+        new_alternatives = new.get(keyword)
+        if new_alternatives is not None and old_alternatives is None:
+            errors.append(f"{path}.{keyword}: replacement added alternatives as a restriction")
+        elif old_alternatives is not None and new_alternatives is not None:
+            if not isinstance(old_alternatives, list) or not isinstance(new_alternatives, list):
+                errors.append(f"{path}.{keyword}: alternatives must be lists")
+            else:
+                for index, old_alternative in enumerate(old_alternatives):
+                    if not any(
+                        not schema_compatibility_errors(
+                            old_alternative,
+                            new_alternative,
+                            path=f"{path}.{keyword}[{index}]",
+                        )
+                        for new_alternative in new_alternatives
+                    ):
+                        errors.append(f"{path}.{keyword}[{index}]: predecessor alternative is no longer covered")
+
+    old_all = old.get("allOf")
+    new_all = new.get("allOf")
+    if new_all is not None and old_all is None:
+        errors.append(f"{path}.allOf: replacement added a conjunctive restriction")
+    elif old_all is not None and new_all is not None:
+        if not isinstance(old_all, list) or not isinstance(new_all, list):
+            errors.append(f"{path}.allOf: declarations must be lists")
+        else:
+            for index, new_alternative in enumerate(new_all):
+                if not any(
+                    not schema_compatibility_errors(
+                        old_alternative,
+                        new_alternative,
+                        path=f"{path}.allOf[{index}]",
+                    )
+                    for old_alternative in old_all
+                ):
+                    errors.append(f"{path}.allOf[{index}]: replacement added an uncovered restriction")
+
+    for keyword in ("items", "contains", "propertyNames"):
+        if keyword in new and keyword not in old:
+            errors.append(f"{path}.{keyword}: replacement added a schema restriction")
+        elif keyword in old and keyword in new:
+            errors.extend(schema_compatibility_errors(old[keyword], new[keyword], path=f"{path}.{keyword}"))
+
+    old_prefix = old.get("prefixItems")
+    new_prefix = new.get("prefixItems")
+    if new_prefix is not None and old_prefix is None:
+        errors.append(f"{path}.prefixItems: replacement added tuple restrictions")
+    elif old_prefix is not None and new_prefix is not None:
+        if not isinstance(old_prefix, list) or not isinstance(new_prefix, list):
+            errors.append(f"{path}.prefixItems: declarations must be lists")
+        elif len(new_prefix) > len(old_prefix):
+            errors.append(f"{path}.prefixItems: replacement added tuple positions")
+        else:
+            for index, new_item in enumerate(new_prefix):
+                errors.extend(
+                    schema_compatibility_errors(old_prefix[index], new_item, path=f"{path}.prefixItems[{index}]")
+                )
+
+    if not isinstance(old_additional, (bool, dict)) or not isinstance(new_additional, (bool, dict)):
+        errors.append(f"{path}.additionalProperties: declarations must be booleans or objects")
+    elif old_additional is True and not (new_additional is True or new_additional == {}):
+        errors.append(f"{path}.additionalProperties: replacement restricted predecessor extension fields")
+    elif isinstance(old_additional, dict) and isinstance(new_additional, dict):
+        errors.extend(
+            schema_compatibility_errors(
+                old_additional,
+                new_additional,
+                path=f"{path}.additionalProperties",
+            )
+        )
+    elif isinstance(old_additional, dict) and new_additional is False:
+        errors.append(f"{path}.additionalProperties: replacement forbids predecessor extension fields")
+
+    for keyword in LOWER_BOUNDS:
+        if keyword in new and keyword not in old:
+            errors.append(f"{path}.{keyword}: replacement added a lower bound")
+        elif keyword in old and keyword in new:
+            try:
+                if Decimal(str(new[keyword])) > Decimal(str(old[keyword])):
+                    errors.append(f"{path}.{keyword}: replacement tightened the lower bound")
+            except InvalidOperation:
+                errors.append(f"{path}.{keyword}: bound is not numeric")
+    for keyword in UPPER_BOUNDS:
+        if keyword in new and keyword not in old:
+            errors.append(f"{path}.{keyword}: replacement added an upper bound")
+        elif keyword in old and keyword in new:
+            try:
+                if Decimal(str(new[keyword])) < Decimal(str(old[keyword])):
+                    errors.append(f"{path}.{keyword}: replacement tightened the upper bound")
+            except InvalidOperation:
+                errors.append(f"{path}.{keyword}: bound is not numeric")
+
+    if "multipleOf" in new:
+        if "multipleOf" not in old:
+            errors.append(f"{path}.multipleOf: replacement added a divisibility restriction")
+        else:
+            try:
+                old_multiple = Decimal(str(old["multipleOf"]))
+                new_multiple = Decimal(str(new["multipleOf"]))
+                if new_multiple <= 0 or old_multiple % new_multiple != 0:
+                    errors.append(f"{path}.multipleOf: replacement rejects predecessor multiples")
+            except (InvalidOperation, ZeroDivisionError):
+                errors.append(f"{path}.multipleOf: divisibility declaration is invalid")
+
+    for keyword in EXACT_ASSERTIONS:
+        if keyword in new and (keyword not in old or canonical(new[keyword]) != canonical(old[keyword])):
+            errors.append(f"{path}.{keyword}: replacement added or changed an exact assertion")
+    if new.get("uniqueItems") is True and old.get("uniqueItems") is not True:
+        errors.append(f"{path}.uniqueItems: replacement now rejects duplicate items")
+    if "not" in new and ("not" not in old or canonical(new["not"]) != canonical(old["not"])):
+        errors.append(f"{path}.not: replacement added or changed a negative assertion")
+
+    old_dependencies = old.get("dependentRequired", {})
+    new_dependencies = new.get("dependentRequired", {})
+    if not isinstance(old_dependencies, dict) or not isinstance(new_dependencies, dict):
+        errors.append(f"{path}.dependentRequired: declarations must be objects")
+    else:
+        for name, new_dependency in new_dependencies.items():
+            old_dependency = old_dependencies.get(name)
+            if not isinstance(new_dependency, list) or not isinstance(old_dependency, list):
+                errors.append(f"{path}.dependentRequired.{name}: replacement added an unsupported dependency")
+            elif not set(new_dependency) <= set(old_dependency):
+                errors.append(f"{path}.dependentRequired.{name}: replacement added required peers")
+
+    known = ANNOTATION_KEYWORDS | HANDLED_KEYWORDS
+    for keyword in sorted((set(new) | set(old)) - known):
+        if keyword not in old:
+            errors.append(f"{path}.{keyword}: replacement added an unverified constraint")
+        elif keyword in new and canonical(new[keyword]) != canonical(old[keyword]):
+            errors.append(f"{path}.{keyword}: unverified constraint changed")
+    return errors
+
+
+new_tools = registry_tools(new_path, expected_tool_count=expected_count)
+new_by_name = {item["name"]: item for item in new_tools}
+new_names = sorted(new_by_name)
+if len(new_names) != expected_count:
+    raise SystemExit(
+        f"replacement MCP tool surface is not the exact expected {expected_count}-tool registry"
+    )
+if not expected_additions.issubset(new_names):
+    raise SystemExit("replacement MCP is missing one or more neuro/teaching tools")
+
+previous_count = 0
+additions = []
+changed_compatible_contracts: list[str] = []
+incompatible_contracts: list[dict[str, Any]] = []
+removed: list[str] = []
+if predecessor_captured:
+    previous_tools = registry_tools(previous_path)
+    previous_by_name = {item["name"]: item for item in previous_tools}
+    previous_names = sorted(previous_by_name)
+    previous_count = len(previous_tools)
+    removed = sorted(set(previous_by_name) - set(new_by_name))
+    if removed:
+        raise SystemExit("replacement MCP removed predecessor tools: " + ",".join(removed))
+    additions = sorted(set(new_by_name) - set(previous_by_name))
+    if len(previous_names) == 244 and expected_additions.isdisjoint(previous_names):
+        if set(additions) != expected_additions:
+            raise SystemExit("244-tool predecessor did not receive exactly the five approved additions")
+    for name in previous_names:
+        old = previous_by_name[name]
+        new = new_by_name[name]
+        errors: list[str] = []
+        old_capabilities = set(old["capabilities"])
+        new_capabilities = set(new["capabilities"])
+        if not old_capabilities <= new_capabilities:
+            errors.append(f"capabilities removed: {sorted(old_capabilities - new_capabilities)}")
+        if canonical(old["effect"]) != canonical(new["effect"]):
+            errors.append("effect changed")
+        if canonical(old["annotations"]) != canonical(new["annotations"]):
+            errors.append("annotations changed")
+        if canonical(old["description"]) != canonical(new["description"]):
+            errors.append("description changed")
+        errors.extend(
+            schema_compatibility_errors(
+                old["parameters"],
+                new["parameters"],
+                path="parameters",
+                allow_input_enum_widening=True,
+            )
+        )
+        # Existing callers must remain valid inputs to the replacement, while
+        # every replacement output must remain consumable by predecessor
+        # clients.  The output compatibility direction is therefore reversed.
+        errors.extend(
+            schema_compatibility_errors(
+                new["outputSchema"],
+                old["outputSchema"],
+                path="outputSchema(replacement-to-predecessor)",
+                allow_input_enum_widening=False,
+            )
+        )
+        if errors:
+            incompatible_contracts.append({"name": name, "errors": errors[:64]})
+            continue
+        changed_fields = [
+            field
+            for field in (
+                "annotations",
+                "capabilities",
+                "description",
+                "effect",
+                "outputSchema",
+                "parameters",
+            )
+            if canonical(old.get(field)) != canonical(new.get(field))
+        ]
+        if changed_fields or old.get("contractSha256") != new.get("contractSha256"):
+            changed_compatible_contracts.append(name)
+    if incompatible_contracts:
+        raise SystemExit(
+            "replacement MCP has backward-incompatible predecessor contracts: "
+            + canonical(incompatible_contracts)
+        )
+
+print(
+    json.dumps(
+        {
+            "expectedToolCount": expected_count,
+            "newToolCount": len(new_names),
+            "predecessorCaptured": predecessor_captured,
+            "predecessorToolCount": previous_count,
+            "predecessorToolsRemoved": removed,
+            "predecessorToolsRemovedCount": len(removed),
+            "changedCompatibleContracts": changed_compatible_contracts,
+            "incompatibleContracts": incompatible_contracts,
+            "incompatibleContractCount": len(incompatible_contracts),
+            "semanticCompatibilityVerified": predecessor_captured,
+            "additions": additions,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+)
+PY
+
+INSTALL_STAGE="verify_isolated_neuro_runtime_canary"
+docker exec -i \
+  -e SOVEREIGN_EXPECTED_CANARY_REVISION="$EXPECTED_REVISION" \
+  sovereign-chatgpt-mcp python - <<'PY'
+import asyncio
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+import tempfile
+
+
+temporary_root = None
+workspace_temporary_root = None
+with tempfile.TemporaryDirectory(
+    prefix="sovereign-neuro-deployment-canary-",
+    dir="/var/lib/sovereign-tool-routing",
+) as temporary_directory:
+    temporary_root = Path(temporary_directory)
+    isolated_state = temporary_root / "state"
+    isolated_ranking_state = temporary_root / "tool-ranking"
+    os.environ["SOVEREIGN_NEURO_RUNTIME_STATE_ROOT"] = str(isolated_state)
+    os.environ["SOVEREIGN_TOOL_RANKING_STATE_ROOT"] = str(isolated_ranking_state)
+    # The canary explicitly commits one source event below.  Disable only the
+    # advisory outcome-to-neuro projection in this one-off process so wrapper
+    # telemetry cannot manufacture additional canonical source events.
+    os.environ["SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED"] = "0"
+
+    import launcher
+    import neuro_teaching_tools
+    from neuromorphic_runtime import ChangeEvent, ZERO_SHA256
+    from policy import validate_workspace_id
+
+    tracking_contract = launcher.TOOL_SUCCESS_TRACKING
+    assert tracking_contract["telemetryScope"] == "mutable-tool-outcomes-only", tracking_contract
+    assert tracking_contract["readOnlyCallsPersisted"] is False, tracking_contract
+
+    expected_revision = os.environ["SOVEREIGN_EXPECTED_CANARY_REVISION"]
+    assert os.environ.get("SOVEREIGN_SOURCE_REVISION") == expected_revision
+    policy_path = Path(neuro_teaching_tools.__file__).resolve().parent / "config" / "sovereign-continuity-policy.json"
+    embedded_policy_sha256 = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+    assert os.environ.get("SOVEREIGN_NEURO_POLICY_SHA256") == embedded_policy_sha256
+
+    # Invoke all five new tools through the registered FastMCP ToolManager so
+    # Pydantic arguments/results, the operating-profile gate and success
+    # tracking stay in the exercised path.  Only the expected routed target is
+    # replaced with a fail-closed guard; previews must never execute it.
+    tool_manager = launcher.mcp._tool_manager
+    canary_tool_names = {
+        "neuro_event_commit",
+        "neuro_event_route_preview",
+        "neuro_runtime_contract_status",
+        "teaching_lesson_simulate",
+        "teaching_package_assess",
+    }
+    read_only_canary_tool_names = canary_tool_names - {"neuro_event_commit"}
+    for canary_tool_name in canary_tool_names:
+        registered_canary_tool = tool_manager.get_tool(canary_tool_name)
+        assert registered_canary_tool is not None, canary_tool_name
+        assert registered_canary_tool.output_schema, canary_tool_name
+        assert registered_canary_tool.fn_metadata.output_model is not None, canary_tool_name
+    for read_only_canary_tool_name in read_only_canary_tool_names:
+        read_only_canary_tool = tool_manager.get_tool(read_only_canary_tool_name)
+        assert not getattr(read_only_canary_tool.fn, "__sovereign_success_tracking__", False)
+        assert not getattr(read_only_canary_tool.fn, "__sovereign_operating_profile_wrapped__", False)
+    commit_tool = tool_manager.get_tool("neuro_event_commit")
+    assert getattr(commit_tool.fn, "__sovereign_success_tracking__", False)
+    assert getattr(commit_tool.fn, "__sovereign_operating_profile_wrapped__", False)
+
+    registered_tools = list(launcher.mcp._tool_manager.list_tools())
+    assert len({tool.name for tool in registered_tools}) == 249
+
+    def call_registered(tool_name: str, arguments: dict[str, object]):
+        return asyncio.run(tool_manager.call_tool(tool_name, arguments, convert_result=False))
+
+    empty_status = call_registered("neuro_runtime_contract_status", {})
+    assert empty_status.ok is True, empty_status
+    assert empty_status.status == "NEURO_RUNTIME_CONTRACT_READY", empty_status
+    assert empty_status.evidence["toolCount"] == 249, empty_status
+    assert empty_status.data["stateInitializedByThisCall"] is False, empty_status
+    assert not isolated_state.exists(), "read-only status initialized isolated state"
+    continuity_binding = call_registered("sovereign_continuity_context_read", {})
+    assert continuity_binding.ok is True, continuity_binding
+    assert continuity_binding.status == "CONTINUITY_CONTEXT_BOUND", continuity_binding
+
+    # Continuity is now bound.  Guard every one of the 244 predecessor tools
+    # for the remainder of the canary while leaving only the five additive
+    # Neuro/Teacher wrapper chains callable.
+    guarded_tool_calls: list[str] = []
+    guarded_tool_names: list[str] = []
+    for registered_tool in registered_tools:
+        tool_name = registered_tool.name
+        if tool_name in canary_tool_names:
+            continue
+
+        def forbidden_selected_tool_call(*_args, _tool_name=tool_name, **_kwargs):
+            guarded_tool_calls.append(_tool_name)
+            raise AssertionError(f"canary executed guarded predecessor tool: {_tool_name}")
+
+        registered_tool.fn = forbidden_selected_tool_call
+        guarded_tool_names.append(tool_name)
+    assert len(set(guarded_tool_names)) == 244, len(set(guarded_tool_names))
+
+    now = datetime.now(timezone.utc)
+    now = now.replace(microsecond=(now.microsecond // 1000) * 1000)
+    event = ChangeEvent.create(
+        event_id="event.neuro-deployment-canary",
+        system_id="sovereign-studio-ato",
+        revision_sha=expected_revision,
+        policy_sha256=embedded_policy_sha256,
+        lane="deterministic-verification",
+        tick=0,
+        sequence=0,
+        event_time=now,
+        delta_ms=0,
+        kind="runtime.change",
+        source="runtime.deployment-canary",
+        entity="mcp.registry",
+        field="tool-surface",
+        old_hash=ZERO_SHA256,
+        new_hash="1" * 64,
+        magnitude=1,
+        previous_evidence_sha256=ZERO_SHA256,
+        causal_parent_sha256=ZERO_SHA256,
+        producer_identity="sovereign.deployment-canary",
+        canonical=True,
+        payload={"units": 1, "max_units": 2, "scope": "mcp-runtime"},
+    )
+    preview_arguments = {
+        "change_event": event.to_dict(),
+        "request_id": "request.neuro-deployment-canary",
+        "session_id": "session.neuro-deployment-canary",
+        "mission_summary": "Read MCP runtime status.",
+        "required_capabilities": ["runtime"],
+        "allowed_effects": ["read"],
+        "relevance_threshold": 1,
+        "max_tools": 3,
+    }
+
+    quarantined = call_registered(
+        "neuro_event_route_preview",
+        {"foundation_event_kind": "unknown_canary_kind", **preview_arguments},
+    )
+    assert quarantined.ok is False, quarantined
+    assert quarantined.status == "NEURO_EVENT_QUARANTINED", quarantined
+    assert quarantined.mutationPerformed is False, quarantined
+    assert quarantined.data["previewArtifact"]["proposal"]["selectedToolContracts"] == [], quarantined
+    assert quarantined.data["previewArtifact"]["proposal"]["mayExecute"] is False, quarantined
+    assert not isolated_state.exists(), "quarantine initialized isolated state"
+
+    preview = call_registered(
+        "neuro_event_route_preview",
+        {"foundation_event_kind": "work_request", **preview_arguments},
+    )
+    assert preview.ok is True, preview
+    assert preview.status == "NEURO_EVENT_CANDIDATE", preview
+    artifact = preview.data["previewArtifact"]
+    selected_contracts = artifact["proposal"]["selectedToolContracts"]
+    assert artifact["route"]["routeComplete"] is True, artifact
+    assert selected_contracts, artifact
+    assert [contract["name"] for contract in selected_contracts] == ["mcp_self_update_status"], selected_contracts
+    assert all(contract["effect"] == "read" for contract in selected_contracts), selected_contracts
+    assert artifact["proposal"]["proposalOnly"] is True, artifact
+    assert artifact["proposal"]["mayExecute"] is False, artifact
+    assert artifact["proposal"]["autoExecute"] is False, artifact
+    assert artifact["proposal"]["externalEffects"] == [], artifact
+    assert guarded_tool_calls == [], guarded_tool_calls
+
+    workspace_parent = Path(os.environ["SOVEREIGN_MCP_WORKSPACE_ROOT"])
+    workspace_context = None
+    for _workspace_attempt in range(32):
+        candidate_context = tempfile.TemporaryDirectory(
+            prefix="neurocanary-",
+            dir=workspace_parent,
+        )
+        try:
+            validate_workspace_id(Path(candidate_context.name).name)
+        except ValueError:
+            candidate_context.cleanup()
+            continue
+        workspace_context = candidate_context
+        break
+    assert workspace_context is not None, "could not allocate a valid bounded workspace id"
+    with workspace_context as workspace_temporary_directory:
+        workspace_temporary_root = Path(workspace_temporary_directory)
+        workspace_id = workspace_temporary_root.name
+        repository = workspace_temporary_root / "repo"
+        (repository / ".git").mkdir(parents=True)
+        excerpt = "Runtime inspection is read-only evidence collection."
+        source_path = repository / "docs" / "runtime.md"
+        source_path.parent.mkdir(parents=True)
+        source_bytes = (
+            "# Runtime evidence\n\n"
+            f"{excerpt}\n"
+            "This bounded source is used only by the deployment teaching canary.\n"
+        ).encode("utf-8")
+        source_path.write_bytes(source_bytes)
+        source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        source_mtime_ns = source_path.stat().st_mtime_ns
+        teaching_package = {
+            "schema_version": "1.0",
+            "package": {
+                "id": "runtime-evidence-canary",
+                "title": "Runtime evidence canary lesson",
+                "version": "1.0.0",
+                "created_at": "2026-08-14T00:00:00Z",
+                "language": "en",
+                "scope": "read-only runtime evidence",
+                "source_profile_ref": "source-local",
+                "limitations": ["no tool execution", "no package mutation"],
+            },
+            "provenance": [
+                {
+                    "id": "prov-runtime",
+                    "source_type": "files",
+                    "locator": "docs/runtime.md",
+                    "retrieved_at": "2026-08-14T00:00:00Z",
+                    "content_hash": source_sha256,
+                    "trust_level": "repository",
+                    "license_or_policy": "repository-owner-policy",
+                }
+            ],
+            "evidence": [
+                {
+                    "id": "ev-runtime",
+                    "provenance_ref": "prov-runtime",
+                    "locator": "docs/runtime.md#L3",
+                    "excerpt": excerpt,
+                    "content_hash": hashlib.sha256(excerpt.encode("utf-8")).hexdigest(),
+                    "classification": "internal",
+                }
+            ],
+            "knowledge_units": [
+                {
+                    "id": "ku-runtime",
+                    "claim": "Inspect runtime evidence before drawing a conclusion.",
+                    "explanation": "The registered read-only contract returns bounded evidence.",
+                    "scope": "runtime inspection",
+                    "assumptions": ["live registry available"],
+                    "evidence_refs": ["ev-runtime"],
+                    "confidence": "high",
+                }
+            ],
+            "skills": [
+                {
+                    "id": "skill-runtime",
+                    "title": "Runtime evidence canary lesson",
+                    "outcome": "A bounded runtime evidence report.",
+                    "knowledge_refs": ["ku-runtime"],
+                    "preconditions": ["live registry is available"],
+                    "inputs_schema": {
+                        "type": "object",
+                        "properties": {"scope": {"type": "string"}},
+                        "required": ["scope"],
+                        "additionalProperties": False,
+                    },
+                    "steps": [
+                        {
+                            "id": "inspect",
+                            "action": "Inspect runtime health evidence",
+                            "why": "Runtime truth requires readback.",
+                            "tool_ref": selected_contracts[0],
+                        }
+                    ],
+                    "verification": {
+                        "success_conditions": ["evidence is bounded"],
+                        "failure_signals": ["registry drift"],
+                        "fallback": "stop and reassess",
+                    },
+                    "safety_boundaries": ["read-only", "no automatic execution"],
+                }
+            ],
+            "assessments": [
+                {
+                    "id": "assess-runtime",
+                    "skill_or_knowledge_ref": "skill-runtime",
+                    "type": "dry_run",
+                    "prompt": "Explain the evidence boundary.",
+                    "rubric": ["names the live contract"],
+                }
+            ],
+            "target_adapters": [
+                {
+                    "id": "adapter-mcp",
+                    "target_kind": "mcp",
+                    "format": "lesson",
+                    "mapping": {"skill": "tool"},
+                    "write_mode": "read_only",
+                    "approval_required": False,
+                }
+            ],
+        }
+        package_path = repository / "teaching" / "knowledge-package.json"
+        package_path.parent.mkdir(parents=True)
+        package_bytes = json.dumps(
+            teaching_package,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        package_path.write_bytes(package_bytes)
+        package_sha256 = hashlib.sha256(package_bytes).hexdigest()
+        package_mtime_ns = package_path.stat().st_mtime_ns
+
+        def repository_file_tree() -> dict[str, dict[str, object]]:
+            return {
+                str(path.relative_to(repository)): {
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "size": path.stat().st_size,
+                    "mtimeNs": path.stat().st_mtime_ns,
+                }
+                for path in sorted(repository.rglob("*"))
+                if path.is_file()
+            }
+
+        repository_tree_before = repository_file_tree()
+        assert repository_tree_before["docs/runtime.md"]["sha256"] == source_sha256
+        assert repository_tree_before["teaching/knowledge-package.json"]["sha256"] == package_sha256
+
+        assessment = call_registered(
+            "teaching_package_assess",
+            {
+                "workspace_id": workspace_id,
+                "relative_path": "teaching/knowledge-package.json",
+                "expected_sha256": package_sha256,
+            },
+        )
+        assert assessment.ok is True, assessment
+        assert assessment.status == "TEACHING_PACKAGE_ASSESSED", assessment
+        assert assessment.mutationPerformed is False, assessment
+        assert assessment.evidence["packageWritten"] is False, assessment
+        assert assessment.evidence["externalEffectPerformed"] is False, assessment
+        assessment_receipt = assessment.data["assessmentReceipt"]
+        assert assessment_receipt["mutationPerformed"] is False, assessment_receipt
+        assert assessment_receipt["externalEffects"] == [], assessment_receipt
+
+        lesson = call_registered(
+            "teaching_lesson_simulate",
+            {
+                "workspace_id": workspace_id,
+                "relative_path": "teaching/knowledge-package.json",
+                "package_sha256": package_sha256,
+                "assessment_receipt": assessment_receipt,
+                "skill_id": "skill-runtime",
+                "exercise_inputs": {"scope": "mcp-runtime"},
+                "max_output_chars": 4000,
+            },
+        )
+        assert lesson.ok is True, lesson
+        assert lesson.status == "TEACHING_LESSON_SIMULATED", lesson
+        assert lesson.mutationPerformed is False, lesson
+        assert lesson.evidence["packageWritten"] is False, lesson
+        assert lesson.evidence["toolExecuted"] is False, lesson
+        assert lesson.evidence["externalEffectPerformed"] is False, lesson
+        assert lesson.data["proposalOnly"] is True, lesson
+        assert lesson.data["mayExecute"] is False, lesson
+        assert lesson.data["autoExecute"] is False, lesson
+        assert package_path.read_bytes() == package_bytes, "teacher tools changed package bytes"
+        assert package_path.stat().st_mtime_ns == package_mtime_ns, "teacher tools touched package metadata"
+        assert source_path.read_bytes() == source_bytes, "teacher tools changed provenance source bytes"
+        assert source_path.stat().st_mtime_ns == source_mtime_ns, "teacher tools touched provenance source metadata"
+        repository_tree_after = repository_file_tree()
+        assert repository_tree_after == repository_tree_before, "teacher tools changed repository tree"
+        assert guarded_tool_calls == [], guarded_tool_calls
+
+    assert workspace_temporary_root is not None and not workspace_temporary_root.exists()
+
+    committed = call_registered(
+        "neuro_event_commit",
+        {
+            "preview_artifact": artifact,
+            "preview_sha256": artifact["previewSha256"],
+            "expected_head_sha256": ZERO_SHA256,
+            "expected_sequence": 0,
+        },
+    )
+    assert committed.ok is True, committed
+    assert committed.status == "NEURO_EVENT_COMMITTED", committed
+    assert committed.mutationPerformed is True, committed
+    assert committed.evidence["sourceChainVerified"] is True, committed
+    assert committed.evidence["foundationChainVerified"] is True, committed
+    assert committed.evidence["crossLedgerCommitComplete"] is True, committed
+    assert committed.evidence["externalEffectPerformed"] is False, committed
+    assert committed.data["proposalOnly"] is True, committed
+    assert committed.data["mayExecute"] is False, committed
+    assert guarded_tool_calls == [], guarded_tool_calls
+
+    replay = call_registered(
+        "neuro_event_commit",
+        {
+            "preview_artifact": artifact,
+            "preview_sha256": artifact["previewSha256"],
+            "expected_head_sha256": ZERO_SHA256,
+            "expected_sequence": 0,
+        },
+    )
+    assert replay.ok is True, replay
+    assert replay.status == "NEURO_EVENT_ALREADY_COMMITTED", replay
+    assert replay.mutationPerformed is False, replay
+    assert replay.evidence["receiptHash"] == committed.evidence["receiptHash"], replay
+
+    tampered_preview = json.loads(json.dumps(artifact))
+    tampered_preview["request"]["missionSummary"] = "Tampered mission."
+    rejected_tamper = call_registered(
+        "neuro_event_commit",
+        {
+            "preview_artifact": tampered_preview,
+            "preview_sha256": artifact["previewSha256"],
+            "expected_head_sha256": ZERO_SHA256,
+            "expected_sequence": 0,
+        },
+    )
+    assert rejected_tamper.ok is False, rejected_tamper
+    assert rejected_tamper.status == "NEURO_EVENT_COMMIT_REJECTED", rejected_tamper
+    assert rejected_tamper.mutationPerformed is False, rejected_tamper
+
+    readback = call_registered("neuro_runtime_contract_status", {})
+    assert readback.ok is True, readback
+    assert readback.data["ledger"]["eventCount"] == 1, readback
+    assert readback.data["ledger"]["integrityVerified"] is True, readback
+    assert readback.data["foundationLedger"]["entryCount"] == 1, readback
+    assert readback.data["foundationLedger"]["integrityVerified"] is True, readback
+    assert readback.data["admissions"]["pending"] == 0, readback
+    assert readback.data["admissions"]["complete"] == 1, readback
+    assert readback.data["admissions"]["integrityVerified"] is True, readback
+
+    ledger_path = isolated_state / "neuromorphic-runtime.sqlite3"
+    with sqlite3.connect(ledger_path) as connection:
+        cursor = connection.execute("UPDATE projections SET value_hash = ?", ("f" * 64,))
+        assert cursor.rowcount == 1
+        connection.commit()
+    tamper_readback = call_registered("neuro_runtime_contract_status", {})
+    assert tamper_readback.ok is False, tamper_readback
+    assert tamper_readback.status == "NEURO_RUNTIME_CONTRACT_DEGRADED", tamper_readback
+    assert tamper_readback.data["ledger"]["integrityVerified"] is False, tamper_readback
+    assert tamper_readback.data["ledger"]["failureFamily"] == "ChainIntegrityError", tamper_readback
+    assert guarded_tool_calls == [], guarded_tool_calls
+    tracking_events = [
+        json.loads(line)
+        for line in (isolated_ranking_state / "tool-events.jsonl").read_text("utf-8").splitlines()
+        if line.strip()
+    ]
+    tracked_canary_tools = {event.get("tool") for event in tracking_events}
+    assert tracked_canary_tools == {"neuro_event_commit"}, tracked_canary_tools
+    assert "mcp_self_update_status" not in tracked_canary_tools, tracked_canary_tools
+    persisted_outcome_tools = sorted(tracked_canary_tools)
+
+assert temporary_root is not None and not temporary_root.exists(), "isolated canary state was not cleaned"
+print(
+    json.dumps(
+        {
+            "status": "NEURO_DEPLOYMENT_CANARY_VERIFIED",
+            "registryToolCount": 249,
+            "guardedPredecessorToolCount": 244,
+            "quarantineNoMutation": True,
+            "previewProposalOnly": True,
+            "selectedToolsExecuted": False,
+            "commitReplayVerified": True,
+            "tamperDetected": True,
+            "canonicalReadbackVerified": True,
+            "registeredToolSurfaceVerified": True,
+            "teacherAssessmentVerified": True,
+            "teacherLessonSimulationVerified": True,
+            "teachingSourceProvenanceVerified": True,
+            "teachingPackageUnchanged": True,
+            "telemetryScope": "mutable-tool-outcomes-only",
+            "readOnlyCallsPersisted": False,
+            "persistedOutcomeTools": persisted_outcome_tools,
+            "isolatedStateCleaned": True,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 )
 PY
 
@@ -1596,7 +2856,24 @@ systemctl is-enabled --quiet sovereign-release-reconciler.timer \
 systemctl is-active --quiet sovereign-release-reconciler.timer \
   || fail "coordinated release reconciler timer is not active"
 
+if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
+  [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "1" ]] \
+    || fail "predecessor MCP existed but semantic compatibility was not verified"
+else
+  [[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" == "0" ]] \
+    || fail "first-install state conflicts with predecessor registry evidence"
+fi
 INSTALL_STAGE="completed"
 INSTALL_COMPLETED=1
 ROLLBACK_ARMED=0
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":false,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"operating_profile_enforced":true,"continuity_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":false,"workspace_pr_head_sync_available":false,"workflow_dispatch_available":false,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE"
+PREVIOUS_TOOL_SURFACE_COMPARED_JSON=false
+[[ "$PREVIOUS_MCP_TOOL_SURFACE_CAPTURED" != "1" ]] || PREVIOUS_TOOL_SURFACE_COMPARED_JSON=true
+PREDECESSOR_CONTAINER_PRESENT_JSON=false
+SEMANTIC_COMPATIBILITY_VERIFIED_JSON=false
+FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=true
+if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
+  PREDECESSOR_CONTAINER_PRESENT_JSON=true
+  SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
+  FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
+fi
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":false,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":false,"workspace_pr_head_sync_available":false,"workflow_dispatch_available":false,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"

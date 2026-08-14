@@ -44,7 +44,7 @@ Chat-Memory darf auf diese Pfade und Regeln hinweisen, ist aber niemals technisc
 - Keine automatische Rekursion, kein unbeschränktes Retry und kein Wechsel der Fehlerfamilie ohne neue Evidence.
 - Keine Secrets im Chat, in MCP-Argumenten, Logs, Repository oder Datenbank speichern.
 - Owner-geschützte Werte ausschließlich über die authentifizierte Owner-Oberfläche erfassen.
-- FreeLLM und Paid OpenRouter/LiteLLM als getrennte Routen behandeln. Kein stiller Fallback in irgendeine Richtung.
+- FreeLLM und Paid OpenRouter als getrennte direkte Routen behandeln. LiteLLM bleibt als Transport stillgelegt; kein stiller Fallback in irgendeine Richtung.
 - Keine UI-Anzeige, kein Mock, Stub, Facade-Ergebnis oder ungeprüfter Funktionsreturn als Live-Erfolg melden.
 
 ### 3.3 Nach der Ausführung

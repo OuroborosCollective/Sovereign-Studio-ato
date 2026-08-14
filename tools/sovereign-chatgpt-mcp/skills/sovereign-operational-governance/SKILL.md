@@ -14,7 +14,7 @@ The online LLM interprets natural language and maps the mission to structured ca
 
 ## Installed base skill families
 
-This manifest owns 16 governance families. The companion `sovereign-operational-assurance` manifest adds 27 distinct families and reuses the registry family rather than duplicating it. The combined routing inventory therefore exposes 43 unique skill families and 48 unique profile tool identities.
+This manifest owns the base governance families. The companion `sovereign-operational-assurance` and `sovereign-neuro-teaching-runtime` manifests add distinct bounded families and reuse the same live registry rather than duplicating it. `operational_skill_inventory` is the authoritative current count; prose counts are intentionally avoided because the registry evolves.
 
 1. `sovereign-tool-capability-router`
 2. `sovereign-mcp-registry-verifier`
@@ -35,7 +35,7 @@ This manifest owns 16 governance families. The companion `sovereign-operational-
 
 ## Registered base MCP tools
 
-The following 16 tools are implemented by `operational_governance_tools.py`. `toolchain_composition.py` adds five typed, non-executing composition tools. The assurance module registers 28 additional callable tools, including its inventory, and reuses `mcp_tool_contract_registry` rather than duplicating it.
+The following base tools are implemented by `operational_governance_tools.py`. `toolchain_composition.py` adds typed, non-executing composition tools. The assurance and neuro-teaching modules add their own callable tools and reuse `mcp_tool_contract_registry` rather than duplicating it.
 
 - `operational_skill_inventory`
 - `mcp_tool_contract_registry`

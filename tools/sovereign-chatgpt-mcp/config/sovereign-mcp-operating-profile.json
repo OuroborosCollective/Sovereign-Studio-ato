@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.mcp-operating-profile.v1",
   "profileId": "sovereign-mcp-optimal-operation",
-  "profileVersion": "1.1.0",
+  "profileVersion": "1.1.1",
   "purpose": "Persist and technically enforce continuity-read, mission-first, contract-bound and evidence-first operation across ChatGPT sessions and MCP revisions.",
   "enforcementMode": "fail-closed",
   "naturalLanguageBoundary": {
@@ -107,7 +107,8 @@
   },
   "routeIsolation": {
     "freeRoute": "FreeLLM direct transport only",
-    "paidRoute": "Paid OpenRouter/LiteLLM transport only",
+    "paidRoute": "Paid OpenRouter direct transport only",
+    "legacyLiteLLMTransportAllowed": false,
     "automaticFreeToPaidFallback": false,
     "automaticPaidToFreeFallback": false,
     "pricingRuleAppliesTo": "paid route only",

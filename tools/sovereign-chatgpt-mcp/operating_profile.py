@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import continuity
 import operational_governance_tools
 import toolchain_composition
+from policy import contains_secret_shaped_value
 
 
 LOCAL_READ_ONLY = ToolAnnotations(
@@ -31,13 +32,6 @@ _ENFORCEMENT_INSTALLED = False
 _ENFORCED_TOOL_NAMES: tuple[str, ...] = ()
 
 _EXACT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-_SECRET_VALUE_PATTERNS = (
-    re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
-    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b", re.I),
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
-)
 _EXACT_REVISION_FIELDS = (
     "expected_revision",
     "expected_head_sha",
@@ -155,6 +149,14 @@ def _load_profile() -> tuple[dict[str, Any], str]:
     mutation_gate = payload.get("mutationGate")
     if not isinstance(mutation_gate, dict) or not mutation_gate.get("enabled") or not mutation_gate.get("automatic"):
         raise RuntimeError("automatic mutation gate must remain enabled")
+    route_isolation = payload.get("routeIsolation")
+    if (
+        not isinstance(route_isolation, dict)
+        or route_isolation.get("freeRoute") != "FreeLLM direct transport only"
+        or route_isolation.get("paidRoute") != "Paid OpenRouter direct transport only"
+        or route_isolation.get("legacyLiteLLMTransportAllowed") is not False
+    ):
+        raise RuntimeError("provider routes must remain direct and legacy LiteLLM must remain retired")
     return payload, hashlib.sha256(raw).hexdigest()
 
 
@@ -397,13 +399,7 @@ def sovereign_mission_preflight(
 
 
 def _contains_secret_shaped_value(value: Any) -> bool:
-    if isinstance(value, str):
-        return any(pattern.search(value) for pattern in _SECRET_VALUE_PATTERNS)
-    if isinstance(value, dict):
-        return any(_contains_secret_shaped_value(item) for item in value.values())
-    if isinstance(value, (list, tuple, set)):
-        return any(_contains_secret_shaped_value(item) for item in value)
-    return False
+    return contains_secret_shaped_value(value)
 
 
 

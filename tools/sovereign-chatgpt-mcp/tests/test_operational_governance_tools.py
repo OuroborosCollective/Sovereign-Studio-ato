@@ -301,8 +301,9 @@ def test_inventory_and_router_use_live_registry_without_executing_tools(register
     _, _, _ = registered
     inventory = tools.operational_skill_inventory()
     assert inventory.status == "OPERATIONAL_SKILL_SUITE_READY"
-    assert inventory.skillCount == 45
-    assert inventory.toolCount == 52
+    assert inventory.skillCount == 46
+    assert inventory.toolCount == 57
+    assert any(skill["name"] == "sovereign-neuro-teaching-runtime" for skill in inventory.skills)
     assert inventory.boundaries["naturalLanguageInterpretation"] == "model_only"
     assert inventory.boundaries["autoMerge"] is False
 
@@ -806,3 +807,22 @@ def test_evidence_payloads_redact_secret_shaped_values_and_require_real_backup_d
             restored_digest="",
             restore_status="not-tested",
         )
+
+
+def test_effect_annotation_conflicts_fail_safe_without_reclassifying_existing_capabilities() -> None:
+    assert tools._effect_from_annotations(
+        {
+            "readOnlyHint": True,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+    ) == "external-write"
+    assert tools._effect_from_annotations(
+        {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": True,
+        }
+    ) == "read"
