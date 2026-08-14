@@ -94,6 +94,545 @@ def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch,
     assert json.loads((tmp_path / "status.json").read_text("utf-8"))["revision"] == revision
 
 
+def _scoped_reconcile_fixture(
+    monkeypatch, tmp_path, *, restored: bool = True, backend_current: bool = False
+):
+    module = _load()
+    revision = "d" * 40
+    previous_revision = "a" * 40
+    backend_digest = "sha256:" + "b" * 64
+    mcp_digest = "sha256:" + "c" * 64
+    previous_digest = "sha256:" + "e" * 64
+    scope = {
+        "revision": revision,
+        "releaseGateRunId": 91,
+        "backendDigest": backend_digest,
+        "mcpDigest": mcp_digest,
+        "manifestEvidenceSha256": "f" * 64,
+    }
+    gate = {"ready": True, "status": "RELEASE_GATE_VERIFIED", "runId": 91}
+    backend_image = {
+        "repository": module.BACKEND_REPOSITORY,
+        "revision": revision,
+        "digest": backend_digest,
+    }
+    mcp_image = {
+        "repository": module.MCP_REPOSITORY,
+        "revision": revision,
+        "digest": mcp_digest,
+    }
+    previous_backend = {
+        "present": True,
+        "valid": True,
+        "container": "sovereign-backend",
+        "containerId": "old-container",
+        "running": True,
+        "startedAt": "2026-08-14T18:00:00Z",
+        "networks": ["areloria_arelorian-network", "sovereign-private", "supabase_default"],
+        "revision": previous_revision,
+        "digest": previous_digest,
+    }
+    if backend_current:
+        previous_backend.update({"revision": revision, "digest": backend_digest})
+    current_backend = {
+        **previous_backend,
+        "containerId": "restored-container",
+        "startedAt": "2026-08-14T19:46:16Z",
+    }
+    if not restored:
+        current_backend.update({"revision": revision, "digest": backend_digest})
+    current_mcp = {
+        "present": True,
+        "valid": True,
+        "container": "sovereign-chatgpt-mcp",
+        "containerId": "old-mcp",
+        "running": True,
+        "health": "healthy",
+        "startedAt": "2026-08-12T10:00:00Z",
+        "networks": ["supabase_default"],
+        "revision": previous_revision,
+        "digest": "sha256:" + "1" * 64,
+    }
+    identity_calls = {"backend": 0}
+
+    def container_identity(container, _repository):
+        if container == "sovereign-backend":
+            identity_calls["backend"] += 1
+            return dict(previous_backend if identity_calls["backend"] == 1 else current_backend)
+        return dict(current_mcp)
+
+    monkeypatch.setattr(module, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(module, "STATUS_FILE", tmp_path / "status.json")
+    monkeypatch.setattr(module, "_expected_scope", lambda: dict(scope))
+    monkeypatch.setattr(module, "_main_revision", lambda: revision)
+    monkeypatch.setattr(module, "_release_gate", lambda *_args, **_kwargs: dict(gate))
+    monkeypatch.setattr(module, "_refresh_operator_source", lambda _scope: {"revision": revision})
+    monkeypatch.setattr(
+        module,
+        "_image_evidence",
+        lambda repository, _revision: dict(
+            backend_image if repository == module.BACKEND_REPOSITORY else mcp_image
+        ),
+    )
+    monkeypatch.setattr(module, "_container_identity", container_identity)
+    monkeypatch.setattr(
+        module,
+        "_backend_health_identity",
+        lambda: {
+            "ok": True,
+            "status": "VERIFIED",
+            "sourceRevision": current_backend["revision"],
+            "imageDigest": current_backend["digest"],
+            "responseSha256": "2" * 64,
+        },
+    )
+    return module, scope, previous_backend, current_backend
+
+
+def test_backend_post_production_failure_preserves_scope_and_proves_restoration(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    mcp_calls: list[str] = []
+
+    def failed_backend_command(_argv, **_kwargs):
+        raise module.ReconcileError(
+            "backend_deploy",
+            "exit=1;outputSha256=" + "3" * 64,
+            safe_evidence={
+                "outputSha256": "3" * 64,
+                "diagnostics": [
+                    {"stage": "platform_integrations", "failureFamily": "RuntimeError"},
+                    {"stage": "admin_canary", "failureFamily": "ContractFailure"},
+                ],
+            },
+        )
+
+    monkeypatch.setattr(module, "_command_json", failed_backend_command)
+    monkeypatch.setattr(
+        module,
+        "_deploy_mcp_from_ci_scope",
+        lambda *_args, **_kwargs: mcp_calls.append("called"),
+    )
+
+    result = module.reconcile()
+
+    assert result["status"] == "BACKEND_DEPLOY_FAILED"
+    assert result["revision"] == scope["revision"]
+    assert result["expectedScope"] == scope
+    assert result["previousBackend"] == previous_backend
+    assert result["mutationEvidenceStatus"] == "PERFORMED"
+    assert result["mutationPerformed"] is True
+    assert result["restoration"]["identityRestored"] is True
+    assert result["restoration"]["networkParity"] is True
+    assert result["restoration"]["livenessParity"] is True
+    assert result["restoration"]["containerRecreated"] is True
+    assert result["retryable"] is False
+    assert mcp_calls == []
+
+
+@pytest.mark.parametrize(
+    ("diagnostics", "expected_status", "expected_mutation"),
+    [
+        ([{"stage": "candidate_health", "failureFamily": "ContractFailure"}], "PERFORMED", True),
+        ([{"stage": "preflight", "failureFamily": "ContractFailure"}], "UNKNOWN", None),
+        ([], "UNKNOWN", None),
+    ],
+)
+def test_backend_failure_records_proven_effects_and_never_encodes_unknown_as_false(
+    monkeypatch, tmp_path, diagnostics, expected_status, expected_mutation
+) -> None:
+    module, _scope, _previous_backend, current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    current_backend.update(
+        {"containerId": "old-container", "startedAt": "2026-08-14T18:00:00Z"}
+    )
+
+    def failed_backend_command(_argv, **_kwargs):
+        safe_evidence = {"outputSha256": "4" * 64}
+        if diagnostics:
+            safe_evidence["diagnostics"] = diagnostics
+        raise module.ReconcileError(
+            "backend_deploy",
+            "exit=1;outputSha256=" + "4" * 64,
+            safe_evidence=safe_evidence,
+        )
+
+    monkeypatch.setattr(module, "_command_json", failed_backend_command)
+
+    result = module.reconcile()
+
+    assert result["mutationEvidenceStatus"] == expected_status
+    if expected_mutation is None:
+        assert "mutationPerformed" not in result
+    else:
+        assert result["mutationPerformed"] is expected_mutation
+    if diagnostics and diagnostics[0]["stage"] == "candidate_health":
+        assert (
+            result["restoration"]["status"]
+            == "PREVIOUS_IDENTITY_NETWORK_AND_LIVENESS_UNCHANGED"
+        )
+        assert result["restoration"]["identityRestored"] is False
+    assert result["retryable"] is False
+
+
+def test_backend_post_production_failure_does_not_claim_mismatched_restore(
+    monkeypatch, tmp_path
+) -> None:
+    module, _scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path, restored=False
+    )
+
+    def failed_backend_command(_argv, **_kwargs):
+        raise module.ReconcileError(
+            "backend_deploy",
+            "exit=1;outputSha256=" + "5" * 64,
+            safe_evidence={
+                "diagnostics": [{"stage": "production_health", "failureFamily": "ContractFailure"}]
+            },
+        )
+
+    monkeypatch.setattr(module, "_command_json", failed_backend_command)
+
+    result = module.reconcile()
+
+    assert result["mutationPerformed"] is True
+    assert (
+        result["restoration"]["status"]
+        == "RESTORATION_IDENTITY_NETWORK_OR_LIVENESS_UNVERIFIED"
+    )
+    assert result["restoration"]["identityRestored"] is False
+    assert result["restoration"]["livenessParity"] is False
+
+
+def test_backend_restore_requires_network_attachment_parity(monkeypatch, tmp_path) -> None:
+    module, _scope, _previous_backend, current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    current_backend["networks"] = ["supabase_default"]
+
+    def failed_backend_command(_argv, **_kwargs):
+        raise module.ReconcileError(
+            "backend_deploy",
+            "exit=1;outputSha256=" + "5" * 64,
+            safe_evidence={
+                "diagnostics": [{"stage": "admin_canary", "failureFamily": "ContractFailure"}]
+            },
+        )
+
+    monkeypatch.setattr(module, "_command_json", failed_backend_command)
+
+    result = module.reconcile()
+
+    assert result["mutationPerformed"] is True
+    assert result["restoration"]["identityParity"] is True
+    assert result["restoration"]["livenessParity"] is True
+    assert result["restoration"]["networkParity"] is False
+    assert result["restoration"]["identityRestored"] is False
+    assert (
+        result["restoration"]["status"]
+        == "RESTORATION_IDENTITY_NETWORK_OR_LIVENESS_UNVERIFIED"
+    )
+
+
+def test_restart_proves_mutation_without_claiming_container_recreation_or_restore() -> None:
+    module = _load()
+    revision = "a" * 40
+    digest = "sha256:" + "b" * 64
+    previous = {
+        "present": True,
+        "containerId": "same-container",
+        "running": True,
+        "startedAt": "2026-08-14T18:00:00Z",
+        "networks": ["sovereign-private"],
+        "revision": revision,
+        "digest": digest,
+    }
+    current = {
+        **previous,
+        "startedAt": "2026-08-14T19:00:00Z",
+    }
+    health = {
+        "ok": True,
+        "sourceRevision": revision,
+        "imageDigest": digest,
+    }
+
+    mutation_status, mutation_performed = module._production_mutation_evidence(
+        [], previous, current
+    )
+    restoration = module._restoration_evidence(previous, current, health)
+
+    assert mutation_status == "PERFORMED"
+    assert mutation_performed is True
+    assert restoration["containerRecreated"] is False
+    assert restoration["containerRestarted"] is True
+    assert restoration["identityRestored"] is False
+    assert (
+        restoration["status"]
+        == "RESTARTED_IDENTITY_NETWORK_AND_LIVENESS_VERIFIED"
+    )
+
+
+def test_runtime_readback_failure_retains_successful_mutation_evidence(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    monkeypatch.setattr(
+        module,
+        "_command_json",
+        lambda *_args, **_kwargs: {"receipt": {"ok": True}, "outputSha256": "6" * 64},
+    )
+    monkeypatch.setattr(
+        module,
+        "_deploy_mcp_from_ci_scope",
+        lambda *_args, **_kwargs: {"status": "DEPLOYED", "revision": scope["revision"]},
+    )
+    monkeypatch.setattr(
+        module,
+        "_runtime_readback",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            module.ReconcileError("runtime_readback", "broker is not ready")
+        ),
+    )
+
+    result = module.reconcile()
+
+    assert result["status"] == "RUNTIME_READBACK_FAILED"
+    assert result["revision"] == scope["revision"]
+    assert result["expectedScope"] == scope
+    assert result["mutationEvidenceStatus"] == "PERFORMED"
+    assert result["mutationPerformed"] is True
+    assert result["retryable"] is False
+
+
+def test_unexpected_runtime_readback_failure_stays_redacted_and_retains_mutation(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    monkeypatch.setattr(
+        module,
+        "_command_json",
+        lambda *_args, **_kwargs: {"receipt": {"ok": True}, "outputSha256": "6" * 64},
+    )
+    monkeypatch.setattr(
+        module,
+        "_deploy_mcp_from_ci_scope",
+        lambda *_args, **_kwargs: {"status": "DEPLOYED", "revision": scope["revision"]},
+    )
+    raw_secret = "private-broker-error-detail"
+    monkeypatch.setattr(
+        module,
+        "_runtime_readback",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError(raw_secret)),
+    )
+
+    result = module.reconcile()
+
+    assert result["status"] == "RUNTIME_READBACK_FAILED"
+    assert result["mutationPerformed"] is True
+    assert result["runtimeReadback"]["failureFamily"] == "OSError"
+    assert raw_secret not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    ("installer_stage", "expected_status", "expected_mutation"),
+    [
+        ("preflight", "UNKNOWN", None),
+        ("backup_existing_control_plane", "UNKNOWN", None),
+        ("replace_mcp_container", "PERFORMED", True),
+    ],
+)
+def test_mcp_failure_uses_observed_effect_instead_of_desired_drift(
+    monkeypatch, tmp_path, installer_stage, expected_status, expected_mutation
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path, backend_current=True
+    )
+
+    def failed_mcp_update(*_args, **_kwargs):
+        raise module.ReconcileError(
+            "mcp_deploy",
+            "exit=1;outputSha256=" + "7" * 64,
+            safe_evidence={
+                "outputSha256": "7" * 64,
+                "installerDiagnostic": {
+                    "stage": installer_stage,
+                    "rollbackAttempted": installer_stage != "preflight",
+                },
+            },
+        )
+
+    monkeypatch.setattr(module, "_deploy_mcp_from_ci_scope", failed_mcp_update)
+
+    result = module.reconcile()
+
+    assert result["status"] == "MCP_UPDATE_FAILED"
+    assert result["revision"] == scope["revision"]
+    assert result["mutationEvidenceStatus"] == expected_status
+    assert result["mcpUpdate"]["mutationEvidenceStatus"] == expected_status
+    if expected_mutation is None:
+        assert "mutationPerformed" not in result
+        assert "mutationPerformed" not in result["mcpUpdate"]
+    else:
+        assert result["mutationPerformed"] is expected_mutation
+        assert result["mcpUpdate"]["mutationPerformed"] is expected_mutation
+    assert result["rollback"]["attempted"] is False
+    assert result["retryable"] is False
+
+
+def test_mcp_component_evidence_stays_unknown_when_only_backend_mutated(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    command_calls: list[str] = []
+
+    def successful_backend_command(argv, **_kwargs):
+        command_calls.append(str(argv[0]))
+        return {"receipt": {"ok": True}, "outputSha256": "8" * 64}
+
+    def failed_mcp_preflight(*_args, **_kwargs):
+        raise module.ReconcileError(
+            "mcp_deploy",
+            "exit=1;outputSha256=" + "9" * 64,
+            safe_evidence={
+                "outputSha256": "9" * 64,
+                "installerDiagnostic": {
+                    "stage": "preflight",
+                    "rollbackAttempted": False,
+                },
+            },
+        )
+
+    monkeypatch.setattr(module, "_command_json", successful_backend_command)
+    monkeypatch.setattr(module, "_deploy_mcp_from_ci_scope", failed_mcp_preflight)
+
+    result = module.reconcile()
+
+    assert result["status"] == "MCP_UPDATE_FAILED_BACKEND_ROLLBACK_ATTEMPTED"
+    assert result["revision"] == scope["revision"]
+    assert result["mutationEvidenceStatus"] == "PERFORMED"
+    assert result["mutationPerformed"] is True
+    assert result["backendDeploy"]["mutationPerformed"] is True
+    assert result["mcpUpdate"]["mutationEvidenceStatus"] == "UNKNOWN"
+    assert "mutationPerformed" not in result["mcpUpdate"]
+    assert result["rollback"]["attempted"] is True
+    assert len(command_calls) == 2
+
+
+def test_command_failure_returns_only_bounded_diagnostics_and_output_hash(monkeypatch) -> None:
+    module = _load()
+    raw_secret = "super-secret-runtime-value"
+    completed = subprocess.CompletedProcess(
+        ["deploy"],
+        1,
+        "SOVEREIGN_DEPLOY_DIAGNOSTIC:admin_canary:ContractFailure\n",
+        raw_secret,
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["deploy"], timeout=10, stage="backend_deploy")
+
+    error = caught.value
+    assert error.safe_evidence["diagnostics"] == [
+        {"stage": "admin_canary", "failureFamily": "ContractFailure"}
+    ]
+    assert len(error.safe_evidence["outputSha256"]) == 64
+    assert raw_secret not in json.dumps(error.safe_evidence)
+    assert raw_secret not in error.detail
+
+
+def test_mcp_installer_failure_returns_stage_without_reason(monkeypatch) -> None:
+    module = _load()
+    raw_secret = "private-installer-reason"
+    completed = subprocess.CompletedProcess(
+        ["install"],
+        1,
+        "",
+        (
+            "install blocked: stage=replace_mcp_container exit=1 "
+            f"reason={raw_secret} rollback_attempted=1\n"
+        ),
+    )
+    monkeypatch.setattr(module, "_run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(module.ReconcileError) as caught:
+        module._command_json(["install"], timeout=10, stage="mcp_deploy")
+
+    evidence = caught.value.safe_evidence
+    assert evidence["installerDiagnostic"] == {
+        "stage": "replace_mcp_container",
+        "rollbackAttempted": True,
+    }
+    assert raw_secret not in json.dumps(evidence)
+    assert raw_secret not in caught.value.detail
+
+
+def test_global_failure_fallback_never_claims_no_mutation(monkeypatch, tmp_path) -> None:
+    module = _load()
+    revision = "7" * 40
+    monkeypatch.setattr(module, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(module, "STATUS_FILE", tmp_path / "status.json")
+    monkeypatch.setattr(module, "LOCK_FILE", tmp_path / "reconcile.lock")
+    monkeypatch.setattr(module, "GITHUB_TOKEN_FILE", tmp_path / "ephemeral-token")
+    module.EXPECTED_REVISION = revision
+    module.EXPECTED_RELEASE_GATE_RUN_ID = "92"
+    module.EXPECTED_BACKEND_DIGEST = "sha256:" + "8" * 64
+    module.EXPECTED_MCP_DIGEST = "sha256:" + "9" * 64
+    module.EXPECTED_MANIFEST_EVIDENCE_SHA256 = "a" * 64
+    monkeypatch.setattr(
+        module,
+        "reconcile",
+        lambda: (_ for _ in ()).throw(module.ReconcileError("host_command", "timeout")),
+    )
+
+    exit_code = module.main()
+    result = json.loads((tmp_path / "status.json").read_text("utf-8"))
+
+    assert exit_code == 1
+    assert result["revision"] == revision
+    assert result["mutationEvidenceStatus"] == "UNKNOWN"
+    assert "mutationPerformed" not in result
+    assert result["retryable"] is False
+
+
+@pytest.mark.parametrize(
+    ("receipt", "expected_exit"),
+    [
+        ({"ok": False, "status": "BACKEND_DEPLOY_FAILED"}, 1),
+        ({"ok": False, "status": "RUNTIME_READBACK_FAILED"}, 1),
+        ({"ok": False, "status": "WAITING_FOR_RELEASE_GATE"}, 0),
+        ({"ok": True, "status": "COORDINATED_RELEASE_DEPLOYED"}, 0),
+    ],
+)
+def test_main_propagates_terminal_reconcile_failures(
+    monkeypatch, tmp_path, receipt, expected_exit
+) -> None:
+    module = _load()
+    monkeypatch.setattr(module, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(module, "STATUS_FILE", tmp_path / "status.json")
+    monkeypatch.setattr(module, "LOCK_FILE", tmp_path / "reconcile.lock")
+    monkeypatch.setattr(module, "GITHUB_TOKEN_FILE", tmp_path / "ephemeral-token")
+    module.EXPECTED_REVISION = "b" * 40
+    module.EXPECTED_RELEASE_GATE_RUN_ID = "93"
+    module.EXPECTED_BACKEND_DIGEST = "sha256:" + "c" * 64
+    module.EXPECTED_MCP_DIGEST = "sha256:" + "d" * 64
+    module.EXPECTED_MANIFEST_EVIDENCE_SHA256 = "e" * 64
+    monkeypatch.setattr(module, "reconcile", lambda: dict(receipt))
+
+    assert module.main() == expected_exit
+
+
 def test_self_runtime_readback_accepts_only_the_expected_in_progress_release_run_contract() -> None:
     source = SCRIPT.read_text("utf-8")
     assert "expected_runtime_readback_run_id: int | None = None" in source
