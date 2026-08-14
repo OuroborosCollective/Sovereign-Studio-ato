@@ -578,6 +578,56 @@ def test_mcp_installer_failure_returns_stage_without_reason(monkeypatch) -> None
     assert raw_secret not in caught.value.detail
 
 
+def test_mcp_deploy_runs_ci_scoped_non_executable_installer_through_fixed_bash(
+    monkeypatch, tmp_path
+) -> None:
+    module = _load()
+    revision = "f" * 40
+    digest = "sha256:" + "1" * 64
+    checkout = tmp_path / "checkout"
+    installer = checkout / "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+    installer.parent.mkdir(parents=True)
+    receipt = {
+        "ok": True,
+        "mcp_revision": revision,
+        "mcp_image": f"{module.MCP_REPOSITORY}@{digest}",
+        "host_command_worker_active": True,
+        "broker": "active",
+        "broker_rpc_ready": True,
+        "broker_socket_host_visible": True,
+        "broker_socket_container_visible": True,
+        "mcp_protocol_ready": True,
+        "self_update_available": False,
+        "pr_lifecycle_available": False,
+        "workflow_dispatch_available": False,
+    }
+    installer.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        f"[ \"$SOVEREIGN_MCP_EXPECTED_REVISION\" = \"{revision}\" ]\n"
+        f"[ \"$SOVEREIGN_MCP_EXPECTED_DIGEST\" = \"{digest}\" ]\n"
+        f"printf '%s\\n' '{json.dumps(receipt, separators=(',', ':'))}'\n",
+        "utf-8",
+    )
+    installer.chmod(0o644)
+    monkeypatch.setenv("PATH", "")
+
+    result = module._deploy_mcp_from_ci_scope(
+        revision,
+        {"digest": digest},
+        {
+            "revision": revision,
+            "path": str(checkout),
+            "installer": str(installer),
+        },
+    )
+
+    assert installer.stat().st_mode & 0o111 == 0
+    assert result["status"] == "DEPLOYED"
+    assert result["revision"] == revision
+    assert result["digest"] == digest
+
+
 def test_global_failure_fallback_never_claims_no_mutation(monkeypatch, tmp_path) -> None:
     module = _load()
     revision = "7" * 40
@@ -714,7 +764,8 @@ def test_candidate_failure_is_not_a_global_series_rollback_contract() -> None:
 def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     coordinated = (REPOSITORY_ROOT / ".github/workflows/sovereign-coordinated-release.yml").read_text("utf-8")
     mcp_workflow = (REPOSITORY_ROOT / ".github/workflows/sovereign-chatgpt-mcp.yml").read_text("utf-8")
-    installer = (ROOT / "deploy/install-on-vps.sh").read_text("utf-8")
+    installer_path = ROOT / "deploy/install-on-vps.sh"
+    installer = installer_path.read_text("utf-8")
     service = (ROOT / "deploy/sovereign-release-reconciler.service").read_text("utf-8")
     timer = (ROOT / "deploy/sovereign-release-reconciler.timer").read_text("utf-8")
 
@@ -741,9 +792,11 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert "systemctl enable --now sovereign-release-reconciler.timer" in installer
     assert "ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release" in service
     assert "OnUnitActiveSec=2min" in timer
+    assert installer_path.stat().st_mode & 0o111 == 0o111
     reconciler = SCRIPT.read_text("utf-8")
     assert "_schedule_self_update" not in reconciler
     assert "def _deploy_mcp_from_ci_scope" in reconciler
+    assert '["/bin/bash", str(installer)]' in reconciler
     assert '"SOVEREIGN_MCP_EXPECTED_DIGEST": mcp["digest"]' in reconciler
     assert "def _refresh_operator_source" in reconciler
     assert '"git", "-C", str(OPERATOR_SOURCE), "fetch", "--no-tags", "origin", "main"' in reconciler
