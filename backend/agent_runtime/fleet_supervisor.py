@@ -93,6 +93,43 @@ def _shared(left: Sequence[str], right: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(set(left).intersection(right)))
 
 
+def _mirror_overlap(left: Sequence[str], right: Sequence[str]) -> tuple[str, ...]:
+    """Return left paths whose canonical/mirror counterpart appears in ``right``.
+
+    Two paths that are mirror counterparts of each other (e.g.
+    ``backend/agent_runtime/foo.py`` and ``scripts/sovereign-backend/agent_runtime/foo.py``)
+    must not run in parallel because mirror surfaces must stay byte-equivalent.
+    """
+    right_set = set(right)
+    hits = [path for path in left if (counterpart := mirror_counterpart(path)) and counterpart in right_set]
+    return tuple(sorted(dict.fromkeys(hits)))
+
+
+# Canonical/mirror root pairs that must stay byte-equivalent when mirror ownership
+# applies (see AGENTS.md and backend/agent_runtime/configuration/config_source_inventory.py).
+# A path under one root has a deterministic counterpart under the other root.
+_MIRROR_ROOT_PAIRS: tuple[tuple[str, str], ...] = (
+    ("backend/agent_runtime/", "scripts/sovereign-backend/agent_runtime/"),
+)
+
+
+def mirror_counterpart(path: str) -> str | None:
+    """Return the canonical/mirror counterpart path for ``path``, or ``None``.
+
+    Mirrored surfaces must remain byte-equivalent; editing a file under one mirror
+    root and its counterpart under the other in parallel risks divergence, so the
+    fleet planner treats such pairs as a structural (Class B) conflict rather than
+    two independent changes. Unrelated files keep no counterpart.
+    """
+    normalized = path.replace("\\", "/")
+    for canonical_root, mirror_root in _MIRROR_ROOT_PAIRS:
+        for left_root, right_root in ((canonical_root, mirror_root), (mirror_root, canonical_root)):
+            if normalized.startswith(left_root):
+                suffix = normalized[len(left_root):]
+                return f"{right_root}{suffix}"
+    return None
+
+
 @dataclass(frozen=True)
 class FleetTask:
     task_id: str
@@ -302,6 +339,8 @@ def pair_conflicts(left: FleetTask, right: FleetTask) -> tuple[FleetConflict, ..
             findings.append(FleetConflict(task_a, task_b, code, f"shared {label}: {', '.join(values)}"))
 
     add("DIRECT_PATH_CONFLICT", _shared(left.changed_paths, right.changed_paths), "changed paths")
+    mirror_hits = _mirror_overlap(left.changed_paths, right.changed_paths)
+    add("CANONICAL_MIRROR_CONFLICT", mirror_hits, "canonical/mirror counterparts")
     add("CANONICAL_OWNER_CONFLICT", _shared(left.canonical_owners, right.canonical_owners), "canonical owners")
     add("INVARIANT_SCOPE_CONFLICT", _shared(left.invariant_scopes, right.invariant_scopes), "invariant scopes")
     add("MUTATION_RESOURCE_CONFLICT", _shared(left.mutation_resources, right.mutation_resources), "mutation resources")

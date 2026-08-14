@@ -16,6 +16,7 @@ from agent_runtime.fleet_supervisor import (
     build_fleet_projection,
     create_worker_assignment,
     evaluate_fleet_verdict,
+    mirror_counterpart,
     pair_conflicts,
     validate_worker_event,
 )
@@ -43,6 +44,16 @@ def task(task_id: str, **overrides: object) -> FleetTask:
     [
         ({"changed_paths": ("src/a.py",)}, {"changed_paths": ("src/a.py",)}, "DIRECT_PATH_CONFLICT"),
         ({"changed_paths": ("src/a.py",)}, {"changed_paths": ("src/a.py", "src/b.py")}, "DIRECT_PATH_CONFLICT"),
+        (
+            {"changed_paths": ("backend/agent_runtime/foo.py",)},
+            {"changed_paths": ("scripts/sovereign-backend/agent_runtime/foo.py",)},
+            "CANONICAL_MIRROR_CONFLICT",
+        ),
+        (
+            {"changed_paths": ("scripts/sovereign-backend/agent_runtime/bar.py",)},
+            {"changed_paths": ("backend/agent_runtime/bar.py",)},
+            "CANONICAL_MIRROR_CONFLICT",
+        ),
         ({"canonical_owners": ("backend",)}, {"canonical_owners": ("backend",)}, "CANONICAL_OWNER_CONFLICT"),
         ({"invariant_scopes": ("auth",)}, {"invariant_scopes": ("auth",)}, "INVARIANT_SCOPE_CONFLICT"),
         ({"mutation_resources": ("postgres",)}, {"mutation_resources": ("postgres",)}, "MUTATION_RESOURCE_CONFLICT"),
@@ -85,6 +96,64 @@ def test_parallel_matrix_requires_explicit_non_overlap(first_path: str, second_p
     assert len(plan.lanes) == 1
     assert plan.lanes[0].parallel_safe is True
     assert set(plan.lanes[0].task_ids) == {"task-first", "task-second"}
+
+
+def test_mirror_counterpart_is_deterministic_and_symmetric() -> None:
+    assert mirror_counterpart("backend/agent_runtime/foo.py") == "scripts/sovereign-backend/agent_runtime/foo.py"
+    assert mirror_counterpart("scripts/sovereign-backend/agent_runtime/foo.py") == "backend/agent_runtime/foo.py"
+    # Windows-style separators normalize the same way.
+    assert mirror_counterpart("backend\\agent_runtime\\foo.py") == "scripts/sovereign-backend/agent_runtime/foo.py"
+    # Unrelated surfaces keep no counterpart and must not be over-serialized by Class B.
+    assert mirror_counterpart("frontend/app.tsx") is None
+    assert mirror_counterpart("tools/sovereign-chatgpt-mcp/server.py") is None
+
+
+def test_canonical_mirror_conflict_serializes_parallel_lane() -> None:
+    plan = build_fleet_plan(
+        integration_id="fleet-mirror",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        base_revision=BASE,
+        architecture_receipt_hashes=[RECEIPT],
+        max_parallel_lanes=2,
+        tasks=[
+            task("task-canonical", changed_paths=("backend/agent_runtime/rescue.py",)),
+            task("task-mirror", changed_paths=("scripts/sovereign-backend/agent_runtime/rescue.py",)),
+        ],
+    )
+
+    # Mirror counterparts must not share a parallel lane even with max_parallel_lanes=2.
+    assert len(plan.lanes) == 2
+    assert plan.lanes[0].parallel_safe is False
+    codes = {conflict.code for conflict in plan.conflicts}
+    assert "CANONICAL_MIRROR_CONFLICT" in codes
+    assert "DIRECT_PATH_CONFLICT" not in codes
+
+
+@pytest.mark.parametrize(
+    ("first_path", "second_path"),
+    [
+        ("backend/agent_runtime/rescue.py", "backend/agent_runtime/routes.py"),
+        ("scripts/sovereign-backend/agent_runtime/rescue.py", "scripts/sovereign-backend/agent_runtime/routes.py"),
+        ("backend/agent_runtime/rescue.py", "scripts/sovereign-backend/agent_runtime/routes.py"),
+    ],
+)
+def test_non_counterpart_mirror_root_files_stay_parallel(first_path: str, second_path: str) -> None:
+    """Different suffixes under mirror roots are not Class B counterparts and may parallelize."""
+    plan = build_fleet_plan(
+        integration_id="fleet-mirror-safe",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        base_revision=BASE,
+        architecture_receipt_hashes=[RECEIPT],
+        max_parallel_lanes=2,
+        tasks=[
+            task("task-first", changed_paths=(first_path,)),
+            task("task-second", changed_paths=(second_path,)),
+        ],
+    )
+
+    assert len(plan.lanes) == 1
+    assert plan.lanes[0].parallel_safe is True
+    assert "CANONICAL_MIRROR_CONFLICT" not in {conflict.code for conflict in plan.conflicts}
 
 
 def test_unknown_semantics_are_serialized_and_hash_bound() -> None:
