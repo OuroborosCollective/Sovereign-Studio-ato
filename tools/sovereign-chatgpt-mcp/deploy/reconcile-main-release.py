@@ -80,6 +80,28 @@ BROKER_SOCKET = Path(
         "/run/sovereign-chatgpt-broker/operator.sock",
     )
 )
+# The installer owns Backend env discovery and persists only the selected
+# path as SOVEREIGN_BACKEND_ENV_FILE in the root-managed control-plane env.
+# Resolve that pointer here; never copy or serialize Backend secret values.
+CONTROL_PLANE_ENV = Path(
+    os.getenv(
+        "SOVEREIGN_RELEASE_CONTROL_PLANE_ENV_FILE",
+        "/opt/sovereign-chatgpt-tools/runtime.env",
+    )
+)
+BACKEND_MANAGED_ENV_FILE = Path(
+    os.getenv(
+        "SOVEREIGN_BACKEND_MANAGED_ENV_FILE",
+        "/opt/sovereign-chatgpt-tools/backend-runtime.env",
+    )
+)
+ALLOWED_BACKEND_ENV_FILES = frozenset(
+    {
+        Path("/run/secrets/sovereign-backend.env"),
+        Path("/opt/sovereign-backend/.env"),
+    }
+)
+
 
 class ReconcileError(RuntimeError):
     def __init__(self, stage: str, detail: str) -> None:
@@ -137,6 +159,62 @@ def _github_token() -> str:
     if not token or "\n" in token or "\r" in token:
         raise ReconcileError("github_auth", "ephemeral token value is invalid")
     return token
+
+
+def _assert_root_private(path: Path, *, regular: bool) -> None:
+    metadata = path.lstat()
+    if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) not in {0o600, 0o700}:
+        raise ReconcileError("backend_env", "privileged file metadata is unsafe")
+    if regular and not stat.S_ISREG(metadata.st_mode):
+        raise ReconcileError("backend_env", "privileged file type is invalid")
+
+
+def _private_regular_file(path: Path, *, label: str) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise ReconcileError("backend_env", f"{label} is unavailable") from exc
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+        raise ReconcileError("backend_env", f"{label} is not a regular file")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise ReconcileError("backend_env", f"{label} mode is unsafe")
+
+
+def _backend_env_file() -> Path:
+    # Resolve only the installer-selected Backend base env *path* from the
+    # root-managed control-plane env. Reject symlinks, arbitrary/relative
+    # pointers and anything outside the sanctioned allowlist. Never read or
+    # return the secret contents of the selected file.
+    _assert_root_private(CONTROL_PLANE_ENV, regular=True)
+    matches: list[str] = []
+    try:
+        for raw_line in CONTROL_PLANE_ENV.read_text("utf-8").splitlines():
+            if raw_line.startswith("SOVEREIGN_BACKEND_ENV_FILE="):
+                matches.append(raw_line.split("=", 1)[1].strip())
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ReconcileError("backend_env", "control-plane env is unreadable") from exc
+    if len(matches) != 1:
+        raise ReconcileError("backend_env", "backend env pointer is missing or ambiguous")
+    selected = Path(matches[0])
+    if selected not in ALLOWED_BACKEND_ENV_FILES:
+        raise ReconcileError("backend_env", "backend env pointer is outside the canonical allowlist")
+    _private_regular_file(selected, label="backend env file")
+    return selected
+
+
+def _backend_deploy_environment() -> dict[str, str]:
+    # Export only the resolved Backend env *path* plus the canonical Backend
+    # image repository and the shared managed env file pointer into the
+    # ephemeral deploy/rollback subprocess environment. Do not copy the
+    # ambient reconciler environment or any secret values.
+    backend_env_file = _backend_env_file()
+    environment: dict[str, str] = {
+        "PATH": os.environ.get("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
+        "SOVEREIGN_BACKEND_ENV_FILE": str(backend_env_file),
+        "SOVEREIGN_BACKEND_MANAGED_ENV_FILE": str(BACKEND_MANAGED_ENV_FILE),
+        "SOVEREIGN_BACKEND_IMAGE_REPOSITORY": BACKEND_REPOSITORY,
+    }
+    return environment
 
 
 def _expected_scope() -> dict[str, Any]:
@@ -599,6 +677,7 @@ def reconcile() -> dict[str, Any]:
 
     backend_deploy: dict[str, Any] = {"status": "ALREADY_CURRENT", "mutationPerformed": False}
     if backend_changed:
+        deploy_environment = _backend_deploy_environment()
         backend_deploy = {
             "status": "DEPLOYED",
             "mutationPerformed": True,
@@ -606,6 +685,7 @@ def reconcile() -> dict[str, Any]:
                 [BACKEND_DEPLOY, backend_image["digest"], revision],
                 timeout=1800,
                 stage="backend_deploy",
+                environment=deploy_environment,
             ),
         }
 
@@ -625,6 +705,7 @@ def reconcile() -> dict[str, Any]:
                     [BACKEND_ROLLBACK, previous_digest],
                     timeout=900,
                     stage="backend_rollback_after_mcp_failure",
+                    environment=deploy_environment,
                 )
                 rollback = {"attempted": True, "ok": True, **rollback_result}
             except ReconcileError as rollback_exc:
