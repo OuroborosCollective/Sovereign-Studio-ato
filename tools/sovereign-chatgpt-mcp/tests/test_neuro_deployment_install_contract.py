@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = ROOT.parents[1]
 INSTALLER = ROOT / "deploy" / "install-on-vps.sh"
 WORKFLOW = REPOSITORY / ".github" / "workflows" / "sovereign-chatgpt-mcp.yml"
+REMOTE_INSTALL = (
+    ROOT / "deploy" / "install-and-verify-private-mcp-on-vps.sh"
+)
 
 
 EXPECTED_NEURO_TOOLS = {
@@ -870,6 +873,8 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
 
 def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Path) -> None:
     workflow = WORKFLOW.read_text("utf-8")
+    remote_install = REMOTE_INSTALL.read_text("utf-8")
+    deployment_surface = workflow + "\n" + remote_install
 
     for path in (
         "neuro_architecture_contract.py",
@@ -880,40 +885,42 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
     ):
         assert path in workflow
     assert "assert len(tool_names) == 249" in workflow
-    assert "assert len(tool_names - expected_tools) == 244" in workflow
+    assert "assert len(tool_names - expected_tools) == 244" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2
     assert '--expected-head "${SOVEREIGN_SOURCE_REVISION}"' in workflow
     assert '--label "org.opencontainers.image.revision=${SOVEREIGN_SOURCE_REVISION}"' in workflow
     assert 'test "$REVISION_LABEL" = "$SOVEREIGN_SOURCE_REVISION"' in workflow
-    assert '-e SOVEREIGN_EXPECTED_WORKFLOW_REVISION="$EXPECTED_REVISION"' in workflow
-    assert "assert revision == os.environ.get('SOVEREIGN_EXPECTED_WORKFLOW_REVISION'), revision" in workflow
-    assert "status = neuro_teaching_tools.neuro_runtime_contract_status()" in workflow
-    assert "assert status.status == 'NEURO_RUNTIME_CONTRACT_READY'" in workflow
-    assert "assert status.data['admissions']['pending'] == 0" in workflow
-    assert "'neuro_runtime_verified': neuro_runtime_state == 'ready'" in workflow
+    assert '-e SOVEREIGN_EXPECTED_WORKFLOW_REVISION="$EXPECTED_REVISION"' in deployment_surface
+    assert "assert revision == os.environ.get('SOVEREIGN_EXPECTED_WORKFLOW_REVISION'), revision" in deployment_surface
+    assert "status = neuro_teaching_tools.neuro_runtime_contract_status()" in deployment_surface
+    assert "assert status.status == 'NEURO_RUNTIME_CONTRACT_READY'" in deployment_surface
+    assert "assert status.data['admissions']['pending'] == 0" in deployment_surface
+    assert "'neuro_runtime_verified': neuro_runtime_state == 'ready'" in deployment_surface
     assert "SOVEREIGN_NEURO_GLOBAL_MAX_EVENTS" in workflow
     assert "SOVEREIGN_NEURO_OUTCOME_MAX_EVENTS" in workflow
-    assert "tool_manager.call_tool(tool_name, arguments, convert_result=False)" in workflow
-    assert '"registered_tool_surface_canary":true' in workflow
-    assert '"teaching_functional_canary":true' in workflow
-    assert '"teaching_source_provenance_canary":true' in workflow
-    assert '"teaching_package_mutated":false' in workflow
-    assert "mcp_tool_contract_registry(include_schemas=True)" in workflow
-    assert '"changedCompatibleContracts": changed_compatible_contracts' in workflow
-    assert '"incompatibleContractCount": len(incompatible_contracts)' in workflow
-    assert '"semanticCompatibilityVerified": predecessor_captured' in workflow
-    assert '"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only"' in workflow
-    assert '"read_only_tool_calls_persisted":false' in workflow
-    assert '"canary_persisted_outcome_tools":\\["neuro_event_commit"\\]' in workflow
-    assert "SOVEREIGN_MCP_ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR=0" in workflow
-    assert "receipt.get('predecessor_container_present') is not predecessor_observed" in workflow
-    assert "'predecessor_contract_gate': predecessor_contract_gate" in workflow
-    assert "payload.get('semantic_compatibility_verified') is True" in workflow
-    assert "payload.get('first_install_attested') is False" in workflow
+    assert "tool_manager.call_tool(tool_name, arguments, convert_result=False)" in deployment_surface
+    assert '"registered_tool_surface_canary":true' in deployment_surface
+    assert '"teaching_functional_canary":true' in deployment_surface
+    assert '"teaching_source_provenance_canary":true' in deployment_surface
+    assert '"teaching_package_mutated":false' in deployment_surface
+    assert "mcp_tool_contract_registry(include_schemas=True)" in deployment_surface
+    assert '"changedCompatibleContracts": changed_compatible_contracts' in deployment_surface
+    assert '"incompatibleContractCount": len(incompatible_contracts)' in deployment_surface
+    assert '"semanticCompatibilityVerified": predecessor_captured' in deployment_surface
+    assert '"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only"' in deployment_surface
+    assert '"read_only_tool_calls_persisted":false' in deployment_surface
+    assert '"canary_persisted_outcome_tools":\\["neuro_event_commit"\\]' in deployment_surface
+    assert "SOVEREIGN_MCP_ALLOW_FIRST_INSTALL_WITHOUT_PREDECESSOR=0" in deployment_surface
+    assert "receipt.get('predecessor_container_present') is not predecessor_observed" in deployment_surface
+    assert "'predecessor_contract_gate': predecessor_contract_gate" in deployment_surface
+    assert "payload.get('semantic_compatibility_verified') is True" in deployment_surface
+    assert "payload.get('first_install_attested') is False" in deployment_surface
 
     writer_marker = 'cat > "$STATUS_WRITER" <<\'PY\'\n'
-    writer = textwrap.dedent(workflow.split(writer_marker, 1)[1].split("\n            PY", 1)[0])
+    writer = textwrap.dedent(
+        remote_install.split(writer_marker, 1)[1].split("\nPY", 1)[0]
+    )
 
     def run_status_writer(
         receipt: dict[str, object],
