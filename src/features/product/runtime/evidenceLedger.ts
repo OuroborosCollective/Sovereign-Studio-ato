@@ -48,27 +48,25 @@ export interface EvidenceValidationReport {
   summary: string;
 }
 
-// Validation constants
-const EVIDENCE_CATEGORIES: EvidenceCategory[] = ['draft-pr', 'workflow-watch', 'repair', 'runtime-status', 'validation'];
-const EVIDENCE_STATUSES: EvidenceStatus[] = ['success', 'failure', 'unknown', 'blocked', 'pending'];
-const EVIDENCE_SOURCE_TYPES: EvidenceSource['type'][] = ['github-api', 'local-runtime', 'user-action', 'system-check', 'telemetry'];
+// Validation constants & fast lookup sets
+const EVIDENCE_CATEGORIES = new Set<EvidenceCategory>(['draft-pr', 'workflow-watch', 'repair', 'runtime-status', 'validation']);
+const EVIDENCE_STATUSES = new Set<EvidenceStatus>(['success', 'failure', 'unknown', 'blocked', 'pending']);
+const EVIDENCE_SOURCE_TYPES = new Set<EvidenceSource['type']>(['github-api', 'local-runtime', 'user-action', 'system-check', 'telemetry']);
 const MAX_REASON_LENGTH = 800;
 const MAX_ENTRIES = 200;
 
+// Optimized secret checking patterns (non-global to eliminate stateful lastIndex mutation overhead)
 const SECRET_PATTERNS = [
-  /ghp_[A-Za-z0-9_]{8,}/g,
-  /github_pat_[A-Za-z0-9_]+/g,
-  /sk-[A-Za-z0-9_-]{12,}/g,
-  /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/gi,
-  /password\s*[:=]\s*[^\s]+/gi,
-  /token\s*[:=]\s*[^\s]+/gi,
+  /ghp_[A-Za-z0-9_]{8,}/,
+  /github_pat_[A-Za-z0-9_]+/,
+  /sk-[A-Za-z0-9_-]{12,}/,
+  /Bearer\s+[A-Za-z0-9._~+/=-]{10,}/i,
+  /password\s*[:=]\s*[^\s]+/i,
+  /token\s*[:=]\s*[^\s]+/i,
 ];
 
 function hasSecret(value: string): boolean {
-  return SECRET_PATTERNS.some((pattern) => {
-    pattern.lastIndex = 0;
-    return pattern.test(value);
-  });
+  return SECRET_PATTERNS.some((pattern) => pattern.test(value));
 }
 
 function stableHash(input: string): string {
@@ -95,13 +93,13 @@ export function validateEvidenceEntry(entry: EvidenceLedgerEntry): EvidenceValid
   const warnings: string[] = [];
 
   if (!entry.id.trim()) errors.push('Evidence entry id is required.');
-  if (!EVIDENCE_CATEGORIES.includes(entry.category)) {
+  if (!EVIDENCE_CATEGORIES.has(entry.category)) {
     errors.push(`Unknown evidence category: ${entry.category}`);
   }
-  if (!EVIDENCE_STATUSES.includes(entry.status)) {
+  if (!EVIDENCE_STATUSES.has(entry.status)) {
     errors.push(`Unknown evidence status: ${entry.status}`);
   }
-  if (!EVIDENCE_SOURCE_TYPES.includes(entry.source.type)) {
+  if (!EVIDENCE_SOURCE_TYPES.has(entry.source.type)) {
     errors.push(`Unknown evidence source type: ${entry.source.type}`);
   }
   if (!entry.reason.trim()) {
