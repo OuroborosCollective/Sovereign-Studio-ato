@@ -2,9 +2,9 @@
 
 ## Status
 
-This document defines an **inactive architecture foundation**. It does not activate a runtime, replace an existing tool path, modify Docker, deploy to the VPS, authorize effects, or prove production health.
+This document defines the canonical foundation and the **repository-implemented Sovereign MCP runtime slice** built on it. The slice is part of the existing FastMCP process and Docker build; it does not create a second MCP server, registry, code server, approval system, provider route, or effect executor.
 
-Merging this foundation into the repository only publishes contracts, tests, research evidence, and documentation. Runtime activation remains a separate, feature-flagged and evidence-bound implementation phase.
+Repository implementation and tests do not prove that a particular image is deployed. Current activation must be read from `neuro_runtime_contract_status` and corroborated with the immutable image revision, MCP protocol/registry, container, and PatchMon readbacks. Until those agree, the correct status is `TESTED_AT_REVISION` or `DEPLOYED_UNVERIFIED`, never assumed production health.
 
 The biological names in this document are explanatory aliases. Canonical software ownership remains technical and explicit.
 
@@ -170,13 +170,58 @@ The first implementation is located in:
 - `src/features/product/runtime/neuroArchitectureContract.ts`
 - `backend/agent_runtime/neuro_architecture_contract.py`
 - `scripts/sovereign-backend/agent_runtime/neuro_architecture_contract.py`
+- `tools/sovereign-chatgpt-mcp/neuro_architecture_contract.py`
 - `scripts/neuro-architecture-graph.mjs`
+
+The three Python copies are governed mirrors and must remain byte-identical. The MCP parity test imports the backend owner and MCP mirror and compares both file bytes and canonical envelope output.
+
+## Implemented MCP runtime slice
+
+| Principle | Live-path implementation | Authority boundary |
+|---|---|---|
+| Event/delta processing | `ChangeEvent`, `DeltaDetector`, `RelevanceGate`, append-only `NeuromorphicLedger`, and incremental tool-outcome projections | Unknown event kinds fail closed; a delta receipt cannot execute an effect |
+| Time as data | `TemporalEnvelope` binds integer tick, per-source sequence, UTC event time, and derived `deltaMs`; bounded temporal windows are hash-bound | Wall time is evidence data, not sequence authority |
+| Sparse capability gating | The existing live-registry predictive router selects a bounded advisory tool subset; `neuro_event_route_preview` exposes the combined candidate path | The static Teacher catalog is not imported and routing never activates a tool automatically |
+| Compute near data | SQLite WAL projections remain beside MCP state; existing repository intelligence continues to query its revision-bound local index and returns bounded snippets/hashes | No second datastore owner or broad data-copy service is introduced |
+| Edge/sensor preprocessing | `QuantizedSpikeFilter` performs deterministic integer leak/integrate/fire filtering in preview and produces uncertain, proposal-only output | It is not a sensor authenticity layer and cannot become canonical truth |
+| Hybrid two-lane runtime | Sparse routing produces a `CandidateReceipt`; the Foundation lane verifies an allowlisted domain contract and persists a separate hash-chained decision receipt; existing operating-profile, toolchain, broker, and target readback paths remain effect authority | Foundation always returns `mayExecute=false`; tool success is recorded only after the existing call returns and never overrides target readback |
+
+The five additive MCP tools are:
+
+- `neuro_runtime_contract_status`
+- `neuro_event_route_preview`
+- `neuro_event_commit`
+- `teaching_package_assess`
+- `teaching_lesson_simulate`
+
+`neuro_event_commit` is an idempotent local-state mutation and therefore remains covered by the existing automatic operating-profile mutation gate and persistent outcome tracker. The other four tools are effect-free and are excluded from both persistent wrappers. More generally, every tool with `readOnlyHint=true` remains free of ranking and neuromorphic state writes. Only mutating outcomes enter the incremental persistent projection; bounded log scans are reserved for startup/crash recovery.
+
+## Foundation verification contract
+
+The Foundation is a deterministic verification adapter, not another event authority. It accepts only explicitly registered domain kinds, verifies the embedded canonical evidence envelope and source `ChangeEvent` hash, and returns one of `accepted`, `quarantined`, or `rejected`. Unknown kinds, stale or malformed bindings, contradictions, unverifiable candidate evidence, and hash mismatches never fall back to a generic accept path.
+
+Foundation decisions and change events use separate SQLite WAL ledgers because they represent different evidence records. Both are transactional, hash-chained, replay-checked, and independently readable. Neither ledger can authorize or perform an external effect.
+
+The two ledgers are not described as one atomic transaction. A durable admission
+intent binds the exact preview, classification, live-registry (or canonical
+no-registry discard) evidence, Foundation decision, NMC receipt and Foundation
+receipt. A crash may leave that intent in `pending`; status reports recovery
+pending and an exact retry resumes idempotently. It never fabricates a completed
+cross-ledger commit.
+
+Status opens both ledgers in strict read-only mode and uses their canonical
+semantic verifiers, including schema identity, event/receipt chains,
+projections, metrics and admission bindings. SQLite `quick_check` alone is not
+treated as semantic integrity evidence. Global and tool-outcome event/byte
+quotas bound persistent growth; a new admission stops before its intent or
+event is written when the global quota is exhausted, while an exact replay
+remains readable.
 
 ## Failure semantics
 
 | Failure | Required behavior |
 |---|---|
-| invalid signature or revision | quarantine, append evidence, no effect |
+| invalid envelope or revision | return bounded quarantine evidence without persistence or effect |
 | replay or sequence gap | quarantine, no inferred repair |
 | stale policy | block authorization |
 | side-channel timeout | continue canonical verification without the suggestion |
@@ -195,28 +240,26 @@ Aha remains a later product/research-organization surface if a concrete connecte
 
 Speechify is reserved for a later narrated deep dive after the scientific atlas and architecture report are stable. Audio narration is a presentation artifact and does not change evidence status.
 
-## Current implementation boundary
+## Clean-room and archive provenance
 
-This foundation intentionally does not include:
+The implementation is a clean-room adaptation of the supplied functional requirements and the repository's existing canonical contracts. No Python bytecode, Docker stack, static 92-action catalog, private prompt, credential, or independently packaged runtime from the supplied archives is copied into the product. The archives contained no accepted license grant for source import, so they remain audit evidence only.
 
-- Kafka or Redpanda deployment
-- database migrations
-- live API routes
-- WebSocket activation
-- Docker inclusion
-- VPS changes
-- PatchMon mutation
-- LLM provider changes
-- Quicknode endpoint creation
-- Arelorian Wasd code
-- merge or main push
+Audit-bound attachment hashes:
 
-## Next implementation slices
+- Foundation/Brain candidate: `4178d3139be11ae66f8e0fe89f31595b277f906c8cf060fd16c1f5b0a3f6493d`
+- logic-first extension: `13d94b5686e4b990c3ebf7131cd90b3c73f8299de9bcd81498fef85f38ece010`
+- Teacher candidate: `0daea330b35c1e2a32fdb22b94e6cfef1d89a1a4d093b9879556e8ce769d9795`
+- revision-bound live MCP comparison export: `5b604c4fd7cd80ce21af8dbaaf8b8fc05407ec39158ed8aedb4f85765d38c489`
 
-1. Expand the scientific source ledger with dated claims, source identity, anatomical level, and uncertainty.
-2. Build a machine-readable region/nucleus/pathway graph and distinguish anatomical, functional, modulatory, and metaphorical edges.
-3. Add property-based tests for lane transition closure, hash chains, replay, tick monotonicity, and side-channel independence.
-4. Integrate read-only architecture sensors and compare the proposed lanes with existing ATO ownership surfaces.
-5. Add bounded adapters behind feature flags only after exact-head CI and owner review.
-6. Append both continuity ledgers byte-identically before creating a Draft PR.
-7. Perform runtime, container, PatchMon, and immutable revision readback only after an approved deployment phase.
+The neuromorphic-computing preprint informs principle-level hybridization only. It is not treated as proof that this software is biologically equivalent, and no spiking neural network or specialized neuromorphic hardware is claimed.
+
+## Deliberate exclusions and next slices
+
+- No Kafka/Redpanda, second Postgres, second MCP gateway, WebSocket, or new host port.
+- No automatic execution from sparse candidates and no bypass of owner approval, exact revision, policy, effect, evidence, or readback gates.
+- Teaching accepts only a repository-local regular source whose workspace-safe path, bytes, SHA-256 and excerpt are independently read and bound, its documented license/policy identifiers, and its supported bounded JSON-Schema subset. Remote or otherwise non-local provenance cannot self-assert repository trust; unknown, forbidden, unverifiable or unsupported contracts fail closed.
+- No LiteLLM route; paid inference remains direct OpenRouter and free inference remains direct FreeLLM/Revolver.
+- No Quicknode endpoint, Aha/Speechify authority, or Arelorian Wasd code/state.
+- A real external sensor/edge adapter remains a later, source-authenticated and backpressure-aware slice; the current spike filter is only the deterministic local preprocessing primitive.
+- General near-data workers beyond existing Repository Intelligence and local SQLite projections require their own datastore-owner contract.
+- Runtime claims require exact-head CI, immutable image publication, controlled deployment, and revision/digest/protocol/registry/container/PatchMon readback.

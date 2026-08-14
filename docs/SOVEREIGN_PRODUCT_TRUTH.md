@@ -129,6 +129,35 @@ Evidence must be bound to the relevant identity:
 
 Telemetry and traces help observation but are not canonical receipts. Liveness proves only liveness.
 
+## Neuro-inspired verification truth
+
+Neuromorphic principles may optimize routing and evidence processing, but they
+do not replace deterministic authority. The allowed MCP shape is hybrid:
+
+```text
+change/delta + temporal envelope
+→ bounded relevance and sparse advisory routing
+→ proposal-only candidate
+→ deterministic Foundation verification
+→ explicit admission receipt
+→ separate approved effect path and target readback, when applicable
+```
+
+- The existing FastMCP instance, live registry and permission/effect contracts
+  remain authoritative.
+- Sparse routing selects a bounded candidate subset; it never grants
+  permission or executes a tool.
+- Unknown kinds, stale revision/policy identities, ambiguous provenance and
+  partial cross-ledger state fail closed.
+- Event, Foundation and teaching receipts are hash-bound evidence. They are not
+  target-system effect proof.
+- Mutating-tool outcome projections are a bounded best-effort side channel.
+  Read-only tools do not write ranking or neuromorphic state. Tracking failure
+  must not alter a primary tool result, and integrity status must come from the
+  canonical ledger verifier.
+- Repository implementation, CI, image construction, deployment and live
+  plugin usability remain separate truth classes.
+
 ## Continuity truth
 
 - Continuity context and policy are mandatory before mutating MCP work.

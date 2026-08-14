@@ -14,6 +14,12 @@ services:
       SOVEREIGN_MCP_BROKER_SOCKET: /run/sovereign-chatgpt-broker/operator.sock
       SOVEREIGN_MCP_COMMAND_QUEUE: /opt/sovereign-chatgpt-tools/command-queue
       SOVEREIGN_TOOL_RANKING_STATE_ROOT: /var/lib/sovereign-tool-routing
+      SOVEREIGN_NEURO_RUNTIME_STATE_ROOT: /var/lib/sovereign-tool-routing/neuro-runtime
+      SOVEREIGN_NEURO_RUNTIME_TRACKING_ENABLED: "1"
+      SOVEREIGN_NEURO_GLOBAL_MAX_EVENTS: "100000"
+      SOVEREIGN_NEURO_GLOBAL_MAX_BYTES: "268435456"
+      SOVEREIGN_NEURO_OUTCOME_MAX_EVENTS: "90000"
+      SOVEREIGN_NEURO_OUTCOME_MAX_BYTES: "268435456"
       ANDROID_SDK_ROOT: /opt/android-sdk
       ANDROID_HOME: /opt/android-sdk
     ports:

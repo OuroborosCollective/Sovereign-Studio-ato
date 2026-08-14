@@ -79,6 +79,32 @@ Current repository functionality includes:
 
 The index, parser and projection results are side channels. Canonical truth remains the tracked file, exact Git blob, revision and required external readback.
 
+### Neuro-inspired MCP verification lane
+
+- Extend the existing FastMCP server and live registry; never introduce a
+  parallel MCP, registry, router, code server or automatic effect lane.
+- The canonical neuro contract has governed byte-identical runtime mirrors;
+  parity is a tested deployment invariant.
+- Change events bind delta identity, time/order, source head, repository
+  revision and continuity-policy hash.
+- Relevance, bounded spike filtering, resource homeostasis and predictive
+  routing are advisory. Candidate receipts are proposal-only and cannot
+  execute tools.
+- Foundation verification is explicit, fail-closed and persisted in its own
+  transactionally hash-chained ledger. A recovery intent binds the
+  neuromorphic and Foundation receipts without pretending two SQLite commits
+  are one atomic transaction.
+- Teaching packages require bounded, hash-bound provenance and exact live tool
+  contracts. Assessment/simulation cannot promote learning or execute tools.
+- Mutating-tool outcome projections are incremental and quota-bounded.
+  Read-only tools do not persist ranking or neuromorphic state. Tracking errors
+  must never replace the wrapped tool result or its original exception.
+- Status readback must use the same canonical integrity verifier used for
+  events, heads, projections and metrics; SQLite `quick_check` alone is not
+  evidence of semantic integrity.
+- Five additive tools are registered. Never infer or document a total live
+  tool count without registry readback from the exact deployed revision.
+
 ### Continuity
 
 - Continuity context and policy are read before mutating MCP work.

@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "e3a188a046d3f9ec90d50e057798904b2875b869",
-  "rawCandidateCount": 94,
-  "canonicalCandidateCount": 75,
+  "sourceRevision": "027f742f6daad7eb89149df7371da9b5a4ebdc83",
+  "rawCandidateCount": 95,
+  "canonicalCandidateCount": 76,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -762,12 +762,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_governance_tools.py",
       "mirrorPaths": [],
       "symbol": "_capabilities_for",
-      "line": 658,
+      "line": 678,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "125f30b5fbcda224fa97dc30b67b045b4738c6e7ccf5573f5d81f6987f23ff2f",
+      "fileSha256": "37f4b0fce3ccc7d9f5b4b349a1cb80e21ceb81f2ae280031bf44aa820b9f4342",
       "anchorSha256": "34fa07f098656f3d4db4f35af0f89bc4b35a37ef3f1c1f29c9bd5a469126c3f0",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:f07019f2c104f91c5be4bd03",
+      "candidateId": "llm-boundary:23689502fd0b6a5fe7e1b4c7",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_capabilities_for evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -775,12 +775,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_governance_tools.py",
       "mirrorPaths": [],
       "symbol": "schema_migration_reconcile",
-      "line": 1416,
+      "line": 1436,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "125f30b5fbcda224fa97dc30b67b045b4738c6e7ccf5573f5d81f6987f23ff2f",
+      "fileSha256": "37f4b0fce3ccc7d9f5b4b349a1cb80e21ceb81f2ae280031bf44aa820b9f4342",
       "anchorSha256": "667fa2e40e6387bf677788a4bad138913ebf3fd9fef342f2f6860183de8bd0f0",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:1e0133140314882170694711",
+      "candidateId": "llm-boundary:fa132a7c84718ccc5b7eaa9a",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "schema_migration_reconcile scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
@@ -788,25 +788,38 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_governance_tools.py",
       "mirrorPaths": [],
       "symbol": "semantic_intent_boundary_audit",
-      "line": 1776,
+      "line": 1796,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "125f30b5fbcda224fa97dc30b67b045b4738c6e7ccf5573f5d81f6987f23ff2f",
+      "fileSha256": "37f4b0fce3ccc7d9f5b4b349a1cb80e21ceb81f2ae280031bf44aa820b9f4342",
       "anchorSha256": "16dc240a74167a3c40217562ca69d333413f5dc0988d99bab3341e3c112d60b2",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:23a5a7c37260176f55e3e49a",
+      "candidateId": "llm-boundary:d049ecbb923d9715c42412a2",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "semantic_intent_boundary_audit scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
     {
       "canonicalPath": "tools/sovereign-chatgpt-mcp/policy.py",
       "mirrorPaths": [],
-      "symbol": "safe_repo_path",
-      "line": 62,
+      "symbol": "mapping_key_is_secret_shaped",
+      "line": 134,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "d7f7daa02b344ff42e19e2a1ffbd76feb7a98729ced52f47373bf2f43233e7da",
+      "fileSha256": "0f5aba3072675d586322c8923f45b3d8af17ed31d38daf39222f2b661ab2f93a",
+      "anchorSha256": "51c558c9d1d9402bf1faf2528f6f6002944804e376a1b6f2913b0bd785cc3164",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:ca587ace43bdbbe9a6dc4916",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "mapping_key_is_secret_shaped deterministically classifies bounded mapping keys against an explicit credential-name policy; it does not interpret free language, select a route, invoke a tool, or authorize an effect."
+    },
+    {
+      "canonicalPath": "tools/sovereign-chatgpt-mcp/policy.py",
+      "mirrorPaths": [],
+      "symbol": "safe_repo_path",
+      "line": 196,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "0f5aba3072675d586322c8923f45b3d8af17ed31d38daf39222f2b661ab2f93a",
       "anchorSha256": "fa4af5ce4a0c7efa0448a2d8a531e1d117abbc26f9b9303c9b22f4556b05875e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:783980ca54f6ebd481b42689",
+      "candidateId": "llm-boundary:371aa7be533210e0d7795567",
       "classification": "STRUCTURED_POLICY",
       "rationale": "safe_repo_path evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1019,5 +1032,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "3dc3453dc15bdeda03b60c0ebc3b8f3ab05720880f1d5b6912a2e8cb629bd7bf"
+  "ledgerSha256": "71192232b971e1ddbcac371712715168e1707265e9ba85a36a3ace42e8686133"
 }

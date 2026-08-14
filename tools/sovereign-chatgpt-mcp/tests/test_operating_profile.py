@@ -19,13 +19,14 @@ def _registered_tools() -> dict[str, object]:
 
 def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> None:
     status = operating_profile.sovereign_operating_profile_status()
+    profile, _profile_sha256 = operating_profile._load_profile()
     report = launcher.OPERATING_PROFILE_ENFORCEMENT
     tools = _registered_tools()
 
     assert status.ok is True
     assert status.status == "OPERATING_PROFILE_ENFORCED"
     assert status.profileId == "sovereign-mcp-optimal-operation"
-    assert status.profileVersion == "1.1.0"
+    assert status.profileVersion == "1.1.1"
     assert len(status.profileSha256) == 64
     assert len(status.registrySnapshotSha256) == 64
     assert status.missingGovernanceTools == []
@@ -35,6 +36,9 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert report.ok is True
     assert report.enforcedToolCount == report.mutableToolCount
     assert status.enforcedToolCount == status.mutableToolCount
+    assert profile["routeIsolation"]["freeRoute"] == "FreeLLM direct transport only"
+    assert profile["routeIsolation"]["paidRoute"] == "Paid OpenRouter direct transport only"
+    assert profile["routeIsolation"]["legacyLiteLLMTransportAllowed"] is False
     assert "sovereign_continuity_context_read" in tools
     assert "sovereign_continuity_status" in tools
     assert "sovereign_operating_profile_status" in tools
@@ -96,6 +100,69 @@ def test_argument_gate_requires_owner_revision_confirmation_and_blocks_secret_sh
         "OPERATING_PROFILE_CONFIRMATION_MISSING",
         "OPERATING_PROFILE_SECRET_SHAPED_ARGUMENT_BLOCKED",
     }
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "access_token",
+        "provider_api_key",
+        "client_secret_value",
+        "githubToken",
+        "databasePassword",
+        "client_secret_value_data",
+        "access_token_raw_value",
+        "provider_api_key_material_bytes",
+        "database_password_text_string",
+        "authorization_header",
+        "auth_header",
+        "session_cookie",
+        "client_secret_json",
+        "access_token_payload",
+    ],
+)
+def test_shared_secret_gate_blocks_secret_shaped_mapping_keys(key: str) -> None:
+    arguments = {key: "opaque-protected-value"}
+    assert operating_profile._contains_secret_shaped_value(arguments) is True
+    findings = operating_profile._validate_invocation_arguments(
+        "example_workspace_write",
+        "workspace-write",
+        {"type": "object", "properties": {key: {"type": "string"}}},
+        arguments,
+    )
+    assert {item["family"] for item in findings} == {
+        "OPERATING_PROFILE_SECRET_SHAPED_ARGUMENT_BLOCKED"
+    }
+
+
+def test_shared_secret_gate_preserves_counters_and_false_no_secret_attestations() -> None:
+    assert operating_profile._contains_secret_shaped_value(
+        {
+            "inputTokens": 12,
+            "token_count": 12,
+            "argumentValuesRecorded": False,
+            "secretValuesRecorded": False,
+            "secretValuesReturned": False,
+        }
+    ) is False
+    assert operating_profile._contains_secret_shaped_value(
+        {"secretValuesReturned": True}
+    ) is True
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+        "client_secret=protected-value",
+        "access_token=protected-value",
+        "Cookie: session=protected-value",
+        "Set-Cookie: session=protected-value",
+        "https://user:protected-value@example.invalid/path",
+    ],
+)
+def test_shared_secret_gate_blocks_protected_string_literals(literal: str) -> None:
+    assert operating_profile._contains_secret_shaped_value({"note": literal}) is True
 
 
 

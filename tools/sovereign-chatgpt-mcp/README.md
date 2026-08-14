@@ -37,6 +37,22 @@ Privater Operator für `OuroborosCollective/Sovereign-Studio-ato`. Er macht die 
 - `DROP`-, `DELETE`- und andere destruktive Migrationen besitzen einen zweiten, separat deaktivierten Schalter
 - kein OpenAI-API-Key im MCP-Server nötig; der Server ruft selbst kein Modell auf
 
+## Neuro-/Foundation- und Teaching-Lane
+
+Die neuromorph inspirierte Erweiterung läuft im **selben** FastMCP-Prozess und über denselben ChatGPT-Connector. Containername, Loopback-Port, Broker, Workspace-/Code-Pfad, Registry, Operating Profile und Sovottt-Verbindung bleiben erhalten. Es gibt keinen zweiten MCP-Server und keinen statischen Parallelkatalog.
+
+Fünf additive Werkzeuge bilden die neue Oberfläche:
+
+- `neuro_runtime_contract_status` liest Vertrag, Registry, Quoten und Ledger-Integrität.
+- `neuro_event_route_preview` prüft ein revisions-/policy-/zeitgebundenes Delta, die Foundation-Domäne, optionale Sensor- und Homeostasis-Evidence sowie eine kleine Auswahl aus der echten Live-Registry. Das Ergebnis ist nur ein Kandidat.
+- `neuro_event_commit` persistiert den exakten Preview-, Registry-, Foundation- und Event-Receipt idempotent. Es führt kein vorgeschlagenes Tool aus.
+- `teaching_package_assess` prüft ein repository-lokales, SHA-256-gebundenes Wissenspaket und seine tatsächlich vorhandene, reguläre Quelldatei gegen die aktuelle Tool-Registry, Provenienz, Lizenz-/Policy- und Evidenzgrenzen. Nicht lokal verifizierbare Transporte können ihre Vertrauensstufe nicht selbst behaupten und werden ohne autoritativen Adapterbeleg abgewiesen.
+- `teaching_lesson_simulate` erzeugt ausschließlich eine begrenzte Dry-Run-Lektion; kein Paketschritt wird ausgeführt und kein Modellgewicht verändert.
+
+Nur Ergebnisse tatsächlich verändernder Werkzeuge aktualisieren die persistente Erfolgsprojektion inkrementell und können zusätzlich in den kanonischen Temporal-/Delta-Ledger projiziert werden. Werkzeuge mit `readOnlyHint=true` bleiben auch gegenüber Ranking- und Neuro-State zustandsfrei; ihre Empfehlungen sind höchstens prozesslokal und begrenzt. Tracking ist eine fail-soft Side-Channel-Funktion: I/O-, Quota- oder Integritätsfehler dürfen weder ein erfolgreiches Primärtool in einen Fehler verwandeln noch dessen ursprünglichen Fehler ersetzen. Persistente Quoten verhindern unbegrenztes Wachstum.
+
+Der schnelle Pfad bleibt strikt `proposalOnly`; Foundation-Entscheidungen liefern stets `mayExecute=false`. Wirkliche Effekte laufen weiterhin ausschließlich über die vorhandene Toolchain-, Operating-Profile-, Owner-, Broker- und Ziel-Readback-Kette.
+
 ## Werkzeugfluss für einen Backendfehler
 
 1. `workspace_prepare`
@@ -178,7 +194,7 @@ cd tools/sovereign-chatgpt-mcp
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py enterprise_backend_tools.py server.py launcher.py tests/*.py
+python -m py_compile policy.py runtime.py database.py operations.py broker.py broker_client.py enterprise_backend_tools.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py server.py launcher.py tests/*.py
 python -m pytest -q
 docker build -t sovereign-chatgpt-mcp:local .
 ```

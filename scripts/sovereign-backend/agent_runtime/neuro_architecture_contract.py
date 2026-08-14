@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _ID = re.compile(r"^[a-z0-9][a-z0-9._:-]{1,159}$")
+MAX_SIGNED_INT64 = 2**63 - 1
 
 
 class EvidenceClass(str, Enum):
@@ -97,8 +98,15 @@ class EvidenceEnvelope:
                 raise ValueError(f"invalid {name}")
         if not _ID.fullmatch(self.event_id):
             raise ValueError("invalid event_id")
-        if self.tick < 0 or self.sequence < 0:
-            raise ValueError("tick and sequence must be non-negative integers")
+        if (
+            isinstance(self.tick, bool)
+            or isinstance(self.sequence, bool)
+            or not isinstance(self.tick, int)
+            or not isinstance(self.sequence, int)
+            or not 0 <= self.tick <= MAX_SIGNED_INT64
+            or not 0 <= self.sequence <= MAX_SIGNED_INT64
+        ):
+            raise ValueError("tick and sequence must be non-negative signed 64-bit integers")
         if not self.producer_identity.strip():
             raise ValueError("producer_identity must not be empty")
         if self.lane in NON_CANONICAL_LANES and self.canonical:
