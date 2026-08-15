@@ -100,8 +100,8 @@ jobs:
           set -euo pipefail
           key_file="$RUNNER_TEMP/freellmpool-overlay-proxy-key"
           python -c 'import secrets,sys; open(sys.argv[1],"w",encoding="utf-8").write(secrets.token_urlsafe(48)+"\n")' "$key_file"
-          sudo chown 10001:10001 "$key_file"
           chmod 0400 "$key_file"
+          sudo chown 10001:10001 "$key_file"
           docker network create sovereign-freellmpool-overlay-ci >/dev/null
           docker run -d \
             --name sovereign-freellmpool-overlay-ci \
