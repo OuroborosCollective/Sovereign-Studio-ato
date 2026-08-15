@@ -33,6 +33,10 @@ MAINTENANCE_DIR="$INSTALL_ROOT/maintenance"
 ANDROID_SDK_DIR="/opt/android-sdk"
 OWNER_INPUT_HOST_ROOT="/opt/sovereign-owner-managed"
 RETIRED_OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"
+GITHUB_APP_SECRET_DIR="/opt/secure/sovereign-github-app"
+GITHUB_APP_PRIVATE_KEY_FILE="$GITHUB_APP_SECRET_DIR/private-key.pem"
+MCP_GITHUB_APP_PRIVATE_KEY_FILE="/run/secrets/sovereign-github-app-private-key.pem"
+MCP_GITHUB_APP_INSTALLATION_ID="153170343"
 BACKEND_WORKSPACE_HOST_ROOT="/opt/sovereign-agent-workspaces"
 BACKEND_WORKSPACE_UID="10001"
 BACKEND_WORKSPACE_GID="10001"
@@ -145,6 +149,35 @@ read_backend_value() {
   else
     read_value "$BACKEND_ENV_PATH" "$key"
   fi
+}
+
+prepare_mcp_github_app_secret() {
+  local app_id encoded_key temporary_key
+  INSTALL_STAGE="prepare_mcp_github_app_secret"
+  app_id="$(read_backend_value GITHUB_APP_ID)"
+  encoded_key="$(read_backend_value GITHUB_APP_PRIVATE_KEY)"
+  [[ "$app_id" =~ ^[1-9][0-9]*$ ]] || fail "backend GitHub App ID is missing or invalid"
+  [[ -n "$encoded_key" ]] || fail "backend GitHub App private key is missing"
+  install -d -m 0750 -o root -g "$MCP_GID" "$GITHUB_APP_SECRET_DIR"
+  temporary_key="$(mktemp "$GITHUB_APP_SECRET_DIR/.private-key.XXXXXX")" \
+    || fail "could not create temporary GitHub App private key file"
+  if ! printf '%s' "$encoded_key" | base64 --decode > "$temporary_key"; then
+    rm -f "$temporary_key"
+    fail "backend GitHub App private key is not valid base64"
+  fi
+  if ! grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$temporary_key"; then
+    rm -f "$temporary_key"
+    fail "backend GitHub App private key has an invalid PEM header"
+  fi
+  chown root:"$MCP_GID" "$temporary_key" || { rm -f "$temporary_key"; fail "could not set GitHub App private key ownership"; }
+  chmod 0640 "$temporary_key" || { rm -f "$temporary_key"; fail "could not set GitHub App private key mode"; }
+  mv -f "$temporary_key" "$GITHUB_APP_PRIVATE_KEY_FILE" || { rm -f "$temporary_key"; fail "could not activate GitHub App private key"; }
+  chown root:"$MCP_GID" "$GITHUB_APP_PRIVATE_KEY_FILE" || fail "could not verify GitHub App private key ownership"
+  chmod 0640 "$GITHUB_APP_PRIVATE_KEY_FILE" || fail "could not verify GitHub App private key mode"
+  set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_APP_ID "$app_id"
+  set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID "$MCP_GITHUB_APP_INSTALLATION_ID"
+  set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE "$MCP_GITHUB_APP_PRIVATE_KEY_FILE"
+  unset app_id encoded_key temporary_key
 }
 
 ensure_managed_env() {
@@ -1042,7 +1075,7 @@ fi
 ROLLBACK_ARMED=1
 
 INSTALL_STAGE="copy_control_plane_files"
-for file in Dockerfile requirements.txt policy.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py launcher.py docker-compose.yml; do
+for file in Dockerfile requirements.txt policy.py github_installation_auth.py runtime.py database.py database_evidence_tools.py command_contract.py command_queue.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py github_issue_contracts.py owner_input_widget.py self_heal.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py sovereign_rescue_widget.py server.py tool_extensions.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py repository_intelligence_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py predictive_tool_router.py tool_success_ranking.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py patchmon_operator.py patchmon_fleet.py launcher.py docker-compose.yml; do
   install_managed_control_plane_file 0644 "$SOURCE_DIR/$file" "$INSTALL_ROOT/$file" "runtime/$file"
 done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
@@ -1220,6 +1253,7 @@ remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL
 remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
+prepare_mcp_github_app_secret
 OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
 OWNER_ADMIN_ID="$(read_backend_value SOVEREIGN_OWNER_ADMIN_ID)"
 OWNER_ADMIN_EMAIL="$(read_backend_value SOVEREIGN_OWNER_ADMIN_EMAIL)"

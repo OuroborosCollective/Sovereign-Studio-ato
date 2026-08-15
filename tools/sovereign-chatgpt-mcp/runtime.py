@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -12,11 +13,16 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Iterator
 
 import requests
 
 import continuity
+from github_installation_auth import (
+    GitHubAppInstallationAuth,
+    GitHubAppInstallationConfig,
+    UnavailableGitHubInstallationAuth,
+)
 from policy import (
     BLOCKED_PARTS,
     MAX_FILE_BYTES,
@@ -32,7 +38,7 @@ from policy import (
 class RuntimeConfig:
     repository: str
     workspace_root: Path
-    github_token: str
+    github_app: GitHubAppInstallationConfig | None
     allowed_base_branches: tuple[str, ...]
     allowed_containers: tuple[str, ...]
     command_timeout: int
@@ -42,17 +48,33 @@ class RuntimeConfig:
         repository = os.getenv("SOVEREIGN_MCP_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato").strip()
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
             raise RuntimeError("SOVEREIGN_MCP_REPOSITORY ist ungültig")
+        if os.getenv("GITHUB_TOKEN", "").strip():
+            raise RuntimeError("Persistentes GITHUB_TOKEN ist im MCP-Container verboten")
         root = Path(os.getenv("SOVEREIGN_MCP_WORKSPACE_ROOT", "/opt/sovereign-chatgpt-tools/workspaces"))
-        token = os.getenv("GITHUB_TOKEN", "").strip()
+        app_variables = (
+            "SOVEREIGN_MCP_GITHUB_APP_ID",
+            "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID",
+            "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE",
+        )
+        github_app = (
+            GitHubAppInstallationConfig.from_env(repository=repository)
+            if any(os.getenv(name, "").strip() for name in app_variables)
+            else None
+        )
         bases = tuple(x.strip() for x in os.getenv("SOVEREIGN_MCP_ALLOWED_BASE_BRANCHES", "main").split(",") if x.strip())
         containers = tuple(x.strip() for x in os.getenv("SOVEREIGN_MCP_ALLOWED_CONTAINERS", "sovereign-backend").split(",") if x.strip())
         timeout = max(30, min(int(os.getenv("SOVEREIGN_MCP_COMMAND_TIMEOUT", "900")), 3600))
-        return cls(repository, root, token, bases, containers, timeout)
+        return cls(repository, root, github_app, bases, containers, timeout)
 
 
 class OperatorRuntime:
-    def __init__(self, config: RuntimeConfig | None = None) -> None:
+    def __init__(self, config: RuntimeConfig | None = None, *, github_auth: Any | None = None) -> None:
         self.config = config or RuntimeConfig.from_env()
+        self.github_auth = github_auth or (
+            GitHubAppInstallationAuth(self.config.github_app)
+            if self.config.github_app is not None
+            else UnavailableGitHubInstallationAuth()
+        )
         self.config.workspace_root.mkdir(parents=True, exist_ok=True)
 
     def _workspace(self, workspace_id: str) -> Path:
@@ -88,19 +110,28 @@ class OperatorRuntime:
         }
         self._write_metadata(workspace_id, metadata)
 
-    def _askpass(self) -> tuple[str, dict[str, str]]:
-        if not self.config.github_token:
-            raise RuntimeError("GITHUB_TOKEN ist auf dem MCP-Server nicht konfiguriert")
-        directory = tempfile.mkdtemp(prefix="sovereign-askpass-")
-        script = Path(directory) / "askpass.sh"
-        script.write_text(
-            "#!/bin/sh\ncase \"$1\" in *Username*) echo x-access-token ;; *Password*) printf '%s' \"$GITHUB_TOKEN\" ;; esac\n",
-            "utf-8",
-        )
-        script.chmod(0o700)
-        env = os.environ.copy()
-        env.update({"GIT_ASKPASS": str(script), "GIT_TERMINAL_PROMPT": "0", "GITHUB_TOKEN": self.config.github_token})
-        return directory, env
+    @contextmanager
+    def _askpass(self) -> Iterator[tuple[str, dict[str, str]]]:
+        """Expose one installation token only to the active Git subprocess."""
+        with self.github_auth.token() as token:
+            directory = tempfile.mkdtemp(prefix="sovereign-askpass-")
+            script = Path(directory) / "askpass.sh"
+            script.write_text(
+                "#!/bin/sh\ncase \"$1\" in *Username*) echo x-access-token ;; *Password*) printf '%s' \"$SOVEREIGN_GITHUB_INSTALLATION_TOKEN\" ;; esac\n",
+                "utf-8",
+            )
+            script.chmod(0o700)
+            env = os.environ.copy()
+            env.update({
+                "GIT_ASKPASS": str(script),
+                "GIT_TERMINAL_PROMPT": "0",
+                "SOVEREIGN_GITHUB_INSTALLATION_TOKEN": token,
+            })
+            try:
+                yield directory, env
+            finally:
+                env.pop("SOVEREIGN_GITHUB_INSTALLATION_TOKEN", None)
+                shutil.rmtree(directory, ignore_errors=True)
 
     def _run(self, argv: list[str], *, cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
         started = time.monotonic()
@@ -144,8 +175,7 @@ class OperatorRuntime:
         workspace = self._workspace(workspace_id)
         repo = workspace / "repo"
         workspace.mkdir(mode=0o700, parents=True, exist_ok=False)
-        askpass_dir, env = self._askpass()
-        try:
+        with self._askpass() as (_askpass_dir, env):
             clone = self._run(
                 ["git", "clone", "--depth", "1", "--branch", base_branch, f"https://github.com/{self.config.repository}.git", str(repo)],
                 cwd=workspace,
@@ -160,8 +190,6 @@ class OperatorRuntime:
                 raise RuntimeError(f"Branch-Erstellung fehlgeschlagen: {checkout['stderr']}")
             self._run(["git", "config", "user.name", os.getenv("SOVEREIGN_MCP_GIT_AUTHOR_NAME", "Sovereign ChatGPT Operator")], cwd=repo)
             self._run(["git", "config", "user.email", os.getenv("SOVEREIGN_MCP_GIT_AUTHOR_EMAIL", "sovereign-operator@users.noreply.github.com")], cwd=repo)
-        finally:
-            shutil.rmtree(askpass_dir, ignore_errors=True)
 
         metadata = {
             "workspace_id": workspace_id,
@@ -301,41 +329,37 @@ class OperatorRuntime:
                 if exclude_text and not exclude_text.endswith("\n"):
                     exclude_file.write("\n")
                 exclude_file.write(exclude_marker + "\n")
-        headers = {
-            "Authorization": f"Bearer {self.config.github_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
         metadata_url = (
             f"https://api.github.com/repos/{self.config.repository}/actions/artifacts/{artifact_number}"
         )
-        metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
-        if metadata_response.status_code != 200:
-            raise RuntimeError(
-                f"Artifact-Metadaten konnten nicht gelesen werden: HTTP {metadata_response.status_code}"
+        with self.github_auth.headers() as headers:
+            metadata_response = requests.get(metadata_url, headers=headers, timeout=30)
+            if metadata_response.status_code != 200:
+                raise RuntimeError(
+                    f"Artifact-Metadaten konnten nicht gelesen werden: HTTP {metadata_response.status_code}"
+                )
+            metadata = metadata_response.json()
+            workflow_run = metadata.get("workflow_run") if isinstance(metadata, dict) else None
+            actual_run_id = int((workflow_run or {}).get("id") or 0)
+            if actual_run_id != run_number:
+                raise ValueError("Artifact gehört nicht zum bestätigten Workflow-Run")
+            if bool(metadata.get("expired")):
+                raise RuntimeError("GitHub-Artefakt ist abgelaufen")
+            archive_url = str(metadata.get("archive_download_url") or "").strip()
+            if not archive_url:
+                raise RuntimeError("GitHub lieferte keine Artifact-Download-URL")
+            response = requests.get(
+                archive_url,
+                headers=headers,
+                stream=True,
+                allow_redirects=True,
+                timeout=120,
             )
-        metadata = metadata_response.json()
-        workflow_run = metadata.get("workflow_run") if isinstance(metadata, dict) else None
-        actual_run_id = int((workflow_run or {}).get("id") or 0)
-        if actual_run_id != run_number:
-            raise ValueError("Artifact gehört nicht zum bestätigten Workflow-Run")
-        if bool(metadata.get("expired")):
-            raise RuntimeError("GitHub-Artefakt ist abgelaufen")
-        archive_url = str(metadata.get("archive_download_url") or "").strip()
-        if not archive_url:
-            raise RuntimeError("GitHub lieferte keine Artifact-Download-URL")
 
         archive_limit = 600 * 1024 * 1024
         extract_limit = 1_200 * 1024 * 1024
         workspace = self._workspace(workspace_id)
         archive_path = workspace / f"artifact-{artifact_number}.zip.part"
-        response = requests.get(
-            archive_url,
-            headers=headers,
-            stream=True,
-            allow_redirects=True,
-            timeout=120,
-        )
         if response.status_code != 200:
             raise RuntimeError(f"Artifact-Download fehlgeschlagen: HTTP {response.status_code}")
         downloaded = 0
@@ -526,16 +550,12 @@ class OperatorRuntime:
             raise RuntimeError("PROTECTED_BRANCH_SYNC_FORBIDDEN")
         branch = validate_branch(raw_branch)
 
-        headers = {
-            "Authorization": f"Bearer {self.config.github_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
-        response = requests.get(
-            f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
-            headers=headers,
-            timeout=30,
-        )
+        with self.github_auth.headers() as headers:
+            response = requests.get(
+                f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+                headers=headers,
+                timeout=30,
+            )
         if response.status_code != 200:
             raise RuntimeError(f"PR konnte nicht geprüft werden: HTTP {response.status_code}")
         pull = response.json()
@@ -590,8 +610,7 @@ class OperatorRuntime:
                 raise RuntimeError("WORKSPACE_SYNC_STASH_IDENTITY_MISSING")
             stash_ref = "stash@{0}"
 
-        askpass_dir, env = self._askpass()
-        try:
+        with self._askpass() as (_askpass_dir, env):
             fetched = self._run(
                 [
                     "git",
@@ -603,8 +622,6 @@ class OperatorRuntime:
                 cwd=repo,
                 env=env,
             )
-        finally:
-            shutil.rmtree(askpass_dir, ignore_errors=True)
         if not fetched["ok"]:
             if stash_ref:
                 restore_original_workspace()
@@ -728,16 +745,12 @@ class OperatorRuntime:
         if not selected_paths:
             raise ValueError("Keine sicheren Pfade ausgewählt")
 
-        headers = {
-            "Authorization": f"Bearer {self.config.github_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
-        response = requests.get(
-            f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
-            headers=headers,
-            timeout=30,
-        )
+        with self.github_auth.headers() as headers:
+            response = requests.get(
+                f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+                headers=headers,
+                timeout=30,
+            )
         if response.status_code != 200:
             raise RuntimeError(f"PR konnte nicht geprüft werden: HTTP {response.status_code}")
         pull = response.json()
@@ -760,8 +773,7 @@ class OperatorRuntime:
             raise RuntimeError("PR_BASE_REVISION_INVALID")
 
         remote_ref = f"refs/remotes/origin/pull/{number}/head"
-        askpass_dir, env = self._askpass()
-        try:
+        with self._askpass() as (_askpass_dir, env):
             fetched = self._run(
                 [
                     "git",
@@ -773,8 +785,6 @@ class OperatorRuntime:
                 cwd=repo,
                 env=env,
             )
-        finally:
-            shutil.rmtree(askpass_dir, ignore_errors=True)
         if not fetched["ok"]:
             raise RuntimeError(f"PR_HEAD_FETCH_FAILED: {fetched['stderr']}")
         fetched_head = self._run(["git", "rev-parse", remote_ref], cwd=repo)
@@ -858,17 +868,13 @@ class OperatorRuntime:
         continuity_result = self.continuity_completion_advisory(workspace_id)
 
         owner = self.config.repository.split("/", 1)[0]
-        headers = {
-            "Authorization": f"Bearer {self.config.github_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
-        inventory = requests.get(
-            f"https://api.github.com/repos/{self.config.repository}/pulls",
-            headers=headers,
-            params={"state": "open", "base": base_branch, "per_page": 100},
-            timeout=30,
-        )
+        with self.github_auth.headers() as headers:
+            inventory = requests.get(
+                f"https://api.github.com/repos/{self.config.repository}/pulls",
+                headers=headers,
+                params={"state": "open", "base": base_branch, "per_page": 100},
+                timeout=30,
+            )
         if inventory.status_code != 200:
             raise RuntimeError(f"Offene PRs konnten nicht geprüft werden: HTTP {inventory.status_code}")
         open_pulls = inventory.json()
@@ -928,32 +934,30 @@ class OperatorRuntime:
         commit = self._run(["git", "commit", "-m", commit_message[:200]], cwd=repo)
         if not add["ok"] or not commit["ok"]:
             raise RuntimeError(f"Commit fehlgeschlagen: {commit['stderr'] or add['stderr']}")
-        askpass_dir, env = self._askpass()
-        try:
+        with self._askpass() as (_askpass_dir, env):
             push = self._run(["git", "push", "--set-upstream", "origin", branch], cwd=repo, env=env)
-        finally:
-            shutil.rmtree(askpass_dir, ignore_errors=True)
         if not push["ok"]:
             raise RuntimeError(f"Push fehlgeschlagen: {push['stderr']}")
 
         created = same_branch is None
-        if same_branch is not None:
-            number = int(same_branch.get("number") or 0)
-            if number < 1:
-                raise RuntimeError("Bestehender PR besitzt keine gültige Nummer")
-            response = requests.patch(
-                f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
-                headers=headers,
-                timeout=30,
-                json={"title": title[:256], "body": body, "state": "open"},
-            )
-        else:
-            response = requests.post(
-                f"https://api.github.com/repos/{self.config.repository}/pulls",
-                headers=headers,
-                timeout=30,
-                json={"title": title[:256], "head": f"{owner}:{branch}", "base": base_branch, "body": body, "draft": True},
-            )
+        with self.github_auth.headers() as headers:
+            if same_branch is not None:
+                number = int(same_branch.get("number") or 0)
+                if number < 1:
+                    raise RuntimeError("Bestehender PR besitzt keine gültige Nummer")
+                response = requests.patch(
+                    f"https://api.github.com/repos/{self.config.repository}/pulls/{number}",
+                    headers=headers,
+                    timeout=30,
+                    json={"title": title[:256], "body": body, "state": "open"},
+                )
+            else:
+                response = requests.post(
+                    f"https://api.github.com/repos/{self.config.repository}/pulls",
+                    headers=headers,
+                    timeout=30,
+                    json={"title": title[:256], "head": f"{owner}:{branch}", "base": base_branch, "body": body, "draft": True},
+                )
         if response.status_code not in (200, 201):
             operation = "aktualisiert" if same_branch is not None else "erstellt"
             raise RuntimeError(f"Draft-PR konnte nicht {operation} werden: HTTP {response.status_code}")

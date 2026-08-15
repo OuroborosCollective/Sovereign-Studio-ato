@@ -30,6 +30,7 @@ services:
       - /opt/sovereign-chatgpt-tools/tool-routing-state:/var/lib/sovereign-tool-routing
       - /opt/android-sdk:/opt/android-sdk:ro
       - /run/sovereign-chatgpt-broker:/run/sovereign-chatgpt-broker
+      - /opt/secure/sovereign-github-app/private-key.pem:/run/secrets/sovereign-github-app-private-key.pem:ro
     group_add:
       - "${BROKER_GID:?BROKER_GID must match the sovereign-mcp host group}"
     networks:

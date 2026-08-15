@@ -235,6 +235,24 @@ def _atomic_write(target: dict[str, Any], protected_value: bytes | bytearray | s
             encoded[index] = 0
 
 
+def _owner_resolution_conflict(row: dict[str, Any] | None) -> dict[str, str]:
+    """Project terminal owner-request states without conflating failure and expiry."""
+    current = row or {}
+    status = str(current.get("status") or "")
+    if status == "failed":
+        return {
+            "error": "Anfrage ist fehlgeschlagen; das geschützte Ziel wurde nicht aktualisiert",
+            "status": "failed",
+            "resultCode": str(current.get("result_code") or "target_update_failed"),
+        }
+    if status == "expired":
+        return {"error": "Anfrage ist abgelaufen", "status": "expired"}
+    return {
+        "error": "Anfrage ist bereits entschieden oder nicht vorhanden",
+        "status": status or "missing",
+    }
+
+
 def _request_api(row: dict[str, Any], targets: dict[str, dict[str, Any]]) -> dict[str, Any]:
     target = targets.get(str(row.get("target_id") or ""), {})
     return {
@@ -391,7 +409,14 @@ def register_owner_input_routes(
                 row = cur.fetchone()
             conn.commit()
             if not row:
-                return _no_store(jsonify({"error": "Anfrage ist abgelaufen, bereits entschieden oder nicht vorhanden"})), 409
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT status, result_code FROM owner_input_requests
+                           WHERE id=%s::uuid LIMIT 1""",
+                        (request_id,),
+                    )
+                    current = cur.fetchone()
+                return _no_store(jsonify(_owner_resolution_conflict(dict(current) if current else None))), 409
             claimed = dict(row)
 
             if decision == "no":

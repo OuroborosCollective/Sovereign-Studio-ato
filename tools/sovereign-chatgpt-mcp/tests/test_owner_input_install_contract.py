@@ -259,3 +259,23 @@ def test_self_update_blocks_before_credential_read_without_ephemeral_ci_scope() 
     assert 'SELF_UPDATE_ENABLED="${SOVEREIGN_MCP_ENABLE_SELF_UPDATE:-0}"' in updater
     assert 'write_status BLOCKED "" "self-update is disabled until a CI-mediated ephemeral credential scope is implemented"' in updater
     assert updater.index('[[ "$SELF_UPDATE_ENABLED" == "1" ]]') < updater.index('TOKEN="$(sed -n \'s/^GITHUB_TOKEN=//p\' "$BROKER_ENV" | tail -n 1)"')
+
+
+def test_mcp_github_app_installation_secret_is_file_mounted_and_pat_free() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    compose = (ROOT / "docker-compose.yml").read_text("utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text("utf-8")
+    requirements = (ROOT / "requirements.txt").read_text("utf-8")
+
+    assert 'MCP_GITHUB_APP_INSTALLATION_ID="153170343"' in installer
+    assert 'GITHUB_APP_PRIVATE_KEY_FILE="$GITHUB_APP_SECRET_DIR/private-key.pem"' in installer
+    assert 'MCP_GITHUB_APP_PRIVATE_KEY_FILE="/run/secrets/sovereign-github-app-private-key.pem"' in installer
+    assert 'prepare_mcp_github_app_secret' in installer
+    assert 'read_backend_value GITHUB_APP_ID' in installer
+    assert 'read_backend_value GITHUB_APP_PRIVATE_KEY' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID "$MCP_GITHUB_APP_INSTALLATION_ID"' in installer
+    assert 'set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE "$MCP_GITHUB_APP_PRIVATE_KEY_FILE"' in installer
+    assert 'GITHUB_TOKEN' not in compose
+    assert '/opt/secure/sovereign-github-app/private-key.pem:/run/secrets/sovereign-github-app-private-key.pem:ro' in compose
+    assert 'github_installation_auth.py' in dockerfile
+    assert 'PyJWT[crypto]==2.10.1' in requirements

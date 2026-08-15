@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,23 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from github_installation_auth import GitHubAppInstallationConfig
 from runtime import OperatorRuntime, RuntimeConfig
+
+
+class FixtureInstallationAuth:
+    @contextmanager
+    def token(self):
+        yield "test-installation-token"
+
+    @contextmanager
+    def headers(self):
+        with self.token() as token:
+            yield {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
 
 
 @pytest.fixture()
@@ -20,11 +37,17 @@ def repo_runtime(tmp_path: Path):
         RuntimeConfig(
             repository="OuroborosCollective/Sovereign-Studio-ato",
             workspace_root=workspace_root,
-            github_token="test-token-not-used",
+            github_app=GitHubAppInstallationConfig(
+                app_id="123456",
+                installation_id=153170343,
+                private_key_file=tmp_path / "not-read-in-fixture.pem",
+                repository="OuroborosCollective/Sovereign-Studio-ato",
+            ),
             allowed_base_branches=("main",),
             allowed_containers=("sovereign-backend",),
             command_timeout=30,
-        )
+        ),
+        github_auth=FixtureInstallationAuth(),
     )
     workspace_id = "job-abcdef123456"
     workspace = workspace_root / workspace_id

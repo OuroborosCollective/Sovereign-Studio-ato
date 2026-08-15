@@ -9,6 +9,7 @@ import subprocess
 import pytest
 
 import continuity
+from github_installation_auth import GitHubAppInstallationConfig
 from runtime import OperatorRuntime, RuntimeConfig
 
 
@@ -145,7 +146,12 @@ def test_changed_files_expands_untracked_directories(tmp_path: Path) -> None:
     runtime = OperatorRuntime(RuntimeConfig(
         repository="OuroborosCollective/Sovereign-Studio-ato",
         workspace_root=tmp_path / "workspaces",
-        github_token="test-token",
+        github_app=GitHubAppInstallationConfig(
+            app_id="123456",
+            installation_id=153170343,
+            private_key_file=tmp_path / "not-read-in-continuity-test.pem",
+            repository="OuroborosCollective/Sovereign-Studio-ato",
+        ),
         allowed_base_branches=("main",),
         allowed_containers=("sovereign-backend",),
         command_timeout=30,
