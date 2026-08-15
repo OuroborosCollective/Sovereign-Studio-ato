@@ -16,7 +16,10 @@ export function SlashCommandMenu({ commands, selectedIndex, onSelect }: SlashCom
           key={command.cmd}
           type="button"
           role="option"
+          tabIndex={index === selectedIndex ? 0 : -1}
           aria-selected={index === selectedIndex}
+          aria-label={`Slash-Befehl ${command.cmd}: ${command.description}`}
+          title={`Slash-Befehl: ${command.cmd} – ${command.description}`}
           onClick={() => onSelect(command)}
           style={{ width: '100%', textAlign: 'left', padding: '8px 10px', border: 0, borderRadius: 8, background: index === selectedIndex ? '#00d9b122' : 'transparent', color: '#cdd9e5', cursor: 'pointer' }}
         >

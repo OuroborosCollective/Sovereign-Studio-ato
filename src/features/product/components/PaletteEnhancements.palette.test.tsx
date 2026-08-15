@@ -17,6 +17,7 @@ import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
+import { SlashCommandMenu } from './SlashCommandMenu';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -600,6 +601,39 @@ describe('Palette Accessibility Enhancements', () => {
       );
       const disabledInlineBadgeBtn = screen.getByRole('button', { name: 'Repo Datei: src/App.tsx' });
       expect(disabledInlineBadgeBtn).toHaveAttribute('title', 'src/App.tsx');
+    });
+  });
+
+  describe('SlashCommandMenu Accessibility Enhancements', () => {
+    it('renders options with correct aria-label, title, aria-selected, and roving tabIndex', () => {
+      const commands = [
+        { cmd: '/help', description: 'Show help message' },
+        { cmd: '/fix', description: 'Fix an issue in code' },
+      ];
+      const onSelect = vi.fn();
+
+      render(
+        <SlashCommandMenu
+          commands={commands as any}
+          selectedIndex={1}
+          onSelect={onSelect}
+        />
+      );
+
+      const option1 = screen.getByRole('option', { name: 'Slash-Befehl /help: Show help message' });
+      expect(option1).toHaveAttribute('aria-label', 'Slash-Befehl /help: Show help message');
+      expect(option1).toHaveAttribute('title', 'Slash-Befehl: /help – Show help message');
+      expect(option1).toHaveAttribute('aria-selected', 'false');
+      expect(option1).toHaveAttribute('tabIndex', '-1');
+
+      const option2 = screen.getByRole('option', { name: 'Slash-Befehl /fix: Fix an issue in code' });
+      expect(option2).toHaveAttribute('aria-label', 'Slash-Befehl /fix: Fix an issue in code');
+      expect(option2).toHaveAttribute('title', 'Slash-Befehl: /fix – Fix an issue in code');
+      expect(option2).toHaveAttribute('aria-selected', 'true');
+      expect(option2).toHaveAttribute('tabIndex', '0');
+
+      fireEvent.click(option1);
+      expect(onSelect).toHaveBeenCalledWith(commands[0]);
     });
   });
 
