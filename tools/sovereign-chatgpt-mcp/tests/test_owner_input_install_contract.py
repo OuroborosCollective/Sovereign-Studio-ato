@@ -211,7 +211,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "meta=OWNER_INPUT_TOOL_META" in server
     assert "structured_output=True" in server
     assert '"sensitiveValuesIncluded": False' in server
-    assert '"protectedValueTransport": "direct_backend_https_only"' in client
+    assert '"protectedValueTransport": "direct_backend_https_only"' in server
     assert '"llm_can_receive_protected_value": False' in client
 
 
