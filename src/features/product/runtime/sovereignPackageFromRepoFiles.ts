@@ -110,6 +110,14 @@ const AUTONOMOUS_MISSION_TARGETS = [
   'src/features/product/runtime/sovereignPackageFromRepoFiles.test.ts',
 ];
 
+const CONCRETE_MISSION_VERB_REGEX = new RegExp(
+  `(^|[^a-z0-9_-])(${CONCRETE_MISSION_VERBS.join('|')})($|[^a-z0-9_-])`,
+  'i'
+);
+
+const DOCS_TOKENS = ['readme', 'documentation', 'dokumentation', 'docs', 'update history', 'changelog'];
+const DOCS_REGEX = new RegExp(DOCS_TOKENS.join('|'), 'i');
+
 function normalizeMissionText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -144,12 +152,12 @@ function existingTargets(repoFiles: RepoFile[]): string[] {
 
 function hasConcreteMissionVerb(mission: string): boolean {
   const normalized = normalizeMissionText(mission);
-  return CONCRETE_MISSION_VERBS.some((verb) => new RegExp(`(^|[^a-z0-9_-])${verb}($|[^a-z0-9_-])`, 'i').test(normalized));
+  return CONCRETE_MISSION_VERB_REGEX.test(normalized);
 }
 
 function isDocumentationSovereignMission(mission: string): boolean {
   const normalized = normalizeMissionText(mission);
-  return ['readme', 'documentation', 'dokumentation', 'docs', 'update history', 'changelog'].some((token) => normalized.includes(token));
+  return DOCS_REGEX.test(normalized);
 }
 
 function runtimeUserKeys(_input: BuildSovereignPackageFromRepoFilesInput): undefined {
