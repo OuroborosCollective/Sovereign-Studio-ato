@@ -211,7 +211,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert "meta=OWNER_INPUT_TOOL_META" in server
     assert "structured_output=True" in server
     assert '"sensitiveValuesIncluded": False' in server
-    assert '"protectedValueTransport": "direct_backend_https_only"' in server
+    assert '"protectedValueTransport": "direct_backend_https_only"' in client
     assert '"llm_can_receive_protected_value": False' in client
 
 
@@ -278,4 +278,4 @@ def test_mcp_github_app_installation_secret_is_file_mounted_and_pat_free() -> No
     assert 'GITHUB_TOKEN' not in compose
     assert '/opt/secure/sovereign-github-app/private-key.pem:/run/secrets/sovereign-github-app-private-key.pem:ro' in compose
     assert 'github_installation_auth.py' in dockerfile
-    assert 'PyJWT[crypto]==2.10.1' in requirements
+    assert 'PyJWT[crypto]==2.13.0' in requirements
