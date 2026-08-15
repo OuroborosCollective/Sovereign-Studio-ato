@@ -136,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .sovereign-evidence
-          docker exec sovereign-freellmpool-overlay-ci python - "$OVERLAY_SHA256" <<'PY' > .sovereign-evidence/freellmpool-overlay-runtime-receipt.json
+          docker exec -i sovereign-freellmpool-overlay-ci python - "$OVERLAY_SHA256" <<'PY' > .sovereign-evidence/freellmpool-overlay-runtime-receipt.json
           import hashlib
           import json
           import sys
@@ -203,21 +203,23 @@ jobs:
                       'failureFamily': failure_family,
                       'latencyMs': int((time.monotonic() - started) * 1000),
                   })
-                  assert verified, {'model': model, 'confirmation': confirmation_index, 'status': status, 'failureFamily': failure_family}
+              successful_confirmations = sum(1 for item in confirmations if item['textualChatResponseVerified'])
               receipts.append({
                   'modelId': model,
-                  'ok': True,
+                  'ok': successful_confirmations == 2,
                   'confirmationCount': 2,
+                  'successfulConfirmationCount': successful_confirmations,
                   'confirmations': confirmations,
               })
 
+          all_verified = all(item['ok'] for item in receipts)
           output = {
               'schemaVersion': 'sovereign.freellmpool-overlay-runtime-receipt.v1',
-              'ok': True,
+              'ok': all_verified,
               'runtimeImage': 'sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa',
               'overlaySha256': expected_overlay_sha,
               'admittedModelCount': len(required),
-              'allAdmittedModelsDoubleCanaryVerified': all(item['confirmationCount'] == 2 for item in receipts),
+              'allAdmittedModelsDoubleCanaryVerified': all_verified,
               'receipts': receipts,
               'rawProviderResponsesPersisted': False,
               'secretValuesReturned': False,
@@ -228,11 +230,11 @@ jobs:
           import json
           from pathlib import Path
           receipt = json.loads(Path('.sovereign-evidence/freellmpool-overlay-runtime-receipt.json').read_text('utf-8'))
-          assert receipt['ok'] is True
           assert receipt['admittedModelCount'] == 3
-          assert receipt['allAdmittedModelsDoubleCanaryVerified'] is True
           assert receipt['rawProviderResponsesPersisted'] is False
           assert receipt['secretValuesReturned'] is False
+          assert receipt['ok'] is True, receipt
+          assert receipt['allAdmittedModelsDoubleCanaryVerified'] is True, receipt
           PY
 
       - name: Upload bounded overlay evidence
