@@ -201,3 +201,22 @@ def test_owner_page_keeps_value_out_of_storage_and_clears_transport_field() -> N
     assert "mode:'same-origin'" in page
     assert "redirect:'error'" in page
     assert "HTTPS-Übertragung nicht bestätigt" in page
+
+
+def test_owner_resolution_conflict_preserves_failed_instead_of_projecting_expired() -> None:
+    failed = runtime._owner_resolution_conflict({
+        "status": "failed",
+        "result_code": "target_update_failed",
+    })
+    expired = runtime._owner_resolution_conflict({
+        "status": "expired",
+        "result_code": "expired",
+    })
+
+    assert failed == {
+        "error": "Anfrage ist fehlgeschlagen; das geschützte Ziel wurde nicht aktualisiert",
+        "status": "failed",
+        "resultCode": "target_update_failed",
+    }
+    assert expired == {"error": "Anfrage ist abgelaufen", "status": "expired"}
+    assert failed["status"] != expired["status"]

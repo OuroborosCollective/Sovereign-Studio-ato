@@ -6,7 +6,6 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import subprocess
 from typing import Annotated, Any, Final, Literal, Sequence
 
@@ -1253,23 +1252,18 @@ def _validated_sha(value: str, field: str) -> str:
     return normalized
 
 
-def _github_headers() -> dict[str, str]:
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2026-03-10",
-        "User-Agent": "sovereign-enterprise-backend-revision-resolver",
-    }
-    token = str(getattr(getattr(_RUNTIME, "config", None), "github_token", "") or "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
-
-
 def _github_json(url: str) -> tuple[dict[str, Any] | None, str | None]:
+    auth = getattr(_RUNTIME, "github_auth", None)
+    if auth is None:
+        return None, "GITHUB_INSTALLATION_AUTH_UNAVAILABLE"
     try:
-        response = requests.get(url, headers=_github_headers(), timeout=30)
+        with auth.headers() as headers:
+            headers["User-Agent"] = "sovereign-enterprise-backend-revision-resolver"
+            response = requests.get(url, headers=headers, timeout=30)
     except requests.RequestException:
         return None, "GITHUB_TRANSPORT_FAILED"
+    except RuntimeError:
+        return None, "GITHUB_INSTALLATION_AUTH_UNAVAILABLE"
     if response.status_code != 200:
         return None, f"GITHUB_HTTP_{response.status_code}"
     try:
@@ -1284,26 +1278,22 @@ def _fetch_refs(repo: Path, base_branch: str, pr_number: int) -> tuple[bool, str
     if pr_number:
         refspecs.append(f"+refs/pull/{pr_number}/head:refs/remotes/origin/pull/{pr_number}/head")
     argv = ["git", "-C", str(repo), "fetch", "--no-tags", "origin", *refspecs]
-    askpass_dir: str | None = None
-    env: dict[str, str] | None = None
     try:
         askpass_factory = getattr(_RUNTIME, "_askpass", None)
-        if callable(askpass_factory):
-            askpass_dir, env = askpass_factory()
-        completed = subprocess.run(
-            argv,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=120,
-            env=env,
-        )
+        if not callable(askpass_factory):
+            return False, "GITHUB_INSTALLATION_AUTH_UNAVAILABLE"
+        with askpass_factory() as (_askpass_dir, env):
+            completed = subprocess.run(
+                argv,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+                env=env,
+            )
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
         return False, "REMOTE_FETCH_FAILED"
-    finally:
-        if askpass_dir:
-            shutil.rmtree(askpass_dir, ignore_errors=True)
     return (True, None) if completed.returncode == 0 else (False, "REMOTE_FETCH_FAILED")
 
 
