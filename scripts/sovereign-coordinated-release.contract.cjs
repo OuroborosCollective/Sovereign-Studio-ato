@@ -84,6 +84,7 @@ test('GitHub-App VPS deployment skill contract executes on each main release and
   assert.match(workflow, /verify_github_app_vps_deploy_skill\.py/);
   assert.match(workflow, /github-app-vps-deploy-skill\.json/);
   assert.match(workflow, /githubAppVpsDeploySkill/);
+  assert.match(workflow, /name: sovereign-coordinated-release-\$\{\{ env\.EXPECTED_REVISION \}\}[\s\S]*include-hidden-files: true/);
   const evidenceDirectory = fs.mkdtempSync(path.join(root, '.sovereign-skill-contract-'));
   const evidencePath = path.join(evidenceDirectory, 'skill.json');
   const head = childProcess.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
