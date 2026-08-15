@@ -1,0 +1,261 @@
+name: Sovereign FreeLLMPool Catalog Overlay Verification
+
+on:
+  push:
+    paths:
+      - '.github/workflows/sovereign-freellmpool-overlay-verify.yml'
+      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-entrypoint.py'
+      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-catalog-overlay.evidence.json'
+      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_catalog_overlay.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  POOL_IMAGE: ghcr.io/ouroboroscollective/sovereign-freellmpool@sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa
+  OVERLAY_SHA256: eb6647f5bb7aec552a2b82bf03f9341ae246f5025a2ced1caa27b7a08bcb6a90
+
+jobs:
+  verify-overlay:
+    name: Verify bounded LLM7 overlay with real double canaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact Sovereign revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate static overlay contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-entrypoint.py
+          python - <<'PY'
+          import ast
+          import hashlib
+          import json
+          import tomllib
+          from pathlib import Path
+
+          root = Path('tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool')
+          tree = ast.parse((root / 'freellmpool-entrypoint.py').read_text('utf-8'))
+          literals = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      literals[node.targets[0].id] = ast.literal_eval(node.value)
+                  except (ValueError, TypeError):
+                      pass
+          overlay = str(literals['CATALOG_OVERLAY'])
+          expected_sha = str(literals['CATALOG_SHA256'])
+          assert hashlib.sha256(overlay.encode()).hexdigest() == expected_sha
+          evidence = json.loads((root / 'freellmpool-catalog-overlay.evidence.json').read_text('utf-8'))
+          assert evidence['overlaySha256'] == expected_sha
+          assert evidence['minimumProductionReadyRoutesUnchanged'] == 7
+          assert evidence['deployBootstrapRequestTimeoutSecondsUnchanged'] == 45
+          providers = {row['id']: row for row in tomllib.loads(overlay)['provider']}
+          assert [item['name'] for item in providers['llm7']['models']] == ['default', 'fast', 'codestral-latest']
+          assert all(providers[name]['models'] == [] for name in ('pollinations', 'ovh', 'kilo'))
+          PY
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull exact immutable pool image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$POOL_IMAGE"
+          repo_digests="$(docker image inspect "$POOL_IMAGE" --format '{{json .RepoDigests}}')"
+          python - "$repo_digests" "$POOL_IMAGE" <<'PY'
+          import json
+          import sys
+          values = json.loads(sys.argv[1]) or []
+          expected = sys.argv[2]
+          assert expected in values, (expected, values)
+          PY
+
+      - name: Start immutable pool through production-parity Sovereign boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/freellmpool-overlay-proxy-key"
+          data_dir="$RUNNER_TEMP/freellmpool-overlay-data"
+          python -c 'import secrets,sys; open(sys.argv[1],"w",encoding="utf-8").write(secrets.token_urlsafe(48)+"\n")' "$key_file"
+          chmod 0400 "$key_file"
+          sudo chown 10001:10001 "$key_file"
+          mkdir -p "$data_dir"
+          chmod 0700 "$data_dir"
+          sudo chown 10001:10001 "$data_dir"
+          docker network create sovereign-freellmpool-overlay-ci >/dev/null
+          docker run -d \
+            --name sovereign-freellmpool-overlay-ci \
+            --init \
+            --network sovereign-freellmpool-overlay-ci \
+            --user 10001:10001 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --env HOME=/var/lib/freellmpool \
+            --env FREELLMPOOL_QUOTA_PATH=/var/lib/freellmpool/quota.json \
+            --env FREELLMPOOL_QUOTA_FLUSH_EVERY=1 \
+            --env FREELLMPOOL_LOG=WARNING \
+            --volume "$data_dir:/var/lib/freellmpool:rw" \
+            --volume "$GITHUB_WORKSPACE/tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-entrypoint.py:/opt/sovereign/freellmpool-entrypoint.py:ro" \
+            --volume "$key_file:/run/secrets/freellmpool_proxy_key:ro" \
+            --entrypoint python \
+            "$POOL_IMAGE" \
+            /opt/sovereign/freellmpool-entrypoint.py >/dev/null
+          test "$(docker inspect sovereign-freellmpool-overlay-ci --format '{{.Config.User}}')" = "10001:10001"
+          test "$(docker inspect sovereign-freellmpool-overlay-ci --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
+          port_bindings="$(docker inspect sovereign-freellmpool-overlay-ci --format '{{json .HostConfig.PortBindings}}')"
+          test "$port_bindings" = "null" || test "$port_bindings" = "{}"
+          docker exec -i sovereign-freellmpool-overlay-ci python - <<'PY'
+          from pathlib import Path
+          path = Path('/var/lib/freellmpool/.sovereign-write-probe')
+          path.write_text('ok', encoding='utf-8')
+          assert path.read_text('utf-8') == 'ok'
+          path.unlink()
+          PY
+          for attempt in $(seq 1 30); do
+            if docker exec sovereign-freellmpool-overlay-ci python -c "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=3))['status']=='ok'" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Verify overlay catalog and three real double canaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .sovereign-evidence
+          docker exec -i sovereign-freellmpool-overlay-ci python - "$OVERLAY_SHA256" <<'PY' > .sovereign-evidence/freellmpool-overlay-runtime-receipt.json
+          import hashlib
+          import json
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          expected_overlay_sha = sys.argv[1]
+          overlay_path = Path('/tmp/sovereign-freellmpool-providers.toml')
+          assert overlay_path.is_file() and not overlay_path.is_symlink()
+          assert hashlib.sha256(overlay_path.read_bytes()).hexdigest() == expected_overlay_sha
+          key = Path('/run/secrets/freellmpool_proxy_key').read_text('utf-8').strip()
+          headers = {'Authorization': f'Bearer {key}'}
+          models_request = urllib.request.Request('http://127.0.0.1:8080/v1/models', headers=headers)
+          with urllib.request.urlopen(models_request, timeout=10) as response:
+              models_payload = json.load(response)
+          rows = models_payload.get('data') if isinstance(models_payload, dict) else None
+          assert isinstance(rows, list) and rows
+          model_ids = {str(row.get('id') or '') for row in rows if isinstance(row, dict)}
+          required = ('llm7/default', 'llm7/fast', 'llm7/codestral-latest')
+          assert set(required).issubset(model_ids), sorted(model_ids)
+          assert not any(model.startswith(('pollinations/', 'ovh/', 'kilo/')) for model in model_ids)
+
+          receipts = []
+          for model in required:
+              confirmations = []
+              for confirmation_index in (1, 2):
+                  request = urllib.request.Request(
+                      'http://127.0.0.1:8080/v1/chat/completions',
+                      data=json.dumps({
+                          'model': model,
+                          'messages': [{'role': 'user', 'content': 'Reply with OK.'}],
+                          'max_tokens': 128,
+                          'temperature': 0,
+                      }).encode('utf-8'),
+                      headers={**headers, 'Content-Type': 'application/json'},
+                      method='POST',
+                  )
+                  started = time.monotonic()
+                  status = None
+                  verified = False
+                  failure_family = None
+                  try:
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          status = int(response.status)
+                          payload = json.load(response)
+                      choices = payload.get('choices') if isinstance(payload, dict) else None
+                      message = choices[0].get('message') if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+                      content = message.get('content') if isinstance(message, dict) else None
+                      text = content.strip() if isinstance(content, str) else ''
+                      verified = message.get('role') == 'assistant' and bool(text) if isinstance(message, dict) else False
+                      if not verified:
+                          failure_family = 'non_text_assistant_response'
+                  except urllib.error.HTTPError as exc:
+                      status = int(exc.code)
+                      failure_family = 'upstream_http_error'
+                  except (TimeoutError, urllib.error.URLError, OSError) as exc:
+                      failure_family = type(exc).__name__
+                  confirmations.append({
+                      'confirmation': confirmation_index,
+                      'httpStatus': status,
+                      'textualChatResponseVerified': verified,
+                      'failureFamily': failure_family,
+                      'latencyMs': int((time.monotonic() - started) * 1000),
+                  })
+              successful_confirmations = sum(1 for item in confirmations if item['textualChatResponseVerified'])
+              receipts.append({
+                  'modelId': model,
+                  'ok': successful_confirmations == 2,
+                  'confirmationCount': 2,
+                  'successfulConfirmationCount': successful_confirmations,
+                  'confirmations': confirmations,
+              })
+
+          all_verified = all(item['ok'] for item in receipts)
+          print(json.dumps({
+              'schemaVersion': 'sovereign.freellmpool-overlay-runtime-receipt.v1',
+              'ok': all_verified,
+              'runtimeImage': 'sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa',
+              'overlaySha256': expected_overlay_sha,
+              'admittedModelCount': len(required),
+              'allAdmittedModelsDoubleCanaryVerified': all_verified,
+              'receipts': receipts,
+              'rawProviderResponsesPersisted': False,
+              'secretValuesReturned': False,
+          }, sort_keys=True, separators=(',', ':')))
+          PY
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('.sovereign-evidence/freellmpool-overlay-runtime-receipt.json').read_text('utf-8'))
+          assert receipt['admittedModelCount'] == 3
+          assert receipt['rawProviderResponsesPersisted'] is False
+          assert receipt['secretValuesReturned'] is False
+          assert receipt['ok'] is True, receipt
+          assert receipt['allAdmittedModelsDoubleCanaryVerified'] is True, receipt
+          PY
+
+      - name: Upload bounded overlay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sovereign-freellmpool-overlay-${{ github.sha }}
+          path: .sovereign-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: true
+
+      - name: Cleanup isolated pool
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f sovereign-freellmpool-overlay-ci >/dev/null 2>&1 || true
+          docker network rm sovereign-freellmpool-overlay-ci >/dev/null 2>&1 || true
