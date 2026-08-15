@@ -491,6 +491,23 @@ class TestRateLimiting:
         assert len(_rate_limit_store) == 1 # Only "new_ip" exists
         assert "new_ip" in _rate_limit_store
 
+    def test_rate_limit_evicts_oldest_active_entries_at_cap(self):
+        """Rate limit store must evict oldest active entries if active identifiers exceed 1000."""
+        now = time.time()
+        for i in range(1005):
+            _rate_limit_store[f"active_ip_{i}"] = [now - (1005 - i) * 0.01]
+
+        assert len(_rate_limit_store) == 1005
+
+        allowed, remaining = _check_rate_limit("new_active_ip", max_requests=10)
+        assert allowed is True
+
+        assert len(_rate_limit_store) == 1000
+        assert "new_active_ip" in _rate_limit_store
+        assert "active_ip_0" not in _rate_limit_store
+        assert "active_ip_5" not in _rate_limit_store
+        assert "active_ip_1004" in _rate_limit_store
+
 
 class TestAuditLogging:
     """Tests für Audit-Logging Funktion."""

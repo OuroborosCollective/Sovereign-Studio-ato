@@ -226,18 +226,6 @@ def _check_rate_limit(identifier: str, max_requests: int = RATE_LIMIT_MAX_REQUES
     cutoff = now - RATE_LIMIT_WINDOW
     
     with _rate_limit_lock:
-        # Sweeping store if it has grown too large to prevent DoS (memory exhaustion)
-        if len(_rate_limit_store) > 1000:
-            expired_keys = []
-            for k, timestamps in _rate_limit_store.items():
-                active = [t for t in timestamps if t > cutoff]
-                if not active:
-                    expired_keys.append(k)
-                else:
-                    _rate_limit_store[k] = active
-            for k in expired_keys:
-                del _rate_limit_store[k]
-
         # Clean old entries
         if identifier in _rate_limit_store:
             active = [t for t in _rate_limit_store[identifier] if t > cutoff]
@@ -258,6 +246,27 @@ def _check_rate_limit(identifier: str, max_requests: int = RATE_LIMIT_MAX_REQUES
         if identifier not in _rate_limit_store:
             _rate_limit_store[identifier] = []
         _rate_limit_store[identifier].append(now)
+
+        # Sweeping store if it has grown too large to prevent DoS (memory exhaustion)
+        if len(_rate_limit_store) > 1000:
+            expired_keys = []
+            for k, timestamps in _rate_limit_store.items():
+                active = [t for t in timestamps if t > cutoff]
+                if not active:
+                    expired_keys.append(k)
+                else:
+                    _rate_limit_store[k] = active
+            for k in expired_keys:
+                del _rate_limit_store[k]
+
+            if len(_rate_limit_store) > 1000:
+                oldest_keys = sorted(
+                    _rate_limit_store,
+                    key=lambda k: max(_rate_limit_store[k]) if _rate_limit_store[k] else 0,
+                )[: len(_rate_limit_store) - 1000]
+                for k in oldest_keys:
+                    del _rate_limit_store[k]
+
         return True, max_requests - current_count - 1
 
 
