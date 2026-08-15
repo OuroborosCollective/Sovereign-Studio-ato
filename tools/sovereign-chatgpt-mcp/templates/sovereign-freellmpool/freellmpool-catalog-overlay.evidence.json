@@ -1,0 +1,40 @@
+{
+  "admittedModels": [
+    {
+      "attempts": 3,
+      "evidencePath": "docs/MODEL_ACTIVITY_AUDIT_2026-07-29.md",
+      "modelId": "llm7/default",
+      "revision": "172b1bb6759a1c08cb9d9f7d4e247ca05b34126c",
+      "source": "0xzr/freellmpool",
+      "successfulCompletions": 3
+    },
+    {
+      "attempts": 3,
+      "evidencePath": "docs/MODEL_ACTIVITY_AUDIT_2026-07-29.md",
+      "modelId": "llm7/fast",
+      "revision": "172b1bb6759a1c08cb9d9f7d4e247ca05b34126c",
+      "source": "0xzr/freellmpool",
+      "successfulCompletions": 3
+    },
+    {
+      "confirmationCount": 2,
+      "modelId": "llm7/codestral-latest",
+      "source": "OuroborosCollective/Sovereign-Studio-ato",
+      "workflowRunId": 31877008001
+    }
+  ],
+  "deployBootstrapRequestTimeoutSecondsUnchanged": 45,
+  "minimumProductionReadyRoutesUnchanged": 7,
+  "overlaySha256": "eb6647f5bb7aec552a2b82bf03f9341ae246f5025a2ced1caa27b7a08bcb6a90",
+  "provider": "llm7",
+  "runtimeImage": "ghcr.io/ouroboroscollective/sovereign-freellmpool@sha256:b5b131dec34a32925c6280611df9e9c0ede1ba6b39efb0e103a76064044f32fa",
+  "runtimeUpstreamRevision": "f9e09e536682083297cfd6fec3ea5d3aac5262c8",
+  "schemaVersion": "sovereign.freellmpool-catalog-overlay-evidence.v1",
+  "secretValuesReturned": false,
+  "withheldBuiltInKeylessProviders": [
+    "pollinations",
+    "ovh",
+    "kilo"
+  ],
+  "withheldMeaning": "not-admitted-in-bounded-production-lane-without-equivalent-current-positive-chat-evidence"
+}
