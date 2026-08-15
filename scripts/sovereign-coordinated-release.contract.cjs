@@ -78,12 +78,39 @@ test('coordinated release revalidates current main before registry work and befo
   assert.match(workflow, /AUTHORITATIVE_REVISION: \$\{\{ steps\.authoritative_main_final\.outputs\.head \}\}/);
 });
 
+test('GitHub-App VPS deployment skill contract executes on each main release and is bound into release evidence', () => {
+  const verifier = path.join(root, 'scripts/verify_github_app_vps_deploy_skill.py');
+  assert.match(workflow, /Execute GitHub App revision-locked VPS deployment skill contract/);
+  assert.match(workflow, /verify_github_app_vps_deploy_skill\.py/);
+  assert.match(workflow, /github-app-vps-deploy-skill\.json/);
+  assert.match(workflow, /githubAppVpsDeploySkill/);
+  const evidenceDirectory = fs.mkdtempSync(path.join(root, '.sovereign-skill-contract-'));
+  const evidencePath = path.join(evidenceDirectory, 'skill.json');
+  const head = childProcess.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  const result = childProcess.spawnSync('python3', [
+    verifier,
+    '--repo', root,
+    '--revision', head,
+    '--output', evidencePath,
+  ], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const receipt = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.revision, head);
+  assert.equal(receipt.persistentGithubTokenAllowed, false);
+  assert.equal(receipt.installationTokenScoped, true);
+  assert.equal(receipt.runtimePromotionRequiresIndependentReceipt, true);
+  assert.equal(receipt.secretValuesReturned, false);
+  fs.rmSync(evidenceDirectory, { recursive: true, force: true });
+});
+
 test('manifest records immutable identities but blocks runtime promotion without independent target-system evidence', () => {
   assert.match(workflow, /schemaVersion': 'sovereign\.coordinated-release-manifest\.v1'/);
   assert.match(workflow, /'deploymentPerformed': False/);
   assert.match(workflow, /'runtimePromotionStatus': 'BLOCKED_PENDING_INDEPENDENT_TARGET_SYSTEM_READBACK'/);
   assert.match(workflow, /'authoritativeMainRevision': authoritative_revision/);
   assert.match(workflow, /hashlib\.sha256\(canonical\)/);
+  assert.match(workflow, /githubAppVpsDeploySkill/);
 });
 
 test('independent target runtime receipt uses a short-lived read-only Actions token and separates deployment authority', () => {
