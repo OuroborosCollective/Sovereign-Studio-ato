@@ -17,6 +17,7 @@ import { ChangelogPreviewCard } from './ChangelogPreviewCard';
 import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
+import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -702,6 +703,128 @@ describe('Palette Accessibility Enhancements', () => {
 
       const checkUnknown = screen.getByText('unknown');
       expect(checkUnknown).toHaveAttribute('title', 'Unknown');
+    });
+  });
+
+  describe('CompactRepoSetupSheet Accessibility and Keyboard Usability Enhancements', () => {
+    it('associates label and input programmatically', () => {
+      render(
+        <CompactRepoSetupSheet
+          value=""
+          busy={false}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      const label = screen.getByText('GitHub Repository URL');
+      expect(label).toHaveAttribute('for', 'repo-setup-url-input');
+
+      const input = screen.getByLabelText('GitHub Repository URL');
+      expect(input).toHaveAttribute('id', 'repo-setup-url-input');
+    });
+
+    it('triggers onLoad when pressing Enter inside URL input', () => {
+      const onLoad = vi.fn();
+      render(
+        <CompactRepoSetupSheet
+          value="https://github.com/owner/repo"
+          busy={false}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={onLoad}
+          onClose={vi.fn()}
+        />
+      );
+
+      const input = screen.getByLabelText('GitHub Repository URL');
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(onLoad).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not trigger onLoad on Enter when value is empty or busy', () => {
+      const onLoad = vi.fn();
+      const { rerender } = render(
+        <CompactRepoSetupSheet
+          value=""
+          busy={false}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={onLoad}
+          onClose={vi.fn()}
+        />
+      );
+
+      const input = screen.getByLabelText('GitHub Repository URL');
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(onLoad).not.toHaveBeenCalled();
+
+      // Busy state
+      rerender(
+        <CompactRepoSetupSheet
+          value="https://github.com/owner/repo"
+          busy={true}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={onLoad}
+          onClose={vi.fn()}
+        />
+      );
+
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(onLoad).not.toHaveBeenCalled();
+    });
+
+    it('shows stateful submit button titles based on loading status', () => {
+      const { rerender } = render(
+        <CompactRepoSetupSheet
+          value=""
+          busy={false}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      let submitBtn = screen.getByRole('button', { name: 'Repo-Snapshot laden' });
+      expect(submitBtn).toBeDisabled();
+      expect(submitBtn).toHaveAttribute('title', 'Bitte geben Sie eine gültige GitHub-Repository-URL ein');
+
+      // Valid but not busy
+      rerender(
+        <CompactRepoSetupSheet
+          value="https://github.com/owner/repo"
+          busy={false}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      submitBtn = screen.getByRole('button', { name: 'Repo-Snapshot laden' });
+      expect(submitBtn).not.toBeDisabled();
+      expect(submitBtn).toHaveAttribute('title', 'Repository-Snapshot von der angegebenen URL laden');
+
+      // Busy loading
+      rerender(
+        <CompactRepoSetupSheet
+          value="https://github.com/owner/repo"
+          busy={true}
+          error={null}
+          onChange={vi.fn()}
+          onLoad={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      submitBtn = screen.getByRole('button', { name: 'Repo-Snapshot wird geladen…' });
+      expect(submitBtn).toBeDisabled();
+      expect(submitBtn).toHaveAttribute('title', 'Repository-Snapshot wird geladen…');
     });
   });
 });
