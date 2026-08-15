@@ -399,21 +399,78 @@ export interface PredictiveMetrics {
 // ============================================================================
 // Validation Schemas (Zod-like patterns for runtime validation)
 // ============================================================================
+//
+// Issue #1168: Predictive Contract Foundation - step 1 guard gaps.
+//
+// These are the canonical strict validators for the core Predictive Runtime
+// contract family. They enforce `additionalProperties: false` semantics (no
+// unknown keys), reject non-finite numbers (NaN, Infinity, -Infinity) and the
+// ambiguous negative-zero timestamp, and validate every required field of the
+// interface, not a subset. A passing result means STRUCTURALLY_VALID only; it
+// never implies VERIFIED, permission, or runtime truth.
+
+const SIGNAL_KEYS = new Set(['id', 'node', 'value', 'timestamp', 'traceId', 'metadata']);
+const PREDICTION_KEYS = new Set([
+  'id',
+  'predictedValue',
+  'confidence',
+  'node',
+  'timestamp',
+  'traceId',
+  'patternId',
+  'embedding',
+]);
+const SYNAPSE_KEYS = new Set([
+  'id',
+  'sourceNode',
+  'targetNode',
+  'weight',
+  'lastUpdate',
+  'activationCount',
+  'weightDelta',
+]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** True only for a real positive instant, rejecting NaN, +/-Infinity and -0. */
+function isPositiveFiniteInstant(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && (n as number) > 0 && !Object.is(n, -0);
+}
+
+/** Reject negative zero anywhere (ambiguous numeric identity). */
+function isFiniteNumber(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && !Object.is(n, -0);
+}
+
+/** Validate an optional embedding: finite numbers only when present. */
+function isValidOptionalEmbedding(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every(v => typeof v === 'number' && Number.isFinite(v) && !Object.is(v, -0));
+}
+
+function hasNoUnknownKeys(obj: Record<string, unknown>, allowed: Set<string>): boolean {
+  return Object.keys(obj).every(k => allowed.has(k));
+}
 
 /**
  * Runtime validation for Signal objects.
  */
 export function isValidSignal(obj: unknown): obj is Signal {
-  if (typeof obj !== 'object' || obj === null) return false;
+  if (!isPlainObject(obj) || !hasNoUnknownKeys(obj, SIGNAL_KEYS)) return false;
   const s = obj as Partial<Signal>;
   return (
     typeof s.id === 'string' &&
+    s.id.length > 0 &&
     typeof s.node === 'string' &&
-    typeof s.value === 'number' &&
-    Number.isFinite(s.value) &&
-    typeof s.timestamp === 'number' &&
-    s.timestamp > 0 &&
-    typeof s.traceId === 'string'
+    s.node.length > 0 &&
+    isFiniteNumber(s.value) &&
+    isPositiveFiniteInstant(s.timestamp) &&
+    typeof s.traceId === 'string' &&
+    s.traceId.length > 0 &&
+    (s.metadata === undefined || isPlainObject(s.metadata))
   );
 }
 
@@ -421,16 +478,24 @@ export function isValidSignal(obj: unknown): obj is Signal {
  * Runtime validation for Prediction objects.
  */
 export function isValidPrediction(obj: unknown): obj is Prediction {
-  if (typeof obj !== 'object' || obj === null) return false;
+  if (!isPlainObject(obj) || !hasNoUnknownKeys(obj, PREDICTION_KEYS)) return false;
   const p = obj as Partial<Prediction>;
   return (
     typeof p.id === 'string' &&
-    typeof p.predictedValue === 'number' &&
-    Number.isFinite(p.predictedValue) &&
+    p.id.length > 0 &&
+    isFiniteNumber(p.predictedValue) &&
     typeof p.confidence === 'number' &&
+    Number.isFinite(p.confidence) &&
+    !Object.is(p.confidence, -0) &&
     p.confidence >= 0 &&
     p.confidence <= 1 &&
-    typeof p.node === 'string'
+    typeof p.node === 'string' &&
+    p.node.length > 0 &&
+    isPositiveFiniteInstant(p.timestamp) &&
+    typeof p.traceId === 'string' &&
+    p.traceId.length > 0 &&
+    (p.patternId === undefined || typeof p.patternId === 'string') &&
+    isValidOptionalEmbedding(p.embedding)
   );
 }
 
@@ -438,15 +503,25 @@ export function isValidPrediction(obj: unknown): obj is Prediction {
  * Runtime validation for Synapse objects.
  */
 export function isValidSynapse(obj: unknown): obj is Synapse {
-  if (typeof obj !== 'object' || obj === null) return false;
+  if (!isPlainObject(obj) || !hasNoUnknownKeys(obj, SYNAPSE_KEYS)) return false;
   const syn = obj as Partial<Synapse>;
   return (
     typeof syn.id === 'string' &&
+    syn.id.length > 0 &&
     typeof syn.sourceNode === 'string' &&
+    syn.sourceNode.length > 0 &&
     typeof syn.targetNode === 'string' &&
+    syn.targetNode.length > 0 &&
     typeof syn.weight === 'number' &&
+    Number.isFinite(syn.weight) &&
+    !Object.is(syn.weight, -0) &&
     syn.weight >= 0 &&
-    syn.weight <= 1
+    syn.weight <= 1 &&
+    isPositiveFiniteInstant(syn.lastUpdate) &&
+    typeof syn.activationCount === 'number' &&
+    Number.isInteger(syn.activationCount) &&
+    syn.activationCount >= 0 &&
+    isFiniteNumber(syn.weightDelta)
   );
 }
 
