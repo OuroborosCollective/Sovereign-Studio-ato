@@ -47,7 +47,7 @@ def _semantic_ast(path: Path) -> str:
 
 
 def test_byte_identical_package_and_snapshot_export_mirrors() -> None:
-    for relative in ("__init__.py", "scann_snapshot_export.py"):
+    for relative in ("__init__.py", "scann_snapshot_export.py", "scann_exact_rescore.py"):
         canonical = _CANONICAL_ROOT / relative
         production = _PRODUCTION_ROOT / relative
         assert production.is_file(), f"missing production mirror: {production}"

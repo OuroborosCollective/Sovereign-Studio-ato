@@ -51,6 +51,16 @@ from .scann_snapshot_export import (
     build_manifest_from_export,
 )
 
+from .scann_exact_rescore import (
+    ExactContractError,
+    ExactCandidate,
+    ExactSearchResult,
+    recall_at_k,
+    exact_distance,
+    normalize_vector,
+    search_exact,
+)
+
 
 __all__ = [
     # Manifest
@@ -83,4 +93,12 @@ __all__ = [
     "extract_memory_leaf_for_export",
     "export_snapshot",
     "build_manifest_from_export",
+    # Exact rescore
+    "ExactContractError",
+    "ExactCandidate",
+    "ExactSearchResult",
+    "recall_at_k",
+    "exact_distance",
+    "normalize_vector",
+    "search_exact",
 ]
