@@ -521,10 +521,11 @@ function scoreRule(
 }
 
 function compareCandidates(a: PatternCandidateInternal, b: PatternCandidateInternal): number {
+  // Optimized: Replace slow localeCompare with fast native lexicographical comparison operators.
   return (
     b.rule.priority - a.rule.priority ||
     b.score - a.score ||
-    a.rule.id.localeCompare(b.rule.id)
+    (a.rule.id < b.rule.id ? -1 : a.rule.id > b.rule.id ? 1 : 0)
   );
 }
 
