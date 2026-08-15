@@ -312,6 +312,7 @@ jobs:
           name: sovereign-coordinated-release-${{ env.EXPECTED_REVISION }}
           path: .sovereign-evidence
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
 
 
