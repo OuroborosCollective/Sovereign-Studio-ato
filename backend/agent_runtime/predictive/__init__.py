@@ -1,5 +1,5 @@
 """
-Predictive signal pipeline module.
+Predictive module: signal pipeline and bounded action policy/readback contracts.
 """
 
 from .signal_pipeline import (
@@ -52,4 +52,47 @@ __all__ = [
     "running_difference",
     "running_total",
     "to_min_max",
+]
+
+from .action_policy import (
+    ActionLevel,
+    ActionPlan,
+    CapabilityClass,
+    LiveContext,
+    PolicyDecision,
+    PolicyVerdict,
+    RejectReason,
+    evaluate_plan,
+    make_plan,
+    normalize_parameters,
+    payload_hash_for,
+    can_derive,
+    CONTRACT_VERSION,
+)
+
+from .causal_readback import (
+    CausalVerdict,
+    EvidenceWindow,
+    ReadbackResult,
+    evaluate_readback,
+)
+
+__all__ += [
+    "ActionLevel",
+    "ActionPlan",
+    "CapabilityClass",
+    "LiveContext",
+    "PolicyDecision",
+    "PolicyVerdict",
+    "RejectReason",
+    "evaluate_plan",
+    "make_plan",
+    "normalize_parameters",
+    "payload_hash_for",
+    "can_derive",
+    "CONTRACT_VERSION",
+    "CausalVerdict",
+    "EvidenceWindow",
+    "ReadbackResult",
+    "evaluate_readback",
 ]
