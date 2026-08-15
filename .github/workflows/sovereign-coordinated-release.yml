@@ -97,7 +97,6 @@ jobs:
                   );
                   if (!publisher) {
                     if (run.status !== 'completed') {
-                      // Downstream publisher jobs are absent until prerequisite completes.
                       waiting = true;
                       break;
                     }
@@ -120,7 +119,6 @@ jobs:
                   );
                   if (publisher.conclusion === 'skipped') {
                     if (isBackendPrValidation || isMcpBranchUpdate) {
-                      // Only explicitly non-producing dispatch modes may be bypassed.
                       continue;
                     }
                     core.setFailed(`${requirement.workflow}:LATEST_EXACT_REVISION_PUBLISHER_SKIPPED_UNEXPECTEDLY:${run.id}`);
@@ -416,6 +414,9 @@ jobs:
               -o HostKeyAlgorithms=ssh-ed25519 \
               -o IdentitiesOnly=yes \
               -o ConnectTimeout=30 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=40 \
+              -o TCPKeepAlive=yes \
               root@46.202.154.25 \
               > .sovereign-evidence/independent-target-runtime-receipt.json
 
