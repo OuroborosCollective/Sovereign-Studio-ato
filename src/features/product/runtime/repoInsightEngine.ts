@@ -19,6 +19,7 @@
  */
 
 import type { RepoFile } from '../../github/types';
+import { escapeRegExp } from './sharedRegexUtils';
 import type {
   ScanFinding,
   ScanFindingRegistry,
@@ -206,6 +207,12 @@ const WORKFLOW_INDICATOR_PATHS = [
   '.circleci/',
 ];
 
+const RUNTIME_REGEX = new RegExp(RUNTIME_INDICATOR_PATHS.map(escapeRegExp).join('|'));
+const MOBILE_REGEX = new RegExp(MOBILE_INDICATOR_PATHS.map(escapeRegExp).join('|'));
+const COMPONENT_REGEX = new RegExp(COMPONENT_INDICATOR_PATHS.map(escapeRegExp).join('|'));
+const TEST_REGEX = new RegExp(TEST_INDICATOR_PATHS.map(escapeRegExp).join('|'));
+const WORKFLOW_REGEX = new RegExp(WORKFLOW_INDICATOR_PATHS.map(escapeRegExp).join('|'));
+
 // Hoisted CONFIG_NAMES array constant to the module level to avoid re-allocating on every check.
 const CONFIG_NAMES = [
   'package.json',
@@ -261,23 +268,23 @@ function getRiskFromExtension(path: string): InsightRisk {
 
 // Accepts pre-lowercased file paths to eliminate redundant internal lowercasing operations in loop iteration.
 function isRuntimePath(lowerPath: string): boolean {
-  return RUNTIME_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
+  return RUNTIME_REGEX.test(lowerPath);
 }
 
 function isMobilePath(lowerPath: string): boolean {
-  return MOBILE_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
+  return MOBILE_REGEX.test(lowerPath);
 }
 
 function isComponentPath(lowerPath: string): boolean {
-  return COMPONENT_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
+  return COMPONENT_REGEX.test(lowerPath);
 }
 
 function isTestPath(lowerPath: string): boolean {
-  return TEST_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
+  return TEST_REGEX.test(lowerPath);
 }
 
 function isWorkflowPath(lowerPath: string): boolean {
-  return WORKFLOW_INDICATOR_PATHS.some((indicator) => lowerPath.includes(indicator));
+  return WORKFLOW_REGEX.test(lowerPath);
 }
 
 function isConfigPath(lowerPath: string): boolean {

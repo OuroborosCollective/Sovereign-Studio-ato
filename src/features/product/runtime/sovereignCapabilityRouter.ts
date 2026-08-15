@@ -24,6 +24,7 @@ import type {
   SovereignActionEventInput,
   SovereignActionRoute,
 } from './sovereignActionStreamRuntime';
+import { escapeRegExp } from './sharedRegexUtils';
 
 export type { CapabilityRouterInput, CapabilityDecision } from './sovereignCapabilityTypes';
 
@@ -116,9 +117,22 @@ const WORKFLOW_REPAIR_TOKENS = [
   'workflowfehler beheben', 'ci fehler', 'workflowfehler', 'reparatur',
 ];
 
+const GERMAN_MUTATION_REGEX = new RegExp(GERMAN_MUTATION_STEMS.map(escapeRegExp).join('|'));
+const STATUS_QUESTION_REGEX = new RegExp(STATUS_QUESTION_TOKENS.map(escapeRegExp).join('|'));
+const FREE_CHAT_REGEX = new RegExp(FREE_CHAT_TOKENS.map(escapeRegExp).join('|'));
+const WORKFLOW_WATCH_REGEX = new RegExp(WORKFLOW_WATCH_TOKENS.map(escapeRegExp).join('|'));
+const WORKFLOW_REPAIR_REGEX = new RegExp(WORKFLOW_REPAIR_TOKENS.map(escapeRegExp).join('|'));
+const DRAFT_PR_REGEX = new RegExp(DRAFT_PR_TOKENS.map(escapeRegExp).join('|'));
+const DIRECT_PATCH_REGEX = new RegExp(DIRECT_PATCH_TOKENS.map(escapeRegExp).join('|'));
+const COMPLEX_TASK_REGEX = new RegExp(COMPLEX_TASK_TOKENS.map(escapeRegExp).join('|'));
+const SOVEREIGN_AGENT_REGEX = new RegExp(SOVEREIGN_AGENT_TOKENS.map(escapeRegExp).join('|'));
+const CODE_GENERATION_REGEX = new RegExp(CODE_GENERATION_TOKENS.map(escapeRegExp).join('|'));
+const LOAD_REPO_REGEX = new RegExp(LOAD_REPO_TOKENS.map(escapeRegExp).join('|'));
+const SIMPLE_MODIFIER_REGEX = new RegExp(SIMPLE_MODIFIER_TOKENS.map(escapeRegExp).join('|'));
+
 function hasExplicitMutationIntent(lower: string): boolean {
   return ENGLISH_MUTATION_PATTERN.test(lower)
-    || GERMAN_MUTATION_STEMS.some((stem) => lower.includes(stem));
+    || GERMAN_MUTATION_REGEX.test(lower);
 }
 
 function isReadOnlyRequest(trimmed: string, lower: string): boolean {
@@ -134,23 +148,23 @@ export function classifyOfflineCapabilityIntent(text: string): IntentClassificat
   if (/^https?:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\/.*)?$/i.test(trimmed)) {
     return 'load_repo';
   }
-  if (STATUS_QUESTION_TOKENS.some((token) => lower.includes(token))) return 'status_question';
+  if (STATUS_QUESTION_REGEX.test(lower)) return 'status_question';
   if (
     GREETING_PATTERN.test(trimmed)
-    || FREE_CHAT_TOKENS.some((token) => lower.includes(token))
+    || FREE_CHAT_REGEX.test(lower)
   ) return 'free_chat';
-  if (WORKFLOW_WATCH_TOKENS.some((token) => lower.includes(token))) return 'workflow_watch';
+  if (WORKFLOW_WATCH_REGEX.test(lower)) return 'workflow_watch';
   if (isReadOnlyRequest(trimmed, lower)) return 'free_chat';
-  if (WORKFLOW_REPAIR_TOKENS.some((token) => lower.includes(token))) return 'repair_workflow';
-  if (DRAFT_PR_TOKENS.some((token) => lower.includes(token))) return 'draft_pr';
+  if (WORKFLOW_REPAIR_REGEX.test(lower)) return 'repair_workflow';
+  if (DRAFT_PR_REGEX.test(lower)) return 'draft_pr';
 
-  const hasDirectPatchKeyword = DIRECT_PATCH_TOKENS.some((token) => lower.includes(token));
-  const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
+  const hasDirectPatchKeyword = DIRECT_PATCH_REGEX.test(lower);
+  const hasComplexKeyword = COMPLEX_TASK_REGEX.test(lower);
   if (hasDirectPatchKeyword && !hasComplexKeyword) return 'direct_patch';
 
-  if (SOVEREIGN_AGENT_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
-  if (CODE_GENERATION_TOKENS.some((token) => lower.includes(token))) return 'code_generation';
-  if (LOAD_REPO_TOKENS.some((token) => lower.includes(token))) return 'load_repo';
+  if (SOVEREIGN_AGENT_REGEX.test(lower)) return 'code_generation';
+  if (CODE_GENERATION_REGEX.test(lower)) return 'code_generation';
+  if (LOAD_REPO_REGEX.test(lower)) return 'load_repo';
   return 'unknown';
 }
 
@@ -170,11 +184,11 @@ export function determineOfflineTaskComplexity(
     case 'repair_workflow':
       return 'medium';
     case 'code_generation': {
-      const hasComplexKeyword = COMPLEX_TASK_TOKENS.some((token) => lower.includes(token));
+      const hasComplexKeyword = COMPLEX_TASK_REGEX.test(lower);
       if (!hasComplexKeyword) return 'medium';
       // Mixed-signal resolution: if user signals "simple/quick/small" alongside
       // complex-task keywords, honour the intent modifier and route as medium.
-      const hasSimpleModifier = SIMPLE_MODIFIER_TOKENS.some((token) => lower.includes(token));
+      const hasSimpleModifier = SIMPLE_MODIFIER_REGEX.test(lower);
       return hasSimpleModifier ? 'medium' : 'complex';
     }
     default:
@@ -294,7 +308,7 @@ export function buildOfflineCapabilityLanguageEvidence(text: string): Capability
   return {
     intent,
     complexity: determineOfflineTaskComplexity(intent, text),
-    explicitAgentRequest: SOVEREIGN_AGENT_TOKENS.some((token) => text.toLowerCase().includes(token)),
+    explicitAgentRequest: SOVEREIGN_AGENT_REGEX.test(text.toLowerCase()),
     source: 'offline_fallback',
   };
 }
