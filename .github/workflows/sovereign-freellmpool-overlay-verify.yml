@@ -1,14 +1,7 @@
 name: Sovereign FreeLLMPool Catalog Overlay Verification
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/sovereign-freellmpool-overlay-verify.yml'
-      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-entrypoint.py'
-      - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-catalog-overlay.evidence.json'
-      - 'tools/sovereign-chatgpt-mcp/tests/test_freellmpool_catalog_overlay.py'
   push:
-    branches: [main]
     paths:
       - '.github/workflows/sovereign-freellmpool-overlay-verify.yml'
       - 'tools/sovereign-chatgpt-mcp/templates/sovereign-freellmpool/freellmpool-entrypoint.py'
@@ -130,7 +123,7 @@ jobs:
           test "$(docker inspect sovereign-freellmpool-overlay-ci --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
           port_bindings="$(docker inspect sovereign-freellmpool-overlay-ci --format '{{json .HostConfig.PortBindings}}')"
           test "$port_bindings" = "null" || test "$port_bindings" = "{}"
-          docker exec sovereign-freellmpool-overlay-ci python - <<'PY'
+          docker exec -i sovereign-freellmpool-overlay-ci python - <<'PY'
           from pathlib import Path
           path = Path('/var/lib/freellmpool/.sovereign-write-probe')
           path.write_text('ok', encoding='utf-8')
