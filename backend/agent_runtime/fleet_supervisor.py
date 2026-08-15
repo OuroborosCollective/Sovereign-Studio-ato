@@ -566,8 +566,16 @@ def evaluate_fleet_verdict(
     cross_task_receipts: Sequence[Mapping[str, Any]] | None = None,
     merge_readback: Mapping[str, Any] | None = None,
     runtime_readback: Mapping[str, Any] | None = None,
+    observed_required_gates: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Arbitrate exact-head worker, CI, independent-review, cross-task and runtime evidence."""
+    """Arbitrate exact-head worker, CI, independent-review, cross-task and runtime evidence.
+
+    ``observed_required_gates`` is the read-back required-check/ruleset contract for the
+    PR at the observed head. When supplied, the verdict never silently trusts the planned
+    gate set: any gate the live contract now requires but the plan omitted, or any planned
+    gate the live contract no longer requires, is recorded as drift and a gate newly
+    required by the live contract blocks until its exact-head receipt is supplied.
+    """
 
     selected_task = task if isinstance(task, FleetTask) else FleetTask.from_dict(task)
     gaps: list[str] = []
@@ -575,6 +583,20 @@ def evaluate_fleet_verdict(
     status = "WORKER_COMPLETED_UNVERIFIED"
     expected_head = selected_task.expected_head_revision
     merge_revision = ""
+
+    # The live required-check/ruleset contract is read back rather than hardcoded. The
+    # verdict arbitrates over the union of planned and observed gates so that a gate the
+    # live contract newly requires can never be silently skipped.
+    observed_gates = _strings(observed_required_gates, "observed_required_gates")
+    planned_gates = tuple(selected_task.required_gates)
+    gate_contract_drift = bool(observed_gates) and set(observed_gates) != set(planned_gates)
+    arbitrated_gates: tuple[str, ...]
+    if observed_gates:
+        arbitrated_gates = tuple(sorted(set(planned_gates) | set(observed_gates)))
+    else:
+        arbitrated_gates = planned_gates
+    if gate_contract_drift:
+        contradictions.append("REQUIRED_GATE_CONTRACT_DRIFT")
 
     def receipt_hash(receipt: Mapping[str, Any]) -> str:
         return str(
@@ -614,17 +636,33 @@ def evaluate_fleet_verdict(
                 gate = str(receipt.get("gate") or receipt.get("name") or "").strip()
                 if gate:
                     by_gate[gate] = receipt
-        missing = [gate for gate in selected_task.required_gates if gate not in by_gate]
-        failed = [
+        missing = [gate for gate in arbitrated_gates if gate not in by_gate]
+        stale_heads = [
             gate for gate, receipt in by_gate.items()
-            if not receipt_success(receipt) or receipt_head(receipt) != expected_head
+            if receipt_success(receipt) and receipt_head(receipt) != expected_head
         ]
+        exact_failures = [
+            gate for gate, receipt in by_gate.items()
+            if not receipt_success(receipt) and receipt_head(receipt) == expected_head
+        ]
+        non_exact_failures = [
+            gate for gate, receipt in by_gate.items()
+            if not receipt_success(receipt) and receipt_head(receipt) != expected_head
+        ]
+        # A green run bound to a different SHA is a stale-head contradiction and must never
+        # count as exact-head evidence. It is surfaced as a contradiction regardless of the
+        # primary status, so a stale green can never hide behind a waiting/failed gate.
+        if stale_heads:
+            contradictions.extend(f"CHECK_STALE_HEAD:{gate}" for gate in sorted(stale_heads))
         if missing:
             status = "CI_WAITING"
             gaps.extend(f"CHECK_MISSING:{gate}" for gate in missing)
-        elif failed:
+        elif stale_heads:
+            status = "STALE_HEAD"
+        elif exact_failures or non_exact_failures:
             status = "CI_FAILED"
-            gaps.extend(f"CHECK_NOT_EXACT_SUCCESS:{gate}" for gate in sorted(failed))
+            gaps.extend(f"CHECK_FAILED:{gate}" for gate in sorted(exact_failures))
+            gaps.extend(f"CHECK_NOT_EXACT_SUCCESS:{gate}" for gate in sorted(non_exact_failures))
         else:
             reviews = [item for item in review_receipts or () if isinstance(item, Mapping)]
             if not reviews:
@@ -658,6 +696,11 @@ def evaluate_fleet_verdict(
                         if not valid_cross:
                             status = "CONTRADICTED"
                             contradictions.append("CROSS_TASK_CONFLICT_READBACK_NOT_EXACT")
+                        elif gate_contract_drift:
+                            # The live required-check contract no longer matches the plan.
+                            # A merge must not proceed against an un-reconciled gate contract.
+                            status = "BLOCKED_MISSING_EVIDENCE"
+                            gaps.append("REQUIRED_GATE_CONTRACT_NOT_RECONCILED")
                         else:
                             status = "MERGE_CANDIDATE"
 
@@ -706,6 +749,10 @@ def evaluate_fleet_verdict(
         "expectedHeadRevision": expected_head or None,
         "mergeRevision": merge_revision or None,
         "status": status,
+        "plannedGates": list(planned_gates),
+        "observedRequiredGates": list(observed_gates),
+        "arbitratedGates": list(arbitrated_gates),
+        "gateContractDrift": gate_contract_drift,
         "evidenceGaps": sorted(dict.fromkeys(gaps)),
         "contradictions": sorted(dict.fromkeys(contradictions)),
         "reviewEvidenceCount": len(review_receipts or ()),

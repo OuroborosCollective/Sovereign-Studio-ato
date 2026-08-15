@@ -317,3 +317,201 @@ def test_projection_marks_stale_main_as_command_blocker() -> None:
     assert projection["stale"] is True
     assert projection["commandsBlocked"] is True
     assert "MAIN_HEAD_STALE_OR_UNAVAILABLE" in projection["evidenceGaps"]
+
+
+def _full_verdict_setup(task_id: str, required_gates: tuple[str, ...]):
+    """Build a task, plan and assignment that reach the cross-task evidence stage."""
+    selected = task(task_id, expected_head_revision=HEAD, required_gates=required_gates)
+    plan = build_fleet_plan(
+        integration_id=f"fleet-{task_id}",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        base_revision=BASE,
+        tasks=[selected],
+    )
+    assignment = create_worker_assignment(
+        plan,
+        lane_id="lane-01",
+        task_id=task_id,
+        controller_run_id=f"run-{task_id}",
+        workspace_id=f"job-{task_id}",
+        workspace_branch=f"sovereign/chatgpt/{task_id}",
+        run_envelope_hash=RECEIPT,
+        capability_manifest_hash=RECEIPT,
+    )
+    return selected, assignment
+
+
+def _green_reviews() -> list[dict[str, object]]:
+    return [{
+        "reviewerId": "reviewer-independent",
+        "independent": True,
+        "status": "approved",
+        "headSha": HEAD,
+        "receiptSha256": RECEIPT,
+    }]
+
+
+def _green_cross() -> list[dict[str, object]]:
+    return [{
+        "status": "passed",
+        "headSha": HEAD,
+        "conflictsResolved": True,
+        "receiptSha256": RECEIPT,
+    }]
+
+
+def test_stale_green_check_is_stale_head_not_ci_failed() -> None:
+    """A green check bound to a different SHA is a stale-head contradiction, not CI failure."""
+    selected, assignment = _full_verdict_setup("task-stale-head", required_gates=("unit",))
+    stale_sha = "9" * 40
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "success", "headSha": stale_sha}],
+    )
+
+    assert verdict["status"] == "STALE_HEAD"
+    assert "CHECK_STALE_HEAD:unit" in verdict["contradictions"]
+    assert "CHECK_NOT_EXACT_SUCCESS:unit" not in verdict["evidenceGaps"]
+    assert verdict["gateContractDrift"] is False
+
+
+def test_stale_green_plus_missing_gate_surfaces_contradiction_while_waiting() -> None:
+    """A stale green cannot hide behind another gate still waiting; both must surface."""
+    selected, assignment = _full_verdict_setup("task-stale-and-wait", required_gates=("unit", "lint"))
+    stale_sha = "9" * 40
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[
+            {"gate": "unit", "status": "success", "headSha": stale_sha},
+            # 'lint' has no receipt yet
+        ],
+    )
+
+    assert verdict["status"] == "CI_WAITING"
+    assert "CHECK_MISSING:lint" in verdict["evidenceGaps"]
+    assert "CHECK_STALE_HEAD:unit" in verdict["contradictions"]
+
+
+def test_exact_head_failed_check_is_ci_failed() -> None:
+    """A check that genuinely failed at the exact head is CI_FAILED, not STALE_HEAD."""
+    selected, assignment = _full_verdict_setup("task-ci-failed", required_gates=("unit",))
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "failure", "headSha": HEAD}],
+    )
+
+    assert verdict["status"] == "CI_FAILED"
+    assert "CHECK_FAILED:unit" in verdict["evidenceGaps"]
+
+
+def test_observed_required_gate_contract_drift_blocks_merge() -> None:
+    """When the live required-check contract differs from the plan, merge is blocked.
+
+    All arbitrated gates (including the newly required one) have exact-head receipts, so
+    the verdict reaches the merge stage where the un-reconciled contract blocks it.
+    """
+    selected, assignment = _full_verdict_setup("task-drift", required_gates=("unit", "lint"))
+    receipts = [
+        {"gate": "unit", "status": "success", "headSha": HEAD},
+        {"gate": "lint", "status": "success", "headSha": HEAD},
+        {"gate": "audit", "status": "success", "headSha": HEAD},
+    ]
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=receipts,
+        review_receipts=_green_reviews(),
+        cross_task_receipts=_green_cross(),
+        observed_required_gates=("unit", "lint", "audit"),
+    )
+
+    assert verdict["status"] == "BLOCKED_MISSING_EVIDENCE"
+    assert verdict["gateContractDrift"] is True
+    assert "REQUIRED_GATE_CONTRACT_DRIFT" in verdict["contradictions"]
+    assert "REQUIRED_GATE_CONTRACT_NOT_RECONCILED" in verdict["evidenceGaps"]
+    assert verdict["mergeAuthorized"] is False
+    # The newly required gate is arbitrated, so it is not silently skipped.
+    assert "audit" in verdict["arbitratedGates"]
+    assert "audit" in verdict["observedRequiredGates"]
+
+
+def test_observed_required_gate_contract_reconciled_allows_merge_candidate() -> None:
+    """When the live contract matches the plan and all receipts exist, merge proceeds."""
+    selected, assignment = _full_verdict_setup("task-reconciled", required_gates=("unit", "lint"))
+    receipts = [
+        {"gate": "unit", "status": "success", "headSha": HEAD},
+        {"gate": "lint", "status": "success", "headSha": HEAD},
+    ]
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=receipts,
+        review_receipts=_green_reviews(),
+        cross_task_receipts=_green_cross(),
+        observed_required_gates=("unit", "lint"),
+    )
+
+    assert verdict["status"] == "MERGE_CANDIDATE"
+    assert verdict["gateContractDrift"] is False
+    assert verdict["mergeAuthorized"] is False
+
+
+def test_newly_required_gate_without_receipt_waits_for_evidence() -> None:
+    """A gate newly required by the live contract, with no receipt, blocks as waiting."""
+    selected, assignment = _full_verdict_setup("task-new-gate", required_gates=("unit",))
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "success", "headSha": HEAD}],
+        observed_required_gates=("unit", "audit"),
+    )
+
+    assert verdict["status"] == "CI_WAITING"
+    assert "CHECK_MISSING:audit" in verdict["evidenceGaps"]
+    assert verdict["gateContractDrift"] is True
+    assert "audit" in verdict["arbitratedGates"]
+
+
+def test_no_observed_contract_falls_back_to_planned_gates() -> None:
+    """Without a read-back contract the verdict arbitrates only over planned gates."""
+    selected, assignment = _full_verdict_setup("task-no-readback", required_gates=("unit",))
+
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "success", "headSha": HEAD}],
+    )
+
+    assert verdict["gateContractDrift"] is False
+    assert verdict["arbitratedGates"] == ["unit"]
+    assert verdict["observedRequiredGates"] == []
