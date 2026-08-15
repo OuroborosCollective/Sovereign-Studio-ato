@@ -367,7 +367,13 @@ def build_fleet_plan(
     """Build deterministic lanes and serialize anything that lacks proof of independence."""
 
     normalized_tasks = tuple(
-        item if isinstance(item, FleetTask) else FleetTask.from_dict(item)
+        # Route every task through ``from_dict`` so direct ``FleetTask`` instances and
+        # dict inputs produce the same canonical form (sorted string lists). Otherwise a
+        # plan built from a task with unsorted ``required_gates`` would change its
+        # ``plan_hash`` on a ``to_dict`` -> ``from_dict`` round-trip, breaking the
+        # hash-binding contract for any persisted/serialized plan.
+        FleetTask.from_dict(item.to_dict()) if isinstance(item, FleetTask)
+        else FleetTask.from_dict(item)
         for item in tasks
     )
     if not normalized_tasks:
@@ -751,24 +757,83 @@ def build_fleet_projection(
         if isinstance(item, Mapping)
     }
 
+    # A contradicted verdict means that task's bound evidence no longer describes a valid
+    # exact-head path. It blocks that lane (surfaced per-lane and in activeBlockers) but does
+    # not by itself invalidate the whole fleet projection: fleet-wide ``commandsBlocked`` stays
+    # tied to main-head drift so independent parallel lanes are not over-blocked.
+    # Statuses that hard-block a lane: the bound evidence no longer describes a valid
+    # exact-head path and the lane cannot proceed without external resolution. Waiting
+    # states (CI_WAITING, REVIEW_WAITING, CROSS_TASK_WAITING) are NOT blockers: their
+    # missing gates are surfaced as missingGates / evidenceGaps and the lane stays ACTIVE.
+    _BLOCKING_STATUSES = {
+        "STALE_HEAD",
+        "CONTRADICTED",
+        "BLOCKED_BASE_DRIFT",
+        "BLOCKED_HEAD_UNBOUND",
+        "BLOCKED_HEAD_MISMATCH",
+        "BLOCKED_WORKSPACE_HEAD_MISMATCH",
+        "BLOCKED_MISSING_EVIDENCE",
+    }
+
+    def _blocker_codes(verdict: Mapping[str, Any]) -> list[str]:
+        status = str(verdict.get("status") or "")
+        if status not in _BLOCKING_STATUSES:
+            return []
+        # For a hard-blocked verdict the evidence gaps are the concrete reasons it is
+        # blocked, so they are surfaced as blocker codes alongside the status itself.
+        codes: list[str] = [status]
+        for gap in verdict.get("evidenceGaps") or verdict.get("evidence_gaps") or ():
+            codes.append(str(gap))
+        return sorted(dict.fromkeys(codes))
+
+    # A contradicted verdict means that task's bound evidence no longer describes a valid
+    # exact-head path. It blocks that lane (surfaced per-lane and in activeBlockers) but does
+    # not by itself invalidate the whole fleet projection: fleet-wide ``commandsBlocked`` stays
+    # tied to main-head drift so independent parallel lanes are not over-blocked.
+    contradictions: set[str] = set()
+    active_blockers: set[str] = set()
+    source_receipt_hashes: set[str] = set()
     task_states: list[dict[str, Any]] = []
     for task in selected_plan.tasks:
         status = "PLANNED"
-        if task.task_id in assignment_by_task:
+        assignment = assignment_by_task.get(task.task_id)
+        if assignment:
             status = "ASSIGNED"
         event = event_by_task.get(task.task_id)
         if event:
             status = str(event.get("status") or event.get("eventType") or status)
         verdict = verdict_by_task.get(task.task_id)
+        verdict_status = ""
+        required_gates: list[str] = list(task.required_gates)
+        missing_gates: list[str] = []
+        blocker_codes: list[str] = []
         if verdict:
             status = str(verdict.get("status") or status)
+            verdict_status = status
             for gap in verdict.get("evidenceGaps") or verdict.get("evidence_gaps") or ():
                 evidence_gaps.add(str(gap))
+                if str(gap).startswith("CHECK_MISSING:"):
+                    missing_gates.append(str(gap)[len("CHECK_MISSING:"):])
+            for contradiction in verdict.get("contradictions") or ():
+                contradictions.add(str(contradiction))
+            for gate in verdict.get("arbitratedGates") or verdict.get("arbitrated_gates") or ():
+                if str(gate) not in required_gates:
+                    required_gates.append(str(gate))
+            blocker_codes = _blocker_codes(verdict)
+            active_blockers.update(blocker_codes)
+            for key in ("verdictHash", "verdict_hash"):
+                value = str(verdict.get(key) or "").strip().lower()
+                if value:
+                    source_receipt_hashes.add(value)
         task_states.append({
             "taskId": task.task_id,
             "sourceType": task.source_type,
             "sourceId": task.source_id,
             "status": status,
+            "verdictStatus": verdict_status or None,
+            "requiredGates": sorted(dict.fromkeys(required_gates)),
+            "missingGates": sorted(dict.fromkeys(missing_gates)),
+            "blockerCodes": sorted(dict.fromkeys(blocker_codes)),
             "expectedBaseRevision": task.expected_base_revision,
             "expectedHeadRevision": task.expected_head_revision or None,
         })
@@ -776,27 +841,67 @@ def build_fleet_projection(
     lanes = []
     for lane in selected_plan.lanes:
         lane_tasks = [state for state in task_states if state["taskId"] in lane.task_ids]
-        lane_status = (
-            "STALE" if stale
-            else "BLOCKED" if any(str(task["status"]).startswith("BLOCKED") for task in lane_tasks)
-            else "ACTIVE" if any(task["status"] not in {"PLANNED", "MERGED", "RUNTIME_VERIFIED"} for task in lane_tasks)
-            else "PLANNED"
-        )
-        lanes.append({**lane.to_dict(), "tasks": lane_tasks, "status": lane_status})
+        lane_verdicts = [
+            str(state.get("verdictStatus") or "") for state in lane_tasks
+            if state.get("verdictStatus")
+        ]
+        if stale:
+            lane_status = "STALE"
+        elif any(code for state in lane_tasks for code in state.get("blockerCodes", [])):
+            lane_status = "BLOCKED"
+        elif any(str(state.get("status")).startswith("BLOCKED") for state in lane_tasks):
+            lane_status = "BLOCKED"
+        elif any(state["status"] not in {"PLANNED", "MERGED", "RUNTIME_VERIFIED"} for state in lane_tasks):
+            lane_status = "ACTIVE"
+        else:
+            lane_status = "PLANNED"
+        lanes.append({
+            **lane.to_dict(),
+            "tasks": lane_tasks,
+            "status": lane_status,
+            "fleetVerdict": lane_verdicts[0] if lane_verdicts else None,
+            "requiredGates": sorted(
+                dict.fromkeys(gate for state in lane_tasks for gate in state.get("requiredGates", []))
+            ),
+            "missingGates": sorted(
+                dict.fromkeys(gate for state in lane_tasks for gate in state.get("missingGates", []))
+            ),
+            "blockerCodes": sorted(
+                dict.fromkeys(code for state in lane_tasks for code in state.get("blockerCodes", []))
+            ),
+        })
+
+    aggregate_counts = {
+        "lanes": len(lanes),
+        "tasks": len(task_states),
+        "mergeCandidates": sum(1 for state in task_states if state.get("status") == "MERGE_CANDIDATE"),
+        "runtimeVerified": sum(1 for state in task_states if state.get("status") == "RUNTIME_VERIFIED"),
+        "contradicted": sum(1 for state in task_states if state.get("verdictStatus") == "CONTRADICTED"),
+        "staleHead": sum(1 for state in task_states if state.get("verdictStatus") == "STALE_HEAD"),
+        "blocked": sum(1 for state in task_states if str(state.get("status")).startswith("BLOCKED")),
+        "missingEvidence": len(evidence_gaps),
+        "contradictions": len(contradictions),
+    }
 
     payload = {
         "schemaVersion": SCHEMA_VERSION,
         "status": "FLEET_STALE" if stale else "FLEET_PROJECTED",
         "readOnly": True,
         "mutationPerformed": False,
+        "integrationId": selected_plan.integration_id,
+        "repository": selected_plan.repository,
         "planHash": selected_plan.plan_hash,
         "baseRevision": selected_plan.base_revision,
         "observedMainRevision": observed or None,
+        "projectionBuiltFromReceiptHashes": sorted(source_receipt_hashes),
         "stale": stale,
         "commandsBlocked": stale,
         "nextEligibleActions": ["REPLAN"] if stale else ["READBACK", "ASSIGN_THROUGH_EXISTING_CONTROLLER"],
         "lanes": lanes,
         "tasks": task_states,
+        "aggregateCounts": aggregate_counts,
+        "activeBlockers": sorted(active_blockers),
+        "contradictions": sorted(contradictions),
         "evidenceGaps": sorted(evidence_gaps),
     }
     return {**payload, "projectionHash": stable_hash(payload)}

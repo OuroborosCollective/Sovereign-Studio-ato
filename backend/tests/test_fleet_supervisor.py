@@ -317,3 +317,195 @@ def test_projection_marks_stale_main_as_command_blocker() -> None:
     assert projection["stale"] is True
     assert projection["commandsBlocked"] is True
     assert "MAIN_HEAD_STALE_OR_UNAVAILABLE" in projection["evidenceGaps"]
+
+
+# --- Fleet 4/4: status projection extension (#1309) --------------------------------
+
+
+def _verdict_plan_and_assignment(*, required_gates=("unit", "lint")):
+    selected = task(
+        "task-proj",
+        expected_head_revision=HEAD,
+        required_gates=tuple(required_gates),
+    )
+    plan = build_fleet_plan(
+        integration_id="fleet-projection-1309",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        base_revision=BASE,
+        tasks=[selected],
+    )
+    assignment = create_worker_assignment(
+        plan,
+        lane_id="lane-01",
+        task_id="task-proj",
+        controller_run_id="run-proj",
+        workspace_id="job-proj",
+        workspace_branch="sovereign/chatgpt/proj",
+        run_envelope_hash=RECEIPT,
+        capability_manifest_hash=RECEIPT,
+    )
+    return selected, plan, assignment
+
+
+def test_projection_surfaces_verdict_gates_blockers_and_aggregate_counts() -> None:
+    selected, plan, assignment = _verdict_plan_and_assignment()
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "success", "headSha": HEAD}],
+    )
+    assert verdict["status"] == "CI_WAITING"
+
+    projection = build_fleet_projection(
+        plan,
+        assignments=[assignment.to_dict()],
+        verdicts=[verdict],
+        observed_main_revision=BASE,
+    )
+
+    assert projection["schemaVersion"] == "sovereign.fleet.v1"
+    assert projection["readOnly"] is True
+    assert projection["mutationPerformed"] is False
+    assert projection["stale"] is False
+    assert projection["commandsBlocked"] is False
+    assert projection["integrationId"] == "fleet-projection-1309"
+    assert projection["repository"] == "OuroborosCollective/Sovereign-Studio-ato"
+
+    task_state = projection["tasks"][0]
+    assert task_state["verdictStatus"] == "CI_WAITING"
+    # arbitrated required gates surfaced (unit satisfied, lint still missing)
+    assert "unit" in task_state["requiredGates"]
+    assert "lint" in task_state["requiredGates"]
+    assert "lint" in task_state["missingGates"]
+    assert "CHECK_MISSING:lint" in projection["evidenceGaps"]
+
+    lane = projection["lanes"][0]
+    assert lane["status"] == "ACTIVE"
+    assert lane["fleetVerdict"] == "CI_WAITING"
+    assert "lint" in lane["missingGates"]
+
+    counts = projection["aggregateCounts"]
+    assert counts["lanes"] == 1
+    assert counts["tasks"] == 1
+    assert counts["missingEvidence"] == len(projection["evidenceGaps"])
+    assert counts["blocked"] == 0
+
+    # projection is rebuildable and hash-bound to its source receipt
+    assert projection["projectionBuiltFromReceiptHashes"] == [verdict["verdictHash"]]
+    rebuilt = build_fleet_projection(
+        plan,
+        assignments=[assignment.to_dict()],
+        verdicts=[verdict],
+        observed_main_revision=BASE,
+    )
+    assert rebuilt["projectionHash"] == projection["projectionHash"]
+
+
+def test_projection_surfaces_blocker_codes_and_blocks_lane_without_overblocking_fleet() -> None:
+    selected, plan, assignment = _verdict_plan_and_assignment()
+    # Drift observed base -> BLOCKED_BASE_DRIFT with a blocker gap code
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=HEAD,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+    )
+    assert verdict["status"] == "BLOCKED_BASE_DRIFT"
+
+    projection = build_fleet_projection(
+        plan,
+        assignments=[assignment.to_dict()],
+        verdicts=[verdict],
+        observed_main_revision=BASE,
+    )
+
+    task_state = projection["tasks"][0]
+    assert task_state["verdictStatus"] == "BLOCKED_BASE_DRIFT"
+    assert "BLOCKED_BASE_DRIFT" in task_state["blockerCodes"]
+    assert "EXACT_BASE_MISMATCH" in task_state["blockerCodes"]
+
+    lane = projection["lanes"][0]
+    assert lane["status"] == "BLOCKED"
+    assert "BLOCKED_BASE_DRIFT" in lane["blockerCodes"]
+
+    assert "BLOCKED_BASE_DRIFT" in projection["activeBlockers"]
+    assert projection["aggregateCounts"]["blocked"] == 1
+
+    # A single lane's contradiction must NOT over-block the whole fleet: main head still
+    # matches the plan base, so fleet-wide commands stay eligible.
+    assert projection["stale"] is False
+    assert projection["commandsBlocked"] is False
+    assert projection["status"] == "FLEET_PROJECTED"
+
+
+def test_projection_collects_verdict_contradictions() -> None:
+    selected, plan, assignment = _verdict_plan_and_assignment()
+    # Both required gates pass, but the independent review is not proven exact
+    # (receipt hash is malformed) -> CONTRADICTED with a contradiction code.
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[
+            {"gate": "unit", "status": "success", "headSha": HEAD},
+            {"gate": "lint", "status": "success", "headSha": HEAD},
+        ],
+        review_receipts=[{
+            "reviewerId": "reviewer-bad",
+            "independent": True,
+            "status": "approved",
+            "headSha": HEAD,
+            "receiptSha256": "not-a-valid-hash",
+        }],
+    )
+    assert verdict["status"] == "CONTRADICTED"
+    assert "INDEPENDENT_REVIEW_NOT_EXACT_OR_NOT_PROVEN" in verdict["contradictions"]
+
+    projection = build_fleet_projection(
+        plan,
+        assignments=[assignment.to_dict()],
+        verdicts=[verdict],
+        observed_main_revision=BASE,
+    )
+
+    assert projection["aggregateCounts"]["contradicted"] == 1
+    assert projection["contradictions"] == verdict["contradictions"]
+    assert projection["tasks"][0]["verdictStatus"] == "CONTRADICTED"
+    # CONTRADICTED blocks its lane
+    assert projection["lanes"][0]["status"] == "BLOCKED"
+    # but does not stale the whole fleet while main head still matches base
+    assert projection["stale"] is False
+
+
+def test_projection_is_deterministic_across_dict_and_object_inputs() -> None:
+    selected, plan, assignment = _verdict_plan_and_assignment()
+    verdict = evaluate_fleet_verdict(
+        selected,
+        assignment=assignment,
+        observed_base_revision=BASE,
+        observed_head_revision=HEAD,
+        workspace_head_revision=HEAD,
+        check_receipts=[{"gate": "unit", "status": "success", "headSha": HEAD}],
+    )
+
+    from_object = build_fleet_projection(
+        plan,
+        assignments=[assignment.to_dict()],
+        verdicts=[verdict],
+        observed_main_revision=BASE,
+    )
+    from_dict = build_fleet_projection(
+        plan.to_dict(),
+        assignments=[assignment.to_dict()],
+        verdicts=[verdict],
+        observed_main_revision=BASE,
+    )
+    assert from_object == from_dict
+    assert from_object["planHash"] == plan.plan_hash
+    assert from_object["projectionHash"] == from_dict["projectionHash"]
