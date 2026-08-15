@@ -416,6 +416,9 @@ jobs:
               -o HostKeyAlgorithms=ssh-ed25519 \
               -o IdentitiesOnly=yes \
               -o ConnectTimeout=30 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=40 \
+              -o TCPKeepAlive=yes \
               root@46.202.154.25 \
               > .sovereign-evidence/independent-target-runtime-receipt.json
 
