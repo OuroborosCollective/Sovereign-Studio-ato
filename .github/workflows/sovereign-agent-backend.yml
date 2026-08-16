@@ -43,6 +43,7 @@ jobs:
           set +e
           pytest scripts/sovereign-backend/tests \
             backend/tests/test_agent_runtime_routes.py \
+            backend/tests/test_execution_transparency_statement.py \
             backend/tests/test_configuration_provenance.py \
             backend/tests/test_configuration_provenance_mirror.py \
             backend/tests/test_configuration_provenance_parity.py \
@@ -53,6 +54,12 @@ jobs:
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"
+
+      - name: Run N+1 malformed JSON regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest backend/tests/test_n1_json_validation.py -q
 
       - name: Validate Sovereign Brain Projection (advisory)
         id: brain_projection
