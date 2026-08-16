@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import importlib.util
 import os
 import sys
@@ -456,3 +457,31 @@ def test_canonical_and_mirror_cag_adapters_are_byte_equal():
         lowered = canonical.lower()
         assert b"firebase-tools" not in lowered
         assert b"firestore" not in lowered
+
+
+def test_adapters_package_reexports_supplemental_only():
+    """Every name in adapters.__all__ must be importable from the package.
+
+    Regression guard: an earlier change extended wolfram_agenttools with CAG
+    adapters but dropped ``SUPPLEMENTAL_ONLY`` from the package import block
+    while still listing it in ``__all__``, so
+    ``from agent_runtime.adapters import SUPPLEMENTAL_ONLY`` raised
+    ``ImportError``. The mirror at scripts/sovereign-backend must stay
+    byte-equal, so it is exercised through the same path.
+    """
+    adapters_pkg = _load_module(
+        f"{_PACKAGE}.adapters",
+        ROOT / "backend" / "agent_runtime" / "adapters" / "__init__.py",
+    )
+    adapters_pkg.__path__ = [
+        str(ROOT / "backend" / "agent_runtime" / "adapters")
+    ]
+    assert "SUPPLEMENTAL_ONLY" in adapters_pkg.__all__
+    # Every advertised public name must resolve through the package re-export.
+    for name in adapters_pkg.__all__:
+        assert hasattr(adapters_pkg, name), (
+            f"adapters.__all__ advertises {name!r} but it is not importable "
+            f"from the package; the import block in __init__.py is stale."
+        )
+    assert adapters_pkg.SUPPLEMENTAL_ONLY == "SUPPLEMENTAL_ONLY"
+    assert adapters_pkg.CAG_SUPPLEMENTAL_ONLY == adapters_pkg.SUPPLEMENTAL_ONLY
