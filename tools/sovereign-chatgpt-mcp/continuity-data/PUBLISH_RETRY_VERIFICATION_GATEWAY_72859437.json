@@ -1,0 +1,19 @@
+{
+  "schema": "sovereign.publication-retry.v1",
+  "project": "sovereign-verification-gateway-a2a",
+  "workspaceId": "job-fd3efac696f5",
+  "branch": "sovereign/chatgpt/1786897666-verification-gateway-a2a-b6494b",
+  "baseRevision": "5dbe8a750b0d40f11cc3800ea091db945c9d2a49",
+  "implementationHead": "728594373c0ec2ff13c032c21ccccaa5f5d6f92c",
+  "reason": "Retry Draft-PR publication of the already committed and tested Verification Gateway after the publication wrapper previously stopped on a clean committed workspace.",
+  "scope": "publication-metadata-only",
+  "productCodeChangedByReceipt": false,
+  "ownerAuthorization": "GitHub write and administrative access approved for correct publication handling.",
+  "intendedEffect": "publish-existing-branch-as-draft-pr",
+  "excludedEffects": [
+    "merge",
+    "deployment",
+    "production-migration"
+  ],
+  "truthBoundary": "This receipt records the publication retry intent and exact pre-publication revision only. GitHub publication success requires authenticated PR readback."
+}
