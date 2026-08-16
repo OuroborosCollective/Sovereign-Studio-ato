@@ -18,6 +18,7 @@ import { WorkflowRepairPanel } from './WorkflowRepairPanel';
 import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
+import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -825,6 +826,66 @@ describe('Palette Accessibility Enhancements', () => {
       submitBtn = screen.getByRole('button', { name: 'Repo-Snapshot wird geladen…' });
       expect(submitBtn).toBeDisabled();
       expect(submitBtn).toHaveAttribute('title', 'Repository-Snapshot wird geladen…');
+    });
+  });
+
+  describe('ErrorCategoriesPanel Accessibility and Hover Discoverability Enhancements', () => {
+    it('renders with section aria-label and native hover tooltips on badges, cards, and buttons', () => {
+      const mockRegistry = {
+        findings: [
+          {
+            id: 'find-1',
+            category: 'type-error' as const,
+            severity: 'critical' as const,
+            title: 'Unresolved TypeScript Type Error',
+            description: 'Type mismatch in component props',
+            fixTips: 'Fix type definition',
+            filePath: 'src/components/MyComponent.tsx',
+            confidence: 0.9,
+            hits: 1,
+            status: 'active' as const,
+          },
+          {
+            id: 'find-2',
+            category: 'security-leak' as const,
+            severity: 'high' as const,
+            title: 'Exposed Hardcoded Secret',
+            description: 'Found API key string',
+            fixTips: 'Move to env var',
+            filePath: 'src/config.ts',
+            confidence: 0.95,
+            hits: 1,
+            status: 'resolved' as const,
+          },
+        ],
+        runs: [],
+      };
+
+      const onFindingClick = vi.fn();
+
+      render(<ErrorCategoriesPanel registry={mockRegistry} onFindingClick={onFindingClick} />);
+
+      const section = screen.getByRole('region', { name: 'Fehlerkategorien Übersicht' });
+      expect(section).toBeInTheDocument();
+
+      const statusBadge = screen.getByText('1 aktiv · 1 gelöst');
+      expect(statusBadge).toHaveAttribute('title', '1 aktive Findings, 1 gelöst');
+
+      const criticalCard = screen.getByTitle('1 kritisch-Findings');
+      expect(criticalCard).toBeInTheDocument();
+
+      const findingCategoryBadge = screen.getByTitle('1 aktive TypeScript-Findings');
+      expect(findingCategoryBadge).toBeInTheDocument();
+
+      const findingBtn = screen.getByRole('button', { name: /Unresolved TypeScript Type Error/i });
+      expect(findingBtn).toHaveAttribute('title', 'Finding anzeigen: Unresolved TypeScript Type Error');
+      expect(findingBtn).toHaveClass('focus-visible:ring-2');
+
+      const filePathElement = screen.getByTitle('src/components/MyComponent.tsx');
+      expect(filePathElement).toBeInTheDocument();
+
+      fireEvent.click(findingBtn);
+      expect(onFindingClick).toHaveBeenCalledWith(mockRegistry.findings[0]);
     });
   });
 });
