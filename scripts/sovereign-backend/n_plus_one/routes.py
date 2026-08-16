@@ -262,7 +262,9 @@ def register_n_plus_one_routes(
     @app.route("/api/n-plus-one/voice/synthesize", methods=["POST"])
     @require_admin
     def n_plus_one_voice_synthesize():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
         text = str(body.get("text") or "")
         mood = str(body.get("mood") or "neutral")
         api_key = (
@@ -357,9 +359,12 @@ def register_n_plus_one_routes(
     @app.route("/api/n-plus-one/learning-candidates", methods=["POST"])
     @require_session
     def n_plus_one_create_learning_candidate():
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
         try:
             normalized = normalize_learning_candidate(
-                request.get_json(force=True) or {},
+                body,
                 user_id=request.session_user_id,
             )
         except ValueError as exc:
@@ -427,7 +432,9 @@ def register_n_plus_one_routes(
     @app.route("/api/n-plus-one/linguistic/observe", methods=["POST"])
     @require_session
     def n_plus_one_linguistic_observe():
-        body = request.get_json(force=True) or {}
+        body = request.get_json(force=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
         text = str(body.get("text") or "")
         try:
             rules = query(
