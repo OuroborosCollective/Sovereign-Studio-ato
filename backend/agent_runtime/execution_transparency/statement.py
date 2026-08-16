@@ -12,10 +12,13 @@ Privacy / secret safety
 The exported statement never carries raw prompts, chain-of-thought, source-code
 contents, database rows, access tokens / PATs / API keys, provider answers, full
 tool outputs, secrets or PII. Only identity hashes and bounded effect metadata
-survive the projection. The canonicalization and secret-safety logic is reused
-from ``agent_run_receipts`` (``canonical_value`` / ``canonical_sha256``); it is
-not copied. Any secret-shaped field that attempts to enter the statement body
-fails closed via :class:`agent_runtime.agent_run_receipts.ReceiptContractError`.
+survive the projection. The raw ``operation_identity`` is hashed before export,
+just like ``agent_run_id``, so the internal receipt's free-form string cannot leak
+a secret or PII value through a key-safe field. The canonicalization and
+secret-safety logic is reused from ``agent_run_receipts`` (``canonical_value`` /
+``canonical_sha256``); it is not copied. Any secret-shaped field that attempts to
+enter the statement body fails closed via
+:class:`agent_runtime.agent_run_receipts.ReceiptContractError`.
 
 Canonicalization
 ----------------
@@ -138,6 +141,22 @@ def _hash_agent_run_id(agent_run_id: str) -> str:
     normalized = _normalize_string(str(agent_run_id or "").strip())
     if not normalized:
         raise TransparencyBlocked("AGENT_RUN_ID_MISSING", "agent run id is required for the statement")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _hash_operation_identity(operation_identity: str) -> str:
+    """Hash the free-form internal operation identity before public projection.
+
+    ``agent_run_receipts`` deliberately permits ``operation_identity`` as a
+    canonical string and its secret guard rejects secret-shaped *keys*, not
+    arbitrary string values. Exporting that string verbatim would therefore make
+    the privacy claim stronger than the actual contract. The external statement
+    keeps only its deterministic SHA-256 identity.
+    """
+
+    normalized = _normalize_string(str(operation_identity or "").strip())
+    if not normalized:
+        raise TransparencyBlocked("OPERATION_IDENTITY_MISSING", "operation identity is required for the statement")
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
@@ -271,9 +290,7 @@ def privacy_minimized_statement(
             )
 
     agent_run_id_sha256 = _hash_agent_run_id(body.get("agent_run_id"))
-    operation_identity = _normalize_string(str(body.get("operation_identity") or "").strip())
-    if not operation_identity:
-        raise TransparencyBlocked("OPERATION_IDENTITY_MISSING", "operation identity is required for the statement")
+    operation_identity = _hash_operation_identity(body.get("operation_identity"))
 
     statement = AgentExecutionTransparencyStatement(
         schema_version=STATEMENT_SCHEMA_VERSION,

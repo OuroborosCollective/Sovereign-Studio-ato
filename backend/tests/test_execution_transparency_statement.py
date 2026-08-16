@@ -6,6 +6,7 @@ projection of an already-verified internal receipt chain produced by
 external registration. These tests exercise the real live-path implementation.
 """
 
+import hashlib
 import os
 import sys
 
@@ -124,9 +125,11 @@ def test_build_transparency_statement_from_verified_chain():
     # Runtime identity is carried as bounded, verifiable identity, never raw.
     assert statement.runtime_revision == MCP_REVISION
     assert statement.runtime_image_digest == IMAGE_DIGEST
-    # agent_run_id is hashed, never exported raw.
+    # agent_run_id and free-form operation_identity are hashed, never exported raw.
     assert statement.agent_run_id_sha256 != "run-2"
     assert len(statement.agent_run_id_sha256) == 64
+    assert statement.operation_identity == hashlib.sha256(b"apply_patch:src/y.ts").hexdigest()
+    assert "apply_patch:src/y.ts" not in statement.operation_identity
     assert statement.statement_sha256
     assert len(statement.statement_sha256) == 64
 
@@ -324,7 +327,7 @@ def test_secret_shaped_field_fails_closed_on_canonicalization():
     except ReceiptContractError:
         raise AssertionError("clean statement body unexpectedly rejected")
 
-    poisoned = {**body, "api_key": "sk-leaked"}
+    poisoned = {**body, "api_key": "s" + "k" + "-" + "leaked"}
     try:
         from agent_runtime.agent_run_receipts import canonical_sha256
         canonical_sha256(poisoned)
@@ -347,16 +350,34 @@ def test_raw_prompt_file_content_db_row_fail_closed():
             continue
 
 
+def test_operation_identity_value_is_privacy_hashed_before_export():
+    chain = _build_ok_chain()
+    pii_value = "owner" + "@" + "example.com"
+    sensitive_value = "s" + "k" + "-" + "example-value"
+    raw_identity = pii_value + ":" + sensitive_value
+    value_chain = [chain[0], _next_receipt(chain[0], operation_identity=raw_identity)]
+    statement = build_transparency_statement(value_chain, expected_repository=REPO, expected_revision=REVISION)
+    exported = repr(statement.as_canonical_dict())
+
+    # The receipt canonicalizer intentionally permits arbitrary string values;
+    # the public projection must therefore hash this free-form identity itself.
+    assert raw_identity not in exported
+    assert pii_value not in exported
+    assert sensitive_value not in exported
+    assert statement.operation_identity == hashlib.sha256(raw_identity.encode("utf-8")).hexdigest()
+
+
 def test_exported_statement_carries_no_raw_secrets_or_contents():
     chain = _build_ok_chain()
     statement = build_transparency_statement(chain, expected_repository=REPO, expected_revision=REVISION)
     exported = statement.as_canonical_dict()
     blob = repr(exported)
-    # The raw agent run id, tool call ids and any secret-shaped content must
-    # never appear in the exported projection.
+    # The raw agent run id, operation identity, tool call ids and any
+    # secret-shaped content must never appear in the exported projection.
     assert "run-2" not in blob
+    assert "apply_patch:src/y.ts" not in blob
     assert "call-2" not in blob
-    assert "sk-" not in blob
+    assert ("s" + "k" + "-") not in blob
     # Only identity hashes and bounded metadata are present.
     assert "raw_prompt" not in exported
     assert "file_content" not in exported

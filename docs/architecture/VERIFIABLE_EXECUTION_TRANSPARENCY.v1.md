@@ -90,7 +90,7 @@ The exported statement never carries:
 - full tool outputs,
 - secrets / PII.
 
-The raw `agent_run_id` is hashed (`agent_run_id_sha256`) before export. Only identity hashes and bounded effect metadata survive the projection. Canonicalization and secret-safety logic is **reused** from `agent_run_receipts` (`canonical_value` / `canonical_sha256`), not copied. Any secret-shaped field that attempts to enter the canonical body fails closed via `ReceiptContractError` (the same gate used by receipts). `REDACTED_FIELDS` is a fixed declaration documenting exactly what is never exported.
+The raw `agent_run_id` is hashed (`agent_run_id_sha256`) before export. The internal `operation_identity` is also a free-form receipt string, so the external `operation_identity` field carries only its deterministic lowercase SHA-256 identity; the raw operation string never crosses the export boundary. This closes the value-level gap left by the shared canonicalizer, whose secret-safety contract rejects secret-shaped keys but deliberately does not classify arbitrary string values. Only identity hashes and bounded effect metadata survive the projection. Canonicalization and secret-safety logic is **reused** from `agent_run_receipts` (`canonical_value` / `canonical_sha256`), not copied. Any secret-shaped field that attempts to enter the canonical body fails closed via `ReceiptContractError` (the same gate used by receipts). `REDACTED_FIELDS` is a fixed declaration documenting exactly what is never exported.
 
 ## Canonicalization
 
@@ -122,7 +122,8 @@ Coverage:
 - effect `none` → blocked;
 - secret-shaped field (api_key, raw_prompt, file_content, database_row, prompt_text, cookie, private_key) → fail closed;
 - floats in identity fields → fail closed;
-- exported statement carries no raw secrets, raw ids, or contents;
+- exported statement carries no raw secrets, raw ids, raw operation identity, or contents;
+- a free-form operation identity containing PII-like and sensitive-looking text is exported only as its deterministic SHA-256 identity;
 - statement has no registration / signature / external-effect keys (projection only);
 - non-positive (BLOCKED) receipt projects without runtime identity.
 
