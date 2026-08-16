@@ -244,6 +244,7 @@ jobs:
           tests/test_agent_workspace_provisioner.py \
           tests/test_agent_job_lifecycle.py \
           tests/test_agent_runtime_routes.py \
+          tests/test_execution_transparency_statement.py \
           tests/test_agent_tool_policy.py \
           tests/test_agent_internal_tools.py \
           tests/test_agent_tool_routes.py \
