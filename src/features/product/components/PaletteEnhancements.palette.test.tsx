@@ -499,9 +499,19 @@ describe('Palette Accessibility Enhancements', () => {
 
       render(<AutoCodeReviewCard result={mockResult as any} onCancel={handleCancel} />);
 
+      const article = screen.getByRole('article', { name: 'Code Review Ergebnis' });
+      expect(article).toBeInTheDocument();
+
+      const highBadge = screen.getByTitle('1 hohe Schwachstellen (HIGH)');
+      expect(highBadge).toBeInTheDocument();
+
+      const findingCard = screen.getByTitle('Schwachstelle in src/features/product/components/AutoCodeReviewCard.tsx (L10): Security (HIGH)');
+      expect(findingCard).toBeInTheDocument();
+
       const findingsBtn = screen.getByRole('button', { name: /Findings/i });
       expect(findingsBtn).toHaveAttribute('aria-expanded', 'true');
       expect(findingsBtn).toHaveAttribute('title', 'Gefundene Schwachstellen ausblenden');
+      expect(findingsBtn).toHaveClass('focus-visible:ring-2');
 
       // Click to toggle/close findings
       fireEvent.click(findingsBtn);
@@ -510,6 +520,7 @@ describe('Palette Accessibility Enhancements', () => {
 
       const backBtn = screen.getByRole('button', { name: /Zurück zum Fix/i });
       expect(backBtn).toHaveAttribute('title', 'Zurück zum Fix-Workflow wechseln');
+      expect(backBtn).toHaveClass('focus-visible:ring-2');
     });
   });
 
