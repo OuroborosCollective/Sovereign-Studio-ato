@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -103,6 +104,26 @@ def _scoped_reconcile_fixture(
     backend_digest = "sha256:" + "b" * 64
     mcp_digest = "sha256:" + "c" * 64
     previous_digest = "sha256:" + "e" * 64
+    # Bind the backend env pointer the installer would have persisted. The
+    # managed runtime.env stores only the sanctioned pointer; the real secret
+    # backend env file is a separate regular file. Secret contents are never
+    # read by the reconciler.
+    backend_env_file = tmp_path / "backend.env"
+    backend_env_file.write_text("SOVEREIGN_OWNER_REQUEST_KEY=not-a-secret-fixture\n", "utf-8")
+    os.chmod(backend_env_file, 0o600)
+    managed_env_file = tmp_path / "runtime.env"
+    managed_env_file.write_text(
+        f"SOVEREIGN_BACKEND_ENV_FILE={backend_env_file}\n",
+        "utf-8",
+    )
+    os.chmod(managed_env_file, 0o600)
+    monkeypatch.setattr(module, "MANAGED_RUNTIME_ENV", managed_env_file)
+    # The sanctioned set is a production contract; in the test sandbox the
+    # backend env file lives under tmp_path, so the membership check still runs
+    # against a known allow-list rather than being bypassed.
+    monkeypatch.setattr(
+        module, "SANCTIONED_BACKEND_ENV_PATHS", frozenset({str(backend_env_file)})
+    )
     scope = {
         "revision": revision,
         "releaseGateRunId": 91,
@@ -527,6 +548,140 @@ def test_mcp_component_evidence_stays_unknown_when_only_backend_mutated(
     assert "mutationPerformed" not in result["mcpUpdate"]
     assert result["rollback"]["attempted"] is True
     assert len(command_calls) == 2
+
+
+def test_backend_deploy_subprocess_receives_installer_selected_env_file(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    captured: dict[str, Any] = {}
+
+    def capturing_command(argv, *, timeout=None, stage=None, environment=None):
+        captured["argv"] = list(argv)
+        captured["stage"] = stage
+        captured["environment"] = dict(environment) if environment else {}
+        return {"receipt": {"ok": True}, "outputSha256": "a" * 64}
+
+    monkeypatch.setattr(module, "_command_json", capturing_command)
+    monkeypatch.setattr(
+        module,
+        "_deploy_mcp_from_ci_scope",
+        lambda *_args, **_kwargs: {"status": "DEPLOYED", "revision": scope["revision"]},
+    )
+    monkeypatch.setattr(
+        module, "_runtime_readback", lambda *_args, **_kwargs: {"backend": {}, "mcp": {}, "broker": {}, "patchmon": {"status": "VERIFIED"}}
+    )
+
+    result = module.reconcile()
+
+    assert result["status"] == "COORDINATED_RELEASE_DEPLOYED"
+    env_file = result["backendDeploy"]["backendEnvFile"]
+    assert env_file == str(tmp_path / "backend.env")
+    assert env_file in module.SANCTIONED_BACKEND_ENV_PATHS
+    assert captured["environment"]["SOVEREIGN_BACKEND_ENV_FILE"] == env_file
+    assert captured["stage"] == "backend_deploy"
+    assert str(module.BACKEND_DEPLOY) in captured["argv"][0]
+
+
+def test_backend_rollback_subprocess_reuses_installer_selected_env_file(
+    monkeypatch, tmp_path
+) -> None:
+    module, scope, _previous_backend, _current_backend = _scoped_reconcile_fixture(
+        monkeypatch, tmp_path
+    )
+    captured_envs: list[str] = []
+
+    def capturing_command(argv, *, timeout=None, stage=None, environment=None):
+        captured_envs.append(
+            environment.get("SOVEREIGN_BACKEND_ENV_FILE", "") if environment else ""
+        )
+        return {"receipt": {"ok": True}, "outputSha256": "b" * 64}
+
+    monkeypatch.setattr(module, "_command_json", capturing_command)
+
+    def failed_mcp_preflight(*_args, **_kwargs):
+        raise module.ReconcileError(
+            "mcp_deploy",
+            "exit=1;outputSha256=" + "9" * 64,
+            safe_evidence={
+                "outputSha256": "9" * 64,
+                "installerDiagnostic": {
+                    "stage": "preflight",
+                    "rollbackAttempted": False,
+                },
+            },
+        )
+
+    monkeypatch.setattr(module, "_deploy_mcp_from_ci_scope", failed_mcp_preflight)
+
+    result = module.reconcile()
+
+    assert result["status"] == "MCP_UPDATE_FAILED_BACKEND_ROLLBACK_ATTEMPTED"
+    # Two subprocesses: backend deploy then backend rollback; both share the
+    # installer-selected canonical env pointer.
+    assert len(captured_envs) == 2
+    assert captured_envs[0] == captured_envs[1]
+    assert captured_envs[0] == str(tmp_path / "backend.env")
+    assert captured_envs[0] in module.SANCTIONED_BACKEND_ENV_PATHS
+
+
+def test_backend_env_resolver_fails_closed_when_managed_env_missing(monkeypatch, tmp_path) -> None:
+    module = _load()
+    monkeypatch.setattr(module, "MANAGED_RUNTIME_ENV", tmp_path / "absent.env")
+    monkeypatch.setattr(
+        module, "SANCTIONED_BACKEND_ENV_PATHS", frozenset({str(tmp_path / "backend.env")})
+    )
+    with pytest.raises(module.ReconcileError) as caught:
+        module._resolve_backend_env_file()
+    assert caught.value.stage == "backend_env_binding"
+
+
+def test_backend_env_resolver_fails_closed_when_pointer_unsanctioned(monkeypatch, tmp_path) -> None:
+    module = _load()
+    unsanctioned = tmp_path / "evil.env"
+    unsanctioned.write_text("KEY=not-a-secret-fixture\n", "utf-8")
+    managed_env_file = tmp_path / "runtime.env"
+    managed_env_file.write_text(f"SOVEREIGN_BACKEND_ENV_FILE={unsanctioned}\n", "utf-8")
+    monkeypatch.setattr(module, "MANAGED_RUNTIME_ENV", managed_env_file)
+    monkeypatch.setattr(
+        module, "SANCTIONED_BACKEND_ENV_PATHS", frozenset({str(tmp_path / "sanctioned.env")})
+    )
+    with pytest.raises(module.ReconcileError) as caught:
+        module._resolve_backend_env_file()
+    assert caught.value.stage == "backend_env_binding"
+
+
+def test_backend_env_resolver_fails_closed_when_pointer_is_symlink(monkeypatch, tmp_path) -> None:
+    module = _load()
+    real_env = tmp_path / "backend.env"
+    real_env.write_text("KEY=not-a-secret-fixture\n", "utf-8")
+    symlinked_env = tmp_path / "linked.env"
+    symlinked_env.symlink_to(real_env)
+    managed_env_file = tmp_path / "runtime.env"
+    managed_env_file.write_text(f"SOVEREIGN_BACKEND_ENV_FILE={symlinked_env}\n", "utf-8")
+    monkeypatch.setattr(module, "MANAGED_RUNTIME_ENV", managed_env_file)
+    monkeypatch.setattr(
+        module, "SANCTIONED_BACKEND_ENV_PATHS", frozenset({str(symlinked_env)})
+    )
+    with pytest.raises(module.ReconcileError) as caught:
+        module._resolve_backend_env_file()
+    assert caught.value.stage == "backend_env_binding"
+
+
+def test_backend_env_resolver_fails_closed_when_sanctioned_file_missing(monkeypatch, tmp_path) -> None:
+    module = _load()
+    sanctioned_but_absent = tmp_path / "backend.env"
+    managed_env_file = tmp_path / "runtime.env"
+    managed_env_file.write_text(f"SOVEREIGN_BACKEND_ENV_FILE={sanctioned_but_absent}\n", "utf-8")
+    monkeypatch.setattr(module, "MANAGED_RUNTIME_ENV", managed_env_file)
+    monkeypatch.setattr(
+        module, "SANCTIONED_BACKEND_ENV_PATHS", frozenset({str(sanctioned_but_absent)})
+    )
+    with pytest.raises(module.ReconcileError) as caught:
+        module._resolve_backend_env_file()
+    assert caught.value.stage == "backend_env_binding"
 
 
 def test_command_failure_returns_only_bounded_diagnostics_and_output_hash(monkeypatch) -> None:

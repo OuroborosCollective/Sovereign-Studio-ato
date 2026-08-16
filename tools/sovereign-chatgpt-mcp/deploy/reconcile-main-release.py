@@ -111,6 +111,26 @@ BROKER_SOCKET = Path(
         "/run/sovereign-chatgpt-broker/operator.sock",
     )
 )
+# Managed runtime.env written by install-on-vps.sh. It stores the
+# SOVEREIGN_BACKEND_ENV_FILE pointer the owner selected at install time.
+# Only that single pointer key is read; no secret values are copied out.
+MANAGED_RUNTIME_ENV = Path(
+    os.getenv(
+        "SOVEREIGN_MCP_RUNTIME_ENV_FILE",
+        "/opt/sovereign-chatgpt-tools/runtime.env",
+    )
+)
+# Exact backend env paths the installer may sanction. Anything else
+# (relative paths, alternate locations, symlinks) is rejected so the
+# reconcile host cannot be pointed at an arbitrary secret-bearing file.
+SANCTIONED_BACKEND_ENV_PATHS = frozenset(
+    {
+        "/run/secrets/sovereign-backend.env",
+        "/opt/sovereign-backend/.env",
+    }
+)
+BACKEND_ENV_POINTER_RE = re.compile(r"^SOVEREIGN_BACKEND_ENV_FILE=(.*)$")
+
 
 class ReconcileError(RuntimeError):
     def __init__(
@@ -279,6 +299,52 @@ def _run(
         )
     except subprocess.TimeoutExpired as exc:
         raise ReconcileError("host_command", f"timeout:{Path(argv[0]).name}") from exc
+
+
+def _resolve_backend_env_file() -> str:
+    """Resolve the sanctioned backend env path the installer persisted.
+
+    Reads only the SOVEREIGN_BACKEND_ENV_FILE pointer from the managed
+    runtime.env. No other keys and no secret values are read or returned.
+    The pointer must be an exact sanctioned absolute path that exists as a
+    regular, non-symlink private file; otherwise the reconcile fails closed.
+    """
+    if MANAGED_RUNTIME_ENV.is_symlink():
+        raise ReconcileError("backend_env_binding", "managed runtime env is a symlink")
+    if not MANAGED_RUNTIME_ENV.is_file():
+        raise ReconcileError("backend_env_binding", "managed runtime env is missing")
+    try:
+        raw_lines = MANAGED_RUNTIME_ENV.read_text("utf-8").splitlines()
+    except OSError as exc:
+        raise ReconcileError("backend_env_binding", "managed runtime env is unreadable") from exc
+    pointer = ""
+    for line in raw_lines:
+        match = BACKEND_ENV_POINTER_RE.match(line.strip())
+        if match is not None:
+            pointer = match.group(1).strip()
+    # Strip a single pair of surrounding quotes the installer/set_value may add.
+    if len(pointer) >= 2 and pointer[0] == pointer[-1] and pointer[0] in ("'", '"'):
+        pointer = pointer[1:-1]
+    if pointer not in SANCTIONED_BACKEND_ENV_PATHS:
+        raise ReconcileError("backend_env_binding", "backend env pointer is not sanctioned")
+    target = Path(pointer)
+    if target.is_symlink():
+        raise ReconcileError("backend_env_binding", "backend env pointer is a symlink")
+    if not target.is_file():
+        raise ReconcileError("backend_env_binding", "sanctioned backend env file is missing")
+    return pointer
+
+
+def _backend_deploy_environment() -> dict[str, str]:
+    """Build the ephemeral environment for backend deploy/rollback subprocesses.
+
+    Exports only the resolved backend env pointer plus the already-canonical
+    backend image repository. Secret contents are never copied or returned.
+    """
+    environment = os.environ.copy()
+    environment["SOVEREIGN_BACKEND_ENV_FILE"] = _resolve_backend_env_file()
+    environment["SOVEREIGN_BACKEND_IMAGE_REPOSITORY"] = BACKEND_REPOSITORY
+    return environment
 
 
 def _refresh_operator_source(scope: dict[str, Any]) -> dict[str, Any]:
@@ -848,16 +914,27 @@ def reconcile() -> dict[str, Any]:
         and current_mcp.get("digest") == mcp_image["digest"]
     )
 
-    backend_deploy: dict[str, Any] = {"status": "ALREADY_CURRENT", "mutationPerformed": False}
+    # Resolve the sanctioned backend env binding once; deploy and any later
+    # rollback share the same pointer so both subprocesses agree with the
+    # installer-selected canonical env path.
+    backend_deploy_env = _backend_deploy_environment()
+    backend_env_pointer = backend_deploy_env["SOVEREIGN_BACKEND_ENV_FILE"]
+    backend_deploy: dict[str, Any] = {
+        "status": "ALREADY_CURRENT",
+        "mutationPerformed": False,
+        "backendEnvFile": backend_env_pointer,
+    }
     if backend_changed:
         try:
             backend_deploy = {
                 "status": "DEPLOYED",
                 "mutationPerformed": True,
+                "backendEnvFile": backend_env_pointer,
                 **_command_json(
                     [BACKEND_DEPLOY, backend_image["digest"], revision],
                     timeout=1800,
                     stage="backend_deploy",
+                    environment=backend_deploy_env,
                 ),
             }
         except ReconcileError as exc:
@@ -930,6 +1007,7 @@ def reconcile() -> dict[str, Any]:
                     [BACKEND_ROLLBACK, previous_digest],
                     timeout=900,
                     stage="backend_rollback_after_mcp_failure",
+                    environment=backend_deploy_env,
                 )
                 rollback = {"attempted": True, "ok": True, **rollback_result}
             except ReconcileError as rollback_exc:
