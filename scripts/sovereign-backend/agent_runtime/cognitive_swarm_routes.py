@@ -15,6 +15,7 @@ import uuid
 from flask import jsonify, request
 
 from .a2a_routes import register_a2a_routes
+from .verification_gateway import register_verification_gateway_routes
 from .cognitive_run_store import (
     AgentRunIterationLimit,
     AgentRunNotResumable,
@@ -2421,6 +2422,12 @@ def register_cognitive_swarm_routes(
             implementation_job_id=str(body.get("implementationJobId") or "") or None,
         )
         return jsonify(payload), status_code
+
+    register_verification_gateway_routes(
+        app,
+        require_session=require_session,
+        get_connection=get_connection,
+    )
 
     register_a2a_routes(
         app,

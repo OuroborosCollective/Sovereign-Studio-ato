@@ -178,6 +178,17 @@ def build_sovereign_agent_card(
             input_modes=list(A2A_INPUT_MODES),
             output_modes=list(A2A_OUTPUT_MODES),
         ),
+        AgentSkill(
+            id="sovereign-verification",
+            name="Paid Evidence Verification",
+            description=(
+                "Executes server-entitled evidence verification through the Sovereign A2A extension; "
+                "formal claims are replayed deterministically and model agreement is never a truth rule."
+            ),
+            tags=["verification", "evidence-receipt", "paid", "a2a"],
+            input_modes=list(A2A_INPUT_MODES),
+            output_modes=list(A2A_OUTPUT_MODES),
+        ),
     ]
 
     core_agents = manifest.get("agents") if isinstance(manifest, Mapping) else None
