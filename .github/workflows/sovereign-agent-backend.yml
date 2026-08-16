@@ -55,6 +55,12 @@ jobs:
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"
 
+      - name: Run N+1 malformed JSON regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest backend/tests/test_n1_json_validation.py -q
+
       - name: Validate Sovereign Brain Projection (advisory)
         id: brain_projection
         if: always()
