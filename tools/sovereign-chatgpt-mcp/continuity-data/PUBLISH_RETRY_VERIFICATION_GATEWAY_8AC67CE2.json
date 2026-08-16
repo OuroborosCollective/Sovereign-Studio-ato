@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "sovereign.verification-gateway-publish-retry.v1",
+  "recordedAt": "2026-08-16T17:55:00Z",
+  "repository": "OuroborosCollective/Sovereign-Studio-ato",
+  "workspaceId": "job-fd3efac696f5",
+  "branch": "sovereign/chatgpt/1786897666-verification-gateway-a2a-b6494b",
+  "baseRevision": "5dbe8a750b0d40f11cc3800ea091db945c9d2a49",
+  "previousWorkspaceHead": "8ac67ce20754ce476bebffb11086e07cffe254a3",
+  "reason": "Owner reported updated GitHub App repository permissions; retry the standard Draft-PR publication path without changing Verification Gateway product code.",
+  "constraints": {
+    "productCodeChangedByRetry": false,
+    "directMainPush": false,
+    "rulesetWeakened": false,
+    "credentialMaterialStored": false,
+    "privateKeyStored": false
+  },
+  "expectedNextEvidence": [
+    "GitHub branch push accepted",
+    "Draft PR created or reconciled",
+    "exact remote PR head SHA read back",
+    "GitHub Actions evidence bound to that head"
+  ]
+}
