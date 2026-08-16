@@ -431,6 +431,7 @@ def test_canonical_and_deployment_mirrors_are_byte_equal_and_firebase_free():
         "agent_runtime/adapters/__init__.py",
         "agent_runtime/adapters/github_octokit_contract.py",
         "agent_runtime/adapters/wolfram_agenttools.py",
+        "agent_runtime/adapters/wolfram_cag_transport.py",
         "agent_runtime/contracts/sovereign_skill.v1.schema.json",
     )
     for relative in relative_paths:
