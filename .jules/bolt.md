@@ -59,3 +59,7 @@
 ## 2026-08-07 - [Native Array Sorting Efficiency]
 **Learning:** When sorting simple string arrays (such as object keys) where local language-specific collation is not required, passing a custom comparison callback (e.g., `.sort((a, b) => a < b ? -1 : a > b ? 1 : 0)`) forces the JavaScript engine to cross the C++/JS boundary for every element comparison, degrading performance.
 **Action:** Use the default, argument-less `.sort()` method for sorting arrays of strings lexicographically, as it leverages the engine's highly optimized internal sorting algorithms.
+
+## 2026-08-16 - [Consolidating Multi-Pass Reductions and Slice Allocations in Mathematical Analysis]
+**Learning:** Calculating mathematical statistics (such as Pearson correlation) over array buffers using multiple `.slice()` subarray calls and sequential `.reduce()` passes creates significant garbage collection overhead and repeated array traversal costs. Consolidating all summations into a single indexed `for` loop pass drops loop overhead to a single $O(N)$ traversal with $O(1)$ memory allocations.
+**Action:** Always replace chained `.slice()` and multi-pass `.reduce()` calls in mathematical analysis routines with a single `for` loop that accumulates all required summations concurrently.

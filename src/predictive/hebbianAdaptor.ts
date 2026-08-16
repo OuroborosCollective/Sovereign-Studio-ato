@@ -426,21 +426,32 @@ export class Synaptogenesis {
     const buffer = this.correlationBuffer.get(nodeA)?.get(nodeB);
     if (!buffer || buffer.length < this.config.minSamples) return 0;
 
-    const midpoint = Math.floor(buffer.length / 2);
-    const x = buffer.slice(0, midpoint);
-    const y = buffer.slice(midpoint, midpoint + x.length);
-    if (!x.length || x.length !== y.length) return 0;
+    const n = Math.floor(buffer.length / 2);
+    if (n === 0) return 0;
 
-    const n = x.length;
-    const sumX = x.reduce((sum, value) => sum + value, 0);
-    const sumY = y.reduce((sum, value) => sum + value, 0);
-    const sumXY = x.reduce((sum, value, index) => sum + value * y[index], 0);
-    const sumX2 = x.reduce((sum, value) => sum + value * value, 0);
-    const sumY2 = y.reduce((sum, value) => sum + value * value, 0);
+    // ⚡ Bolt: Single-pass accumulation over correlation buffer replacing
+    // multiple array allocations (.slice) and 5 sequential .reduce() passes.
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumX2 = 0;
+    let sumY2 = 0;
+
+    for (let i = 0; i < n; i++) {
+      const xVal = buffer[i];
+      const yVal = buffer[n + i];
+      sumX += xVal;
+      sumY += yVal;
+      sumXY += xVal * yVal;
+      sumX2 += xVal * xVal;
+      sumY2 += yVal * yVal;
+    }
+
     const numerator = n * sumXY - sumX * sumY;
     const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
     if (Math.abs(denominator) < CORRELATION_EPSILON) {
-      const averageCoActivation = buffer.reduce((sum, value) => sum + value, 0) / buffer.length;
+      // Reuse precomputed sumX and sumY over n*2 items to avoid extra .reduce()
+      const averageCoActivation = (sumX + sumY) / (2 * n);
       if (averageCoActivation > COACTIVATION_NOISE_THRESHOLD) return 1;
       if (averageCoActivation < -COACTIVATION_NOISE_THRESHOLD) return -1;
       return 0;
