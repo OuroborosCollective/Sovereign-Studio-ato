@@ -43,6 +43,7 @@ jobs:
           set +e
           pytest scripts/sovereign-backend/tests \
             backend/tests/test_agent_runtime_routes.py \
+            backend/tests/test_execution_transparency_statement.py \
             backend/tests/test_configuration_provenance.py \
             backend/tests/test_configuration_provenance_mirror.py \
             backend/tests/test_configuration_provenance_parity.py \
