@@ -11,6 +11,7 @@ from .github_octokit_contract import (
 )
 from .wolfram_agenttools import (
     CAG_SUPPLEMENTAL_ONLY,
+    SUPPLEMENTAL_ONLY,
     WOLFRAM_CAPABILITY_MAP,
     WOLFRAM_CAG_COMPONENT_MAP,
     WolframAdapterAttestation,
