@@ -102,6 +102,24 @@ def test_managed_private_env_mutations_preserve_inode_before_attribute_restore()
         assert "temporary.replace(path)" not in block
 
 
+def test_ci_runtime_readback_authorization_preserves_protected_authorized_keys_inode() -> None:
+    # Regression for protected /root/.ssh/authorized_keys on repeated self-update.
+    script = INSTALLER.read_text("utf-8")
+    block = script.split("install_ci_runtime_readback_authorization() {", 1)[1].split("ensure_private_file_mode() {", 1)[0]
+
+    prepare_index = block.index('prepare_managed_private_file_mutation "$authorized_keys" "root-authorized-keys"')
+    chown_index = block.index('chown root:root "$authorized_keys"')
+    chmod_index = block.index('chmod 0600 "$authorized_keys"')
+    assert prepare_index < chown_index
+    assert prepare_index < chmod_index
+    assert 'touch "$authorized_keys"' not in block
+    assert 'mv -f "$temporary" "$authorized_keys"' not in block
+    assert 'with target.open("wb") as handle:' in block
+    assert "os.fsync(handle.fileno())" in block
+    assert 'INSTALL_STAGE="mutate_managed_private_file:root-authorized-keys"' in block
+    assert "CI runtime readback authorization in-place write failed" in block
+
+
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
     script = INSTALLER.read_text("utf-8")
 
