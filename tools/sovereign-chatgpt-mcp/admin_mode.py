@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import os
 import re
@@ -9,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from github_installation_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
 from operations import OperationsRuntime, _read_env_value
 from self_heal import REPAIR_ENGINE
 
@@ -98,6 +100,22 @@ class PrivateAdminRuntime:
     def __init__(self, operations: OperationsRuntime) -> None:
         self.operations = operations
 
+    @contextmanager
+    def _github_push_token(self):
+        legacy_token = os.getenv("GITHUB_TOKEN", "").strip()
+        if legacy_token:
+            yield legacy_token
+            return
+        repository = os.getenv(
+            "SOVEREIGN_MCP_REPOSITORY",
+            "OuroborosCollective/Sovereign-Studio-ato",
+        ).strip()
+        auth = GitHubAppInstallationAuth(
+            GitHubAppInstallationConfig.from_env(repository=repository)
+        )
+        with auth.token() as token:
+            yield token
+
     def _admin_connection(self, database: str = "") -> tuple[str, str, str, str, str]:
         host = _read_env_value(self.operations.backend_env_file, "POSTGRES_HOST") or "db"
         port = _read_env_value(self.operations.backend_env_file, "POSTGRES_PORT") or "5432"
@@ -179,9 +197,6 @@ class PrivateAdminRuntime:
                 "git_top_level": str(actual_top_level),
             }
 
-        token = os.getenv("GITHUB_TOKEN", "").strip()
-        if not token:
-            raise RuntimeError("GITHUB_TOKEN fehlt im privaten Broker")
         self._git(repo, ["config", "user.name", os.getenv("SOVEREIGN_MCP_GIT_AUTHOR_NAME", "Sovereign ChatGPT Operator")])
         self._git(repo, ["config", "user.email", os.getenv("SOVEREIGN_MCP_GIT_AUTHOR_EMAIL", "sovereign-operator@users.noreply.github.com")])
         diff_check = self._git(repo, ["diff", "--check"])
@@ -207,9 +222,10 @@ class PrivateAdminRuntime:
                 "utf-8",
             )
             script.chmod(0o700)
-            env = os.environ.copy()
-            env.update({"GIT_ASKPASS": str(script), "GIT_TERMINAL_PROMPT": "0", "GITHUB_TOKEN": token})
-            push = self._git(repo, ["push", "origin", "HEAD:refs/heads/main"], env=env, timeout=600)
+            with self._github_push_token() as token:
+                env = os.environ.copy()
+                env.update({"GIT_ASKPASS": str(script), "GIT_TERMINAL_PROMPT": "0", "GITHUB_TOKEN": token})
+                push = self._git(repo, ["push", "origin", "HEAD:refs/heads/main"], env=env, timeout=600)
         finally:
             shutil.rmtree(askpass_dir, ignore_errors=True)
         if not push["ok"]:

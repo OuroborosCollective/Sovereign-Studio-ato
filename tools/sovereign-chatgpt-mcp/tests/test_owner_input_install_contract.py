@@ -87,7 +87,10 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'systemctl show --property MainPID --value sovereign-chatgpt-broker.service' in installer
     assert 'broker process inherited a persistent GitHub API credential' in installer
     assert 'SOVEREIGN_MCP_ENABLE_SELF_UPDATE' in installer
-    assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
+    assert 'bind_private_owner_github_capabilities_to_ephemeral_app_auth' in installer
+    assert 'SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE "1"' in installer
+    assert 'GITHUB_APP_REPOSITORY_CANARY_VERIFIED' in installer
+    assert 'printf \'SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=%s\\n\' "$GITHUB_APP_PRIVATE_KEY_FILE"' in installer
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert '/opt/secure/owner-managed' not in installer
 
@@ -253,12 +256,16 @@ def test_controller_operator_tools_are_owner_scoped_and_secret_bounded() -> None
     assert "timeout=1200" in client
 
 
-def test_self_update_blocks_before_credential_read_without_ephemeral_ci_scope() -> None:
+def test_self_update_uses_ephemeral_github_app_auth_and_never_reads_persistent_api_token() -> None:
     updater = (ROOT / "deploy" / "self-update-chatgpt-mcp.sh").read_text("utf-8")
 
     assert 'SELF_UPDATE_ENABLED="${SOVEREIGN_MCP_ENABLE_SELF_UPDATE:-0}"' in updater
-    assert 'write_status BLOCKED "" "self-update is disabled until a CI-mediated ephemeral credential scope is implemented"' in updater
-    assert updater.index('[[ "$SELF_UPDATE_ENABLED" == "1" ]]') < updater.index('TOKEN="$(sed -n \'s/^GITHUB_TOKEN=//p\' "$BROKER_ENV" | tail -n 1)"')
+    assert 'CURRENT_STAGE="prepare_ephemeral_github_app_auth"' in updater
+    assert 'GitHubAppInstallationAuth' in updater
+    assert 'GitHubAppInstallationConfig.from_env(repository=repository)' in updater
+    assert 'sed -n \'s/^GITHUB_TOKEN=//p\' "$BROKER_ENV"' not in updater
+    assert 'unset GITHUB_TOKEN' in updater
+    assert updater.index('[[ "$SELF_UPDATE_ENABLED" == "1" ]]') < updater.index('CURRENT_STAGE="prepare_ephemeral_github_app_auth"')
 
 
 def test_mcp_github_app_installation_secret_is_file_mounted_and_pat_free() -> None:

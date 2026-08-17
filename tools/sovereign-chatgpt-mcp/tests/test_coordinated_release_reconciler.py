@@ -597,9 +597,12 @@ def test_mcp_deploy_runs_ci_scoped_non_executable_installer_through_fixed_bash(
         "broker_socket_host_visible": True,
         "broker_socket_container_visible": True,
         "mcp_protocol_ready": True,
-        "self_update_available": False,
-        "pr_lifecycle_available": False,
-        "workflow_dispatch_available": False,
+        "self_update_available": True,
+        "pr_lifecycle_available": True,
+        "workspace_pr_head_sync_available": True,
+        "workflow_dispatch_available": True,
+        "github_app_repository_canary": True,
+        "persistent_github_token_present": False,
     }
     installer.write_text(
         "#!/usr/bin/env bash\n"
@@ -784,10 +787,16 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert 'SOVEREIGN_MCP_ENABLE_MAIN_PUSH \\' in installer
     assert 'SOVEREIGN_MCP_ENABLE_PR_MERGE \\' in installer
     assert 'SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \\' in installer
-    assert 'set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"' in installer
-    assert '"self_update_available":false' in installer
-    assert '"pr_lifecycle_available":false' in installer
-    assert '"workflow_dispatch_available":false' in installer
+    assert 'bind_private_owner_github_capabilities_to_ephemeral_app_auth' in installer
+    assert 'SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE "1"' in installer
+    assert '"self_update_available":true' in installer
+    assert '"pr_lifecycle_available":true' in installer
+    assert '"workspace_pr_head_sync_available":true' in installer
+    assert '"workflow_dispatch_available":true' in installer
+    assert '"github_app_repository_canary":true' in installer
+    assert '"persistent_github_token_present":false' in installer
+    assert 'GITHUB_APP_REPOSITORY_CANARY_VERIFIED' in installer
+    assert 'printf \'SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=%s\\n\' "$GITHUB_APP_PRIVATE_KEY_FILE"' in installer
     assert 'install_ci_runtime_readback_authorization' in installer
     assert "systemctl enable --now sovereign-release-reconciler.timer" in installer
     assert "ExecStart=/opt/sovereign-chatgpt-tools/bin/reconcile-main-release" in service
@@ -815,3 +824,9 @@ def test_workflows_and_installer_bind_coordinated_release_contract() -> None:
     assert 'receipt.get("broker_socket_host_visible") is not True' in reconciler
     assert 'receipt.get("broker_socket_container_visible") is not True' in reconciler
     assert 'receipt.get("mcp_protocol_ready") is not True' in reconciler
+    assert 'receipt.get("self_update_available") is not True' in reconciler
+    assert 'receipt.get("pr_lifecycle_available") is not True' in reconciler
+    assert 'receipt.get("workspace_pr_head_sync_available") is not True' in reconciler
+    assert 'receipt.get("workflow_dispatch_available") is not True' in reconciler
+    assert 'receipt.get("github_app_repository_canary") is not True' in reconciler
+    assert 'receipt.get("persistent_github_token_present") is not False' in reconciler

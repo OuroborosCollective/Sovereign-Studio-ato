@@ -8,6 +8,7 @@ import zipfile
 import pytest
 
 from github_admin import GitHubAdminRuntime
+from github_installation_auth import GitHubAppInstallationAuth
 
 
 @dataclass
@@ -41,6 +42,9 @@ class FakeSession:
         if key not in self.routes or not self.routes[key]:
             raise AssertionError(f"Unexpected GitHub request: {key}")
         return self.routes[key].pop(0)
+
+    def post(self, url, headers=None, json=None, timeout=None):
+        return self.request("POST", url, headers=headers, json=json, timeout=timeout)
 
 
 class FakeSelfUpdate:
@@ -106,6 +110,50 @@ def _runtime(monkeypatch, routes):
     update = FakeSelfUpdate()
     session = FakeSession(routes)
     return GitHubAdminRuntime(update, session=session), update, session
+
+
+def test_github_admin_uses_ephemeral_installation_auth_without_persistent_token(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("SOVEREIGN_MCP_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato")
+    monkeypatch.setenv("SOVEREIGN_MCP_GITHUB_APP_ID", "123")
+    monkeypatch.setenv("SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID", "456")
+    private_key = tmp_path / "github-app.pem"
+    private_key.write_text("test-key-material", encoding="utf-8")
+    private_key.chmod(0o600)
+    monkeypatch.setenv("SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE", str(private_key))
+    monkeypatch.setattr(GitHubAdminRuntime, "_governance_mode", staticmethod(lambda: "enforced"))
+    monkeypatch.setattr(GitHubAppInstallationAuth, "_app_jwt", lambda self: "ephemeral-app-jwt")
+    installation_token = "installation-token-for-test"
+    session = FakeSession({
+        ("POST", "/app/installations/456/access_tokens"): [
+            FakeResponse(201, {"token": installation_token})
+        ],
+        ("GET", "/repos/OuroborosCollective/Sovereign-Studio-ato/pulls/7"): [
+            FakeResponse(200, _pull("a" * 40))
+        ],
+    })
+    runtime = GitHubAdminRuntime(FakeSelfUpdate(), session=session)
+
+    pull = runtime._pull(7)
+
+    assert pull["number"] == 7
+    assert runtime.token == ""
+    assert session.calls[0]["path"] == "/app/installations/456/access_tokens"
+    assert session.calls[0]["json"] == {"repositories": ["Sovereign-Studio-ato"]}
+    assert session.calls[1]["headers"]["Authorization"] == f"Bearer {installation_token}"
+    assert not hasattr(runtime.github_auth, "token_value")
+
+
+def test_github_admin_fails_closed_without_token_or_app_configuration(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("SOVEREIGN_MCP_GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID", raising=False)
+    monkeypatch.delenv("SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE", raising=False)
+    monkeypatch.setenv("SOVEREIGN_MCP_REPOSITORY", "OuroborosCollective/Sovereign-Studio-ato")
+    runtime = GitHubAdminRuntime(FakeSelfUpdate(), session=FakeSession({}))
+
+    with pytest.raises(RuntimeError, match="GitHub-App-Installation-Authentisierung"):
+        runtime._pull(7)
 
 
 def _zip_log(name: str, text: str) -> bytes:

@@ -9,13 +9,16 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import base64
+import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import time
 from typing import Callable, Iterator
 
-import jwt
 import requests
 
 
@@ -89,28 +92,43 @@ class GitHubAppInstallationAuth:
         self._session = session or requests.Session()
         self._now = now or time.time
 
+    @staticmethod
+    def _base64url(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
     def _app_jwt(self) -> str:
-        try:
-            private_key = self.config.private_key_file.read_bytes()
-        except OSError as exc:
-            raise RuntimeError("GitHub-App-Private-Key-Datei ist nicht lesbar") from exc
-        if not private_key:
-            raise RuntimeError("GitHub-App-Private-Key-Datei ist leer")
+        openssl = shutil.which("openssl")
+        if not openssl:
+            raise RuntimeError("OpenSSL für GitHub-App-JWT ist nicht verfügbar")
         now = int(self._now())
+        header = self._base64url(
+            json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode("utf-8")
+        )
+        claims = self._base64url(
+            json.dumps(
+                {
+                    "iat": now - _CLOCK_SKEW_SECONDS,
+                    "exp": now + _TOKEN_TTL_SECONDS,
+                    "iss": self.config.app_id,
+                },
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        signing_input = f"{header}.{claims}".encode("ascii")
         try:
-            return str(
-                jwt.encode(
-                    {
-                        "iat": now - _CLOCK_SKEW_SECONDS,
-                        "exp": now + _TOKEN_TTL_SECONDS,
-                        "iss": self.config.app_id,
-                    },
-                    private_key,
-                    algorithm="RS256",
-                )
+            signed = subprocess.run(
+                [openssl, "dgst", "-sha256", "-sign", str(self.config.private_key_file)],
+                input=signing_input,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=10,
             )
-        except Exception as exc:
+        except (OSError, subprocess.TimeoutExpired) as exc:
             raise RuntimeError("GitHub-App-JWT konnte nicht erzeugt werden") from exc
+        if signed.returncode != 0 or not signed.stdout:
+            raise RuntimeError("GitHub-App-JWT konnte nicht erzeugt werden")
+        return f"{header}.{claims}.{self._base64url(signed.stdout)}"
 
     def _issue_token(self) -> str:
         app_jwt = self._app_jwt()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,11 @@ from ci_repair_tools import (
     MAX_ARCHIVE_BYTES,
     bounded_text_sources_from_archive,
     extract_workflow_failure_evidence,
+)
+from github_installation_auth import (
+    GitHubAppInstallationAuth,
+    GitHubAppInstallationConfig,
+    UnavailableGitHubInstallationAuth,
 )
 from self_update import SelfUpdateRuntime
 
@@ -87,6 +93,18 @@ class GitHubAdminRuntime:
             raise RuntimeError("SOVEREIGN_MCP_REPOSITORY ist ungültig")
         self.token = os.getenv("GITHUB_TOKEN", "").strip()
         self.session = session or requests.Session()
+        app_variables = (
+            "SOVEREIGN_MCP_GITHUB_APP_ID",
+            "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID",
+            "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE",
+        )
+        if any(os.getenv(name, "").strip() for name in app_variables):
+            self.github_auth = GitHubAppInstallationAuth(
+                GitHubAppInstallationConfig.from_env(repository=self.repository),
+                session=self.session,
+            )
+        else:
+            self.github_auth = UnavailableGitHubInstallationAuth()
         self.api_root = "https://api.github.com"
         self.private_owner_mode = _enabled("SOVEREIGN_MCP_PRIVATE_OWNER_MODE")
         self.allowed_workflows = {
@@ -153,14 +171,20 @@ class GitHubAdminRuntime:
             "advisory_pending": advisory_pending,
         }
 
-    def _headers(self) -> dict[str, str]:
-        if not self.token:
-            raise RuntimeError("GITHUB_TOKEN fehlt im privaten Broker")
-        return {
-            "Authorization": f"Bearer {self.token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
+    @contextmanager
+    def _headers(self):
+        if self.token:
+            yield {
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2026-03-10",
+            }
+            return
+        with self.github_auth.headers() as headers:
+            yield {
+                **headers,
+                "X-GitHub-Api-Version": "2026-03-10",
+            }
 
     def _request(
         self,
@@ -173,14 +197,15 @@ class GitHubAdminRuntime:
         timeout: int = 30,
     ) -> Any:
         try:
-            response = self.session.request(
-                method,
-                f"{self.api_root}{path}",
-                headers=self._headers(),
-                params=params,
-                json=json_body,
-                timeout=timeout,
-            )
+            with self._headers() as headers:
+                response = self.session.request(
+                    method,
+                    f"{self.api_root}{path}",
+                    headers=headers,
+                    params=params,
+                    json=json_body,
+                    timeout=timeout,
+                )
         except requests.RequestException as exc:
             raise RuntimeError(f"GitHub API ist nicht erreichbar: {exc}") from exc
         if response.status_code not in expected:
@@ -198,12 +223,13 @@ class GitHubAdminRuntime:
         timeout: int = 60,
     ) -> bytes:
         try:
-            response = self.session.request(
-                "GET",
-                f"{self.api_root}{path}",
-                headers=self._headers(),
-                timeout=timeout,
-            )
+            with self._headers() as headers:
+                response = self.session.request(
+                    "GET",
+                    f"{self.api_root}{path}",
+                    headers=headers,
+                    timeout=timeout,
+                )
         except requests.RequestException as exc:
             raise RuntimeError(f"GitHub artifact API is not reachable: {exc}") from exc
         if response.status_code != 200:

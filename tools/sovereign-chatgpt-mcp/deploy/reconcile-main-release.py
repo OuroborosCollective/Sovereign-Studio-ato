@@ -735,9 +735,12 @@ def _deploy_mcp_from_ci_scope(
         or receipt.get("broker_socket_host_visible") is not True
         or receipt.get("broker_socket_container_visible") is not True
         or receipt.get("mcp_protocol_ready") is not True
-        or receipt.get("self_update_available") is not False
-        or receipt.get("pr_lifecycle_available") is not False
-        or receipt.get("workflow_dispatch_available") is not False
+        or receipt.get("self_update_available") is not True
+        or receipt.get("pr_lifecycle_available") is not True
+        or receipt.get("workspace_pr_head_sync_available") is not True
+        or receipt.get("workflow_dispatch_available") is not True
+        or receipt.get("github_app_repository_canary") is not True
+        or receipt.get("persistent_github_token_present") is not False
     ):
         raise ReconcileError("mcp_deploy", "installer receipt violates CI scope or capability truth")
     return {
