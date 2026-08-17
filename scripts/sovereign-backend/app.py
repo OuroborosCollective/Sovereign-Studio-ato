@@ -94,6 +94,7 @@ from openrouter_free_runtime import register_openrouter_free_runtime
 from openrouter_provider_runtime import register_openrouter_provider_runtime
 from controller_board import register_controller_board_routes
 from enterprise_platform import register_enterprise_platform_routes
+from evidence_observatory import register_evidence_observatory_routes
 
 # GitHub App integration (Marketplace)
 try:
@@ -2384,6 +2385,9 @@ def health_ready():
                    to_regclass('github_app_credits') IS NOT NULL AS github_app_credits,
                    to_regclass('github_app_credit_transactions') IS NOT NULL AS github_app_credit_transactions,
                    to_regclass('sovereign_rescue_repairs') IS NOT NULL AS sovereign_rescue_repairs,
+                   to_regclass('evidence_observatory_cases') IS NOT NULL AS evidence_observatory_cases,
+                   to_regclass('evidence_observatory_publish_receipts') IS NOT NULL AS evidence_observatory_publish_receipts,
+                   to_regclass('evidence_observatory_arena_runs') IS NOT NULL AS evidence_observatory_arena_runs,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
                        WHERE table_schema=current_schema()
@@ -2430,6 +2434,9 @@ def health_ready():
             "github_app_credits",
             "github_app_credit_transactions",
             "sovereign_rescue_repairs",
+            "evidence_observatory_cases",
+            "evidence_observatory_publish_receipts",
+            "evidence_observatory_arena_runs",
             "transaction_receipts",
             "receipt_fingerprints",
         ))
@@ -2456,6 +2463,7 @@ def health_ready():
                 "044_n_plus_one_memory_voice_update.sql",
                 "045_sovereign_rescue.sql",
                 "051_openrouter_free_revolver_management.sql",
+                "053_evidence_observatory_atlas.sql",
             ],
             "schemaContractsVerified": schema_ready,
             "activeRoutes": len(routes or []),
@@ -6291,6 +6299,14 @@ register_are_inference_routes(
     app,
     require_session=require_session,
     get_connection=get_agent_runtime_connection,
+)
+register_evidence_observatory_routes(
+    app,
+    require_session=require_session,
+    require_admin=require_admin,
+    query=query,
+    get_current_admin=get_current_admin,
+    audit=audit,
 )
 
 # ── GitHub App Marketplace Integration ────────────────────────────────────────
