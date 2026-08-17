@@ -1199,7 +1199,7 @@ for GUARDED_CAPABILITY in \
     set_value "$MANAGED_ENV" "$GUARDED_CAPABILITY" "0"
   fi
 done
-unset PRIVATE_OWNER_MODE OWNER_CAPABILITY GUARDED_CAPABILITY
+unset OWNER_CAPABILITY GUARDED_CAPABILITY
 
 INSTALL_STAGE="ensure_recovery_image_digest"
 CURRENT_MCP_IMAGE_DIGEST="$(read_mcp_value SOVEREIGN_MCP_IMAGE)"
@@ -1243,6 +1243,7 @@ remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
 prepare_mcp_github_app_secret
+INSTALL_STAGE="verify_private_owner_github_app_contract"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
   [[ "$(read_mcp_value SOVEREIGN_MCP_GITHUB_APP_ID)" =~ ^[1-9][0-9]*$ ]] \
     || fail "private owner GitHub capabilities require GitHub App ID"
@@ -1251,6 +1252,7 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
   [[ -f "$GITHUB_APP_PRIVATE_KEY_FILE" && ! -L "$GITHUB_APP_PRIVATE_KEY_FILE" ]] \
     || fail "private owner GitHub capabilities require the protected GitHub App key"
 fi
+INSTALL_STAGE="resolve_owner_approval_identity"
 OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
 OWNER_ADMIN_ID="$(read_backend_value SOVEREIGN_OWNER_ADMIN_ID)"
 OWNER_ADMIN_EMAIL="$(read_backend_value SOVEREIGN_OWNER_ADMIN_EMAIL)"
@@ -1260,6 +1262,7 @@ fi
 if [[ -z "$OWNER_ADMIN_ID" && -z "$OWNER_ADMIN_EMAIL" ]]; then
   OWNER_ADMIN_EMAIL="rastamanweeste@gmail.com"
 fi
+INSTALL_STAGE="validate_owner_approval_identity"
 [[ "$OWNER_REFERENCE_ID" =~ ^[0-9]{1,20}$ ]] || fail "SOVEREIGN_OWNER_REFERENCE_ID is invalid"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"
 if [[ -n "$OWNER_ADMIN_ID" ]]; then
@@ -1270,7 +1273,7 @@ elif [[ "$OWNER_ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$
 else
   fail "configure a valid SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL for the owner approval surface"
 fi
-unset OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL
+unset PRIVATE_OWNER_MODE OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL
 
 for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml sovereign-chatgpt-mcp.yml sovereign-agent-backend.yml release-verification.yml; do
   CURRENT_ALLOWED_WORKFLOWS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_WORKFLOWS)"
