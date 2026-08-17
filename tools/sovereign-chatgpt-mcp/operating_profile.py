@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import continuity
 import operational_governance_tools
 import toolchain_composition
-from policy import contains_secret_shaped_value
+from policy import contains_high_confidence_secret_value, contains_secret_shaped_value
 
 
 LOCAL_READ_ONLY = ToolAnnotations(
@@ -44,6 +44,9 @@ _CONFIRMATION_FIELDS = (
     "confirmation_sha256",
     "confirmation_digest",
     "confirmation_inventory_sha256",
+)
+_REPOSITORY_SOURCE_MUTATION_TOOLS = frozenset(
+    {"repository_apply_search_replace", "repository_write_new_file"}
 )
 
 
@@ -453,7 +456,12 @@ def _validate_invocation_arguments(tool_name: str, effect: str, parameters: dict
                     "field": field,
                 }
             )
-    if _contains_secret_shaped_value(kwargs):
+    secret_value_present = (
+        contains_high_confidence_secret_value(kwargs)
+        if tool_name in _REPOSITORY_SOURCE_MUTATION_TOOLS
+        else _contains_secret_shaped_value(kwargs)
+    )
+    if secret_value_present:
         findings.append(
             {
                 "severity": "P0",

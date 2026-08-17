@@ -135,6 +135,30 @@ def test_shared_secret_gate_blocks_secret_shaped_mapping_keys(key: str) -> None:
     }
 
 
+def test_repository_source_mutation_allows_identifier_text_but_blocks_concrete_secret_literals() -> None:
+    source_identifier_text = "to" + "ken = os.getenv('PROTECTED_VALUE_NAME')"
+    source_findings = operating_profile._validate_invocation_arguments(
+        "repository_apply_search_replace",
+        "workspace-write",
+        {"type": "object", "properties": {"blocks": {"type": "array"}}},
+        {"blocks": [{"search": "before", "replace": source_identifier_text}]},
+    )
+    assert "OPERATING_PROFILE_SECRET_SHAPED_ARGUMENT_BLOCKED" not in {
+        item["family"] for item in source_findings
+    }
+
+    concrete_literal = "gh" + "p_" + ("a" * 24)
+    literal_findings = operating_profile._validate_invocation_arguments(
+        "repository_apply_search_replace",
+        "workspace-write",
+        {"type": "object", "properties": {"blocks": {"type": "array"}}},
+        {"blocks": [{"search": "before", "replace": concrete_literal}]},
+    )
+    assert "OPERATING_PROFILE_SECRET_SHAPED_ARGUMENT_BLOCKED" in {
+        item["family"] for item in literal_findings
+    }
+
+
 def test_shared_secret_gate_preserves_counters_and_false_no_secret_attestations() -> None:
     assert operating_profile._contains_secret_shaped_value(
         {

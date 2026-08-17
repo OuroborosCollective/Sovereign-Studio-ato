@@ -67,6 +67,10 @@ _SECRET_LITERAL_PATTERNS = (
     ),
     re.compile(r"\b[a-z][a-z0-9+.-]*://[^/\s:@]+:[^@\s/]+@", re.I),
 )
+_HIGH_CONFIDENCE_SECRET_LITERAL_PATTERNS = (
+    *_SECRET_LITERAL_PATTERNS[:7],
+    _SECRET_LITERAL_PATTERNS[-1],
+)
 
 
 def normalized_argument_key(value: Any) -> str:
@@ -147,6 +151,18 @@ def mapping_key_is_secret_shaped(key: Any, value: Any) -> bool:
 
 def string_is_secret_shaped(value: str) -> bool:
     return any(pattern.search(value) for pattern in _SECRET_LITERAL_PATTERNS)
+
+
+def contains_high_confidence_secret_value(value: Any) -> bool:
+    """Reject concrete secret literals while allowing source-code identifier text."""
+
+    if isinstance(value, Mapping):
+        return any(contains_high_confidence_secret_value(child) for child in value.values())
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return any(contains_high_confidence_secret_value(child) for child in value)
+    return isinstance(value, str) and any(
+        pattern.search(value) for pattern in _HIGH_CONFIDENCE_SECRET_LITERAL_PATTERNS
+    )
 
 
 def contains_secret_shaped_value(value: Any) -> bool:
