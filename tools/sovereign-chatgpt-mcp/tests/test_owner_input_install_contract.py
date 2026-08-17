@@ -65,7 +65,7 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert "SOVEREIGN_OWNER_ADMIN_ID" in installer
     assert "SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
     assert "configure a valid SOVEREIGN_OWNER_ADMIN_ID or SOVEREIGN_OWNER_ADMIN_EMAIL" in installer
-    assert "unset OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL" in installer
+    assert "unset PRIVATE_OWNER_MODE OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL" in installer
     assert "echo $OWNER_REQUEST_KEY" not in installer
     assert "printf '%s' \"$OWNER_REQUEST_KEY\"" not in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
@@ -93,6 +93,23 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'printf \'SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=%s\\n\' "$GITHUB_APP_PRIVATE_KEY_FILE"' in installer
     assert 'printf \'GITHUB_TOKEN=%s\\n\'' not in installer
     assert '/opt/secure/owner-managed' not in installer
+
+
+def test_private_owner_mode_remains_bound_through_github_app_verification() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+
+    configure_index = installer.index('PRIVATE_OWNER_MODE="$(read_mcp_value SOVEREIGN_MCP_PRIVATE_OWNER_MODE)"')
+    github_secret_index = installer.index("prepare_mcp_github_app_secret\n")
+    github_verify_index = installer.index('INSTALL_STAGE="verify_private_owner_github_app_contract"')
+    owner_identity_index = installer.index('INSTALL_STAGE="resolve_owner_approval_identity"')
+    unset_index = installer.index(
+        "unset PRIVATE_OWNER_MODE OWNER_REQUEST_KEY OWNER_REFERENCE_ID OWNER_ADMIN_ID OWNER_ADMIN_EMAIL"
+    )
+
+    assert configure_index < github_secret_index < github_verify_index < owner_identity_index < unset_index
+    assert "unset PRIVATE_OWNER_MODE OWNER_CAPABILITY GUARDED_CAPABILITY" not in installer
+    assert 'if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then' in installer[github_verify_index:owner_identity_index]
+    assert 'INSTALL_STAGE="validate_owner_approval_identity"' in installer[owner_identity_index:unset_index]
 
 
 def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> None:
