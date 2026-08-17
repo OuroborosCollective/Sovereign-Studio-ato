@@ -517,8 +517,11 @@ def register_proven_learning_routes(app: Any, *, get_connection: ConnectionFacto
     def internal_proven_learning_plan():
         if not _service_authorized():
             return jsonify({"error": "Nicht autorisiert"}), 401
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Malformed payload; dictionary required", "status": "PROVEN_LEARNING_PLAN_BLOCKED"}), 400
         try:
-            return jsonify(plan_proven_learning((request.get_json(force=True) or {}).get("record"))), 200
+            return jsonify(plan_proven_learning(body.get("record"))), 200
         except ValueError as exc:
             return jsonify({"error": str(exc)[:500], "status": "PROVEN_LEARNING_PLAN_BLOCKED"}), 400
 
@@ -526,7 +529,9 @@ def register_proven_learning_routes(app: Any, *, get_connection: ConnectionFacto
     def internal_proven_learning_apply():
         if not _service_authorized():
             return jsonify({"error": "Nicht autorisiert"}), 401
-        body = request.get_json(force=True) or {}
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "Malformed payload; dictionary required", "status": "PROVEN_LEARNING_APPLY_BLOCKED"}), 400
         conn = get_connection()
         try:
             result = apply_proven_learning(
