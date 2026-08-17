@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "5034f862f9955dd56e527d8c270aa8c3441e911a",
+  "sourceRevision": "b791f381ffb25acf4450d7e27204b88f6fd60ff5",
   "rawCandidateCount": 95,
   "canonicalCandidateCount": 76,
   "entries": [
@@ -801,12 +801,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/policy.py",
       "mirrorPaths": [],
       "symbol": "mapping_key_is_secret_shaped",
-      "line": 134,
+      "line": 138,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "0f5aba3072675d586322c8923f45b3d8af17ed31d38daf39222f2b661ab2f93a",
+      "fileSha256": "131471cb8c7119fe4a211ee75dff9d6d4457fe1ccacf30175b9ba25414752e66",
       "anchorSha256": "51c558c9d1d9402bf1faf2528f6f6002944804e376a1b6f2913b0bd785cc3164",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:ca587ace43bdbbe9a6dc4916",
+      "candidateId": "llm-boundary:8c5fd84b4bf7be04110d738e",
       "classification": "STRUCTURED_POLICY",
       "rationale": "mapping_key_is_secret_shaped deterministically classifies bounded mapping keys against an explicit credential-name policy; it does not interpret free language, select a route, invoke a tool, or authorize an effect."
     },
@@ -814,12 +814,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/policy.py",
       "mirrorPaths": [],
       "symbol": "safe_repo_path",
-      "line": 196,
+      "line": 212,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "0f5aba3072675d586322c8923f45b3d8af17ed31d38daf39222f2b661ab2f93a",
+      "fileSha256": "131471cb8c7119fe4a211ee75dff9d6d4457fe1ccacf30175b9ba25414752e66",
       "anchorSha256": "fa4af5ce4a0c7efa0448a2d8a531e1d117abbc26f9b9303c9b22f4556b05875e",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:371aa7be533210e0d7795567",
+      "candidateId": "llm-boundary:efa50a95ca7db6be30153578",
       "classification": "STRUCTURED_POLICY",
       "rationale": "safe_repo_path evaluates bounded identifiers, paths, hashes, allowlists or explicit tool state; it does not infer semantic intent from free user language."
     },
@@ -1032,5 +1032,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "e6b59dfc83b1719438c71579a47dc955c207cde7e11a01d0c69b7cfda1b4d812"
+  "ledgerSha256": "0bd915fb2c7aa7d325ab87019e1c2415e8db92eaa977127211e640e0dd0a2010"
 }
