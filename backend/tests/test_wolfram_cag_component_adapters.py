@@ -180,6 +180,38 @@ def test_request_contract_is_typed_and_validates_size_and_forbidden_keys():
         _request(requested_output_bytes=10 * 1024 * 1024).validate()
     with pytest.raises(WolframCagError, match="forbidden"):
         _request(idempotency_key="apikey").validate()
+    # Request payload size is enforced against the component contract, not
+    # merely declared.
+    with pytest.raises(WolframCagError, match="request size must be non-negative"):
+        _request(request_size_bytes=-1).validate()
+    with pytest.raises(WolframCagError, match="request payload exceeds component limit"):
+        _request(request_size_bytes=component.max_request_bytes + 1).validate()
+    # A request at exactly the limit is accepted.
+    _request(request_size_bytes=component.max_request_bytes).validate()
+
+
+def test_request_size_limit_is_testable_per_component_and_bound_into_hash():
+    # Each component declares a distinct, finite request limit that is
+    # individually enforceable, satisfying #1459's "Requestlimits sind testbar".
+    for capability_id, component in WOLFRAM_CAG_COMPONENT_MAP.items():
+        assert component.max_request_bytes > 0
+        at_limit = _request(
+            capability_id=capability_id,
+            request_size_bytes=component.max_request_bytes,
+        )
+        assert at_limit.validate().capability_id == capability_id
+        over_limit = _request(
+            capability_id=capability_id,
+            request_size_bytes=component.max_request_bytes + 1,
+        )
+        with pytest.raises(WolframCagError, match="request payload exceeds component limit") as exc:
+            over_limit.validate()
+        assert exc.value.family is WolframCagErrorFamily.SCHEMA
+    # The declared request size is part of the deterministic receipt identity,
+    # so two equal requests with different sizes produce different hashes.
+    base = _request(request_size_bytes=0)
+    sized = _request(request_size_bytes=1024)
+    assert base.request_hash != sized.request_hash
 
 
 def test_credentials_resolved_server_side_and_secret_never_returned_or_logged(monkeypatch):

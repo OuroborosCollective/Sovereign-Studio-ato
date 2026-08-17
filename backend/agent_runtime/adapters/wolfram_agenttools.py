@@ -350,6 +350,11 @@ class WolframCagRequest:
     response_schema_hash: str = ""
     idempotency_key: str = ""
     requested_output_bytes: int = 0
+    # Declared byte size of the request body + query payload the caller will
+    # send to the component transport. Carried explicitly (not derivable from
+    # ``body_hash``) so the per-component ``max_request_bytes`` limit is
+    # enforceable and testable before any network call is made.
+    request_size_bytes: int = 0
 
     def validate(self) -> WolframCagComponent:
         component = WOLFRAM_CAG_COMPONENT_MAP.get(self.capability_id)
@@ -380,6 +385,16 @@ class WolframCagRequest:
                 "requested output exceeds component limit",
                 family=WolframCagErrorFamily.SCHEMA,
             )
+        if self.request_size_bytes < 0:
+            raise WolframCagError(
+                "request size must be non-negative",
+                family=WolframCagErrorFamily.SCHEMA,
+            )
+        if self.request_size_bytes > component.max_request_bytes:
+            raise WolframCagError(
+                "request payload exceeds component limit",
+                family=WolframCagErrorFamily.SCHEMA,
+            )
         return component
 
     @property
@@ -392,6 +407,7 @@ class WolframCagRequest:
             "responseSchemaHash": self.response_schema_hash,
             "idempotencyKey": self.idempotency_key,
             "requestedOutputBytes": self.requested_output_bytes,
+            "requestSizeBytes": self.request_size_bytes,
         }
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
