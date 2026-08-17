@@ -168,8 +168,10 @@ export GITHUB_TOKEN="$TOKEN"
 export GIT_ASKPASS="$ASKPASS_DIR/askpass.sh"
 export GIT_TERMINAL_PROMPT=0
 
+CURRENT_STAGE="prepare_registry_auth"
 REGISTRY_USERNAME="x-access-token"
 REGISTRY_TOKEN="$TOKEN"
+REGISTRY_IDENTITY_VERIFICATION_REQUIRED=0
 if [[ -f "$GHCR_ENV" ]]; then
   python3 - "$GHCR_ENV" <<'PY'
 import os
@@ -189,6 +191,7 @@ PY
     fi
     REGISTRY_USERNAME="$CONFIGURED_GHCR_USERNAME"
     REGISTRY_TOKEN="$CONFIGURED_GHCR_TOKEN"
+    REGISTRY_IDENTITY_VERIFICATION_REQUIRED=1
   fi
 fi
 if [[ ! "$REGISTRY_USERNAME" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]; then
@@ -197,6 +200,35 @@ if [[ ! "$REGISTRY_USERNAME" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]; then
 fi
 export SOVEREIGN_GHCR_USERNAME="$REGISTRY_USERNAME"
 export SOVEREIGN_GHCR_TOKEN="$REGISTRY_TOKEN"
+if [[ "$REGISTRY_IDENTITY_VERIFICATION_REQUIRED" == "1" ]]; then
+  VALIDATED_REGISTRY_USERNAME="$(python3 - <<'PY'
+import json
+import os
+import urllib.request
+
+request = urllib.request.Request(
+    "https://api.github.com/user",
+    headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {os.environ['SOVEREIGN_GHCR_TOKEN']}",
+        "User-Agent": "sovereign-mcp-self-update",
+        "X-GitHub-Api-Version": "2026-03-10",
+    },
+)
+with urllib.request.urlopen(request, timeout=20) as response:
+    payload = json.load(response)
+login = str(payload.get("login") or "").strip()
+if not login:
+    raise SystemExit("GitHub identity response has no login")
+print(login)
+PY
+)"
+  if [[ "${VALIDATED_REGISTRY_USERNAME,,}" != "${REGISTRY_USERNAME,,}" ]]; then
+    write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; configured GHCR username does not match authenticated GitHub identity"
+    exit 1
+  fi
+  unset VALIDATED_REGISTRY_USERNAME
+fi
 python3 - "$REGISTRY_AUTH_DIR/config.json" <<'PY'
 from pathlib import Path
 import base64
@@ -214,7 +246,7 @@ Path(sys.argv[1]).write_text(
 PY
 chmod 0600 "$REGISTRY_AUTH_DIR/config.json"
 export DOCKER_CONFIG="$REGISTRY_AUTH_DIR"
-unset SOVEREIGN_GHCR_USERNAME SOVEREIGN_GHCR_TOKEN REGISTRY_TOKEN CONFIGURED_GHCR_TOKEN TOKEN
+unset SOVEREIGN_GHCR_USERNAME SOVEREIGN_GHCR_TOKEN REGISTRY_TOKEN CONFIGURED_GHCR_TOKEN TOKEN REGISTRY_IDENTITY_VERIFICATION_REQUIRED
 
 CURRENT_STAGE="fetch_confirmed_revision"
 write_status RUNNING "$EXPECTED_REVISION" "fetching confirmed main revision"
