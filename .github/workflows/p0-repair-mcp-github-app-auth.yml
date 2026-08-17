@@ -65,6 +65,88 @@ jobs:
               test -n "${SUDO_PASSWORD:-}" || die sudo_password_unavailable
               printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
             }
+            read_env_value() {
+              local file="$1"
+              local key="$2"
+              run_root sed -n "s/^${key}=//p" "$file" 2>/dev/null | tail -n 1
+            }
+            write_env_value_stdin() {
+              local file="$1"
+              local key="$2"
+              local attrs=""
+              local cleared_i=0
+              local cleared_a=0
+              attrs="$(run_root lsattr -d -- "$file" 2>/dev/null | awk '{print $1}' || true)"
+              if [[ "$attrs" == *i* ]]; then
+                run_root chattr -i -- "$file" || die "${key}_immutable_clear_failed"
+                cleared_i=1
+              fi
+              if [[ "$attrs" == *a* ]]; then
+                run_root chattr -a -- "$file" || die "${key}_append_only_clear_failed"
+                cleared_a=1
+              fi
+              if ! run_root python3 - "$file" "$key" <<'PY'
+import os
+import sys
+
+path, key = sys.argv[1:3]
+value = os.environ.get('SOVEREIGN_STDIN_VALUE', '')
+if not value:
+    value = sys.stdin.read()
+if not value:
+    raise SystemExit(1)
+with open(path, 'r', encoding='utf-8') as handle:
+    lines = handle.read().splitlines()
+replacement = f'{key}={value}'
+updated = []
+replaced = False
+for line in lines:
+    if line.startswith(f'{key}='):
+        if not replaced:
+            updated.append(replacement)
+            replaced = True
+        continue
+    updated.append(line)
+if not replaced:
+    updated.append(replacement)
+with open(path, 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(updated) + '\n')
+PY
+              then
+                [[ "$cleared_a" != 1 ]] || run_root chattr +a -- "$file" >/dev/null 2>&1 || true
+                [[ "$cleared_i" != 1 ]] || run_root chattr +i -- "$file" >/dev/null 2>&1 || true
+                die "${key}_managed_env_write_failed"
+              fi
+              [[ "$cleared_a" != 1 ]] || run_root chattr +a -- "$file" || die "${key}_append_only_restore_failed"
+              [[ "$cleared_i" != 1 ]] || run_root chattr +i -- "$file" || die "${key}_immutable_restore_failed"
+            }
+            set_public_env_value() {
+              local file="$1"
+              local key="$2"
+              local value="$3"
+              SOVEREIGN_STDIN_VALUE="$value" run_root python3 - "$file" "$key" <<'PY'
+import os
+import sys
+path, key = sys.argv[1:3]
+value = os.environ['SOVEREIGN_STDIN_VALUE']
+with open(path, 'r', encoding='utf-8') as handle:
+    lines = handle.read().splitlines()
+replacement = f'{key}={value}'
+updated = []
+replaced = False
+for line in lines:
+    if line.startswith(f'{key}='):
+        if not replaced:
+            updated.append(replacement)
+            replaced = True
+        continue
+    updated.append(line)
+if not replaced:
+    updated.append(replacement)
+with open(path, 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(updated) + '\n')
+PY
+            }
 
             stage ssh_connected
             run_root docker inspect sovereign-chatgpt-mcp >/dev/null 2>&1 || die mcp_container_missing
@@ -91,8 +173,79 @@ jobs:
             test -f "$BACKEND_ENV" || die backend_runtime_env_missing
             test ! -L "$BACKEND_ENV" || die backend_runtime_env_symlink
             stage backend_runtime_env_present
-            grep -q '^GITHUB_APP_ID=[1-9][0-9]*$' "$BACKEND_ENV" || die backend_github_app_id_missing
+
+            APP_ID="$(read_env_value "$BACKEND_ENV" GITHUB_APP_ID)"
+            if [[ ! "$APP_ID" =~ ^[1-9][0-9]*$ ]]; then
+              stage resolving_backend_github_app_id
+              APP_ID="$(run_root docker inspect sovereign-backend --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^GITHUB_APP_ID=//p' | tail -n 1 || true)"
+            fi
+            if [[ ! "$APP_ID" =~ ^[1-9][0-9]*$ ]]; then
+              for candidate in /opt/sovereign-chatgpt-tools/.env /opt/sovereign-chatgpt-tools/runtime.env; do
+                if run_root test -f "$candidate"; then
+                  APP_ID="$(read_env_value "$candidate" GITHUB_APP_ID)"
+                  [[ "$APP_ID" =~ ^[1-9][0-9]*$ ]] && break
+                fi
+              done
+            fi
+            [[ "$APP_ID" =~ ^[1-9][0-9]*$ ]] || die backend_github_app_id_unrecoverable
+            printf 'SOVEREIGN_AUTH_RESCUE_APP_ID:%s\n' "$APP_ID"
+            if ! grep -q '^GITHUB_APP_ID=[1-9][0-9]*$' "$BACKEND_ENV"; then
+              stage restoring_backend_github_app_id
+              BACKEND_ATTRS="$(run_root lsattr -d -- "$BACKEND_ENV" 2>/dev/null | awk '{print $1}' || true)"
+              BACKEND_CLEAR_I=0
+              BACKEND_CLEAR_A=0
+              if [[ "$BACKEND_ATTRS" == *i* ]]; then run_root chattr -i -- "$BACKEND_ENV" || die backend_env_immutable_clear_failed; BACKEND_CLEAR_I=1; fi
+              if [[ "$BACKEND_ATTRS" == *a* ]]; then run_root chattr -a -- "$BACKEND_ENV" || die backend_env_append_only_clear_failed; BACKEND_CLEAR_A=1; fi
+              set_public_env_value "$BACKEND_ENV" GITHUB_APP_ID "$APP_ID" || die backend_github_app_id_write_failed
+              [[ "$BACKEND_CLEAR_A" != 1 ]] || run_root chattr +a -- "$BACKEND_ENV" || die backend_env_append_only_restore_failed
+              [[ "$BACKEND_CLEAR_I" != 1 ]] || run_root chattr +i -- "$BACKEND_ENV" || die backend_env_immutable_restore_failed
+            fi
+            grep -q '^GITHUB_APP_ID=[1-9][0-9]*$' "$BACKEND_ENV" || die backend_github_app_id_missing_after_restore
             stage backend_github_app_id_present
+
+            if ! grep -q '^GITHUB_APP_PRIVATE_KEY=.' "$BACKEND_ENV"; then
+              stage resolving_backend_github_app_private_key
+              ENCODED_KEY="$(run_root docker inspect sovereign-backend --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^GITHUB_APP_PRIVATE_KEY=//p' | tail -n 1 || true)"
+              if [[ -z "$ENCODED_KEY" ]]; then
+                for candidate in /opt/sovereign-chatgpt-tools/.env /opt/sovereign-chatgpt-tools/runtime.env; do
+                  if run_root test -f "$candidate"; then
+                    ENCODED_KEY="$(read_env_value "$candidate" GITHUB_APP_PRIVATE_KEY)"
+                    [[ -n "$ENCODED_KEY" ]] && break
+                  fi
+                done
+              fi
+              [[ -n "$ENCODED_KEY" ]] || die backend_github_app_private_key_unrecoverable
+              BACKEND_ATTRS="$(run_root lsattr -d -- "$BACKEND_ENV" 2>/dev/null | awk '{print $1}' || true)"
+              BACKEND_CLEAR_I=0
+              BACKEND_CLEAR_A=0
+              if [[ "$BACKEND_ATTRS" == *i* ]]; then run_root chattr -i -- "$BACKEND_ENV" || die backend_env_immutable_clear_failed; BACKEND_CLEAR_I=1; fi
+              if [[ "$BACKEND_ATTRS" == *a* ]]; then run_root chattr -a -- "$BACKEND_ENV" || die backend_env_append_only_clear_failed; BACKEND_CLEAR_A=1; fi
+              SOVEREIGN_STDIN_VALUE="$ENCODED_KEY" run_root python3 - "$BACKEND_ENV" GITHUB_APP_PRIVATE_KEY <<'PY'
+import os
+import sys
+path, key = sys.argv[1:3]
+value = os.environ['SOVEREIGN_STDIN_VALUE']
+with open(path, 'r', encoding='utf-8') as handle:
+    lines = handle.read().splitlines()
+replacement = f'{key}={value}'
+updated = []
+replaced = False
+for line in lines:
+    if line.startswith(f'{key}='):
+        if not replaced:
+            updated.append(replacement)
+            replaced = True
+        continue
+    updated.append(line)
+if not replaced:
+    updated.append(replacement)
+with open(path, 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(updated) + '\n')
+PY
+              unset ENCODED_KEY
+              [[ "$BACKEND_CLEAR_A" != 1 ]] || run_root chattr +a -- "$BACKEND_ENV" || die backend_env_append_only_restore_failed
+              [[ "$BACKEND_CLEAR_I" != 1 ]] || run_root chattr +i -- "$BACKEND_ENV" || die backend_env_immutable_restore_failed
+            fi
             grep -q '^GITHUB_APP_PRIVATE_KEY=.' "$BACKEND_ENV" || die backend_github_app_private_key_missing
             stage backend_github_app_private_key_present
 
@@ -116,46 +269,48 @@ jobs:
             test "$MOUNT_RW" = 'false' || die app_key_mount_not_read_only
             stage app_key_mount_read_only
 
-            run_root docker exec -i sovereign-chatgpt-mcp python - <<'PY'
-            import json
-            import os
-            import re
-            import shutil
-            import subprocess
+            if ! run_root docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+import json
+import os
+import re
+import shutil
+import subprocess
 
-            from runtime import OperatorRuntime, RuntimeConfig
+from runtime import OperatorRuntime, RuntimeConfig
 
-            if os.getenv('GITHUB_TOKEN', '').strip():
-                raise SystemExit('persistent_github_token_present')
+if os.getenv('GITHUB_TOKEN', '').strip():
+    raise SystemExit('persistent_github_token_present')
 
-            config = RuntimeConfig.from_env()
-            if config.github_app is None:
-                raise SystemExit('github_app_config_missing_after_repair')
-            if config.github_app.installation_id != 153170343:
-                raise SystemExit('unexpected_github_app_installation_id')
-            if str(config.github_app.private_key_file) != '/run/secrets/sovereign-github-app-private-key.pem':
-                raise SystemExit('unexpected_github_app_key_mount_path')
+config = RuntimeConfig.from_env()
+if config.github_app is None:
+    raise SystemExit('github_app_config_missing_after_repair')
+if config.github_app.installation_id != 153170343:
+    raise SystemExit('unexpected_github_app_installation_id')
+if str(config.github_app.private_key_file) != '/run/secrets/sovereign-github-app-private-key.pem':
+    raise SystemExit('unexpected_github_app_key_mount_path')
 
-            runtime = OperatorRuntime(config)
-            metadata = runtime.prepare_workspace(base_branch='main', task_slug='github-app-auth-canary')
-            workspace_id = metadata['workspace_id']
-            try:
-                repo = runtime._repo(workspace_id)
-                head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
-                if not re.fullmatch(r'[0-9a-f]{40}', head):
-                    raise SystemExit('authenticated_clone_invalid_head')
-                print(json.dumps({
-                    'status': 'MCP_GITHUB_APP_AUTH_VERIFIED',
-                    'workspacePrepared': True,
-                    'cloneHead': head,
-                    'installationId': config.github_app.installation_id,
-                    'persistentGithubTokenPresent': False,
-                    'secretValuesReturned': False,
-                }, sort_keys=True, separators=(',', ':')))
-            finally:
-                shutil.rmtree(runtime._workspace(workspace_id), ignore_errors=True)
-            PY
-            test "$?" -eq 0 || die authenticated_workspace_canary_failed
+runtime = OperatorRuntime(config)
+metadata = runtime.prepare_workspace(base_branch='main', task_slug='github-app-auth-canary')
+workspace_id = metadata['workspace_id']
+try:
+    repo = runtime._repo(workspace_id)
+    head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    if not re.fullmatch(r'[0-9a-f]{40}', head):
+        raise SystemExit('authenticated_clone_invalid_head')
+    print(json.dumps({
+        'status': 'MCP_GITHUB_APP_AUTH_VERIFIED',
+        'workspacePrepared': True,
+        'cloneHead': head,
+        'installationId': config.github_app.installation_id,
+        'persistentGithubTokenPresent': False,
+        'secretValuesReturned': False,
+    }, sort_keys=True, separators=(',', ':')))
+finally:
+    shutil.rmtree(runtime._workspace(workspace_id), ignore_errors=True)
+PY
+            then
+              die authenticated_workspace_canary_failed
+            fi
             stage authenticated_workspace_canary_ok
 
             HEALTH="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}')" || die health_read_failed
