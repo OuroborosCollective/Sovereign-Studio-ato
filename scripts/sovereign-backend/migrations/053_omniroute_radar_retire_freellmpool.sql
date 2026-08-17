@@ -43,6 +43,19 @@ BEGIN
 END
 $retire$;
 
+CREATE TABLE IF NOT EXISTS llm_provider_radar_runtime (
+    sensor_id TEXT PRIMARY KEY CHECK (char_length(sensor_id) BETWEEN 1 AND 120),
+    lease_owner UUID,
+    lease_expires_at TIMESTAMPTZ,
+    last_started_at TIMESTAMPTZ,
+    last_completed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO llm_provider_radar_runtime (sensor_id)
+VALUES ('omniroute-free-model-catalog')
+ON CONFLICT (sensor_id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS llm_provider_radar_runs (
     id UUID PRIMARY KEY,
     sensor_id TEXT NOT NULL CHECK (char_length(sensor_id) BETWEEN 1 AND 120),
