@@ -152,6 +152,7 @@ def test_installer_binds_revision_policy_permissions_and_preserves_predecessor_s
         'docker compose up -d --no-build --force-recreate --remove-orphans'
     )
 
+    assert 'EXPECTED_MCP_TOOL_COUNT="249"' in script
     assert 'EXPECTED_MCP_TOOL_COUNT="250"' in script
     assert 'INSTALL_STAGE="capture_previous_mcp_tool_surface"' in script
     assert 'INSTALL_STAGE="verify_mcp_tool_surface_preservation"' in script
@@ -299,6 +300,8 @@ resolve_previous_mcp_registry_capture_mode
         "SOVEREIGN_NEURO_POLICY_SHA256": policy_sha256,
         "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
         "SOVEREIGN_KAPPA_POS": "1000000",
+        "SOVEREIGN_MCP_PRIVATE_OWNER_MODE": "1",
+        "SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE": "1",
     }
     registry_process = subprocess.run(
         [
@@ -836,6 +839,8 @@ def test_exact_embedded_neuro_canary_runs_against_the_real_local_registry(tmp_pa
         "SOVEREIGN_MCP_REPOSITORY": "OuroborosCollective/Sovereign-Studio-ato",
         "SOVEREIGN_ANDROID_NATIVE_BUILD_MODE": "github_actions",
         "SOVEREIGN_KAPPA_POS": "1000000",
+        "SOVEREIGN_MCP_PRIVATE_OWNER_MODE": "1",
+        "SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE": "1",
     }
     completed = subprocess.run(
         [sys.executable, "-c", embedded],
@@ -886,7 +891,7 @@ def test_ci_packages_and_independently_reads_back_the_neuro_runtime(tmp_path: Pa
         "skills/sovereign-neuro-teaching-runtime/SKILL.md",
     ):
         assert path in workflow
-    assert "assert len(tool_names) == 250" in workflow
+    assert "assert len(tool_names) == 249" in workflow
     assert "assert len(tool_names - expected_tools) == 245" in deployment_surface
     assert "SOVEREIGN_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
     assert workflow.count("ref: ${{ env.SOVEREIGN_SOURCE_REVISION }}") == 2

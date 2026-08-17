@@ -1408,7 +1408,6 @@ def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) ->
     return broker.call("container_logs", {"container": container, "tail": tail})
 
 
-@mcp.tool(annotations=EXTERNAL_WRITE)
 def vps_dev_exec(
     cwd: str,
     argv: list[str],
@@ -1420,6 +1419,13 @@ def vps_dev_exec(
         {"cwd": cwd, "argv": argv, "timeout_seconds": timeout_seconds},
         timeout=max(30, min(int(timeout_seconds) + 15, 1215)),
     )
+
+
+if (
+    os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
+    and os.getenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "0").strip() == "1"
+):
+    mcp.tool(annotations=EXTERNAL_WRITE)(vps_dev_exec)
 
 
 @mcp.tool(annotations=READ_ONLY)

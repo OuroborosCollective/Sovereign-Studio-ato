@@ -334,7 +334,7 @@ jobs:
           grep -q '"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only"' deploy/install-on-vps.sh
           grep -q '"read_only_tool_calls_persisted":false' deploy/install-on-vps.sh
           grep -q '"canary_persisted_outcome_tools":\["neuro_event_commit"\]' deploy/install-on-vps.sh
-          grep -q 'EXPECTED_MCP_TOOL_COUNT="250"' deploy/install-on-vps.sh
+          grep -q 'EXPECTED_MCP_TOOL_COUNT="249"' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_NEURO_RUNTIME_STATE_ROOT: /var/lib/sovereign-tool-routing/neuro-runtime' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_EVENTS: "100000"' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_BYTES: "268435456"' docker-compose.yml
@@ -730,7 +730,7 @@ jobs:
               'teaching_lesson_simulate',
               'teaching_package_assess',
           }
-          assert len(tool_names) == 250, len(tool_names)
+          assert len(tool_names) == 249, len(tool_names)
           assert neuro_tool_names <= tool_names, sorted(neuro_tool_names - tool_names)
           assert {
               'backend_engineering_tool_inventory',

@@ -60,7 +60,7 @@ MCP_UID="10001"
 MCP_GID="10001"
 MCP_HOST_PORT="8090"
 NEURO_RUNTIME_STATE_HOST_DIR="$INSTALL_ROOT/tool-routing-state/neuro-runtime"
-EXPECTED_MCP_TOOL_COUNT="250"
+EXPECTED_MCP_TOOL_COUNT="249"
 MCP_IMAGE_REPOSITORY="${SOVEREIGN_MCP_IMAGE_REPOSITORY:-ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp}"
 EXPECTED_REVISION="${SOVEREIGN_MCP_EXPECTED_REVISION:-}"
 EXPECTED_MCP_DIGEST="${SOVEREIGN_MCP_EXPECTED_DIGEST:-}"
@@ -1189,6 +1189,9 @@ if [[ "$PRIVATE_OWNER_MODE" != "1" && "$PRIVATE_VPS_DEV_MODE" == "1" ]]; then
 fi
 set_value "$MANAGED_ENV" SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE "$PRIVATE_VPS_DEV_MODE"
 set_value "$MANAGED_ENV" SOVEREIGN_MCP_DEV_ROOTS "/opt/sovereign-chatgpt-tools/workspaces,/opt/sovereign-backend,/opt/sovereign-operator-source,/opt/sovereign-agent-workspaces,/opt/gpt-tools"
+if [[ "$PRIVATE_VPS_DEV_MODE" == "1" ]]; then
+  EXPECTED_MCP_TOOL_COUNT="250"
+fi
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
   for OWNER_CAPABILITY in \
     SOVEREIGN_MCP_ENABLE_DB_WRITES \
