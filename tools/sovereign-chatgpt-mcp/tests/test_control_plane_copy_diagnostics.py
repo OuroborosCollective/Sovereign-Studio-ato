@@ -90,6 +90,18 @@ def test_managed_control_plane_copy_is_file_bound_and_fail_closed() -> None:
     assert '"$failed_stage" "$exit_code" "${failed_reason:-unexpected command failure}"' in script
 
 
+def test_managed_private_env_mutations_preserve_inode_before_attribute_restore() -> None:
+    script = INSTALLER.read_text("utf-8")
+    set_block = script.split("set_value() {", 1)[1].split("remove_value() {", 1)[0]
+    remove_block = script.split("remove_value() {", 1)[1].split("remove_csv_values() {", 1)[0]
+    csv_block = script.split("remove_csv_values() {", 1)[1].split("valid_mcp_image_digest() {", 1)[0]
+
+    for block in (set_block, remove_block, csv_block):
+        assert 'with path.open("w", encoding="utf-8", newline="\\n") as handle:' in block
+        assert "os.fsync(handle.fileno())" in block
+        assert "temporary.replace(path)" not in block
+
+
 def test_installer_rejects_reduced_launcher_surface_and_missing_widget_domain() -> None:
     script = INSTALLER.read_text("utf-8")
 

@@ -397,30 +397,18 @@ for line in lines:
 if not replaced:
     out.append(f"{key}={value}")
 payload = "\n".join(out) + "\n"
-temporary = path.with_suffix(path.suffix + ".tmp")
-temporary.write_text(payload, "utf-8")
-os.chmod(temporary, 0o600)
+with path.open("w", encoding="utf-8", newline="\n") as handle:
+    handle.write(payload)
+    handle.flush()
+    os.fsync(handle.fileno())
 try:
-    temporary.replace(path)
-except OSError as exc:
-    if exc.errno not in {errno.EPERM, errno.EBUSY, errno.EXDEV}:
-        temporary.unlink(missing_ok=True)
+    os.chmod(path, 0o600)
+except OSError as chmod_exc:
+    if chmod_exc.errno not in {errno.EPERM, errno.EACCES, errno.EROFS}:
         raise
-    try:
-        with path.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        try:
-            os.chmod(path, 0o600)
-        except OSError as chmod_exc:
-            if chmod_exc.errno not in {errno.EPERM, errno.EACCES, errno.EROFS}:
-                raise
-            mode = stat.S_IMODE(path.stat().st_mode)
-            if mode & 0o077:
-                raise PermissionError(f"protected file has unsafe mode: {mode:o}") from chmod_exc
-    finally:
-        temporary.unlink(missing_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if mode & 0o077:
+        raise PermissionError(f"protected file has unsafe mode: {mode:o}") from chmod_exc
 PY
   then
     restore_managed_private_file_mutation_best_effort "$file"
@@ -447,10 +435,12 @@ if not path.exists():
     raise SystemExit(0)
 lines = path.read_text("utf-8").splitlines()
 out = [line for line in lines if not line.startswith(key + "=")]
-temporary = path.with_suffix(path.suffix + ".tmp")
-temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
-os.chmod(temporary, 0o600)
-temporary.replace(path)
+payload = ("\n".join(out) + "\n") if out else ""
+with path.open("w", encoding="utf-8", newline="\n") as handle:
+    handle.write(payload)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(path, 0o600)
 PY
   then
     restore_managed_private_file_mutation_best_effort "$file"
@@ -486,10 +476,12 @@ for line in path.read_text("utf-8").splitlines():
     retained = [item for item in values if item not in blocked]
     if retained:
         out.append(key + "=" + ",".join(dict.fromkeys(retained)))
-temporary = path.with_suffix(path.suffix + ".tmp")
-temporary.write_text(("\n".join(out) + "\n") if out else "", "utf-8")
-os.chmod(temporary, 0o600)
-temporary.replace(path)
+payload = ("\n".join(out) + "\n") if out else ""
+with path.open("w", encoding="utf-8", newline="\n") as handle:
+    handle.write(payload)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.chmod(path, 0o600)
 PY
   then
     restore_managed_private_file_mutation_best_effort "$file"
