@@ -19,7 +19,8 @@ describe('ThoughtBubble Palette Enhancements', () => {
     const button = screen.getByRole('button');
     // aria-expanded should be false initially
     expect(button).toHaveAttribute('aria-expanded', 'false');
-    // title should be "Gedanken ausklappen"
+    // aria-label and title should be "Gedanken ausklappen"
+    expect(button).toHaveAttribute('aria-label', 'Gedanken ausklappen');
     expect(button).toHaveAttribute('title', 'Gedanken ausklappen');
   });
 
@@ -29,11 +30,24 @@ describe('ThoughtBubble Palette Enhancements', () => {
 
     fireEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button).toHaveAttribute('aria-label', 'Gedanken einklappen');
     expect(button).toHaveAttribute('title', 'Gedanken einklappen');
 
     fireEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(button).toHaveAttribute('aria-label', 'Gedanken ausklappen');
     expect(button).toHaveAttribute('title', 'Gedanken ausklappen');
+  });
+
+  it('handles focus and blur states correctly for keyboard navigation', () => {
+    render(<ThoughtBubble text={longText} />);
+    const button = screen.getByRole('button');
+
+    fireEvent.focus(button);
+    expect(button.style.outline).toContain('solid');
+
+    fireEvent.blur(button);
+    expect(button.style.outline).toBe('none');
   });
 
   it('toggles between truncated and full text', () => {

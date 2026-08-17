@@ -24,6 +24,7 @@ function useTypedWorkStateText(text: string): string {
 export function ThoughtBubble({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const typedText = useTypedWorkStateText(text);
   const displayText =
     open || typedText.length <= 96 ? typedText : `${typedText.slice(0, 96)}…`;
@@ -36,8 +37,11 @@ export function ThoughtBubble({ text }: { text: string }) {
       onClick={() => setOpen((v) => !v)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
       aria-live="polite"
       aria-expanded={open}
+      aria-label={label}
       title={label}
       style={{
         width: "100%",
@@ -50,7 +54,9 @@ export function ThoughtBubble({ text }: { text: string }) {
         padding: "4px 16px",
         cursor: "pointer",
         textAlign: "left",
-        transition: "background 0.2s",
+        transition: "background 0.2s, outline 0.2s",
+        outline: isFocused ? `2px solid ${C.sky}` : "none",
+        outlineOffset: 2,
       }}
     >
       <span
