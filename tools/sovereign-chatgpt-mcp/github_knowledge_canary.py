@@ -42,6 +42,7 @@ cleanup = {
 }
 evidence: dict[str, object] = {}
 failure: dict[str, object] | None = None
+failure_stage = "runtime_identity"
 conn = None
 
 
@@ -63,6 +64,7 @@ try:
     if runtime_revision != expected_revision or runtime_digest != expected_digest:
         raise RuntimeError("backend runtime identity mismatch")
 
+    failure_stage = "health_identity"
     with urllib.request.urlopen("http://127.0.0.1:8787/health", timeout=8) as response:
         health_body = response.read(1_000_000)
     health = json.loads(health_body.decode("utf-8"))
@@ -75,6 +77,7 @@ try:
 
     import knowledge_library
 
+    failure_stage = "database_identity"
     conn = psycopg2.connect(
         host=os.environ.get("POSTGRES_HOST", "db"),
         port=int(os.environ.get("POSTGRES_PORT", "5432")),
@@ -98,6 +101,7 @@ try:
     admin_id = str(admin["id"])
     admin_email = str(admin["email"])
 
+    failure_stage = "public_github_fetch"
     original_token = os.environ.pop("TOOLCHAIN_GITHUB_TOKEN", None)
     original_pat = os.environ.pop("GITHUB_PERSONAL_ACCESS_TOKEN", None)
     original_github_get = knowledge_library._github_get
@@ -145,6 +149,7 @@ try:
             "expectedRevision": expected_revision,
         },
     )
+    failure_stage = "knowledge_persistence"
     inserted = knowledge_library._insert_document(
         conn,
         admin_id,
@@ -152,6 +157,14 @@ try:
         source_id_override=source_id,
     )
     source = inserted.get("source") if isinstance(inserted, dict) else {}
+    persistence_blocker = inserted.get("blocker") if isinstance(inserted, dict) else None
+    evidence["persistence"] = {
+        "status": str(source.get("status") or ""),
+        "chunkCount": int(source.get("chunkCount") or 0),
+        "embeddedCount": int(source.get("embeddedChunks") or 0),
+        "blockerPresent": bool(persistence_blocker),
+        "blockerSha256": digest_text(persistence_blocker) if persistence_blocker else "",
+    }
     if (
         inserted.get("duplicate") is not False
         or source.get("id") != source_id
@@ -161,6 +174,7 @@ try:
     ):
         raise RuntimeError("knowledge persistence did not reach fully embedded ready state")
 
+    failure_stage = "persisted_provenance"
     with conn.cursor() as cur:
         cur.execute(
             """SELECT status, chunk_count AS "chunkCount",
@@ -214,6 +228,7 @@ try:
     ):
         raise RuntimeError("persisted knowledge provenance or vector evidence is incomplete")
 
+    failure_stage = "transport_failure_contract"
     sensitive_detail = f"DO_NOT_PERSIST_{uuid.uuid4().hex}"
     original_requests_get = knowledge_library.requests.get
 
@@ -255,6 +270,7 @@ try:
         conn.commit()
         audit_ids.append(nonlocal_audit)
 
+    failure_stage = "failure_audit"
     audit_ids: list[str] = []
     failure_url = f"https://github.com/sovereign-canary/transport?token={sensitive_detail}"
     transport_error = knowledge_library.GitHubKnowledgeAccessError(
@@ -290,7 +306,9 @@ try:
     ):
         raise RuntimeError("failure audit leaked raw transport identity or lost blocker evidence")
 
+    failure_stage = "complete"
     evidence = {
+        **evidence,
         "source": {
             "status": "ready",
             "chunkCount": chunk_count,
@@ -317,6 +335,7 @@ try:
     }
 except Exception as exc:
     failure = {
+        "stage": failure_stage,
         "type": type(exc).__name__,
         "messageSha256": digest_text(exc),
     }
@@ -397,6 +416,7 @@ cleanup_ok = all(cleanup.get(key) == 0 for key in (
 ))
 if failure is None and not cleanup_ok:
     failure = {
+        "stage": "cleanup",
         "type": "CleanupIncomplete",
         "messageSha256": digest_text(cleanup),
     }

@@ -1,112 +1,117 @@
 #!/bin/bash
-# Install the nginx configuration for openhands.arelorian.de per issue #1187.
+# Retire the legacy OpenHands reverse-proxy integration per issue #1196.
 # Run as: sudo bash setup-nginx.sh
 #
-# Routing contract:
-#   /         → 127.0.0.1:3000 (existing local service / Browserless UI)
-#   /mcp      → 127.0.0.1:8090 (MCP, requires X-API-Key header)
-#   all other → 403 (fail-closed)
-#
-# API key sourced from owner-managed file (must exist with mode 0600):
-#   /opt/sovereign-owner-managed/openhands_mcp_api_key.txt
+# The historical hostname remains as a deny-only 410 vhost so requests cannot
+# fall through to an unrelated default TLS server. No Browserless, MCP, agent,
+# websocket, credential, or other upstream is exposed by this contract.
 
-set -e
+set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SOURCE_CONFIG="$SCRIPT_DIR/nginx/openhands.arelorian.de.conf"
 CONFIG_FILE="/etc/nginx/sites-available/openhands.arelorian.de"
 SYM_LINK="/etc/nginx/conf.d/openhands.arelorian.de.conf"
-KEY_FILE="/opt/sovereign-owner-managed/openhands_mcp_api_key.txt"
+LEGACY_ENABLED_LINK="/etc/nginx/sites-enabled/openhands.arelorian.de"
+BACKUP_ROOT="/var/backups/sovereign-nginx/openhands-retirement"
+BACKUP_DIR=""
 
-echo "Setting up nginx for openhands.arelorian.de (issue #1187)..."
-
-# Verify owner-managed API key file exists with correct permissions
-if [ ! -f "$KEY_FILE" ]; then
-    echo "ERROR: Owner-managed API key file not found: $KEY_FILE"
-    echo "Create it with: echo 'set \$mcp_api_key \"YOUR_KEY_HERE\";' > $KEY_FILE && chmod 0600 $KEY_FILE"
+if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+    echo "ERROR: OpenHands retirement must run as root"
     exit 1
 fi
 
-KEY_PERMS=$(stat -c "%a" "$KEY_FILE" 2>/dev/null || stat -f "%Lp" "$KEY_FILE" 2>/dev/null)
-if [ "$KEY_PERMS" != "600" ]; then
-    echo "ERROR: API key file has permissions $KEY_PERMS, expected 0600"
-    echo "Fix with: chmod 0600 $KEY_FILE"
+if [ ! -f "$SOURCE_CONFIG" ] || [ -L "$SOURCE_CONFIG" ]; then
+    echo "ERROR: Canonical retired vhost is missing or is a symlink"
     exit 1
 fi
 
-    # Create the same server blocks committed in nginx/openhands.arelorian.de.conf.
-cat > "$CONFIG_FILE" << 'NGINXCONF'
-server {
-    listen 80;
-    server_name openhands.arelorian.de;
-    return 301 https://$host$request_uri;
+# The retirement source must never regain an upstream or credential surface.
+if grep -Eq 'proxy_pass|127\.0\.0\.1:(3000|8090)|mcp_api_key|X-API-Key|location[[:space:]]*=[[:space:]]*/mcp' "$SOURCE_CONFIG"; then
+    echo "ERROR: Canonical retired vhost contains a forbidden legacy integration surface"
+    exit 1
+fi
+if ! grep -Fq 'return 410;' "$SOURCE_CONFIG"; then
+    echo "ERROR: Canonical retired vhost is not fail-closed"
+    exit 1
+fi
+
+mkdir -p "$BACKUP_ROOT"
+chmod 0700 "$BACKUP_ROOT"
+BACKUP_DIR="$(mktemp -d "$BACKUP_ROOT/retire.XXXXXXXX")"
+chmod 0700 "$BACKUP_DIR"
+
+backup_path() {
+    local target="$1"
+    local name="$2"
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        cp -a -- "$target" "$BACKUP_DIR/$name"
+    fi
 }
 
-server {
-    listen 443 ssl http2;
-    server_name openhands.arelorian.de;
-
-    ssl_certificate /etc/letsencrypt/live/openhands.arelorian.de/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/openhands.arelorian.de/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    # Load MCP API key from owner-managed file
-    # The file must exist with mode 0600 on the VPS before running setup-nginx.sh
-    # Key value is not committed to the repository.
-    # Fail-closed: if file is missing or unreadable, no authentication succeeds.
-    set $mcp_api_key "";
-    set $mcp_authorized 0;
-    # Load key into nginx variable; fails silently if file missing (fail-closed)
-    include /opt/sovereign-owner-managed/openhands_mcp_api_key.txt;
-
-    # MCP route: authenticated Streamable-HTTP proxy to MCP at port 8090
-    # Only exact-match /mcp is proxied; /mcp/* falls through to the catch-all 403.
-    location = /mcp {
-        # Require X-API-Key header; fail-closed without it
-        if ($http_x_api_key != $mcp_api_key) {
-            return 401;
-        }
-
-        proxy_pass http://127.0.0.1:8090/mcp;
-        proxy_http_version 1.1;
-        proxy_set_header Content-Type "application/json";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_buffering off;
-        proxy_cache off;
-    }
-
-    # Root route: existing local service at port 3000 (Browserless/OpenHands UI)
-    # Unchanged from previous configuration per issue #1187 acceptance criterion 1.
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 86400;
-    }
-
-    access_log /var/log/nginx/openhands.arelorian.de.access.log;
-    error_log /var/log/nginx/openhands.arelorian.de.error.log;
+restore_path() {
+    local target="$1"
+    local name="$2"
+    rm -f -- "$target"
+    if [ -e "$BACKUP_DIR/$name" ] || [ -L "$BACKUP_DIR/$name" ]; then
+        cp -a -- "$BACKUP_DIR/$name" "$target"
+    fi
 }
-NGINXCONF
 
-echo "Config created: $CONFIG_FILE"
+rollback() {
+    echo "Retirement validation failed; restoring previous nginx paths"
+    restore_path "$CONFIG_FILE" "sites-available"
+    restore_path "$SYM_LINK" "conf-d"
+    restore_path "$LEGACY_ENABLED_LINK" "sites-enabled"
+    nginx -t || true
+    systemctl reload nginx || true
+}
 
-# Create symlink
-ln -sf "$CONFIG_FILE" "$SYM_LINK"
-echo "Symlink created: $SYM_LINK"
+backup_path "$CONFIG_FILE" "sites-available"
+backup_path "$SYM_LINK" "conf-d"
+backup_path "$LEGACY_ENABLED_LINK" "sites-enabled"
 
-# Test nginx
-nginx -t
+# Remove a historical sites-enabled link and replace the active conf.d path with
+# one canonical deny-only vhost. Browserless and MCP runtimes are untouched.
+rm -f -- "$LEGACY_ENABLED_LINK" "$SYM_LINK"
+install -o root -g root -m 0644 "$SOURCE_CONFIG" "$CONFIG_FILE"
+ln -s "$CONFIG_FILE" "$SYM_LINK"
 
-# Reload nginx
-pkill -HUP nginx || nginx
+if ! nginx -t; then
+    rollback
+    exit 1
+fi
 
-echo "Nginx reloaded. openhands.arelorian.de configured per issue #1187:"
-echo "  /     → 127.0.0.1:3000 (root, unchanged)"
-echo "  /mcp  → 127.0.0.1:8090 (MCP, requires X-API-Key header)"
-echo "  other → 403 (fail-closed)"
+if ! systemctl reload nginx; then
+    rollback
+    exit 1
+fi
+
+if ! systemctl is-active --quiet nginx; then
+    rollback
+    exit 1
+fi
+
+# Read back the installed file and reject any silent reintroduction of the old
+# Browserless/MCP proxy or credential include before declaring retirement.
+if grep -Eq 'proxy_pass|127\.0\.0\.1:(3000|8090)|mcp_api_key|X-API-Key|location[[:space:]]*=[[:space:]]*/mcp' "$CONFIG_FILE"; then
+    rollback
+    echo "ERROR: Installed vhost still contains a legacy OpenHands integration surface"
+    exit 1
+fi
+if ! grep -Fq 'return 410;' "$CONFIG_FILE"; then
+    rollback
+    echo "ERROR: Installed vhost is not fail-closed"
+    exit 1
+fi
+
+printf '%s\n' \
+    "OPENHANDS_RUNTIME_RETIRED" \
+    "vhost=openhands.arelorian.de" \
+    "http_status=410" \
+    "browserless_proxy_present=false" \
+    "mcp_proxy_present=false" \
+    "credential_include_present=false" \
+    "nginx_config_valid=true" \
+    "nginx_service_active=true" \
+    "backup_dir=$BACKUP_DIR"
