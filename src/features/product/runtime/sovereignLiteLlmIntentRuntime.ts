@@ -323,7 +323,7 @@ function buildMessages(args: SovereignDirectLlmIntentRequest): readonly DevChatW
 export async function fetchSovereignDirectLlmInterpretation(
   args: SovereignDirectLlmIntentRequest,
 ): Promise<DevChatWorkerInterpretationResult> {
-  const fetchImpl = args.fetchImpl ?? globalThis.fetch;
+  const fetchImpl = args.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const messages = buildMessages(args);
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), SOVEREIGN_INTENT_TIMEOUT_MS);

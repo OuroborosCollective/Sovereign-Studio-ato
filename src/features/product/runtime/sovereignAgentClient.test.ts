@@ -1,10 +1,53 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SovereignAgentClient } from './sovereignAgentClient';
 import { resolveSovereignAgentConfig } from './sovereignAgentRuntime';
 
 const config = resolveSovereignAgentConfig({ enabled: true, agentApiUrl: 'https://agent.example.test' });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('SovereignAgentClient', () => {
+  it('binds the default global fetch receiver before starting repository execution', async () => {
+    let callCount = 0;
+    vi.stubGlobal('fetch', async function receiverSensitiveFetch(
+      this: typeof globalThis,
+      _url: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> {
+      if (this !== globalThis) throw new TypeError('Illegal invocation');
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response(JSON.stringify({
+          ok: true,
+          status: 'COMPLETED',
+          jobId: 'job-bound-fetch',
+          workspaceId: 'ws-bound-fetch',
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        job: {
+          id: 'job-bound-fetch',
+          workspaceId: 'ws-bound-fetch',
+          status: 'completed',
+          repoUrl: 'https://github.com/acme/repo',
+          branch: 'main',
+          changedFiles: [],
+          events: [],
+        },
+      }), { status: 200 });
+    });
+
+    const client = new SovereignAgentClient({ config });
+    const snapshot = await client.startRepositoryExecution({
+      repoUrl: 'https://github.com/acme/repo',
+      mission: 'Repair the runtime transport.',
+    });
+
+    expect(callCount).toBe(2);
+    expect(snapshot).toMatchObject({ jobId: 'job-bound-fetch', workspaceId: 'ws-bound-fetch', status: 'completed' });
+  });
   it('starts jobs only through /api/user/agent/jobs', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ job: { id: 'job-1', workspaceId: 'ws-1', status: 'queued', changedFiles: [], events: [] } }), { status: 201 }));
     const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch, now: () => 10 });
