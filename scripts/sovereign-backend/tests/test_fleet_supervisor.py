@@ -12,12 +12,15 @@ if str(RUNTIME_ROOT) not in sys.path:
 from agent_runtime.fleet_supervisor import (
     FleetContractError,
     FleetTask,
+    WORKER_EVENT_TYPES,
+    WORKER_LIFECYCLE_STATES,
     build_fleet_plan,
     build_fleet_projection,
     create_worker_assignment,
     evaluate_fleet_verdict,
     mirror_counterpart,
     pair_conflicts,
+    transition_worker_lifecycle,
     validate_worker_event,
 )
 
@@ -386,3 +389,152 @@ def test_projection_marks_stale_main_as_command_blocker() -> None:
     assert projection["stale"] is True
     assert projection["commandsBlocked"] is True
     assert "MAIN_HEAD_STALE_OR_UNAVAILABLE" in projection["evidenceGaps"]
+
+
+def _assignment() -> object:
+    plan = build_fleet_plan(
+        integration_id="fleet-events",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        base_revision=BASE,
+        tasks=[task("task-events", expected_head_revision=HEAD)],
+    )
+    return create_worker_assignment(
+        plan,
+        lane_id="lane-01",
+        task_id="task-events",
+        controller_run_id="run-events",
+        workspace_id="job-events",
+        workspace_branch="sovereign/chatgpt/worker",
+        run_envelope_hash=RECEIPT,
+        capability_manifest_hash=RECEIPT,
+    )
+
+
+def test_full_worker_event_vocabulary_is_accepted_and_neutral() -> None:
+    assignment = _assignment()
+    for event_type in WORKER_EVENT_TYPES:
+        event = validate_worker_event(
+            assignment,
+            event_type=event_type,
+            summary=f"event {event_type}",
+        )
+        assert event["eventType"] == event_type
+        assert "VERIFIED" not in event["status"] or event["status"] == "COMPLETED_UNVERIFIED"
+
+
+def test_worker_event_rejects_verification_and_authoritative_claims() -> None:
+    assignment = _assignment()
+    for forbidden in ("WORKER_RUNTIME_VERIFIED", "WORKER_VERIFIED", "MERGED", "DEPLOYED"):
+        with pytest.raises(FleetContractError):
+            validate_worker_event(assignment, event_type=forbidden, summary="must be rejected")
+
+
+def test_worker_event_binds_sequence_base_head_and_predecessor() -> None:
+    assignment = _assignment()
+    event = validate_worker_event(
+        assignment,
+        event_type="WORKSPACE_BOUND",
+        summary="worker bound to prepared workspace",
+        evidence_refs=[RECEIPT],
+        sequence=3,
+        base_revision=BASE,
+        head_revision=HEAD,
+        predecessor_hash=RECEIPT,
+    )
+    assert event["sequence"] == 3
+    assert event["baseRevision"] == BASE
+    assert event["headRevision"] == HEAD
+    assert event["predecessorHash"] == RECEIPT
+
+
+def test_worker_event_hash_chains_predecessor_and_sequence() -> None:
+    assignment = _assignment()
+    first = validate_worker_event(
+        assignment,
+        event_type="WORKER_STARTED",
+        summary="started",
+        sequence=1,
+        base_revision=BASE,
+    )
+    second = validate_worker_event(
+        assignment,
+        event_type="WORKSPACE_BOUND",
+        summary="bound",
+        sequence=2,
+        base_revision=BASE,
+        predecessor_hash=first["eventHash"],
+    )
+    # Changing the predecessor must change the chained event hash (tamper-evident stream).
+    tampered = validate_worker_event(
+        assignment,
+        event_type="WORKSPACE_BOUND",
+        summary="bound",
+        sequence=2,
+        base_revision=BASE,
+        predecessor_hash=RECEIPT,
+    )
+    assert second["eventHash"] != tampered["eventHash"]
+    assert second["predecessorHash"] == first["eventHash"]
+
+
+def test_worker_event_rejects_bad_sequence_and_revisions() -> None:
+    assignment = _assignment()
+    for bad_sequence in (-1, "1", True, 1.0):
+        with pytest.raises(FleetContractError):
+            validate_worker_event(assignment, event_type="WORKER_STARTED", summary="s", sequence=bad_sequence)
+    for bad_revision in ("short", "z" * 41):
+        with pytest.raises(FleetContractError):
+            validate_worker_event(assignment, event_type="WORKER_STARTED", summary="s", base_revision=bad_revision)
+
+
+def test_worker_event_keeps_legacy_caller_identity_when_no_binding_supplied() -> None:
+    assignment = _assignment()
+    legacy = validate_worker_event(
+        assignment,
+        event_type="WORKER_COMPLETED_UNVERIFIED",
+        summary="legacy minimal call",
+        evidence_refs=[RECEIPT],
+    )
+    assert legacy["status"] == "COMPLETED_UNVERIFIED"
+    assert "sequence" not in legacy
+    assert "baseRevision" not in legacy
+    assert "predecessorHash" not in legacy
+
+
+def test_lifecycle_transitions_follow_the_planned_path() -> None:
+    assert transition_worker_lifecycle("PLANNED", "WORKER_READY") == "READY"
+    assert transition_worker_lifecycle("READY", "WORKER_STARTED") == "RUNNING"
+    assert transition_worker_lifecycle("RUNNING", "PR_READY_UNVERIFIED") == "VERIFYING"
+    assert transition_worker_lifecycle("VERIFYING", "WORKER_COMPLETED_UNVERIFIED") == "COMPLETED_UNVERIFIED"
+
+
+def test_lifecycle_rejects_illegal_and_authoritative_transitions() -> None:
+    # Cannot skip straight to completion/verification.
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("PLANNED", "WORKER_COMPLETED_UNVERIFIED")
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("READY", "PR_READY_UNVERIFIED")
+    # No event can reach a verified/merged state.
+    for state in WORKER_LIFECYCLE_STATES:
+        with pytest.raises(FleetContractError):
+            transition_worker_lifecycle(state, "WORKER_RUNTIME_VERIFIED")
+    # Terminal states admit no further transition.
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("COMPLETED_UNVERIFIED", "WORKER_READY")
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("FAILED", "WORKER_STARTED")
+    # Unknown state and event.
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("RUNTIME_VERIFIED", "WORKER_STARTED")
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("RUNNING", "TOTALLY_MADE_UP")
+
+
+def test_lifecycle_side_effect_events_only_allowed_while_running() -> None:
+    assert transition_worker_lifecycle("RUNNING", "PATCH_PREPARED") == "RUNNING"
+    assert transition_worker_lifecycle("RUNNING", "TEST_RESULT_RECORDED") == "RUNNING"
+    assert transition_worker_lifecycle("RUNNING", "EVIDENCE_REFERENCE_ADDED") == "RUNNING"
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("READY", "PATCH_PREPARED")
+    with pytest.raises(FleetContractError):
+        transition_worker_lifecycle("ASSIGNED", "EVIDENCE_REFERENCE_ADDED")
