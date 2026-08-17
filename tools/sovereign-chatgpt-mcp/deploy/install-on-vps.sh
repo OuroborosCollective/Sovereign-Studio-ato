@@ -240,7 +240,48 @@ install_ci_runtime_readback_authorization() {
     || fail "CI runtime readback public key must contain exactly one line"
   ssh-keygen -lf "$key_source" >/dev/null \
     || fail "CI runtime readback public key is invalid"
-  install -d -m 0700 -o root -g root "$root_ssh_dir"
+  INSTALL_STAGE="prepare_ci_runtime_readback_ssh_directory"
+  if [[ -e "$root_ssh_dir" || -L "$root_ssh_dir" ]]; then
+    local ssh_dir_metadata ssh_dir_attrs=""
+    local ssh_dir_cleared_immutable=0
+    local ssh_dir_cleared_append_only=0
+    [[ -d "$root_ssh_dir" && ! -L "$root_ssh_dir" ]] \
+      || fail "CI runtime readback SSH directory is not a regular directory"
+    ssh_dir_metadata="$(stat -c '%u:%g:%a' -- "$root_ssh_dir")" \
+      || fail "CI runtime readback SSH directory metadata read failed"
+    if [[ "$ssh_dir_metadata" != "0:0:700" ]]; then
+      ssh_dir_attrs="$(lsattr -d -- "$root_ssh_dir" 2>/dev/null | awk '{print $1}' || true)"
+      if [[ "$ssh_dir_attrs" == *i* ]]; then
+        chattr -i -- "$root_ssh_dir" \
+          || fail "CI runtime readback SSH directory immutable-bit clear failed"
+        ssh_dir_cleared_immutable=1
+      fi
+      if [[ "$ssh_dir_attrs" == *a* ]]; then
+        if ! chattr -a -- "$root_ssh_dir"; then
+          [[ "$ssh_dir_cleared_immutable" != "1" ]] || chattr +i -- "$root_ssh_dir" >/dev/null 2>&1 || true
+          fail "CI runtime readback SSH directory append-only-bit clear failed"
+        fi
+        ssh_dir_cleared_append_only=1
+      fi
+      if ! chown root:root -- "$root_ssh_dir" || ! chmod 0700 -- "$root_ssh_dir"; then
+        [[ "$ssh_dir_cleared_append_only" != "1" ]] || chattr +a -- "$root_ssh_dir" >/dev/null 2>&1 || true
+        [[ "$ssh_dir_cleared_immutable" != "1" ]] || chattr +i -- "$root_ssh_dir" >/dev/null 2>&1 || true
+        fail "CI runtime readback SSH directory metadata repair failed"
+      fi
+      if [[ "$ssh_dir_cleared_append_only" == "1" ]]; then
+        chattr +a -- "$root_ssh_dir" \
+          || fail "CI runtime readback SSH directory append-only-bit restore failed"
+      fi
+      if [[ "$ssh_dir_cleared_immutable" == "1" ]]; then
+        chattr +i -- "$root_ssh_dir" \
+          || fail "CI runtime readback SSH directory immutable-bit restore failed"
+      fi
+    fi
+  else
+    install -d -m 0700 -o root -g root "$root_ssh_dir" \
+      || fail "CI runtime readback SSH directory creation failed"
+  fi
+  INSTALL_STAGE="install_ci_runtime_readback_authorization"
   if [[ -e "$authorized_keys" || -L "$authorized_keys" ]]; then
     [[ -f "$authorized_keys" && ! -L "$authorized_keys" ]] \
       || fail "CI runtime readback authorization target is not a regular file"
