@@ -19,9 +19,12 @@ from evidence_observatory_contracts import (  # noqa: E402
     sha256_text,
     source_dependency_analysis,
 )
+import evidence_observatory_integrations as observatory_integrations  # noqa: E402
 from evidence_observatory_integrations import (  # noqa: E402
+    NOTION_VERSION,
     normalize_notion_page,
     publish_huggingface_batch,
+    sync_notion_research,
 )
 
 
@@ -206,6 +209,54 @@ def test_notion_claim_mutation_creates_a_new_external_candidate_identity():
     second = normalize_notion_page(changed)
     assert first["externalKey"] != second["externalKey"]
     assert first["sourceKind"] == "notion"
+
+
+def test_notion_direct_sync_combines_search_and_data_source_without_truth_promotion(monkeypatch):
+    search_page = {
+        "object": "page",
+        "id": "1" * 32,
+        "url": "https://www.notion.so/search-page",
+        "last_edited_time": "2026-08-17T07:00:00Z",
+        "properties": {
+            "Claim": {"type": "rich_text", "rich_text": [{"plain_text": "Search claim"}]},
+            "Name": {"type": "title", "title": [{"plain_text": "Search research"}]},
+        },
+    }
+    data_page = {
+        "object": "page",
+        "id": "2" * 32,
+        "url": "https://www.notion.so/data-page",
+        "last_edited_time": "2026-08-17T08:00:00Z",
+        "properties": {
+            "Claim": {"type": "rich_text", "rich_text": [{"plain_text": "Data source claim"}]},
+            "Name": {"type": "title", "title": [{"plain_text": "Data research"}]},
+        },
+    }
+    calls = []
+
+    def fake_notion_request(method, path, *, json_body=None):
+        calls.append((method, path, dict(json_body or {})))
+        if path == "/search":
+            return {"results": [search_page], "has_more": False, "next_cursor": None}
+        assert path == f"/data_sources/{'a' * 32}/query"
+        return {"results": [data_page], "has_more": False, "next_cursor": None}
+
+    monkeypatch.setattr(observatory_integrations, "_notion_request", fake_notion_request)
+    result = sync_notion_research({
+        "query": "evidence",
+        "dataSourceIds": ["a" * 32],
+        "maxResults": 10,
+    })
+
+    assert NOTION_VERSION == "2026-03-11"
+    assert result["normalizedCount"] == 2
+    assert result["searchPageCount"] == 1
+    assert result["dataSourcePageCount"] == 1
+    assert result["dataSourceIdsQueried"] == 1
+    assert result["truthPromotions"] == 0
+    assert result["protectedValueReturned"] is False
+    assert all(page["sourceKind"] == "notion" for page in result["pages"])
+    assert calls[0][1] == "/search"
 
 
 def test_hugging_face_publisher_never_writes_directly_to_main():

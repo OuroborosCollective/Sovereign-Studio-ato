@@ -27,8 +27,11 @@ from evidence_observatory_contracts import (
 from evidence_observatory_integrations import (
     arena_request,
     normalize_notion_export,
+    notion_connection_status,
+    notion_token_configured,
     parse_arena_text,
     publish_huggingface_batch,
+    sync_notion_research,
 )
 
 QueryFn = Callable[..., Any]
@@ -217,14 +220,7 @@ def register_evidence_observatory_routes(
         })
         return jsonify({"ok": True, "candidate": dict(row), "truthPromotion": False}), 201
 
-    @app.route("/api/admin/evidence-observatory/v1/notion/import", methods=["POST"])
-    @require_admin
-    def observatory_notion_import():
-        try:
-            normalized = normalize_notion_export(request.get_json(force=True) or {})
-            admin_id = _admin_id(get_current_admin)
-        except (ValueError, RuntimeError) as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+    def _persist_notion_candidates(normalized: dict[str, Any], admin_id: str, *, audit_action: str) -> dict[str, Any]:
         inserted = updated = 0
         candidate_ids: list[str] = []
         for candidate in normalized["pages"]:
@@ -259,14 +255,88 @@ def register_evidence_observatory_routes(
             candidate_ids.append(str(row["id"]))
             updated += int(bool(existing))
             inserted += int(not existing)
-        audit("evidence_observatory_notion_import", None, {
-            "inputCount": normalized["inputCount"], "normalizedCount": normalized["normalizedCount"],
-            "inserted": inserted, "updated": updated, "truthPromotions": 0,
+        audit(audit_action, None, {
+            "inputCount": normalized["inputCount"],
+            "normalizedCount": normalized["normalizedCount"],
+            "inserted": inserted,
+            "updated": updated,
+            "truthPromotions": 0,
             "candidateIds": candidate_ids[:100],
+            "notionApiVersion": normalized.get("apiVersion"),
         })
-        return jsonify({"ok": True, "inserted": inserted, "updated": updated,
-                        "candidateIds": candidate_ids, "truthPromotions": 0,
-                        "workflowState": WORKFLOW_QUARANTINED})
+        return {
+            "ok": True,
+            "inserted": inserted,
+            "updated": updated,
+            "candidateIds": candidate_ids,
+            "truthPromotions": 0,
+            "workflowState": WORKFLOW_QUARANTINED,
+        }
+
+    @app.route("/api/admin/evidence-observatory/v1/notion/import", methods=["POST"])
+    @require_admin
+    def observatory_notion_import():
+        try:
+            normalized = normalize_notion_export(request.get_json(force=True) or {})
+            admin_id = _admin_id(get_current_admin)
+        except (ValueError, RuntimeError) as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(_persist_notion_candidates(
+            normalized,
+            admin_id,
+            audit_action="evidence_observatory_notion_import",
+        ))
+
+    @app.route("/api/admin/evidence-observatory/v1/notion/status", methods=["GET"])
+    @require_admin
+    def observatory_notion_status():
+        try:
+            status = notion_connection_status()
+        except RuntimeError as exc:
+            return jsonify({
+                "ok": False,
+                "status": "NOTION_READ_BLOCKED",
+                "error": str(exc),
+                "tokenConfigured": notion_token_configured(),
+                "protectedValueReturned": False,
+            }), 502
+        return jsonify(status), 200 if status.get("ok") else 409
+
+    @app.route("/api/admin/evidence-observatory/v1/notion/sync", methods=["POST"])
+    @require_admin
+    def observatory_notion_sync():
+        try:
+            normalized = sync_notion_research(request.get_json(force=True) or {})
+            admin_id = _admin_id(get_current_admin)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc), "truthPromotions": 0}), 400
+        except RuntimeError as exc:
+            audit("evidence_observatory_notion_sync_blocked", None, {
+                "blocker": str(exc)[:160],
+                "tokenConfigured": notion_token_configured(),
+                "truthPromotions": 0,
+            })
+            status = 409 if str(exc) == "notion_token_not_configured" else 502
+            return jsonify({
+                "ok": False,
+                "error": str(exc),
+                "tokenConfigured": notion_token_configured(),
+                "protectedValueReturned": False,
+                "truthPromotions": 0,
+            }), status
+        result = _persist_notion_candidates(
+            normalized,
+            admin_id,
+            audit_action="evidence_observatory_notion_sync",
+        )
+        return jsonify({
+            **result,
+            "searchPageCount": normalized.get("searchPageCount", 0),
+            "dataSourcePageCount": normalized.get("dataSourcePageCount", 0),
+            "deduplicatedPageCount": normalized.get("deduplicatedPageCount", 0),
+            "dataSourceIdsQueried": normalized.get("dataSourceIdsQueried", 0),
+            "protectedValueReturned": False,
+        })
 
     @app.route("/api/admin/evidence-observatory/v1/cases/<case_id>/verify", methods=["POST"])
     @require_admin
@@ -322,7 +392,8 @@ def register_evidence_observatory_routes(
                         "publicationReceipts": int(publications.get("count") or 0),
                         "publicationReadbacksVerified": int(publications.get("verified") or 0),
                         "arenaRuns": int(arena.get("count") or 0),
-                        "notionMode": "normalized-authenticated-import",
+                        "notionMode": "protected-owner-token-direct-sync-plus-normalized-import",
+                        "notionTokenConfigured": notion_token_configured(),
                         "huggingFaceMode": "runtime-identity-staging-with-readback",
                         "directRawCredentialIngress": False})
 

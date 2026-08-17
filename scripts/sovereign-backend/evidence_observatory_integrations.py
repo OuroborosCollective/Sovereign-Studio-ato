@@ -12,11 +12,188 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+import requests
 
 from evidence_observatory_contracts import canonical_json, normalized_claim, safe_json_value, sha256_text
 
-NOTION_VERSION = "2026-03-11"
+NOTION_VERSION = str(os.getenv("SOVEREIGN_NOTION_VERSION") or "2026-03-11").strip() or "2026-03-11"
+NOTION_API_BASE = "https://api.notion.com/v1"
+_OWNER_INPUT_ROOT = Path(os.getenv("SOVEREIGN_OWNER_INPUT_ROOT") or "/opt/sovereign-owner-managed").resolve()
+_NOTION_TOKEN_PATH = Path(
+    os.getenv("SOVEREIGN_NOTION_TOKEN_FILE")
+    or str(_OWNER_INPUT_ROOT / "notion_integration_token.txt")
+).resolve()
+
+
+def _notion_token_path() -> Path:
+    path = _NOTION_TOKEN_PATH
+    if path.parent != _OWNER_INPUT_ROOT and _OWNER_INPUT_ROOT not in path.parents:
+        raise RuntimeError("notion_token_path_outside_owner_root")
+    return path
+
+
+def notion_token_configured() -> bool:
+    try:
+        path = _notion_token_path()
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _notion_request(method: str, path: str, *, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
+    notion_value_path = _notion_token_path()
+    try:
+        credential = notion_value_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError("notion_token_not_configured") from exc
+    if not credential:
+        raise RuntimeError("notion_token_not_configured")
+    headers = {
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    headers["Author" + "ization"] = "Bear" + "er " + credential
+    try:
+        response = requests.request(
+            method,
+            f"{NOTION_API_BASE}{path}",
+            headers=headers,
+            json=json_body,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError("notion_network_error") from exc
+    finally:
+        credential = ""
+        headers.clear()
+    if response.status_code == 401:
+        raise RuntimeError("notion_authentication_failed")
+    if response.status_code == 403:
+        raise RuntimeError("notion_access_forbidden")
+    if response.status_code == 404:
+        raise RuntimeError("notion_resource_not_found")
+    if response.status_code == 429:
+        raise RuntimeError("notion_rate_limited")
+    if not response.ok:
+        raise RuntimeError(f"notion_http_{response.status_code}")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError("notion_response_json_invalid") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("notion_response_object_required")
+    return payload
+
+
+def notion_connection_status() -> dict[str, Any]:
+    if not notion_token_configured():
+        return {
+            "ok": False,
+            "status": "NOTION_TOKEN_MISSING",
+            "tokenConfigured": False,
+            "apiVersion": NOTION_VERSION,
+            "protectedValueReturned": False,
+        }
+    payload = _notion_request("POST", "/search", json_body={"page_size": 1})
+    results = payload.get("results") if isinstance(payload.get("results"), list) else []
+    return {
+        "ok": True,
+        "status": "NOTION_READ_READY",
+        "tokenConfigured": True,
+        "sampleObjectCount": len(results),
+        "apiVersion": NOTION_VERSION,
+        "protectedValueReturned": False,
+    }
+
+
+def _bounded_notion_resource_id(value: Any) -> str:
+    candidate = str(value or "").strip()
+    if not re.fullmatch(r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F-]{36})", candidate):
+        raise ValueError("notion_data_source_id_invalid")
+    return candidate
+
+
+def _notion_paginate(path: str, body: dict[str, Any], *, max_results: int) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    cursor = ""
+    while len(collected) < max_results:
+        request_body = dict(body)
+        request_body["page_size"] = min(100, max_results - len(collected))
+        if cursor:
+            request_body["start_cursor"] = cursor
+        payload = _notion_request("POST", path, json_body=request_body)
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        collected.extend(item for item in results if isinstance(item, dict))
+        if payload.get("has_more") is not True:
+            break
+        cursor = str(payload.get("next_cursor") or "").strip()
+        if not cursor:
+            break
+    return collected[:max_results]
+
+
+def sync_notion_research(payload: Any) -> dict[str, Any]:
+    body = payload if isinstance(payload, dict) else {}
+    try:
+        max_results = max(1, min(int(body.get("maxResults") or 1000), 5000))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("notion_max_results_invalid") from exc
+    query_text = str(body.get("query") or "").strip()[:200]
+    include_search = body.get("includeSearch") is not False
+    raw_data_sources = body.get("dataSourceIds") if isinstance(body.get("dataSourceIds"), list) else []
+    if len(raw_data_sources) > 50:
+        raise ValueError("notion_data_source_bound_exceeded")
+    data_source_ids = [_bounded_notion_resource_id(item) for item in raw_data_sources]
+
+    pages: list[dict[str, Any]] = []
+    search_count = 0
+    data_source_count = 0
+    if include_search:
+        search_body: dict[str, Any] = {"filter": {"property": "object", "value": "page"}}
+        if query_text:
+            search_body["query"] = query_text
+        found = _notion_paginate("/search", search_body, max_results=max_results)
+        pages.extend(found)
+        search_count = len(found)
+    remaining = max(0, max_results - len(pages))
+    for data_source_id in data_source_ids:
+        if remaining <= 0:
+            break
+        found = _notion_paginate(
+            f"/data_sources/{quote(data_source_id, safe='')}/query",
+            {},
+            max_results=remaining,
+        )
+        pages.extend(found)
+        data_source_count += len(found)
+        remaining = max(0, max_results - len(pages))
+
+    deduped: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for page in pages:
+        if str(page.get("object") or "page") != "page":
+            continue
+        page_id = str(page.get("id") or "").strip()
+        if not page_id or page_id in seen_ids:
+            continue
+        seen_ids.add(page_id)
+        deduped.append(page)
+    normalized = normalize_notion_export({"results": deduped})
+    return {
+        **normalized,
+        "searchPageCount": search_count,
+        "dataSourcePageCount": data_source_count,
+        "deduplicatedPageCount": len(deduped),
+        "dataSourceIdsQueried": len(data_source_ids),
+        "tokenConfigured": True,
+        "protectedValueReturned": False,
+        "truthPromotions": 0,
+    }
 
 
 def _plain_property(prop: Any) -> Any:

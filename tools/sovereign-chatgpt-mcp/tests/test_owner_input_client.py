@@ -113,6 +113,36 @@ def test_create_request_allows_openrouter_target_without_exposing_key(monkeypatc
     assert result["llm_can_receive_protected_value"] is False
 
 
+def test_create_request_allows_notion_target_without_exposing_protected_value(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "88888888-8888-4888-8888-888888888888"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "notion_integration_token",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="notion_integration_token",
+        title="Notion Evidence Sync aktivieren",
+        reason="Der Observatory-Sync benötigt eine geschützte Owner-Eingabe.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "notion_integration_token"
+    assert call["json"]["fieldLabel"] == "Notion Integration Token"
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+    assert result["protected_value_transport"] == "owner_ui_only"
+
+
 def test_create_request_rejects_retired_github_personal_access_target(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")

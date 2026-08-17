@@ -28,7 +28,7 @@ Core invariant:
 ## State machine
 
 1. `QUARANTINED/private`
-   - Notion normalized import.
+   - Notion normalized import or protected direct read sync.
    - Community hint submission.
    - Failed or incomplete gate replay.
 2. `PUBLISHABLE/public`
@@ -66,11 +66,23 @@ Requires an authenticated session. The request may contain project, title, claim
 
 ## Notion intake
 
+Manual normalized import:
+
 `POST /api/admin/evidence-observatory/v1/notion/import`
 
-The endpoint accepts a bounded normalized Notion API export from an authenticated admin workflow. It does not accept raw Notion credentials. A candidate identity includes the Notion page identity and claim fingerprint. A changed claim therefore creates a new candidate identity rather than silently rewriting an already evaluated claim.
+Protected direct read status:
 
-Direct Notion credential handling is intentionally not implemented in this module. A future direct sync must use a protected connector/credential lane and still terminate at the same `QUARANTINED` boundary.
+`GET /api/admin/evidence-observatory/v1/notion/status`
+
+Protected direct read sync:
+
+`POST /api/admin/evidence-observatory/v1/notion/sync`
+
+The direct sync never accepts a credential in the Observatory request. The configured Owner enters the Notion integration value through the existing protected owner-input surface under target `notion_integration_token`. That surface writes a mode-0600 file below the owner-managed runtime directory and never returns the protected value to MCP, LLM, PostgreSQL, audit logs, or the Observatory response.
+
+The sync uses the current Notion API version contract, searches accessible pages and can additionally query explicit data-source IDs. Search and data-source results are deduplicated, normalized, then passed through the same persistence function as the manual import. Both paths therefore terminate at `QUARANTINED/private` with `truthPromotions=0`.
+
+A candidate identity includes the Notion page identity and claim fingerprint. A changed claim creates a new candidate identity rather than silently rewriting an already evaluated claim. The direct sync is read-only with respect to Notion; Observatory does not write research conclusions back to Notion.
 
 ## Verification gate
 
