@@ -54,12 +54,26 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
 }) => {
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('day');
 
-  const totals = useMemo(() => ({
-    cost: usageStats.reduce((sum, item) => sum + item.estimatedCost, 0),
-    tokens: usageStats.reduce((sum, item) => sum + item.totalTokens, 0),
-    requests: usageStats.reduce((sum, item) => sum + item.requestCount, 0),
-    maxTokens: Math.max(1, ...usageStats.map((item) => item.totalTokens)),
-  }), [usageStats]);
+  // Single-pass accumulation optimization:
+  // Replaced four separate array traversals (three .reduce passes and one .map + spread in Math.max)
+  // with a single O(N) loop to eliminate intermediate array allocations and reduce iteration overhead.
+  const totals = useMemo(() => {
+    let cost = 0;
+    let tokens = 0;
+    let requests = 0;
+    let maxTokens = 1;
+
+    for (const item of usageStats) {
+      cost += item.estimatedCost;
+      tokens += item.totalTokens;
+      requests += item.requestCount;
+      if (item.totalTokens > maxTokens) {
+        maxTokens = item.totalTokens;
+      }
+    }
+
+    return { cost, tokens, requests, maxTokens };
+  }, [usageStats]);
 
   if (!isAdmin) return null;
 
