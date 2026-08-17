@@ -241,10 +241,19 @@ install_ci_runtime_readback_authorization() {
   ssh-keygen -lf "$key_source" >/dev/null \
     || fail "CI runtime readback public key is invalid"
   install -d -m 0700 -o root -g root "$root_ssh_dir"
-  touch "$authorized_keys"
-  chown root:root "$authorized_keys"
-  chmod 0600 "$authorized_keys"
+  if [[ -e "$authorized_keys" || -L "$authorized_keys" ]]; then
+    [[ -f "$authorized_keys" && ! -L "$authorized_keys" ]] \
+      || fail "CI runtime readback authorization target is not a regular file"
+  else
+    install -m 0600 -o root -g root /dev/null "$authorized_keys" \
+      || fail "CI runtime readback authorization file creation failed"
+  fi
   prepare_managed_private_file_mutation "$authorized_keys" "root-authorized-keys"
+  INSTALL_STAGE="mutate_managed_private_file:root-authorized-keys"
+  chown root:root "$authorized_keys" \
+    || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization ownership update failed"; }
+  chmod 0600 "$authorized_keys" \
+    || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization mode update failed"; }
   temporary="$(mktemp "$root_ssh_dir/.authorized_keys.XXXXXX")" \
     || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization temporary file creation failed"; }
   if ! {
@@ -254,11 +263,27 @@ install_ci_runtime_readback_authorization() {
   } > "$temporary"; then
     rm -f "$temporary"
     restore_managed_private_file_mutation_best_effort "$authorized_keys"
-    fail "CI runtime readback authorization write failed"
+    fail "CI runtime readback authorization staging write failed"
   fi
-  chown root:root "$temporary"
-  chmod 0600 "$temporary"
-  mv -f "$temporary" "$authorized_keys"
+  if ! python3 - "$temporary" "$authorized_keys" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+payload = source.read_bytes()
+with target.open("wb") as handle:
+    handle.write(payload)
+    handle.flush()
+    os.fsync(handle.fileno())
+PY
+  then
+    rm -f "$temporary"
+    restore_managed_private_file_mutation_best_effort "$authorized_keys"
+    fail "CI runtime readback authorization in-place write failed"
+  fi
+  rm -f "$temporary"
   restore_managed_private_file_mutation "$authorized_keys" "root-authorized-keys"
   grep -Fq 'command="/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback",restrict ssh-ed25519 ' "$authorized_keys" \
     || fail "CI runtime readback forced-command authorization is missing"
