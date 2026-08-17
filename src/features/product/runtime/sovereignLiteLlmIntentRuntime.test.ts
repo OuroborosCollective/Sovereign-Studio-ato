@@ -19,6 +19,48 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 describe('sovereignLiteLlmIntentRuntime', () => {
+  it('binds a receiver-sensitive global fetch for German action intent classification', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', async function receiverSensitiveFetch(
+      this: typeof globalThis,
+      url: RequestInfo | URL,
+      _init?: RequestInit,
+    ): Promise<Response> {
+      if (this !== globalThis) throw new TypeError('Illegal invocation');
+      calls.push(String(url));
+      if (calls.length === 1) {
+        return jsonResponse({
+          routes: [{ id: 'sovereign-chat', defaultModelId: 'openai/gpt-5.2-mini', enabled: true }],
+        });
+      }
+      return jsonResponse({
+        model: 'openai/gpt-5.2-mini',
+        choices: [{ message: { content: JSON.stringify({
+          mode: 'action',
+          intent: 'draft_pr',
+          action_disposition: 'execute',
+          assistant_text: 'Ich habe den Auftrag verstanden. Die Runtime prüft jetzt die Gates.',
+          action_title: 'Routing reparieren und Draft PR erstellen',
+          confidence: 0.97,
+          language: 'de',
+        }) } }],
+      });
+    });
+
+    const result = await fetchSovereignLiteLlmInterpretation({
+      text: 'Repariere den Routingfehler und mach am Ende einen Draft PR.',
+      requestId: '00000000-0000-4000-8000-000000000109',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.interpretation).toMatchObject({
+      mode: 'action',
+      intent: 'draft_pr',
+      actionDisposition: 'execute',
+      language: 'de',
+    });
+    expect(calls).toEqual([SOVEREIGN_LITELLM_ROUTES, SOVEREIGN_LITELLM_CHAT]);
+  });
   it('resolves an enabled backend route and interprets language through the Sovereign direct LLM runtime', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({

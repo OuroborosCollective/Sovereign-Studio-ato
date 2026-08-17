@@ -352,7 +352,7 @@ export class SovereignAgentClient {
   private readonly now: () => number;
   constructor(options: SovereignAgentClientOptions = {}) {
     this.config = options.config ?? resolveSovereignAgentConfig();
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     this.now = options.now ?? Date.now;
   }
   getConfig(): SovereignAgentConfig { return this.config; }
