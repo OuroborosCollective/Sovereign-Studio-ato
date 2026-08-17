@@ -232,7 +232,6 @@ install_ci_runtime_readback_authorization() {
   local key_source="$SOURCE_DIR/deploy/ci-runtime-readback.pub"
   local root_ssh_dir="/root/.ssh"
   local authorized_keys="$root_ssh_dir/authorized_keys"
-  local temporary=""
   INSTALL_STAGE="install_ci_runtime_readback_authorization"
   [[ -f "$key_source" && ! -L "$key_source" ]] \
     || fail "CI runtime readback public key is missing"
@@ -295,36 +294,31 @@ install_ci_runtime_readback_authorization() {
     || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization ownership update failed"; }
   chmod 0600 "$authorized_keys" \
     || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization mode update failed"; }
-  temporary="$(mktemp "$root_ssh_dir/.authorized_keys.XXXXXX")" \
-    || { restore_managed_private_file_mutation_best_effort "$authorized_keys"; fail "CI runtime readback authorization temporary file creation failed"; }
-  if ! {
-    grep -Fv 'sovereign-runtime-readback-ci' "$authorized_keys" || true
-    printf 'command="%s",restrict ' "$RELEASE_READBACK_BIN"
-    cat "$key_source"
-  } > "$temporary"; then
-    rm -f "$temporary"
-    restore_managed_private_file_mutation_best_effort "$authorized_keys"
-    fail "CI runtime readback authorization staging write failed"
-  fi
-  if ! python3 - "$temporary" "$authorized_keys" <<'PY'
+  if ! python3 - "$authorized_keys" "$key_source" "$RELEASE_READBACK_BIN" <<'PY'
 from pathlib import Path
 import os
 import sys
 
-source = Path(sys.argv[1])
-target = Path(sys.argv[2])
-payload = source.read_bytes()
-with target.open("wb") as handle:
+target = Path(sys.argv[1])
+key_source = Path(sys.argv[2])
+forced_command = sys.argv[3]
+key_line = key_source.read_text("utf-8").strip()
+lines = [
+    line
+    for line in target.read_text("utf-8").splitlines()
+    if "sovereign-runtime-readback-ci" not in line
+]
+lines.append(f'command="{forced_command}",restrict {key_line}')
+payload = "\n".join(lines) + "\n"
+with target.open("w", encoding="utf-8", newline="\n") as handle:
     handle.write(payload)
     handle.flush()
     os.fsync(handle.fileno())
 PY
   then
-    rm -f "$temporary"
     restore_managed_private_file_mutation_best_effort "$authorized_keys"
     fail "CI runtime readback authorization in-place write failed"
   fi
-  rm -f "$temporary"
   restore_managed_private_file_mutation "$authorized_keys" "root-authorized-keys"
   grep -Fq 'command="/opt/sovereign-chatgpt-tools/bin/run-coordinated-release-readback",restrict ssh-ed25519 ' "$authorized_keys" \
     || fail "CI runtime readback forced-command authorization is missing"
