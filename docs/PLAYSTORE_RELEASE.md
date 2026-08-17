@@ -36,11 +36,12 @@ Before production submission, check these items:
 - Release artifact is the signed `.aab`, not the APK.
 - App name, short description, full description, screenshots and feature graphic are present.
 - App category and contact email are set.
-- Privacy policy URL is configured if required by app behavior.
+- Privacy policy URL is configured and resolves to a policy that names **ARE-LOGIK - NOCode Studio**, package `com.arestudio.nocode.aab`, Google Play developer **ARE-LOGIC ENGINE**, and the responsible provider identity. The canonical deployable page is `/privacy.html`.
 - Data Safety form matches the app behavior.
 - Content rating questionnaire is completed.
 - Target audience and ads declarations are completed.
-- App access instructions are provided if login or restricted features are required.
+- **HARD GATE — App access:** if login or restricted features are required, Play Console **App access / Sign in details** contains a currently functional dedicated review account or guest path plus exact navigation instructions. Never submit a restricted build with this field empty.
+- The review account is tested against the exact release candidate immediately before submission; credentials stay in Play Console/credential management and are never committed to this repository.
 - Internal testing track has at least one successful install before production.
 - The signed AAB uses the same signing identity for future updates.
 
