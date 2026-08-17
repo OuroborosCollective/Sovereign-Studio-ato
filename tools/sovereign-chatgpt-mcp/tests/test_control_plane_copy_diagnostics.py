@@ -114,8 +114,20 @@ def test_ci_runtime_readback_authorization_preserves_protected_authorized_keys_i
     assert prepare_index < chmod_index
     assert 'touch "$authorized_keys"' not in block
     assert 'mv -f "$temporary" "$authorized_keys"' not in block
-    assert 'with target.open("wb") as handle:' in block
+    assert 'mktemp "$root_ssh_dir/.authorized_keys.XXXXXX"' not in block
+    assert 'local temporary=""' not in block
+    assert 'with target.open("w", encoding="utf-8", newline="\\n") as handle:' in block
+    assert 'if "sovereign-runtime-readback-ci" not in line' in block
+    assert 'lines.append(f\'command="{forced_command}",restrict {key_line}\')' in block
     assert "os.fsync(handle.fileno())" in block
+    assert 'INSTALL_STAGE="prepare_ci_runtime_readback_ssh_directory"' in block
+    assert '[[ -d "$root_ssh_dir" && ! -L "$root_ssh_dir" ]]' in block
+    assert 'ssh_dir_metadata="$(stat -c \'%u:%g:%a\' -- "$root_ssh_dir")"' in block
+    assert 'if [[ "$ssh_dir_metadata" != "0:0:700" ]]; then' in block
+    assert 'chattr -i -- "$root_ssh_dir"' in block
+    assert 'chattr -a -- "$root_ssh_dir"' in block
+    assert 'install -d -m 0700 -o root -g root "$root_ssh_dir" \\' in block
+    assert "CI runtime readback SSH directory creation failed" in block
     assert 'INSTALL_STAGE="mutate_managed_private_file:root-authorized-keys"' in block
     assert "CI runtime readback authorization in-place write failed" in block
 
