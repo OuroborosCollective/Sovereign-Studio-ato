@@ -1,0 +1,20 @@
+{
+  "target": "tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh",
+  "source_ref": "sovereign/chatgpt/mcp-readback-ssh-dir-pre-guard-20260817",
+  "branch_base_ref": "sovereign/chatgpt/mcp-readback-ssh-dir-pre-guard-20260817",
+  "branch": "sovereign/chatgpt/mcp-readback-ssh-dir-pre-guard-20260817",
+  "expectedSha": "5a72ba3bae4110859b5d58492fb521af9e476684",
+  "commit_message": "fix(mcp): eliminate SSH-directory temp write from readback auth",
+  "pr_title": "Fix: guard protected SSH directory before runtime readback authorization",
+  "pr_body": "Complete the protected SSH readback fix: no mutation of an already-correct root .ssh directory and no temporary-file creation inside a potentially +i/+a protected parent. authorized_keys is computed and written in-place after its own protected-file guard with fsync.",
+  "blocks": [
+    {
+      "search": "  local authorized_keys=\"$root_ssh_dir/authorized_keys\"\n  local temporary=\"\"\n",
+      "replace": "  local authorized_keys=\"$root_ssh_dir/authorized_keys\"\n"
+    },
+    {
+      "search": "  temporary=\"$(mktemp \"$root_ssh_dir/.authorized_keys.XXXXXX\")\" \\\n    || { restore_managed_private_file_mutation_best_effort \"$authorized_keys\"; fail \"CI runtime readback authorization temporary file creation failed\"; }\n  if ! {\n    grep -Fv 'sovereign-runtime-readback-ci' \"$authorized_keys\" || true\n    printf 'command=\"%s\",restrict ' \"$RELEASE_READBACK_BIN\"\n    cat \"$key_source\"\n  } > \"$temporary\"; then\n    rm -f \"$temporary\"\n    restore_managed_private_file_mutation_best_effort \"$authorized_keys\"\n    fail \"CI runtime readback authorization staging write failed\"\n  fi\n  if ! python3 - \"$temporary\" \"$authorized_keys\" <<'PY'\nfrom pathlib import Path\nimport os\nimport sys\n\nsource = Path(sys.argv[1])\ntarget = Path(sys.argv[2])\npayload = source.read_bytes()\nwith target.open(\"wb\") as handle:\n    handle.write(payload)\n    handle.flush()\n    os.fsync(handle.fileno())\nPY\n  then\n    rm -f \"$temporary\"\n    restore_managed_private_file_mutation_best_effort \"$authorized_keys\"\n    fail \"CI runtime readback authorization in-place write failed\"\n  fi\n  rm -f \"$temporary\"\n",
+      "replace": "  if ! python3 - \"$authorized_keys\" \"$key_source\" \"$RELEASE_READBACK_BIN\" <<'PY'\nfrom pathlib import Path\nimport os\nimport sys\n\ntarget = Path(sys.argv[1])\nkey_source = Path(sys.argv[2])\nforced_command = sys.argv[3]\nkey_line = key_source.read_text(\"utf-8\").strip()\nlines = [\n    line\n    for line in target.read_text(\"utf-8\").splitlines()\n    if \"sovereign-runtime-readback-ci\" not in line\n]\nlines.append(f'command=\"{forced_command}\",restrict {key_line}')\npayload = \"\\n\".join(lines) + \"\\n\"\nwith target.open(\"w\", encoding=\"utf-8\", newline=\"\\n\") as handle:\n    handle.write(payload)\n    handle.flush()\n    os.fsync(handle.fileno())\nPY\n  then\n    restore_managed_private_file_mutation_best_effort \"$authorized_keys\"\n    fail \"CI runtime readback authorization in-place write failed\"\n  fi\n"
+    }
+  ]
+}
