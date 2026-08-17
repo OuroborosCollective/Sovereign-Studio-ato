@@ -309,6 +309,11 @@ class TestHealthcheckArchitecture(unittest.TestCase):
 class TestAdminRuntimeTruth(unittest.TestCase):
     """Tests ensuring /admin serves only the canonical React UI truth."""
 
+    def test_backend_root_redirects_to_admin_instead_of_404(self):
+        response = app.test_client().get("/", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/admin/"))
+
     def test_legacy_admin_panel_html_literal_absent(self):
         """The historical _ADMIN_PANEL_HTML literal must not exist."""
         app_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")

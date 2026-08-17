@@ -6180,6 +6180,12 @@ def _user_app_index_response():
     return resp
 
 
+@app.route("/", methods=["GET"])
+def backend_root():
+    """Use the backend origin as a useful entrypoint during private development."""
+    return redirect("/admin/", code=302)
+
+
 @app.route("/admin")
 def admin_panel_redirect():
     return redirect("/admin/", code=308)

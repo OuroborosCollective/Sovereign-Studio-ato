@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import grp
+import hashlib
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import socketserver
 import stat
 import subprocess
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +26,7 @@ from managed_compose import ManagedComposeRuntime
 from operations import OperationsRuntime
 from patchmon_fleet import PatchmonFleetRuntime
 from patchmon_operator import PatchmonOperatorRuntime
-from policy import validate_container
+from policy import contains_secret_shaped_value, validate_container
 from self_update import SelfUpdateRuntime
 
 MAX_REQUEST_BYTES = 1_200_000
@@ -35,6 +37,18 @@ COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 class BrokerRuntime:
     def __init__(self) -> None:
         self.private_owner_mode = os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
+        self.private_vps_dev_mode = bool(
+            self.private_owner_mode
+            and os.getenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "0").strip() == "1"
+        )
+        self.dev_roots = tuple(
+            Path(item.strip()).resolve()
+            for item in os.getenv(
+                "SOVEREIGN_MCP_DEV_ROOTS",
+                "/opt/sovereign-chatgpt-tools/workspaces,/opt/sovereign-backend,/opt/sovereign-operator-source,/opt/sovereign-agent-workspaces,/opt/gpt-tools",
+            ).split(",")
+            if item.strip()
+        )
         self.allowed_containers = tuple(
             item.strip()
             for item in os.getenv(
@@ -146,6 +160,120 @@ class BrokerRuntime:
             "container": container,
             "stdout": result["stdout"],
             "stderr": result["stderr"],
+        }
+
+    @staticmethod
+    def _path_under(path: Path, roots: tuple[Path, ...]) -> bool:
+        return any(path == root or root in path.parents for root in roots)
+
+    def _dev_cwd(self, raw: Any) -> Path:
+        if not self.private_vps_dev_mode:
+            raise RuntimeError("private_vps_dev_mode_disabled")
+        selected = Path(str(raw or "").strip()).resolve()
+        if not selected.is_dir() or not self._path_under(selected, self.dev_roots):
+            raise ValueError("development cwd is outside the configured private VPS roots")
+        return selected
+
+    def _dev_argument_safe(self, value: str) -> bool:
+        if not value or len(value) > 4_000 or "\x00" in value or "\n" in value or "\r" in value:
+            return False
+        lowered = value.casefold()
+        path_parts = tuple(part for part in value.replace("\\", "/").split("/") if part)
+        if ".." in path_parts:
+            return False
+        forbidden_markers = (
+            "/opt/sovereign-owner-managed",
+            "/root/.ssh",
+            "/etc/shadow",
+            "/etc/sudoers",
+            "/proc/1/environ",
+            "/var/run/docker.sock",
+            "/run/docker.sock",
+            ".env",
+            "id_rsa",
+            "id_ed25519",
+        )
+        if any(marker in lowered for marker in forbidden_markers):
+            return False
+        if value.startswith(("http://", "https://")):
+            parsed = urllib.parse.urlsplit(value)
+            host = (parsed.hostname or "").lower()
+            allowed_hosts = {
+                "127.0.0.1",
+                "localhost",
+                "sovereign-backend.arelorian.de",
+                "arelorian.de",
+                "chat.arelorian.de",
+                "github.com",
+                "api.github.com",
+            }
+            return parsed.scheme in {"http", "https"} and host in allowed_hosts and not parsed.username and not parsed.password
+        if value.startswith("/"):
+            try:
+                return self._path_under(Path(value).resolve(), self.dev_roots)
+            except OSError:
+                return False
+        return True
+
+    def dev_exec(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Run one bounded argv command directly on the private VPS development host."""
+        cwd = self._dev_cwd(arguments.get("cwd"))
+        raw_argv = arguments.get("argv")
+        if not isinstance(raw_argv, list) or not 1 <= len(raw_argv) <= 64:
+            raise ValueError("argv must contain between 1 and 64 arguments")
+        argv = [str(item) for item in raw_argv]
+        if not all(self._dev_argument_safe(item) for item in argv):
+            raise ValueError("development command contains a forbidden or out-of-scope argument")
+
+        executable = Path(argv[0]).name
+        allowed = {
+            "git", "gh", "curl", "python3", "pytest",
+            "ls", "find", "rg", "grep", "sed", "awk", "cat", "head", "tail",
+            "pwd", "stat", "du", "df", "ps", "ss", "mkdir", "touch", "cp", "mv", "rm", "chmod",
+            "docker", "systemctl", "journalctl",
+        }
+        if executable not in allowed:
+            raise ValueError("executable is not allowlisted for private VPS development")
+        if executable == "python3" and any(item in {"-c", "-m"} for item in argv[1:]):
+            raise ValueError("inline or module Python execution is not allowed in the host development lane")
+        if executable == "docker":
+            subcommand = next((item for item in argv[1:] if not item.startswith("-")), "")
+            if subcommand not in {"ps", "inspect", "logs", "stats", "start", "stop", "restart", "compose"}:
+                raise ValueError("docker subcommand is outside the development lane")
+            if subcommand == "compose" and any(item in {"down", "rm", "kill"} for item in argv[2:]):
+                raise ValueError("destructive docker compose subcommand is outside the development lane")
+        if executable == "systemctl":
+            action = next((item for item in argv[1:] if not item.startswith("-")), "")
+            service = next((item for item in argv[2:] if not item.startswith("-")), "")
+            if action not in {"status", "is-active", "restart", "start", "stop"}:
+                raise ValueError("systemctl action is outside the development lane")
+            if service not in {"nginx", "sovereign-chatgpt-broker", "sovereign-chatgpt-command-worker"}:
+                raise ValueError("systemctl service is outside the development lane")
+
+        timeout = max(1, min(int(arguments.get("timeout_seconds") or 300), 1_200))
+        result = self._run(argv, timeout=timeout)
+        stdout = str(result.get("stdout") or "")
+        stderr = str(result.get("stderr") or "")
+        secret_shaped = contains_secret_shaped_value({"stdout": stdout, "stderr": stderr})
+        output_sha256 = hashlib.sha256((stdout + "\n" + stderr).encode("utf-8", errors="replace")).hexdigest()
+        if secret_shaped:
+            stdout = ""
+            stderr = ""
+        return {
+            "ok": bool(result.get("ok")),
+            "status": "PRIVATE_VPS_DEV_COMMAND_COMPLETED" if result.get("ok") else "PRIVATE_VPS_DEV_COMMAND_FAILED",
+            "exitCode": int(result.get("exit_code") or 0),
+            "cwd": str(cwd),
+            "executable": executable,
+            "argumentCount": len(argv) - 1,
+            "stdout": stdout,
+            "stderr": stderr,
+            "outputSha256": output_sha256,
+            "outputRedacted": secret_shaped,
+            "privateVpsDevMode": True,
+            "shellInterpolationUsed": False,
+            "mutationPerformed": executable in {"git", "gh", "python3", "pytest", "mkdir", "touch", "cp", "mv", "rm", "chmod", "docker", "systemctl"},
+            "secretValuesReturned": False,
         }
 
     @staticmethod
@@ -432,6 +560,7 @@ class BrokerRuntime:
             },
             "container_status": self.container_status,
             "container_logs": self.container_logs,
+            "vps_dev_exec": self.dev_exec,
             "fleet_filebrowser_retirement_plan": lambda _values: self.fleet_maintenance.filebrowser_retirement_plan(),
             "fleet_filebrowser_retirement_apply": lambda values: self.fleet_maintenance.filebrowser_retirement_apply(
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),

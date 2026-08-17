@@ -103,6 +103,60 @@ def test_unknown_broker_action_is_blocked() -> None:
     assert "nicht freigegeben" in result["blocker"]
 
 
+def test_private_vps_dev_exec_runs_direct_argv_inside_configured_root(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_DEV_ROOTS", str(tmp_path))
+    runtime = BrokerRuntime()
+    observed = {}
+
+    def run(argv, timeout=60):
+        observed.update(argv=argv, timeout=timeout)
+        return {"ok": True, "exit_code": 0, "stdout": "clean\n", "stderr": ""}
+
+    monkeypatch.setattr(runtime, "_run", run)
+    result = runtime.dispatch(
+        "vps_dev_exec",
+        {"cwd": str(tmp_path), "argv": ["git", "status", "--short"], "timeout_seconds": 45},
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "PRIVATE_VPS_DEV_COMMAND_COMPLETED"
+    assert result["shellInterpolationUsed"] is False
+    assert result["stdout"] == "clean\n"
+    assert observed == {"argv": ["git", "status", "--short"], "timeout": 45}
+
+
+def test_private_vps_dev_exec_blocks_parent_escape(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_DEV_ROOTS", str(tmp_path))
+    runtime = BrokerRuntime()
+
+    result = runtime.dispatch(
+        "vps_dev_exec",
+        {"cwd": str(tmp_path), "argv": ["cat", "../outside"]},
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert "forbidden or out-of-scope" in result["blocker"]
+
+
+def test_private_vps_dev_exec_is_disabled_without_owner_dev_mode(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", raising=False)
+    monkeypatch.delenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", raising=False)
+    monkeypatch.setenv("SOVEREIGN_MCP_DEV_ROOTS", str(tmp_path))
+    runtime = BrokerRuntime()
+
+    result = runtime.dispatch(
+        "vps_dev_exec",
+        {"cwd": str(tmp_path), "argv": ["git", "status"]},
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["blocker"] == "private_vps_dev_mode_disabled"
+
+
 def test_non_allowlisted_container_is_blocked(monkeypatch) -> None:
     monkeypatch.delenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", raising=False)
     runtime = BrokerRuntime()

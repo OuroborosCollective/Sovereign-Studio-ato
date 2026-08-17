@@ -26,7 +26,7 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert status.ok is True
     assert status.status == "OPERATING_PROFILE_ENFORCED"
     assert status.profileId == "sovereign-mcp-optimal-operation"
-    assert status.profileVersion == "1.1.1"
+    assert status.profileVersion == "1.2.0"
     assert len(status.profileSha256) == 64
     assert len(status.registrySnapshotSha256) == 64
     assert status.missingGovernanceTools == []
@@ -39,6 +39,10 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
     assert profile["routeIsolation"]["freeRoute"] == "FreeLLM direct transport only"
     assert profile["routeIsolation"]["paidRoute"] == "Paid OpenRouter direct transport only"
     assert profile["routeIsolation"]["legacyLiteLLMTransportAllowed"] is False
+    assert profile["developmentMode"]["releaseDeploymentBypass"] is False
+    assert profile["developmentMode"]["secretBypass"] is False
+    assert profile["developmentMode"]["rawShellEnabled"] is False
+    assert "vps_dev_exec" in profile["developmentMode"]["continuityFastPathTools"]
     assert "sovereign_continuity_context_read" in tools
     assert "sovereign_continuity_status" in tools
     assert "sovereign_operating_profile_status" in tools
@@ -50,6 +54,15 @@ def test_profile_is_loaded_registered_and_enforced_for_every_mutable_tool() -> N
         assert tool.meta["sovereign/operatingProfileEnforced"] is True
         assert getattr(tool.fn, "__sovereign_operating_profile_wrapped__", False) is True
 
+
+
+def test_private_vps_dev_mode_requires_private_owner(monkeypatch) -> None:
+    monkeypatch.delenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", raising=False)
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "1")
+    assert operating_profile._private_vps_dev_mode_enabled() is False
+
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    assert operating_profile._private_vps_dev_mode_enabled() is True
 
 
 def test_read_only_mission_preflight_compiles_and_validates_live_contracts() -> None:

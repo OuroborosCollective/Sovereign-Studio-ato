@@ -1,8 +1,8 @@
 {
   "schemaVersion": "sovereign.mcp-operating-profile.v1",
   "profileId": "sovereign-mcp-optimal-operation",
-  "profileVersion": "1.1.1",
-  "purpose": "Persist and technically enforce continuity-read, mission-first, contract-bound and evidence-first operation across ChatGPT sessions and MCP revisions.",
+  "profileVersion": "1.2.0",
+  "purpose": "Persist evidence-first release truth while allowing a bounded private-VPS development fast path for repository and host debugging.",
   "enforcementMode": "fail-closed",
   "naturalLanguageBoundary": {
     "onlineUnderstanding": "llm-only",
@@ -121,6 +121,24 @@
     "repositoryAllowed": false,
     "databaseAllowed": false,
     "protectedInputPath": "authenticated owner UI only"
+  },
+  "developmentMode": {
+    "environmentFlag": "SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE",
+    "requiresPrivateOwnerMode": true,
+    "directHostExecution": "bounded argv without shell interpolation",
+    "continuityFastPathTools": [
+      "workspace_prepare",
+      "repository_apply_search_replace",
+      "repository_write_new_file",
+      "repository_run_check",
+      "repository_materialize_pr_paths",
+      "repository_sync_workspace_to_pr_head",
+      "repository_create_draft_pr",
+      "vps_dev_exec"
+    ],
+    "releaseDeploymentBypass": false,
+    "secretBypass": false,
+    "rawShellEnabled": false
   },
   "forbiddenToolNames": [
     "shell",

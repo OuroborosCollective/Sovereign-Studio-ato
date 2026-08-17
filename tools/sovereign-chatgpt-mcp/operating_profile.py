@@ -4,6 +4,7 @@ from dataclasses import asdict
 import functools
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 from typing import Annotated, Any
@@ -45,6 +46,23 @@ _CONFIRMATION_FIELDS = (
     "confirmation_digest",
     "confirmation_inventory_sha256",
 )
+_DEVELOPMENT_FAST_PATH_TOOLS = frozenset({
+    "workspace_prepare",
+    "repository_apply_search_replace",
+    "repository_write_new_file",
+    "repository_run_check",
+    "repository_materialize_pr_paths",
+    "repository_sync_workspace_to_pr_head",
+    "repository_create_draft_pr",
+    "vps_dev_exec",
+})
+
+
+def _private_vps_dev_mode_enabled() -> bool:
+    return bool(
+        os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
+        and os.getenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "0").strip() == "1"
+    )
 
 
 class StrictModel(BaseModel):
@@ -532,7 +550,12 @@ def _gate_or_raise(tool_name: str, effect: str, parameters: dict[str, Any], kwar
         validation = validated.model_dump(mode="json")
         findings.extend(validated.findings)
     findings.extend(_validate_invocation_arguments(tool_name, effect, parameters, kwargs))
-    findings.extend(continuity.continuity_gate_findings(tool_name, effect))
+    development_fast_path = bool(
+        _private_vps_dev_mode_enabled()
+        and tool_name in _DEVELOPMENT_FAST_PATH_TOOLS
+    )
+    if not development_fast_path:
+        findings.extend(continuity.continuity_gate_findings(tool_name, effect))
     if findings:
         payload = {
             "schemaVersion": "sovereign.mutation-gate-block.v1",

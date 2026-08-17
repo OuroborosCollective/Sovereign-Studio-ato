@@ -62,6 +62,25 @@ def test_runtime_boundaries_report_enforced_execution_model(monkeypatch) -> None
     }
 
 
+def test_private_vps_dev_mode_relaxes_development_only_boundaries(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "1")
+    monkeypatch.setenv("SOVEREIGN_MCP_DEV_ROOTS", "/opt/sovereign-chatgpt-tools/workspaces")
+
+    result = mcp_runtime_boundaries()
+
+    assert result["private_owner_mode_enabled"] is True
+    assert result["private_vps_dev_mode_enabled"] is True
+    assert result["private_vps_dev_exec_available"] is True
+    assert result["host_mutation_execution"] == "direct_bounded_dev_argv_plus_host_command_queue_for_release"
+    assert result["direct_broker_socket_mutation_allowed"] is True
+    assert result["workspace_changes_end_at_draft_pr"] is False
+    assert result["generic_shell_available"] is False
+    assert result["private_vps_dev_exec_shell_interpolation"] is False
+    assert result["release_mutations_remain_separately_gated"] is True
+    assert "private_vps_dev_exec" in result["active_private_admin_capabilities"]
+
+
 def test_issue_tools_publish_strict_input_and_output_schemas() -> None:
     registered = {tool.name: tool for tool in launcher.mcp._tool_manager.list_tools()}
     expected = {

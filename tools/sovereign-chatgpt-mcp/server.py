@@ -76,26 +76,44 @@ def _private_admin_capabilities() -> list[str]:
         capabilities.append("managed_compose_write")
     if os.getenv("SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE", "0").strip() == "1":
         capabilities.extend(("patchmon_patch_write", "fleet_maintenance_write"))
+    if (
+        os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
+        and os.getenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "0").strip() == "1"
+    ):
+        capabilities.append("private_vps_dev_exec")
     return capabilities
 
 
 def _runtime_boundaries() -> dict[str, Any]:
+    private_owner_mode = os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1"
+    private_vps_dev_mode = bool(
+        private_owner_mode
+        and os.getenv("SOVEREIGN_MCP_PRIVATE_VPS_DEV_MODE", "0").strip() == "1"
+    )
     return {
         "ok": True,
         "status": "RUNTIME_BOUNDARIES_VERIFIED",
         "node_build_execution": "github_actions_only",
         "local_node_dependency_install_allowed": False,
-        "host_mutation_execution": "host_command_queue_only",
-        "direct_broker_socket_mutation_allowed": False,
+        "host_mutation_execution": (
+            "direct_bounded_dev_argv_plus_host_command_queue_for_release"
+            if private_vps_dev_mode else "host_command_queue_only"
+        ),
+        "direct_broker_socket_mutation_allowed": private_vps_dev_mode,
         "generic_shell_available": False,
-        "workspace_changes_end_at_draft_pr": True,
+        "private_vps_dev_exec_available": private_vps_dev_mode,
+        "private_vps_dev_exec_shell_interpolation": False,
+        "private_vps_dev_roots_configured": bool(os.getenv("SOVEREIGN_MCP_DEV_ROOTS", "").strip()),
+        "workspace_changes_end_at_draft_pr": False if private_vps_dev_mode else True,
         "workspace_pr_head_sync": "exact_revision_local_only",
         "workspace_pr_head_sync_force_push_allowed": False,
         "workspace_pr_head_sync_main_mutation_allowed": False,
+        "release_mutations_remain_separately_gated": True,
         "owner_protected_input_execution": "authenticated_owner_ui_only",
         "llm_can_receive_protected_values": False,
         "raw_payment_card_input_allowed": False,
-        "private_owner_mode_enabled": os.getenv("SOVEREIGN_MCP_PRIVATE_OWNER_MODE", "0").strip() == "1",
+        "private_owner_mode_enabled": private_owner_mode,
+        "private_vps_dev_mode_enabled": private_vps_dev_mode,
         "active_private_admin_capabilities": _private_admin_capabilities(),
     }
 
@@ -1388,6 +1406,20 @@ def vps_container_status(container: str = "sovereign-backend") -> dict[str, Any]
 def vps_container_logs(container: str = "sovereign-backend", tail: int = 200) -> dict[str, Any]:
     """Read bounded logs from one allowlisted Docker container through the local broker."""
     return broker.call("container_logs", {"container": container, "tail": tail})
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def vps_dev_exec(
+    cwd: str,
+    argv: list[str],
+    timeout_seconds: Annotated[int, Field(ge=1, le=1200)] = 300,
+) -> dict[str, Any]:
+    """Run one bounded direct-argv development command on the private VPS host; no shell interpolation."""
+    return broker.call(
+        "vps_dev_exec",
+        {"cwd": cwd, "argv": argv, "timeout_seconds": timeout_seconds},
+        timeout=max(30, min(int(timeout_seconds) + 15, 1215)),
+    )
 
 
 @mcp.tool(annotations=READ_ONLY)
