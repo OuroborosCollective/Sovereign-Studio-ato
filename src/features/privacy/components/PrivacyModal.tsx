@@ -76,16 +76,55 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
         
         <div className="space-y-4 overflow-y-auto max-h-96 text-gray-600 dark:text-gray-300">
           <section>
-            <h3 className="font-bold text-gray-900 dark:text-white">1. Datenerfassung</h3>
-            <p>Wir erfassen nur technisch notwendige Daten, um die Funktionalität dieser Anwendung zu gewährleisten.</p>
+            <h3 className="font-bold text-gray-900 dark:text-white">1. Identität der App und des Anbieters</h3>
+            <p>
+              Diese Datenschutzerklärung gilt für <strong>ARE-LOGIK - NOCode Studio</strong>
+              {' '}mit der Android-Paket-ID <code>com.arestudio.nocode.aab</code>.
+            </p>
+            <p>
+              Google-Play-Entwicklername: <strong>ARE-LOGIC ENGINE</strong>. Verantwortliche Person/Anbieterin:
+              {' '}<strong>Susanne Möller</strong>, Schwarzenmoorstr. 117, 32049 Herford, Deutschland.
+            </p>
           </section>
           <section>
-            <h3 className="font-bold text-gray-900 dark:text-white">2. Datennutzung</h3>
-            <p>Ihre Daten werden nicht an Dritte weitergegeben und ausschließlich lokal oder in gesicherten Umgebungen verarbeitet.</p>
+            <h3 className="font-bold text-gray-900 dark:text-white">2. Welche Daten verarbeitet werden</h3>
+            <p>
+              Je nach verwendeter Funktion verarbeitet die App Konto- und Anmeldedaten (z. B. E-Mail-Adresse,
+              Anzeigename und Authentifizierungskennungen), von Ihnen bereitgestellte Projekt-, Datei-, Repository-
+              oder Chat-Inhalte sowie technische Verbindungs- und Geräteinformationen, die für sicheren Betrieb,
+              Fehlerdiagnose und Missbrauchsschutz erforderlich sind.
+            </p>
+            <p>
+              Wenn optionale Telemetrie aktiviert ist, können pseudonymisierte Nutzungsereignisse verarbeitet werden.
+              Zahlungsanbieter verarbeiten Zahlungsdaten in ihren eigenen Systemen; die App benötigt für Freischaltungen
+              nur Zahlungs-/Entitlement-Status und speichert keine vollständigen Karten- oder Bankzugangsdaten.
+            </p>
           </section>
           <section>
-            <h3 className="font-bold text-gray-900 dark:text-white">3. Ihre Rechte</h3>
-            <p>Sie haben jederzeit das Recht auf Auskunft, Berichtigung oder Löschung Ihrer gespeicherten Daten.</p>
+            <h3 className="font-bold text-gray-900 dark:text-white">3. Zweck, Weitergabe und Speicherdauer</h3>
+            <p>
+              Daten werden zur Bereitstellung der App, Authentifizierung, Ausführung ausdrücklich angeforderter Funktionen,
+              Abrechnung/Freischaltung, Sicherheit, Support und Fehleranalyse verarbeitet. Eine Weitergabe erfolgt nur,
+              soweit sie für die jeweils genutzte Funktion erforderlich ist, etwa an einen von Ihnen gewählten Login-,
+              Hosting-, Repository-, Modell- oder Zahlungsdienst. Es findet kein Verkauf personenbezogener Daten statt.
+            </p>
+            <p>
+              Daten werden nur solange aufbewahrt, wie dies für den jeweiligen Zweck, gesetzliche Pflichten oder die
+              Sicherheit des Dienstes erforderlich ist. Nutzer können die Löschung ihrer Kontodaten verlangen.
+            </p>
+          </section>
+          <section>
+            <h3 className="font-bold text-gray-900 dark:text-white">4. Ihre Rechte und Kontakt</h3>
+            <p>
+              Sie haben im gesetzlichen Rahmen Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung,
+              Datenübertragbarkeit und Widerspruch. Datenschutzanfragen können an
+              {' '}<a className="underline" href="mailto:projectouroboroscollective@gmail.com">projectouroboroscollective@gmail.com</a>
+              {' '}gerichtet werden.
+            </p>
+            <p>
+              Die öffentlich abrufbare Fassung dieser Erklärung ist unter
+              {' '}<a className="underline" href="/privacy.html" target="_blank" rel="noreferrer">/privacy.html</a> verfügbar.
+            </p>
           </section>
         </div>
 

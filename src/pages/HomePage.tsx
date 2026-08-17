@@ -3,6 +3,7 @@ import MainLayout from '../components/layouts/MainLayout';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useHomePageMetrics } from '../hooks/useHomePageMetrics';
 import { getLatestSovereignHealthReport } from '../features/product/runtime/sovereignHealth';
+import { PrivacyModal } from '../features/privacy/components/PrivacyModal';
 
 /**
  * CanvasEngine
@@ -265,6 +266,7 @@ const HomePage: React.FC = () => {
           </div>
         </main>
       </ErrorBoundary>
+      <PrivacyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
     </MainLayout>
   );
 };
