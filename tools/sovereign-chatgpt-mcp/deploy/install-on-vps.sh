@@ -1081,7 +1081,7 @@ done
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/CONTEXT.md" "$INSTALL_ROOT/continuity-data/CONTEXT.md" "continuity-data/CONTEXT.md"
 install_managed_control_plane_file 0644 "$SOURCE_DIR/continuity-data/LEDGER.jsonl" "$INSTALL_ROOT/continuity-data/LEDGER.jsonl" "continuity-data/LEDGER.jsonl"
 
-for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
+for file in broker.py browserless_reader.py document_pipeline.py github_knowledge_canary.py issue_closure_canary.py programming_language_catalog_runtime.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_installation_auth.py ci_repair_tools.py llm_boundary_ledger.py llm_boundary_contract.py self_update.py policy.py self_heal.py managed_compose.py patchmon_operator.py patchmon_fleet.py fleet_maintenance.py; do
   install_managed_control_plane_file 0640 "$SOURCE_DIR/$file" "$BROKER_DIR/$file" "broker/$file"
 done
 install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"
@@ -1188,24 +1188,21 @@ if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
     SOVEREIGN_MCP_ENABLE_MAIN_PUSH \
     SOVEREIGN_MCP_ENABLE_PR_MERGE \
     SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \
-    SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE; do
+    SOVEREIGN_MCP_ENABLE_SELF_UPDATE \
+    SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE \
+    SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE; do
     set_value "$MANAGED_ENV" "$OWNER_CAPABILITY" "1"
   done
 fi
-INSTALL_STAGE="disable_token_dependent_github_capabilities_without_ephemeral_ci_scope"
-for TOKEN_DEPENDENT_CAPABILITY in \
-  SOVEREIGN_MCP_ENABLE_MAIN_PUSH \
-  SOVEREIGN_MCP_ENABLE_PR_MERGE \
-  SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL \
-  SOVEREIGN_MCP_ENABLE_SELF_UPDATE; do
-  set_value "$MANAGED_ENV" "$TOKEN_DEPENDENT_CAPABILITY" "0"
-done
-set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE "0"
-unset TOKEN_DEPENDENT_CAPABILITY
+INSTALL_STAGE="bind_private_owner_github_capabilities_to_ephemeral_app_auth"
+if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
+  set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE "1"
+else
+  set_value "$MANAGED_ENV" SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE "0"
+fi
 for GUARDED_CAPABILITY in \
   SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS \
-  SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS \
-  SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE; do
+  SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS; do
   if [[ -z "$(read_mcp_value "$GUARDED_CAPABILITY")" ]]; then
     set_value "$MANAGED_ENV" "$GUARDED_CAPABILITY" "0"
   fi
@@ -1254,6 +1251,14 @@ remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
 prepare_mcp_github_app_secret
+if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
+  [[ "$(read_mcp_value SOVEREIGN_MCP_GITHUB_APP_ID)" =~ ^[1-9][0-9]*$ ]] \
+    || fail "private owner GitHub capabilities require GitHub App ID"
+  [[ "$(read_mcp_value SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID)" =~ ^[1-9][0-9]*$ ]] \
+    || fail "private owner GitHub capabilities require GitHub App installation ID"
+  [[ -f "$GITHUB_APP_PRIVATE_KEY_FILE" && ! -L "$GITHUB_APP_PRIVATE_KEY_FILE" ]] \
+    || fail "private owner GitHub capabilities require the protected GitHub App key"
+fi
 OWNER_REFERENCE_ID="$(read_backend_value SOVEREIGN_OWNER_REFERENCE_ID)"
 OWNER_ADMIN_ID="$(read_backend_value SOVEREIGN_OWNER_ADMIN_ID)"
 OWNER_ADMIN_EMAIL="$(read_backend_value SOVEREIGN_OWNER_ADMIN_EMAIL)"
@@ -1354,12 +1359,13 @@ prepare_managed_private_file_mutation "$BROKER_ENV" "broker-environment"
 INSTALL_STAGE="mutate_managed_private_file:broker-environment"
 if ! {
   for environment_file in "$ENV_FILE" "$MANAGED_ENV"; do
-    grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
+    grep -E '^(SOVEREIGN_MCP_REPOSITORY|SOVEREIGN_MCP_GIT_AUTHOR_NAME|SOVEREIGN_MCP_GIT_AUTHOR_EMAIL|SOVEREIGN_MCP_ALLOWED_CONTAINERS|SOVEREIGN_MCP_ALLOWED_WORKFLOWS|SOVEREIGN_MCP_WORKSPACE_ROOT|SOVEREIGN_MCP_PRIVATE_OWNER_MODE|SOVEREIGN_MCP_ENABLE_DB_WRITES|SOVEREIGN_MCP_ENABLE_DEPLOY|SOVEREIGN_MCP_ALLOW_DATA_BACKFILLS|SOVEREIGN_MCP_ALLOW_DESTRUCTIVE_MIGRATIONS|SOVEREIGN_MCP_ENABLE_ADMIN_SQL|SOVEREIGN_MCP_ENABLE_MAIN_PUSH|SOVEREIGN_MCP_ENABLE_PR_MERGE|SOVEREIGN_MCP_ENABLE_WORKFLOW_CONTROL|SOVEREIGN_MCP_ALLOW_MERGE_WITHOUT_CHECKS|SOVEREIGN_MCP_ENABLE_SELF_UPDATE|SOVEREIGN_MCP_ENABLE_COMPOSE_WRITE|SOVEREIGN_MCP_ENABLE_PATCHMON_PATCH_WRITE|SOVEREIGN_MCP_GITHUB_CAPABILITIES_AVAILABLE|SOVEREIGN_MCP_GITHUB_APP_ID|SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID|SOVEREIGN_MCP_PREVIEW_POSTGRES_HOST|SOVEREIGN_MCP_PREVIEW_POSTGRES_PORT|SOVEREIGN_MCP_PREVIEW_POSTGRES_DB|SOVEREIGN_MCP_PREVIEW_POSTGRES_USER|SOVEREIGN_MCP_PREVIEW_POSTGRES_PASSWORD|SOVEREIGN_BACKEND_IMAGE_REPOSITORY|SOVEREIGN_BACKEND_ENV_FILE|SOVEREIGN_BACKEND_MANAGED_ENV_FILE)=' "$environment_file" || true
   done
   printf 'SOVEREIGN_MCP_DEPLOY_SCRIPT=%s\n' "$BIN_DIR/deploy-sovereign-backend"
   printf 'SOVEREIGN_MCP_ROLLBACK_SCRIPT=%s\n' "$BIN_DIR/rollback-sovereign-backend"
   printf 'SOVEREIGN_MCP_SOURCE_DIR=/opt/sovereign-operator-source\n'
   printf 'SOVEREIGN_MCP_GOVERNANCE_MODE_PATH=%s\n' "$BROKER_GOVERNANCE_MODE"
+  printf 'SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=%s\n' "$GITHUB_APP_PRIVATE_KEY_FILE"
   printf 'SOVEREIGN_MCP_SELF_UPDATE_SERVICE=sovereign-chatgpt-mcp-self-update.service\n'
   printf 'SOVEREIGN_MCP_SELF_UPDATE_STATUS=/var/lib/sovereign-chatgpt-self-update/status.json\n'
   printf 'SOVEREIGN_MCP_COMMAND_QUEUE=%s\n' "$COMMAND_QUEUE_DIR"
@@ -1413,6 +1419,46 @@ wait_for_broker_ready || {
   systemctl status sovereign-chatgpt-broker.service --no-pager >&2 || true
   fail "host broker socket exists but the broker RPC did not become ready after ${BROKER_READY_ATTEMPTS}s"
 }
+
+INSTALL_STAGE="verify_ephemeral_github_app_broker_auth"
+python3 - "$BROKER_ENV" "$BROKER_DIR" <<'PY'
+import os
+from pathlib import Path
+import sys
+
+env_file = Path(sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+allowed = {
+    "SOVEREIGN_MCP_REPOSITORY",
+    "SOVEREIGN_MCP_GITHUB_APP_ID",
+    "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID",
+    "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE",
+}
+for line in env_file.read_text("utf-8").splitlines():
+    if "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    if key in allowed:
+        os.environ[key] = value
+
+import requests
+from github_installation_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
+
+repository = os.environ["SOVEREIGN_MCP_REPOSITORY"]
+auth = GitHubAppInstallationAuth(GitHubAppInstallationConfig.from_env(repository=repository))
+with auth.headers() as headers:
+    response = requests.get(
+        f"https://api.github.com/repos/{repository}",
+        headers=headers,
+        timeout=20,
+    )
+if response.status_code != 200:
+    raise SystemExit(f"GitHub App repository canary failed: HTTP {response.status_code}")
+payload = response.json()
+if str(payload.get("full_name") or "") != repository:
+    raise SystemExit("GitHub App repository canary returned the wrong repository")
+print("GITHUB_APP_REPOSITORY_CANARY_VERIFIED")
+PY
 
 # The image is built and dependency-resolved in GitHub Actions. The VPS only
 # pulls and verifies the immutable revision before touching the running container.
@@ -2910,4 +2956,4 @@ if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
   SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
   FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
 fi
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":false,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_enforced":true,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":false,"workspace_pr_head_sync_available":false,"workflow_dispatch_available":false,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_enforced":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"

@@ -107,6 +107,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "admin_mode.py" in broker_copy_loop
     assert "browserless_reader.py" in broker_copy_loop
     assert "github_admin.py" in broker_copy_loop
+    assert "github_installation_auth.py" in broker_copy_loop
     assert 'BROKER_GOVERNANCE_MODE="$BROKER_DIR/sovereign-governance-mode.json"' in script
     assert 'versioned governance mode is missing' in script
     assert 'install_managed_control_plane_file 0640 "$SOURCE_DIR/config/sovereign-governance-mode.json" "$BROKER_GOVERNANCE_MODE" "broker/sovereign-governance-mode.json"' in script
@@ -397,8 +398,10 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert '"operating_profile_enforced":true' in installer
     assert '"continuity_enforced":true' in installer
     assert '"repository_revision_resolver":true' in installer
-    assert '"workspace_pr_head_sync_available":false' in installer
-    assert '"workspace_pr_head_sync_available":true' not in installer
+    assert '"workspace_pr_head_sync_available":true' in installer
+    assert '"github_app_repository_canary":true' in installer
+    assert '"persistent_github_token_present":false' in installer
+    assert 'GITHUB_APP_REPOSITORY_CANARY_VERIFIED' in installer
     assert 'callable(server.repository_sync_workspace_to_pr_head)' in installer
     assert 'callable(server.postgres_schema_inventory)' in installer
     assert 'callable(server.controller_run_external_event)' in installer

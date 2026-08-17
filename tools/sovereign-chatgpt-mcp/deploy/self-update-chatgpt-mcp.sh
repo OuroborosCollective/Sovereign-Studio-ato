@@ -134,10 +134,18 @@ print(revision)
 PY
 )"
 
-CURRENT_STAGE="prepare_registry_auth"
-TOKEN="$(sed -n 's/^GITHUB_TOKEN=//p' "$BROKER_ENV" | tail -n 1)"
+CURRENT_STAGE="prepare_ephemeral_github_app_auth"
+TOKEN="$(PYTHONPATH=/opt/sovereign-chatgpt-tools/broker python3 - <<'PY'
+import os
+from github_installation_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
+repository = os.getenv("SOVEREIGN_MCP_REPOSITORY", "").strip()
+auth = GitHubAppInstallationAuth(GitHubAppInstallationConfig.from_env(repository=repository))
+with auth.token() as token:
+    print(token, end="")
+PY
+)"
 if [[ -z "$TOKEN" ]]; then
-  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; protected GitHub token metadata is missing"
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; ephemeral GitHub App installation token was not issued"
   exit 1
 fi
 ASKPASS_DIR="$(mktemp -d)"
@@ -160,7 +168,7 @@ export GITHUB_TOKEN="$TOKEN"
 export GIT_ASKPASS="$ASKPASS_DIR/askpass.sh"
 export GIT_TERMINAL_PROMPT=0
 
-REGISTRY_USERNAME=""
+REGISTRY_USERNAME="x-access-token"
 REGISTRY_TOKEN="$TOKEN"
 if [[ -f "$GHCR_ENV" ]]; then
   python3 - "$GHCR_ENV" <<'PY'
@@ -182,30 +190,6 @@ PY
     REGISTRY_USERNAME="$CONFIGURED_GHCR_USERNAME"
     REGISTRY_TOKEN="$CONFIGURED_GHCR_TOKEN"
   fi
-fi
-if [[ -z "$REGISTRY_USERNAME" ]]; then
-  REGISTRY_USERNAME="$(python3 - <<'PY'
-import json
-import os
-import urllib.request
-
-request = urllib.request.Request(
-    "https://api.github.com/user",
-    headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-        "User-Agent": "sovereign-mcp-self-update",
-        "X-GitHub-Api-Version": "2026-03-10",
-    },
-)
-with urllib.request.urlopen(request, timeout=20) as response:
-    payload = json.load(response)
-login = str(payload.get("login") or "").strip()
-if not login:
-    raise SystemExit("GitHub identity response has no login")
-print(login)
-PY
-)"
 fi
 if [[ ! "$REGISTRY_USERNAME" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]; then
   write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; registry username metadata is invalid"
@@ -237,6 +221,7 @@ write_status RUNNING "$EXPECTED_REVISION" "fetching confirmed main revision"
 cd "$SOURCE_DIR"
 git fetch origin main
 ACTUAL_REVISION="$(git rev-parse origin/main)"
+unset GITHUB_TOKEN
 [[ "$ACTUAL_REVISION" == "$EXPECTED_REVISION" ]] || {
   write_status BLOCKED "$EXPECTED_REVISION" "origin/main does not match expected revision"
   exit 1
