@@ -98,6 +98,9 @@ def test_canary_success_requires_cleanup_and_secret_free_readback(monkeypatch) -
     assert "vector_index_outbox" in script
     assert "github_api_timeout" in script
     assert "DELETE FROM knowledge_sources" in script
+    assert 'failure_stage = "knowledge_persistence"' in script
+    assert '"blockerSha256": digest_text(persistence_blocker)' in script
+    assert '"stage": failure_stage' in script
     assert "secretValuesReturned" in script
 
 
@@ -206,6 +209,59 @@ def test_terminal_success_with_mismatched_runtime_identity_is_rejected(monkeypat
     assert result["ok"] is False
     assert result["status"] == "GITHUB_KNOWLEDGE_LIVE_CANARY_FAILED"
     assert result["sourceRevision"] == REVISION
+
+
+def test_canary_failure_preserves_stage_and_only_hashed_persistence_blocker(monkeypatch) -> None:
+    payload = {
+        "ok": False,
+        "status": "GITHUB_KNOWLEDGE_LIVE_CANARY_FAILED",
+        "sourceRevision": REVISION,
+        "imageDigest": DIGEST,
+        "evidence": {
+            "persistence": {
+                "status": "partial",
+                "chunkCount": 1,
+                "embeddedCount": 0,
+                "blockerPresent": True,
+                "blockerSha256": "d" * 64,
+            }
+        },
+        "cleanup": {
+            "sourceRows": 0,
+            "linkRows": 0,
+            "candidateRows": 0,
+            "blockRows": 0,
+            "outboxRows": 0,
+            "auditRows": 0,
+        },
+        "cleanupVerified": True,
+        "failure": {
+            "stage": "knowledge_persistence",
+            "type": "RuntimeError",
+            "messageSha256": "e" * 64,
+        },
+        "secretValuesReturned": False,
+        "documentContentReturned": False,
+    }
+
+    monkeypatch.setattr(
+        github_knowledge_canary.subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(
+            argv, 1, stdout=json.dumps(payload) + "\n", stderr=""
+        ),
+    )
+
+    result = github_knowledge_canary.GitHubKnowledgeCanaryRuntime().live_canary(
+        expected_revision=REVISION,
+        expected_image_digest=DIGEST,
+    )
+
+    assert result["ok"] is False
+    assert result["readback"]["failure"]["stage"] == "knowledge_persistence"
+    assert result["readback"]["evidence"]["persistence"]["blockerSha256"] == "d" * 64
+    assert "embedding" not in str(result).lower()
+    assert result["readback"]["cleanupVerified"] is True
 
 
 def test_canary_failure_never_returns_stderr_or_document_content(monkeypatch) -> None:

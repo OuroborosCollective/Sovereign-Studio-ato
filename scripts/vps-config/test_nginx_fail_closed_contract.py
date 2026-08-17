@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -9,77 +10,72 @@ CONFIG_PATH = ROOT / "scripts/vps-config/nginx/openhands.arelorian.de.conf"
 SETUP_PATH = ROOT / "scripts/vps-config/setup-nginx.sh"
 
 
-def _embedded_nginx_config(setup_script: str) -> str:
-    match = re.search(
-        r"cat > \"\$CONFIG_FILE\" << 'NGINXCONF'(.+?)NGINXCONF",
-        setup_script,
-        re.DOTALL,
+FORBIDDEN_LEGACY = (
+    "proxy_pass",
+    "127.0.0.1:3000",
+    "127.0.0.1:8090",
+    "mcp_api_key",
+    "X-API-Key",
+    "location = /mcp",
+)
+
+
+def test_openhands_nginx_config_is_retired_and_fail_closed() -> None:
+    config = CONFIG_PATH.read_text(encoding="utf-8")
+
+    assert "server_name openhands.arelorian.de;" in config
+    assert config.count("return 410;") == 2
+    assert "listen 80;" in config
+    assert "listen 443 ssl http2;" in config
+
+    for marker in FORBIDDEN_LEGACY:
+        assert marker not in config
+
+    assert re.findall(r"proxy_pass\s+[^;]+;", config) == []
+
+
+def test_openhands_retirement_installer_is_rollback_safe() -> None:
+    setup = SETUP_PATH.read_text(encoding="utf-8")
+
+    assert 'SOURCE_CONFIG="$SCRIPT_DIR/nginx/openhands.arelorian.de.conf"' in setup
+    assert 'CONFIG_FILE="/etc/nginx/sites-available/openhands.arelorian.de"' in setup
+    assert 'SYM_LINK="/etc/nginx/conf.d/openhands.arelorian.de.conf"' in setup
+    assert 'LEGACY_ENABLED_LINK="/etc/nginx/sites-enabled/openhands.arelorian.de"' in setup
+    assert 'BACKUP_ROOT="/var/backups/sovereign-nginx/openhands-retirement"' in setup
+    assert "backup_path" in setup
+    assert "rollback()" in setup
+    assert 'install -o root -g root -m 0644 "$SOURCE_CONFIG" "$CONFIG_FILE"' in setup
+    assert 'rm -f -- "$LEGACY_ENABLED_LINK" "$SYM_LINK"' in setup
+    assert "nginx -t" in setup
+    assert "systemctl reload nginx" in setup
+    assert "systemctl is-active --quiet nginx" in setup
+    assert "OPENHANDS_RUNTIME_RETIRED" in setup
+    assert "browserless_proxy_present=false" in setup
+    assert "mcp_proxy_present=false" in setup
+    assert "credential_include_present=false" in setup
+
+    assert "openhands_mcp_api_key.txt" not in setup
+    assert "KEY_FILE=" not in setup
+    assert "YOUR_KEY_HERE" not in setup
+    assert "forbidden legacy integration surface" in setup
+
+
+def test_openhands_retirement_installer_has_valid_bash_syntax() -> None:
+    result = subprocess.run(
+        ["bash", "-n", str(SETUP_PATH)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    assert match, "Could not find NGINXCONF heredoc in setup script"
-    return match.group(1).strip()
+    assert result.returncode == 0, result.stderr
 
 
-def test_committed_and_generated_nginx_servers_are_identical() -> None:
-    """Verify committed config and embedded config in setup script match."""
-    committed = CONFIG_PATH.read_text(encoding="utf-8")
-    generated = _embedded_nginx_config(SETUP_PATH.read_text(encoding="utf-8"))
-    committed_servers = committed[committed.index("server {") :].strip()
-
-    assert generated == committed_servers
-
-
-def test_mcp_route_requires_api_key() -> None:
-    """Verify /mcp requires X-API-Key authentication."""
-    config = CONFIG_PATH.read_text(encoding="utf-8")
-
-    # Must have exact-match /mcp location
-    assert "location = /mcp {" in config
-    # Must check X-API-Key header
-    assert '$http_x_api_key' in config
-    assert 'return 401;' in config
-    # Must include owner-managed key file
-    assert "include /opt/sovereign-owner-managed/openhands_mcp_api_key.txt" in config
-
-
-def test_mcp_route_proxies_to_port_8090() -> None:
-    """Verify /mcp proxies to 127.0.0.1:8090 (MCP, not Browserless)."""
-    config = CONFIG_PATH.read_text(encoding="utf-8")
-
-    assert "proxy_pass http://127.0.0.1:8090/mcp" in config
-
-
-def test_root_route_proxies_to_port_3000() -> None:
-    """Verify root / proxies to 127.0.0.1:3000 (existing local service)."""
-    config = CONFIG_PATH.read_text(encoding="utf-8")
-
-    assert "location / {" in config
-    assert "proxy_pass http://127.0.0.1:3000;" in config
-
-
-def test_key_file_verification_in_setup_script() -> None:
-    """Verify setup script checks for owner-managed API key file."""
-    setup = SETUP_PATH.read_text(encoding="utf-8")
-
-    assert "/opt/sovereign-owner-managed/openhands_mcp_api_key.txt" in setup
-    assert 'chmod 0600' in setup
-    assert 'KEY_FILE="/opt/sovereign-owner-managed/openhands_mcp_api_key.txt"' in setup
-
-
-def test_setup_script_validates_permissions() -> None:
-    """Verify setup script checks key file has 0600 permissions."""
-    setup = SETUP_PATH.read_text(encoding="utf-8")
-
-    assert 'KEY_PERMS=$(stat' in setup
-    assert '"600"' in setup
-
-
-def test_no_hardcoded_api_keys() -> None:
-    """Verify no actual API keys are committed to the repository."""
+def test_retirement_files_contain_no_secret_or_bearer_material() -> None:
     config = CONFIG_PATH.read_text(encoding="utf-8")
     setup = SETUP_PATH.read_text(encoding="utf-8")
+    joined = config + "\n" + setup
 
-    # The config should set variable to empty string as default
-    assert 'set $mcp_api_key "";' in config
-    # Should NOT have any actual key values
-    assert "sk-" not in config and "sk-" not in setup
-    assert "api_key" not in config.lower() or "mcp_api_key" in config.lower()
+    assert not re.search(
+        r"(?:Bearer\s+|sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{16,})",
+        joined,
+    )
