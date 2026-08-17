@@ -147,19 +147,15 @@ def resolve_ref_sha(api: GitHubApi, ref: str) -> str:
 
 
 def ensure_branch(api: GitHubApi, branch: str, source_sha: str) -> None:
-    ref_path = f"/git/ref/heads/{urllib.parse.quote(branch, safe='/')}"
+    payload = {"ref": f"refs/heads/{branch}", "sha": source_sha}
     try:
-        existing = api.request("GET", ref_path)
-        existing_sha = existing.get("object", {}).get("sha")
-        if isinstance(existing_sha, str) and existing_sha:
+        api.request("POST", "/git/refs", payload)
+        print(f"✓ Branch erstellt: {branch}")
+    except RuntimeError as error:
+        if "Reference already exists" in str(error) or "already exists" in str(error):
             print(f"✓ Branch existiert bereits: {branch}")
             return
-    except RuntimeError as error:
-        if "HTTP 404" not in str(error):
-            raise
-    payload = {"ref": f"refs/heads/{branch}", "sha": source_sha}
-    api.request("POST", "/git/refs", payload)
-    print(f"✓ Branch erstellt: {branch}")
+        raise
 
 
 def update_file(api: GitHubApi, branch: str, path: str, sha: str, content: str, message: str) -> str:
