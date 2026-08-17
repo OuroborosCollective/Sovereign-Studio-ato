@@ -1,0 +1,16 @@
+{
+  "target": "tools/sovereign-chatgpt-mcp/tests/test_control_plane_copy_diagnostics.py",
+  "source_ref": "sovereign/chatgpt/mcp-readback-ssh-dir-pre-guard-20260817",
+  "branch_base_ref": "sovereign/chatgpt/mcp-readback-ssh-dir-pre-guard-20260817",
+  "branch": "sovereign/chatgpt/mcp-readback-ssh-dir-pre-guard-20260817",
+  "expectedSha": "f08537604fdf40c32e76e4b7284cfab473b024a0",
+  "commit_message": "test(mcp): forbid SSH-directory temp writes in readback auth",
+  "pr_title": "Fix: guard protected SSH directory before runtime readback authorization",
+  "pr_body": "Complete regression coverage for protected /root/.ssh: no mktemp or temporary target replacement, direct in-place authorized_keys write with fsync after the file-specific protected-attribute guard.",
+  "blocks": [
+    {
+      "search": "    assert 'touch \"$authorized_keys\"' not in block\n    assert 'mv -f \"$temporary\" \"$authorized_keys\"' not in block\n    assert 'with target.open(\"wb\") as handle:' in block\n    assert \"os.fsync(handle.fileno())\" in block\n",
+      "replace": "    assert 'touch \"$authorized_keys\"' not in block\n    assert 'mv -f \"$temporary\" \"$authorized_keys\"' not in block\n    assert 'mktemp \"$root_ssh_dir/.authorized_keys.XXXXXX\"' not in block\n    assert 'local temporary=\"\"' not in block\n    assert 'with target.open(\"w\", encoding=\"utf-8\", newline=\"\\\\n\") as handle:' in block\n    assert 'if \"sovereign-runtime-readback-ci\" not in line' in block\n    assert 'lines.append(f\\'command=\"{forced_command}\",restrict {key_line}\\')' in block\n    assert \"os.fsync(handle.fileno())\" in block\n"
+    }
+  ]
+}
