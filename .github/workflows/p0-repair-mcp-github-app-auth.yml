@@ -1,0 +1,154 @@
+name: P0 Repair MCP GitHub App Auth
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/p0-repair-mcp-github-app-auth.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: p0-mcp-github-app-auth-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST || secrets.SSH_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || secrets.SSH_USER }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD || secrets.VPS_PW || secrets.SSH_PW || secrets.SSH_PASSWORD }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT || secrets.SSH_PORT || '22' }}
+    steps:
+      - name: Validate rescue inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VPS_HOST:-}"
+          test -n "${VPS_USER:-}"
+          test -n "${VPS_PASSWORD:-}"
+          [[ "${VPS_SSH_PORT}" =~ ^[0-9]+$ ]]
+
+      - name: Repair MCP GitHub App binding and prove authenticated clone
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+        env:
+          SUDO_PASSWORD: ${{ env.VPS_PASSWORD }}
+        with:
+          host: ${{ env.VPS_HOST }}
+          username: ${{ env.VPS_USER }}
+          password: ${{ env.VPS_PASSWORD }}
+          port: ${{ env.VPS_SSH_PORT }}
+          command_timeout: 25m
+          envs: SUDO_PASSWORD
+          script: |
+            set -Eeuo pipefail
+
+            run_root() {
+              if [ "$(id -u)" -eq 0 ]; then
+                "$@"
+                return
+              fi
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+                return
+              fi
+              test -n "${SUDO_PASSWORD:-}" || { echo 'sudo password unavailable' >&2; exit 1; }
+              printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
+            }
+
+            run_root docker inspect sovereign-chatgpt-mcp >/dev/null
+            MCP_IMAGE_ID="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Image}}')"
+            MCP_IMAGE_REF="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{.Config.Image}}')"
+            MCP_REVISION="$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            [[ "$MCP_REVISION" =~ ^[0-9a-f]{40}$ ]]
+
+            if [[ "$MCP_IMAGE_REF" =~ @sha256:([0-9a-f]{64})$ ]]; then
+              MCP_DIGEST="sha256:${BASH_REMATCH[1]}"
+            else
+              MCP_REPODIGEST="$(run_root docker image inspect "$MCP_IMAGE_ID" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep '^ghcr.io/ouroboroscollective/sovereign-chatgpt-mcp@sha256:' | head -n 1)"
+              [[ "$MCP_REPODIGEST" =~ @sha256:([0-9a-f]{64})$ ]]
+              MCP_DIGEST="sha256:${BASH_REMATCH[1]}"
+            fi
+
+            test -f /opt/sovereign-chatgpt-tools/backend-runtime.env
+            grep -q '^GITHUB_APP_ID=[1-9][0-9]*$' /opt/sovereign-chatgpt-tools/backend-runtime.env
+            grep -q '^GITHUB_APP_PRIVATE_KEY=' /opt/sovereign-chatgpt-tools/backend-runtime.env
+
+            TMP_ROOT="$(mktemp -d /tmp/sovereign-mcp-auth-repair.XXXXXX)"
+            trap 'rm -rf "$TMP_ROOT"' EXIT
+            git clone --quiet --filter=blob:none --no-checkout https://github.com/OuroborosCollective/Sovereign-Studio-ato.git "$TMP_ROOT/repo"
+            git -C "$TMP_ROOT/repo" fetch --quiet --depth 1 origin "$MCP_REVISION"
+            git -C "$TMP_ROOT/repo" checkout --quiet --detach "$MCP_REVISION"
+            test "$(git -C "$TMP_ROOT/repo" rev-parse HEAD)" = "$MCP_REVISION"
+
+            run_root env \
+              SOVEREIGN_MCP_EXPECTED_REVISION="$MCP_REVISION" \
+              SOVEREIGN_MCP_EXPECTED_DIGEST="$MCP_DIGEST" \
+              bash "$TMP_ROOT/repo/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
+
+            MOUNT_RW="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/sovereign-github-app-private-key.pem"}}{{.RW}}{{end}}{{end}}')"
+            test "$MOUNT_RW" = 'false'
+
+            run_root docker exec -i sovereign-chatgpt-mcp python - <<'PY'
+            import json
+            import os
+            import re
+            import shutil
+            import subprocess
+
+            from runtime import OperatorRuntime, RuntimeConfig
+
+            if os.getenv('GITHUB_TOKEN', '').strip():
+                raise SystemExit('persistent GITHUB_TOKEN is still present')
+
+            config = RuntimeConfig.from_env()
+            if config.github_app is None:
+                raise SystemExit('GitHub App config missing after repair')
+            if config.github_app.installation_id != 153170343:
+                raise SystemExit('unexpected GitHub App installation id')
+            if str(config.github_app.private_key_file) != '/run/secrets/sovereign-github-app-private-key.pem':
+                raise SystemExit('unexpected GitHub App key mount path')
+
+            runtime = OperatorRuntime(config)
+            metadata = runtime.prepare_workspace(base_branch='main', task_slug='github-app-auth-canary')
+            workspace_id = metadata['workspace_id']
+            try:
+                repo = runtime._repo(workspace_id)
+                head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+                if not re.fullmatch(r'[0-9a-f]{40}', head):
+                    raise SystemExit('authenticated clone returned invalid HEAD')
+                print(json.dumps({
+                    'status': 'MCP_GITHUB_APP_AUTH_VERIFIED',
+                    'workspacePrepared': True,
+                    'cloneHead': head,
+                    'installationId': config.github_app.installation_id,
+                    'persistentGithubTokenPresent': False,
+                    'secretValuesReturned': False,
+                }, sort_keys=True, separators=(',', ':')))
+            finally:
+                shutil.rmtree(runtime._workspace(workspace_id), ignore_errors=True)
+            PY
+
+            HEALTH="$(run_root docker inspect sovereign-chatgpt-mcp --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}')"
+            test "$HEALTH" = 'healthy'
+
+      - name: Remove completed rescue workflow
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Commit rescue completion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin main
+          rm .github/workflows/p0-repair-mcp-github-app-auth.yml
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .github/workflows/p0-repair-mcp-github-app-auth.yml
+          git commit -m 'chore: remove completed MCP GitHub App auth rescue workflow'
+          git push origin HEAD:main
