@@ -72,7 +72,7 @@ function formatLine(line: ChatLine, options: ChatExportOptions): string {
   }
   
   const timestamp = line.createdAt 
-    ? new Date(line.createdAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(line.createdAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     : '';
   
   const prefix = line.role === 'user' ? '**Du**' : '**Assistant**';

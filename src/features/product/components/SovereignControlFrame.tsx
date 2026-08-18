@@ -67,7 +67,7 @@ export function SovereignControlFrame({ state, children, title = 'Sovereign Cont
   return (
     <section className="mx-auto flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-black text-slate-100" data-testid="sovereign-control-frame" data-layout="control-frame-around-chat-workbench">
       <div className="flex h-6 flex-shrink-0 items-center justify-between bg-black px-3 font-mono text-[9px] text-slate-500" data-testid="control-frame-android-status-bar">
-        <span>{new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>
+        <span>{new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span>
         <span>conf <span style={{ color }}>{state.confidence.toFixed(2)}</span></span>
       </div>
 

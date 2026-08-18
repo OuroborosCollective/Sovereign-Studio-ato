@@ -27,7 +27,9 @@ function formatTime(date: Date): string {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    // Pin the hour cycle: without it, runtimes may resolve de-DE to h24,
+    // rendering midnight as "24:00:00" instead of "00:00:00" (ICU-dependent).
+    hourCycle: 'h23',
   });
 }
 

@@ -161,17 +161,21 @@ describe('useHomePageMetrics', () => {
     });
 
     it('tracks lastUpdated timestamp', () => {
-      vi.setSystemTime(new Date('2024-01-15T10:00:00'));
+      // Hermetic: explicit UTC instant, expectations derived from the same
+      // reference. Never hardcode epoch millis against a local-time parse —
+      // that makes the assertion machine-timezone dependent.
+      const reference = new Date('2024-01-15T10:00:00Z');
+      vi.setSystemTime(reference);
 
       const { result } = renderHook(() => useHomePageMetrics(null));
 
-      expect(result.current.lastUpdated).toBe(1705312800000);
+      expect(result.current.lastUpdated).toBe(reference.getTime());
 
       act(() => {
         vi.advanceTimersByTime(5000);
       });
 
-      expect(result.current.lastUpdated).toBe(1705312805000);
+      expect(result.current.lastUpdated).toBe(reference.getTime() + 5000);
     });
   });
 
