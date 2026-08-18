@@ -162,6 +162,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     ).read_text("utf-8")
     ast.parse(server)
     ast.parse(client)
+    ast.parse(backend_owner_input)
 
     signature = server.split("def owner_approval_request_create(", 1)[1].split(") ->", 1)[0]
     open_signature = server.split("def owner_approval_widget_open(", 1)[1].split(") ->", 1)[0]
@@ -177,6 +178,14 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"github_token": {' in backend_owner_input
     assert '"path": "/opt/sovereign-owner-managed/github_owner_token.txt"' in backend_owner_input
     assert 'targets["github_token"]["path"] = str(_root() / "github_owner_token.txt")' in backend_owner_input
+    assert 'DIRECT_UPLOAD_TARGET_IDS = frozenset({"github_token"})' in backend_owner_input
+    assert 'DIRECT_UPLOAD_MAX_TTL_SECONDS = 300' in backend_owner_input
+    assert 'def _direct_upload_token(' in backend_owner_input
+    assert 'def _direct_upload_authorized(' in backend_owner_input
+    assert '@app.route("/api/owner-input/direct-upload/<request_id>", methods=["POST"])' in backend_owner_input
+    assert 'request.mimetype != "application/octet-stream"' in backend_owner_input
+    assert 'owner_comment=\'direct_binary_upload\'' in backend_owner_input
+    assert '"protectedValueReturned": False' in backend_owner_input
     assert '"github_pat": {' not in backend_owner_input
     assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' not in backend_owner_input
     assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' not in backend_owner_input

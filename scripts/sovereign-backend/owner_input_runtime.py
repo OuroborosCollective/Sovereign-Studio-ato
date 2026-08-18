@@ -7,10 +7,12 @@ server destination and never returned, audited or stored in PostgreSQL.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -32,6 +34,9 @@ MAX_TTL_SECONDS = 3600
 MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 RETIRED_TARGET_IDS = frozenset({"github_pat"})
+DIRECT_UPLOAD_TARGET_IDS = frozenset({"github_token"})
+DIRECT_UPLOAD_MAX_TTL_SECONDS = 300
+DIRECT_UPLOAD_TOKEN_RE = re.compile(r"^(?P<expires>[0-9]{10,13})\.(?P<mac>[0-9a-f]{64})$")
 DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
     "github_token": {
         "label": "GitHub Owner recovery credential",
@@ -169,6 +174,37 @@ def _service_authorized() -> bool:
     expected = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
     supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
     return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
+
+def _direct_upload_signing_key() -> bytes:
+    value = os.getenv("SOVEREIGN_OWNER_REQUEST_KEY", "").strip()
+    if len(value) < 32:
+        raise RuntimeError("SOVEREIGN_OWNER_REQUEST_KEY ist nicht ausreichend konfiguriert")
+    return value.encode("utf-8")
+
+
+def _direct_upload_token(request_id: str, target_id: str, expires_epoch: int) -> str:
+    normalized_request = str(uuid.UUID(str(request_id)))
+    normalized_target = str(target_id or "").strip()
+    expiry = int(expires_epoch)
+    message = f"owner-direct-upload-v1:{normalized_request}:{normalized_target}:{expiry}".encode("utf-8")
+    digest = hmac.new(_direct_upload_signing_key(), message, hashlib.sha256).hexdigest()
+    return f"{expiry}.{digest}"
+
+
+def _direct_upload_authorized(request_id: str, target_id: str, supplied: str) -> bool:
+    match = DIRECT_UPLOAD_TOKEN_RE.fullmatch(str(supplied or "").strip())
+    if not match:
+        return False
+    expires_epoch = int(match.group("expires"))
+    now = int(time.time())
+    if expires_epoch < now or expires_epoch > now + DIRECT_UPLOAD_MAX_TTL_SECONDS + 30:
+        return False
+    try:
+        expected = _direct_upload_token(request_id, target_id, expires_epoch)
+    except (RuntimeError, ValueError):
+        return False
+    return hmac.compare_digest(expected, str(supplied).strip())
 
 
 def _luhn_valid(digits: str) -> bool:
@@ -339,8 +375,96 @@ def register_owner_input_routes(
             conn.commit()
             if not row:
                 return _no_store(jsonify({"error": "Offene Owner-Anfrage konnte nicht bestätigt werden"})), 409
-            return _no_store(jsonify({"ok": True, "request": _request_api(dict(row), targets)})), 201
+            request_payload = _request_api(dict(row), targets)
+            if target_id in DIRECT_UPLOAD_TARGET_IDS:
+                upload_expires = int(time.time()) + min(ttl, DIRECT_UPLOAD_MAX_TTL_SECONDS)
+                request_payload["directUpload"] = {
+                    "method": "POST",
+                    "path": f"/api/owner-input/direct-upload/{request_payload['id']}",
+                    "authorizationScheme": "Bearer",
+                    "token": _direct_upload_token(request_payload["id"], target_id, upload_expires),
+                    "expiresAtEpoch": upload_expires,
+                    "contentType": "application/octet-stream",
+                    "singleUse": True,
+                }
+            return _no_store(jsonify({"ok": True, "request": request_payload})), 201
         finally:
+            _close(conn)
+
+    @app.route("/api/owner-input/direct-upload/<request_id>", methods=["POST"])
+    def owner_input_direct_upload(request_id: str):
+        try:
+            normalized_request_id = str(uuid.UUID(str(request_id)))
+        except (ValueError, TypeError, AttributeError):
+            return _no_store(jsonify({"error": "Ungültige Anfrage-ID"})), 400
+        authorization = request.headers.get("Authorization", "").strip()
+        supplied_token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+        target_id = "github_token"
+        if not _direct_upload_authorized(normalized_request_id, target_id, supplied_token):
+            return _no_store(jsonify({"error": "Direkt-Upload ist nicht autorisiert oder abgelaufen"})), 401
+        if request.mimetype != "application/octet-stream":
+            return _no_store(jsonify({"error": "Direkt-Upload erwartet application/octet-stream"})), 415
+
+        targets = _target_map()
+        target = targets.get(target_id)
+        if not target or target_id not in DIRECT_UPLOAD_TARGET_IDS:
+            return _no_store(jsonify({"error": "Direkt-Upload-Ziel ist nicht allowlistet"})), 400
+        content_length = int(request.content_length or 0)
+        if content_length < 1 or content_length > int(target["maxBytes"]):
+            return _no_store(jsonify({"error": "Der geschützte Wert fehlt oder überschreitet das Ziel-Limit"})), 400
+
+        conn = get_connection()
+        claimed = False
+        protected_buffer = bytearray()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE owner_input_requests
+                       SET status='processing', owner_comment='direct_binary_upload'
+                       WHERE id=%s::uuid AND target_id=%s AND status='pending' AND expires_at > NOW()
+                       RETURNING id::text""",
+                    (normalized_request_id, target_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            if not row:
+                return _no_store(jsonify({"error": "Anfrage ist nicht mehr für Direkt-Upload verfügbar"})), 409
+            claimed = True
+            protected_buffer = bytearray(request.get_data(cache=False, as_text=False) or b"")
+            if not protected_buffer or len(protected_buffer) > int(target["maxBytes"]):
+                raise ValueError("Der geschützte Wert fehlt oder überschreitet das Ziel-Limit")
+            if _contains_payment_card_bytes(protected_buffer):
+                raise ValueError("Rohe Kartennummern sind nicht zulässig")
+            _atomic_write(target, protected_buffer)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE owner_input_requests
+                       SET status='consumed', resolved_at=NOW(), consumed_at=NOW(), result_code='target_updated'
+                       WHERE id=%s::uuid AND status='processing'""",
+                    (normalized_request_id,),
+                )
+            conn.commit()
+            return _no_store(jsonify({
+                "ok": True,
+                "status": "consumed",
+                "targetId": target_id,
+                "protectedValueReturned": False,
+            }))
+        except Exception:
+            conn.rollback()
+            if claimed:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE owner_input_requests
+                           SET status='failed', resolved_at=NOW(), result_code='target_update_failed'
+                           WHERE id=%s::uuid AND status='processing'""",
+                        (normalized_request_id,),
+                    )
+                conn.commit()
+            return _no_store(jsonify({"error": "Direkt-Upload konnte das geschützte Ziel nicht aktualisieren"})), 400
+        finally:
+            for index in range(len(protected_buffer)):
+                protected_buffer[index] = 0
             _close(conn)
 
     @app.route("/api/internal/owner-input/requests/<request_id>", methods=["GET"])
