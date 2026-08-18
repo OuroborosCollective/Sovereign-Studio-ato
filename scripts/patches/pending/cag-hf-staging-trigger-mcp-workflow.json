@@ -1,0 +1,31 @@
+{
+  "target": ".github/workflows/sovereign-chatgpt-mcp.yml",
+  "source_ref": "37b9b923ebdbe8c3057ee4210abeb31527e1b8b9",
+  "branch_base_ref": "37b9b923ebdbe8c3057ee4210abeb31527e1b8b9",
+  "branch": "sovereign/chatgpt/1787087859-hf-rights-contract-readback-bd9781",
+  "commit_message": "ci(mcp): validate CAG staging publisher tool",
+  "pr_title": "fix(evidence): wire exact CAG benchmark HF staging trigger",
+  "pr_body": "Follow-up to #1556: fixed-scope CAG benchmark staging trigger. No HF main promotion.",
+  "blocks": [
+    {
+      "search": "github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py",
+      "replace": "github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py evidence_observatory_cag_runtime.py github_issue_contracts.py"
+    },
+    {
+      "search": "          grep -q 'document_pipeline.py' deploy/install-on-vps.sh\n          grep -q 'owner_input_widget.py' deploy/install-on-vps.sh",
+      "replace": "          grep -q 'document_pipeline.py' deploy/install-on-vps.sh\n          grep -q 'evidence_observatory_cag_runtime.py' deploy/install-on-vps.sh\n          grep -q 'owner_input_widget.py' deploy/install-on-vps.sh"
+    },
+    {
+      "search": "          grep -q 'EXPECTED_MCP_TOOL_COUNT=\"249\"' deploy/install-on-vps.sh",
+      "replace": "          grep -q 'EXPECTED_MCP_TOOL_COUNT=\"250\"' deploy/install-on-vps.sh"
+    },
+    {
+      "search": "              'github_knowledge_live_canary',\n              'memory_gateway_collection_canary',",
+      "replace": "              'github_knowledge_live_canary',\n              'evidence_observatory_cag_staging_publish',\n              'memory_gateway_collection_canary',"
+    },
+    {
+      "search": "          assert len(tool_names) == 249, len(tool_names)",
+      "replace": "          assert len(tool_names) == 250, len(tool_names)"
+    }
+  ]
+}

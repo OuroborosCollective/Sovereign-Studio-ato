@@ -254,7 +254,7 @@ jobs:
 
       - name: Compile Python runtime
         run: |
-          python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py evidence_observatory_cag_runtime.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py
+          python -m py_compile policy.py runtime.py database.py command_contract.py command_queue.py command_worker.py operations.py admin_mode.py github_admin.py github_knowledge_canary.py github_knowledge_mcp_client.py github_issue_contracts.py self_update.py broker.py broker_client.py owner_input_client.py a2a_runtime_client.py document_pipeline.py owner_input_widget.py self_heal.py managed_compose.py patchmon_operator.py android_hardening.py android_validation_router.py mcp_protocol_health.py sovereign_cognitive_widget.py llm_boundary_contract.py llm_boundary_ledger.py ci_repair_tools.py repository_skill_tools.py proven_learning_tools.py skill_supply_chain_tools.py deterministic_contract.py deterministic_architecture_tools.py enterprise_backend_tools.py freemium_product_architect_tools.py openai_project_access_tools.py continuity.py validate_continuity.py operating_profile.py operational_governance_tools.py operational_assurance_tools.py output_contracts.py toolchain_composition.py server.py tool_extensions.py launcher.py
           python -m py_compile neuro_architecture_contract.py neuromorphic_runtime.py foundation_runtime.py neuro_teaching_tools.py
 
       - name: Validate fixed shell and systemd assets
@@ -286,7 +286,6 @@ jobs:
           grep -q 'owner_input_client.py' deploy/install-on-vps.sh
           grep -q 'a2a_runtime_client.py' deploy/install-on-vps.sh
           grep -q 'document_pipeline.py' deploy/install-on-vps.sh
-          grep -q 'evidence_observatory_cag_runtime.py' deploy/install-on-vps.sh
           grep -q 'owner_input_widget.py' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_OWNER_REQUEST_KEY' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_BACKEND_INTERNAL_URL' deploy/install-on-vps.sh
@@ -335,7 +334,7 @@ jobs:
           grep -q '"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only"' deploy/install-on-vps.sh
           grep -q '"read_only_tool_calls_persisted":false' deploy/install-on-vps.sh
           grep -q '"canary_persisted_outcome_tools":\["neuro_event_commit"\]' deploy/install-on-vps.sh
-          grep -q 'EXPECTED_MCP_TOOL_COUNT="250"' deploy/install-on-vps.sh
+          grep -q 'EXPECTED_MCP_TOOL_COUNT="249"' deploy/install-on-vps.sh
           grep -q 'SOVEREIGN_NEURO_RUNTIME_STATE_ROOT: /var/lib/sovereign-tool-routing/neuro-runtime' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_EVENTS: "100000"' docker-compose.yml
           grep -q 'SOVEREIGN_NEURO_GLOBAL_MAX_BYTES: "268435456"' docker-compose.yml
@@ -646,7 +645,6 @@ jobs:
               'a2a_live_canary',
               'document_pipeline_live_canary',
               'github_knowledge_live_canary',
-              'evidence_observatory_cag_staging_publish',
               'memory_gateway_collection_canary',
               'managed_compose_stack_plan',
               'deploy_managed_compose_stack',
@@ -732,7 +730,7 @@ jobs:
               'teaching_lesson_simulate',
               'teaching_package_assess',
           }
-          assert len(tool_names) == 250, len(tool_names)
+          assert len(tool_names) == 249, len(tool_names)
           assert neuro_tool_names <= tool_names, sorted(neuro_tool_names - tool_names)
           assert {
               'backend_engineering_tool_inventory',
