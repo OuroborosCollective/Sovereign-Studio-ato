@@ -185,6 +185,16 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '@app.route("/api/owner-input/direct-upload/<request_id>", methods=["POST"])' in backend_owner_input
     assert 'request.mimetype != "application/octet-stream"' in backend_owner_input
     assert 'owner_comment=\'direct_binary_upload\'' in backend_owner_input
+    assert 'from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey' in backend_owner_input
+    assert 'from cryptography.hazmat.primitives.ciphers.aead import AESGCM' in backend_owner_input
+    assert 'from cryptography.hazmat.primitives.kdf.hkdf import HKDF' in backend_owner_input
+    assert 'def _direct_upload_public_key(' in backend_owner_input
+    assert 'def _direct_upload_aes_key(' in backend_owner_input
+    assert 'def _decrypt_direct_upload_payload(' in backend_owner_input
+    assert '"encryptedTransport": "X25519-HKDF-SHA256+AES-256-GCM"' in backend_owner_input
+    assert '"serverPublicKey": _direct_upload_public_key()' in backend_owner_input
+    assert '@app.route("/api/owner-input/direct-upload-encrypted/<request_id>", methods=["GET"])' in backend_owner_input
+    assert "encrypted_capability_upload" in backend_owner_input
     assert '"protectedValueReturned": False' in backend_owner_input
     assert '"github_pat": {' not in backend_owner_input
     assert '"path": "/opt/sovereign-owner-managed/github_pat.txt"' not in backend_owner_input

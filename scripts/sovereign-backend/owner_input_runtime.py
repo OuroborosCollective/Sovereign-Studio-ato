@@ -7,6 +7,7 @@ server destination and never returned, audited or stored in PostgreSQL.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -18,6 +19,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from flask import jsonify, make_response, request
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from freellm_provider_credentials import (
     FREELLM_PROVIDER_SPECS,
@@ -207,6 +212,76 @@ def _direct_upload_authorized(request_id: str, target_id: str, supplied: str) ->
     return hmac.compare_digest(expected, str(supplied).strip())
 
 
+def _b64url_encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(value: str, *, max_chars: int) -> bytes:
+    encoded = str(value or "").strip()
+    if not encoded or len(encoded) > max_chars or not re.fullmatch(r"[A-Za-z0-9_-]+", encoded):
+        raise ValueError("Ungültige verschlüsselte Upload-Daten")
+    padding = "=" * ((4 - len(encoded) % 4) % 4)
+    try:
+        return base64.urlsafe_b64decode(encoded + padding)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Ungültige verschlüsselte Upload-Daten") from exc
+
+
+def _direct_upload_encryption_private_key() -> X25519PrivateKey:
+    private_material = hashlib.sha256(
+        b"sovereign-owner-direct-upload-x25519-v1\x00" + _direct_upload_signing_key()
+    ).digest()
+    return X25519PrivateKey.from_private_bytes(private_material)
+
+
+def _direct_upload_public_key() -> str:
+    public_bytes = _direct_upload_encryption_private_key().public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return _b64url_encode(public_bytes)
+
+
+def _direct_upload_aes_key(request_id: str, target_id: str, sender_public: bytes) -> bytes:
+    if len(sender_public) != 32:
+        raise ValueError("Ungültiger Sender-Public-Key")
+    try:
+        shared_secret = _direct_upload_encryption_private_key().exchange(
+            X25519PublicKey.from_public_bytes(sender_public)
+        )
+    except ValueError as exc:
+        raise ValueError("Ungültiger Sender-Public-Key") from exc
+    salt = hashlib.sha256(
+        f"{str(uuid.UUID(request_id))}:{target_id}".encode("utf-8")
+    ).digest()
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        info=b"sovereign-owner-direct-upload-aesgcm-v1",
+    ).derive(shared_secret)
+
+
+def _decrypt_direct_upload_payload(
+    request_id: str,
+    target_id: str,
+    sender_public_b64: str,
+    nonce_b64: str,
+    ciphertext_b64: str,
+) -> bytearray:
+    sender_public = _b64url_decode(sender_public_b64, max_chars=64)
+    nonce = _b64url_decode(nonce_b64, max_chars=32)
+    ciphertext = _b64url_decode(ciphertext_b64, max_chars=12000)
+    if len(sender_public) != 32 or len(nonce) != 12 or len(ciphertext) < 17 or len(ciphertext) > 8208:
+        raise ValueError("Ungültige verschlüsselte Upload-Daten")
+    key = _direct_upload_aes_key(request_id, target_id, sender_public)
+    aad = f"{str(uuid.UUID(request_id))}:{target_id}".encode("utf-8")
+    try:
+        return bytearray(AESGCM(key).decrypt(nonce, ciphertext, aad))
+    except Exception as exc:
+        raise ValueError("Verschlüsselter Upload konnte nicht authentifiziert werden") from exc
+
+
 def _luhn_valid(digits: str) -> bool:
     total = 0
     parity = len(digits) % 2
@@ -386,6 +461,9 @@ def register_owner_input_routes(
                     "expiresAtEpoch": upload_expires,
                     "contentType": "application/octet-stream",
                     "singleUse": True,
+                    "encryptedGetPath": f"/api/owner-input/direct-upload-encrypted/{request_payload['id']}",
+                    "encryptedTransport": "X25519-HKDF-SHA256+AES-256-GCM",
+                    "serverPublicKey": _direct_upload_public_key(),
                 }
             return _no_store(jsonify({"ok": True, "request": request_payload})), 201
         finally:
@@ -462,6 +540,83 @@ def register_owner_input_routes(
                     )
                 conn.commit()
             return _no_store(jsonify({"error": "Direkt-Upload konnte das geschützte Ziel nicht aktualisieren"})), 400
+        finally:
+            for index in range(len(protected_buffer)):
+                protected_buffer[index] = 0
+            _close(conn)
+
+    @app.route("/api/owner-input/direct-upload-encrypted/<request_id>", methods=["GET"])
+    def owner_input_direct_upload_encrypted(request_id: str):
+        try:
+            normalized_request_id = str(uuid.UUID(str(request_id)))
+        except (ValueError, TypeError, AttributeError):
+            return _no_store(jsonify({"error": "Ungültige Anfrage-ID"})), 400
+        target_id = "github_token"
+        supplied_token = str(request.args.get("cap") or "").strip()
+        if not _direct_upload_authorized(normalized_request_id, target_id, supplied_token):
+            return _no_store(jsonify({"error": "Verschlüsselter Direkt-Upload ist nicht autorisiert oder abgelaufen"})), 401
+
+        targets = _target_map()
+        target = targets.get(target_id)
+        if not target or target_id not in DIRECT_UPLOAD_TARGET_IDS:
+            return _no_store(jsonify({"error": "Direkt-Upload-Ziel ist nicht allowlistet"})), 400
+
+        protected_buffer = bytearray()
+        conn = get_connection()
+        claimed = False
+        try:
+            protected_buffer = _decrypt_direct_upload_payload(
+                normalized_request_id,
+                target_id,
+                str(request.args.get("senderPublicKey") or ""),
+                str(request.args.get("nonce") or ""),
+                str(request.args.get("ciphertext") or ""),
+            )
+            if not protected_buffer or len(protected_buffer) > int(target["maxBytes"]):
+                raise ValueError("Der geschützte Wert fehlt oder überschreitet das Ziel-Limit")
+            if _contains_payment_card_bytes(protected_buffer):
+                raise ValueError("Rohe Kartennummern sind nicht zulässig")
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE owner_input_requests
+                       SET status='processing', owner_comment='encrypted_capability_upload'
+                       WHERE id=%s::uuid AND target_id=%s AND status='pending' AND expires_at > NOW()
+                       RETURNING id::text""",
+                    (normalized_request_id, target_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            if not row:
+                return _no_store(jsonify({"error": "Anfrage ist nicht mehr für Direkt-Upload verfügbar"})), 409
+            claimed = True
+            _atomic_write(target, protected_buffer)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE owner_input_requests
+                       SET status='consumed', resolved_at=NOW(), consumed_at=NOW(), result_code='target_updated'
+                       WHERE id=%s::uuid AND status='processing'""",
+                    (normalized_request_id,),
+                )
+            conn.commit()
+            return _no_store(jsonify({
+                "ok": True,
+                "status": "consumed",
+                "targetId": target_id,
+                "encryptedTransport": "X25519-HKDF-SHA256+AES-256-GCM",
+                "protectedValueReturned": False,
+            }))
+        except Exception:
+            conn.rollback()
+            if claimed:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE owner_input_requests
+                           SET status='failed', resolved_at=NOW(), result_code='target_update_failed'
+                           WHERE id=%s::uuid AND status='processing'""",
+                        (normalized_request_id,),
+                    )
+                conn.commit()
+            return _no_store(jsonify({"error": "Verschlüsselter Direkt-Upload konnte das geschützte Ziel nicht aktualisieren"})), 400
         finally:
             for index in range(len(protected_buffer)):
                 protected_buffer[index] = 0
