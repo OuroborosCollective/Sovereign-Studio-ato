@@ -21,6 +21,7 @@ import {
   searchReusableMemory,
 } from './features/knowledge/knowledgeApi';
 import { RescuePanel } from './features/rescue/RescuePanel';
+import { EvidenceObservatoryAtlas } from './features/evidence-observatory/EvidenceObservatoryAtlas';
 
 const CHAT_ONLY_STYLE: React.CSSProperties = {
   height: '100dvh',
@@ -28,7 +29,7 @@ const CHAT_ONLY_STYLE: React.CSSProperties = {
   background: '#0e1116',
 };
 
-export default function App() {
+function SovereignChatApp() {
   const [mission, setMission] = useState('GitHub-URL einfügen oder Auftrag schreiben.');
   const agentConfig = useMemo(() => resolveSovereignAgentConfig(), []);
   const agentClient = useMemo(
@@ -418,4 +419,12 @@ export default function App() {
       </main>
     </LlmAdapterProvider>
   );
+}
+
+export default function App() {
+  const observatoryMode = typeof window !== 'undefined'
+    && (window.location.pathname === '/observatory'
+      || window.location.pathname === '/evidence-observatory'
+      || new URLSearchParams(window.location.search).get('observatory') === '1');
+  return observatoryMode ? <EvidenceObservatoryAtlas /> : <SovereignChatApp />;
 }
