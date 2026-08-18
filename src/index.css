@@ -59,6 +59,18 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * Chat chronology: BuilderContainer already owns a column flex scroller.
+ * The auto-margin spacer consumes only unused vertical space, anchoring short
+ * conversations next to the composer while collapsing to zero as history grows.
+ * This preserves ordinary upward scrolling without reversing DOM order.
+ */
+.sovereign-chat-body::before {
+  content: "";
+  margin-top: auto;
+  flex: 0 0 auto;
+}
+
 .sovereign-app-shell {
   min-height: 100vh;
 }
