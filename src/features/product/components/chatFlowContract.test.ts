@@ -24,10 +24,11 @@ describe('DevChat consent and conversation flow contract', () => {
   it('keeps detailed agent runtime evidence collapsed until the user asks for it', () => {
     const source = read(AGENT_STREAM_PATH);
 
-    expect(source).toContain('const [expanded, setExpanded] = useState(false)');
-    expect(source).toContain('data-expanded={expanded ? \'true\' : \'false\'}');
-    expect(source).toContain("{expanded ? 'Details ausblenden' : 'Details'}");
-    expect(source).toContain('{expanded && (');
+    expect(source).not.toContain('const [expanded, setExpanded]');
+    expect(source).toContain('<details');
+    expect(source).toContain('data-default-collapsed="true"');
+    expect(source).toContain('<summary');
+    expect(source).toContain('>Details</span>');
   });
 
   it('keeps guided repo actions compact by default so the composer owns the bottom of chat', () => {
