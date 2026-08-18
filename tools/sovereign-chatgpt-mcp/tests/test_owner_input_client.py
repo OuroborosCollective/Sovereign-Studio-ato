@@ -143,6 +143,36 @@ def test_create_request_allows_notion_target_without_exposing_protected_value(mo
     assert result["protected_value_transport"] == "owner_ui_only"
 
 
+def test_create_request_allows_hf_publication_rights_receipt_without_exposing_value(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "99999999-9999-4999-8999-999999999999"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "hf_publication_rights",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="hf_publication_rights",
+        title="HF-Staging-Publikationsrechte binden",
+        reason="Der Evidence-Observatory-Publisher benötigt ein exaktes Owner-Rechte-Receipt.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "hf_publication_rights"
+    assert call["json"]["fieldLabel"] == "HF-Publikationsrechte JSON-Receipt"
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+    assert result["protected_value_transport"] == "owner_ui_only"
+
+
 def test_create_request_rejects_retired_github_personal_access_target(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")

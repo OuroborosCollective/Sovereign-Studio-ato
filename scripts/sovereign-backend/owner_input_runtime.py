@@ -85,6 +85,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 8192,
         "kind": "credential",
     },
+    "hf_publication_rights": {
+        "label": "Evidence Observatory Hugging Face publication rights",
+        "fieldLabel": "Exaktes HF-Publikationsrechte-JSON-Receipt",
+        "path": "/opt/sovereign-owner-managed/hf_publication_rights.json",
+        "maxBytes": 64000,
+        "kind": "approval_receipt",
+    },
     "proven_learning_confirmation": {
         "label": "Evidence-geprüftes Learning Pattern",
         "fieldLabel": "Exakten 64-stelligen Plan-Hash eingeben",
@@ -121,6 +128,7 @@ def _target_map() -> dict[str, dict[str, Any]]:
     )
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["notion_integration_token"]["path"] = str(_root() / "notion_integration_token.txt")
+    targets["hf_publication_rights"]["path"] = str(_root() / "hf_publication_rights.json")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")
     for provider_id, provider in FREELLM_PROVIDER_SPECS.items():
         if bool(provider.get("keyless")):
