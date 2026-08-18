@@ -24,35 +24,40 @@ def test_worker_exposes_versioned_768_embedding_route():
     assert "handleEmbeddings(request, env)" in source
 
 
-def test_worker_deploy_requires_real_live_embedding_evidence():
+def test_worker_deploy_is_permanently_disabled_and_secret_free():
+    # Contract drift (production truth): the legacy Cloudflare Worker AI proxy
+    # deployment is permanently disabled; embeddings moved to the private
+    # FreeLLMAPI Docker runtime. The security contract inverts: the workflow
+    # must NOT deploy anything and must NOT reference Cloudflare AI secrets.
     workflow = read(".github/workflows/deploy-worker.yml")
 
-    for secret in (
+    assert "Legacy Cloudflare Worker AI Proxy Disabled" in workflow
+    assert "permanently disabled" in workflow
+    assert "workflow_dispatch" in workflow
+    for forbidden in (
+        "wrangler deploy",
         "CF_AI_TOKEN",
         "CF_ACCOUNT_ID",
         "CLOUDFLARE_API_TOKEN",
         "CLOUDFLARE_ACCOUNT_ID",
+        "secrets.",
     ):
-        assert secret in workflow
-    worker_package = read("cloudflare-worker-ai-proxy/package.json")
-    assert '"wrangler": "4.110.0"' in worker_package
-    assert "npx wrangler --version" in workflow
-    assert "npx wrangler deploy" in workflow
-    assert 'EXPECTED_WORKER_VERSION: \'1.2.0\'' in workflow
-    assert 'POST "${WORKER_URL}/v1/embeddings"' in workflow
-    assert "vector.length !== 768" in workflow
-    assert "WORKER_EMBEDDING_RUNTIME=PASS" in workflow
+        assert forbidden not in workflow, forbidden
 
 
-def test_backend_mirrors_report_deployment_drift_instead_of_generic_404():
+def test_backend_mirrors_fail_closed_on_non_private_embedding_route():
+    # Contract drift (production truth): the mirrors no longer report worker
+    # version drift; they fail closed unless the private FreeLLMAPI Docker
+    # endpoint is used and never fall back to the retired Worker path.
     for path in (
         "backend/vector_embedding.py",
         "scripts/sovereign-backend/vector_embedding.py",
     ):
         source = read(path)
-        assert "deployed worker version=" in source
-        assert "embeddingPath=" in source
-        assert "version 1.2.0 or newer" in source
+        assert "Embeddings require the private FreeLLMAPI Docker endpoint" in source
+        assert "retired Cloudflare Worker path" in source
+        assert "DEFAULT_FREELLMAPI_BASE_URL" in source
+        assert 'provider="freellmapi-private"' in source
 
 
 def test_oauth_callback_uses_state_bound_opener_origin():

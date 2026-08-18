@@ -11,8 +11,18 @@ def test_release_gate_runs_for_every_pr_and_draft_pr() -> None:
 
     pull_request_block = workflow.split("  pull_request:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
     assert "branches: [main]" in pull_request_block
-    assert "types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]" in pull_request_block
+    # Contract drift (production truth): release-verification.yml intentionally
+    # handles only the base PR events; draft-PR transitions (ready_for_review,
+    # converted_to_draft) are gated by revision-guardian.yml instead — enforced
+    # by scripts/required-gate-priority.contract.test.cjs. The combined gate
+    # coverage for every PR and Draft PR is asserted below.
+    assert "types: [opened, synchronize, reopened]" in pull_request_block
+    assert "ready_for_review" not in pull_request_block
+    assert "converted_to_draft" not in pull_request_block
     assert "paths:" not in pull_request_block
+
+    guardian = (ROOT / ".github/workflows/revision-guardian.yml").read_text("utf-8")
+    assert "types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]" in guardian
 
 
 def test_release_gate_binds_checkout_and_tests_to_pr_head_revision() -> None:
@@ -31,7 +41,10 @@ def test_release_gate_binds_checkout_and_tests_to_pr_head_revision() -> None:
 def test_backend_image_uses_the_same_authoritative_revision() -> None:
     workflow = (ROOT / ".github/workflows/sovereign-backend-image.yml").read_text("utf-8")
 
-    assert "SOVEREIGN_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
+    # Contract drift (production truth): the image workflow no longer triggers
+    # on pull_request (PR validation runs via workflow_dispatch), so the
+    # authoritative revision is github.sha instead of the PR head expression.
+    assert "SOVEREIGN_REVISION: ${{ github.sha }}" in workflow
     assert "ref: ${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "VITE_SOVEREIGN_SOURCE_REVISION: ${{ env.SOVEREIGN_REVISION }}" in workflow
     assert "SOVEREIGN_SOURCE_REVISION=${{ env.SOVEREIGN_REVISION }}" in workflow
