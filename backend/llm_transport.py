@@ -13,15 +13,18 @@ LEGACY_LITELLM_TRANSPORT: Final[str] = "litellm"
 OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
 FREELLM_BASE_URL: Final[str] = "http://freellmapi:3001/v1"
 FREELLMPOOL_BASE_URL: Final[str] = "http://freellmpool:8080/v1"
+OMNIROUTE_BASE_URL: Final[str] = "http://omniroute:20128/v1"
 # Historical/known direct FreeLLM sources. This set is metadata only and MUST
 # NOT be interpreted as execution eligibility.
 FREELLM_BASE_URLS: Final[frozenset[str]] = frozenset(
     {FREELLM_BASE_URL, FREELLMPOOL_BASE_URL}
 )
-# FreeLLMPool is retired from live execution. Keeping the historical URL above
-# lets evidence/readback code recognize old receipts without making stale DB
-# rows executable again.
-FREELLM_EXECUTION_BASE_URLS: Final[frozenset[str]] = frozenset({FREELLM_BASE_URL})
+# Compatibility name: this is the allowlist for Sovereign's existing free-route
+# transport family. FreeLLMAPI remains live, FreeLLMPool remains retired, and
+# OmniRoute is the explicit replacement route source.
+FREELLM_EXECUTION_BASE_URLS: Final[frozenset[str]] = frozenset(
+    {FREELLM_BASE_URL, OMNIROUTE_BASE_URL}
+)
 SUPPORTED_EXECUTION_TRANSPORTS: Final[frozenset[str]] = frozenset(
     {OPENROUTER_TRANSPORT, FREELLM_TRANSPORT}
 )
@@ -127,6 +130,7 @@ def route_is_openrouter_free(route: dict[str, Any]) -> bool:
 
 
 def route_is_direct_freellm(route: dict[str, Any]) -> bool:
+    """Accept the existing FreeLLMAPI route and its OmniRoute pool replacement."""
     config = route_config(route)
     return (
         not bool(route.get("disabled"))
@@ -135,6 +139,10 @@ def route_is_direct_freellm(route: dict[str, Any]) -> bool:
         and route_api_base(route) in FREELLM_EXECUTION_BASE_URLS
         and config.get("direct") is True
     )
+
+
+def route_is_omniroute_source(route: dict[str, Any]) -> bool:
+    return route_is_direct_freellm(route) and route_api_base(route) == OMNIROUTE_BASE_URL
 
 
 def _snapshot_canonical(value: Any) -> Any:

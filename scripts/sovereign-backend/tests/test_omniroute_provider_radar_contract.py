@@ -15,7 +15,9 @@ from llm_transport import (  # noqa: E402
     FREELLM_BASE_URLS,
     FREELLM_EXECUTION_BASE_URLS,
     FREELLMPOOL_BASE_URL,
+    OMNIROUTE_BASE_URL,
     route_is_direct_freellm,
+    route_is_omniroute_source,
 )
 from omniroute_provider_radar import (  # noqa: E402
     CatalogSource,
@@ -52,12 +54,15 @@ def _source(*entries: str) -> CatalogSource:
     )
 
 
-def test_freellmpool_remains_known_metadata_but_is_not_execution_eligible() -> None:
+def test_freellmapi_stays_live_pool_stays_retired_and_omniroute_is_replacement_source() -> None:
     assert FREELLMPOOL_BASE_URL in FREELLM_BASE_URLS
     assert FREELLMPOOL_BASE_URL not in FREELLM_EXECUTION_BASE_URLS
     assert FREELLM_BASE_URL in FREELLM_EXECUTION_BASE_URLS
+    assert OMNIROUTE_BASE_URL in FREELLM_EXECUTION_BASE_URLS
     assert route_is_direct_freellm(_freellm_route(FREELLM_BASE_URL)) is True
     assert route_is_direct_freellm(_freellm_route(FREELLMPOOL_BASE_URL)) is False
+    assert route_is_direct_freellm(_freellm_route(OMNIROUTE_BASE_URL)) is True
+    assert route_is_omniroute_source(_freellm_route(OMNIROUTE_BASE_URL)) is True
 
 
 def test_omniroute_catalog_candidates_are_quarantined_and_tos_avoid_is_blocked() -> None:
@@ -107,11 +112,17 @@ def test_radar_migration_is_mirrored_and_permanently_candidate_only() -> None:
     assert "status IN ('quarantined', 'blocked_tos', 'stale')" in sql
 
 
-def test_production_entrypoint_registers_radar_without_making_it_an_execution_transport() -> None:
+def test_production_entrypoint_keeps_radar_and_execution_authority_separate() -> None:
     dockerfile = (BACKEND_ROOT / "Dockerfile").read_text("utf-8")
     production_app = (BACKEND_ROOT / "production_app.py").read_text("utf-8")
+    execution = (BACKEND_ROOT / "omniroute_execution_runtime.py").read_text("utf-8")
 
     assert "production_app:app" in dockerfile
     assert "register_omniroute_provider_radar" in production_app
     assert "omniroute_provider_radar_service" in production_app
-    assert "OmniRoute" not in (BACKEND_ROOT / "llm_transport.py").read_text("utf-8")
+    assert "register_omniroute_execution_runtime" in production_app
+    assert "omniroute_execution_service" in production_app
+    assert "routing_eligible" not in execution
+    assert "_completion_canary(1)" in execution
+    assert "_completion_canary(2)" in execution
+    assert "freeLlmApiChanged" in execution
