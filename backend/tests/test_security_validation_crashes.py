@@ -21,9 +21,7 @@ if "flask" not in sys.modules:
     flask_stub.request = SimpleNamespace()
     sys.modules["flask"] = flask_stub
 
-import flask
-# Stub/mock flask.request so we don't get request context RuntimeError during collection or tests
-flask.request = SimpleNamespace(remote_addr="127.0.0.1")
+import flask  # noqa: F401 - guarantees a flask module exists (stub installed above if missing)
 
 # Stub psycopg2 to avoid external C dependencies
 if "psycopg2" not in sys.modules:
@@ -35,11 +33,19 @@ if "psycopg2" not in sys.modules:
 
 import security_runtime
 
+# security_runtime binds flask.jsonify/request at import time
+# (`from flask import jsonify, request`). Patch those bound module names
+# directly instead of mutating the shared flask module, so the tests work
+# regardless of whether a real Flask or the import stub was bound first in
+# this pytest session.
+security_runtime.request = SimpleNamespace(remote_addr="127.0.0.1")
+security_runtime.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
+
 
 def mock_require_session(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        flask.request.session_user_id = str(uuid.uuid4())
+        security_runtime.request.session_user_id = str(uuid.uuid4())
         return func(*args, **kwargs)
     return wrapper
 
@@ -87,8 +93,8 @@ class MockApp:
 
 class TestSecurityValidationCrashes(unittest.TestCase):
     def setUp(self):
-        self.old_jsonify = getattr(flask, "jsonify", None)
-        flask.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs, 400)
+        self.old_jsonify = security_runtime.jsonify
+        security_runtime.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
 
         self.app = MockApp()
         security_runtime.register_security_routes(
@@ -100,7 +106,7 @@ class TestSecurityValidationCrashes(unittest.TestCase):
 
     def tearDown(self):
         if self.old_jsonify is not None:
-            flask.jsonify = self.old_jsonify
+            security_runtime.jsonify = self.old_jsonify
 
     def test_non_dict_payloads_rejected_safely(self):
         # List of endpoints that parse JSON body using request.get_json
@@ -129,8 +135,8 @@ class TestSecurityValidationCrashes(unittest.TestCase):
             self.assertTrue(callable(handler), f"Handler not registered for path {path}")
 
             for malformed in malformed_bodies:
-                # Set up mock request body directly on the global flask.request
-                flask.request.get_json = lambda *args, **kwargs: malformed
+                # Set up mock request body directly on the module-bound request
+                security_runtime.request.get_json = lambda *args, **kwargs: malformed
 
                 # Call route handler and get the tuple/response returned by jsonify/Flask
                 res = handler()

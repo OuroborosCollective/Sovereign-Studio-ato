@@ -39,11 +39,19 @@ if "psycopg2" not in sys.modules:
 
 import are_inference
 
+# are_inference binds flask.jsonify/request at import time
+# (`from flask import jsonify, request`). Patch those bound module names
+# directly instead of mutating the shared flask module, so the tests work
+# regardless of whether a real Flask or the import stub was bound first in
+# this pytest session.
+are_inference.request = SimpleNamespace(remote_addr="127.0.0.1")
+are_inference.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
+
 
 def mock_require_session(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        flask.request.session_user_id = str(uuid.uuid4())
+        are_inference.request.session_user_id = str(uuid.uuid4())
         return func(*args, **kwargs)
     return wrapper
 
@@ -87,8 +95,8 @@ class MockApp:
 
 class TestAreInferenceValidationCrashes(unittest.TestCase):
     def setUp(self):
-        self.old_jsonify = getattr(flask, "jsonify", None)
-        flask.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs, 400)
+        self.old_jsonify = are_inference.jsonify
+        are_inference.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
 
         self.app = MockApp()
         are_inference.register_are_inference_routes(
@@ -99,7 +107,7 @@ class TestAreInferenceValidationCrashes(unittest.TestCase):
 
     def tearDown(self):
         if self.old_jsonify is not None:
-            flask.jsonify = self.old_jsonify
+            are_inference.jsonify = self.old_jsonify
 
     def test_non_dict_payloads_rejected_safely(self):
         # List of endpoints that parse JSON body using request.get_json
@@ -123,8 +131,8 @@ class TestAreInferenceValidationCrashes(unittest.TestCase):
             self.assertTrue(callable(handler), f"Handler not registered for path {path}")
 
             for malformed in malformed_bodies:
-                # Set up mock request body directly on the global flask.request
-                flask.request.get_json = lambda *args, **kwargs: malformed
+                # Set up mock request body directly on the module-bound request
+                are_inference.request.get_json = lambda *args, **kwargs: malformed
 
                 if path == "/api/inference/are/quarantine/<candidate_id>/promote":
                     res = handler(candidate_id=str(uuid.uuid4()))
