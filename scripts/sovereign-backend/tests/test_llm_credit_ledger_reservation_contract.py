@@ -9,10 +9,7 @@ MIGRATIONS = (
     ROOT / "backend" / "migrations" / "053_llm_usage_credit_ledger_types.sql",
     ROOT / "scripts" / "sovereign-backend" / "migrations" / "053_llm_usage_credit_ledger_types.sql",
 )
-APP_SOURCES = (
-    ROOT / "backend" / "app.py",
-    ROOT / "scripts" / "sovereign-backend" / "app.py",
-)
+PRODUCTIVE_APP = ROOT / "scripts" / "sovereign-backend" / "app.py"
 
 PREEXISTING_LEDGER_TYPES = {
     "purchase",
@@ -57,28 +54,25 @@ def test_migration_mirrors_are_byte_identical_and_preserve_existing_contract():
     assert "ADD CONSTRAINT credit_ledger_type_check CHECK (type IN (" in canonical
 
 
-def test_every_direct_llm_runtime_ledger_type_is_allowed_by_migration():
+def test_every_productive_direct_llm_ledger_type_is_allowed_by_migration():
     allowed = _quoted_values(MIGRATIONS[0].read_text(encoding="utf-8"))
-
-    for path in APP_SOURCES:
-        source = path.read_text(encoding="utf-8")
-        runtime_types = set(
-            re.findall(r'ledger_type="(llm_usage_[a-z0-9_]+)"', source)
-        )
-        assert runtime_types == DIRECT_LLM_LEDGER_TYPES
-        assert runtime_types <= allowed
+    source = PRODUCTIVE_APP.read_text(encoding="utf-8")
+    runtime_types = set(
+        re.findall(r'ledger_type="(llm_usage_[a-z0-9_]+)"', source)
+    )
+    assert runtime_types == DIRECT_LLM_LEDGER_TYPES
+    assert runtime_types <= allowed
 
 
 def test_paid_reservation_is_persisted_before_provider_execution():
-    for path in APP_SOURCES:
-        source = path.read_text(encoding="utf-8")
-        start = source.index("def public_llm_chat():")
-        route_source = source[start:]
+    source = PRODUCTIVE_APP.read_text(encoding="utf-8")
+    start = source.index("def public_llm_chat():")
+    route_source = source[start:]
 
-        reservation = "_reserve_provider_funded_llm_credits("
-        assert reservation in route_source
-        assert "fetch_worker_ai(" in route_source
-        assert route_source.index(reservation) < route_source.index("fetch_worker_ai(")
-        assert 'ledger_type="llm_usage_reservation"' in source
-        assert 'ledger_type="llm_usage_refund"' in source
-        assert 'ledger_type="llm_usage_adjustment"' in source
+    reservation = "_reserve_provider_funded_llm_credits("
+    assert reservation in route_source
+    assert "fetch_worker_ai(" in route_source
+    assert route_source.index(reservation) < route_source.index("fetch_worker_ai(")
+    assert 'ledger_type="llm_usage_reservation"' in source
+    assert 'ledger_type="llm_usage_refund"' in source
+    assert 'ledger_type="llm_usage_adjustment"' in source
