@@ -445,8 +445,14 @@ def register_evidence_observatory_routes(
             """WITH receipt AS (
                    INSERT INTO evidence_observatory_publish_receipts
                        (batch_id, repo_id, revision, commit_oid, data_path, manifest_path,
-                        data_sha256, manifest_sha256, case_ids, state, readback_verified, created_by)
-                   VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'PUBLISHED',true,%s::uuid)
+                        data_sha256, manifest_sha256, case_ids, state, readback_verified,
+                        batch_sha256, license_rights_sha256, privacy_scan_sha256,
+                        publisher_policy_sha256, expected_target, observed_target,
+                        observed_target_revision, observed_artifact_hashes,
+                        write_attempt_identity, readback_identity, publication_status,
+                        publication_receipt, publication_receipt_sha256, created_by)
+                   VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'PUBLISHED',true,
+                           %s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s::uuid)
                    RETURNING id::text
                ), updated AS (
                    UPDATE evidence_observatory_cases
@@ -458,7 +464,17 @@ def register_evidence_observatory_routes(
                       (SELECT COUNT(*)::integer FROM updated) AS updated_count""",
             (receipt["batchId"], receipt["repoId"], receipt["revision"], receipt["commitOid"],
              receipt["dataPath"], receipt["manifestPath"], receipt["dataSha256"],
-             receipt["manifestSha256"], psycopg2.extras.Json(case_ids), admin_id, case_ids),
+             receipt["manifestSha256"], psycopg2.extras.Json(case_ids),
+             receipt["batchSha256"], receipt["licenseRightsHash"], receipt["privacyScanHash"],
+             receipt["publisherPolicyHash"], receipt["publicationReceipt"]["expectedTarget"],
+             receipt["publicationReceipt"]["observedTarget"],
+             receipt["publicationReceipt"]["observedTargetRevision"],
+             psycopg2.extras.Json(receipt["publicationReceipt"]["observedArtifactHashes"]),
+             receipt["publicationReceipt"]["writeAttemptIdentity"],
+             receipt["publicationReceipt"]["readbackIdentity"],
+             receipt["publicationReceipt"]["status"],
+             psycopg2.extras.Json(receipt["publicationReceipt"]),
+             receipt["publicationReceiptSha256"], admin_id, case_ids),
             one=True, write=True,
         )
         if int((persisted or {}).get("updated_count") or 0) != len(case_ids):
@@ -469,7 +485,9 @@ def register_evidence_observatory_routes(
             "caseCount": len(case_ids), "caseIds": case_ids, "repoId": receipt["repoId"],
             "revision": receipt["revision"], "commitOid": receipt["commitOid"],
             "dataSha256": receipt["dataSha256"], "manifestSha256": receipt["manifestSha256"],
-            "readbackVerified": True,
+            "batchSha256": receipt["batchSha256"], "licenseRightsHash": receipt["licenseRightsHash"],
+            "privacyScanHash": receipt["privacyScanHash"], "publisherPolicyHash": receipt["publisherPolicyHash"],
+            "publicationReceiptSha256": receipt["publicationReceiptSha256"], "readbackVerified": True,
         })
         return jsonify({**receipt, "publishedCaseIds": case_ids, "persistenceVerified": True})
 

@@ -19,6 +19,7 @@ from urllib.parse import quote
 import requests
 
 from evidence_observatory_contracts import canonical_json, normalized_claim, safe_json_value, sha256_text
+from evidence_observatory_publisher import publish_huggingface_batch as _secure_publish_huggingface_batch
 
 NOTION_VERSION = str(os.getenv("SOVEREIGN_NOTION_VERSION") or "2026-03-11").strip() or "2026-03-11"
 NOTION_API_BASE = "https://api.notion.com/v1"
@@ -301,83 +302,17 @@ def normalize_notion_export(payload: Any) -> dict[str, Any]:
     }
 
 
-def publish_huggingface_batch(*, rows: list[dict[str, Any]], repo_id: str, revision: str) -> dict[str, Any]:
-    """Commit a gated batch and verify exact bytes at the returned Hub revision.
-
-    Authentication is delegated to huggingface_hub's configured runtime identity;
-    no credential value crosses this module's function boundary.
-    """
-    if not repo_id:
-        raise RuntimeError("huggingface_repo_configuration_missing")
-    target_revision = revision.strip() or "staging-atlas"
-    if target_revision in {"main", "master"}:
-        raise RuntimeError("huggingface_direct_main_publish_forbidden")
-    if not rows:
-        raise RuntimeError("huggingface_publish_empty_batch")
-    try:
-        from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
-    except ImportError as exc:
-        raise RuntimeError("huggingface_hub_dependency_missing") from exc
-
-    import uuid
-    batch_id = str(uuid.uuid4())
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    data_path = f"staging/atlas-batches/{stamp}-{batch_id}.jsonl"
-    manifest_path = f"staging/atlas-batches/{stamp}-{batch_id}.manifest.json"
-    data_bytes = ("\n".join(canonical_json(row) for row in rows) + "\n").encode("utf-8")
-    expected_data_sha = hashlib.sha256(data_bytes).hexdigest()
-    manifest = {
-        "schemaVersion": "sovereign.evidence-hf-batch.v1",
-        "batchId": batch_id,
-        "caseIds": [row.get("caseId") for row in rows],
-        "caseCount": len(rows),
-        "dataPath": data_path,
-        "dataSha256": expected_data_sha,
-        "truthNotice": "Publication means the evidence state passed deterministic gates; it does not imply every claim is SUPPORTED.",
-    }
-    manifest_bytes = canonical_json(manifest).encode("utf-8")
-    expected_manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
-
-    api = HfApi()
-    try:
-        api.create_branch(repo_id=repo_id, repo_type="dataset", branch=target_revision, exist_ok=True)
-    except Exception:
-        # Existing branch and permission errors are decided by create_commit below.
-        pass
-    commit = api.create_commit(
+def publish_huggingface_batch(
+    *, rows: list[dict[str, Any]], repo_id: str, revision: str,
+    license_rights: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Delegate to the fail-closed #1507 publisher truth boundary."""
+    return _secure_publish_huggingface_batch(
+        rows=rows,
         repo_id=repo_id,
-        repo_type="dataset",
-        revision=target_revision,
-        operations=[
-            CommitOperationAdd(path_in_repo=data_path, path_or_fileobj=data_bytes),
-            CommitOperationAdd(path_in_repo=manifest_path, path_or_fileobj=manifest_bytes),
-        ],
-        commit_message=f"Sovereign Evidence Atlas batch {batch_id}",
+        revision=revision,
+        license_rights=license_rights,
     )
-    commit_oid = str(getattr(commit, "oid", "") or getattr(commit, "commit_id", "") or "")
-    if not commit_oid:
-        raise RuntimeError("huggingface_commit_oid_missing")
-    data_local = hf_hub_download(repo_id=repo_id, filename=data_path, repo_type="dataset", revision=commit_oid)
-    manifest_local = hf_hub_download(repo_id=repo_id, filename=manifest_path, repo_type="dataset", revision=commit_oid)
-    with open(data_local, "rb") as handle:
-        observed_data_sha = hashlib.sha256(handle.read()).hexdigest()
-    with open(manifest_local, "rb") as handle:
-        observed_manifest_sha = hashlib.sha256(handle.read()).hexdigest()
-    if observed_data_sha != expected_data_sha or observed_manifest_sha != expected_manifest_sha:
-        raise RuntimeError("huggingface_publish_readback_mismatch")
-    return {
-        "ok": True,
-        "batchId": batch_id,
-        "repoId": repo_id,
-        "revision": target_revision,
-        "commitOid": commit_oid,
-        "dataPath": data_path,
-        "manifestPath": manifest_path,
-        "dataSha256": expected_data_sha,
-        "manifestSha256": expected_manifest_sha,
-        "readbackVerified": True,
-        "runtimeIdentityUsed": True,
-    }
 
 
 def arena_request(case: dict[str, Any]) -> dict[str, Any]:

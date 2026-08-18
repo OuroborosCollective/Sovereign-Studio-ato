@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import copy
+import sys
+from pathlib import Path
+
+import pytest
+
+BACKEND = Path(__file__).resolve().parents[1]
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
+from evidence_observatory_contracts import sha256_text  # noqa: E402
+from evidence_observatory_publisher import (  # noqa: E402
+    PUBLISHER_POLICY,
+    build_huggingface_publish_plan,
+    scan_public_payload,
+)
+from wolfram_cag_benchmark_publication import build_cag_benchmark_public_rows  # noqa: E402
+
+
+REPO_ID = "Thorsu/sovereign-evidence-observatory"
+REVISION = "staging-atlas"
+
+
+def _rights(case_ids: list[str]) -> dict:
+    text = (
+        "One-time authorization for the Sovereign Evidence Observatory staging publisher to publish only the "
+        "public-safe projections of the listed Wolfram CAG benchmark cases to the exact Hugging Face staging "
+        "target. This does not authorize source-code publication or promotion to main."
+    )
+    return {
+        "schemaVersion": "sovereign.hf-publication-rights.v1",
+        "status": "AUTHORIZED",
+        "rightsHolder": "Owner authorization receipt",
+        "authorizedEntity": "Sovereign Evidence Observatory staging publisher",
+        "purpose": "Publish the public-safe CAG benchmark projections for evidence evaluation.",
+        "scope": "One exact staging batch only; no repository source code and no main promotion.",
+        "licenseId": "other",
+        "authorizedTarget": REPO_ID,
+        "authorizedRevision": REVISION,
+        "authorizedCaseIds": case_ids,
+        "authorizationRef": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/issues/1507",
+        "authorizationText": text,
+        "authorizationSha256": sha256_text(text),
+        "conditions": [
+            "staging branch only",
+            "public-safe projections only",
+            "no raw prompts, credentials, private records, or source code",
+            "separate owner approval required for final public promotion",
+        ],
+    }
+
+
+def test_cag_benchmark_builds_twelve_publishable_truth_bound_rows():
+    rows = build_cag_benchmark_public_rows()
+    assert len(rows) == 12
+    assert [row["caseId"] for row in rows] == [f"cag-bench-{index:03d}" for index in range(1, 13)]
+    assert all(row["workflowState"] == "PUBLISHABLE" for row in rows)
+    assert all(row["gateReport"]["passed"] is True for row in rows)
+    assert all(row["truthBoundary"]["liveCagResult"] is False for row in rows)
+    verdicts = {row["caseId"]: row["verdict"] for row in rows}
+    assert verdicts["cag-bench-002"] == "REFUTED"
+    assert verdicts["cag-bench-007"] == "REFUTED"
+    assert verdicts["cag-bench-011"] == "UNPROVEN"
+    assert verdicts["cag-bench-012"] == "UNPROVEN"
+
+
+def test_identical_cag_batch_has_deterministic_manifest_and_all_1507_hash_surfaces():
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    first = build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights)
+    second = build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights)
+    assert first["batchId"] == second["batchId"]
+    assert first["batchSha256"] == second["batchSha256"]
+    assert first["manifestSha256"] == second["manifestSha256"]
+    assert first["dataSha256"] == second["dataSha256"]
+    manifest = first["manifest"]
+    required = {
+        "schema_version", "batch_id", "case_ids", "passport_hashes",
+        "gate_receipt_hashes", "public_payload_hashes", "source_publication_refs",
+        "license_rights_hash", "privacy_scan_hash", "publisher_policy_hash",
+        "target_repo_identity", "batch_sha256",
+    }
+    assert required.issubset(manifest)
+    assert len(manifest["case_ids"]) == 12
+    assert len(manifest["passport_hashes"]) == 12
+    assert len(manifest["gate_receipt_hashes"]) == 12
+    assert len(manifest["public_payload_hashes"]) == 12
+    assert len(manifest["source_publication_refs"]) == 12
+    assert first["privacyScan"]["findingCount"] == 0
+    assert PUBLISHER_POLICY["readbackBeforeRetry"] is True
+
+
+def test_rights_are_fail_closed_for_unknown_license_target_and_case_scope():
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    rights["licenseId"] = "UNKNOWN"
+    with pytest.raises(RuntimeError, match="rights_license_unknown"):
+        build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights)
+
+    rights = _rights([row["caseId"] for row in rows])
+    rights["authorizedTarget"] = "someone/else"
+    with pytest.raises(RuntimeError, match="rights_target_mismatch"):
+        build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights)
+
+    rights = _rights([row["caseId"] for row in rows[:-1]])
+    with pytest.raises(RuntimeError, match="rights_case_scope_mismatch"):
+        build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights)
+
+
+def test_final_public_payload_scan_blocks_private_field_and_secret_shape():
+    rows = build_cag_benchmark_public_rows()
+    poisoned = copy.deepcopy(rows)
+    poisoned[0]["method"]["token"] = "hf_abcdefghijklmnopqrstuvwxyz123456"
+    report = scan_public_payload(poisoned)
+    assert report["findingCount"] >= 1
+    rights = _rights([row["caseId"] for row in poisoned])
+    with pytest.raises(RuntimeError, match="huggingface_public_privacy_scan_blocked"):
+        build_huggingface_publish_plan(
+            rows=poisoned, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+        )
+
+
+def test_stale_gate_or_passport_and_missing_provenance_block_before_hf_write():
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+
+    stale_gate = copy.deepcopy(rows)
+    stale_gate[0]["gateReport"]["passed"] = False
+    with pytest.raises(RuntimeError, match="huggingface_gate_receipt_invalid"):
+        build_huggingface_publish_plan(
+            rows=stale_gate, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+        )
+
+    stale_passport = copy.deepcopy(rows)
+    stale_passport[0]["passportSha256"] = "0" * 64
+    with pytest.raises(RuntimeError, match="huggingface_passport_binding_mismatch"):
+        build_huggingface_publish_plan(
+            rows=stale_passport, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+        )
+
+    missing_source = copy.deepcopy(rows)
+    missing_source[0]["sources"] = []
+    with pytest.raises(RuntimeError, match="huggingface_source_provenance_missing"):
+        build_huggingface_publish_plan(
+            rows=missing_source, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+        )
+
+
+def test_direct_main_is_forbidden_before_any_rights_or_transport_work():
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    rights["authorizedRevision"] = "main"
+    with pytest.raises(RuntimeError, match="huggingface_direct_main_publish_forbidden"):
+        build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision="main", license_rights=rights)
