@@ -1,9 +1,9 @@
 """Bounded direct OpenAI-compatible HTTP transport for persisted LLM routes.
 
-Paid traffic and the isolated OpenRouter-Free lane go directly to OpenRouter;
-remaining free traffic goes directly to the managed FreeLLM API. Protected
-service keys are read only from distinct allowlisted 0600 owner files and are
-never returned, logged, or persisted by this module.
+Paid traffic and the isolated OpenRouter-Free lane go directly to OpenRouter.
+The existing FreeLLMAPI route keeps its protected owner key; the OmniRoute
+replacement for the retired FreeLLMPool is intentionally keyless at Sovereign's
+transport boundary. Protected keys are never returned, logged, or persisted.
 """
 from __future__ import annotations
 
@@ -18,10 +18,12 @@ import requests
 
 from llm_transport import (
     FREELLM_TRANSPORT,
+    OMNIROUTE_BASE_URL,
     OPENROUTER_TRANSPORT,
     route_api_base,
     route_config,
     route_is_direct_freellm,
+    route_is_omniroute_source,
     route_is_openrouter_free,
     route_is_openrouter_paid,
     route_provider_model,
@@ -50,8 +52,7 @@ _RETRYABLE_FREELLM_FAMILIES = frozenset({
 
 
 def classify_freellm_canary_state(result: dict[str, Any]) -> tuple[str, str]:
-    """Separate retryable pool availability from hard policy failures."""
-
+    """Separate retryable free-route availability from hard policy failures."""
     blocker = str(
         result.get("blocker")
         or result.get("error")
@@ -138,6 +139,24 @@ def _protected_key(
             protected[index] = 0
 
 
+@contextmanager
+def _authorization_headers(route: dict[str, Any]) -> Iterator[dict[str, str]]:
+    """Return auth headers while keeping OmniRoute's replacement lane keyless."""
+    transport = route_transport(route)
+    api_base = route_api_base(route)
+    if route_is_omniroute_source(route):
+        if api_base != OMNIROUTE_BASE_URL:
+            raise DirectLlmRuntimeError("omniroute_route_rejected")
+        yield {}
+        return
+    with _protected_key(
+        transport,
+        api_base,
+        openrouter_free=route_is_openrouter_free(route),
+    ) as key:
+        yield {"Authorization": f"Bearer {key}"}
+
+
 def _openrouter_policy(route: dict[str, Any]) -> dict[str, Any]:
     policy = route_config(route).get("providerPolicy")
     required = (
@@ -178,7 +197,6 @@ def fetch_direct_llm(
     timeout: int = 120,
 ) -> tuple[requests.Response | None, str]:
     """Execute one exact persisted direct route and return bounded response bytes."""
-
     transport = route_transport(route)
     if transport == OPENROUTER_TRANSPORT:
         if not (
@@ -206,13 +224,9 @@ def fetch_direct_llm(
             return None, exc.family
 
     try:
-        with _protected_key(
-            transport,
-            api_base,
-            openrouter_free=route_is_openrouter_free(route),
-        ) as key:
+        with _authorization_headers(route) as auth_headers:
             headers = {
-                "Authorization": f"Bearer {key}",
+                **auth_headers,
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "User-Agent": "sovereign-studio-direct-llm/1",
