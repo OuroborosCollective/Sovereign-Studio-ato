@@ -93,6 +93,7 @@ jobs:
             printf 'SOVEREIGN_AUTH_RESCUE_DIGEST:%s\n' "$MCP_DIGEST"
 
             BACKEND_ENV=/opt/sovereign-chatgpt-tools/backend-runtime.env
+            HOST_APP_KEY=/opt/secure/sovereign-github-app/private-key.pem
             test -f "$BACKEND_ENV" || die backend_runtime_env_missing
             test ! -L "$BACKEND_ENV" || die backend_runtime_env_symlink
             stage backend_runtime_env_present
@@ -137,6 +138,66 @@ jobs:
             run_root grep -q '^GITHUB_APP_ID=[1-9][0-9]*$' "$BACKEND_ENV" || die backend_github_app_id_missing_after_restore
             stage backend_github_app_id_present
 
+            if ! run_root grep -q '^GITHUB_APP_PRIVATE_KEY=.' "$BACKEND_ENV"; then
+              stage resolving_backend_github_app_private_key
+              ENCODED_KEY="$(run_root docker inspect sovereign-backend --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^GITHUB_APP_PRIVATE_KEY=//p' | tail -n 1 || true)"
+              if [[ -n "$ENCODED_KEY" ]]; then
+                KEY_CHECK="$(mktemp /tmp/sovereign-github-app-key-check.XXXXXX)" || die backend_github_app_private_key_check_create_failed
+                if ! printf '%s' "$ENCODED_KEY" | base64 --decode > "$KEY_CHECK" 2>/dev/null \
+                  || ! grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$KEY_CHECK"; then
+                  rm -f "$KEY_CHECK"
+                  ENCODED_KEY=""
+                else
+                  rm -f "$KEY_CHECK"
+                  stage backend_container_github_app_private_key_valid
+                fi
+              fi
+              if [[ -z "$ENCODED_KEY" ]] && run_root test -f "$HOST_APP_KEY" && ! run_root test -L "$HOST_APP_KEY"; then
+                if run_root grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$HOST_APP_KEY"; then
+                  ENCODED_KEY="$(run_root base64 -w0 "$HOST_APP_KEY")" || die host_github_app_private_key_encode_failed
+                  stage host_github_app_private_key_valid
+                fi
+              fi
+              if [[ -z "$ENCODED_KEY" ]]; then
+                for candidate in /opt/sovereign-chatgpt-tools/.env /opt/sovereign-chatgpt-tools/runtime.env; do
+                  if run_root test -f "$candidate"; then
+                    ENCODED_KEY="$(read_env_value "$candidate" GITHUB_APP_PRIVATE_KEY)"
+                    [[ -n "$ENCODED_KEY" ]] && break
+                  fi
+                done
+              fi
+              [[ -n "$ENCODED_KEY" ]] || die backend_github_app_private_key_unrecoverable
+
+              KEY_CHECK="$(mktemp /tmp/sovereign-github-app-key-check.XXXXXX)" || die backend_github_app_private_key_check_create_failed
+              if ! printf '%s' "$ENCODED_KEY" | base64 --decode > "$KEY_CHECK" 2>/dev/null \
+                || ! grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$KEY_CHECK"; then
+                rm -f "$KEY_CHECK"
+                unset ENCODED_KEY
+                die backend_github_app_private_key_invalid
+              fi
+              rm -f "$KEY_CHECK"
+
+              stage restoring_backend_github_app_private_key
+              BACKEND_ATTRS="$(run_root lsattr -d -- "$BACKEND_ENV" 2>/dev/null | awk '{print $1}' || true)"
+              BACKEND_CLEAR_I=0
+              BACKEND_CLEAR_A=0
+              if [[ "$BACKEND_ATTRS" == *i* ]]; then
+                run_root chattr -i -- "$BACKEND_ENV" || die backend_env_immutable_clear_failed
+                BACKEND_CLEAR_I=1
+              fi
+              if [[ "$BACKEND_ATTRS" == *a* ]]; then
+                run_root chattr -a -- "$BACKEND_ENV" || die backend_env_append_only_clear_failed
+                BACKEND_CLEAR_A=1
+              fi
+              if run_root grep -q '^GITHUB_APP_PRIVATE_KEY=' "$BACKEND_ENV"; then
+                run_root sed -i "s|^GITHUB_APP_PRIVATE_KEY=.*|GITHUB_APP_PRIVATE_KEY=${ENCODED_KEY}|" "$BACKEND_ENV" || die backend_github_app_private_key_write_failed
+              else
+                run_root sh -c 'printf "%s\n" "$1" >> "$2"' _ "GITHUB_APP_PRIVATE_KEY=${ENCODED_KEY}" "$BACKEND_ENV" || die backend_github_app_private_key_write_failed
+              fi
+              [[ "$BACKEND_CLEAR_A" != 1 ]] || run_root chattr +a -- "$BACKEND_ENV" || die backend_env_append_only_restore_failed
+              [[ "$BACKEND_CLEAR_I" != 1 ]] || run_root chattr +i -- "$BACKEND_ENV" || die backend_env_immutable_restore_failed
+              unset ENCODED_KEY
+            fi
             run_root grep -q '^GITHUB_APP_PRIVATE_KEY=.' "$BACKEND_ENV" || die backend_github_app_private_key_missing
             stage backend_github_app_private_key_present
 
