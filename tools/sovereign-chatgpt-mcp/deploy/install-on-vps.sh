@@ -23,8 +23,8 @@ MILVUS_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/milvus-sovereign"
 MILVUS_TEMPLATE_SOURCE="$SOURCE_DIR/templates/milvus-sovereign"
 FREELLMAPI_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-freellmapi"
 FREELLMAPI_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-freellmapi"
-FREELLMPOOL_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-freellmpool"
-FREELLMPOOL_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-freellmpool"
+OMNIROUTE_TEMPLATE_DIR="$COMPOSE_TEMPLATE_ROOT/sovereign-omniroute"
+OMNIROUTE_TEMPLATE_SOURCE="$SOURCE_DIR/templates/sovereign-omniroute"
 DOCKER_AUTH_DIR="$INSTALL_ROOT/docker-auth"
 WORKSPACE_DIR="$INSTALL_ROOT/workspaces"
 COMMAND_QUEUE_DIR="$INSTALL_ROOT/command-queue"
@@ -1020,8 +1020,7 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin is not ins
 [[ -f "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "milvus compose template is missing"
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "FreeLLM API compose template is missing"
 [[ -f "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" ]] || fail "FreeLLM API bootstrap template is missing"
-[[ -f "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "FreeLLMPool compose template is missing"
-[[ -f "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" ]] || fail "FreeLLMPool entrypoint template is missing"
+[[ -f "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" ]] || fail "OmniRoute compose template is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-governance/SKILL.md" ]] || fail "operational governance skill manifest is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-operational-assurance/SKILL.md" ]] || fail "operational assurance skill manifest is missing"
 [[ -f "$SOURCE_DIR/skills/sovereign-mcp-optimal-operation/SKILL.md" ]] || fail "optimal operation skill manifest is missing"
@@ -1044,8 +1043,8 @@ python3 -m py_compile "$SOURCE_DIR/deploy/run-coordinated-release-readback.py" \
   || fail "coordinated release reconciler timer is missing"
 
 getent group sovereign-mcp >/dev/null 2>&1 || groupadd --system sovereign-mcp
-install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$FREELLMPOOL_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
-for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-freellmpool; do
+install -d -m 0750 "$INSTALL_ROOT" "$BIN_DIR" "$BROKER_DIR" "$COMPOSE_TEMPLATE_ROOT" "$PGBACKWEB_TEMPLATE_DIR" "$PATCHMON_TEMPLATE_DIR" "$CODE_SERVER_TEMPLATE_DIR" "$MILVUS_TEMPLATE_DIR" "$FREELLMAPI_TEMPLATE_DIR" "$OMNIROUTE_TEMPLATE_DIR" "$INSTALL_ROOT/continuity-data" "$INSTALL_ROOT/tool-routing-state"
+for MANAGED_COMPOSE_ROOT in /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-omniroute; do
   if [[ -e "$MANAGED_COMPOSE_ROOT" || -L "$MANAGED_COMPOSE_ROOT" ]]; then
     [[ -d "$MANAGED_COMPOSE_ROOT" && ! -L "$MANAGED_COMPOSE_ROOT" ]] \
       || fail "managed compose root is not a regular directory: $MANAGED_COMPOSE_ROOT"
@@ -1149,8 +1148,7 @@ backup_managed_control_plane_file "$CODE_SERVER_TEMPLATE_DIR/docker-compose.yml"
 backup_managed_control_plane_file "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 backup_managed_control_plane_file "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
-backup_managed_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"
-backup_managed_control_plane_file "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"
+backup_managed_control_plane_file "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
 for file in deploy-sovereign-backend rollback-sovereign-backend bootstrap-database install-secure-tunnel validate-tunnel-doctor-report reconcile-main-release run-coordinated-release-readback; do
   backup_managed_control_plane_file "$BIN_DIR/$file" "bin/$file"
 done
@@ -1172,8 +1170,7 @@ install_managed_control_plane_file 0640 "$CODE_SERVER_TEMPLATE_SOURCE/docker-com
 install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"
 install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/sovereign-freellm-bootstrap.mjs" "$FREELLMAPI_TEMPLATE_DIR/sovereign-freellm-bootstrap.mjs" "templates/sovereign-freellmapi/sovereign-freellm-bootstrap.mjs"
-install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"
-install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"
+install_managed_control_plane_file 0640 "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/deploy-sovereign-backend" "$BIN_DIR/deploy-sovereign-backend" "bin/deploy-sovereign-backend"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/rollback-sovereign-backend" "$BIN_DIR/rollback-sovereign-backend" "bin/rollback-sovereign-backend"
 install_managed_control_plane_file 0750 "$SOURCE_DIR/deploy/bootstrap-database.sh" "$BIN_DIR/bootstrap-database" "bin/bootstrap-database"
@@ -1204,7 +1201,7 @@ set_managed_control_plane_directory_ownership "$PATCHMON_TEMPLATE_DIR" "template
 set_managed_control_plane_directory_ownership "$CODE_SERVER_TEMPLATE_DIR" "templates/code-server-46bq"
 set_managed_control_plane_directory_ownership "$MILVUS_TEMPLATE_DIR" "templates/milvus-sovereign"
 set_managed_control_plane_directory_ownership "$FREELLMAPI_TEMPLATE_DIR" "templates/sovereign-freellmapi"
-set_managed_control_plane_directory_ownership "$FREELLMPOOL_TEMPLATE_DIR" "templates/sovereign-freellmpool"
+set_managed_control_plane_directory_ownership "$OMNIROUTE_TEMPLATE_DIR" "templates/sovereign-omniroute"
 
 INSTALL_STAGE="prepare_private_environment_files"
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -1301,7 +1298,7 @@ set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owne
 remove_value "$BACKEND_MANAGED_ENV" LITELLM_BASE_URL
 remove_value "$BACKEND_MANAGED_ENV" LITELLM_MASTER_KEY_FILE
 set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE "/opt/sovereign-owner-managed/freellmapi_unified_key.txt"
-set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE "/opt/sovereign-owner-managed/freellmpool_proxy_key.txt"
+remove_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE
 prepare_mcp_github_app_secret
 INSTALL_STAGE="verify_private_owner_github_app_contract"
 if [[ "$PRIVATE_OWNER_MODE" == "1" ]]; then
@@ -1345,7 +1342,7 @@ for REQUIRED_WORKFLOW in android.yml e2e-testing.yml sovereign-backend-image.yml
 done
 unset REQUIRED_WORKFLOW CURRENT_ALLOWED_WORKFLOWS
 
-for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-freellmpool; do
+for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserless gpt-tika gpt-gotenberg gpt-dozzle code-server-46bq-code-server-1 pgbackweb-wq5r-pgbackweb-1 pgbackweb-wq5r-db-1 patchmon-sovereign-server-1 patchmon-sovereign-database-1 patchmon-sovereign-redis-1 patchmon-sovereign-guacd-1 sovereign-freellmapi sovereign-omniroute; do
   CURRENT_ALLOWED_CONTAINERS="$(read_mcp_value SOVEREIGN_MCP_ALLOWED_CONTAINERS)"
   if [[ -z "$CURRENT_ALLOWED_CONTAINERS" ]]; then
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER"
@@ -1353,7 +1350,7 @@ for REQUIRED_CONTAINER in sovereign-backend sovereign-chatgpt-mcp gpt-browserles
     set_value "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "$REQUIRED_CONTAINER,$CURRENT_ALLOWED_CONTAINERS"
   fi
 done
-remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1"
+remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1,sovereign-freellmpool"
 unset REQUIRED_CONTAINER CURRENT_ALLOWED_CONTAINERS
 
 if [[ "$(read_mcp_value SOVEREIGN_MCP_BOOTSTRAP_DATABASE)" == "1" ]]; then
@@ -3011,4 +3008,4 @@ if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
   SEMANTIC_COMPATIBILITY_VERIFIED_JSON=true
   FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON=false
 fi
-printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_enforced":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-freellmpool"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"
+printf '{"ok":true,"mcp":"http://127.0.0.1:8090/mcp","mcp_protocol_ready":true,"broker":"active","broker_rpc_ready":true,"broker_socket_host_visible":true,"broker_socket_container_visible":true,"host_command_worker_active":true,"inbound_mutation_forbidden":true,"container":"sovereign-chatgpt-mcp","mcp_image":"%s","mcp_revision":"%s","tunnel_mode":"%s","workspace_writable":true,"policy_repair_engine":true,"private_admin_mode_available":true,"self_update_available":true,"android_hardening_available":true,"android_native_build_mode":"github_actions","android_native_validation_router":true,"deterministic_architecture_tools":true,"database_evidence_tools":true,"enterprise_backend_tools":true,"freemium_product_architect_tools":true,"operational_governance_tools":true,"operational_assurance_tools":true,"neuro_runtime_tools":true,"foundation_runtime":true,"teaching_runtime_tools":true,"neuro_functional_canary":true,"neuro_tamper_detection":true,"neuro_selected_tools_executed":false,"registered_tool_surface_canary":true,"teaching_functional_canary":true,"teaching_source_provenance_canary":true,"teaching_package_mutated":false,"tool_outcome_telemetry_scope":"mutable-tool-outcomes-only","read_only_tool_calls_persisted":false,"canary_persisted_outcome_tools":["neuro_event_commit"],"mcp_tool_count":%s,"predecessor_container_present":%s,"predecessor_registry_capture_mode":"%s","previous_tool_surface_compared":%s,"semantic_compatibility_verified":%s,"first_install_without_predecessor":%s,"first_install_attested":%s,"event_delta_projection":"incremental","operating_profile_enforced":true,"continuity_enforced":true,"github_app_repository_canary":true,"persistent_github_token_present":false,"repository_revision_resolver":true,"kappa_scale":1000000,"cross_runtime_parity_proven":true,"pr_lifecycle_available":true,"workspace_pr_head_sync_available":true,"workflow_dispatch_available":true,"managed_compose_write_available":true,"patchmon_operator_available":true,"managed_compose_stacks":["sovereign-backend","gpt-tools","code-server-46bq","pgbackweb-wq5r","patchmon-sovereign","milvus-sovereign","sovereign-freellmapi","sovereign-omniroute"]}\n' "$MCP_IMAGE_DIGEST" "$EXPECTED_REVISION" "$TUNNEL_MODE" "$EXPECTED_MCP_TOOL_COUNT" "$PREDECESSOR_CONTAINER_PRESENT_JSON" "$PREVIOUS_MCP_REGISTRY_CAPTURE_MODE" "$PREVIOUS_TOOL_SURFACE_COMPARED_JSON" "$SEMANTIC_COMPATIBILITY_VERIFIED_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON" "$FIRST_INSTALL_WITHOUT_PREDECESSOR_JSON"

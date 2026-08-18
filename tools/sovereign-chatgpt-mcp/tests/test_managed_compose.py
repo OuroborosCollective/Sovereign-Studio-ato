@@ -23,7 +23,7 @@ def test_managed_compose_stack_allowlist_is_exact() -> None:
         "patchmon-sovereign",
         "milvus-sovereign",
         "sovereign-freellmapi",
-        "sovereign-freellmpool",
+        "sovereign-omniroute",
     }
     assert is_mutating_action("deploy_managed_compose_stack") is True
     assert is_mutating_action("memory_gateway_collection_canary") is True
