@@ -33,6 +33,12 @@ from evidence_observatory_integrations import (
     publish_huggingface_batch,
     sync_notion_research,
 )
+from evidence_observatory_cag_staging import (
+    CAG_BENCHMARK_CASE_IDS,
+    HF_CAG_REPO_ID,
+    HF_CAG_STAGING_REVISION,
+    publish_cag_benchmark_staging,
+)
 
 QueryFn = Callable[..., Any]
 AuditFn = Callable[[str, str | None, dict[str, Any]], None]
@@ -508,6 +514,115 @@ def register_evidence_observatory_routes(
             "publicationReceiptSha256": receipt["publicationReceiptSha256"], "readbackVerified": True,
         })
         return jsonify({**receipt, "publishedCaseIds": case_ids, "persistenceVerified": True})
+
+    @app.route("/api/admin/evidence-observatory/v1/publish/huggingface/cag-benchmark", methods=["POST"])
+    @require_admin
+    def observatory_publish_huggingface_cag_benchmark():
+        case_ids = list(CAG_BENCHMARK_CASE_IDS)
+        try:
+            receipt = publish_cag_benchmark_staging()
+            admin_id = _admin_id(get_current_admin)
+        except Exception as exc:
+            audit("evidence_observatory_hf_cag_benchmark_publish_blocked", None, {
+                "caseCount": len(case_ids),
+                "repoId": HF_CAG_REPO_ID,
+                "revision": HF_CAG_STAGING_REVISION,
+                "blocker": type(exc).__name__,
+            })
+            return jsonify({
+                "ok": False,
+                "error": "cag_benchmark_hf_publish_blocked",
+                "blocker": type(exc).__name__,
+                "readbackVerified": False,
+            }), 502
+
+        if receipt.get("status") == "DUPLICATE_NOOP":
+            audit("evidence_observatory_hf_cag_benchmark_duplicate_noop", receipt["batchId"], {
+                "caseCount": len(case_ids),
+                "caseIds": case_ids,
+                "repoId": receipt["repoId"],
+                "revision": receipt["revision"],
+                "batchSha256": receipt["batchSha256"],
+                "duplicateSemanticPublishSkipped": True,
+                "readbackVerified": False,
+            })
+            return jsonify({
+                **receipt,
+                "publishedCaseIds": [],
+                "skippedCaseIds": case_ids,
+                "publicationReceiptPersisted": False,
+                "truthNotice": "No Hub mutation or publication receipt was created because the exact semantic batch already exists.",
+            })
+
+        if receipt.get("status") != "PUBLISHED_VERIFIED" or receipt.get("readbackVerified") is not True:
+            return jsonify({"ok": False, "error": "cag_publish_readback_not_verified"}), 502
+
+        existing = query(
+            """SELECT id::text AS receipt_id
+               FROM evidence_observatory_publish_receipts
+               WHERE batch_sha256=%s AND publication_status='PUBLISHED_VERIFIED'
+               ORDER BY created_at DESC LIMIT 1""",
+            (receipt["batchSha256"],), one=True,
+        )
+        if existing:
+            audit("evidence_observatory_hf_cag_benchmark_receipt_idempotent", receipt["batchId"], {
+                "caseCount": len(case_ids),
+                "caseIds": case_ids,
+                "batchSha256": receipt["batchSha256"],
+                "readbackVerified": True,
+            })
+            return jsonify({
+                **receipt,
+                "publishedCaseIds": case_ids,
+                "publicationReceiptPersisted": True,
+                "persistenceIdempotent": True,
+                "receiptId": existing["receipt_id"],
+            })
+
+        persisted = query(
+            """INSERT INTO evidence_observatory_publish_receipts
+                   (batch_id, repo_id, revision, commit_oid, data_path, manifest_path,
+                    data_sha256, manifest_sha256, case_ids, state, readback_verified,
+                    batch_sha256, license_rights_sha256, privacy_scan_sha256,
+                    publisher_policy_sha256, expected_target, observed_target,
+                    observed_target_revision, observed_artifact_hashes,
+                    write_attempt_identity, readback_identity, publication_status,
+                    publication_receipt, publication_receipt_sha256, created_by)
+               VALUES (%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'PUBLISHED',true,
+                       %s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s::uuid)
+               RETURNING id::text AS receipt_id""",
+            (receipt["batchId"], receipt["repoId"], receipt["revision"], receipt["commitOid"],
+             receipt["dataPath"], receipt["manifestPath"], receipt["dataSha256"],
+             receipt["manifestSha256"], psycopg2.extras.Json(case_ids),
+             receipt["batchSha256"], receipt["licenseRightsHash"], receipt["privacyScanHash"],
+             receipt["publisherPolicyHash"], receipt["publicationReceipt"]["expectedTarget"],
+             receipt["publicationReceipt"]["observedTarget"],
+             receipt["publicationReceipt"]["observedTargetRevision"],
+             psycopg2.extras.Json(receipt["publicationReceipt"]["observedArtifactHashes"]),
+             receipt["publicationReceipt"]["writeAttemptIdentity"],
+             receipt["publicationReceipt"]["readbackIdentity"],
+             receipt["publicationReceipt"]["status"],
+             psycopg2.extras.Json(receipt["publicationReceipt"]),
+             receipt["publicationReceiptSha256"], admin_id),
+            one=True, write=True,
+        )
+        audit("evidence_observatory_hf_cag_benchmark_published", receipt["batchId"], {
+            "caseCount": len(case_ids),
+            "caseIds": case_ids,
+            "repoId": receipt["repoId"],
+            "revision": receipt["revision"],
+            "commitOid": receipt["commitOid"],
+            "batchSha256": receipt["batchSha256"],
+            "publicationReceiptSha256": receipt["publicationReceiptSha256"],
+            "readbackVerified": True,
+        })
+        return jsonify({
+            **receipt,
+            "publishedCaseIds": case_ids,
+            "publicationReceiptPersisted": True,
+            "persistenceIdempotent": False,
+            "receiptId": persisted["receipt_id"],
+        })
 
     @app.route("/api/evidence-observatory/v1/arena/cases/<case_id>/request", methods=["GET"])
     @require_session

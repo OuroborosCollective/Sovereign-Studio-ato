@@ -15,6 +15,7 @@ from admin_mode import PrivateAdminRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import is_mutating_action
 from document_pipeline import DocumentPipelineRuntime
+from evidence_observatory_cag_runtime import EvidenceObservatoryCagPublicationRuntime
 from fleet_maintenance import FleetMaintenanceRuntime
 from github_admin import GitHubAdminRuntime
 from github_knowledge_canary import GitHubKnowledgeCanaryRuntime
@@ -53,6 +54,7 @@ class BrokerRuntime:
         self.github_knowledge = GitHubKnowledgeCanaryRuntime()
         self.issue_closure = IssueClosureCanaryRuntime()
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
+        self.evidence_observatory_cag = EvidenceObservatoryCagPublicationRuntime()
         self.managed_compose = ManagedComposeRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
@@ -478,6 +480,11 @@ class BrokerRuntime:
                 owner_approved=bool(values.get("owner_approved", False)),
             ),
             "programming_language_catalog_persistent_import": lambda values: self.programming_language_catalog.persistent_import(
+                expected_revision=str(values.get("expected_revision") or ""),
+                expected_image_digest=str(values.get("expected_image_digest") or ""),
+                owner_approved=bool(values.get("owner_approved", False)),
+            ),
+            "evidence_observatory_cag_staging_publish": lambda values: self.evidence_observatory_cag.publish_staging(
                 expected_revision=str(values.get("expected_revision") or ""),
                 expected_image_digest=str(values.get("expected_image_digest") or ""),
                 owner_approved=bool(values.get("owner_approved", False)),

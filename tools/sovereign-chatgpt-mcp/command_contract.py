@@ -25,6 +25,7 @@ MUTATING_ACTIONS = frozenset(
         "github_knowledge_live_canary",
         "issue_closure_runtime_canary",
         "programming_language_catalog_persistent_import",
+        "evidence_observatory_cag_staging_publish",
         "litellm_model_aliases_activate",
         "patchmon_patch_action_apply",
         "patchmon_fleet_bootstrap_apply",
