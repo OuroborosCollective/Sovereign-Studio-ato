@@ -1,8 +1,9 @@
-"""Ephemeral GitHub App installation authentication for MCP repository operations.
+"""GitHub authentication for MCP repository operations.
 
-The GitHub App private key remains a read-only container secret.  A repository-scoped
-installation token is minted only while an outbound GitHub request or Git subprocess
-is active; it is never written to a workspace, response, log, or object attribute.
+The preferred path is an ephemeral GitHub App installation token. When the App
+configuration is unavailable, the runtime may fall back to one owner-managed PAT
+stored in a protected VPS file. The protected value is read only for the active
+outbound request or Git subprocess and is never returned by MCP tools.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import time
 from typing import Callable, Iterator
@@ -25,6 +27,37 @@ import requests
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _TOKEN_TTL_SECONDS = 540
 _CLOCK_SKEW_SECONDS = 60
+_DEFAULT_OWNER_TOKEN_FILE = Path("/opt/sovereign-owner-managed/github_owner_token.txt")
+_MAX_OWNER_TOKEN_BYTES = 8192
+
+
+def _owner_token_file() -> Path:
+    configured = os.getenv("SOVEREIGN_MCP_GITHUB_TOKEN_FILE", "").strip()
+    path = Path(configured) if configured else _DEFAULT_OWNER_TOKEN_FILE
+    if not path.is_absolute():
+        raise RuntimeError("SOVEREIGN_MCP_GITHUB_TOKEN_FILE ist ungültig")
+    return path
+
+
+def _read_owner_token() -> str:
+    path = _owner_token_file()
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel ist nicht konfiguriert") from exc
+    if not stat.S_ISREG(metadata.st_mode) or path.is_symlink() or metadata.st_mode & 0o077:
+        raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel verletzt den sicheren Dateivertrag")
+    if metadata.st_size < 20 or metadata.st_size > _MAX_OWNER_TOKEN_BYTES:
+        raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel hat eine ungültige Größe")
+    try:
+        token = path.read_text("utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel ist nicht lesbar") from exc
+    if len(token) < 20 or len(token.encode("utf-8")) > _MAX_OWNER_TOKEN_BYTES or any(
+        character.isspace() for character in token
+    ):
+        raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel hat ein ungültiges Format")
+    return token
 
 
 @dataclass(frozen=True)
@@ -65,17 +98,24 @@ class GitHubAppInstallationConfig:
 
 
 class UnavailableGitHubInstallationAuth:
-    """Fail closed when a read-only MCP process has no GitHub App configuration."""
+    """Use the protected owner PAT file when GitHub App configuration is unavailable."""
 
     @contextmanager
     def token(self) -> Iterator[str]:
-        raise RuntimeError("GitHub-App-Installation-Authentisierung ist nicht konfiguriert")
-        yield ""  # pragma: no cover
+        issued = _read_owner_token()
+        try:
+            yield issued
+        finally:
+            issued = ""
 
     @contextmanager
     def headers(self) -> Iterator[dict[str, str]]:
         with self.token() as token:
-            yield {"Authorization": f"Bearer {token}"}
+            yield {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
 
 
 class GitHubAppInstallationAuth:
@@ -164,7 +204,7 @@ class GitHubAppInstallationAuth:
         try:
             yield issued
         finally:
-            # Python strings cannot be wiped in place.  Do not retain this value in
+            # Python strings cannot be wiped in place. Do not retain this value in
             # object state, files, logs, subprocess output, or MCP responses.
             issued = ""
 
