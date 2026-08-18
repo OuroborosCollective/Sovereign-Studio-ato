@@ -75,11 +75,16 @@ def test_transaction_schema_matches_admin_reader_and_writer() -> None:
     assert "result.transactions.map(normalizeTransaction)" in client
 
 
-def test_private_litellm_admin_excludes_disabled_legacy_direct_routes() -> None:
+def test_private_llm_admin_excludes_disabled_legacy_direct_routes() -> None:
     source = read(CANONICAL_APP)
-    assert "WHERE lower(provider) = 'litellm'" in source
+    # Contract drift (production truth): the private admin listing now selects
+    # OpenRouter routes via the runtime_kind fallback, legacy direct routes are
+    # everything outside ('openrouter', 'freellm'), and the policy marker was
+    # renamed to "unknown-transports-disabled-and-hidden".
+    assert "WHERE lower(COALESCE(runtime_kind, provider))='openrouter'" in source
+    assert "NOT IN ('openrouter', 'freellm')" in source
     assert "legacyDirectRouteCount" in source
-    assert "disabled-and-hidden-from-private-litellm-admin" in source
+    assert "unknown-transports-disabled-and-hidden" in source
 
 
 def test_payment_admin_hides_legacy_aliases_and_blocks_legacy_mutation() -> None:
@@ -97,11 +102,16 @@ def test_credit_package_list_errors_are_not_false_empty_successes() -> None:
 
 
 def test_backend_release_is_validation_only_and_queue_bound() -> None:
-    workflow = read(ROOT / ".github/workflows/sovereign-agent-backend.yml")
+    # Contract drift (production truth): the queue-only release policy gate
+    # moved from sovereign-agent-backend.yml to sovereign-agent-supplemental.yml;
+    # the backend workflow itself is now test/validation-only.
+    workflow = read(ROOT / ".github/workflows/sovereign-agent-supplemental.yml")
     assert "Queue-only Release Policy" in workflow
     assert "permissions:\n  contents: read" in workflow
     assert "Validation-only boundary verified" in workflow
     assert "production release requires the Sovereign host-command queue" in workflow
-    assert "capture_stdout: true" not in workflow
-    for forbidden in ("apple" + "boy/", "ssh-" + "action", "scp-" + "action", "docker " + "build", "docker " + "run"):
-        assert forbidden not in workflow
+    backend_workflow = read(ROOT / ".github/workflows/sovereign-agent-backend.yml")
+    for candidate in (workflow, backend_workflow):
+        assert "capture_stdout: true" not in candidate
+        for forbidden in ("apple" + "boy/", "ssh-" + "action", "scp-" + "action", "docker " + "build", "docker " + "run"):
+            assert forbidden not in candidate

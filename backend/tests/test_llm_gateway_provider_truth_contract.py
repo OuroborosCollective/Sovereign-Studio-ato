@@ -5,10 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-APP_SOURCES = (
-    ROOT / "backend" / "app.py",
-    ROOT / "scripts" / "sovereign-backend" / "app.py",
-)
+APP_SOURCES = (ROOT / "scripts" / "sovereign-backend" / "app.py",)
 
 
 def _load_catalog_runtime(path: Path, rows: list[dict]):
@@ -133,10 +130,14 @@ def test_gateway_probe_uses_single_provider_path_and_real_response_models():
         assert "PROVIDER_MODELS = _PersistedProviderCatalog()" in source
 
 
-def test_live_and_deploy_gateway_contracts_are_semantically_identical():
-    for name in ("test_provider_key", "test_provider_available"):
-        assert _function_ast(APP_SOURCES[0], name) == _function_ast(APP_SOURCES[1], name)
-    assert _class_ast(APP_SOURCES[0], "_PersistedProviderCatalog") == _class_ast(
-        APP_SOURCES[1],
-        "_PersistedProviderCatalog",
+def test_backend_has_no_second_app_py_truth():
+    """Anti-regression guard replacing the old dual-source parity check.
+
+    `backend/app.py` was deliberately removed: scripts/sovereign-backend/app.py
+    is the single source of truth. If a second copy ever reappears, the
+    contracts above must be revisited instead of silently drifting apart.
+    """
+    assert not (ROOT / "backend" / "app.py").exists(), (
+        "backend/app.py must not exist - single source of truth is "
+        "scripts/sovereign-backend/app.py"
     )
