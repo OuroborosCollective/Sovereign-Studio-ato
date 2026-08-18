@@ -44,7 +44,10 @@ def _read_owner_token() -> str:
     try:
         metadata = path.lstat()
     except OSError as exc:
-        raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel ist nicht konfiguriert") from exc
+        raise RuntimeError(
+            "GitHub-App-Installation-Authentisierung ist nicht konfiguriert; "
+            "Owner-verwalteter GitHub-Zugriffsschlüssel ist nicht konfiguriert"
+        ) from exc
     if not stat.S_ISREG(metadata.st_mode) or path.is_symlink() or metadata.st_mode & 0o077:
         raise RuntimeError("Owner-verwalteter GitHub-Zugriffsschlüssel verletzt den sicheren Dateivertrag")
     if metadata.st_size < 20 or metadata.st_size > _MAX_OWNER_TOKEN_BYTES:
