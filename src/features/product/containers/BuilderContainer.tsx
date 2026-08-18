@@ -22,6 +22,7 @@ import {
   type IdeaOption,
 } from "../runtime/builderContainerHelpers";
 import { deriveBuilderContainerState } from "../runtime/builderContainerRuntime";
+import { resolveDraftPrBuildStatus } from "../runtime/draftPrBuildStatusRuntime";
 import { getSovereignContainerContract } from "../runtime/sovereignContainerContracts";
 import { SOVEREIGN_FORM_MISSION } from "../runtime/sovereignFormContracts";
 import {
@@ -2783,6 +2784,7 @@ export function BuilderContainer({
   } | null>(null);
   const submitInFlightRef = useRef(false);
   const startAgentInFlightRef = useRef(false);
+  const publishDraftPrInFlightRef = useRef(false);
   const pendingResumeRetryRef = useRef(false);
   const [pendingResumeRetrySequence, setPendingResumeRetrySequence] = useState(0);
   const currentRepoScopeKeyRef = useRef<string | null>(currentRepoScopeKey);
@@ -3829,6 +3831,19 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
   };
 
   const publishConfirmedDraftPr = async (): Promise<void> => {
+    if (publishDraftPrInFlightRef.current) {
+      addLog('info', 'Draft-PR publish ignored while another publish is in flight', 'router');
+      return;
+    }
+    publishDraftPrInFlightRef.current = true;
+    try {
+      await publishConfirmedDraftPrInner();
+    } finally {
+      publishDraftPrInFlightRef.current = false;
+    }
+  };
+
+  const publishConfirmedDraftPrInner = async (): Promise<void> => {
     if (!chatRepoSnapshot || !currentRepoScopeKey) {
       setShowRepoSetup(true);
       appendActionEvent(buildBlockedActionEvent({
@@ -6686,6 +6701,9 @@ Das echte Repo-Setup wurde geöffnet.`,
                 <DraftPrCard
                   url={scopedAgentJob.draftPrUrl}
                   changedFiles={scopedAgentJob.changedFiles || []}
+                  buildStatus={resolveDraftPrBuildStatus({
+                    draftPrUrl: scopedAgentJob.draftPrUrl,
+                  })}
                   onOpenBrowser={() =>
                     window.open(scopedAgentJob.draftPrUrl, "_blank")
                   }

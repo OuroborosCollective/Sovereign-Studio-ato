@@ -16,11 +16,16 @@ sys.path.insert(0, str(BACKEND))
 
 # The isolated repository test host intentionally has no Flask/PostgreSQL runtime
 # dependencies. Stub only import surfaces; tests below never execute HTTP or DB I/O.
-flask_stub = ModuleType("flask")
-flask_stub.jsonify = lambda value=None, **kwargs: value if value is not None else kwargs
-flask_stub.make_response = lambda value=None, *args, **kwargs: value
-flask_stub.request = SimpleNamespace()
-sys.modules.setdefault("flask", flask_stub)
+# Prefer a real Flask when installed: pre-registering a stub in sys.modules
+# would poison other test modules that need real Flask in the same session.
+try:
+    import flask  # noqa: F401
+except ImportError:
+    flask_stub = ModuleType("flask")
+    flask_stub.jsonify = lambda value=None, **kwargs: value if value is not None else kwargs
+    flask_stub.make_response = lambda value=None, *args, **kwargs: value
+    flask_stub.request = SimpleNamespace()
+    sys.modules.setdefault("flask", flask_stub)
 psycopg2_stub = ModuleType("psycopg2")
 psycopg2_extras_stub = ModuleType("psycopg2.extras")
 psycopg2_stub.extras = psycopg2_extras_stub
@@ -74,32 +79,40 @@ def test_embedding_adapter_accepts_cloudflare_and_openai_shapes() -> None:
     assert vector_embedding.vector_literal(cloudflare[0]).startswith("[")
 
 
-def test_embedding_adapter_fails_closed_when_default_route_is_explicitly_disabled(
+def test_embedding_adapter_fails_closed_without_private_freellm_route(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    for name in (
-        "CLOUDFLARE_ACCOUNT_ID",
-        "CLOUDFLARE_API_TOKEN",
-        "KNOWLEDGE_EMBEDDING_BASE_URL",
-        "WORKER_AI_PROXY_KEY",
+    # Contract drift (production truth): the retired Cloudflare Worker /
+    # WORKER_AI_PROXY_URL default route was replaced by the private FreeLLMAPI
+    # Docker runtime. Fail-closed now means: non-private base URLs are rejected
+    # and a missing managed unified key aborts before any network call.
+    monkeypatch.setenv("FREELLMAPI_INTERNAL_URL", "https://public.example.com/v1")
+    with pytest.raises(
+        vector_embedding.EmbeddingUnavailable,
+        match="Embeddings require the private FreeLLMAPI Docker endpoint",
     ):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("WORKER_AI_PROXY_URL", "")
-    with pytest.raises(vector_embedding.EmbeddingUnavailable, match="no embedding route configured"):
+        vector_embedding.embed_texts(["real vector required"])
+
+    monkeypatch.setenv("FREELLMAPI_INTERNAL_URL", vector_embedding.DEFAULT_FREELLMAPI_BASE_URL)
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.delenv("SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE", raising=False)
+    with pytest.raises(
+        vector_embedding.EmbeddingUnavailable,
+        match="FreeLLMAPI unified key unavailable",
+    ):
         vector_embedding.embed_texts(["real vector required"])
 
 
-def test_embedding_adapter_uses_sovereign_worker_default_route(
+def test_embedding_adapter_uses_private_freellm_default_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for name in (
-        "CLOUDFLARE_ACCOUNT_ID",
-        "CLOUDFLARE_API_TOKEN",
-        "KNOWLEDGE_EMBEDDING_BASE_URL",
-        "WORKER_AI_PROXY_URL",
-        "WORKER_AI_PROXY_KEY",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    # Contract drift (production truth): embeddings now use the private
+    # FreeLLMAPI Docker endpoint authenticated with the managed unified key
+    # instead of the retired sovereign worker proxy route.
+    monkeypatch.delenv("FREELLMAPI_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("SOVEREIGN_OWNER_INPUT_ROOT", raising=False)
+    monkeypatch.delenv("SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE", raising=False)
 
     calls: list[dict[str, object]] = []
 
@@ -122,17 +135,22 @@ def test_embedding_adapter_uses_sovereign_worker_default_route(
         return Response()
 
     monkeypatch.setattr(vector_embedding.requests, "post", post)
+    monkeypatch.setattr(
+        vector_embedding,
+        "read_managed_freellm_key_file",
+        lambda **kwargs: (bytearray(b"test-unified-key"), "test-unified-key"),
+    )
     batch = vector_embedding.embed_texts(["real knowledge"])
 
-    assert batch.provider == "embedding-proxy"
+    assert batch.provider == "freellmapi-private"
     assert len(batch.vectors) == 1
     assert len(batch.vectors[0]) == 768
-    assert calls[0]["url"] == (
-        "https://sovereign-llm-proxy.projectouroboroscollective.workers.dev/v1/embeddings"
-    )
+    assert calls[0]["url"] == f"{vector_embedding.DEFAULT_FREELLMAPI_BASE_URL}/embeddings"
+    assert calls[0]["headers"]["Authorization"] == "Bearer test-unified-key"
     assert calls[0]["json"] == {
-        "model": "@cf/google/embeddinggemma-300m",
+        "model": vector_embedding.EMBEDDING_MODEL,
         "input": ["real knowledge"],
+        "dimensions": vector_embedding.EMBEDDING_DIMENSIONS,
     }
 
 
@@ -356,8 +374,13 @@ def test_worker_exposes_real_openai_compatible_embedding_contract() -> None:
     worker = read(ROOT / "cloudflare-worker-ai-proxy" / "src" / "index.ts")
     backend_adapter = read(DEPLOY / "vector_embedding.py")
 
-    assert "DEFAULT_WORKER_AI_PROXY_URL" in backend_adapter
-    assert "configured_worker = os.getenv(\"WORKER_AI_PROXY_URL\")" in backend_adapter
+    # Backend adapter drift: embeddings moved from the retired worker proxy
+    # (DEFAULT_WORKER_AI_PROXY_URL / WORKER_AI_PROXY_URL) to the private
+    # FreeLLMAPI Docker runtime guarded by the managed unified-key file.
+    assert "DEFAULT_FREELLMAPI_BASE_URL" in backend_adapter
+    assert "FREELLMAPI_INTERNAL_URL" in backend_adapter
+    assert "read_managed_freellm_key_file" in backend_adapter
+    assert 'provider="freellmapi-private"' in backend_adapter
     assert "DEFAULT_EMBEDDING_MODEL = '@cf/google/embeddinggemma-300m'" in worker
     assert "const EMBEDDING_DIMENSIONS = 768" in worker
     assert "async function handleEmbeddings" in worker
@@ -445,7 +468,10 @@ def test_frontend_surfaces_and_runtime_consumption_exist() -> None:
     assert "const workerHealthForInference = await fetchDevChatWorkerHealth()" in builder
     assert "repositoryRevision: chatRepoSnapshot?.treeSha" in builder
     assert "files: chatRepoSnapshot?.files ?? []" in builder
-    assert "const _canProceed = await chargeCredits(d.modelId" in builder
+    # Contract drift (production truth): the client-side chargeCredits gate was
+    # removed from the builder; LLM billing is now owned server-side by
+    # /api/llm/chat and free routes reserve zero credits.
+    assert "LLM billing is owned by /api/llm/chat" in builder
     assert "if (fullText && !streamError && !streamDiagnostic)" in builder
     assert "await quarantineOnlineAnswer" in builder
     assert "Der Auftrag wurde vor Credit-Abzug und Online-Call gestoppt" in builder

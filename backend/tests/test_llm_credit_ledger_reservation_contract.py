@@ -70,9 +70,14 @@ def test_paid_reservation_is_persisted_before_provider_execution():
     route_source = source[start:]
 
     reservation = "_reserve_provider_funded_llm_credits("
+    # Contract drift (production truth): provider execution moved from the
+    # retired Worker proxy (fetch_worker_ai) to direct OpenRouter/FreeLLM
+    # routes (fetch_direct_llm); the reservation-before-execution ordering
+    # contract is unchanged.
+    execution = "fetch_direct_llm("
     assert reservation in route_source
-    assert "fetch_worker_ai(" in route_source
-    assert route_source.index(reservation) < route_source.index("fetch_worker_ai(")
+    assert execution in route_source
+    assert route_source.index(reservation) < route_source.index(execution)
     assert 'ledger_type="llm_usage_reservation"' in source
     assert 'ledger_type="llm_usage_refund"' in source
     assert 'ledger_type="llm_usage_adjustment"' in source

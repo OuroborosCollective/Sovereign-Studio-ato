@@ -449,6 +449,106 @@ describe('IntegrationIntentDraftCard', () => {
   });
 
   // ─────────────────────────────────────────────────────────────
+  // Double-submit protection
+  // ─────────────────────────────────────────────────────────────
+
+  describe('double-submit protection', () => {
+    it('fires onConfirm exactly once on a fast double click', () => {
+      // Arrange
+      const onConfirm = vi.fn();
+      const draft = createMockDraft();
+      const gates = createMockGates();
+      render(
+        <IntegrationIntentDraftCard
+          draft={draft}
+          gateSnapshot={gates}
+          onConfirm={onConfirm}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      // Act
+      const button = screen.getByTestId('btn-confirm');
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      // Assert
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      expect(button).toBeDisabled();
+    });
+
+    it('disables the other actions after the first confirm click', () => {
+      // Arrange
+      const onRephrase = vi.fn();
+      const onReject = vi.fn();
+      render(
+        <IntegrationIntentDraftCard
+          draft={createMockDraft()}
+          gateSnapshot={createMockGates()}
+          onConfirm={vi.fn()}
+          onRephrase={onRephrase}
+          onReject={onReject}
+        />
+      );
+
+      // Act
+      fireEvent.click(screen.getByTestId('btn-confirm'));
+      fireEvent.click(screen.getByTestId('btn-reject'));
+
+      // Assert
+      expect(onReject).not.toHaveBeenCalled();
+      expect(screen.getByTestId('btn-rephrase')).toBeDisabled();
+      expect(screen.getByTestId('btn-reject')).toBeDisabled();
+    });
+
+    it('fires onReject exactly once on a fast double click', () => {
+      // Arrange
+      const onReject = vi.fn();
+      render(
+        <IntegrationIntentDraftCard
+          draft={createMockDraft()}
+          gateSnapshot={createMockGates()}
+          onConfirm={vi.fn()}
+          onRephrase={vi.fn()}
+          onReject={onReject}
+        />
+      );
+
+      // Act
+      const button = screen.getByTestId('btn-reject');
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      // Assert
+      expect(onReject).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires the GitHub access action exactly once on a fast double click', () => {
+      // Arrange
+      const onConfirmWithGitHubAccess = vi.fn();
+      render(
+        <IntegrationIntentDraftCard
+          draft={createMockDraft()}
+          gateSnapshot={createMockGates({ githubWriteReady: false })}
+          onConfirm={vi.fn()}
+          onConfirmWithGitHubAccess={onConfirmWithGitHubAccess}
+          onRephrase={vi.fn()}
+          onReject={vi.fn()}
+        />
+      );
+
+      // Act
+      const button = screen.getByTestId('btn-confirm');
+      fireEvent.click(button);
+      fireEvent.click(button);
+
+      // Assert
+      expect(onConfirmWithGitHubAccess).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
   // Data attributes
   // ─────────────────────────────────────────────────────────────
 

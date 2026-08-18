@@ -235,6 +235,12 @@ def _repo_root() -> Path:
     for candidate in Path(__file__).resolve().parents:
         if (candidate / ".git").exists():
             return candidate
+        # Snapshot checkouts may ship without .git; accept the canonical
+        # backend mirror structure as the repository marker.
+        if (candidate / "backend" / "migrations").is_dir() and (
+            candidate / "scripts" / "sovereign-backend" / "migrations"
+        ).is_dir():
+            return candidate
     raise AssertionError("repository root not found")
 
 

@@ -19,8 +19,7 @@ if "flask" not in sys.modules:
     flask_stub.request = SimpleNamespace()
     sys.modules["flask"] = flask_stub
 
-import flask
-flask.request = SimpleNamespace(remote_addr="127.0.0.1", session_user_id=str(uuid.uuid4()))
+import flask  # noqa: F401 - guarantees a flask module exists (stub installed above if missing)
 
 # Stub requests and psycopg2 to avoid external runtime/C dependencies in isolation
 if "requests" not in sys.modules:
@@ -38,11 +37,18 @@ if "psycopg2" not in sys.modules:
 
 from n_plus_one import routes as n1_routes
 
+# n_plus_one.routes binds flask.jsonify/request at import time
+# (`from flask import ...`). Patch those bound module names directly instead
+# of mutating the shared flask module, so the tests work regardless of
+# whether a real Flask or the import stub was bound first in this session.
+n1_routes.request = SimpleNamespace(remote_addr="127.0.0.1", session_user_id=str(uuid.uuid4()))
+n1_routes.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
+
 
 def mock_require_session(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        flask.request.session_user_id = str(uuid.uuid4())
+        n1_routes.request.session_user_id = str(uuid.uuid4())
         return func(*args, **kwargs)
     return wrapper
 
@@ -50,7 +56,7 @@ def mock_require_session(func):
 def mock_require_admin(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        flask.request.session_user_id = str(uuid.uuid4())
+        n1_routes.request.session_user_id = str(uuid.uuid4())
         return func(*args, **kwargs)
     return wrapper
 
@@ -76,8 +82,8 @@ class MockApp:
 
 class TestN1JsonValidation(unittest.TestCase):
     def setUp(self):
-        self.old_jsonify = getattr(flask, "jsonify", None)
-        flask.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs, 400)
+        self.old_jsonify = n1_routes.jsonify
+        n1_routes.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
 
         self.app = MockApp()
         n1_routes.register_n_plus_one_routes(
@@ -90,7 +96,7 @@ class TestN1JsonValidation(unittest.TestCase):
 
     def tearDown(self):
         if self.old_jsonify is not None:
-            flask.jsonify = self.old_jsonify
+            n1_routes.jsonify = self.old_jsonify
 
     def test_n1_non_dict_payloads_rejected_safely(self):
         endpoints = [
@@ -112,7 +118,7 @@ class TestN1JsonValidation(unittest.TestCase):
             self.assertTrue(callable(handler), f"Handler not registered for path {path}")
 
             for malformed in malformed_bodies:
-                flask.request.get_json = lambda *args, **kwargs: malformed
+                n1_routes.request.get_json = lambda *args, **kwargs: malformed
 
                 res = handler()
 

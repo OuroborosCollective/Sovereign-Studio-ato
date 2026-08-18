@@ -6,10 +6,7 @@ from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
-APP_SOURCES = (
-    ROOT / "backend" / "app.py",
-    ROOT / "scripts" / "sovereign-backend" / "app.py",
-)
+APP_SOURCES = (ROOT / "scripts" / "sovereign-backend" / "app.py",)
 
 
 def _function_source(path: Path, name: str) -> str:
@@ -206,14 +203,14 @@ def test_gateway_sync_uses_only_atomic_worker_helper_and_reports_blockers():
         assert 'except: pass' not in source
 
 
-def test_live_and_deploy_sync_functions_are_semantically_identical():
-    for name in ("_sync_worker_routes_from_live_source", "admin_llm_gateway_sync"):
-        left = ast.dump(
-            ast.parse(_function_source(APP_SOURCES[0], name)),
-            include_attributes=False,
-        )
-        right = ast.dump(
-            ast.parse(_function_source(APP_SOURCES[1], name)),
-            include_attributes=False,
-        )
-        assert left == right
+def test_backend_has_no_second_app_py_truth():
+    """Anti-regression guard replacing the old dual-source parity check.
+
+    `backend/app.py` was deliberately removed: scripts/sovereign-backend/app.py
+    is the single source of truth. If a second copy ever reappears, the
+    contracts above must be revisited instead of silently drifting apart.
+    """
+    assert not (ROOT / "backend" / "app.py").exists(), (
+        "backend/app.py must not exist - single source of truth is "
+        "scripts/sovereign-backend/app.py"
+    )

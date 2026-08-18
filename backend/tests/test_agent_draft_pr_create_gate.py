@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -35,6 +36,45 @@ class FakeDraftPrCreator:
 
 def fake_github_token() -> str:
     return "ghp_" + "1234567890SECRETSECRETSECRET"
+
+
+class _FakeGitHubResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return json.dumps(self._payload).encode("utf-8")
+
+
+def _github_readback_urlopen(*, existing_prs, pr_number, head_sha, head_branch, base_branch="main"):
+    """URL-routing urlopen fake for the production readback evidence flow."""
+    owner_repo = "OuroborosCollective/Sovereign-Studio-ato"
+
+    def handler(request, timeout=30):
+        url = request.full_url
+        if "/pulls?" in url:
+            return _FakeGitHubResponse(existing_prs)
+        if url.rstrip("/").endswith(f"/pulls/{pr_number}"):
+            return _FakeGitHubResponse({
+                "html_url": f"https://github.com/{owner_repo}/pull/{pr_number}",
+                "state": "open",
+                "draft": True,
+                "head": {"ref": head_branch, "sha": head_sha, "repo": {"full_name": owner_repo}},
+                "base": {"ref": base_branch, "repo": {"full_name": owner_repo}},
+            })
+        if "/check-runs?" in url:
+            return _FakeGitHubResponse({"total_count": 0, "check_runs": []})
+        if "/status?per_page=100" in url:
+            return _FakeGitHubResponse({"state": "success", "statuses": [], "total_count": 0})
+        raise AssertionError(f"Unexpected GitHub URL: {url}")
+
+    return handler
 
 
 def ready_job(**overrides):
@@ -137,7 +177,12 @@ def test_create_uses_injected_creator_and_requires_valid_url(monkeypatch):
     assert result.status == "created"
     assert result.pr_url == "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/123"
     assert result.head_sha == "b" * 40
-    assert result.predictive_signal == "agent_draft_pr_created"
+    # Contract drift (production truth): the predictive_signal event for the
+    # legacy injected-creator path without live readback was renamed from
+    # "agent_draft_pr_created" to "agent_draft_pr_created_unverified_test_creator".
+    # The production GitHubApiDraftPrCreator still emits "agent_draft_pr_created"
+    # after verified readback.
+    assert result.predictive_signal == "agent_draft_pr_created_unverified_test_creator"
     assert creator.calls[0][1] == "test-token"
     assert draft_pr_create_signal(result)["headSha"] == "b" * 40
 
@@ -153,40 +198,61 @@ def test_create_blocks_invalid_creator_url():
 
 
 def test_existing_created_pr_is_idempotent():
-    result = create_draft_pr_for_job(ready_job(
-        pr_state="created",
-        pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/321",
-    ))
+    # Contract drift (production truth): the default GitHubApiDraftPrCreator
+    # re-verifies existing Draft PRs via live readback (verify_existing_draft_pr).
+    # The network-free idempotent shortcut now only applies to injected
+    # unit-test creators without a verifier.
+    result = create_draft_pr_for_job(
+        ready_job(
+            pr_state="created",
+            pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/321",
+        ),
+        creator=FakeDraftPrCreator(),
+        token="test-token",
+    )
 
     assert result.allowed is True
     assert result.status == "created"
     assert result.pr_url.endswith("/pull/321")
+    assert result.predictive_signal == "agent_draft_pr_created_unverified_test_creator"
 
 
 def test_github_creator_reuses_existing_draft_pr(monkeypatch):
     request = draft_pr_create_request_from_job(ready_job())
+    head_sha = "a" * 40
     monkeypatch.setattr(
         draft_pr_create_gate,
         "publish_workspace_branch",
-        lambda *args, **kwargs: type("Publication", (), {"status": "done", "commit_sha": "a" * 40, "blocker": None})(),
+        lambda *args, **kwargs: type("Publication", (), {"status": "done", "commit_sha": head_sha, "blocker": None})(),
+    )
+    # Contract drift (production truth): the creator now returns verified
+    # readback evidence (DraftPrPublicationEvidence) instead of the legacy
+    # (url, head_sha) tuple, so the fake must serve the full readback flow
+    # (open-PR lookup, PR readback, check-runs, combined status).
+    monkeypatch.setattr(
+        draft_pr_create_gate,
+        "urlopen",
+        _github_readback_urlopen(
+            existing_prs=[{
+                "html_url": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/444",
+                "draft": True,
+                "number": 444,
+            }],
+            pr_number=444,
+            head_sha=head_sha,
+            head_branch=request.head_branch,
+        ),
     )
 
-    class FakeResponse:
-        def __enter__(self):
-            return self
+    evidence = GitHubApiDraftPrCreator().create_draft_pr(request, "test-token")
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def read(self):
-            return b'[{"html_url":"https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/444","draft":true}]'
-
-    monkeypatch.setattr(draft_pr_create_gate, "urlopen", lambda request, timeout=30: FakeResponse())
-
-    url, head_sha = GitHubApiDraftPrCreator().create_draft_pr(request, "test-token")
-
-    assert url.endswith("/pull/444")
-    assert head_sha == "a" * 40
+    assert evidence.pr_url.endswith("/pull/444")
+    assert evidence.pr_number == 444
+    assert evidence.published_head_sha == head_sha
+    assert evidence.readback_head_sha == head_sha
+    assert evidence.readback_verified is True
+    assert evidence.checks_readback_verified is True
+    assert evidence.draft_verified is True
 
 
 def test_github_creator_blocks_existing_non_draft_pr(monkeypatch):
@@ -205,7 +271,9 @@ def test_github_creator_blocks_existing_non_draft_pr(monkeypatch):
             return False
 
         def read(self):
-            return b'[{"html_url":"https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/445","draft":false}]'
+            # Production readback contract: entries require a valid positive
+            # "number" so the non-draft guard can identify the blocking PR.
+            return b'[{"html_url":"https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/445","draft":false,"number":445}]'
 
     monkeypatch.setattr(draft_pr_create_gate, "urlopen", lambda request, timeout=30: FakeResponse())
 
@@ -217,14 +285,22 @@ def test_github_creator_blocks_existing_non_draft_pr(monkeypatch):
 
 
 def test_draft_pr_create_signal_is_serializable():
-    result = create_draft_pr_for_job(ready_job(
-        pr_state="created",
-        pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/321",
-    ))
+    # Injected creator: network-free idempotent path (see idempotency test).
+    result = create_draft_pr_for_job(
+        ready_job(
+            pr_state="created",
+            pr_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/321",
+        ),
+        creator=FakeDraftPrCreator(),
+        token="test-token",
+    )
 
     signal = draft_pr_create_signal(result)
 
     assert signal["allowed"] is True
     assert signal["status"] == "created"
     assert signal["prUrl"].endswith("/pull/321")
-    assert signal["signal"] == "agent_draft_pr_created"
+    # Renamed event for the unverified injected-creator path (see drift note
+    # in test_create_uses_injected_creator_and_requires_valid_url).
+    assert signal["signal"] == "agent_draft_pr_created_unverified_test_creator"
+    json.dumps(signal)  # signal payload must stay JSON-serializable

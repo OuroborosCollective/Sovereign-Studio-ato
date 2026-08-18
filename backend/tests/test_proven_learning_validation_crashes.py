@@ -18,13 +18,19 @@ if "flask" not in sys.modules:
     flask_stub.request = SimpleNamespace()
     sys.modules["flask"] = flask_stub
 
-import flask
-flask.request = SimpleNamespace(headers={}, remote_addr="127.0.0.1")
+import flask  # noqa: F401 - guarantees a flask module exists (stub installed above if missing)
 
 if "requests" not in sys.modules:
     sys.modules["requests"] = ModuleType("requests")
 
 import proven_learning_runtime
+
+# proven_learning_runtime binds flask.jsonify/request at import time
+# (`from flask import jsonify, request`). Patch those bound module names
+# directly instead of mutating the shared flask module, so the tests work
+# regardless of whether a real Flask or the import stub was bound first in
+# this pytest session.
+proven_learning_runtime.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
 
 
 class MockCursor:
@@ -69,11 +75,11 @@ class MockApp:
 
 class TestProvenLearningValidationCrashes(unittest.TestCase):
     def setUp(self):
-        self.old_request = getattr(flask, "request", None)
-        flask.request = SimpleNamespace(headers={}, get_json=lambda *args, **kwargs: {})
+        self.old_request = proven_learning_runtime.request
+        proven_learning_runtime.request = SimpleNamespace(headers={}, get_json=lambda *args, **kwargs: {})
 
-        self.old_jsonify = getattr(flask, "jsonify", None)
-        flask.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs, 400)
+        self.old_jsonify = proven_learning_runtime.jsonify
+        proven_learning_runtime.jsonify = lambda value=None, **kwargs: (value if value is not None else kwargs)
 
         # Mock service authorization to return True so route logic reaches payload processing
         self.old_service_authorized = proven_learning_runtime._service_authorized
@@ -87,9 +93,9 @@ class TestProvenLearningValidationCrashes(unittest.TestCase):
 
     def tearDown(self):
         if self.old_request is not None:
-            flask.request = self.old_request
+            proven_learning_runtime.request = self.old_request
         if self.old_jsonify is not None:
-            flask.jsonify = self.old_jsonify
+            proven_learning_runtime.jsonify = self.old_jsonify
         proven_learning_runtime._service_authorized = self.old_service_authorized
 
     def test_non_dict_payloads_rejected_safely(self):
@@ -112,8 +118,7 @@ class TestProvenLearningValidationCrashes(unittest.TestCase):
             self.assertTrue(callable(handler), f"Handler not registered for path {path}")
 
             for malformed in malformed_bodies:
-                flask.request.get_json = lambda *args, **kwargs: malformed
-                proven_learning_runtime.request = flask.request
+                proven_learning_runtime.request.get_json = lambda *args, **kwargs: malformed
 
                 res = handler()
 

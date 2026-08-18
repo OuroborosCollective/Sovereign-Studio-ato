@@ -15,9 +15,9 @@ import type { SovereignActionEventInput } from './sovereignActionStreamRuntime';
 import type { DevChatWorkerIntentKind } from './devChatWorkerBridge';
 import type { RepoFile } from '../../github/types';
 
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 // TYPES
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 
 export interface IntegrationIntentDraft {
   /** Unique identifier for this draft */
@@ -75,9 +75,9 @@ export type IntegrationIntentDraftAction =
   | { type: 'REPHRASE_DRAFT' }
   | { type: 'CLEAR_DRAFT' };
 
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 // INTERNAL HELPERS
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 
 /**
  * Generate a deterministic draft ID from runtime input.
@@ -107,7 +107,7 @@ function extractScopeKeywords(input: string): string[] {
   const lower = input.toLowerCase();
 
   const scopePatterns = [
-    { pattern: /ui|oberflГӨche|interface|komponente|komponent|button|button|eingabe|formular|form/i, label: 'UI/Komponenten' },
+    { pattern: /ui|oberfläche|interface|komponente|komponent|button|button|eingabe|formular|form/i, label: 'UI/Komponenten' },
     { pattern: /runtime|routing|router|route|pfad|aktion/i, label: 'Runtime/Routing' },
     { pattern: /security|sicherheit|token|key|auth|zugang/i, label: 'Sicherheit/Auth' },
     { pattern: /test|testen|pruef|validierung/i, label: 'Tests/Validierung' },
@@ -150,7 +150,7 @@ function deriveAffectedFiles(input: string, repoFiles?: RepoFile[], options?: Cr
   // Map keywords to potential file patterns
   const fileMappings: Array<{ keywords: string[]; patterns: string[] }> = [
     {
-      keywords: ['ui', 'oberflГӨche', 'interface', 'komponente', 'button'],
+      keywords: ['ui', 'oberfläche', 'interface', 'komponente', 'button'],
       patterns: ['components', 'ui', 'styles'],
     },
     {
@@ -214,7 +214,7 @@ function deriveAffectedFiles(input: string, repoFiles?: RepoFile[], options?: Cr
 function extractTitle(input: string): string {
   // Remove common prefixes
   let cleaned = input
-    .replace(/^(bitte |kГ¶nnten sie |kГ¶nntest du |ich mГ¶chte |ich will |soll |kann man |kГ¶nnen wir )+/gi, '')
+    .replace(/^(bitte |könnten sie |könntest du |ich möchte |ich will |soll |kann man |können wir )+/gi, '')
     .trim();
 
   // Limit length
@@ -234,14 +234,14 @@ function extractGoal(input: string): string {
 
   // Pattern matching for common goals
   const goalPatterns: Array<{ pattern: RegExp; goal: string }> = [
-    { pattern: /baue|gebaut|bauen|implementier|stelle her/i, goal: 'Neue FunktionalitГӨt implementieren' },
+    { pattern: /baue|gebaut|bauen|implementier|stelle her/i, goal: 'Neue Funktionalität implementieren' },
     { pattern: /fix|repariere|beheb|korrigier/i, goal: 'Fehler beheben' },
-    { pattern: /ГӨnder|modifizier|anpass|umgestal/i, goal: 'Bestehende FunktionalitГӨt ГӨndern' },
-    { pattern: /test|teste|prГјf/i, goal: 'Tests hinzufГјgen oder verbessern' },
-    { pattern: /entfern|lГ¶sch|streich/i, goal: 'FunktionalitГӨt entfernen' },
-    { pattern: /verbesser|optimier|verstГӨrk|hГӨrt/i, goal: 'QualitГӨt verbessern' },
-    { pattern: /dokumentier|beschreib|erklГӨr/i, goal: 'Dokumentation erstellen' },
-    { pattern: /refaktor|umstrukturiere|Гјberarbeite/i, goal: 'Code refaktorieren' },
+    { pattern: /änder|modifizier|anpass|umgestal/i, goal: 'Bestehende Funktionalität ändern' },
+    { pattern: /test|teste|prüf/i, goal: 'Tests hinzufügen oder verbessern' },
+    { pattern: /entfern|lösch|streich/i, goal: 'Funktionalität entfernen' },
+    { pattern: /verbesser|optimier|verstärk|härt/i, goal: 'Qualität verbessern' },
+    { pattern: /dokumentier|beschreib|erklär/i, goal: 'Dokumentation erstellen' },
+    { pattern: /refaktor|umstrukturiere|überarbeite/i, goal: 'Code refaktorieren' },
   ];
 
   for (const { pattern, goal } of goalPatterns) {
@@ -265,7 +265,7 @@ function createRephrasedText(input: string): string {
   }
 
   // Make it more actionable
-  if (!/^(baue|implementier|fix|ГӨnder|test|entfern|verbesser|dokumentier|refaktor)/i.test(rephrased)) {
+  if (!/^(baue|implementier|fix|änder|test|entfern|verbesser|dokumentier|refaktor)/i.test(rephrased)) {
     // Add "Implementiere" if no clear action verb
     if (!rephrased.startsWith('Der ') && !rephrased.startsWith('Die ')) {
       rephrased = 'Implementiere: ' + rephrased;
@@ -275,9 +275,9 @@ function createRephrasedText(input: string): string {
   return rephrased;
 }
 
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 // CORE RUNTIME FUNCTIONS
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 
 export interface CreateDraftOptions {
   /** Override timestamp for deterministic testing */
@@ -511,9 +511,9 @@ export function reduceIntegrationIntentDraftAction(
   }
 }
 
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 // ACTION EVENT BUILDERS
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 
 /**
  * Build action events for the Sovereign Action Stream.
@@ -539,7 +539,7 @@ export function buildDraftConfirmedEvent(draft: IntegrationIntentDraft): Soverei
   return {
     kind: 'route_selected',
     route: 'runtime',
-    label: 'Integrationsauftrag bestГӨtigt',
+    label: 'Integrationsauftrag bestätigt',
     detail: draft.title,
     state: 'done',
   };
@@ -585,17 +585,17 @@ export function buildRouteBlockedEvent(blocker: string): SovereignActionEventInp
   };
 }
 
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 // INITIAL STATE
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 
 export function createInitialDraftState(): IntegrationIntentDraftState {
   return { status: 'idle' };
 }
 
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 // QUERY HELPERS
-// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
+// в”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җв”Җ
 
 /**
  * Check if the current state indicates a confirmed draft ready for execution

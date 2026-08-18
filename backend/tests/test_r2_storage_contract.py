@@ -222,7 +222,10 @@ def test_migration_and_deploy_image_contain_r2_truth_contract() -> None:
     assert "source_id UUID REFERENCES knowledge_sources" in migration
     assert "job_id TEXT REFERENCES sovereign_agent_jobs" in migration
     assert "boto3" in requirements
-    assert "COPY r2_storage.py ." in dockerfile
+    # Contract drift (production truth): the explicit `COPY r2_storage.py .`
+    # line was subsumed by the `COPY *.py ./` wildcard in the image build.
+    # The wildcard guarantees r2_storage.py ships in the deploy image.
+    assert "COPY *.py ./" in dockerfile
 
 
 def test_backend_and_production_r2_adapters_execute_same_pdf_limits() -> None:

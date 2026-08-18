@@ -4,3 +4,6 @@
 
 # Test runner contract.
 pytest>=9.1.1,<10
+# Hang guard: any blocking test (regex ReDoS, socket waits) must fail loudly
+# instead of burning CI minutes until the job-level timeout kills the runner.
+pytest-timeout>=2.4.0,<3

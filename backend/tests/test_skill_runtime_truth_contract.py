@@ -10,10 +10,7 @@ STORE = ROOT / "src" / "features" / "toolchain" / "useSkillsStore.ts"
 RUNTIME = ROOT / "src" / "features" / "toolchain" / "skillRuntime.ts"
 PANEL = ROOT / "src" / "features" / "toolchain" / "components" / "SkillScanPanel.tsx"
 MIGRATION = ROOT / "scripts" / "sovereign-backend" / "migrations" / "020_user_skills_runtime_contract.sql"
-APP_SOURCES = (
-    ROOT / "backend" / "app.py",
-    ROOT / "scripts" / "sovereign-backend" / "app.py",
-)
+APP_SOURCES = (ROOT / "scripts" / "sovereign-backend" / "app.py",)
 
 
 def _function_ast(path: Path, name: str) -> str:
@@ -117,16 +114,14 @@ def test_user_skills_migration_matches_runtime_contract_without_destructive_acti
     assert "DELETE FROM user_skills" not in source
 
 
-def test_live_and_deploy_skill_functions_are_semantically_identical():
-    for name in (
-        "_scan_tree_for_skills",
-        "tc_skills_adapt",
-        "tc_skills_install",
-        "tc_skills_list",
-        "tc_skills_toggle",
-        "tc_skills_delete",
-    ):
-        assert _function_ast(APP_SOURCES[0], name) == _function_ast(
-            APP_SOURCES[1],
-            name,
-        )
+def test_backend_has_no_second_app_py_truth():
+    """Anti-regression guard replacing the old dual-source parity check.
+
+    `backend/app.py` was deliberately removed: scripts/sovereign-backend/app.py
+    is the single source of truth. If a second copy ever reappears, the
+    contracts above must be revisited instead of silently drifting apart.
+    """
+    assert not (ROOT / "backend" / "app.py").exists(), (
+        "backend/app.py must not exist - single source of truth is "
+        "scripts/sovereign-backend/app.py"
+    )

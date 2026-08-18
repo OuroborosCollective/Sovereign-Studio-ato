@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
-APP_SOURCES = (
-    ROOT / "backend" / "app.py",
-    ROOT / "scripts" / "sovereign-backend" / "app.py",
-)
+# Single source of truth: the live sovereign backend. backend/app.py was
+# deliberately removed; contracts must pin the production implementation only.
+PRODUCTION_APP = ROOT / "scripts" / "sovereign-backend" / "app.py"
+APP_SOURCES = (PRODUCTION_APP,)
 TARGET_FUNCTIONS = {
     "_worker_route_fields",
     "_reconcile_worker_routes_if_empty",
@@ -241,15 +241,25 @@ def test_mid_batch_failure_rolls_back_all_routes_and_audit_evidence():
         assert runtime.pool.returned == 1
 
 
-def test_auto_route_and_health_contract_reject_empty_catalog_green_state():
+def test_auto_route_rejects_empty_catalog_and_reconcile_stays_transactional():
     for path in APP_SOURCES:
         source = path.read_text(encoding="utf-8")
-        assert "_restored_count, reconcile_error = _reconcile_worker_routes_if_empty()" in source
-        assert '"blocker": "llm_routes_empty"' in source
-        assert '"blocker": "llm_routes_empty_after_reconcile"' in source
-        assert "routes_healthy = active_routes > 0" in source
-        assert '"status": "healthy" if routes_healthy else "degraded"' in source
-        assert '"blocker": None if routes_healthy else "llm_routes_empty"' in source
+
+        # New truth: the reconcile helper still exists with its transactional
+        # safeguards, but it is no longer wired implicitly into the resolve or
+        # auto-route paths; an empty policy-verified catalog is an explicit
+        # blocker (503), never a silently green or self-healing state.
+        assert "def _reconcile_worker_routes_if_empty" in source
+        assert "_restored_count, reconcile_error = _reconcile_worker_routes_if_empty()" not in source
+
+        auto_route_start = source.index("def public_llm_auto_route():")
+        auto_route_end = source.index("\ndef ", auto_route_start + 1)
+        auto_route_source = source[auto_route_start:auto_route_end]
+        assert "_reconcile_worker_routes_if_empty" not in auto_route_source
+        assert '"blocker": "llm_routes_empty"' in auto_route_source
+        assert "), 503" in auto_route_source
+
+        # The reconcile path itself stays fail-closed and atomic.
         assert "ON CONFLICT (model_id) DO UPDATE SET" in source
         assert "SELECT pg_advisory_xact_lock(hashtext(%s))" in source
         assert "conn.rollback()" in source
