@@ -7,7 +7,7 @@
 # Networks:
 # - supabase_default: Network for PostgreSQL database access
 # - areloria_arelorian-network: Network for Areloria services
-# - sovereign-private: Internal-only direct OpenRouter and FreeLLM routing network
+# - sovereign-private: Internal-only OpenRouter, FreeLLMAPI and OmniRoute network
 # =============================================================================
 
 services:
@@ -33,6 +33,7 @@ services:
       - .env
       - /opt/sovereign-chatgpt-tools/backend-runtime.env
     environment:
+      # Existing FreeLLMAPI contract intentionally remains unchanged.
       SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE: /opt/sovereign-owner-managed/freellmapi_unified_key.txt
       SOVEREIGN_RUNTIME_ENVIRONMENT: production
       # Source revision is baked into the image; do not override it at runtime.
@@ -43,6 +44,9 @@ services:
       SOVEREIGN_LLM_ROUTE_SCANNER_INITIAL_DELAY_SECONDS: "30"
       SOVEREIGN_LLM_ROUTE_SCANNER_MAX_CANDIDATES: "24"
       SOVEREIGN_LLM_ROUTE_SCANNER_MAX_WORKERS: "4"
+      SOVEREIGN_OMNIROUTE_EXECUTION_ENABLED: "1"
+      SOVEREIGN_OMNIROUTE_EXECUTION_INITIAL_DELAY_SECONDS: "15"
+      SOVEREIGN_OMNIROUTE_EXECUTION_INTERVAL_SECONDS: "21600"
       SOVEREIGN_AGENT_WORKSPACE_ROOT: /var/lib/sovereign-agent/workspaces
       SOVEREIGN_AGENT_WORKSPACE_UID: "10001"
       SOVEREIGN_AGENT_WORKSPACE_GID: "10001"
@@ -62,6 +66,49 @@ services:
       retries: 3
       start_period: 10s
 
+  # Replaces only the retired FreeLLMPool/FreeLLM-Routes source. The separate
+  # sovereign-freellmapi service and its owner-managed provider keys stay intact.
+  omniroute:
+    image: docker.io/diegosouzapw/omniroute:3.8.48@sha256:badb560971fdc23c2fb84b3e8695116239ff215b4cca4b07076201a8efae7f0d
+    container_name: sovereign-omniroute
+    init: true
+    user: "1000:1000"
+    read_only: true
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    stop_grace_period: 40s
+    environment:
+      NODE_ENV: production
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      DATA_DIR: /app/data
+      OMNIROUTE_MEMORY_MB: "1024"
+      NODE_OPTIONS: --max-old-space-size=1024
+    volumes:
+      - sovereign-omniroute-data:/app/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    restart: unless-stopped
+    networks:
+      sovereign-private:
+        aliases:
+          - omniroute
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      sovereign.component: omniroute
+      sovereign.replaces: freellmpool-routes
+      sovereign.version: "3.8.48"
+      sovereign.image-digest: sha256:badb560971fdc23c2fb84b3e8695116239ff215b4cca4b07076201a8efae7f0d
+
 networks:
   supabase_default:
     external: true
@@ -69,3 +116,7 @@ networks:
     external: true
   sovereign-private:
     external: true
+
+volumes:
+  sovereign-omniroute-data:
+    name: sovereign-omniroute-data
