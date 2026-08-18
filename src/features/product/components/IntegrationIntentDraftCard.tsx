@@ -14,6 +14,24 @@
 import React from 'react';
 import type { IntegrationIntentDraft, IntegrationIntentDraftGateSnapshot } from '../runtime/integrationIntentDraftRuntime';
 
+/**
+ * Latch that blocks double-submit: after the first click on any of the three
+ * actions the whole action row is disabled until the parent removes the card.
+ * Without this, a fast double-click on "Einbauen" could emit the confirm
+ * intent twice (double action events / duplicate executor start attempts).
+ */
+function useActionLatch(): { acted: boolean; act: () => boolean } {
+  const actedRef = React.useRef(false);
+  const [acted, setActed] = React.useState(false);
+  const act = React.useCallback(() => {
+    if (actedRef.current) return false;
+    actedRef.current = true;
+    setActed(true);
+    return true;
+  }, []);
+  return { acted, act };
+}
+
 export interface IntegrationIntentDraftCardProps {
   /** The recognized integration draft */
   draft: IntegrationIntentDraft;
@@ -83,20 +101,34 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   canConfirm = true,
   confirmBlocker,
 }) => {
+  const { acted, act } = useActionLatch();
+
   // Determine if we need GitHub access to proceed
   const needsGitHubAccess = gateSnapshot.repoReady && !gateSnapshot.githubWriteReady;
-  
+
   // The "Einbauen" button should be enabled if repo is ready
   // Even without GitHub write, clicking it should lead to the access gate
-  const einbauenEnabled = gateSnapshot.repoReady && (canConfirm || needsGitHubAccess);
-  
+  const einbauenEnabled = !acted && gateSnapshot.repoReady && (canConfirm || needsGitHubAccess);
+
   // Handler for Einbauen - uses GitHub access flow if needed
   const handleEinbauen = () => {
     if (needsGitHubAccess && onConfirmWithGitHubAccess) {
+      if (!act()) return;
       onConfirmWithGitHubAccess();
     } else if (canConfirm) {
+      if (!act()) return;
       onConfirm();
     }
+  };
+
+  const handleRephrase = () => {
+    if (!act()) return;
+    onRephrase();
+  };
+
+  const handleReject = () => {
+    if (!act()) return;
+    onReject();
   };
 
   return (
@@ -227,8 +259,9 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           {/* Neu formulieren */}
           <button
             type="button"
-            onClick={onRephrase}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-[0.98] transition-all"
+            onClick={handleRephrase}
+            disabled={acted}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="btn-rephrase"
             aria-label="Integrationsauftrag neu formulieren"
           >
@@ -238,8 +271,9 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           {/* Ablehnen */}
           <button
             type="button"
-            onClick={onReject}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all"
+            onClick={handleReject}
+            disabled={acted}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="btn-reject"
             aria-label="Integrationsauftrag ablehnen"
           >
