@@ -243,16 +243,24 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             </div>
             
             {/* Bubble */}
-            <div
-              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                msg.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-tr-sm'
-                  : msg.role === 'system'
-                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-tl-sm'
-                  : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
-              }`}
-            >
-              {msg.content}
+            <div className="flex flex-col gap-1 max-w-[85%]">
+              <div
+                className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                  msg.role === 'user'
+                    ? 'bg-indigo-600 text-white rounded-tr-sm'
+                    : msg.role === 'system'
+                    ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-tl-sm'
+                    : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
+                }`}
+              >
+                {msg.content}
+              </div>
+              {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
+                <div className="text-[10px] text-amber-500/70 px-2 flex items-center gap-1 opacity-80" title="Aufgrund eines Fehlers wurde auf ein alternatives Modell zurückgegriffen">
+                  <AlertTriangle size={10} />
+                  Fallback: {msg.metadata.modelId as string}
+                </div>
+              )}
             </div>
           </div>
         ))}
