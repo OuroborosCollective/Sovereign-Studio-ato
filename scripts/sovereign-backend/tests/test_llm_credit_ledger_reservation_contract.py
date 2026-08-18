@@ -64,15 +64,18 @@ def test_every_productive_direct_llm_ledger_type_is_allowed_by_migration():
     assert runtime_types <= allowed
 
 
-def test_paid_reservation_is_persisted_before_provider_execution():
+def test_paid_reservation_is_persisted_before_direct_provider_execution():
     source = PRODUCTIVE_APP.read_text(encoding="utf-8")
     start = source.index("def public_llm_chat():")
     route_source = source[start:]
 
     reservation = "_reserve_provider_funded_llm_credits("
+    direct_execution = "fetch_direct_llm("
     assert reservation in route_source
-    assert "fetch_worker_ai(" in route_source
-    assert route_source.index(reservation) < route_source.index("fetch_worker_ai(")
+    assert direct_execution in route_source
+    assert route_source.index(reservation) < route_source.index(direct_execution)
+    assert "fetch_worker_ai(" not in route_source
+    assert 'transport not in {"openrouter", "freellm"}' in route_source
     assert 'ledger_type="llm_usage_reservation"' in source
     assert 'ledger_type="llm_usage_refund"' in source
     assert 'ledger_type="llm_usage_adjustment"' in source
