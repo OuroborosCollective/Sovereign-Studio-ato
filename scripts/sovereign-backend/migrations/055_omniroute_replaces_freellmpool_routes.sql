@@ -11,6 +11,7 @@ DECLARE
     omniroute_base CONSTANT TEXT := 'http://omniroute:20128/v1';
     retired_pool_base CONSTANT TEXT := 'http://freellmpool:8080/v1';
 BEGIN
+    -- Historical FreeLLMPool evidence remains readable, but never executable.
     UPDATE llm_revolver_provider_sources
     SET enabled=false,
         status='disabled',
@@ -40,6 +41,9 @@ BEGIN
         updated_at=NOW()
     WHERE lower(COALESCE(base_url, ''))=lower(retired_pool_base);
 
+    -- FreeLLMAPI is intentionally untouched. OmniRoute is a second source in
+    -- the existing free-revolver family, so OpenRouter/Billing/Resolver do not
+    -- need a second competing routing authority.
     INSERT INTO llm_revolver_provider_sources (
         id, label, api_base, models_url, auth_mode, status,
         last_error_code, enabled, updated_at
