@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "sovereign.integration-plan.v1",
+  "title": "Fix stale agent consent blocking and restore chat-first layout",
+  "baseRevision": "78cf4377179ad7d04a70663f9dcea0dbdefecf14",
+  "branch": "fix/app-consent-state-chat-flow",
+  "scope": [
+    "src/App.tsx",
+    "src/features/product/components/AgentEventStream.tsx",
+    "src/features/product/components/ActionSuggestionStrip.tsx",
+    "src/features/product/components/IntegrationIntentDraftCard.tsx",
+    "src/features/product/components/chatFlowContract.test.ts"
+  ],
+  "invariants": [
+    "Fresh chat sessions never auto-adopt a persisted agent job.",
+    "Persisted jobs remain recoverable only through explicit Rescue adoption.",
+    "A pending consent draft cannot be made busy by unrelated historical executor state.",
+    "Reject remains available even when execution confirmation is blocked.",
+    "Operational evidence stays accessible but compact by default so conversational messages retain visual priority.",
+    "No provider, billing, GitHub authority, deployment or secret boundary is weakened."
+  ],
+  "acceptance": [
+    "Typecheck, unit tests and web build pass on the exact PR head.",
+    "Chat-flow contract regression passes.",
+    "Current App source contains no automatic listJobs/restoreLatestJob adoption path.",
+    "AgentEventStream and guided actions render collapsed by default.",
+    "Integration draft reject action remains enabled independently of executor readiness."
+  ]
+}
