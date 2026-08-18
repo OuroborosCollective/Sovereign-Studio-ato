@@ -34,6 +34,7 @@ OPERATOR_SECRET_MARKERS = (
     "begin rsa private key",
 )
 ALLOWED_TARGETS = {
+    "github_token": "GitHub Zugriffsschlüssel / PAT",
     "openai_api_key": "OpenAI API-Key",
     "openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle",
     "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
