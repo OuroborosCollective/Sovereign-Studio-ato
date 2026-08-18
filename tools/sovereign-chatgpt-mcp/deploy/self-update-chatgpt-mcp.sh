@@ -9,6 +9,7 @@ STATUS_FILE="$STATE_DIR/status.json"
 INSTALLER="$SOURCE_DIR/tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh"
 BROKER_ENV="/opt/sovereign-chatgpt-tools/broker.env"
 GHCR_ENV="${SOVEREIGN_MCP_GHCR_ENV:-/opt/sovereign-chatgpt-tools/.ghcr.env}"
+OWNER_GITHUB_TOKEN_FILE="${SOVEREIGN_MCP_GITHUB_TOKEN_FILE:-/opt/sovereign-owner-managed/github_owner_token.txt}"
 SELF_UPDATE_TUNNEL_MODE="${SOVEREIGN_MCP_SELF_UPDATE_TUNNEL_MODE:-disabled}"
 SELF_UPDATE_ENABLED="${SOVEREIGN_MCP_ENABLE_SELF_UPDATE:-0}"
 BROKER_READY_ATTEMPTS="${SOVEREIGN_MCP_BROKER_READY_ATTEMPTS:-90}"
@@ -135,7 +136,8 @@ PY
 )"
 
 CURRENT_STAGE="prepare_ephemeral_github_app_auth"
-TOKEN="$(PYTHONPATH=/opt/sovereign-chatgpt-tools/broker python3 - <<'PY'
+TOKEN=""
+if APP_TOKEN="$(PYTHONPATH=/opt/sovereign-chatgpt-tools/broker python3 - <<'PY'
 import os
 from github_installation_auth import GitHubAppInstallationAuth, GitHubAppInstallationConfig
 repository = os.getenv("SOVEREIGN_MCP_REPOSITORY", "").strip()
@@ -143,9 +145,31 @@ auth = GitHubAppInstallationAuth(GitHubAppInstallationConfig.from_env(repository
 with auth.token() as token:
     print(token, end="")
 PY
-)"
+)"; then
+  TOKEN="$APP_TOKEN"
+fi
+unset APP_TOKEN
+
+if [[ -z "$TOKEN" && -f "$OWNER_GITHUB_TOKEN_FILE" ]]; then
+  python3 - "$OWNER_GITHUB_TOKEN_FILE" <<'PY'
+from pathlib import Path
+import stat
+import sys
+
+path = Path(sys.argv[1])
+metadata = path.lstat()
+if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+    raise SystemExit("owner GitHub token file violates the protected file contract")
+if metadata.st_size < 20 or metadata.st_size > 8192:
+    raise SystemExit("owner GitHub token file has an invalid size")
+value = path.read_text("utf-8").strip()
+if len(value) < 20 or any(character.isspace() for character in value):
+    raise SystemExit("owner GitHub token file has an invalid format")
+PY
+  TOKEN="$(cat "$OWNER_GITHUB_TOKEN_FILE")"
+fi
 if [[ -z "$TOKEN" ]]; then
-  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; ephemeral GitHub App installation token was not issued"
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; neither GitHub App nor protected owner GitHub token produced a credential"
   exit 1
 fi
 ASKPASS_DIR="$(mktemp -d)"
@@ -260,8 +284,15 @@ unset GITHUB_TOKEN
 }
 
 CURRENT_STAGE="checkout_confirmed_revision"
-git checkout main
+git checkout --detach --force "$EXPECTED_REVISION"
 git reset --hard "$EXPECTED_REVISION"
+git clean -fd
+CHECKED_OUT_REVISION="$(git rev-parse HEAD)"
+[[ "$CHECKED_OUT_REVISION" == "$EXPECTED_REVISION" ]] || {
+  write_status FAILED "$EXPECTED_REVISION" "stage=${CURRENT_STAGE}; detached source checkout did not match the expected revision"
+  exit 1
+}
+unset CHECKED_OUT_REVISION
 [[ -x "$INSTALLER" ]] || chmod 0750 "$INSTALLER"
 
 CURRENT_STAGE="install_control_plane"
