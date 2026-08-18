@@ -17,6 +17,11 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+# Insert the repo root so `from backend.agent_runtime...` resolves regardless of
+# how pytest is launched (console `pytest` does not add cwd to sys.path, unlike
+# `python -m pytest`). ROOT/backend is also added so modules that import
+# `agent_runtime` as a top-level package keep working.
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
 from backend.agent_runtime.wolfram_cag_evidence import (
