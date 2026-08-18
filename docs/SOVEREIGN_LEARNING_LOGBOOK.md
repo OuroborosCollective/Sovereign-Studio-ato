@@ -249,3 +249,24 @@ Dieses Logbuch enthält ausschließlich evidence-geprüfte, deduplizierte Lernmu
 - Endpoint and frontend reference (repository_check, SHA-256 abc5b9fcb2325b5624baf18303dc2acbb3704d89fcb627fee86cea531f1a50c5): Aktive und nichtaktive Frontend-Aufrufe sowie Backendverträge wurden revisionsgebunden referenziert; der gefundene Legacy-Blindfleck erhielt Regressionstests.
 - Mirror equality (repository_check, SHA-256 0a6ee128bbd8e08ea87f93124d71d752198010388b851e5b1f03098730e6aa6a): Alle kanonischen Spiegelpaare waren bytegleich; mismatchCount war null.
 
+<!-- proven-learning:da22d3d5f6daa4dd95d5c13b39db1a51c94006606d989666eb724b406bfd11ff -->
+## OmniRoute runtime topology completes FreeLLMPool retirement
+
+- Zeitpunkt: 2026-08-18T16:29:00+02:00
+- Vorgang: integration
+- Inhalts-Hash: sha256:da22d3d5f6daa4dd95d5c13b39db1a51c94006606d989666eb724b406bfd11ff
+- Quellrevision: 38b669351a8300c3e4e9fb7e5750d1a04b839801
+- Merge-Ziel: main
+- Erwarteter PR-Head: wird beim PR-Gate gebunden
+- Geänderte Pfade: tools/sovereign-chatgpt-mcp/deploy/install-on-vps.sh, tools/sovereign-chatgpt-mcp/deploy/sovereign-chatgpt-command-worker.service, tools/sovereign-chatgpt-mcp/managed_compose.py, tools/sovereign-chatgpt-mcp/templates/sovereign-omniroute/docker-compose.yml, tools/sovereign-chatgpt-mcp/tests/test_freellmpool_managed_compose.py, tools/sovereign-chatgpt-mcp/tests/test_install_contract.py, tools/sovereign-chatgpt-mcp/tests/test_managed_compose.py
+- Problem: Repository main already preserved FreeLLMAPI and applied migration 055 with zero FreeLLMPool routes plus one fail-closed OmniRoute route, but live PatchMon/Docker evidence still showed the legacy sovereign-freellmpool container running and no sovereign-omniroute container because the MCP managed-compose/installer control plane still registered and required FreeLLMPool.
+- Lösung: Replace only the managed FreeLLMPool stack contract with an immutable sovereign-omniroute stack on sovereign-private; verify non-root/read-only/no-capabilities/no-published-ports plus a real /v1/models canary; only after OmniRoute verifies, remove the exact identity-bound legacy freellmpool container while preserving its image and volume. Keep sovereign-freellmapi untouched and remove the retired pool key/container requirements from the installer and host-worker writable roots.
+- Gültigkeit: Applies to Sovereign Studio ATO runtime topology at and after repository revision 38b669351a8300c3e4e9fb7e5750d1a04b839801. It does not authorize replacing FreeLLMAPI, OpenRouter, Revolver, billing or resolver truth owners.
+- Quellen: OuroborosCollective/Sovereign-Studio-ato@38b669351a8300c3e4e9fb7e5750d1a04b839801:backend/migrations/055_omniroute_replaces_freellmpool_routes.sql; OuroborosCollective/Sovereign-Studio-ato@38b669351a8300c3e4e9fb7e5750d1a04b839801:scripts/sovereign-backend/docker-compose.yml; OuroborosCollective/Sovereign-Studio-ato@38b669351a8300c3e4e9fb7e5750d1a04b839801:tools/sovereign-chatgpt-mcp/managed_compose.py
+
+### Nachweise
+
+- Installer contract tests (repository_check, SHA-256 383fb5e589e861b49323f80b4f534844d4d0ba4cc41c3deef68f3da61067ae5e): Fifteen installer contract tests passed, including real bash syntax validation and updated host-worker/allowlist contracts.
+- Managed Compose tests (repository_check, SHA-256 6b24fae8ef369e64a1ede2fc99a39fb2a31097fd4afe579c766febdae2d9f9a9): Thirty-one managed-compose tests passed with the OmniRoute stack in the exact allowlist.
+- OmniRoute managed-compose tests (repository_check, SHA-256 8d64adaee8cf351d52679671dc32fe0175865bc971942f87e970c6a70ba51a4d): Six focused tests passed, covering OmniRoute stack replacement, transport policy, models canary and identity-bound legacy retirement.
+

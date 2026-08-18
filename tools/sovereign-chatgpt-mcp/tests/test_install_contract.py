@@ -132,7 +132,7 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "sovereign-backend-image.yml" in script
     assert "SOVEREIGN_MCP_ALLOWED_CONTAINERS" in script
     assert "gpt-browserless" in script
-    assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1"' in script
+    assert 'remove_csv_values "$MANAGED_ENV" SOVEREIGN_MCP_ALLOWED_CONTAINERS "sovereign-litellm-litellm-1,sovereign-litellm-db-1,sovereign-freellmpool"' in script
     required_container_line = next(
         line for line in script.splitlines() if line.startswith("for REQUIRED_CONTAINER in ")
     )
@@ -146,7 +146,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert "patchmon-sovereign-redis-1" in script
     assert "patchmon-sovereign-guacd-1" in script
     assert "sovereign-freellmapi" in script
-    assert "sovereign-freellmpool" in script
+    assert "sovereign-omniroute" in script
+    assert "sovereign-freellmpool" not in required_container_line
     assert "GITHUB_TOKEN" in script
     assert "ReadWritePaths=/run/sovereign-chatgpt-broker /opt/sovereign-chatgpt-tools/workspaces" in service
     assert "RuntimeDirectoryPreserve=yes" in service
@@ -170,7 +171,8 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert '/opt/patchmon-sovereign' in worker_service
     assert '/opt/milvus-sovereign' in worker_service
     assert '/opt/sovereign-freellmapi' in worker_service
-    assert '/opt/sovereign-freellmpool' in worker_service
+    assert '/opt/sovereign-omniroute' in worker_service
+    assert '/opt/sovereign-freellmpool' not in worker_service
     assert 'install -m 0640 "$SOURCE_DIR/litellm_stack.py" "$BROKER_DIR/litellm_stack.py"' not in script
     assert 'remove_managed_legacy_file "$BROKER_DIR/litellm_stack.py" "broker/litellm_stack.py"' in script
     assert 'rm -f "$BROKER_DIR/litellm_stack.py"' not in script
@@ -185,20 +187,20 @@ def test_private_broker_admin_mode_is_installed_and_receives_its_switches() -> N
     assert 'templates/patchmon-sovereign' in script
     assert 'templates/milvus-sovereign' in script
     assert 'templates/sovereign-freellmapi' in script
-    assert 'templates/sovereign-freellmpool' in script
+    assert 'templates/sovereign-omniroute' in script
     assert 'install_managed_control_plane_file 0640 "$PGBACKWEB_TEMPLATE_SOURCE/docker-compose.yml" "$PGBACKWEB_TEMPLATE_DIR/docker-compose.yml" "templates/pgbackweb-wq5r/docker-compose.yml"' in script
     assert 'install_managed_control_plane_file 0640 "$PATCHMON_TEMPLATE_SOURCE/docker-compose.yml" "$PATCHMON_TEMPLATE_DIR/docker-compose.yml" "templates/patchmon-sovereign/docker-compose.yml"' in script
     assert 'install_managed_control_plane_file 0640 "$MILVUS_TEMPLATE_SOURCE/docker-compose.yml" "$MILVUS_TEMPLATE_DIR/docker-compose.yml" "templates/milvus-sovereign/docker-compose.yml"' in script
     assert 'install_managed_control_plane_file 0640 "$FREELLMAPI_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMAPI_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmapi/docker-compose.yml"' in script
-    assert 'install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/docker-compose.yml" "$FREELLMPOOL_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-freellmpool/docker-compose.yml"' in script
-    assert 'install_managed_control_plane_file 0640 "$FREELLMPOOL_TEMPLATE_SOURCE/freellmpool-entrypoint.py" "$FREELLMPOOL_TEMPLATE_DIR/freellmpool-entrypoint.py" "templates/sovereign-freellmpool/freellmpool-entrypoint.py"' in script
+    assert 'install_managed_control_plane_file 0640 "$OMNIROUTE_TEMPLATE_SOURCE/docker-compose.yml" "$OMNIROUTE_TEMPLATE_DIR/docker-compose.yml" "templates/sovereign-omniroute/docker-compose.yml"' in script
     assert '"pgbackweb-wq5r"' in script
     assert '"patchmon-sovereign"' in script
     assert '"milvus-sovereign"' in script
     assert '"sovereign-freellmapi"' in script
-    assert '"sovereign-freellmpool"' in script
+    assert '"sovereign-omniroute"' in script
     assert 'SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE' in script
-    assert 'SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' in script
+    assert 'remove_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' in script
+    assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE' not in script
     assert '/opt/secure' in worker_service.split('ReadOnlyPaths=', 1)[1].splitlines()[0]
 
 

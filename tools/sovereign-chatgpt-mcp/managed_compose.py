@@ -80,6 +80,14 @@ FREELLMPOOL_ENTRYPOINT_COMMAND = [
 ]
 FREELLMPOOL_RUNTIME_UID = 10001
 FREELLMPOOL_RUNTIME_GID = 10001
+OMNIROUTE_CONTAINER = "sovereign-omniroute"
+OMNIROUTE_IMAGE = (
+    "docker.io/diegosouzapw/omniroute:3.8.48@"
+    "sha256:badb560971fdc23c2fb84b3e8695116239ff215b4cca4b07076201a8efae7f0d"
+)
+OMNIROUTE_DATA_VOLUME = "sovereign-omniroute-data"
+OMNIROUTE_RUNTIME_UID = 1000
+OMNIROUTE_RUNTIME_GID = 1000
 
 
 @dataclass(frozen=True)
@@ -197,19 +205,16 @@ STACKS: dict[str, ManagedStack] = {
             FREELLMAPI_PROVIDER_SECRET_ROOT,
         ),
     ),
-    "sovereign-freellmpool": ManagedStack(
-        stack_id="sovereign-freellmpool",
-        project_name="sovereign-freellmpool",
-        anchor_container=FREELLMPOOL_CONTAINER,
-        expected_containers=(FREELLMPOOL_CONTAINER,),
-        allowed_services=("freellmpool",),
-        deploy_root="/opt/sovereign-freellmpool",
-        template_name="sovereign-freellmpool",
+    "sovereign-omniroute": ManagedStack(
+        stack_id="sovereign-omniroute",
+        project_name="sovereign-omniroute",
+        anchor_container=OMNIROUTE_CONTAINER,
+        expected_containers=(OMNIROUTE_CONTAINER,),
+        allowed_services=("omniroute",),
+        deploy_root="/opt/sovereign-omniroute",
+        template_name="sovereign-omniroute",
         allowed_networks=("sovereign-private",),
-        allowed_bind_roots=(
-            "/opt/sovereign-freellmpool",
-            FREELLMPOOL_OWNER_KEY_PATH,
-        ),
+        allowed_bind_roots=("/opt/sovereign-omniroute",),
     ),
 }
 
@@ -489,7 +494,6 @@ class ManagedComposeRuntime:
                     "patchmon-sovereign",
                     "milvus-sovereign",
                     "sovereign-freellmapi",
-                    "sovereign-freellmpool",
                 }
                 else "external_or_not_required"
             ),
@@ -543,18 +547,15 @@ class ManagedComposeRuntime:
             if stack.stack_id == "patchmon-sovereign" and service_name == "redis":
                 if str(service.get("user") or "") != PATCHMON_REDIS_USER:
                     raise RuntimeError("PatchMon Redis muss mit der gepinnten Nicht-Root-Identität laufen")
-            if stack.stack_id == "sovereign-freellmpool" and service_name == "freellmpool":
-                if str(service.get("user") or "") != f"{FREELLMPOOL_RUNTIME_UID}:{FREELLMPOOL_RUNTIME_GID}":
-                    raise RuntimeError("FreeLLMPool muss mit der gepinnten Nicht-Root-Identität laufen")
+            if stack.stack_id == "sovereign-omniroute" and service_name == "omniroute":
+                if str(service.get("user") or "") != f"{OMNIROUTE_RUNTIME_UID}:{OMNIROUTE_RUNTIME_GID}":
+                    raise RuntimeError("OmniRoute muss mit der gepinnten Nicht-Root-Identität laufen")
                 if service.get("read_only") is not True:
-                    raise RuntimeError("FreeLLMPool benötigt ein read-only Root-Dateisystem")
+                    raise RuntimeError("OmniRoute benötigt ein read-only Root-Dateisystem")
                 if set(service.get("cap_drop") or []) != {"ALL"}:
-                    raise RuntimeError("FreeLLMPool muss alle Linux-Capabilities abwerfen")
+                    raise RuntimeError("OmniRoute muss alle Linux-Capabilities abwerfen")
                 if "no-new-privileges:true" not in set(service.get("security_opt") or []):
-                    raise RuntimeError("FreeLLMPool benötigt no-new-privileges")
-                environment = service.get("environment")
-                if isinstance(environment, dict) and "FREELLMPOOL_PROXY_KEY" in environment:
-                    raise RuntimeError("FreeLLMPool Proxy-Key darf nicht in Compose-Umgebungswerten stehen")
+                    raise RuntimeError("OmniRoute benötigt no-new-privileges")
             if service.get("privileged"):
                 raise RuntimeError(f"privileged ist gesperrt: {service_name}")
             if service.get("network_mode") == "host" or service.get("pid") == "host" or service.get("ipc") == "host":
@@ -613,11 +614,11 @@ class ManagedComposeRuntime:
             ):
                 raise RuntimeError("FreeLLM API muss exakt auf v0.5.0 und den freigegebenen Digest gepinnt sein")
             if (
-                stack.stack_id == "sovereign-freellmpool"
-                and service_name == "freellmpool"
-                and image != FREELLMPOOL_IMAGE
+                stack.stack_id == "sovereign-omniroute"
+                and service_name == "omniroute"
+                and image != OMNIROUTE_IMAGE
             ):
-                raise RuntimeError("FreeLLMPool muss exakt auf den verifizierten immutable Digest gepinnt sein")
+                raise RuntimeError("OmniRoute muss exakt auf den verifizierten immutable Digest gepinnt sein")
             service_networks = service.get("networks")
             if isinstance(service_networks, dict):
                 used_networks = set(service_networks)
@@ -1581,6 +1582,114 @@ const Database = require('better-sqlite3');
         }
 
     @staticmethod
+    def _omniroute_transport_ready(state: dict[str, Any]) -> bool:
+        data_mounts = [
+            item
+            for item in state.get("mounts") or []
+            if isinstance(item, dict) and item.get("destination") == "/app/data"
+        ]
+        return bool(
+            state.get("present")
+            and state.get("running")
+            and state.get("health") == "healthy"
+            and not (state.get("publishedPorts") or {})
+            and "sovereign-private" in set(state.get("networks") or [])
+            and state.get("imageReference") == OMNIROUTE_IMAGE
+            and state.get("runtimeUser")
+            == f"{OMNIROUTE_RUNTIME_UID}:{OMNIROUTE_RUNTIME_GID}"
+            and state.get("readOnlyRootfs") is True
+            and state.get("privileged") is False
+            and set(state.get("capDrop") or []) == {"ALL"}
+            and "no-new-privileges:true" in set(state.get("securityOpt") or [])
+            and int(state.get("pidsLimit") or 0) == 256
+            and len(data_mounts) == 1
+            and data_mounts[0].get("type") == "volume"
+            and data_mounts[0].get("name") == OMNIROUTE_DATA_VOLUME
+            and data_mounts[0].get("rw") is True
+        )
+
+    def _omniroute_runtime_canary(self) -> dict[str, Any]:
+        script = r"""
+(async () => {
+  const response = await fetch('http://127.0.0.1:20128/v1/models');
+  const raw = await response.text();
+  if (raw.length > 2000000) throw new Error('models_response_too_large');
+  if (!response.ok) throw new Error('models_http_not_ready');
+  const payload = JSON.parse(raw);
+  const rows = Array.isArray(payload && payload.data) ? payload.data : [];
+  if (!rows.length) throw new Error('models_empty');
+  process.stdout.write(JSON.stringify({ok:true,httpStatus:response.status,modelCount:rows.length}));
+})().catch((error) => {
+  const message = String(error && error.message ? error.message : 'runtime_canary_failed');
+  process.stdout.write(JSON.stringify({
+    ok:false,
+    errorFamily:/^[a-z0-9_]{1,80}$/.test(message) ? message : 'runtime_canary_failed',
+  }));
+  process.exitCode = 1;
+});
+"""
+        receipt: dict[str, Any] = {}
+        for _attempt in range(30):
+            result = self._run(
+                ["docker", "exec", OMNIROUTE_CONTAINER, "node", "-e", script],
+                timeout=30,
+            )
+            try:
+                receipt = json.loads(str(result.get("stdout") or "").strip())
+            except json.JSONDecodeError:
+                receipt = {}
+            if result.get("ok") and receipt.get("ok") is True:
+                break
+            time.sleep(2)
+        ok = bool(
+            receipt.get("ok") is True
+            and int(receipt.get("httpStatus") or 0) == 200
+            and int(receipt.get("modelCount") or 0) > 0
+        )
+        return {
+            "ok": ok,
+            "status": "OMNIROUTE_MODELS_VERIFIED" if ok else "OMNIROUTE_RUNTIME_CANARY_FAILED",
+            "modelsStatus": int(receipt.get("httpStatus") or 0),
+            "modelCount": int(receipt.get("modelCount") or 0),
+            "errorFamily": None if ok else str(receipt.get("errorFamily") or "runtime_canary_failed"),
+            "responseContentReturned": False,
+            "secretValuesReturned": False,
+        }
+
+    def _retire_legacy_freellmpool(self) -> dict[str, Any]:
+        state = self._inspect(FREELLMPOOL_CONTAINER)
+        if not state.get("present"):
+            return {
+                "ok": True,
+                "status": "FREELLMPOOL_ALREADY_RETIRED",
+                "containerRemoved": False,
+                "imageRemoved": False,
+                "volumeRemoved": False,
+            }
+        if (
+            state.get("project") != "sovereign-freellmpool"
+            or state.get("service") != "freellmpool"
+            or state.get("imageReference") != FREELLMPOOL_IMAGE
+        ):
+            return {
+                "ok": False,
+                "status": "FREELLMPOOL_RETIREMENT_IDENTITY_MISMATCH",
+                "containerRemoved": False,
+                "imageRemoved": False,
+                "volumeRemoved": False,
+            }
+        result = self._run(["docker", "rm", "--force", FREELLMPOOL_CONTAINER], timeout=60)
+        readback = self._inspect(FREELLMPOOL_CONTAINER)
+        ok = bool(result.get("ok") and not readback.get("present"))
+        return {
+            "ok": ok,
+            "status": "FREELLMPOOL_RETIRED" if ok else "FREELLMPOOL_RETIREMENT_FAILED",
+            "containerRemoved": ok,
+            "imageRemoved": False,
+            "volumeRemoved": False,
+        }
+
+    @staticmethod
     def _freellmpool_transport_ready(state: dict[str, Any]) -> bool:
         data_mounts = [
             item
@@ -2108,8 +2217,8 @@ const call = async (names, payload) => {
             transport_verified = self._code_server_transport_ready(states.get(stack.anchor_container, {}))
         elif stack.stack_id == "sovereign-freellmapi":
             transport_verified = self._freellmapi_transport_ready(states.get(stack.anchor_container, {}))
-        elif stack.stack_id == "sovereign-freellmpool":
-            transport_verified = self._freellmpool_transport_ready(states.get(stack.anchor_container, {}))
+        elif stack.stack_id == "sovereign-omniroute":
+            transport_verified = self._omniroute_transport_ready(states.get(stack.anchor_container, {}))
         else:
             transport_verified = True
 
@@ -2133,8 +2242,8 @@ const call = async (names, payload) => {
                 "authenticatedModels": authenticated_models,
                 "secretValuesReturned": False,
             }
-        elif stack.stack_id == "sovereign-freellmpool":
-            runtime_canary = self._freellmpool_runtime_canary()
+        elif stack.stack_id == "sovereign-omniroute":
+            runtime_canary = self._omniroute_runtime_canary()
         elif stack.stack_id == "milvus-sovereign":
             transport_canary = self._milvus_runtime_canary()
             collection_canary = (
@@ -2161,6 +2270,12 @@ const call = async (names, payload) => {
             and bool(runtime_canary.get("ok"))
             and transport_verified
         )
+        legacy_retirement = (
+            self._retire_legacy_freellmpool()
+            if stack.stack_id == "sovereign-omniroute" and runtime_ok
+            else {"ok": True, "status": "NOT_REQUIRED"}
+        )
+        runtime_ok = bool(runtime_ok and legacy_retirement.get("ok"))
         return {
             "ok": runtime_ok,
             "status": "DEPLOYED_VERIFIED" if runtime_ok else "DEPLOYED_UNVERIFIED",
@@ -2171,6 +2286,7 @@ const call = async (names, payload) => {
             "transportVerified": transport_verified,
             "transportRepair": transport_repair,
             "runtimeCanary": runtime_canary,
+            "legacyRetirement": legacy_retirement,
             "networkPreflight": network_preflight,
             "resourcePreflight": resource_preflight,
             "secretEnvironment": secret_env,

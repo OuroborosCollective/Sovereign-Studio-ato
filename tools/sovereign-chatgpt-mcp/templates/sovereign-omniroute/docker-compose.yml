@@ -1,0 +1,49 @@
+services:
+  omniroute:
+    image: docker.io/diegosouzapw/omniroute:3.8.48@sha256:badb560971fdc23c2fb84b3e8695116239ff215b4cca4b07076201a8efae7f0d
+    container_name: sovereign-omniroute
+    init: true
+    user: "1000:1000"
+    read_only: true
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    stop_grace_period: 40s
+    environment:
+      NODE_ENV: production
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      DATA_DIR: /app/data
+      OMNIROUTE_MEMORY_MB: "1024"
+      NODE_OPTIONS: --max-old-space-size=1024
+    volumes:
+      - sovereign-omniroute-data:/app/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    restart: unless-stopped
+    networks:
+      sovereign-private:
+        aliases:
+          - omniroute
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      sovereign.component: omniroute
+      sovereign.replaces: freellmpool-routes
+      sovereign.version: "3.8.48"
+      sovereign.image-digest: sha256:badb560971fdc23c2fb84b3e8695116239ff215b4cca4b07076201a8efae7f0d
+
+networks:
+  sovereign-private:
+    external: true
+
+volumes:
+  sovereign-omniroute-data:
+    name: sovereign-omniroute-data
