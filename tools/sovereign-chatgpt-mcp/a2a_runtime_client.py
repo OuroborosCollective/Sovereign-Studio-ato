@@ -291,7 +291,7 @@ class A2ARuntimeClient(ControllerRuntimeClient):
         context_snapshot = run.get("context_snapshot") if isinstance(run.get("context_snapshot"), dict) else {}
         same_run = bool(
             str(final_task.get("id") or "") == run_id
-            and str(run.get("run_id") or "") == run_id
+            and str(run.get("run_id") or run.get("id") or "") == run_id
             and str(final_task.get("contextId") or "") == context_id
             and str(context_snapshot.get("a2aContextId") or "") == context_id
         )
@@ -340,7 +340,7 @@ class A2ARuntimeClient(ControllerRuntimeClient):
         final_state = self._state(final_task)
         same_run = bool(
             str(final_task.get("id") or "") == run_id
-            and str(run.get("run_id") or "") == run_id
+            and str(run.get("run_id") or run.get("id") or "") == run_id
             and str(final_task.get("contextId") or "") == context_id
         )
         projected = STATUS_MAP.get(final_status) == final_state

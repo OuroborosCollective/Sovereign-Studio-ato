@@ -489,6 +489,7 @@ class ControllerRuntimeClient(OwnerInputClient):
             payload.get("runId")
             or payload.get("run_id")
             or run.get("run_id")
+            or run.get("id")
             or ""
         ).strip()
         observed_run_verified = bool(
@@ -497,7 +498,7 @@ class ControllerRuntimeClient(OwnerInputClient):
         )
         scoped_run_id = observed_run_id or str(expected_run_id or "").strip()
         scoped_run_verified = bool(RUN_ID_RE.fullmatch(scoped_run_id))
-        event_id = str(event.get("eventId") or event.get("event_id") or "").strip()
+        event_id = str(event.get("eventId") or event.get("event_id") or event.get("id") or "").strip()
         event_verified = bool(event_id and event.get("created") is not False)
         resume_claim_evidence_id = str(payload.get("resumeClaimEvidenceId") or "").strip()
         resume_claim_verified = bool(
