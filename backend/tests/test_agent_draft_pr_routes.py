@@ -7,10 +7,38 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Flask, jsonify, request  # noqa: E402
+import pytest  # noqa: E402
 
+import agent_runtime.routes as agent_routes  # noqa: E402
+from agent_runtime.auto_code_review import AutoCodeReviewResult  # noqa: E402
 from agent_runtime.contracts import SovereignAgentEvent, SovereignAgentJobRequest  # noqa: E402
 from agent_runtime.job_store import create_agent_job_record, update_agent_job_state  # noqa: E402
 from agent_runtime.routes import register_sovereign_agent_routes  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _passing_auto_code_review(monkeypatch):
+    # Production drift: draft-pr/prepare is now gated behind a real auto code
+    # review (git diff + LLM route). These route-level contract tests isolate
+    # the Draft-PR preparation logic, so the review seam is stubbed to a
+    # passing verdict. The blocking behavior of the review itself is covered
+    # by the auto_code_review / verification gateway test suites.
+    monkeypatch.setattr(
+        agent_routes,
+        "auto_code_review",
+        lambda *args, **kwargs: AutoCodeReviewResult(
+            decision="passed",
+            passed=True,
+            summary="Code review passed: stubbed review for route-level Draft PR contract tests.",
+            findings=(),
+            high_count=0,
+            medium_count=0,
+            low_count=0,
+            model_used="test-double",
+            resolved_transport="test",
+            route_id="test-route",
+        ),
+    )
 
 
 class FakeCursor:
@@ -115,6 +143,11 @@ class FakeConnection:
 
     def commit(self):
         self.commits += 1
+
+    def rollback(self):
+        # Production drift: pattern-vector persistence calls conn.rollback()
+        # on its fail-closed paths (e.g. embedding unavailable in tests).
+        pass
 
     def close(self):
         pass
