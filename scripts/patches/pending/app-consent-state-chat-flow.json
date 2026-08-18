@@ -5,6 +5,7 @@
   "branch": "fix/app-consent-state-chat-flow",
   "scope": [
     "src/App.tsx",
+    "src/index.css",
     "src/features/product/components/AgentEventStream.tsx",
     "src/features/product/components/ActionSuggestionStrip.tsx",
     "src/features/product/components/IntegrationIntentDraftCard.tsx",
@@ -16,6 +17,7 @@
     "A pending consent draft cannot be made busy by unrelated historical executor state.",
     "Reject remains available even when execution confirmation is blocked.",
     "Operational evidence stays accessible but compact by default so conversational messages retain visual priority.",
+    "Short chat histories are visually anchored beside the composer without reversing chronological DOM order or breaking upward scrolling.",
     "No provider, billing, GitHub authority, deployment or secret boundary is weakened."
   ],
   "acceptance": [
@@ -23,6 +25,7 @@
     "Chat-flow contract regression passes.",
     "Current App source contains no automatic listJobs/restoreLatestJob adoption path.",
     "AgentEventStream and guided actions render collapsed by default.",
+    "Short conversations use the sovereign-chat-body auto spacer instead of column-reverse ordering.",
     "Integration draft reject action remains enabled independently of executor readiness."
   ]
 }
