@@ -191,6 +191,116 @@ interface RawSovereignAgentJobResponse {
 function endpoint(baseUrl: string, route: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/${route.replace(/^\/+/, '')}`;
 }
+
+// ── User-facing HTTP failure classification ─────────────────────────────────
+//
+// The backend answers blocked journeys with typed blocker codes, e.g.
+// HTTP 503 + "free_route_revolver_exhausted" (free quota used up) or
+// HTTP 428 + "step_up_required" (paid route needs explicit confirmation).
+// The UI surfaces `error.message` verbatim in the action stream and runtime
+// notices, so the message must be actionable instead of a raw blocker code.
+// Fail-closed: unknown failures keep the previous generic behavior, and no
+// classification ever implies an automatic escalation from free to paid.
+
+export type SovereignAgentHttpFailureKind =
+  | 'step_up_required'
+  | 'free_route_exhausted'
+  | 'paid_credits_required'
+  | 'paid_purchase_required'
+  | 'generic';
+
+export interface SovereignAgentHttpFailureClassification {
+  readonly kind: SovereignAgentHttpFailureKind;
+  readonly title: string;
+  readonly guidance: string;
+}
+
+export function classifySovereignAgentHttpFailure(
+  status: number,
+  code?: string,
+  backendMessage?: string,
+): SovereignAgentHttpFailureClassification {
+  const text = `${code ?? ''} ${backendMessage ?? ''}`.toLowerCase();
+
+  if (status === 428 || text.includes('step_up') || text.includes('step-up')) {
+    return {
+      kind: 'step_up_required',
+      title: 'Zusätzliche Bestätigung erforderlich (Step-Up)',
+      guidance: 'Nächste Aktion: Die Ausführung über eine kostenpflichtige Route erfordert eine ausdrückliche Step-Up-Bestätigung. Bestätigung erteilen und den Vorgang erneut anstoßen; es erfolgt kein automatischer Wechsel auf eine Paid-Route.',
+    };
+  }
+
+  if (status === 402 || text.includes('paid_credits_required')) {
+    return {
+      kind: 'paid_credits_required',
+      title: 'Paid-Route ohne ausreichendes Guthaben',
+      guidance: 'Nächste Aktion: Guthaben aufladen oder die kostenlose Route wählen; es erfolgt kein stiller Wechsel auf eine kostenpflichtige Route.',
+    };
+  }
+
+  if (status === 403 && (text.includes('paid_purchase_required') || text.includes('entitlement'))) {
+    return {
+      kind: 'paid_purchase_required',
+      title: 'Paid-Route erfordert einen verifizierten Kauf',
+      guidance: 'Nächste Aktion: Kauf abschließen oder die kostenlose Route verwenden; es erfolgt kein stiller Wechsel auf eine kostenpflichtige Route.',
+    };
+  }
+
+  const looksLikeFreeRouteExhausted = status === 503
+    && (text.includes('free_route_revolver_exhausted')
+      || text.includes('free_route')
+      || text.includes('revolver')
+      || text.includes('quota_exhausted')
+      || text.includes('no_free_route'));
+  if (looksLikeFreeRouteExhausted) {
+    return {
+      kind: 'free_route_exhausted',
+      title: 'Kostenlose Route erschöpft',
+      guidance: 'Nächste Aktion: Auf den Kontingent-Reset warten oder eine Paid-Route ausdrücklich per Step-Up bestätigen; es erfolgt kein stiller Wechsel auf eine Paid-Route.',
+    };
+  }
+
+  return { kind: 'generic', title: '', guidance: '' };
+}
+
+/** Error thrown for non-OK agent backend responses; carries status + blocker code. */
+export class SovereignAgentRequestError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly failureKind: SovereignAgentHttpFailureKind;
+  constructor(args: { message: string; status: number; code?: string; failureKind: SovereignAgentHttpFailureKind }) {
+    super(args.message);
+    this.name = 'SovereignAgentRequestError';
+    this.status = args.status;
+    this.code = args.code;
+    this.failureKind = args.failureKind;
+  }
+}
+
+function buildSovereignAgentHttpError(args: {
+  status: number;
+  body: unknown;
+  fallback: string;
+}): SovereignAgentRequestError {
+  const backendMessage = isObject(args.body) ? backendErrorMessage(args.body) : undefined;
+  const code = isObject(args.body) ? stringValue(args.body.error) : undefined;
+  const classification = classifySovereignAgentHttpFailure(args.status, code, backendMessage);
+  if (classification.kind === 'generic') {
+    return new SovereignAgentRequestError({
+      message: backendMessage || `${args.fallback} returned HTTP ${args.status}.`,
+      status: args.status,
+      code,
+      failureKind: classification.kind,
+    });
+  }
+  const reason = backendMessage && backendMessage !== code ? ` Grund: ${backendMessage}.` : '';
+  return new SovereignAgentRequestError({
+    message: `${classification.title} (HTTP ${args.status}).${reason} ${classification.guidance}`,
+    status: args.status,
+    code,
+    failureKind: classification.kind,
+  });
+}
 function isObject(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }
 function stringValue(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
 function integerValue(value: unknown): number | undefined {
@@ -261,8 +371,7 @@ async function requestSnapshot(args: { url: string; init: RequestInit; fetcher: 
   const response = await args.fetcher(args.url, args.init);
   const body = await readJson(response);
   if (!response.ok) {
-    const message = isObject(body) ? backendErrorMessage(body) : undefined;
-    throw new Error(message || `Sovereign Agent backend returned HTTP ${response.status}.`);
+    throw buildSovereignAgentHttpError({ status: response.status, body, fallback: 'Sovereign Agent backend' });
   }
   if (!isObject(body)) throw new Error('Sovereign Agent backend returned a non-object response.');
   return sanitizeSnapshot(body, args.now);
@@ -272,8 +381,7 @@ async function requestObject(args: { url: string; init: RequestInit; fetcher: ty
   const response = await args.fetcher(args.url, args.init);
   const body = await readJson(response);
   if (!response.ok) {
-    const message = isObject(body) ? backendErrorMessage(body) : undefined;
-    throw new Error(message || `${args.fallback} returned HTTP ${response.status}.`);
+    throw buildSovereignAgentHttpError({ status: response.status, body, fallback: args.fallback });
   }
   if (!isObject(body)) throw new Error(`${args.fallback} returned a non-object response.`);
   return body;
@@ -346,8 +454,7 @@ async function requestJanitorTool(args: { url: string; init: RequestInit; fetche
   const response = await args.fetcher(args.url, args.init);
   const body = await readJson(response);
   if (!response.ok) {
-    const message = isObject(body) ? backendErrorMessage(body) : undefined;
-    throw new Error(message || `Sovereign Janitor returned HTTP ${response.status}.`);
+    throw buildSovereignAgentHttpError({ status: response.status, body, fallback: 'Sovereign Janitor' });
   }
   if (!isObject(body) || !isObject(body.tool)) throw new Error('Sovereign Janitor returned an invalid response.');
   const tool = body.tool;
