@@ -31,6 +31,7 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
         "revolver_provider_key",
         "notion_integration_token",
         "hf_publication_rights",
+        "hf_cag_staging_publish_request",
         "proven_learning_confirmation",
     }.issubset(set(targets))
     assert "openai_api_key" not in targets
@@ -65,11 +66,28 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert rights_target["maxBytes"] == 64000
     assert rights_target["kind"] == "approval_receipt"
 
+    publish_target = targets["hf_cag_staging_publish_request"]
+    assert publish_target["path"] == (tmp_path / "hf_cag_staging_publish.action").resolve()
+    assert publish_target["fieldLabel"] == "Zum Publizieren exakt PUBLISH eingeben"
+    assert publish_target["maxBytes"] == 16
+    assert publish_target["kind"] == "action_confirmation"
+
     learning_target = targets["proven_learning_confirmation"]
     assert learning_target["path"] == (tmp_path / "proven_learning_confirmation.txt").resolve()
     assert learning_target["fieldLabel"] == "Exakten 64-stelligen Plan-Hash eingeben"
     assert learning_target["maxBytes"] == 80
     assert learning_target["kind"] == "approval_receipt"
+
+
+def test_fixed_publish_action_target_cannot_be_overridden(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_INPUT_ROOT", str(tmp_path))
+    monkeypatch.setenv(
+        "SOVEREIGN_OWNER_INPUT_TARGETS_JSON",
+        '{"hf_cag_staging_publish_request":{"path":"/opt/sovereign-owner-managed/other.txt","kind":"credential"}}',
+    )
+
+    with pytest.raises(RuntimeError, match="fixed action target"):
+        runtime._target_map()
 
 
 def test_atomic_write_is_bounded_mode_0600_and_leaves_no_temporary_file(monkeypatch, tmp_path: Path) -> None:
@@ -215,6 +233,9 @@ def test_owner_page_keeps_value_out_of_storage_and_clears_transport_field() -> N
     assert "mode:'same-origin'" in page
     assert "redirect:'error'" in page
     assert "HTTPS-Übertragung nicht bestätigt" in page
+    assert "current.targetKind==='action_confirmation'" in page
+    assert "Ja – Aktion ausführen" in page
+    assert "Aktion bestätigt und ausgeführt." in page
 
 
 def test_owner_resolution_conflict_preserves_failed_instead_of_projecting_expired() -> None:

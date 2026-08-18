@@ -173,6 +173,38 @@ def test_create_request_allows_hf_publication_rights_receipt_without_exposing_va
     assert result["protected_value_transport"] == "owner_ui_only"
 
 
+def test_create_request_allows_hf_cag_publish_action_without_payload_in_mcp(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "abababab-abab-4bab-8bab-abababababab"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "hf_cag_staging_publish_request",
+                "status": "pending",
+                "targetKind": "action_confirmation",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="hf_cag_staging_publish_request",
+        title="CAG benchmark nach HF Staging publizieren",
+        reason="Die Owner-Aktion darf ausschließlich über die geschützte Backend-Oberfläche bestätigt werden.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "hf_cag_staging_publish_request"
+    assert call["json"]["fieldLabel"] == "Zum Publizieren exakt PUBLISH eingeben"
+    assert "PUBLISH" not in str(call["json"].get("reason") or "")
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+    assert result["protected_value_transport"] == "owner_ui_only"
+
+
 def test_create_request_rejects_retired_github_personal_access_target(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")

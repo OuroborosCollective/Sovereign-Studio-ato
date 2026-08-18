@@ -41,6 +41,7 @@ ALLOWED_TARGETS = {
     "openrouter_management_api_key": "OpenRouter Management API Key",
     "notion_integration_token": "Notion Integration Token",
     "hf_publication_rights": "HF-Publikationsrechte JSON-Receipt",
+    "hf_cag_staging_publish_request": "Zum Publizieren exakt PUBLISH eingeben",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 

@@ -39,6 +39,7 @@ MAX_TTL_SECONDS = 3600
 MAX_COMMENT_CHARS = 1000
 DEFAULT_ROOT = Path("/opt/sovereign-owner-managed")
 RETIRED_TARGET_IDS = frozenset({"github_pat"})
+FIXED_ACTION_TARGET_IDS = frozenset({"hf_cag_staging_publish_request"})
 DIRECT_UPLOAD_TARGET_IDS = frozenset({"github_token"})
 DIRECT_UPLOAD_MAX_TTL_SECONDS = 300
 DIRECT_UPLOAD_TOKEN_RE = re.compile(r"^(?P<expires>[0-9]{10,13})\.(?P<mac>[0-9a-f]{64})$")
@@ -92,6 +93,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 64000,
         "kind": "approval_receipt",
     },
+    "hf_cag_staging_publish_request": {
+        "label": "Wolfram CAG benchmark nach Hugging Face Staging publizieren",
+        "fieldLabel": "Zum Publizieren exakt PUBLISH eingeben",
+        "path": "/opt/sovereign-owner-managed/hf_cag_staging_publish.action",
+        "maxBytes": 16,
+        "kind": "action_confirmation",
+    },
     "proven_learning_confirmation": {
         "label": "Evidence-geprüftes Learning Pattern",
         "fieldLabel": "Exakten 64-stelligen Plan-Hash eingeben",
@@ -129,6 +137,7 @@ def _target_map() -> dict[str, dict[str, Any]]:
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["notion_integration_token"]["path"] = str(_root() / "notion_integration_token.txt")
     targets["hf_publication_rights"]["path"] = str(_root() / "hf_publication_rights.json")
+    targets["hf_cag_staging_publish_request"]["path"] = str(_root() / "hf_cag_staging_publish.action")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")
     for provider_id, provider in FREELLM_PROVIDER_SPECS.items():
         if bool(provider.get("keyless")):
@@ -150,6 +159,8 @@ def _target_map() -> dict[str, dict[str, Any]]:
             normalized_target_id = str(target_id)
             if normalized_target_id in RETIRED_TARGET_IDS:
                 raise RuntimeError("Owner input target configuration restores a retired target")
+            if normalized_target_id in FIXED_ACTION_TARGET_IDS:
+                raise RuntimeError("Owner input target configuration overrides a fixed action target")
             if not re.fullmatch(r"[a-z][a-z0-9_]{2,63}", normalized_target_id) or not isinstance(raw, dict):
                 raise RuntimeError("Owner input target configuration is invalid")
             targets[normalized_target_id] = dict(raw)
@@ -403,6 +414,7 @@ def _request_api(row: dict[str, Any], targets: dict[str, dict[str, Any]]) -> dic
         "expiresAt": str(row.get("expires_at") or ""),
         "resolvedAt": str(row.get("resolved_at") or ""),
         "resultCode": str(row.get("result_code") or ""),
+        "targetKind": str(target.get("kind") or "credential"),
     }
 
 
@@ -746,27 +758,81 @@ def register_owner_input_routes(
             protected_buffer = bytearray(request.get_data(cache=False, as_text=False) or b"")
             if _contains_payment_card_bytes(protected_buffer):
                 raise ValueError("Rohe Kartennummern sind nicht zulässig; verwende einen tokenisierten Zahlungsanbieter-Flow")
-            _atomic_write(target, protected_buffer)
+
+            action_result: dict[str, Any] | None = None
+            result_code = "target_updated"
+            if target.get("kind") == "action_confirmation":
+                if target["id"] != "hf_cag_staging_publish_request":
+                    raise ValueError("Die Owner-Aktion ist nicht implementiert")
+                if bytes(protected_buffer) != b"PUBLISH":
+                    raise ValueError("Für diese Owner-Aktion muss exakt PUBLISH eingegeben werden")
+                from wolfram_cag_staging_publication import publish_wolfram_cag_benchmark_staging
+
+                action_result = publish_wolfram_cag_benchmark_staging(
+                    get_connection=get_connection,
+                    admin_id=str((admin or {}).get("id") or ""),
+                )
+                action_status = str(action_result.get("status") or "")
+                if action_status not in {"PUBLISHED_VERIFIED", "DUPLICATE_NOOP"}:
+                    raise RuntimeError("Owner-Aktion endete ohne verifizierten Publikationszustand")
+                result_code = (
+                    "action_published_verified"
+                    if action_status == "PUBLISHED_VERIFIED"
+                    else "action_duplicate_noop"
+                )
+            else:
+                _atomic_write(target, protected_buffer)
+
             with conn.cursor() as cur:
                 cur.execute(
                     """UPDATE owner_input_requests
-                       SET status='consumed', resolved_at=NOW(), consumed_at=NOW(), result_code='target_updated'
+                       SET status='consumed', resolved_at=NOW(), consumed_at=NOW(), result_code=%s
                        WHERE id=%s::uuid AND status='processing'""",
-                    (request_id,),
+                    (result_code, request_id),
                 )
             conn.commit()
-            return _no_store(jsonify({"ok": True, "status": "consumed", "targetId": target["id"]}))
+            response_payload: dict[str, Any] = {
+                "ok": True,
+                "status": "consumed",
+                "targetId": target["id"],
+                "resultCode": result_code,
+                "protectedValueReturned": False,
+            }
+            if action_result is not None:
+                response_payload["action"] = {
+                    "status": action_result.get("status"),
+                    "batchId": action_result.get("batchId"),
+                    "commitOid": action_result.get("commitOid"),
+                    "batchSha256": action_result.get("batchSha256"),
+                    "readbackVerified": bool(action_result.get("readbackVerified")),
+                    "persistenceVerified": bool(action_result.get("persistenceVerified")),
+                    "publishedCaseIds": action_result.get("publishedCaseIds") or [],
+                    "skippedCaseIds": action_result.get("skippedCaseIds") or [],
+                }
+            return _no_store(jsonify(response_payload))
         except Exception as exc:
             conn.rollback()
+            action_failed = bool(
+                claimed
+                and str(claimed.get("target_id") or "") == "hf_cag_staging_publish_request"
+            )
+            failed_result_code = "action_failed" if action_failed else "target_update_failed"
             if claimed:
                 with conn.cursor() as cur:
                     cur.execute(
                         """UPDATE owner_input_requests
-                           SET status='failed', resolved_at=NOW(), result_code='target_update_failed'
+                           SET status='failed', resolved_at=NOW(), result_code=%s
                            WHERE id=%s::uuid AND status='processing'""",
-                        (request_id,),
+                        (failed_result_code, request_id),
                     )
                 conn.commit()
+            if action_failed:
+                return _no_store(jsonify({
+                    "error": "Owner-Aktion konnte nicht verifiziert abgeschlossen werden",
+                    "status": "failed",
+                    "resultCode": failed_result_code,
+                    "protectedValueReturned": False,
+                })), 400
             return _no_store(jsonify({"error": str(exc)[:300]})), 400
         finally:
             for index in range(len(protected_buffer)):
@@ -800,7 +866,7 @@ _OWNER_PAGE = r"""<!doctype html>
 let adminKey='';let current=null;const byId=id=>document.getElementById(id);const requestedId=new URLSearchParams(window.location.search).get('request_id')||'';
 function headers(){return {'Authorization':'Bearer '+adminKey};}
 async function load(){const response=await fetch('/api/admin/owner-input/requests',{headers:headers(),cache:'no-store',credentials:'same-origin',mode:'same-origin',redirect:'error'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Anfrage fehlgeschlagen');const requests=data.requests||[];current=requestedId?(requests.find(item=>item.id===requestedId)||null):(requests[0]||null);render();}
-function render(){byId('login').hidden=Boolean(adminKey);byId('requestCard').hidden=!current;byId('empty').hidden=Boolean(current)||!adminKey;if(!current)return;byId('requestTitle').textContent=current.title;byId('requestReason').textContent=current.reason;byId('requestMeta').textContent=current.targetLabel+' · gültig bis '+current.expiresAt;byId('valueLabel').textContent=current.fieldLabel;byId('protectedValue').value='';byId('comment').value='';byId('result').textContent='';}
-async function resolve(decision){if(!current)return;const encoded=decision==='yes'?new TextEncoder().encode(byId('protectedValue').value):new Uint8Array();const url='/api/admin/owner-input/requests/'+encodeURIComponent(current.id)+'/resolve?decision='+encodeURIComponent(decision)+'&comment='+encodeURIComponent(byId('comment').value);try{const response=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+adminKey,'Content-Type':'application/octet-stream'},cache:'no-store',credentials:'same-origin',mode:'same-origin',redirect:'error',body:encoded});encoded.fill(0);byId('protectedValue').value='';const data=await response.json();if(!response.ok)throw new Error(data.error||'Entscheidung fehlgeschlagen');byId('result').className='ok';byId('result').textContent=decision==='yes'?'Sicher eingetragen und Transportfeld geleert.':'Abgelehnt.';current=null;setTimeout(load,700);}catch(error){encoded.fill(0);byId('protectedValue').value='';byId('result').className='error';byId('result').textContent=error instanceof TypeError?'HTTPS-Übertragung nicht bestätigt. Bitte nicht erneut eingeben und die Verbindung prüfen.':error.message;}}
+function render(){byId('login').hidden=Boolean(adminKey);byId('requestCard').hidden=!current;byId('empty').hidden=Boolean(current)||!adminKey;if(!current)return;const isAction=current.targetKind==='action_confirmation';byId('requestTitle').textContent=current.title;byId('requestReason').textContent=current.reason;byId('requestMeta').textContent=current.targetLabel+' · gültig bis '+current.expiresAt;byId('valueLabel').textContent=current.fieldLabel;byId('yesButton').textContent=isAction?'Ja – Aktion ausführen':'Ja – sicher eintragen';byId('protectedValue').value='';byId('comment').value='';byId('result').textContent='';}
+async function resolve(decision){if(!current)return;const encoded=decision==='yes'?new TextEncoder().encode(byId('protectedValue').value):new Uint8Array();const url='/api/admin/owner-input/requests/'+encodeURIComponent(current.id)+'/resolve?decision='+encodeURIComponent(decision)+'&comment='+encodeURIComponent(byId('comment').value);try{const response=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+adminKey,'Content-Type':'application/octet-stream'},cache:'no-store',credentials:'same-origin',mode:'same-origin',redirect:'error',body:encoded});encoded.fill(0);byId('protectedValue').value='';const data=await response.json();if(!response.ok)throw new Error(data.error||'Entscheidung fehlgeschlagen');byId('result').className='ok';byId('result').textContent=decision==='yes'?(current.targetKind==='action_confirmation'?'Aktion bestätigt und ausgeführt.':'Sicher eingetragen und Transportfeld geleert.'):'Abgelehnt.';current=null;setTimeout(load,700);}catch(error){encoded.fill(0);byId('protectedValue').value='';byId('result').className='error';byId('result').textContent=error instanceof TypeError?'HTTPS-Übertragung nicht bestätigt. Bitte nicht erneut eingeben und die Verbindung prüfen.':error.message;}}
 byId('loginButton').onclick=async()=>{adminKey=byId('adminKey').value.trim();byId('adminKey').value='';try{await load();}catch(error){adminKey='';byId('loginMessage').textContent=error.message;render();}};byId('yesButton').onclick=()=>resolve('yes');byId('noButton').onclick=()=>resolve('no');byId('reloadButton').onclick=load;byId('emptyReload').onclick=load;
 </script></body></html>"""
