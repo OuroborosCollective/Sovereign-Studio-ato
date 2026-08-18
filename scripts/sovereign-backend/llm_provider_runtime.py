@@ -443,7 +443,10 @@ def register_llm_provider_routes(
     @app.route("/api/admin/llm/model-catalog/attach", methods=["POST"])
     @require_admin
     def admin_attach_litellm_model():
-        body = request.get_json(force=True) or {}
+        raw = request.get_json(force=True, silent=True)
+        if raw is not None and not isinstance(raw, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        body = raw or {}
         model_id = str(body.get("modelId") or "").strip()
         if not model_id:
             return jsonify({"error": "modelId fehlt", "blocker": "model_id_required"}), 400
@@ -678,8 +681,11 @@ def register_llm_provider_routes(
     @app.route("/api/admin/llm/provider-deployments/prepare", methods=["POST"])
     @require_admin
     def admin_prepare_llm_provider():
+        raw = request.get_json(force=True, silent=True)
+        if not isinstance(raw, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
         try:
-            config = _normalize_metadata(request.get_json(force=True) or {})
+            config = _normalize_metadata(raw)
         except ValueError as exc:
             return jsonify({"error": str(exc), "blocker": "provider_config_invalid"}), 400
         admin = get_current_admin() or {}
@@ -829,7 +835,10 @@ def register_llm_provider_routes(
         if str(deployment.get("status") or "") == "ready":
             return jsonify({"error": "Route ist bereits aktiv", "blocker": "provider_route_exists"}), 409
 
-        body = request.get_json(silent=True) or {}
+        raw = request.get_json(silent=True)
+        if raw is not None and not isinstance(raw, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        body = raw or {}
         try:
             catalog_model = _catalog_model(str(deployment["litellm_model_name"]))
             policy = _normalize_provider_recovery_policy(body, dict(deployment), catalog_model)
@@ -1299,7 +1308,10 @@ def register_llm_provider_routes(
         supplied = request.headers.get("X-Sovereign-Owner-Request-Key", "").strip()
         if not expected or not supplied or not hmac.compare_digest(expected, supplied):
             return jsonify({"error": "Nicht autorisiert", "blocker": "owner_service_auth_required"}), 401
-        body = request.get_json(silent=True) or {}
+        raw = request.get_json(silent=True)
+        if raw is not None and not isinstance(raw, dict):
+            return jsonify({"error": "Malformed payload; dictionary required"}), 400
+        body = raw or {}
         owner_request_id = str(body.get("ownerRequestId") or "").strip()
         if not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_request_id):
             return jsonify({"error": "ownerRequestId ist ungültig", "blocker": "owner_request_id_invalid"}), 400
