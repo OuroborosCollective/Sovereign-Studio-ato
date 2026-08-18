@@ -5,6 +5,7 @@ const APP_PATH = 'src/App.tsx';
 const AGENT_STREAM_PATH = 'src/features/product/components/AgentEventStream.tsx';
 const ACTION_STRIP_PATH = 'src/features/product/components/ActionSuggestionStrip.tsx';
 const CONSENT_CARD_PATH = 'src/features/product/components/IntegrationIntentDraftCard.tsx';
+const INDEX_CSS_PATH = 'src/index.css';
 
 function read(path: string): string {
   expect(existsSync(path), `${path} must exist`).toBe(true);
@@ -37,6 +38,15 @@ describe('DevChat consent and conversation flow contract', () => {
     expect(source).toContain('const [expanded, setExpanded] = useState(false)');
     expect(source).toContain('aria-controls="sovereign-guided-actions"');
     expect(source).toContain('{expanded && (');
+  });
+
+  it('anchors short chat histories beside the composer without reversing DOM order', () => {
+    const css = read(INDEX_CSS_PATH);
+
+    expect(css).toContain('.sovereign-chat-body::before');
+    expect(css).toContain('margin-top: auto');
+    expect(css).toContain('flex: 0 0 auto');
+    expect(css).not.toContain('flex-direction: column-reverse');
   });
 
   it('keeps rejection available even when execution confirmation is blocked', () => {
