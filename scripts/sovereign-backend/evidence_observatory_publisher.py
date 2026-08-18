@@ -488,7 +488,7 @@ def publish_huggingface_batch(
             readback=existing_readback, prewrite_revision=prewrite_revision, idempotent=True
         )
         return {
-            "ok": True, "batchId": plan["batchId"], "repoId": repo_id,
+            "ok": True, "status": "PUBLISHED_VERIFIED", "batchId": plan["batchId"], "repoId": repo_id,
             "revision": target_revision, "commitOid": observed_revision,
             "dataPath": plan["dataPath"], "manifestPath": plan["manifestPath"],
             "dataSha256": plan["dataSha256"], "manifestSha256": plan["manifestSha256"],
@@ -498,6 +498,31 @@ def publish_huggingface_batch(
             "licenseRightsHash": plan["licenseRightsHash"],
             "publisherPolicyHash": plan["publisherPolicyHash"],
             "publicationReceipt": receipt, "publicationReceiptSha256": receipt["publicationReceiptSha256"],
+            "dedup": dedup,
+        }
+
+    if dedup.get("allIdentical"):
+        # Semantic duplicates already present in the target corpus are a true
+        # no-op.  Do not create a staging branch or publication receipt, since
+        # no new target mutation/readback occurred.
+        return {
+            "ok": True,
+            "status": "DUPLICATE_NOOP",
+            "batchId": plan["batchId"],
+            "repoId": repo_id,
+            "revision": target_revision,
+            "dataPath": plan["dataPath"],
+            "manifestPath": plan["manifestPath"],
+            "dataSha256": plan["dataSha256"],
+            "manifestSha256": plan["manifestSha256"],
+            "batchSha256": plan["batchSha256"],
+            "readbackVerified": False,
+            "runtimeIdentityUsed": True,
+            "idempotent": True,
+            "duplicateSemanticPublishSkipped": True,
+            "privacyScanHash": plan["privacyScan"]["privacyScanSha256"],
+            "licenseRightsHash": plan["licenseRightsHash"],
+            "publisherPolicyHash": plan["publisherPolicyHash"],
             "dedup": dedup,
         }
 
@@ -562,6 +587,7 @@ def publish_huggingface_batch(
         raise RuntimeError("huggingface_publication_receipt_contradicted")
     return {
         "ok": True,
+        "status": "PUBLISHED_VERIFIED",
         "batchId": plan["batchId"],
         "repoId": repo_id,
         "revision": target_revision,

@@ -441,6 +441,24 @@ def register_evidence_observatory_routes(
                 "blocker": type(exc).__name__,
             })
             return jsonify({"ok": False, "error": str(exc)[:240], "readbackVerified": False}), 502
+        if receipt.get("status") == "DUPLICATE_NOOP":
+            audit("evidence_observatory_hf_duplicate_noop", receipt["batchId"], {
+                "caseCount": len(case_ids), "caseIds": case_ids,
+                "repoId": receipt["repoId"], "revision": receipt["revision"],
+                "batchSha256": receipt["batchSha256"],
+                "licenseRightsHash": receipt["licenseRightsHash"],
+                "privacyScanHash": receipt["privacyScanHash"],
+                "publisherPolicyHash": receipt["publisherPolicyHash"],
+                "duplicateSemanticPublishSkipped": True,
+                "readbackVerified": False,
+            })
+            return jsonify({
+                **receipt,
+                "publishedCaseIds": [],
+                "skippedCaseIds": case_ids,
+                "persistenceVerified": True,
+                "truthNotice": "No publication receipt or PUBLISHED state was created because the semantic batch already exists in the target corpus.",
+            })
         persisted = query(
             """WITH receipt AS (
                    INSERT INTO evidence_observatory_publish_receipts

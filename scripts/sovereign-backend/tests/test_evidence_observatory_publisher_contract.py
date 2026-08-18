@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -10,10 +11,11 @@ BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from evidence_observatory_contracts import sha256_text  # noqa: E402
+from evidence_observatory_contracts import canonical_json, sha256_text  # noqa: E402
 from evidence_observatory_publisher import (  # noqa: E402
     PUBLISHER_POLICY,
     build_huggingface_publish_plan,
+    publish_huggingface_batch,
     scan_public_payload,
 )
 from wolfram_cag_benchmark_publication import build_cag_benchmark_public_rows  # noqa: E402
@@ -154,3 +156,141 @@ def test_direct_main_is_forbidden_before_any_rights_or_transport_work():
     rights["authorizedRevision"] = "main"
     with pytest.raises(RuntimeError, match="huggingface_direct_main_publish_forbidden"):
         build_huggingface_publish_plan(rows=rows, repo_id=REPO_ID, revision="main", license_rights=rights)
+
+
+def _install_fake_hub(monkeypatch, tmp_path, *, mode: str = "success", main_rows: list[dict] | None = None):
+    main_sha = "a" * 40
+    files: dict[str, dict[str, bytes]] = {"main": {}}
+    if main_rows:
+        files["main"]["data/casebook.jsonl"] = (
+            "\n".join(canonical_json(row) for row in main_rows) + "\n"
+        ).encode("utf-8")
+    state = {
+        "branch_shas": {"main": main_sha},
+        "files": files,
+        "commits": {main_sha: dict(files["main"])},
+        "events": [],
+        "write_attempts": 0,
+        "branch_creates": 0,
+    }
+
+    def snapshot(revision: str) -> dict[str, bytes]:
+        if revision in state["files"]:
+            return state["files"][revision]
+        if revision in state["commits"]:
+            return state["commits"][revision]
+        raise FileNotFoundError(revision)
+
+    class CommitOperationAdd:
+        def __init__(self, *, path_in_repo, path_or_fileobj):
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class HfApi:
+        def repo_info(self, *, repo_id, repo_type, revision):
+            if revision in state["branch_shas"]:
+                return types.SimpleNamespace(sha=state["branch_shas"][revision])
+            if revision in state["commits"]:
+                return types.SimpleNamespace(sha=revision)
+            raise RuntimeError("revision_missing")
+
+        def list_repo_files(self, *, repo_id, repo_type, revision):
+            return sorted(snapshot(revision))
+
+        def create_branch(self, *, repo_id, repo_type, branch, exist_ok):
+            state["branch_creates"] += 1
+            if branch not in state["files"]:
+                state["files"][branch] = dict(state["files"]["main"])
+                state["branch_shas"][branch] = state["branch_shas"]["main"]
+
+        def create_commit(self, *, repo_id, repo_type, revision, operations, commit_message):
+            state["write_attempts"] += 1
+            attempt = state["write_attempts"]
+            state["events"].append(f"write:{attempt}")
+            if mode == "outage":
+                raise TimeoutError("simulated_hf_outage")
+            target = dict(snapshot(revision))
+            for operation in operations:
+                value = operation.path_or_fileobj
+                payload = value if isinstance(value, bytes) else bytes(value)
+                if mode == "wrong_hash" and operation.path_in_repo.endswith(".jsonl"):
+                    payload += b"corrupt"
+                target[operation.path_in_repo] = payload
+            oid = f"{attempt:040x}"
+            state["files"][revision] = target
+            state["branch_shas"][revision] = oid
+            state["commits"][oid] = dict(target)
+            if mode == "timeout_after_write":
+                raise TimeoutError("simulated_timeout_after_accepted_write")
+            return types.SimpleNamespace(oid=oid)
+
+    def hf_hub_download(*, repo_id, filename, repo_type, revision):
+        state["events"].append(f"read:{revision}:{filename}")
+        content = snapshot(revision)[filename]
+        local = tmp_path / f"{revision.replace('/', '_')}-{filename.replace('/', '_')}"
+        local.write_bytes(content)
+        return str(local)
+
+    fake = types.ModuleType("huggingface_hub")
+    fake.CommitOperationAdd = CommitOperationAdd
+    fake.HfApi = HfApi
+    fake.hf_hub_download = hf_hub_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    return state
+
+
+def test_duplicate_target_content_is_idempotent_noop_without_hf_mutation(monkeypatch, tmp_path):
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    state = _install_fake_hub(monkeypatch, tmp_path, main_rows=rows)
+    result = publish_huggingface_batch(
+        rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+    )
+    assert result["status"] == "DUPLICATE_NOOP"
+    assert result["idempotent"] is True
+    assert result["duplicateSemanticPublishSkipped"] is True
+    assert result["readbackVerified"] is False
+    assert state["write_attempts"] == 0
+    assert state["branch_creates"] == 0
+
+
+def test_timeout_after_accepted_write_is_recovered_by_readback_before_retry(monkeypatch, tmp_path):
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    state = _install_fake_hub(monkeypatch, tmp_path, mode="timeout_after_write")
+    result = publish_huggingface_batch(
+        rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+    )
+    assert result["status"] == "PUBLISHED_VERIFIED"
+    assert result["readbackVerified"] is True
+    assert state["write_attempts"] == 1
+    write_index = state["events"].index("write:1")
+    assert any(event.startswith(f"read:{REVISION}:") for event in state["events"][write_index + 1:])
+
+
+def test_api_success_with_wrong_target_hash_is_never_promoted(monkeypatch, tmp_path):
+    rows = build_cag_benchmark_public_rows()
+    rights = _rights([row["caseId"] for row in rows])
+    state = _install_fake_hub(monkeypatch, tmp_path, mode="wrong_hash")
+    with pytest.raises(RuntimeError, match="huggingface_publish_readback_mismatch"):
+        publish_huggingface_batch(
+            rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+        )
+    assert state["write_attempts"] == 1
+
+
+def test_hf_outage_rechecks_target_before_retry_and_preserves_case_truth(monkeypatch, tmp_path):
+    rows = build_cag_benchmark_public_rows()
+    original = copy.deepcopy(rows)
+    rights = _rights([row["caseId"] for row in rows])
+    state = _install_fake_hub(monkeypatch, tmp_path, mode="outage")
+    with pytest.raises(RuntimeError, match="huggingface_publish_write_failed_after_readback"):
+        publish_huggingface_batch(
+            rows=rows, repo_id=REPO_ID, revision=REVISION, license_rights=rights
+        )
+    assert state["write_attempts"] == 2
+    first_write = state["events"].index("write:1")
+    second_write = state["events"].index("write:2")
+    assert any(event.startswith(f"read:{REVISION}:") for event in state["events"][first_write + 1:second_write])
+    assert rows == original
+    assert all(row["workflowState"] == "PUBLISHABLE" for row in rows)
