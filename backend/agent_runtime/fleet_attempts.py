@@ -25,6 +25,15 @@ _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _REVISION_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _TASK_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,119}$")
 _ACTIVE_HEARTBEAT_STATES = frozenset({"ASSIGNED", "WORKSPACE_BOUND", "RUNNING", "BLOCKED", "VERIFYING"})
+_SECRET_MARKERS = (
+    "sk-proj-",
+    "github_pat_",
+    "ghp_",
+    "authorization: bearer",
+    "begin openssh private key",
+    "begin rsa private key",
+    "begin private key",
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +90,8 @@ def _bounded_text(value: object, field: str, maximum: int) -> str:
     normalized = str(value or "").strip()
     if not normalized or len(normalized) > maximum:
         raise FleetContractError(f"{field} is invalid")
+    if any(marker in normalized.casefold() for marker in _SECRET_MARKERS):
+        raise FleetContractError(f"{field} contains secret-shaped material")
     return normalized
 
 
