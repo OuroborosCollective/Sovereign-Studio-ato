@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const source = readFileSync(new URL('./BuilderContainer.tsx', import.meta.url), 'utf8');
+const source = readFileSync(resolve(process.cwd(), 'src/features/product/containers/BuilderContainer.tsx'), 'utf8');
 
 describe('BuilderContainer Draft-PR publish guard contract', () => {
   it('holds a synchronous single-flight lock around the asynchronous Draft-PR publish', () => {
