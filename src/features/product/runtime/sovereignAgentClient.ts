@@ -90,13 +90,31 @@ export interface SovereignDraftPrPreparationResponse {
   learningEvidence?: SovereignPatternLearningEvidence;
 }
 
+export type SovereignDraftPrCiState = 'none' | 'pending' | 'success' | 'failure';
+
 export interface SovereignDraftPrCreateResponse {
   ok: boolean;
   jobId: string;
   draftPrCreate: {
     allowed: boolean;
     status: string;
-    prUrl?: string;
+    prUrl: string;
+    headSha: string;
+    publishedHeadSha: string;
+    readbackHeadSha: string;
+    prNumber: number;
+    draftVerified: true;
+    prStateVerified: 'open';
+    headBranch: string;
+    baseBranch: string;
+    readbackVerified: true;
+    checksReadbackVerified: true;
+    ciState: SovereignDraftPrCiState;
+    checkRunCount: number;
+    checksPendingCount: number;
+    checksSuccessCount: number;
+    checksFailureCount: number;
+    statusContextCount: number;
     blocker?: string;
     summary?: string;
   };
@@ -175,6 +193,9 @@ function endpoint(baseUrl: string, route: string): string {
 }
 function isObject(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }
 function stringValue(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
+function integerValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
@@ -346,6 +367,18 @@ async function requestJanitorTool(args: { url: string; init: RequestInit; fetche
   };
 }
 
+function draftPrCiState(value: unknown): SovereignDraftPrCiState | undefined {
+  return value === 'none' || value === 'pending' || value === 'success' || value === 'failure' ? value : undefined;
+}
+
+function isCommitSha(value: string | undefined): value is string {
+  return Boolean(value && /^[0-9a-f]{40}$/.test(value));
+}
+
+function isGithubPullRequestUrl(value: string | undefined): value is string {
+  return Boolean(value && /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/[1-9][0-9]*$/.test(value));
+}
+
 export class SovereignAgentClient {
   private readonly config: SovereignAgentConfig;
   private readonly fetcher: typeof fetch;
@@ -514,13 +547,74 @@ export class SovereignAgentClient {
       fallback: 'Sovereign Draft PR create',
     });
     const signal = isObject(body.draftPrCreate) ? body.draftPrCreate : {};
+    const prUrl = stringValue(signal.prUrl);
+    const headSha = stringValue(signal.headSha);
+    const publishedHeadSha = stringValue(signal.publishedHeadSha);
+    const readbackHeadSha = stringValue(signal.readbackHeadSha);
+    const prNumber = integerValue(signal.prNumber);
+    const headBranch = stringValue(signal.headBranch);
+    const baseBranch = stringValue(signal.baseBranch);
+    const ciState = draftPrCiState(signal.ciState);
+    const checkRunCount = integerValue(signal.checkRunCount);
+    const checksPendingCount = integerValue(signal.checksPendingCount);
+    const checksSuccessCount = integerValue(signal.checksSuccessCount);
+    const checksFailureCount = integerValue(signal.checksFailureCount);
+    const statusContextCount = integerValue(signal.statusContextCount);
+    const verified = (
+      body.ok === true
+      && signal.allowed === true
+      && stringValue(signal.status) === 'created'
+      && isGithubPullRequestUrl(prUrl)
+      && isCommitSha(headSha)
+      && isCommitSha(publishedHeadSha)
+      && isCommitSha(readbackHeadSha)
+      && headSha === readbackHeadSha
+      && publishedHeadSha === readbackHeadSha
+      && typeof prNumber === 'number'
+      && prNumber > 0
+      && signal.draftVerified === true
+      && stringValue(signal.prStateVerified) === 'open'
+      && Boolean(headBranch)
+      && Boolean(baseBranch)
+      && signal.readbackVerified === true
+      && signal.checksReadbackVerified === true
+      && Boolean(ciState)
+      && typeof checkRunCount === 'number'
+      && typeof checksPendingCount === 'number'
+      && typeof checksSuccessCount === 'number'
+      && typeof checksFailureCount === 'number'
+      && typeof statusContextCount === 'number'
+      && checksPendingCount + checksSuccessCount + checksFailureCount === checkRunCount
+    );
+    if (!verified) {
+      throw new Error(
+        stringValue(signal.blocker)
+          || 'Sovereign Draft PR create returned no complete GitHub Draft-PR/head-SHA/check readback evidence.',
+      );
+    }
     return {
-      ok: body.ok === true,
+      ok: true,
       jobId: stringValue(body.jobId) || jobId,
       draftPrCreate: {
-        allowed: signal.allowed === true,
-        status: stringValue(signal.status) || 'blocked',
-        prUrl: stringValue(signal.prUrl),
+        allowed: true,
+        status: 'created',
+        prUrl,
+        headSha,
+        publishedHeadSha,
+        readbackHeadSha,
+        prNumber,
+        draftVerified: true,
+        prStateVerified: 'open',
+        headBranch,
+        baseBranch,
+        readbackVerified: true,
+        checksReadbackVerified: true,
+        ciState,
+        checkRunCount,
+        checksPendingCount,
+        checksSuccessCount,
+        checksFailureCount,
+        statusContextCount,
         blocker: stringValue(signal.blocker),
         summary: stringValue(signal.summary),
       },

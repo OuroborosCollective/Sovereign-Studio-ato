@@ -91,6 +91,35 @@ function snapshot(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function verifiedDraftPrCreate(jobId: string, prNumber: number) {
+  const sha = 'a'.repeat(40);
+  return {
+    ok: true,
+    jobId,
+    draftPrCreate: {
+      allowed: true,
+      status: 'created',
+      prUrl: `https://github.com/acme/repo/pull/${prNumber}`,
+      headSha: sha,
+      publishedHeadSha: sha,
+      readbackHeadSha: sha,
+      prNumber,
+      draftVerified: true,
+      prStateVerified: 'open',
+      headBranch: `sovereign/${jobId}`,
+      baseBranch: 'main',
+      readbackVerified: true,
+      checksReadbackVerified: true,
+      ciState: 'pending',
+      checkRunCount: 2,
+      checksPendingCount: 1,
+      checksSuccessCount: 1,
+      checksFailureCount: 0,
+      statusContextCount: 0,
+    },
+  };
+}
+
 beforeEach(() => {
   memory.searchReusableMemory.mockResolvedValue([]);
   memory.reusableMemoryContext.mockReturnValue('');
@@ -138,15 +167,7 @@ describe('App Draft-PR runtime flow', () => {
       jobId: 'job-1',
       draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
     });
-    agent.createDraftPr.mockResolvedValue({
-      ok: true,
-      jobId: 'job-1',
-      draftPrCreate: {
-        allowed: true,
-        status: 'created',
-        prUrl: 'https://github.com/acme/repo/pull/10',
-      },
-    });
+    agent.createDraftPr.mockResolvedValue(verifiedDraftPrCreate('job-1', 10));
     agent.getJob.mockResolvedValue(snapshot({
       status: 'validating',
       draftPrUrl: 'https://github.com/acme/repo/pull/10',
@@ -160,22 +181,14 @@ describe('App Draft-PR runtime flow', () => {
     expect(screen.getByTestId('flow-job-status')).toHaveTextContent('validating');
   });
 
-  it('restores a persisted job and continues the same job to the confirmed PR URL', async () => {
+  it('restores a persisted job and continues the same job to the verified Draft PR URL', async () => {
     agent.listJobs.mockResolvedValue([snapshot()]);
     agent.prepareDraftPr.mockResolvedValue({
       ok: true,
       jobId: 'job-1',
       draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
     });
-    agent.createDraftPr.mockResolvedValue({
-      ok: true,
-      jobId: 'job-1',
-      draftPrCreate: {
-        allowed: true,
-        status: 'created',
-        prUrl: 'https://github.com/acme/repo/pull/10',
-      },
-    });
+    agent.createDraftPr.mockResolvedValue(verifiedDraftPrCreate('job-1', 10));
     agent.getJob.mockResolvedValue(snapshot({
       status: 'completed',
       draftPrUrl: 'https://github.com/acme/repo/pull/10',
@@ -193,7 +206,7 @@ describe('App Draft-PR runtime flow', () => {
     expect(agent.getJob).toHaveBeenCalledWith('job-1');
   });
 
-  it('stages confirmed content once before prepare, create and final reload', async () => {
+  it('stages confirmed content once before prepare, verified create and final reload', async () => {
     agent.listJobs.mockResolvedValue([]);
     agent.startToolchainJob.mockResolvedValue(snapshot({ jobId: 'job-staged', workspaceId: 'job-staged', runtimeId: 'job-staged' }));
     agent.prepareDraftPr.mockResolvedValue({
@@ -201,15 +214,7 @@ describe('App Draft-PR runtime flow', () => {
       jobId: 'job-staged',
       draftPrPreparation: { allowed: true, decision: 'ready', blockers: [] },
     });
-    agent.createDraftPr.mockResolvedValue({
-      ok: true,
-      jobId: 'job-staged',
-      draftPrCreate: {
-        allowed: true,
-        status: 'created',
-        prUrl: 'https://github.com/acme/repo/pull/11',
-      },
-    });
+    agent.createDraftPr.mockResolvedValue(verifiedDraftPrCreate('job-staged', 11));
     agent.getJob.mockResolvedValue(snapshot({
       jobId: 'job-staged',
       workspaceId: 'job-staged',

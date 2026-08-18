@@ -39,4 +39,6 @@ STOPSIGNAL SIGTERM
 # Run migrations on startup, then start bounded threaded gunicorn workers.
 # Agents SDK requests may hold one request slot for a complete double loop, so
 # status and health routes need independent capacity instead of two sync slots.
-CMD ["/bin/sh", "-c", "/docker-entrypoint.d/auto-migrate.sh && exec gunicorn --bind 0.0.0.0:8787 --worker-class gthread --workers \"${SOVEREIGN_WEB_WORKERS:-2}\" --threads \"${SOVEREIGN_WEB_THREADS:-4}\" --timeout 120 app:app"]
+# production_app explicitly registers non-authoritative background provider
+# sensors after the canonical app.py truth boundaries are loaded.
+CMD ["/bin/sh", "-c", "/docker-entrypoint.d/auto-migrate.sh && exec gunicorn --bind 0.0.0.0:8787 --worker-class gthread --workers \"${SOVEREIGN_WEB_WORKERS:-2}\" --threads \"${SOVEREIGN_WEB_THREADS:-4}\" --timeout 120 production_app:app"]
