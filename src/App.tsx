@@ -47,32 +47,10 @@ export default function App() {
       && new URLSearchParams(window.location.search).get('rescue') === '1',
   );
 
-  useEffect(() => {
-    if (!agentConfig.ready || agentJob.status !== 'idle') return;
-    let cancelled = false;
-    let loading = false;
-    const restoreLatestJob = async () => {
-      if (loading) return;
-      loading = true;
-      try {
-        const jobs = await agentClient.listJobs();
-        if (cancelled || jobs.length === 0) return;
-        setAgentJob((current) => current.status === 'idle' ? jobs[0] : current);
-      } catch {
-        // The first app render may precede login. Retry while idle so a later
-        // authenticated session can recover its persisted runtime truth.
-      } finally {
-        loading = false;
-      }
-    };
-    void restoreLatestJob();
-    const timer = window.setInterval(() => { void restoreLatestJob(); }, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [agentClient, agentConfig.ready, agentJob.status]);
-
+  // Fresh chat sessions must stay idle until the user explicitly starts an
+  // execution. Persisted jobs are still recoverable through Rescue, but they
+  // are never adopted automatically because a stale running job would make a
+  // new consent draft look busy and could disable its confirmation controls.
   useEffect(() => {
     const jobId = agentJob.jobId;
     const active = ['queued', 'provisioning', 'running', 'validating'].includes(agentJob.status);
