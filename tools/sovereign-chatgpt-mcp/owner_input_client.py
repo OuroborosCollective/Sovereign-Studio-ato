@@ -40,6 +40,7 @@ ALLOWED_TARGETS = {
     "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
     "openrouter_management_api_key": "OpenRouter Management API Key",
     "notion_integration_token": "Notion Integration Token",
+    "hf_publication_rights": "HF-Publikationsrechte JSON-Receipt",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
 }
 

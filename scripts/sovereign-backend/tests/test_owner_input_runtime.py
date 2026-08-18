@@ -30,6 +30,7 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
         "openrouter_api_key",
         "revolver_provider_key",
         "notion_integration_token",
+        "hf_publication_rights",
         "proven_learning_confirmation",
     }.issubset(set(targets))
     assert "openai_api_key" not in targets
@@ -57,6 +58,12 @@ def test_allowlisted_target_is_derived_from_configured_root(monkeypatch, tmp_pat
     assert notion_target["fieldLabel"] == "Notion Integration Token"
     assert notion_target["maxBytes"] == 8192
     assert notion_target["kind"] == "credential"
+
+    rights_target = targets["hf_publication_rights"]
+    assert rights_target["path"] == (tmp_path / "hf_publication_rights.json").resolve()
+    assert rights_target["fieldLabel"] == "Exaktes HF-Publikationsrechte-JSON-Receipt"
+    assert rights_target["maxBytes"] == 64000
+    assert rights_target["kind"] == "approval_receipt"
 
     learning_target = targets["proven_learning_confirmation"]
     assert learning_target["path"] == (tmp_path / "proven_learning_confirmation.txt").resolve()
