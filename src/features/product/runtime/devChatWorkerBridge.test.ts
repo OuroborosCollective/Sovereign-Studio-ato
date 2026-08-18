@@ -16,6 +16,8 @@ import {
   summarizeDevChatRepoSnapshot,
   isWorkerTimeoutError,
   createWorkerTimeoutDiagnostic,
+  explainDevChatWorkerDiagnostic,
+  isNonRetryableWorkerBlocker,
   WORKER_REPLY_TIMEOUT_MS,
   REPO_TREE_TIMEOUT_MS,
   fetchDevChatRepoTree,
@@ -489,5 +491,82 @@ describe('streamDevChatWorkerReply', () => {
     expect(thrown).toBeInstanceOf(Error);
     expect((thrown as { status?: number }).status).toBe(500);
     expect((thrown as { diagnostic?: { status?: number; scope?: string; canClientFix?: boolean } }).diagnostic).toMatchObject({ status: 500, scope: 'worker_runtime', canClientFix: false });
+  });
+});
+
+
+describe('typed backend blockers (step-up / free-route exhaustion)', () => {
+  const MISSION = { model: DEV_CHAT_WORKER_DEFAULT_MODEL, messages: [{ role: 'user' as const, content: 'Baue einen Draft PR' }] };
+
+  it('classifies HTTP 428 step_up_required as an explicit confirmation gate, not a generic failure', async () => {
+    // Arrange
+    const fetchMock = stubRoutedFetch(() => jsonResponse(
+      { error: { code: 'step_up_required', message: 'paid route requires step-up confirmation' } },
+      428,
+    ));
+
+    // Act
+    const result = await fetchDevChatWorkerReply(MISSION);
+
+    // Assert
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.status).toBe(428);
+    expect(result.diagnostic?.scope).toBe('step_up_required');
+    expect(result.diagnostic?.canClientFix).toBe(true);
+    expect(result.diagnostic?.nextAction).toContain('Step-Up');
+    expect(result.diagnostic?.nextAction).toContain('kein automatischer Wechsel');
+    // No blind retry of a step-up gate: catalog fetch + exactly one chat call.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('classifies HTTP 503 free_route_revolver_exhausted with an actionable quota message', async () => {
+    // Arrange
+    const fetchMock = stubRoutedFetch(() => jsonResponse(
+      { error: 'free_route_revolver_exhausted', message: 'free route revolver exhausted', statusCode: 503 },
+      503,
+    ));
+
+    // Act
+    const result = await fetchDevChatWorkerReply(MISSION);
+
+    // Assert
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.status).toBe(503);
+    expect(result.diagnostic?.scope).toBe('upstream_provider');
+    expect(result.diagnostic?.canClientFix).toBe(false);
+    expect(result.diagnostic?.nextAction).toContain('kostenlose Kontingent');
+    expect(result.diagnostic?.nextAction).toContain('Step-Up');
+    expect(result.diagnostic?.nextAction).toContain('kein stiller Wechsel');
+    // Exhausted free quota is not transient: no blind retry.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('explains a step-up diagnostic with a confirmation title instead of a blocker title', () => {
+    // Arrange
+    const diagnostic = {
+      route: SOVEREIGN_WORKER_CHAT,
+      model: DEV_CHAT_WORKER_DEFAULT_MODEL,
+      messageCount: 1,
+      status: 428,
+      scope: 'step_up_required' as const,
+      canClientFix: true,
+      nextAction: 'Step-Up bestätigen.',
+    };
+
+    // Act
+    const explanation = explainDevChatWorkerDiagnostic(diagnostic);
+
+    // Assert
+    expect(explanation).toContain('Zusätzliche Bestätigung erforderlich (Step-Up)');
+    expect(explanation).not.toContain('Sovereign LLM-Runtime blockiert');
+  });
+
+  it('isNonRetryableWorkerBlocker marks typed blockers and keeps transient 5xx retryable', () => {
+    // Arrange / Act / Assert
+    expect(isNonRetryableWorkerBlocker(428, 'step_up_required')).toBe(true);
+    expect(isNonRetryableWorkerBlocker(503, 'free_route_revolver_exhausted')).toBe(true);
+    expect(isNonRetryableWorkerBlocker(503, 'upstream timeout')).toBe(false);
+    expect(isNonRetryableWorkerBlocker(429, 'rate limited')).toBe(false);
+    expect(isNonRetryableWorkerBlocker(undefined, 'step_up_required')).toBe(true);
   });
 });

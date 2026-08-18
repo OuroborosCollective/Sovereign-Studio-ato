@@ -133,6 +133,7 @@ export type DevChatWorkerFailureScope =
   | 'worker_config'
   | 'worker_runtime'
   | 'upstream_provider'
+  | 'step_up_required'
   | 'network'
   | 'unknown';
 
@@ -497,6 +498,27 @@ function readWorkerContentFromText(text: string): string | undefined {
   }
 }
 
+/**
+ * Returns true for typed backend blockers that a blind retry cannot fix:
+ * - HTTP 428 / step_up_required: an explicit paid-route confirmation is missing.
+ * - HTTP 503 + free-route revolver exhaustion codes: the free quota is used up.
+ * Retrying these only delays the honest blocker message. All other 429/5xx
+ * stay retryable (transient upstream behavior unchanged).
+ */
+export function isNonRetryableWorkerBlocker(status: number | undefined, evidenceText: string): boolean {
+  const text = evidenceText.toLowerCase();
+  if (status === 428 || text.includes('step_up') || text.includes('step-up') || text.includes('step up')) return true;
+  if (status === 503
+    && (text.includes('free_route_revolver_exhausted')
+      || text.includes('free_route')
+      || text.includes('revolver')
+      || text.includes('quota_exhausted')
+      || text.includes('no_free_route'))) {
+    return true;
+  }
+  return false;
+}
+
 function classifyWorkerFailure(args: {
   readonly status?: number;
   readonly errorType?: string;
@@ -530,6 +552,25 @@ function classifyWorkerFailure(args: {
   if (args.status === 429) {
     return { scope: 'upstream_provider', canClientFix: false, nextAction: 'Rate-Limit und die aktive OpenRouter-/FreeLLM-Route prüfen.' };
   }
+  // Typed backend blockers (shared predicate with the retry gate): never treat
+  // them as generic failures and never retry them blindly.
+  if (isNonRetryableWorkerBlocker(args.status, text)) {
+    // Paid step-up gate (HTTP 428 / step_up_required): the next action is the
+    // explicit confirmation flow — no automatic escalation to a paid route.
+    if (args.status === 428 || text.includes('step_up') || text.includes('step-up') || text.includes('step up')) {
+      return {
+        scope: 'step_up_required',
+        canClientFix: true,
+        nextAction: 'Diese Aktion erfordert eine ausdrückliche Step-Up-Bestätigung für eine kostenpflichtige Route. Bestätigung im Step-Up-Dialog erteilen und den Vorgang erneut anstoßen; es erfolgt kein automatischer Wechsel auf eine Paid-Route.',
+      };
+    }
+    // Free-route revolver exhausted (HTTP 503 + backend blocker code).
+    return {
+      scope: 'upstream_provider',
+      canClientFix: false,
+      nextAction: 'Das kostenlose Kontingent der Free-Route ist erschöpft. Auf den Kontingent-Reset warten oder eine Paid-Route ausdrücklich per Step-Up bestätigen; es erfolgt kein stiller Wechsel auf eine Paid-Route.',
+    };
+  }
   if (args.status === 502 || args.status === 503 || args.status === 504) {
     return { scope: 'upstream_provider', canClientFix: false, nextAction: 'Direkten OpenRouter-/FreeLLM-Transport und dessen Upstream-Evidence prüfen.' };
   }
@@ -547,7 +588,9 @@ export function explainDevChatWorkerDiagnostic(diagnostic: DevChatWorkerDiagnost
   const origin = diagnostic.canClientFix ? 'durch eine Nutzer- oder App-Aktion behebbar' : 'nicht sicher im App-Code behebbar';
   const title = diagnostic.scope === 'authentication'
     ? 'Backend-Session nicht bestätigt'
-    : 'Sovereign LLM-Runtime blockiert';
+    : diagnostic.scope === 'step_up_required'
+      ? 'Zusätzliche Bestätigung erforderlich (Step-Up)'
+      : 'Sovereign LLM-Runtime blockiert';
   return [
     `${title}: ${status}.`,
     `Route: ${diagnostic.route}.`,
@@ -704,8 +747,11 @@ export async function fetchDevChatWorkerReply(
           bodySnippet: payload.snippet,
         });
 
-        // Only retry on transient upstream or network issues
-        const isTransient = response.status === 429 || response.status >= 500;
+        // Only retry on transient upstream or network issues. Typed blockers
+        // (step-up required, free-route exhaustion) are never retried blindly.
+        const blockerEvidence = `${payload.type ?? ''} ${payload.code ?? ''} ${payload.message ?? ''} ${payload.snippet ?? ''}`;
+        const isTransient = (response.status === 429 || response.status >= 500)
+          && !isNonRetryableWorkerBlocker(response.status, blockerEvidence);
         if (isTransient && attempt < maxRetries) {
           lastError = { status: response.status, text };
           continue;
