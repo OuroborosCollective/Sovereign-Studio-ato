@@ -15,27 +15,16 @@ import React from 'react';
 import type { IntegrationIntentDraft, IntegrationIntentDraftGateSnapshot } from '../runtime/integrationIntentDraftRuntime';
 
 export interface IntegrationIntentDraftCardProps {
-  /** The recognized integration draft */
   draft: IntegrationIntentDraft;
-  /** Current gate snapshot from runtime */
   gateSnapshot: IntegrationIntentDraftGateSnapshot;
-  /** Called when user confirms the draft and execution path is ready */
   onConfirm: () => void;
-  /** Called when user confirms but GitHub access is needed - opens GitHub Access Gate */
   onConfirmWithGitHubAccess?: () => void;
-  /** Called when user wants to rephrase the draft */
   onRephrase: () => void;
-  /** Called when user rejects the draft */
   onReject: () => void;
-  /** Optional: can confirm check result for button state */
   canConfirm?: boolean;
-  /** Optional: blocker message if cannot confirm */
   confirmBlocker?: string;
 }
 
-/**
- * Single gate indicator component
- */
 function GateIndicator({
   label,
   ready,
@@ -61,18 +50,6 @@ function GateIndicator({
   );
 }
 
-/**
- * Integration Intent Draft Card Component
- *
- * Displays:
- * - Header: "Ich habe daraus diesen Integrationsauftrag erkannt:"
- * - Title (extracted/improved)
- * - Goal
- * - Scope keywords
- * - Affected files (if derivable)
- * - Gate status indicators
- * - Three action buttons
- */
 export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProps> = ({
   draft,
   gateSnapshot,
@@ -83,14 +60,15 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
   canConfirm = true,
   confirmBlocker,
 }) => {
-  // Determine if we need GitHub access to proceed
   const needsGitHubAccess = gateSnapshot.repoReady && !gateSnapshot.githubWriteReady;
-  
-  // The "Einbauen" button should be enabled if repo is ready
-  // Even without GitHub write, clicking it should lead to the access gate
   const einbauenEnabled = gateSnapshot.repoReady && (canConfirm || needsGitHubAccess);
-  
-  // Handler for Einbauen - uses GitHub access flow if needed
+  const effectiveConfirmBlocker = confirmBlocker
+    ?? (
+      gateSnapshot.repoReady && !needsGitHubAccess && !canConfirm
+        ? 'Einbauen wartet: Der Sovereign Agent ist noch nicht startbereit oder ein bestätigter Executor-Lauf ist bereits aktiv.'
+        : undefined
+    );
+
   const handleEinbauen = () => {
     if (needsGitHubAccess && onConfirmWithGitHubAccess) {
       onConfirmWithGitHubAccess();
@@ -106,7 +84,6 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
       data-draft-id={draft.id}
       data-draft-title={draft.title}
     >
-      {/* Header */}
       <div className="px-4 py-3 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
         <div className="flex items-center gap-2">
           <div className="w-5 h-5 rounded-lg bg-cyan-500/20 flex items-center justify-center">
@@ -118,9 +95,7 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-4 py-3 space-y-3">
-        {/* Title */}
         <div>
           <h4
             className="text-sm font-semibold text-slate-100 leading-snug"
@@ -130,7 +105,6 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           </h4>
         </div>
 
-        {/* Goal */}
         <div>
           <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
             Ziel
@@ -140,7 +114,6 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           </p>
         </div>
 
-        {/* Scope */}
         {draft.scope.length > 0 && (
           <div>
             <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
@@ -159,7 +132,6 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           </div>
         )}
 
-        {/* Affected Files */}
         {draft.affectedFiles.length > 0 && (
           <div>
             <span className="text-[10px] text-cyan-500 uppercase tracking-wider font-bold">
@@ -184,7 +156,6 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
           </div>
         )}
 
-        {/* Gates */}
         <div className="pt-2 border-t border-slate-800">
           <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
             Gates
@@ -195,18 +166,16 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             <GateIndicator label="Direct Patch" ready={gateSnapshot.directPatchReady} />
             <GateIndicator label="Sovereign Agent" ready={gateSnapshot.agentReady} />
           </div>
-          {confirmBlocker && (
+          {effectiveConfirmBlocker && (
             <p className="text-[10px] text-amber-400 mt-1.5" data-testid="confirm-blocker">
-              ⚠ {confirmBlocker}
+              ⚠ {effectiveConfirmBlocker}
             </p>
           )}
         </div>
       </div>
 
-      {/* Actions */}
       <div className="px-4 py-3 border-t border-cyan-500/20 bg-slate-900/50">
         <div className="flex gap-2">
-          {/* Einbauen */}
           <button
             type="button"
             onClick={handleEinbauen}
@@ -224,7 +193,6 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             {needsGitHubAccess ? 'GitHub-Zugang benötigt' : 'Einbauen'}
           </button>
 
-          {/* Neu formulieren */}
           <button
             type="button"
             onClick={onRephrase}
@@ -235,12 +203,12 @@ export const IntegrationIntentDraftCard: React.FC<IntegrationIntentDraftCardProp
             Neu formulieren
           </button>
 
-          {/* Ablehnen */}
           <button
             type="button"
             onClick={onReject}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-500 hover:bg-slate-700/50 hover:text-slate-400 active:scale-[0.98] transition-all"
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-rose-500/10 border border-rose-500/35 text-rose-300 hover:bg-rose-500/20 active:scale-[0.98] transition-all"
             data-testid="btn-reject"
+            data-enabled="true"
             aria-label="Integrationsauftrag ablehnen"
           >
             Ablehnen
