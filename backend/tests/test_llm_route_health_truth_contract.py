@@ -5,10 +5,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-APP_SOURCES = (
-    ROOT / "backend" / "app.py",
-    ROOT / "scripts" / "sovereign-backend" / "app.py",
-)
+# Single source of truth: the live sovereign backend. backend/app.py was
+# deliberately removed; contracts must pin the production implementation only.
+PRODUCTION_APP = ROOT / "scripts" / "sovereign-backend" / "app.py"
+APP_SOURCES = (PRODUCTION_APP,)
 
 
 def _function(path: Path, name: str) -> ast.FunctionDef:
@@ -32,9 +32,11 @@ def _route_health_ok_expression(path: Path) -> ast.expr:
     raise AssertionError("Route health response dictionary not found")
 
 
-def test_route_health_ok_is_derived_from_real_health_status():
+def test_route_health_ok_is_derived_from_verified_evidence():
+    # New truth: "ok" is derived from the provider-aware verification result
+    # (bool(result.get("ok"))), never from a literal green constant.
     expected = ast.dump(
-        ast.parse('health_status == "healthy"', mode="eval").body,
+        ast.parse('bool(result.get("ok"))', mode="eval").body,
         include_attributes=False,
     )
     for path in APP_SOURCES:
@@ -48,17 +50,25 @@ def test_degraded_route_cannot_share_a_literal_green_response():
         function_start = source.index("def admin_llm_route_healthcheck")
         next_route = source.index("\n@app.route", function_start + 1)
         function_source = source[function_start:next_route]
-        assert '"ok": True,\n        "routeId": rid' not in function_source
-        assert '"ok": health_status == "healthy"' in function_source
-        assert '"status": health_status' in function_source
-        assert '"health": health_status' in function_source
+
+        # No literal green: "ok" is never hard-coded True anywhere in the
+        # function, and the response derives ok/health from the evidence.
+        assert '"ok": True' not in function_source
+        assert '"ok": bool(result.get("ok"))' in function_source
+        assert '"health": result.get("health") or "degraded"' in function_source
+
+        # Degraded/blocked routes keep explicit blockers instead of a green
+        # state: every health value is conditional on verification evidence.
+        assert function_source.count('"health": "ready" if verified else') >= 2
+        assert '"blocker": "unsupported_llm_transport"' in function_source
+        assert '"blocker": "legacy_litellm_replaced_by_openrouter"' in function_source
 
 
-def test_live_and_deploy_route_health_functions_are_semantically_identical():
+def test_route_health_function_exists_in_single_production_source():
+    # Single source of truth: the removed backend/app.py must stay absent and
+    # the healthcheck contract lives in the production backend only.
+    assert not (ROOT / "backend" / "app.py").exists()
     assert ast.dump(
-        _function(APP_SOURCES[0], "admin_llm_route_healthcheck"),
-        include_attributes=False,
-    ) == ast.dump(
-        _function(APP_SOURCES[1], "admin_llm_route_healthcheck"),
+        _function(PRODUCTION_APP, "admin_llm_route_healthcheck"),
         include_attributes=False,
     )
