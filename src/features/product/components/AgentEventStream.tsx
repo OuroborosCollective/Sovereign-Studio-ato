@@ -9,7 +9,7 @@
  * by default so it cannot push the actual conversation out of view.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
 import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
@@ -223,8 +223,6 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
 }
 
 export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(false);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
   );
@@ -235,15 +233,6 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
     () => buildStream(snapshot, job, isActive),
     [snapshot, job, isActive],
   );
-
-  useEffect(() => {
-    if (!expanded) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    if (typeof el.scrollTo === 'function') {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    }
-  }, [expanded, stream.length]);
 
   const headerLabel = headerLabelFor(snapshot, job);
   const headerColor = headerColorFor(snapshot);
@@ -260,16 +249,28 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.35; }
         }
+        .agent-event-details > summary::-webkit-details-marker { display: none; }
       `}</style>
 
-      <div
-        role="region"
+      <details
+        className="agent-event-details"
         aria-label="Ausführungs-Ereignisstrom"
         data-testid="agent-event-stream"
-        data-expanded={expanded ? 'true' : 'false'}
-        style={{ margin: '3px 12px 3px 46px', borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+        data-default-collapsed="true"
+        style={{ margin: '3px 12px 3px 46px', borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`, overflow: 'hidden' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', background: '#0e1116cc' }}>
+        <summary
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            minHeight: 34,
+            padding: '7px 9px',
+            background: '#0e1116cc',
+            cursor: 'pointer',
+            listStyle: 'none',
+          }}
+        >
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: headerColor, flexShrink: 0, ...(isActive && { animation: 'aes-pulse 1s ease-in-out infinite', boxShadow: `0 0 6px ${headerColor}` }) }} />
           <span style={{ fontSize: 11.5, fontWeight: 600, color: headerColor, flex: 1, minWidth: 0 }}>{headerLabel}</span>
           {changedFiles.length > 0 && (
@@ -277,62 +278,42 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
               {changedFiles.length} Datei{changedFiles.length === 1 ? '' : 'en'}
             </span>
           )}
-          <button
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
-            style={{
-              minHeight: 32,
-              padding: '4px 8px',
-              border: 'none',
-              borderRadius: 6,
-              background: 'transparent',
-              color: C.textSub,
-              fontSize: 10,
-              cursor: 'pointer',
-            }}
-          >
-            {expanded ? 'Details ausblenden' : 'Details'}
-          </button>
+          <span style={{ color: C.textSub, fontSize: 10 }}>Details</span>
+        </summary>
+
+        {repoLabel && (
+          <div style={{ padding: '0 12px 5px', fontSize: 9.5, color: C.textMuted, fontFamily: 'monospace' }}>
+            {repoLabel}
+          </div>
+        )}
+        <div style={{ padding: '6px 12px', maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0, borderTop: `1px solid ${C.border}` }}>
+          {stream.map((event) => <EventRow key={event.id} event={event} />)}
         </div>
 
-        {expanded && (
-          <>
-            {repoLabel && (
-              <div style={{ padding: '0 12px 5px', fontSize: 9.5, color: C.textMuted, fontFamily: 'monospace' }}>
-                {repoLabel}
-              </div>
-            )}
-            <div ref={scrollRef} style={{ padding: '6px 12px', maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0, borderTop: `1px solid ${C.border}` }}>
-              {stream.map((event) => <EventRow key={event.id} event={event} />)}
-            </div>
-
-            {changedFiles.length > 0 && (
-              <div style={{ padding: '6px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {changedFiles.slice(0, 12).map((f) => (
-                  <FileBadge key={f} path={f} onClick={onOpenFile ? () => onOpenFile(f) : undefined} />
-                ))}
-                {changedFiles.length > 12 && <span style={{ fontSize: 11, color: C.textMuted, alignSelf: 'center' }}>+{changedFiles.length - 12} weitere</span>}
-              </div>
-            )}
-
-            {(onCancel || draftPrUrl) && (
-              <div style={{ padding: '8px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                {isActive && onCancel && (
-                  <button type="button" onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', color: C.rose, fontSize: 12, fontWeight: 500, border: `1px solid ${C.rose}`, cursor: 'pointer' }}>
-                    Abbrechen
-                  </button>
-                )}
-                {draftPrUrl && (
-                  <button type="button" onClick={onOpenDraftPr ?? (() => window.open(draftPrUrl, '_blank'))} style={{ padding: '6px 14px', borderRadius: 7, background: C.green, color: '#000', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
-                    Draft PR öffnen ↗
-                  </button>
-                )}
-              </div>
-            )}
-          </>
+        {changedFiles.length > 0 && (
+          <div style={{ padding: '6px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {changedFiles.slice(0, 12).map((f) => (
+              <FileBadge key={f} path={f} onClick={onOpenFile ? () => onOpenFile(f) : undefined} />
+            ))}
+            {changedFiles.length > 12 && <span style={{ fontSize: 11, color: C.textMuted, alignSelf: 'center' }}>+{changedFiles.length - 12} weitere</span>}
+          </div>
         )}
-      </div>
+
+        {(onCancel || draftPrUrl) && (
+          <div style={{ padding: '8px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            {isActive && onCancel && (
+              <button type="button" onClick={onCancel} style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', color: C.rose, fontSize: 12, fontWeight: 500, border: `1px solid ${C.rose}`, cursor: 'pointer' }}>
+                Abbrechen
+              </button>
+            )}
+            {draftPrUrl && (
+              <button type="button" onClick={onOpenDraftPr ?? (() => window.open(draftPrUrl, '_blank'))} style={{ padding: '6px 14px', borderRadius: 7, background: C.green, color: '#000', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+                Draft PR öffnen ↗
+              </button>
+            )}
+          </div>
+        )}
+      </details>
     </>
   );
 }
