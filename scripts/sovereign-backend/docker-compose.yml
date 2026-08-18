@@ -7,7 +7,8 @@
 # Networks:
 # - supabase_default: Network for PostgreSQL database access
 # - areloria_arelorian-network: Network for Areloria services
-# - sovereign-private: Internal-only OpenRouter, FreeLLMAPI and OmniRoute network
+# - sovereign-private: direct OpenRouter and FreeLLM routing network; FreeLLMAPI
+#   stays intact and OmniRoute replaces only the retired FreeLLMPool route source.
 # =============================================================================
 
 services:
