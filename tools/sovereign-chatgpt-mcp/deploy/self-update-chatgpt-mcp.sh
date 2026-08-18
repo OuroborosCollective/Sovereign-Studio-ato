@@ -285,6 +285,7 @@ unset GITHUB_TOKEN
 
 CURRENT_STAGE="checkout_confirmed_revision"
 git checkout --detach --force "$EXPECTED_REVISION"
+git reset --hard "$EXPECTED_REVISION"
 git clean -fd
 CHECKED_OUT_REVISION="$(git rev-parse HEAD)"
 [[ "$CHECKED_OUT_REVISION" == "$EXPECTED_REVISION" ]] || {
