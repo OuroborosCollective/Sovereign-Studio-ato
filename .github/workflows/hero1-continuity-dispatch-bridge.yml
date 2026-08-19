@@ -39,12 +39,43 @@ jobs:
               basehead: `${base}...${head}`,
               per_page: 100,
             });
-            const paths = new Set((comparison.data.files || []).map(file => String(file.filename || '')));
-            const required = [
+            const allPaths = new Set((comparison.data.files || []).map(file => String(file.filename || '')));
+            const ledgerPaths = new Set([
               'docs/sovereign-continuity/LEDGER.jsonl',
               'tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl',
-            ];
-            core.setOutput('needs_repair', required.every(path => paths.has(path)) ? 'false' : 'true');
+            ]);
+            if (![...ledgerPaths].every(path => allPaths.has(path))) {
+              core.setOutput('needs_repair', 'true');
+              return;
+            }
+            const response = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: 'docs/sovereign-continuity/LEDGER.jsonl',
+              ref: head,
+            });
+            if (Array.isArray(response.data) || response.data.type !== 'file' || !response.data.content) {
+              core.setFailed('CONTINUITY_LEDGER_READ_FAILED');
+              return;
+            }
+            const text = Buffer.from(response.data.content, 'base64').toString('utf8');
+            const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+            if (!lines.length) {
+              core.setOutput('needs_repair', 'true');
+              return;
+            }
+            let latest;
+            try {
+              latest = JSON.parse(lines[lines.length - 1]);
+            } catch {
+              core.setFailed('CONTINUITY_LATEST_ENTRY_INVALID_JSON');
+              return;
+            }
+            const covered = new Set(Array.isArray(latest.changedPaths) ? latest.changedPaths.map(String) : []);
+            const expected = [...allPaths].filter(path => !ledgerPaths.has(path));
+            const missing = expected.filter(path => !covered.has(path));
+            core.info(`Continuity missing changedPaths: ${missing.join(', ') || '<none>'}`);
+            core.setOutput('needs_repair', missing.length ? 'true' : 'false');
 
       - name: Dispatch repository-canonical exact-head continuity repair
         if: steps.gate.outputs.needs_repair == 'true'
@@ -63,6 +94,6 @@ jobs:
             -f expected_head_sha="$EXPECTED_HEAD_SHA" \
             -f expected_base_sha="$EXPECTED_BASE_SHA"
 
-      - name: Report no-op when both ledgers are already part of the PR
+      - name: Report no-op when latest receipt covers the PR diff
         if: steps.gate.outputs.needs_repair != 'true'
-        run: echo 'Canonical continuity ledgers are already present in the PR diff; no dispatch performed.'
+        run: echo 'Latest canonical continuity receipt already covers every non-ledger PR path; no dispatch performed.'
