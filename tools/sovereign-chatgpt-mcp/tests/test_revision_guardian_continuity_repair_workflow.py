@@ -47,8 +47,12 @@ def test_legacy_pr_continuity_repair_derives_paths_and_validates_before_push() -
     text = _workflow_text()
 
     assert "['git', 'diff', '--name-only', f'{base}...{head}']" in text
+    assert "ledger_paths = {canonical.as_posix(), mirror.as_posix()}" in text
+    assert "recorded_paths = sorted(path for path in changed_paths if path not in ledger_paths)" in text
+    assert "recorded_paths = sorted(set(changed_paths + ledger_paths))" not in text
     assert "'sourceRevision': head" in text
     assert "'changedPaths': recorded_paths" in text
+    assert "f'Non-ledger changed-path count recorded: {len(recorded_paths)}.'" in text
     assert "git diff --check" in text
     assert "python3 tools/sovereign-chatgpt-mcp/validate_continuity.py" in text
     assert '--base "$EXPECTED_BASE_SHA"' in text
