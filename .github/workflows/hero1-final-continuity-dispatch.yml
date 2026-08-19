@@ -1,0 +1,37 @@
+name: HERO-1 Final Continuity Dispatch
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Dispatch exact target PR continuity repair
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_PR_NUMBER: '1572'
+          TARGET_REF: 'sovereign/copilot-hero1-first-class-integration'
+          EXPECTED_HEAD_SHA: '417009cefa1d066c2f20051ceb3040e0aa46f4f3'
+          EXPECTED_BASE_SHA: '2ea93d5d1b0e28cb17dbb7c103dc10e450e4e45a'
+        run: |
+          set -euo pipefail
+          gh workflow run revision-guardian-continuity-repair-pr.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$TARGET_REF" \
+            -f target_pr_number="$TARGET_PR_NUMBER" \
+            -f expected_head_sha="$EXPECTED_HEAD_SHA" \
+            -f expected_base_sha="$EXPECTED_BASE_SHA"
