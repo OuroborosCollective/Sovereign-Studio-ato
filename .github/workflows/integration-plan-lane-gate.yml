@@ -12,9 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
-  pull-requests: read
 
 concurrency:
   group: integration-plan-lane-${{ github.event.pull_request.number || github.ref }}
@@ -31,82 +29,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Determine whether final exact-path Continuity receipt is required
-        id: continuity-repair
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const base = String(context.payload.pull_request.base.sha || '').toLowerCase();
-            const head = String(context.payload.pull_request.head.sha || '').toLowerCase();
-            if (!/^[0-9a-f]{40}$/.test(base) || !/^[0-9a-f]{40}$/.test(head)) {
-              core.setFailed('PR_REVISION_INVALID');
-              return;
-            }
-            const comparison = await github.rest.repos.compareCommitsWithBasehead({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              basehead: `${base}...${head}`,
-              per_page: 100,
-            });
-            const allPaths = new Set((comparison.data.files || []).map(file => String(file.filename || '')));
-            const ledgerPaths = new Set([
-              'docs/sovereign-continuity/LEDGER.jsonl',
-              'tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl',
-            ]);
-            if (![...ledgerPaths].every(path => allPaths.has(path))) {
-              core.setOutput('needs_repair', 'true');
-              return;
-            }
-            const response = await github.rest.repos.getContent({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              path: 'docs/sovereign-continuity/LEDGER.jsonl',
-              ref: head,
-            });
-            if (Array.isArray(response.data) || response.data.type !== 'file' || !response.data.content) {
-              core.setFailed('CONTINUITY_LEDGER_READ_FAILED');
-              return;
-            }
-            const text = Buffer.from(response.data.content, 'base64').toString('utf8');
-            const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-            if (!lines.length) {
-              core.setOutput('needs_repair', 'true');
-              return;
-            }
-            let latest;
-            try {
-              latest = JSON.parse(lines[lines.length - 1]);
-            } catch {
-              core.setFailed('CONTINUITY_LATEST_ENTRY_INVALID_JSON');
-              return;
-            }
-            const recorded = new Set(Array.isArray(latest.changedPaths) ? latest.changedPaths.map(String) : []);
-            const expected = [...allPaths].filter(path => !ledgerPaths.has(path)).sort();
-            const missing = expected.filter(path => !recorded.has(path));
-            const extra = [...recorded].filter(path => !expected.includes(path)).sort();
-            core.info(`Continuity missing changedPaths: ${missing.join(', ') || '<none>'}`);
-            core.info(`Continuity extra changedPaths: ${extra.join(', ') || '<none>'}`);
-            core.setOutput('needs_repair', missing.length || extra.length ? 'true' : 'false');
-
-      - name: Dispatch repository-canonical exact-head Continuity repair
-        if: steps.continuity-repair.outputs.needs_repair == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_PR_NUMBER: ${{ github.event.pull_request.number }}
-          TARGET_REF: ${{ github.event.pull_request.head.ref }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          gh workflow run revision-guardian-continuity-repair-pr.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$TARGET_REF" \
-            -f target_pr_number="$TARGET_PR_NUMBER" \
-            -f expected_head_sha="$EXPECTED_HEAD_SHA" \
-            -f expected_base_sha="$EXPECTED_BASE_SHA"
 
       - name: Setup Python
         uses: actions/setup-python@v5
