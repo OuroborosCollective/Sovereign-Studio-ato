@@ -3,15 +3,23 @@
 Regression coverage for:
   BUG-A  : zero_price_evidence cross-source seen_input/seen_output accumulation
   BUG-A.2: _numeric_zero treating boolean False as zero price
+
+Both the canonical copy (backend/) and the deployment-mirror copy
+(scripts/sovereign-backend/) are exercised to prevent silent divergence.
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 
 BACKEND = Path(__file__).resolve().parents[1]
+REPO_ROOT = BACKEND.parent
+DEPLOY_MIRROR = REPO_ROOT / "scripts" / "sovereign-backend"
+
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
@@ -20,6 +28,20 @@ from free_revolver_provider_contracts import (
     normalize_models_payload,
     zero_price_evidence,
 )
+
+
+def _load_mirror() -> tuple:
+    """Load the deployment-mirror module isolated from sys.modules."""
+    spec = importlib.util.spec_from_file_location(
+        "_mirror_free_revolver_provider_contracts",
+        DEPLOY_MIRROR / "free_revolver_provider_contracts.py",
+    )
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod._numeric_zero, mod.zero_price_evidence, mod.normalize_models_payload
+
+
+_mirror_numeric_zero, _mirror_zero_price_evidence, _mirror_normalize = _load_mirror()
 
 
 # ── _numeric_zero ──────────────────────────────────────────────────────────────
@@ -212,3 +234,55 @@ class TestNormalizeModelsPayload:
         result = normalize_models_payload([item], managed_quota_contract=True)
         assert result[0]["freeEligible"] is True
         assert result[0]["eligibilitySource"] == "managed-freellm-quota-contract"
+
+
+# ── Deployment-mirror parity ──────────────────────────────────────────────────
+
+class TestDeploymentMirrorParity:
+    """Assert that scripts/sovereign-backend/free_revolver_provider_contracts.py
+    produces identical results to the canonical backend/ copy for every
+    regression case so divergence cannot re-appear silently."""
+
+    # BUG-A.2: boolean False must be rejected in deployment mirror
+    def test_mirror_rejects_boolean_false_as_zero(self) -> None:
+        assert _mirror_numeric_zero(False) is None
+
+    def test_mirror_rejects_boolean_true_as_zero(self) -> None:
+        assert _mirror_numeric_zero(True) is None
+
+    # BUG-A: split-source seen_* flags must not combine across sources in mirror
+    def test_mirror_rejects_split_input_output_across_sources(self) -> None:
+        item = {
+            "pricing": {"prompt": 0.0},
+            "price": {"completion": 0.0},
+        }
+        ok, source = _mirror_zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-unreported-or-incomplete"
+
+    def test_mirror_rejects_boolean_false_in_pricing_fields(self) -> None:
+        item = {"pricing": {"prompt": False, "completion": False}}
+        ok, source = _mirror_zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-invalid"
+
+    def test_mirror_accepts_complete_zero_pricing(self) -> None:
+        item = {"pricing": {"prompt": 0.0, "completion": 0.0}}
+        ok, source = _mirror_zero_price_evidence(item)
+        assert ok is True
+        assert source == "provider-models-explicit-zero-pricing"
+
+    def test_mirror_normalize_bool_false_not_free_eligible(self) -> None:
+        item = {"id": "test-model", "capabilities": ["chat"],
+                "pricing": {"prompt": False, "completion": False}}
+        result = _mirror_normalize([item])
+        assert result[0]["freeEligible"] is False
+        assert result[0]["eligibilitySource"] == "provider-pricing-invalid"
+
+    def test_mirror_normalize_split_source_not_free_eligible(self) -> None:
+        item = {"id": "test-model", "capabilities": ["chat"],
+                "pricing": {"prompt": 0.0},
+                "price": {"completion": 0.0}}
+        result = _mirror_normalize([item])
+        assert result[0]["freeEligible"] is False
+        assert result[0]["providerCostCatalogState"] == "unreported"
