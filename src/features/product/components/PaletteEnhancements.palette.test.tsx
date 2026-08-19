@@ -19,6 +19,7 @@ import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
+import { PatternKnowledgeCard } from './PatternKnowledgeCard';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -897,6 +898,59 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(findingBtn);
       expect(onFindingClick).toHaveBeenCalledWith(mockRegistry.findings[0]);
+    });
+  });
+
+  describe('PatternKnowledgeCard Accessibility and Micro-UX Enhancements', () => {
+    it('renders landmark section linked to title, semantic statistics list, scope tags, and action buttons with tooltips', () => {
+      const counters = {
+        totalStored: 5,
+        verifiedCount: 3,
+        localExecutableCount: 2,
+        frequentlyUsedCount: 1,
+        lastSuccessfulReuseAt: 1_700_000_000_000,
+        localUserCount: 2,
+        remoteUserCount: 1,
+        sharedDerivedCount: 0,
+      };
+
+      const onShowDetails = vi.fn();
+      const onUseLocalMode = vi.fn();
+
+      render(
+        <PatternKnowledgeCard
+          counters={counters}
+          onShowDetails={onShowDetails}
+          onUseLocalMode={onUseLocalMode}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: 'Dein Sovereign-Wissensstand' });
+      expect(section).toBeInTheDocument();
+
+      const statsList = screen.getByRole('list', { name: 'Statistiken zum Sovereign-Wissensstand' });
+      expect(statsList).toBeInTheDocument();
+
+      const totalRow = screen.getByTitle('Statistik: Gespeicherte Patterns - 5');
+      expect(totalRow).toBeInTheDocument();
+
+      const localScopeTag = screen.getByText('lokal');
+      expect(localScopeTag).toHaveAttribute('title', 'Geltungsbereich: lokal');
+      expect(localScopeTag).toHaveAttribute('aria-label', 'Geltungsbereich: lokal');
+
+      const detailsBtn = screen.getByRole('button', { name: 'Details zum Sovereign-Wissensstand ansehen' });
+      expect(detailsBtn).toHaveAttribute('title', 'Details zum Sovereign-Wissensstand ansehen');
+      expect(detailsBtn).toHaveClass('focus-visible:ring-2');
+
+      const localBtn = screen.getByRole('button', { name: 'Lokalen Modus für verifizierte Abläufe nutzen' });
+      expect(localBtn).toHaveAttribute('title', 'Lokalen Modus für verifizierte Abläufe nutzen');
+      expect(localBtn).toHaveClass('focus-visible:ring-2');
+
+      fireEvent.click(detailsBtn);
+      expect(onShowDetails).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(localBtn);
+      expect(onUseLocalMode).toHaveBeenCalledTimes(1);
     });
   });
 });
