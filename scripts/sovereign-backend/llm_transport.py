@@ -28,6 +28,17 @@ FREELLM_EXECUTION_BASE_URLS: Final[frozenset[str]] = frozenset(
 SUPPORTED_EXECUTION_TRANSPORTS: Final[frozenset[str]] = frozenset(
     {OPENROUTER_TRANSPORT, FREELLM_TRANSPORT}
 )
+_KNOWN_ROUTE_TRANSPORTS: Final[frozenset[str]] = frozenset(
+    {*SUPPORTED_EXECUTION_TRANSPORTS, LEGACY_LITELLM_TRANSPORT}
+)
+_TRANSPORT_ALIASES: Final[dict[str, str]] = {
+    "freellmapi": FREELLM_TRANSPORT,
+    "free-llm": FREELLM_TRANSPORT,
+    "free_llm": FREELLM_TRANSPORT,
+    "open-router": OPENROUTER_TRANSPORT,
+    "open_router": OPENROUTER_TRANSPORT,
+    "openrouter.ai": OPENROUTER_TRANSPORT,
+}
 
 
 def route_config(route: dict[str, Any]) -> dict[str, Any]:
@@ -37,23 +48,71 @@ def route_config(route: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_transport(value: Any) -> str:
     transport = str(value or "").strip().lower()
-    if transport in {"freellmapi", "free-llm", "free_llm"}:
-        return FREELLM_TRANSPORT
-    return transport
+    return _TRANSPORT_ALIASES.get(transport, transport)
+
+
+def route_transport_diagnostics(route: dict[str, Any]) -> dict[str, Any]:
+    """Classify transport metadata without letting one conflicting field win.
+
+    Persisted routes historically expose transport through several equivalent
+    fields. A conflict between them is a routing-integrity failure, not a
+    precedence decision. The result is intentionally secret-safe and bounded.
+    """
+    config = route_config(route)
+    values = {
+        "config.transport": config.get("transport"),
+        "runtime_kind": route.get("runtime_kind"),
+        "runtimeKind": route.get("runtimeKind"),
+        "provider": route.get("provider"),
+    }
+    normalized_fields = {
+        field: normalize_transport(value)[:80]
+        for field, value in values.items()
+        if normalize_transport(value)
+    }
+    unique = sorted(set(normalized_fields.values()))
+    route_id = str(route.get("id") or "")[:160]
+    if not unique:
+        return {
+            "ok": False,
+            "routeId": route_id,
+            "transport": "",
+            "failureFamily": "route_transport_missing",
+            "sourceFields": {},
+            "secretValuesReturned": False,
+        }
+    if len(unique) != 1:
+        return {
+            "ok": False,
+            "routeId": route_id,
+            "transport": "",
+            "failureFamily": "route_transport_conflict",
+            "sourceFields": normalized_fields,
+            "secretValuesReturned": False,
+        }
+    transport = unique[0]
+    if transport not in _KNOWN_ROUTE_TRANSPORTS:
+        return {
+            "ok": False,
+            "routeId": route_id,
+            "transport": "",
+            "failureFamily": "route_transport_unsupported",
+            "sourceFields": normalized_fields,
+            "secretValuesReturned": False,
+        }
+    return {
+        "ok": True,
+        "routeId": route_id,
+        "transport": transport,
+        "failureFamily": None,
+        "sourceFields": normalized_fields,
+        "secretValuesReturned": False,
+    }
 
 
 def route_transport(route: dict[str, Any]) -> str:
-    config = route_config(route)
-    for value in (
-        config.get("transport"),
-        route.get("runtime_kind"),
-        route.get("runtimeKind"),
-        route.get("provider"),
-    ):
-        normalized = normalize_transport(value)
-        if normalized:
-            return normalized
-    return ""
+    diagnostic = route_transport_diagnostics(route)
+    return str(diagnostic["transport"]) if diagnostic["ok"] else ""
 
 
 def route_provider_model(route: dict[str, Any]) -> str:
