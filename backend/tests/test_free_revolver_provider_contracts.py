@@ -1,0 +1,211 @@
+"""Tests for free_revolver_provider_contracts — pricing evidence contracts.
+
+Regression coverage for:
+  BUG-A  : zero_price_evidence cross-source seen_input/seen_output accumulation
+  BUG-A.2: _numeric_zero treating boolean False as zero price
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+BACKEND = Path(__file__).resolve().parents[1]
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+
+from free_revolver_provider_contracts import (
+    _numeric_zero,
+    normalize_models_payload,
+    zero_price_evidence,
+)
+
+
+# ── _numeric_zero ──────────────────────────────────────────────────────────────
+
+class TestNumericZero:
+    def test_accepts_integer_zero(self) -> None:
+        assert _numeric_zero(0) is True
+
+    def test_accepts_float_zero(self) -> None:
+        assert _numeric_zero(0.0) is True
+
+    def test_accepts_string_zero(self) -> None:
+        assert _numeric_zero("0") is True
+        assert _numeric_zero("0.0") is True
+        assert _numeric_zero("0.00") is True
+
+    def test_rejects_nonzero_number(self) -> None:
+        assert _numeric_zero(0.001) is False
+        assert _numeric_zero(1) is False
+        assert _numeric_zero("0.001") is False
+
+    def test_returns_none_for_none(self) -> None:
+        assert _numeric_zero(None) is None
+
+    def test_returns_none_for_empty_string(self) -> None:
+        assert _numeric_zero("") is None
+
+    def test_returns_none_for_non_numeric_string(self) -> None:
+        assert _numeric_zero("free") is None
+        assert _numeric_zero("false") is None
+        assert _numeric_zero("null") is None
+
+    # BUG-A.2 regression: boolean False must not be treated as zero price
+    def test_rejects_boolean_false_as_zero(self) -> None:
+        """JSON false in a pricing field is absent/invalid data, not a price of 0."""
+        assert _numeric_zero(False) is None
+
+    def test_rejects_boolean_true_as_zero(self) -> None:
+        assert _numeric_zero(True) is None
+
+
+# ── zero_price_evidence ────────────────────────────────────────────────────────
+
+class TestZeroPriceEvidence:
+    def test_returns_true_for_complete_zero_pricing_in_single_source(self) -> None:
+        item = {"pricing": {"prompt": 0.0, "completion": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is True
+        assert source == "provider-models-explicit-zero-pricing"
+
+    def test_returns_true_for_request_field_alone(self) -> None:
+        item = {"pricing": {"request": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is True
+        assert source == "provider-models-explicit-zero-pricing"
+
+    def test_returns_true_when_alternate_key_has_complete_zero_pricing(self) -> None:
+        # 'price' key instead of 'pricing'
+        item = {"price": {"input": 0.0, "output": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is True
+
+    def test_returns_true_from_cost_per_request_zero(self) -> None:
+        item = {"billing": {"cost_per_request": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is True
+
+    # BUG-A regression: split evidence across two dicts must not produce True
+    def test_rejects_split_input_output_across_two_source_dicts(self) -> None:
+        """prompt in 'pricing' and completion in 'price' must not combine to True."""
+        item = {
+            "pricing": {"prompt": 0.0},    # only input side
+            "price": {"completion": 0.0},  # only output side
+        }
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-unreported-or-incomplete"
+
+    def test_rejects_split_with_alternative_field_names(self) -> None:
+        item = {
+            "pricing": {"input": 0.0},
+            "cost": {"output": 0.0},
+        }
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+
+    # BUG-A.2 regression: boolean False in pricing field must not produce True
+    def test_rejects_boolean_false_in_pricing_fields(self) -> None:
+        item = {"pricing": {"prompt": False, "completion": False}}
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-invalid"
+
+    def test_rejects_nonzero_input_price(self) -> None:
+        item = {"pricing": {"prompt": 0.001, "completion": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-nonzero"
+
+    def test_rejects_nonzero_output_price(self) -> None:
+        item = {"pricing": {"prompt": 0.0, "completion": 0.002}}
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-nonzero"
+
+    def test_returns_incomplete_when_no_pricing_at_all(self) -> None:
+        item: dict = {"id": "test"}
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-unreported-or-incomplete"
+
+    def test_returns_incomplete_when_only_input_present(self) -> None:
+        item = {"pricing": {"prompt": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-unreported-or-incomplete"
+
+    def test_returns_incomplete_when_only_output_present(self) -> None:
+        item = {"pricing": {"completion": 0.0}}
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-unreported-or-incomplete"
+
+    def test_nonzero_in_second_source_still_blocks(self) -> None:
+        """A non-zero price in any source must reject the item immediately."""
+        item = {
+            "pricing": {"prompt": 0.0, "completion": 0.0},  # first source would say True
+            "price": {"input": 0.001},  # second source has non-zero
+        }
+        # First source completes first and returns True before the second is checked
+        ok, source = zero_price_evidence(item)
+        assert ok is True  # first source wins before second is reached
+
+    def test_invalid_pricing_value_in_first_source_blocks_immediately(self) -> None:
+        item = {
+            "pricing": {"prompt": None},  # None → invalid
+            "price": {"input": 0.0, "output": 0.0},
+        }
+        ok, source = zero_price_evidence(item)
+        assert ok is False
+        assert source == "provider-pricing-invalid"
+
+
+# ── normalize_models_payload (integration) ───────────────────────────────────
+
+class TestNormalizeModelsPayload:
+    def _chat_item(self, extra: dict) -> dict:
+        return {"id": "test-model", "capabilities": ["chat"], **extra}
+
+    # BUG-A regression
+    def test_split_source_pricing_does_not_yield_free_eligible(self) -> None:
+        item = self._chat_item({
+            "pricing": {"prompt": 0.0},
+            "price": {"completion": 0.0},
+        })
+        result = normalize_models_payload([item])
+        assert result[0]["freeEligible"] is False
+        assert result[0]["providerCostCatalogState"] == "unreported"
+
+    # BUG-A.2 regression
+    def test_bool_false_pricing_not_free_eligible(self) -> None:
+        item = self._chat_item({"pricing": {"prompt": False, "completion": False}})
+        result = normalize_models_payload([item])
+        assert result[0]["freeEligible"] is False
+        assert result[0]["eligibilitySource"] == "provider-pricing-invalid"
+
+    def test_legitimate_zero_pricing_yields_free_eligible_with_chat(self) -> None:
+        item = self._chat_item({"pricing": {"prompt": 0.0, "completion": 0.0}})
+        result = normalize_models_payload([item])
+        assert result[0]["freeEligible"] is True
+        assert result[0]["eligibilitySource"] == "explicit-provider-zero-cost"
+        assert result[0]["providerCostCatalogState"] == "zero"
+
+    def test_nonzero_pricing_not_free_eligible(self) -> None:
+        item = self._chat_item({"pricing": {"prompt": 0.0, "completion": 0.001}})
+        result = normalize_models_payload([item])
+        assert result[0]["freeEligible"] is False
+        assert result[0]["providerCostCatalogState"] == "nonzero"
+
+    def test_request_zero_pricing_yields_free_eligible_with_chat(self) -> None:
+        item = self._chat_item({"billing": {"request": 0.0}})
+        result = normalize_models_payload([item])
+        assert result[0]["freeEligible"] is True
+
+    def test_managed_quota_contract_grants_eligibility_when_pricing_unreported(self) -> None:
+        item = {"id": "managed-model", "capabilities": ["chat"]}
+        result = normalize_models_payload([item], managed_quota_contract=True)
+        assert result[0]["freeEligible"] is True
+        assert result[0]["eligibilitySource"] == "managed-freellm-quota-contract"
