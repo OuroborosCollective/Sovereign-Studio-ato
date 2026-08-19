@@ -30,18 +30,28 @@ from free_revolver_provider_contracts import (
 )
 
 
-def _load_mirror() -> tuple:
-    """Load the deployment-mirror module isolated from sys.modules."""
+def _load_mirror() -> tuple | None:
+    """Load the deployment-mirror module isolated from sys.modules.
+
+    Returns None when the mirror path does not exist so that canonical tests
+    can still run in checkout environments that only include backend/.
+    """
+    mirror_path = DEPLOY_MIRROR / "free_revolver_provider_contracts.py"
+    if not mirror_path.exists():
+        return None
     spec = importlib.util.spec_from_file_location(
         "_mirror_free_revolver_provider_contracts",
-        DEPLOY_MIRROR / "free_revolver_provider_contracts.py",
+        mirror_path,
     )
     mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod._numeric_zero, mod.zero_price_evidence, mod.normalize_models_payload
 
 
-_mirror_numeric_zero, _mirror_zero_price_evidence, _mirror_normalize = _load_mirror()
+_mirror_result = _load_mirror()
+_mirror_available = _mirror_result is not None
+if _mirror_available:
+    _mirror_numeric_zero, _mirror_zero_price_evidence, _mirror_normalize = _mirror_result  # type: ignore[misc]
 
 
 # ── _numeric_zero ──────────────────────────────────────────────────────────────
@@ -238,6 +248,7 @@ class TestNormalizeModelsPayload:
 
 # ── Deployment-mirror parity ──────────────────────────────────────────────────
 
+@pytest.mark.skipif(not _mirror_available, reason="deployment mirror not present in this checkout")
 class TestDeploymentMirrorParity:
     """Assert that scripts/sovereign-backend/free_revolver_provider_contracts.py
     produces identical results to the canonical backend/ copy for every
