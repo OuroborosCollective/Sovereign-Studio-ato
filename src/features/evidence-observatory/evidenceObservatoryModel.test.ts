@@ -26,9 +26,22 @@ describe('Evidence Observatory model', () => {
     expect(mapPoint({ sourceId: 's', lat: 90, lon: -180 }, 360, 180)).toEqual({ x: 0, y: 0 });
   });
 
-  it('builds a density bucket without turning density into truth', () => {
-    const density = evidenceDensity([baseCase]);
-    expect(density).toEqual([{ at: '2026-08-16', sourceCount: 2, contradictionCount: 1 }]);
+  it('builds a density bucket without turning density into truth and sorts chronologically', () => {
+    const caseUnsorted: EvidenceCase = {
+      ...baseCase,
+      sources: [
+        { id: 's1', observedAt: '2026-08-18T10:00:00Z' },
+        { id: 's2', observedAt: '2026-08-14T11:00:00Z' },
+        { id: 's3', observedAt: '2026-08-16T09:00:00Z' },
+      ],
+      contradictions: [],
+    };
+    const density = evidenceDensity([caseUnsorted]);
+    expect(density).toEqual([
+      { at: '2026-08-14', sourceCount: 1, contradictionCount: 0 },
+      { at: '2026-08-16', sourceCount: 1, contradictionCount: 0 },
+      { at: '2026-08-18', sourceCount: 1, contradictionCount: 0 },
+    ]);
   });
 
   it('filters cases by historical as-of time', () => {
