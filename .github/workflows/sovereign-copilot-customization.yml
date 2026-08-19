@@ -1,13 +1,7 @@
 name: Sovereign Copilot Customization
 
 on:
-  pull_request:
-    paths:
-      - '.github/agents/**'
-      - '.github/skills/**'
-      - '.github/hooks/**'
-      - 'scripts/validate-sovereign-copilot-customization.py'
-      - '.github/workflows/sovereign-copilot-customization.yml'
+  workflow_dispatch:
   push:
     branches:
       - main
