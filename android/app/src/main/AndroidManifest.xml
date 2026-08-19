@@ -25,6 +25,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Legacy deep-link scheme kept intentionally for compatibility with
+                 existing OAuth/Play-Store contracts tied to applicationId
+                 com.arestudio.nocode.aab. Do NOT rename (issue #1567); the
+                 user-facing app label is "Sovereign Studio" via @string/app_name. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

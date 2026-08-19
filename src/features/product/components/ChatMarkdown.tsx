@@ -1,12 +1,13 @@
 /**
  * ChatMarkdown - Lightweight markdown/code rendering for assistant chat bubbles
- * 
+ *
  * Renders assistant messages with:
  * - Fenced code sections as scrollable monospace blocks with copy control
- * - Bold text: **bold**
+ * - Headings (#-######), lists, horizontal rules, pipe tables (Issue #1567, E1)
+ * - Bold text: **bold**, italic: *italic* / _italic_
  * - Inline code: `code`
  * - Links: [text](url)
- * 
+ *
  * No large formatting dependencies, no raw HTML rendering.
  */
 
@@ -30,12 +31,20 @@ const CODE_REGEX = /`([^`\n]+)`/;
 const LINK_REGEX = /\[([^\]\n]+)\]\(([^)\n]+)\)/;
 const CODE_BLOCK_START_REGEX = /^```(\w*)$/;
 const CODE_BLOCK_END_REGEX = /^```$/;
+const HEADING_REGEX = /^(#{1,6})\s+(.*)$/;
+const HR_REGEX = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
+const UL_ITEM_REGEX = /^\s*[-*+]\s+(.*)$/;
+const OL_ITEM_REGEX = /^\s*\d+[.)]\s+(.*)$/;
+const ITALIC_STAR_REGEX = /\*([^*\n]+)\*/;
+const ITALIC_UNDERSCORE_REGEX = /_([^_\n]+)_/;
 
 // Hoisted patterns array to reduce garbage collection pressure in the high-frequency render path.
 const INLINE_PATTERNS = [
   { regex: BOLD_REGEX, type: 'bold' as const },
   { regex: CODE_REGEX, type: 'code' as const },
   { regex: LINK_REGEX, type: 'link' as const, urlGroup: 2 },
+  { regex: ITALIC_STAR_REGEX, type: 'italic' as const },
+  { regex: ITALIC_UNDERSCORE_REGEX, type: 'italic' as const },
 ];
 
 /**
@@ -87,12 +96,17 @@ function sanitizeUrl(url: string): string {
 /**
  * Parse content into segments (code blocks and inline text with formatting)
  */
-type Segment = 
+type Segment =
   | { type: 'text'; content: string }
   | { type: 'bold'; content: string }
+  | { type: 'italic'; content: string }
   | { type: 'code'; content: string }
   | { type: 'link'; content: string; url: string }
   | { type: 'codeblock'; language: string; content: string }
+  | { type: 'heading'; level: number; content: string }
+  | { type: 'hr' }
+  | { type: 'listitem'; ordered: boolean; content: string }
+  | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'linebreak' };
 
 function pushInlineSegments(line: string, segments: Segment[]): void {
@@ -115,7 +129,7 @@ function pushInlineSegments(line: string, segments: Segment[]): void {
       if (earliestIndex > 0) {
         segments.push({ type: 'text', content: remaining.slice(0, earliestIndex) });
       }
-      const segType = earliestMatch.type as 'bold' | 'code' | 'link';
+      const segType = earliestMatch.type as 'bold' | 'italic' | 'code' | 'link';
       if (segType === 'link') {
         segments.push({ type: 'link', content: earliestMatch.match[1], url: earliestMatch.url! });
       } else {
@@ -157,6 +171,19 @@ function getInlineSegments(line: string): Segment[] {
   return segments;
 }
 
+function isTableSeparatorRow(line: string): boolean {
+  const trimmed = line.trim();
+  if (!/^\|?[\s:|-]+\|?[\s:|-]*$/.test(trimmed)) return false;
+  return trimmed.includes('-');
+}
+
+function splitTableRow(line: string): string[] {
+  let trimmed = line.trim();
+  if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+  return trimmed.split('|').map((cell) => cell.trim());
+}
+
 function tokenizeContent(input: string): Segment[] {
   if (input === lastTokenizeInput && lastTokenizeResult) {
     return lastTokenizeResult;
@@ -189,6 +216,54 @@ function tokenizeContent(input: string): Segment[] {
         segments.push({ type: 'linebreak' });
       }
       continue;
+    }
+
+    const headingMatch = line.match(HEADING_REGEX);
+    if (headingMatch) {
+      segments.push({ type: 'heading', level: headingMatch[1].length, content: headingMatch[2].trim() });
+      if (i < lines.length - 1) {
+        segments.push({ type: 'linebreak' });
+      }
+      i += 1;
+      continue;
+    }
+
+    if (HR_REGEX.test(line)) {
+      segments.push({ type: 'hr' });
+      if (i < lines.length - 1) {
+        segments.push({ type: 'linebreak' });
+      }
+      i += 1;
+      continue;
+    }
+
+    const ulMatch = line.match(UL_ITEM_REGEX);
+    const olMatch = line.match(OL_ITEM_REGEX);
+    if (ulMatch || olMatch) {
+      segments.push({ type: 'listitem', ordered: Boolean(olMatch), content: (olMatch || ulMatch)![1] });
+      if (i < lines.length - 1) {
+        segments.push({ type: 'linebreak' });
+      }
+      i += 1;
+      continue;
+    }
+
+    // Pipe table: only a table when the next line is a separator row (streaming safety).
+    if (line.includes('|') && i + 1 < lines.length && isTableSeparatorRow(lines[i + 1])) {
+      const headers = splitTableRow(line);
+      if (headers.length > 0) {
+        i += 2;
+        const rows: string[][] = [];
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+          rows.push(splitTableRow(lines[i]));
+          i += 1;
+        }
+        segments.push({ type: 'table', headers, rows });
+        if (i < lines.length) {
+          segments.push({ type: 'linebreak' });
+        }
+        continue;
+      }
     }
 
     segments.push(...getInlineSegments(line));
@@ -278,6 +353,8 @@ const TextSegmentView = React.memo(function TextSegmentView({ seg }: { seg: Segm
   switch (seg.type) {
     case 'bold':
       return <strong style={{ color: C.text, fontWeight: 600 }}>{seg.content}</strong>;
+    case 'italic':
+      return <em style={{ color: C.text }}>{seg.content}</em>;
     case 'code':
       return (
         <code style={{ background: C.codeBg, padding: '2px 6px', borderRadius: 4, fontSize: '0.9em', color: C.accent, fontFamily: 'monospace' }}>
@@ -300,6 +377,20 @@ const TextSegmentView = React.memo(function TextSegmentView({ seg }: { seg: Segm
 });
 
 /**
+ * Renders inline-formatted content (bold, italic, code, links) for block elements.
+ */
+const InlineContent = React.memo(function InlineContent({ text }: { text: string }) {
+  const segments = getInlineSegments(text);
+  return (
+    <>
+      {segments.map((seg, index) => (
+        <TextSegmentView key={index} seg={seg} />
+      ))}
+    </>
+  );
+});
+
+/**
  * ChatMarkdown - main export
  */
 export const ChatMarkdown = React.memo(function ChatMarkdown({ content }: ChatMarkdownProps) {
@@ -309,14 +400,89 @@ export const ChatMarkdown = React.memo(function ChatMarkdown({ content }: ChatMa
 
   const segments = useMemo(() => tokenizeContent(content), [content]);
 
+  const rendered: React.ReactNode[] = [];
+  for (let index = 0; index < segments.length; index += 1) {
+    const seg = segments[index];
+    if (seg.type === 'codeblock') {
+      rendered.push(<CodeBlockView key={index} language={seg.language} code={seg.content} />);
+      continue;
+    }
+    if (seg.type === 'heading') {
+      const HeadingTag = (`h${seg.level}`) as 'h1';
+      const headingSize = Math.max(26 - seg.level * 2, 14);
+      rendered.push(
+        <HeadingTag key={index} style={{ margin: '10px 0 6px', fontSize: headingSize, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>
+          <InlineContent text={seg.content} />
+        </HeadingTag>,
+      );
+      continue;
+    }
+    if (seg.type === 'hr') {
+      rendered.push(<hr key={index} style={{ border: 'none', borderTop: `1px solid ${C.border}`, margin: '12px 0' }} />);
+      continue;
+    }
+    if (seg.type === 'listitem') {
+      const ordered = seg.ordered;
+      const items: Segment[] = [];
+      let j = index;
+      while (j < segments.length) {
+        const candidate = segments[j];
+        if (candidate.type === 'listitem' && candidate.ordered === ordered) {
+          items.push(candidate);
+          j += 1;
+          if (segments[j]?.type === 'linebreak') j += 1;
+        } else {
+          break;
+        }
+      }
+      const ListTag = ordered ? 'ol' : 'ul';
+      rendered.push(
+        <ListTag key={index} style={{ margin: '6px 0', paddingLeft: 22 }}>
+          {items.map((item, k) => (
+            <li key={k} style={{ margin: '2px 0' }}>
+              <InlineContent text={(item as { content: string }).content} />
+            </li>
+          ))}
+        </ListTag>,
+      );
+      index = j - 1;
+      continue;
+    }
+    if (seg.type === 'table') {
+      rendered.push(
+        <div key={index} style={{ overflowX: 'auto', margin: '8px 0' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 13, minWidth: '50%' }}>
+            <thead>
+              <tr>
+                {seg.headers.map((header, k) => (
+                  <th key={k} style={{ border: `1px solid ${C.border}`, padding: '4px 10px', textAlign: 'left', color: C.text, background: C.codeBg }}>
+                    <InlineContent text={header} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {seg.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, k) => (
+                    <td key={k} style={{ border: `1px solid ${C.border}`, padding: '4px 10px', color: C.text }}>
+                      <InlineContent text={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+    rendered.push(<TextSegmentView key={index} seg={seg} />);
+  }
+
   return (
     <div style={{ fontSize: 14, lineHeight: 1.6, color: C.text, wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-      {segments.map((seg, index) => {
-        if (seg.type === 'codeblock') {
-          return <CodeBlockView key={index} language={seg.language} code={seg.content} />;
-        }
-        return <TextSegmentView key={index} seg={seg} />;
-      })}
+      {rendered}
     </div>
   );
 });
