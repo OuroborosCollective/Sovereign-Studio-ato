@@ -494,6 +494,7 @@ class ManagedComposeRuntime:
                     "patchmon-sovereign",
                     "milvus-sovereign",
                     "sovereign-freellmapi",
+                    "sovereign-omniroute",
                 }
                 else "external_or_not_required"
             ),
@@ -889,6 +890,7 @@ class ManagedComposeRuntime:
             "patchmon-sovereign",
             "milvus-sovereign",
             "sovereign-freellmapi",
+            "sovereign-omniroute",
         }:
             return {
                 "required": False,
@@ -956,6 +958,21 @@ class ManagedComposeRuntime:
                 "ENCRYPTION_KEY": 64,
             }
             fixed_values = {}
+        elif stack.stack_id == "sovereign-omniroute":
+            required_lengths = {
+                "JWT_SECRET": 96,
+                "API_KEY_SECRET": 64,
+                "INITIAL_PASSWORD": 48,
+                "STORAGE_ENCRYPTION_KEY": 64,
+            }
+            fixed_values = {
+                "REQUIRE_API_KEY": "false",
+                "BASE_URL": "http://127.0.0.1:20128",
+                "NEXT_PUBLIC_BASE_URL": "http://127.0.0.1:20128",
+                "AUTH_COOKIE_SECURE": "false",
+                "APP_LOG_TO_FILE": "false",
+                "TMPDIR": "/app/data",
+            }
         else:
             required_lengths = {
                 "MINIO_ACCESS_KEY_ID": 32,
