@@ -1,5 +1,10 @@
 import React from "react";
 import { C } from "./builderConstants";
+import {
+  STATUS_FONT_SIZE_MIN,
+  STATUS_TONE_ICON,
+  STATUS_TONE_LABEL,
+} from "../styles/statusTokens";
 import type {
   WorkbenchStatusSlot,
   WorkbenchStatusSlotId,
@@ -56,22 +61,26 @@ export function WorkbenchStatusChips({
               border: `1px solid ${color}33`,
               color,
               fontFamily: "monospace",
-              fontSize: 10,
+              fontSize: STATUS_FONT_SIZE_MIN,
               cursor: "pointer",
               flexShrink: 0,
               whiteSpace: "nowrap",
             }}
           >
             <span
+              role="img"
+              aria-label={STATUS_TONE_LABEL[slot.tone]}
+              title={STATUS_TONE_LABEL[slot.tone]}
               style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: color,
-                boxShadow: slot.tone !== "neutral" ? `0 0 4px ${color}` : "none",
-                display: "inline-block",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: STATUS_FONT_SIZE_MIN,
+                lineHeight: 1,
               }}
-            />
+            >
+              {STATUS_TONE_ICON[slot.tone]}
+            </span>
             <span style={{ color: C.textSub }}>{slot.label}</span>
             <span style={{ fontWeight: 700 }}>{slot.value}</span>
           </button>
