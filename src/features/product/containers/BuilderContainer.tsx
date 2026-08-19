@@ -2902,7 +2902,7 @@ export function BuilderContainer({
         snap = transitionBlocked(snap, 'Sovereign Agent Runtime blockiert.');
       }
       if (scopedAgentJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
-        const resolvedBranch = scopedAgentJob.branchName ?? scopedAgentJob.branch;
+        const resolvedBranch = scopedAgentJob.branchName;
         if (snap.state === 'executor_running' && resolvedBranch) {
           snap = transitionBranchCreated(snap, resolvedBranch);
         }
