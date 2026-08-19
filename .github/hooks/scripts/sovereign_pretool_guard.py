@@ -15,7 +15,10 @@ from typing import Any, Iterable
 
 DENY_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (
-        re.compile(r"\b(?:curl|wget)\b[^\n|]*\|\s*(?:ba)?sh\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:curl|wget)\b[^\n|]*\|\s*(?:sudo(?:\s+-\S+)*\s+)?(?:ba)?sh\b",
+            re.IGNORECASE,
+        ),
         "Remote download piped directly into a shell is forbidden by repository policy.",
     ),
     (
