@@ -1,0 +1,68 @@
+name: HERO-1 Continuity Dispatch Bridge
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
+    paths:
+      - '.github/workflows/hero1-continuity-dispatch-bridge.yml'
+      - 'docs/sovereign-continuity/LEDGER.jsonl'
+      - 'tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl'
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  dispatch-canonical-repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Determine whether canonical ledger repair is still required
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const base = String(context.payload.pull_request.base.sha || '').toLowerCase();
+            const head = String(context.payload.pull_request.head.sha || '').toLowerCase();
+            if (!/^[0-9a-f]{40}$/.test(base) || !/^[0-9a-f]{40}$/.test(head)) {
+              core.setFailed('PR_REVISION_INVALID');
+              return;
+            }
+            const comparison = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${base}...${head}`,
+              per_page: 100,
+            });
+            const paths = new Set((comparison.data.files || []).map(file => String(file.filename || '')));
+            const required = [
+              'docs/sovereign-continuity/LEDGER.jsonl',
+              'tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl',
+            ];
+            core.setOutput('needs_repair', required.every(path => paths.has(path)) ? 'false' : 'true');
+
+      - name: Dispatch repository-canonical exact-head continuity repair
+        if: steps.gate.outputs.needs_repair == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          gh workflow run revision-guardian-continuity-repair-pr.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f target_pr_number="$TARGET_PR_NUMBER" \
+            -f expected_head_sha="$EXPECTED_HEAD_SHA" \
+            -f expected_base_sha="$EXPECTED_BASE_SHA"
+
+      - name: Report no-op when both ledgers are already part of the PR
+        if: steps.gate.outputs.needs_repair != 'true'
+        run: echo 'Canonical continuity ledgers are already present in the PR diff; no dispatch performed.'
