@@ -94,7 +94,7 @@ GitHub hook timeouts are fail-open by platform contract, so the guard is deliber
 - safe shell work is allowed while repository-forbidden shortcut examples are denied;
 - malformed hook input fails closed at script level.
 
-`.github/workflows/sovereign-copilot-customization.yml` runs this contract for relevant pull requests and pushes to `main`.
+The existing required `.github/workflows/integration-plan-lane-gate.yml` runs this validator on pull-request heads. This preserves the repository's required-gate priority contract instead of introducing a sixth direct `pull_request` workflow. `.github/workflows/sovereign-copilot-customization.yml` remains available for explicit `workflow_dispatch` and verifies the customization again on relevant pushes to `main`.
 
 ## Provider and project boundaries
 
@@ -108,7 +108,7 @@ A full repository integration claim requires at least:
 
 1. exact source/base and candidate head revisions;
 2. expected files and valid profile names read back from GitHub;
-3. validator success at that candidate revision;
+3. validator success at that candidate revision through the required PR lane;
 4. exact-head GitHub CI success for required gates;
 5. continuity completion evidence before repository finalization;
 6. merge exact-head and fresh `main` readback if the owner-authorized merge is performed.
