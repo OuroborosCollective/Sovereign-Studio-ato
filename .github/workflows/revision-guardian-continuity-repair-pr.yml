@@ -150,8 +150,8 @@ jobs:
               text=True,
           )
           changed_paths = sorted({line.strip() for line in changed_output.splitlines() if line.strip()})
-          ledger_paths = [canonical.as_posix(), mirror.as_posix()]
-          recorded_paths = sorted(set(changed_paths + ledger_paths))
+          ledger_paths = {canonical.as_posix(), mirror.as_posix()}
+          recorded_paths = sorted(path for path in changed_paths if path not in ledger_paths)
           entry_id = f'continuity-legacy-pr-{number}-{head[:12]}'
 
           existing_entries = [
@@ -189,13 +189,14 @@ jobs:
               'decisions': [
                   'Nur der exakt bestätigte same-repository PR-Head und der exakt bestätigte main-Head sind zulässig.',
                   'Es werden ausschließlich beide Continuity-Ledger bytegleich erweitert; bestehende Historie wird nicht umgeschrieben.',
-                  'Changed paths stammen aus dem revisionsgebundenen Git-Diff und werden nicht aus UI- oder Cache-Zustand abgeleitet.',
+                  'Changed paths stammen aus dem revisionsgebundenen Git-Diff; die beiden Ledger-Pfade selbst werden nicht als Payload-Änderung aufgezeichnet.',
                   'Leere Erfahrungsrubriken bleiben leer; es werden keine Erlebnisse erfunden.',
               ],
               'evidence': [
                   f'PR #{number} exact source head: {head}.',
                   f'Exact main base already contained by the PR head: {base}.',
                   f'Changed-path count before ledger append: {len(changed_paths)}.',
+                  f'Non-ledger changed-path count recorded: {len(recorded_paths)}.',
                   'Canonical and runtime Continuity ledgers were byte-equal before the append.',
               ],
               'openItems': [
