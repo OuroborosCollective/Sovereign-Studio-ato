@@ -21,6 +21,7 @@ from llm_transport import (
     route_is_direct_freellm,
     route_is_openrouter_free,
     route_transport,
+    route_transport_diagnostics,
 )
 
 _SCOPE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
@@ -119,42 +120,133 @@ def _route_receipt_matches_runtime(route: dict[str, Any]) -> bool:
     )
 
 
-def route_is_verified_free(route: dict[str, Any]) -> bool:
+def verify_free_route_reason(route: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded reasons why a free route is or is not execution-eligible."""
+    failures: list[str] = []
+    transport_diagnostic = route_transport_diagnostics(route)
+    if transport_diagnostic.get("ok") is not True:
+        failures.append(str(
+            transport_diagnostic.get("failureFamily") or "route_transport_invalid"
+        ))
+    transport = route_transport(route)
     direct_freellm = (
         route_is_direct_freellm(route)
-        and route_transport(route) == FREELLM_TRANSPORT
+        and transport == FREELLM_TRANSPORT
     )
     openrouter_free = (
         route_is_openrouter_free(route)
-        and route_transport(route) == OPENROUTER_TRANSPORT
+        and transport == OPENROUTER_TRANSPORT
+    )
+    route_family = (
+        "FREELLM_FREE"
+        if direct_freellm
+        else "OPENROUTER_FREE"
+        if openrouter_free
+        else "UNRESOLVED"
     )
     if not (direct_freellm or openrouter_free):
-        return False
-    if not _route_receipt_matches_runtime(route):
-        return False
+        failures.append("free_route_family_rejected")
+
     config = route.get("config") if isinstance(route.get("config"), dict) else {}
+    identity = (
+        config.get("runtimeIdentity")
+        if isinstance(config.get("runtimeIdentity"), dict)
+        else {}
+    )
+    receipt = (
+        config.get("canaryReceipt")
+        if isinstance(config.get("canaryReceipt"), dict)
+        else {}
+    )
+    source_revision = str(identity.get("sourceRevision") or "").strip().lower()
+    image_digest = str(identity.get("imageDigest") or "").strip().lower()
+    current_revision = os.getenv("SOVEREIGN_SOURCE_REVISION", "").strip().lower()
+    current_digest = os.getenv("SOVEREIGN_IMAGE_DIGEST", "").strip().lower()
+    expected_schema = (
+        _OPENROUTER_FREE_RECEIPT_SCHEMA
+        if openrouter_free
+        else _FREELLM_RECEIPT_SCHEMA
+        if direct_freellm
+        else ""
+    )
+    if identity.get("sourceRevisionVerified") is not True:
+        failures.append("free_runtime_source_revision_unverified")
+    if _SOURCE_REVISION_RE.fullmatch(source_revision) is None:
+        failures.append("free_runtime_source_revision_invalid")
+    if _SOURCE_REVISION_RE.fullmatch(current_revision) is None:
+        failures.append("free_current_source_revision_unverified")
+    elif source_revision != current_revision:
+        failures.append("free_runtime_source_revision_mismatch")
+    if identity.get("imageDigestVerified") is not True:
+        failures.append("free_runtime_image_digest_unverified")
+    if _IMAGE_DIGEST_RE.fullmatch(image_digest) is None:
+        failures.append("free_runtime_image_digest_invalid")
+    if _IMAGE_DIGEST_RE.fullmatch(current_digest) is None:
+        failures.append("free_current_image_digest_unverified")
+    elif image_digest != current_digest:
+        failures.append("free_runtime_image_digest_mismatch")
+    if not expected_schema or str(receipt.get("schemaVersion") or "") != expected_schema:
+        failures.append("free_canary_receipt_schema_mismatch")
+    if receipt.get("generalChatEvidenceVerified") is not True:
+        failures.append("free_canary_chat_evidence_missing")
+    if openrouter_free and receipt.get("zeroCostEvidenceVerified") is not True:
+        failures.append("openrouter_free_zero_cost_evidence_missing")
+    if _RECEIPT_SHA_RE.fullmatch(str(receipt.get("receiptSha256") or "")) is None:
+        failures.append("free_canary_receipt_sha_invalid")
+
     quota_evidence = (
         config.get("quotaEvidence")
         if isinstance(config.get("quotaEvidence"), dict)
         else {}
     )
+    policy: dict[str, Any] | None = None
     try:
         policy = route_billing_policy(route)
     except BillingPolicyError:
-        return False
-    return (
-        policy["billingCategory"] == FREE_CATEGORY
-        and policy["fundingMode"] == "provider_free_quota"
-        and bool(policy["freeEligible"])
-        and bool(policy["quotaContractVerified"])
-        and config.get("canaryVerified") is True
-        and int(config.get("canaryConfirmationCount") or 0) >= 2
-        and str(quota_evidence.get("scope") or "") == route_quota_scope(route)
-        and str(quota_evidence.get("stateOwner") or "")
-            == "postgresql-revolver-state"
-        and int(policy["markupMultiplier"]) == 0
-        and int(policy["userChargeCredits"] or 0) == 0
-    )
+        failures.append("free_billing_policy_invalid")
+    if policy is not None:
+        if policy["billingCategory"] != FREE_CATEGORY:
+            failures.append("free_billing_category_mismatch")
+        if policy["fundingMode"] != "provider_free_quota":
+            failures.append("free_funding_mode_mismatch")
+        if not bool(policy["freeEligible"]):
+            failures.append("free_eligibility_missing")
+        if not bool(policy["quotaContractVerified"]):
+            failures.append("free_quota_contract_missing")
+        if int(policy["markupMultiplier"]) != 0:
+            failures.append("free_markup_nonzero")
+        if int(policy["userChargeCredits"] or 0) != 0:
+            failures.append("free_user_charge_nonzero")
+    if config.get("canaryVerified") is not True:
+        failures.append("free_canary_unverified")
+    try:
+        confirmation_count = int(config.get("canaryConfirmationCount") or 0)
+    except (TypeError, ValueError):
+        confirmation_count = -1
+    if confirmation_count < 2:
+        failures.append("free_double_canary_missing")
+    try:
+        quota_scope = route_quota_scope(route)
+    except ValueError:
+        quota_scope = ""
+        failures.append("free_quota_scope_invalid")
+    if str(quota_evidence.get("scope") or "") != quota_scope:
+        failures.append("free_quota_scope_mismatch")
+    if str(quota_evidence.get("stateOwner") or "") != "postgresql-revolver-state":
+        failures.append("free_quota_state_owner_mismatch")
+
+    return {
+        "ok": not failures,
+        "routeId": str(route.get("id") or "")[:160],
+        "transport": transport,
+        "routeFamily": route_family,
+        "failureFamilies": list(dict.fromkeys(failures)),
+        "secretValuesReturned": False,
+    }
+
+
+def route_is_verified_free(route: dict[str, Any]) -> bool:
+    return verify_free_route_reason(route)["ok"] is True
 
 
 def _number(value: Any) -> Decimal | None:

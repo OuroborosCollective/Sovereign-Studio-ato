@@ -15,12 +15,14 @@ if str(BACKEND) not in sys.path:
 from agent_runtime import cognitive_llm_transport as runtime
 from llm_transport import (
     FREELLM_BASE_URL,
+    OMNIROUTE_BASE_URL,
     OPENROUTER_BASE_URL,
     route_is_direct_freellm,
     route_is_openrouter_paid,
     route_provider_model,
     route_snapshot_hashes,
     route_transport,
+    route_transport_diagnostics,
 )
 
 
@@ -73,6 +75,52 @@ def _route(*, transport: str, profile: str, category: str, base_url: str) -> dic
             } if category == "standard" else {}),
         },
     }
+
+
+def test_openrouter_aliases_normalize_without_collapsing_free_transport() -> None:
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+    paid["config"]["transport"] = "open-router"
+    paid["runtime_kind"] = "open_router"
+    paid["provider"] = "openrouter.ai"
+
+    diagnostic = route_transport_diagnostics(paid)
+    assert diagnostic["ok"] is True
+    assert diagnostic["transport"] == "openrouter"
+    assert route_transport(paid) == "openrouter"
+    assert route_is_openrouter_paid(paid) is True
+
+
+def test_conflicting_transport_fields_fail_closed_instead_of_using_precedence() -> None:
+    paid = _route(
+        transport="openrouter",
+        profile="paid_swarm_6",
+        category="standard",
+        base_url=OPENROUTER_BASE_URL,
+    )
+    paid["runtime_kind"] = "freellm"
+
+    diagnostic = route_transport_diagnostics(paid)
+    assert diagnostic["ok"] is False
+    assert diagnostic["failureFamily"] == "route_transport_conflict"
+    assert diagnostic["secretValuesReturned"] is False
+    assert route_transport(paid) == ""
+    assert route_is_openrouter_paid(paid) is False
+    assert route_is_direct_freellm(paid) is False
+
+
+def test_omniroute_keyless_transport_never_maps_to_a_protected_key_file() -> None:
+    with pytest.raises(runtime.RouteRuntimeError) as captured:
+        runtime._key_spec("freellm", OMNIROUTE_BASE_URL)
+
+    assert captured.value.family == "OMNIROUTE_KEYLESS_AGENTS_SDK_UNSUPPORTED"
+    assert captured.value.next_action == (
+        "USE_DIRECT_KEYLESS_OMNIROUTE_RUNTIME_OR_ADD_VERIFIED_KEYLESS_SDK_ADAPTER"
+    )
 
 
 def test_paid_and_free_transports_are_disjoint() -> None:

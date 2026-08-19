@@ -11,6 +11,7 @@ from typing import Any, Final
 
 from llm_transport import (
     FREELLM_TRANSPORT,
+    OMNIROUTE_BASE_URL,
     OPENROUTER_TRANSPORT,
     route_api_base,
     route_config,
@@ -57,6 +58,11 @@ def _key_spec(transport: str, api_base: str) -> tuple[str, str]:
             return "SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE", _FREELLM_KEY_FILENAME
         if normalized == _FREELLMPOOL_BASE:
             return "SOVEREIGN_FREELLMPOOL_PROXY_KEY_FILE", _FREELLMPOOL_KEY_FILENAME
+        if normalized == OMNIROUTE_BASE_URL:
+            raise RouteRuntimeError(
+                "OMNIROUTE_KEYLESS_AGENTS_SDK_UNSUPPORTED",
+                "USE_DIRECT_KEYLESS_OMNIROUTE_RUNTIME_OR_ADD_VERIFIED_KEYLESS_SDK_ADAPTER",
+            )
         raise RouteRuntimeError(
             "FREELLM_API_BASE_REJECTED",
             "SELECT_VERIFIED_MANAGED_FREELLM_SOURCE",

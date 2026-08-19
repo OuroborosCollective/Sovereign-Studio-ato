@@ -4,6 +4,7 @@ import type { LlmAdapter, LlmAdapterContext, LlmAdapterResult } from '../llmAdap
 import { buildSovereignLlmPrompt } from '../llmAdapter';
 import { normalizePrimaryBridgeUrl, resolvePrimaryBridgeConfig } from '../primaryBridgeConfig';
 import { maskSecrets } from '../../../../shared/utils/crypto';
+import { classifyBackendRoute } from '../../runtime/providerRuntimeChecks';
 
 export interface PrimaryBridgeAdapterOptions {
   proxyUrl?: string;
@@ -19,7 +20,14 @@ type ChatCompletionResponse = {
 };
 
 type RouteResponse = {
-  routes?: Array<{ id?: string; defaultModelId?: string; enabled?: boolean }>;
+  routes?: Array<{
+    id?: string;
+    defaultModelId?: string;
+    enabled?: boolean;
+    provider?: string;
+    billingCategory?: string;
+    fundingMode?: string;
+  }>;
   error?: unknown;
 };
 
@@ -88,7 +96,9 @@ export function createPrimaryBridgeAdapter(options: PrimaryBridgeAdapterOptions 
         if (!routesResponse.ok) {
           throw new Error(typeof routesPayload.error === 'string' ? routesPayload.error : `Route catalog HTTP ${routesResponse.status}`);
         }
-        const enabledRoutes = (routesPayload.routes ?? []).filter((route) => route.enabled);
+        const enabledRoutes = (routesPayload.routes ?? []).filter((route) => (
+          route.enabled === true && classifyBackendRoute(route) !== null
+        ));
         const selectedRoute = (config.model
           ? enabledRoutes.find((route) => route.id === config.model || route.defaultModelId === config.model)
           : undefined)

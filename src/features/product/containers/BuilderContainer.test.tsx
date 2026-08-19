@@ -102,6 +102,9 @@ function liteLlmRouteCatalogResponse(): Response {
       id: 'test-chat-route',
       defaultModelId: TEST_LITELLM_MODEL,
       enabled: true,
+      provider: 'freellm',
+      billingCategory: 'free',
+      fundingMode: 'provider_free_quota',
     }],
   });
 }

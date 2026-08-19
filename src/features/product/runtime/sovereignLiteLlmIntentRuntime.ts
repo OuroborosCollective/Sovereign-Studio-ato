@@ -1,3 +1,4 @@
+import { classifyBackendRoute, type ResolvedTransportClass } from './providerRuntimeChecks';
 import type {
   DevChatWorkerDiagnostic,
   DevChatWorkerIntentKind,
@@ -23,6 +24,9 @@ interface DirectLlmRouteDescriptor {
   readonly id?: unknown;
   readonly defaultModelId?: unknown;
   readonly enabled?: unknown;
+  readonly provider?: unknown;
+  readonly billingCategory?: unknown;
+  readonly fundingMode?: unknown;
 }
 
 interface DirectLlmRouteCatalog {
@@ -275,15 +279,27 @@ function createRequestId(): string | null {
 function chooseRoute(
   payload: DirectLlmRouteCatalog,
   preferredModel: string | undefined,
-): { readonly routeId: string; readonly modelId: string } | null {
+): {
+  readonly routeId: string;
+  readonly modelId: string;
+  readonly resolvedTransportClass: Exclude<ResolvedTransportClass, 'UNRESOLVED'>;
+  readonly pricingDisplay: string;
+} | null {
   if (!Array.isArray(payload.routes)) return null;
-  const enabled = payload.routes.flatMap((candidate): Array<{ routeId: string; modelId: string }> => {
+  const enabled = payload.routes.flatMap((candidate) => {
     if (!candidate || typeof candidate !== 'object') return [];
     const route = candidate as DirectLlmRouteDescriptor;
     if (route.enabled !== true) return [];
+    const classification = classifyBackendRoute(route);
+    if (!classification) return [];
     const routeId = typeof route.id === 'string' ? route.id.trim() : '';
     const modelId = typeof route.defaultModelId === 'string' ? route.defaultModelId.trim() : '';
-    return routeId && modelId ? [{ routeId, modelId }] : [];
+    return routeId && modelId ? [{
+      routeId,
+      modelId,
+      resolvedTransportClass: classification.resolvedTransportClass,
+      pricingDisplay: classification.pricingDisplay,
+    }] : [];
   });
   if (enabled.length === 0) return null;
   const cleanPreferred = preferredModel?.trim();
