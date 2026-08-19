@@ -270,9 +270,16 @@ def _payload_for_case(case: Any) -> dict[str, Any]:
 
 
 def build_cag_benchmark_public_rows() -> list[dict[str, Any]]:
-    """Build 12 gate-/passport-/case-hash-bound public projections."""
+    """Build the 12 publishable gate-/passport-/case-hash-bound projections.
+
+    Boundary cases (``publishable=False``) are excluded: they carry no
+    independent Wolfram reference and exist to prove honest degradation,
+    not to be published as evidence.
+    """
     rows: list[dict[str, Any]] = []
     for case in BENCHMARK_CASES:
+        if not case.publishable:
+            continue
         payload = _payload_for_case(case)
         gate = evaluate_evidence_case(payload)
         if not gate["passed"]:
