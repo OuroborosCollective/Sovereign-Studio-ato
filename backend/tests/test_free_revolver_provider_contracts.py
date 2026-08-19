@@ -143,15 +143,15 @@ class TestZeroPriceEvidence:
         assert ok is False
         assert source == "provider-pricing-unreported-or-incomplete"
 
-    def test_nonzero_in_second_source_still_blocks(self) -> None:
-        """A non-zero price in any source must reject the item immediately."""
+    def test_complete_first_source_wins_regardless_of_later_sources(self) -> None:
+        """When the first source is complete zero-pricing, it wins before any later source is read."""
         item = {
-            "pricing": {"prompt": 0.0, "completion": 0.0},  # first source would say True
-            "price": {"input": 0.001},  # second source has non-zero
+            "pricing": {"prompt": 0.0, "completion": 0.0},  # first source: complete zero evidence
+            "price": {"input": 0.001},  # second source: non-zero, but never reached
         }
-        # First source completes first and returns True before the second is checked
         ok, source = zero_price_evidence(item)
-        assert ok is True  # first source wins before second is reached
+        assert ok is True  # first complete source wins
+        assert source == "provider-models-explicit-zero-pricing"
 
     def test_invalid_pricing_value_in_first_source_blocks_immediately(self) -> None:
         item = {
@@ -200,9 +200,12 @@ class TestNormalizeModelsPayload:
         assert result[0]["providerCostCatalogState"] == "nonzero"
 
     def test_request_zero_pricing_yields_free_eligible_with_chat(self) -> None:
+        # 'billing' is one of the four recognized source keys in zero_price_evidence
         item = self._chat_item({"billing": {"request": 0.0}})
         result = normalize_models_payload([item])
         assert result[0]["freeEligible"] is True
+        assert result[0]["eligibilitySource"] == "explicit-provider-zero-cost"
+        assert result[0]["providerCostCatalogState"] == "zero"
 
     def test_managed_quota_contract_grants_eligibility_when_pricing_unreported(self) -> None:
         item = {"id": "managed-model", "capabilities": ["chat"]}
