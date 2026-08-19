@@ -274,7 +274,7 @@ def assert_provider_target_allowed(url: str) -> None:
 
 
 def _numeric_zero(value: Any) -> bool | None:
-    if value is None or value == "":
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
         return float(value) == 0.0
@@ -297,12 +297,12 @@ def zero_price_evidence(item: dict[str, Any]) -> tuple[bool, str]:
         "completion", "output", "output_cost", "output_cost_per_token", "completion_cost",
     }
     request_fields = {"request", "request_cost", "cost_per_request"}
-    seen_input = False
-    seen_output = False
-    seen_request = False
     for source in sources:
         if not isinstance(source, dict):
             continue
+        seen_input = False
+        seen_output = False
+        seen_request = False
         for field in input_fields | output_fields | request_fields:
             if field not in source:
                 continue
@@ -314,8 +314,8 @@ def zero_price_evidence(item: dict[str, Any]) -> tuple[bool, str]:
             seen_input = seen_input or field in input_fields
             seen_output = seen_output or field in output_fields
             seen_request = seen_request or field in request_fields
-    if seen_request or (seen_input and seen_output):
-        return True, "provider-models-explicit-zero-pricing"
+        if seen_request or (seen_input and seen_output):
+            return True, "provider-models-explicit-zero-pricing"
     return False, "provider-pricing-unreported-or-incomplete"
 
 
