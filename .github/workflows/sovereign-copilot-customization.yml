@@ -1,0 +1,37 @@
+name: Sovereign Copilot Customization
+
+on:
+  pull_request:
+    paths:
+      - '.github/agents/**'
+      - '.github/skills/**'
+      - '.github/hooks/**'
+      - 'scripts/validate-sovereign-copilot-customization.py'
+      - '.github/workflows/sovereign-copilot-customization.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/agents/**'
+      - '.github/skills/**'
+      - '.github/hooks/**'
+      - 'scripts/validate-sovereign-copilot-customization.py'
+      - '.github/workflows/sovereign-copilot-customization.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: HERO-1 customization contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate agents, skills and guard hook
+        run: python scripts/validate-sovereign-copilot-customization.py
