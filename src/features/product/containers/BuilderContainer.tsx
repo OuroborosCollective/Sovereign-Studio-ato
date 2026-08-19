@@ -2903,10 +2903,10 @@ export function BuilderContainer({
       }
       if (scopedAgentJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
         const resolvedBranch = scopedAgentJob.branchName ?? scopedAgentJob.branch;
-        if (resolvedBranch) {
+        if (snap.state === 'executor_running' && resolvedBranch) {
           snap = transitionBranchCreated(snap, resolvedBranch);
         }
-        if (snap.state === 'branch_created') {
+        if (snap.state === 'branch_created' || snap.state === 'commit_created') {
           snap = transitionChecksRunning(snap);
         }
         snap = transitionDraftPrReady(snap, scopedAgentJob.draftPrUrl);
