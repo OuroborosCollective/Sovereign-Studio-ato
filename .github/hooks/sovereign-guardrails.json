@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|powershell",
+        "bash": "python3 .github/hooks/scripts/sovereign_pretool_guard.py",
+        "powershell": "python .github/hooks/scripts/sovereign_pretool_guard.py",
+        "cwd": ".",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
