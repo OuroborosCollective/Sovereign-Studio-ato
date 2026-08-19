@@ -19,10 +19,18 @@ services:
       DATA_DIR: /app/data
       OMNIROUTE_MEMORY_MB: "1024"
       NODE_OPTIONS: --max-old-space-size=1024
+      JWT_SECRET: ${JWT_SECRET}
+      API_KEY_SECRET: ${API_KEY_SECRET}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY}
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
+      BASE_URL: ${BASE_URL:-http://127.0.0.1:20128}
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-http://127.0.0.1:20128}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      APP_LOG_TO_FILE: ${APP_LOG_TO_FILE:-false}
+      TMPDIR: ${TMPDIR:-/app/data}
     volumes:
       - sovereign-omniroute-data:/app/data
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
     restart: unless-stopped
     networks:
       sovereign-private:

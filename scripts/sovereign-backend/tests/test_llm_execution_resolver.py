@@ -18,6 +18,7 @@ from llm_execution_resolver import (
     free_fallback_resolution,
     resolve_execution_profile,
 )
+from llm_revolver import verify_free_route_reason
 from llm_transport import FREELLM_BASE_URL, OPENROUTER_BASE_URL
 
 
@@ -223,6 +224,83 @@ def test_seven_verified_free_quota_scopes_unlock_free_swarm() -> None:
     assert [item["id"] for item in resolution.candidate_routes[:7]] == [
         f"free-{index}" for index in range(7)
     ]
+
+
+def test_free_route_diagnostics_explain_revolver_contract_failures() -> None:
+    free = route(
+        "free-diagnostic",
+        category="free",
+        scope="free:diagnostic",
+        priority=10,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    verified = verify_free_route_reason(free)
+    assert verified["ok"] is True
+    assert verified["routeFamily"] == "FREELLM_FREE"
+    assert verified["failureFamilies"] == []
+
+    free["config"]["canaryConfirmationCount"] = 1
+    free["config"]["quotaEvidence"]["stateOwner"] = "wrong-owner"
+    diagnostic = verify_free_route_reason(free)
+    assert diagnostic["ok"] is False
+    assert "free_double_canary_missing" in diagnostic["failureFamilies"]
+    assert "free_quota_state_owner_mismatch" in diagnostic["failureFamilies"]
+    assert diagnostic["secretValuesReturned"] is False
+
+
+def test_free_resolution_exposes_transport_and_quota_pricing_class() -> None:
+    free = route(
+        "free-display",
+        category="free",
+        scope="free:display",
+        priority=10,
+        profile=FREE_SINGLE_AGENT_PROFILE,
+    )
+    resolution = resolve_execution_profile(
+        routes=[free],
+        state_by_scope={},
+        paid_purchase_verified=False,
+        provider_funded_credits=0,
+        credit_balance=25,
+        requested_mode="free",
+    )
+
+    assert resolution is not None
+    payload = resolution.safe_payload()
+    assert payload["resolvedTransport"] == "freellm"
+    assert payload["resolvedTransportClass"] == "FREELLM_FREE"
+    assert payload["billingCategory"] == "free"
+    assert payload["fundingMode"] == "provider_free_quota"
+    assert payload["pricingDisplay"] == "free (provider quota)"
+
+
+def test_conflicting_paid_transport_metadata_surfaces_typed_resolution_error() -> None:
+    paid = route(
+        "paid-conflict",
+        category="standard",
+        scope="paid:conflict",
+        priority=10,
+        profile=PAID_SWARM_PROFILE,
+    )
+    paid["runtime_kind"] = "freellm"
+
+    try:
+        resolve_execution_profile(
+            routes=[paid],
+            state_by_scope={},
+            paid_purchase_verified=True,
+            paid_entitlement_verified=True,
+            provider_funded_credits=100,
+            requested_mode="paid",
+        )
+    except ExecutionResolutionError as exc:
+        payload = exc.safe_payload()
+        assert exc.failure_family == "route_transport_mismatch"
+        assert exc.status_code == 503
+        assert payload["details"]["transportFailureFamily"] == "route_transport_conflict"
+        assert payload["details"]["secretValuesReturned"] is False
+    else:
+        raise AssertionError("conflicting paid transport metadata must fail closed")
 
 
 def test_free_swarm_threshold_counts_only_routes_marked_for_repository_execution() -> None:
@@ -470,6 +548,11 @@ def test_paid_resolver_selects_distinct_main_and_shared_six_agent_models() -> No
     payload = resolution.safe_payload()
     assert payload["mainModel"] == "provider/model-paid-main"
     assert payload["agentModel"] == "provider/model-paid-workers"
+    assert payload["resolvedTransport"] == "openrouter"
+    assert payload["resolvedTransportClass"] == "OPENROUTER_PAID"
+    assert payload["billingCategory"] == "standard"
+    assert payload["fundingMode"] == "provider_priced"
+    assert payload["pricingDisplay"] == "paid (OpenRouter)"
 
 
 def test_forced_free_resolution_preserves_openrouter_fallback_context() -> None:

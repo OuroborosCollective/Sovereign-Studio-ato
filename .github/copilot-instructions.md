@@ -52,6 +52,15 @@ Evidence and target-system readback decide completion.
 - Architecture docs: `docs/architecture/`
 - Continuity: `docs/sovereign-continuity/` and governed MCP mirror
 
+## GitHub Copilot first-class topology
+
+- `.github/agents/sovereign-overlord-hero-1.agent.md` is the single user-facing Sovereign custom-agent entrypoint.
+- Other `sovereign-*.agent.md` profiles in `.github/agents/` are internal specialists. They must remain `user-invocable: false` and must not become parallel product truth owners.
+- `.github/skills/` contains Copilot discovery/adaptation skills only. Canonical MCP operational skills remain under `tools/sovereign-chatgpt-mcp/skills/` and their machine/runtime enforcement remains authoritative.
+- `.github/hooks/` may prevent locally forbidden execution patterns. Hook output is a permission/policy signal, never runtime success evidence.
+- The HERO may delegate analysis, implementation and independent verification, but final claims still follow `AGENTS.md` truth classes and target-system readback requirements.
+- GitHub custom-agent availability on the default branch is not proof that the Sovereign MCP, production backend, database, providers or containers are deployed or healthy.
+
 ## Common checks
 
 ```bash
@@ -62,6 +71,12 @@ pnpm run test:release-gate
 pnpm run build:web
 pnpm run audit:sovereign
 pnpm run audit:all
+```
+
+For Copilot-customization changes also run:
+
+```bash
+python scripts/validate-sovereign-copilot-customization.py
 ```
 
 Use focused real-path Python tests for affected backend/MCP modules. Report unavailable checks honestly and rely on exact-head GitHub Actions for required aggregate gates.

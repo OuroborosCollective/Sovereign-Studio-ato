@@ -20,11 +20,13 @@ from llm_cost_policy import (
 )
 from llm_revolver import build_revolver_candidates, route_is_verified_free, route_quota_scope
 from llm_transport import (
+    FREELLM_TRANSPORT,
     OPENROUTER_TRANSPORT,
     route_is_openrouter_paid,
     route_provider_model,
     route_snapshot_hashes,
     route_transport,
+    route_transport_diagnostics,
 )
 from paid_execution_entitlement import resolve_paid_execution_entitlement
 
@@ -41,18 +43,29 @@ EXECUTION_MODES = frozenset({AUTO_MODE, PAID_MODE, FREE_MODE})
 class ExecutionResolutionError(RuntimeError):
     """Typed, secret-safe resolution failure for an explicitly requested mode."""
 
-    def __init__(self, failure_family: str, message: str, *, status_code: int) -> None:
+    def __init__(
+        self,
+        failure_family: str,
+        message: str,
+        *,
+        status_code: int,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.failure_family = str(failure_family)
         self.status_code = int(status_code)
+        self.details = dict(details or {})
 
     def safe_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "error": self.failure_family,
             "message": str(self),
             "statusCode": self.status_code,
             "secretValuesReturned": False,
         }
+        if self.details:
+            payload["details"] = self.details
+        return payload
 
 
 def normalize_execution_mode(value: Any) -> str:
@@ -86,6 +99,21 @@ class ExecutionResolution:
     def safe_payload(self) -> dict[str, Any]:
         main_route_hash, main_price_hash = route_snapshot_hashes(self.primary_route)
         agent_route_hash, agent_price_hash = route_snapshot_hashes(self.agent_route)
+        billing = route_billing_policy(self.primary_route)
+        transport = route_transport(self.primary_route)
+        billing_category = str(billing["billingCategory"])
+        if transport == FREELLM_TRANSPORT and billing_category == FREE_CATEGORY:
+            transport_class = "FREELLM_FREE"
+            pricing_display = "free (provider quota)"
+        elif transport == OPENROUTER_TRANSPORT and billing_category == FREE_CATEGORY:
+            transport_class = "OPENROUTER_FREE"
+            pricing_display = "free (provider quota)"
+        elif transport == OPENROUTER_TRANSPORT:
+            transport_class = "OPENROUTER_PAID"
+            pricing_display = "paid (OpenRouter)"
+        else:
+            transport_class = "UNRESOLVED"
+            pricing_display = "unresolved"
         return {
             "profileId": self.profile_id,
             "primaryRouteId": str(self.primary_route.get("id") or ""),
@@ -99,7 +127,11 @@ class ExecutionResolution:
             "mainModel": route_provider_model(self.primary_route),
             "agentRouteId": str(self.agent_route.get("id") or ""),
             "agentModel": route_provider_model(self.agent_route),
-            "resolvedTransport": route_transport(self.primary_route),
+            "resolvedTransport": transport,
+            "resolvedTransportClass": transport_class,
+            "billingCategory": billing_category,
+            "fundingMode": str(billing["fundingMode"]),
+            "pricingDisplay": pricing_display,
             "requestedMode": self.requested_mode,
             "fallbackFromTransport": self.fallback_from_transport,
             "candidateRouteIds": [
@@ -147,6 +179,27 @@ def _route_matches(route: dict[str, Any], requested: str) -> bool:
 
 def _route_profile(route: dict[str, Any]) -> str:
     return str(_route_config(route).get("executionProfile") or "").strip()
+
+
+def _first_transport_failure(
+    routes: Iterable[dict[str, Any]],
+    *,
+    profiles: frozenset[str],
+) -> dict[str, Any] | None:
+    for route in routes:
+        if bool(route.get("disabled")) or _route_profile(route) not in profiles:
+            continue
+        diagnostic = route_transport_diagnostics(route)
+        if diagnostic.get("ok") is not True:
+            return {
+                "routeId": str(diagnostic.get("routeId") or ""),
+                "transportFailureFamily": str(
+                    diagnostic.get("failureFamily") or "route_transport_invalid"
+                ),
+                "sourceFields": dict(diagnostic.get("sourceFields") or {}),
+                "secretValuesReturned": False,
+            }
+    return None
 
 
 def _state_available(state: dict[str, Any] | None, now: datetime) -> bool:
@@ -391,6 +444,17 @@ def resolve_execution_profile(
         )
 
     if mode == PAID_MODE:
+        transport_failure = _first_transport_failure(
+            all_routes,
+            profiles=frozenset({PAID_SWARM_PROFILE}),
+        )
+        if not verified_paid_routes and transport_failure is not None:
+            raise ExecutionResolutionError(
+                "route_transport_mismatch",
+                "a paid route has conflicting, missing, or unsupported transport metadata",
+                status_code=503,
+                details=transport_failure,
+            )
         if not entitlement_verified:
             raise ExecutionResolutionError(
                 "paid_purchase_required",
@@ -413,6 +477,18 @@ def resolve_execution_profile(
         route for route in all_routes if route_is_verified_free(route)
     )
     if not free_routes:
+        if mode == FREE_MODE:
+            transport_failure = _first_transport_failure(
+                all_routes,
+                profiles=frozenset({FREE_SINGLE_AGENT_PROFILE}),
+            )
+            if transport_failure is not None:
+                raise ExecutionResolutionError(
+                    "route_transport_mismatch",
+                    "a free route has conflicting, missing, or unsupported transport metadata",
+                    status_code=503,
+                    details=transport_failure,
+                )
         return None
     if not entitlement_verified:
         raise ExecutionResolutionError(

@@ -487,8 +487,14 @@ def validate_workspace_completion(
     expected_paths = sorted(path for path in normalized_changed if path not in set(ledger_relatives))
     recorded_paths = sorted({str(path).strip() for path in latest.get("changedPaths", []) if str(path).strip()})
     missing_paths = sorted(set(expected_paths) - set(recorded_paths))
-    if missing_paths:
-        raise RuntimeError("CONTINUITY_LEDGER_CHANGED_PATHS_INCOMPLETE: " + ", ".join(missing_paths))
+    extra_paths = sorted(set(recorded_paths) - set(expected_paths))
+    if missing_paths or extra_paths:
+        details: list[str] = []
+        if missing_paths:
+            details.append("missing=" + ", ".join(missing_paths))
+        if extra_paths:
+            details.append("extra=" + ", ".join(extra_paths))
+        raise RuntimeError("CONTINUITY_LEDGER_CHANGED_PATHS_MISMATCH: " + "; ".join(details))
     if latest.get("identity", {}).get("canonicalName") != policy["identity"]["canonicalName"]:
         raise RuntimeError("CONTINUITY_CANONICAL_IDENTITY_MISMATCH")
 

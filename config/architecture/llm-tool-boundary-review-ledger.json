@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "f60c5fa4afb928b432d62ca9669cc70ee85ed91d",
+  "sourceRevision": "2786c64cfde81b22ca9032929dbf6d16bab61095",
   "rawCandidateCount": 95,
   "canonicalCandidateCount": 76,
   "entries": [
@@ -11,12 +11,12 @@
         "backend/agent_runtime/cognitive_llm_transport.py"
       ],
       "symbol": "_runtime_revision",
-      "line": 155,
+      "line": 161,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "48ec473457a53cb3eeb250d2977ca3402f69001586ae1f72e069e3dc94b71266",
+      "fileSha256": "3a1dbfefab7467482c6fc979796a3e14f77f4237f17dd45efc4c7a6d0abfde0a",
       "anchorSha256": "b5ecafe6efa98e0fa05f8144f4f9f2d12c5b868f09a9c8c10c94edc43694e6e9",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:96acea8d186b6cf800854b8f",
+      "candidateId": "llm-boundary:45ef5daee526bafe0e44e963",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_runtime_revision validates one explicit or environment-provided lowercase Git SHA-40 and fails closed before configuration; it does not interpret free language, select a route, or authorize an effect."
     },
@@ -918,12 +918,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1818,
+      "line": 1793,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "c9e4108bfc369b15e9562e466f496cffd9dbf2ed4571f21e4355ff5dead5c082",
+      "fileSha256": "4f8a4269477d1e855e869a02f68dc4c12690242d8cb83bf02256cc346f9927fc",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:125afa66d6d17e19a66490d1",
+      "candidateId": "llm-boundary:29d09b99a8926302efca7d3f",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -1032,5 +1032,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "53555dd9f7187438440991b39248106831f62d07d1f9f7645d6d1f39a8fa12bd"
+  "ledgerSha256": "f4007f0ae6f4021b9d2416dd9f8de8d7c5c130e47444c4335c02ff32a8d9855e"
 }

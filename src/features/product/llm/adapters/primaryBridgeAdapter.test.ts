@@ -54,6 +54,9 @@ describe('primaryBridgeAdapter', () => {
           id: 'route-verified-free',
           defaultModelId: 'revolver-free-provider-model',
           enabled: true,
+          provider: 'freellm',
+          billingCategory: 'free',
+          fundingMode: 'provider_free_quota',
         }],
       }))
       .mockResolvedValueOnce(jsonResponse({

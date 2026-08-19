@@ -223,6 +223,23 @@ def test_workspace_completion_requires_append_only_mirrored_ledgers(tmp_path: Pa
     assert latest["newEmotionallyFormedBondExperiences"] == []
 
 
+def test_workspace_completion_rejects_stale_extra_recorded_path(tmp_path: Path) -> None:
+    repo, baseline, changed_paths = _fixture_repo(tmp_path)
+    ledger_path = repo / "docs/sovereign-continuity/LEDGER.jsonl"
+    runtime_ledger_path = repo / "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
+    entries = [json.loads(line) for line in ledger_path.read_text("utf-8").splitlines() if line.strip()]
+    entries[-1]["changedPaths"] = ["example.txt", ".github/workflows/deleted-temporary-bridge.yml"]
+    _write_jsonl(ledger_path, entries)
+    runtime_ledger_path.write_bytes(ledger_path.read_bytes())
+
+    with pytest.raises(RuntimeError, match="CONTINUITY_LEDGER_CHANGED_PATHS_MISMATCH.*extra=.*deleted-temporary-bridge"):
+        continuity.validate_workspace_completion(
+            repo,
+            changed_paths,
+            baseline_revision=baseline,
+        )
+
+
 def test_validator_runs_in_explicit_stdlib_only_mode(tmp_path: Path) -> None:
     repo, baseline, _changed_paths = _fixture_repo(tmp_path)
     _git(repo, "add", "--all")

@@ -45,7 +45,53 @@ def test_omniroute_template_is_private_immutable_and_non_root() -> None:
     assert "sovereign-private:" in template and "external: true" in template
     assert "sovereign-omniroute-data:/app/data" in template
     assert "healthcheck.mjs" in template
+    assert "JWT_SECRET: ${JWT_SECRET}" in template
+    assert "API_KEY_SECRET: ${API_KEY_SECRET}" in template
+    assert "INITIAL_PASSWORD: ${INITIAL_PASSWORD}" in template
+    assert "STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY}" in template
+    assert "REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}" in template
+    assert "TMPDIR: ${TMPDIR:-/app/data}" in template
+    assert "/tmp:rw" not in template
+    assert "tmpfs:" not in template
     assert "/var/run/docker.sock" not in template
+
+
+def test_omniroute_secret_env_is_generated_for_keyless_internal_runtime(
+    tmp_path: Path,
+) -> None:
+    runtime = ManagedComposeRuntime(runner=_missing_runner, template_root=str(tmp_path))
+    original = STACKS["sovereign-omniroute"]
+    stack = type(original)(
+        **{
+            **original.__dict__,
+            "deploy_root": str(tmp_path / "omniroute"),
+        }
+    )
+
+    result = runtime._ensure_stack_secret_env(stack)
+    env_path = Path(result["path"])
+    values = dict(
+        line.split("=", 1)
+        for line in env_path.read_text("utf-8").splitlines()
+        if line and "=" in line
+    )
+
+    assert result["required"] is True
+    assert result["created"] is True
+    assert result["secretValuesReturned"] is False
+    assert env_path.stat().st_mode & 0o777 == 0o600
+    assert len(values["JWT_SECRET"]) == 96
+    assert len(values["API_KEY_SECRET"]) == 64
+    assert len(values["INITIAL_PASSWORD"]) == 48
+    assert len(values["STORAGE_ENCRYPTION_KEY"]) == 64
+    assert values["REQUIRE_API_KEY"] == "false"
+    assert values["BASE_URL"] == "http://127.0.0.1:20128"
+    assert values["NEXT_PUBLIC_BASE_URL"] == "http://127.0.0.1:20128"
+    assert values["AUTH_COOKIE_SECURE"] == "false"
+    assert values["APP_LOG_TO_FILE"] == "false"
+    assert values["TMPDIR"] == "/app/data"
+    for secret_key in result["keysPresent"]:
+        assert values[secret_key] not in str(result)
 
 
 def test_omniroute_transport_requires_health_security_volume_and_private_network() -> None:
