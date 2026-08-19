@@ -163,6 +163,24 @@ describe('agentWorkRuntime', () => {
     expect(snap.draftPrUrl).toBe('https://github.com/o/r/pull/1');
   });
 
+  it('transitions branch_created → checks_running → draft_pr_ready (no commitSha fast path)', () => {
+    let snap = createIdleSnapshot(TRACE);
+    snap = transitionIntentDetected(snap, 'o/r', 'main');
+    snap = transitionExecutorStarting(snap, 'sovereign-agent');
+    snap = transitionExecutorRunning(snap, 'job-fast');
+    snap = transitionBranchCreated(snap, 'feature/fast');
+    expect(snap.state).toBe('branch_created');
+
+    snap = transitionChecksRunning(snap);
+    expect(snap.state).toBe('checks_running');
+
+    snap = transitionDraftPrReady(snap, 'https://github.com/o/r/pull/55');
+    expect(snap.state).toBe('draft_pr_ready');
+    expect(snap.draftPrUrl).toBe('https://github.com/o/r/pull/55');
+    expect(snap.branchName).toBe('feature/fast');
+    expect(snap.commitSha).toBeNull();
+  });
+
   it('does not finalize a Draft PR from URL evidence alone', () => {
     let snap = createIdleSnapshot(TRACE);
     snap = transitionIntentDetected(snap, 'o/r', 'main');
