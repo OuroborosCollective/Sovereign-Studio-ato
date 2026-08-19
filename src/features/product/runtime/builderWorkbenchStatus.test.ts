@@ -134,6 +134,47 @@ describe('builderWorkbenchStatus', () => {
     expect(errors.some((e) => e.includes('boom'))).toBe(true);
   });
 
+  it('counts user-blocking action events in the problem truth so an active blocker never shows Errors 0', () => {
+    const input = baseInput({
+      actionEvents: [
+        actionEvent({
+          id: 'blocked',
+          kind: 'blocked',
+          route: 'worker',
+          label: 'Online-Sprachdeutung nicht verfügbar',
+          detail: 'Offline-Fallback=free_language_not_safely_classifiable',
+          state: 'blocked',
+        }),
+      ],
+    });
+
+    const errors = deriveErrorEntries(input);
+    expect(errors).toEqual([
+      'Online-Sprachdeutung nicht verfügbar · Offline-Fallback=free_language_not_safely_classifiable',
+    ]);
+    const errorsSlot = deriveWorkbenchStatusSlots(input).find((slot) => slot.id === 'errors')!;
+    expect(errorsSlot.value).toBe('1');
+    expect(errorsSlot.tone).toBe('error');
+  });
+
+  it('does not duplicate a blocked agent-job event when the canonical agent blocker exists', () => {
+    const errors = deriveErrorEntries(baseInput({
+      agentJob: { status: 'blocked', changedFiles: [], events: [], lastError: 'missing github access' },
+      actionEvents: [
+        actionEvent({
+          id: 'agent-blocked',
+          kind: 'agent_job_created',
+          route: 'agent-job',
+          label: 'Sovereign Agent Job blockiert',
+          detail: 'missing github access',
+          state: 'blocked',
+        }),
+      ],
+    }));
+
+    expect(errors).toEqual(['Sovereign Agent Job blockiert · missing github access']);
+  });
+
   it('keeps warning and error text in Logs and counts only structured failed events', () => {
     const input = baseInput({
       logs: [
@@ -163,8 +204,12 @@ describe('builderWorkbenchStatus', () => {
       '10:00:00 · [warn] GitHub access missing',
       '10:00:01 · [error] Worker request failed',
     ]);
+    // Issue #1567 (B1): blocked action events are user-blocking problems and now
+    // belong to the problem truth; this test previously encoded the fail-open gap
+    // where an active blocker surfaced as Errors 0.
     expect(deriveErrorEntries(input)).toEqual([
       'Direct Patch fehlgeschlagen · Patch rejected',
+      'Patch wartet',
     ]);
   });
 

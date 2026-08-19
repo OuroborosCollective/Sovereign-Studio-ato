@@ -135,10 +135,12 @@ export function deriveErrorEntries(input: WorkbenchStatusInput): string[] {
     addUniqueEntry(`Sovereign Agent Job blockiert${input.agentJob.lastError ? ` · ${input.agentJob.lastError}` : ''}`);
   }
   for (const event of input.actionEvents ?? []) {
-    if (event.state !== 'failed') continue;
+    // Issue #1567 (B1): user-blocking events are part of the problem truth. An
+    // active blocker must never surface as "Errors 0" in the status chips.
+    if (event.state !== 'failed' && event.state !== 'blocked') continue;
     if (event.route === 'worker' && input.workerBlocker) continue;
     if (event.route === 'repo' && input.chatRepoError) continue;
-    if (event.route === 'agent-job' && input.agentJob?.status === 'failed') continue;
+    if (event.route === 'agent-job' && (input.agentJob?.status === 'failed' || input.agentJob?.status === 'blocked')) continue;
     const key = [event.route, event.kind, event.sourceId ?? '', event.target ?? '', event.label].join(':');
     if (seenActionFailures.has(key)) continue;
     seenActionFailures.add(key);

@@ -85,6 +85,79 @@ export function classifyOfflineSovereignExecutorIntent(text: string): SovereignE
   return OFFLINE_EXACT_COMMANDS[command] ?? 'unknown';
 }
 
+/**
+ * Issue #1567 (A2): fail-closed gate for the offline free-text chat fallback.
+ *
+ * When the online intent answer violates the schema or free language is not
+ * safely classifiable (`unknown` == free_language_not_safely_classifiable), a
+ * raw free-text answer must never be adopted as a chat fallback with
+ * success/`fertig` semantics while a mutating/actionable intent may have been
+ * requested. Only safely classified pure chat intents (`question`, `status`)
+ * keep the free fallback. Everything else returns a structured BLOCKED outcome
+ * with the concrete missing gates and exactly one next safe action.
+ */
+export type SovereignChatFallbackGate =
+  | 'repo_ready'
+  | 'github_write_access'
+  | 'agent_route'
+  | 'online_intent_evidence';
+
+export interface SovereignChatFallbackInput {
+  readonly intent: SovereignExecutorIntentKind;
+  readonly repoReady?: boolean;
+  readonly githubWriteAllowed?: boolean;
+  readonly agentReady?: boolean;
+}
+
+export type SovereignChatFallbackDecision =
+  | { readonly state: 'chat_fallback_allowed'; readonly reason: string }
+  | {
+      readonly state: 'blocked';
+      readonly reason: string;
+      readonly missingGates: readonly SovereignChatFallbackGate[];
+      readonly nextAction: string;
+    };
+
+const CHAT_FALLBACK_NEXT_ACTION: Record<SovereignChatFallbackGate, string> = {
+  repo_ready: 'Repository laden, damit der Auftrag gegen echten Repo-State geprüft werden kann.',
+  github_write_access: 'GitHub-Schreibzugriff verifizieren; ohne bestätigten Zugang bleibt jede Mutation blockiert.',
+  agent_route: 'Sovereign-Agent-Route konfigurieren und bereitstellen, bevor ein Ausführungsauftrag angenommen wird.',
+  online_intent_evidence: 'Online-Sprachdeutung wiederherstellen und den Auftrag erneut senden; Freitext wird nicht als Erfolg gewertet.',
+};
+
+export function decideOfflineSovereignChatFallback(
+  input: SovereignChatFallbackInput,
+): SovereignChatFallbackDecision {
+  if (input.intent === 'question' || input.intent === 'status') {
+    return {
+      state: 'chat_fallback_allowed',
+      reason: 'Sicher klassifizierter reiner Chat-/Status-Intent; Freitext-Fallback ohne Aktionssemantik erlaubt.',
+    };
+  }
+
+  if (input.intent === 'unknown') {
+    return {
+      state: 'blocked',
+      reason: 'Offline-Fallback=free_language_not_safely_classifiable: Absicht nicht sicher klassifizierbar; ein mutierender Auftrag kann nicht ausgeschlossen werden.',
+      missingGates: ['online_intent_evidence'],
+      nextAction: CHAT_FALLBACK_NEXT_ACTION.online_intent_evidence,
+    };
+  }
+
+  const missingGates: SovereignChatFallbackGate[] = [];
+  if (!input.repoReady) missingGates.push('repo_ready');
+  if (!input.githubWriteAllowed) missingGates.push('github_write_access');
+  if (!input.agentReady) missingGates.push('agent_route');
+  missingGates.push('online_intent_evidence');
+
+  return {
+    state: 'blocked',
+    reason: `Mutierender Intent (${input.intent}) ohne gültige Online-Intent-Evidence; Freitext-Fallback mit Erfolgssemantik ist verboten.`,
+    missingGates,
+    nextAction: CHAT_FALLBACK_NEXT_ACTION[missingGates[0]],
+  };
+}
+
 function event(args: {
   readonly route: SovereignActionRoute;
   readonly kind: SovereignActionEventInput['kind'];
@@ -142,7 +215,6 @@ function blockedDecision(args: {
     state: 'blocked',
     reason: args.reason,
     nextAllowedAction: args.nextAllowedAction,
-    requiredCapability: args.requiredCapability,
     blocker: args.blocker,
     terminal: true,
     workspaceValidation: args.workspaceValidation,

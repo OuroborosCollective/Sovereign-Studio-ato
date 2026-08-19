@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyOfflineSovereignExecutorIntent,
+  decideOfflineSovereignChatFallback,
   decideSovereignExecutorRoute,
 } from './sovereignExecutorRuntime';
 import { buildSovereignToolCapabilityRegistry } from './sovereignToolCapabilityRuntime';
@@ -139,5 +140,58 @@ describe('sovereignExecutorRuntime', () => {
 
     expect(decision.route).toBe('worker_chat');
     expect(decision.nextAllowedAction).toBe('start_worker_chat');
+  });
+
+  describe('decideOfflineSovereignChatFallback (Issue #1567 fail-closed)', () => {
+    it('allows the free-text chat fallback for safely classified pure chat intents', () => {
+      for (const intent of ['question', 'status'] as const) {
+        const decision = decideOfflineSovereignChatFallback({ intent });
+        expect(decision.state).toBe('chat_fallback_allowed');
+      }
+    });
+
+    it('fails closed when free language is not safely classifiable instead of accepting success semantics', () => {
+      const decision = decideOfflineSovereignChatFallback({ intent: 'unknown' });
+
+      expect(decision.state).toBe('blocked');
+      if (decision.state !== 'blocked') return;
+      expect(decision.missingGates).toEqual(['online_intent_evidence']);
+      expect(decision.reason).toContain('free_language_not_safely_classifiable');
+      // Exactly one next safe action, never a silent "fertig" outcome.
+      expect(decision.nextAction.length).toBeGreaterThan(0);
+    });
+
+    it('fails closed for actionable intents with concrete missing gates and exactly one next safe action', () => {
+      const decision = decideOfflineSovereignChatFallback({
+        intent: 'draft_pr',
+        repoReady: false,
+        githubWriteAllowed: false,
+        agentReady: false,
+      });
+
+      expect(decision.state).toBe('blocked');
+      if (decision.state !== 'blocked') return;
+      expect(decision.missingGates).toEqual([
+        'repo_ready',
+        'github_write_access',
+        'agent_route',
+        'online_intent_evidence',
+      ]);
+      expect(decision.nextAction).toContain('Repository');
+    });
+
+    it('lists only the gates that are actually missing for actionable intents', () => {
+      const decision = decideOfflineSovereignChatFallback({
+        intent: 'code_execution',
+        repoReady: true,
+        githubWriteAllowed: true,
+        agentReady: true,
+      });
+
+      expect(decision.state).toBe('blocked');
+      if (decision.state !== 'blocked') return;
+      expect(decision.missingGates).toEqual(['online_intent_evidence']);
+      expect(decision.nextAction).toContain('Online-Sprachdeutung');
+    });
   });
 });
