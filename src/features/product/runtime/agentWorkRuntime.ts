@@ -175,7 +175,7 @@ export function transitionCommitCreated(
 }
 
 export function transitionChecksRunning(snapshot: AgentWorkSnapshot): AgentWorkSnapshot {
-  if (snapshot.state !== 'commit_created') return snapshot;
+  if (snapshot.state !== 'commit_created' && snapshot.state !== 'branch_created') return snapshot;
   return appendEvent(snapshot, 'checks_running', 'Checks laufen…');
 }
 
@@ -185,7 +185,7 @@ export function transitionDraftPrReady(
 ): AgentWorkSnapshot {
   if (snapshot.state !== 'checks_running') return snapshot;
   if (!draftPrUrl || !draftPrUrl.startsWith('https://')) return snapshot;
-  if (!snapshot.jobId || !snapshot.branchName || !snapshot.commitSha) return snapshot;
+  if (!snapshot.jobId || !snapshot.branchName) return snapshot;
   return appendEvent(
     { ...snapshot, draftPrUrl, lastVerifiedAt: Date.now() },
     'draft_pr_ready',

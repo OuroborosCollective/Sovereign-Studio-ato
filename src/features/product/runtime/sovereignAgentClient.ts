@@ -178,6 +178,7 @@ interface RawSovereignAgentJobResponse {
   status?: unknown;
   repoUrl?: unknown;
   branch?: unknown;
+  branchName?: unknown;
   draftPrUrl?: unknown;
   changedFiles?: unknown;
   events?: unknown;
@@ -350,6 +351,7 @@ function sanitizeSnapshot(rawInput: RawSovereignAgentJobResponse, now: () => num
     status: normalizeStatus(raw.status),
     repoUrl: stringValue(raw.repoUrl),
     branch: stringValue(raw.branch),
+    branchName: stringValue(raw.branchName),
     draftPrUrl: stringValue(raw.draftPrUrl),
     changedFiles: stringArray(raw.changedFiles),
     events: eventArray(raw.events, now),

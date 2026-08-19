@@ -189,6 +189,7 @@ import {
   transitionExecutorStarting,
   transitionExecutorRunning,
   transitionBranchCreated,
+  transitionChecksRunning,
   transitionCommitCreated,
   transitionDraftPrReady,
   transitionBlocked,
@@ -2901,6 +2902,13 @@ export function BuilderContainer({
         snap = transitionBlocked(snap, 'Sovereign Agent Runtime blockiert.');
       }
       if (scopedAgentJob.draftPrUrl && snap.state !== 'draft_pr_ready' && snap.state !== 'failed' && snap.state !== 'blocked') {
+        const resolvedBranch = scopedAgentJob.branchName ?? scopedAgentJob.branch;
+        if (resolvedBranch) {
+          snap = transitionBranchCreated(snap, resolvedBranch);
+        }
+        if (snap.state === 'branch_created') {
+          snap = transitionChecksRunning(snap);
+        }
         snap = transitionDraftPrReady(snap, scopedAgentJob.draftPrUrl);
         if (patchPreviewReady) {
           setPatchPreviewReady(false);
