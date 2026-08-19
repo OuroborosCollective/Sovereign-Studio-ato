@@ -266,6 +266,7 @@ jobs:
           tests/test_wolfram_cag_receipts.py \
           tests/test_wolfram_cag_component_adapters.py \
           tests/test_wolfram_cag_benchmark_runner.py \
+          tests/test_wolfram_cag_quickstart.py \
           tests/test_operator_command_gateway.py \
           tests/test_operator_projection_read_only.py \
           tests/test_operator_projection_mirror.py \

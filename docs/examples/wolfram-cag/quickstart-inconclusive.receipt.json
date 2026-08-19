@@ -1,0 +1,51 @@
+{
+  "case_id": "cag-bench-012",
+  "claim_text": "the answer to everything is fuzzy",
+  "claim_value": "",
+  "comparison_verdict": "INCONCLUSIVE",
+  "component_id": "wolfram.cag.hints",
+  "provisioning_blocker": "#1458 (Wolfram owner provisioning) not available",
+  "schemaVersion": "sovereign.wolfram-cag-quickstart-example.v1",
+  "title": "Hint text for an unparseable claim is inconclusive",
+  "transport_receipt": {
+    "assumptions": [
+      "no numeric reference available"
+    ],
+    "bounded_summary": "no real CAG result available; component not provisioned or transport unavailable",
+    "claim_hash": "6ec9579a98eae4dc0392e6bdc8b8ca9b50c01ffe7de74d1b8512d2f1ed2a8d44",
+    "component_id": "wolfram.cag.hints",
+    "component_ready": true,
+    "contract_version": "wolfram-cag-transport.v1",
+    "cost_class": "UNKNOWN",
+    "domain": "general",
+    "finding_codes": [
+      "unavailable_no_transport_receipt"
+    ],
+    "input_hash": "a871385b0b760b5254cc29e2b06fe0593cdfbd674f670b7704db754ced188bcb",
+    "input_text": "the answer to everything is fuzzy",
+    "latency_ms": 0,
+    "max_output_bytes": 1000000,
+    "provider_request_id": "public-benchmark",
+    "provider_response_uuid": "",
+    "quota_class": "UNKNOWN",
+    "receipt_sha256": "d12841db0a4dc185fc08bb0edf397d61eb008cd7dc4a2180551976fb015fa568",
+    "recorded_at": "",
+    "response_status": 200,
+    "result_hash": "987300936ec4df5eb02cbb383529d5f52e0ca99c153393589153fffb675a5a7b",
+    "result_type": "text_hint",
+    "runtime_revision": "0000000000000000000000000000000000000000",
+    "schema_version": "sovereign.wolfram-cag-receipt.v1",
+    "sovereign_run_id": "quickstart-example",
+    "timeout_seconds": 15,
+    "tolerance": {
+      "absolute": "0",
+      "relative": "0",
+      "significant_digits": 12
+    },
+    "truth_notice": "CAG evidence is a supplemental compute/knowledge counter-check. It cannot verify repository, runtime, deployment, PatchMon, ARE or Kappa truth, and no CAG result may self-assert VERIFIED.",
+    "units": "",
+    "verdict": "UNAVAILABLE"
+  },
+  "transport_verdict": "UNAVAILABLE",
+  "truth_notice": "CAG evidence is a supplemental compute/knowledge counter-check. It cannot verify repository, runtime, deployment, PatchMon, ARE or Kappa truth, and no CAG result may self-assert VERIFIED."
+}

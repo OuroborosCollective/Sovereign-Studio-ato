@@ -55,6 +55,7 @@ jobs:
             backend/tests/test_wolfram_cag_receipts.py \
             backend/tests/test_wolfram_cag_component_adapters.py \
             backend/tests/test_wolfram_cag_benchmark_runner.py \
+            backend/tests/test_wolfram_cag_quickstart.py \
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"

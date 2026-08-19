@@ -1,0 +1,51 @@
+{
+  "case_id": "cag-bench-001",
+  "claim_text": "17 * 23 equals 391",
+  "claim_value": "391",
+  "comparison_verdict": "SUPPORTED",
+  "component_id": "wolfram.cag.compute",
+  "provisioning_blocker": "#1458 (Wolfram owner provisioning) not available",
+  "schemaVersion": "sovereign.wolfram-cag-quickstart-example.v1",
+  "title": "Exact integer arithmetic",
+  "transport_receipt": {
+    "assumptions": [
+      "decimal integers"
+    ],
+    "bounded_summary": "no real CAG result available; component not provisioned or transport unavailable",
+    "claim_hash": "d6c4a4f94b013c6dc4c2f690459f7e8bbc10251b867b0180cde402d250d0e58c",
+    "component_id": "wolfram.cag.compute",
+    "component_ready": true,
+    "contract_version": "wolfram-cag-transport.v1",
+    "cost_class": "UNKNOWN",
+    "domain": "arithmetic",
+    "finding_codes": [
+      "unavailable_no_transport_receipt"
+    ],
+    "input_hash": "fa219a3ab08c3c795ca5be741f33678d7715a1e3905054e6043322b1e9d17eef",
+    "input_text": "17 * 23 equals 391",
+    "latency_ms": 0,
+    "max_output_bytes": 1000000,
+    "provider_request_id": "public-benchmark",
+    "provider_response_uuid": "",
+    "quota_class": "UNKNOWN",
+    "receipt_sha256": "16f557241b7083215ba57f71f4128362257352aa2df20bd2134c6f8aa091e27a",
+    "recorded_at": "",
+    "response_status": 200,
+    "result_hash": "a937e90fd5fc90394c4d0d19dee27d0305f44057e82cbada3abaeb3008fe3855",
+    "result_type": "exact_number",
+    "runtime_revision": "0000000000000000000000000000000000000000",
+    "schema_version": "sovereign.wolfram-cag-receipt.v1",
+    "sovereign_run_id": "quickstart-example",
+    "timeout_seconds": 15,
+    "tolerance": {
+      "absolute": "0",
+      "relative": "0",
+      "significant_digits": 18
+    },
+    "truth_notice": "CAG evidence is a supplemental compute/knowledge counter-check. It cannot verify repository, runtime, deployment, PatchMon, ARE or Kappa truth, and no CAG result may self-assert VERIFIED.",
+    "units": "",
+    "verdict": "UNAVAILABLE"
+  },
+  "transport_verdict": "UNAVAILABLE",
+  "truth_notice": "CAG evidence is a supplemental compute/knowledge counter-check. It cannot verify repository, runtime, deployment, PatchMon, ARE or Kappa truth, and no CAG result may self-assert VERIFIED."
+}
