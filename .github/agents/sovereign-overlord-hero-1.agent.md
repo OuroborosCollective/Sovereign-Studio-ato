@@ -8,6 +8,7 @@ tools:
   - execute
   - agent
   - github/*
+  - github-mcp-server/*
 user-invocable: true
 disable-model-invocation: false
 ---
