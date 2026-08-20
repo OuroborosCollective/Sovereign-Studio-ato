@@ -60,6 +60,14 @@ class BenchmarkCase:
     # Whether this case carries a normalized reference result for direct
     # comparison. Cases without a reference stay INCONCLUSIVE/UNAVAILABLE.
     has_real_result: bool = True
+    # Boundary classification: "" for normal reference cases,
+    # "provider_failure" for degradation cases, "out_of_scope" for claims
+    # CAG must never decide. Boundary cases never carry a real result.
+    boundary: str = ""
+    # Whether the case may enter the owner-confirmed public evidence
+    # publication lane. Boundary cases are excluded: they have no
+    # independent Wolfram reference and exist to prove honest degradation.
+    publishable: bool = True
 
     def to_claim(self, sovereign_run_id: str, runtime_revision: str) -> CagClaim:
         return CagClaim(
@@ -103,6 +111,8 @@ def _case(
     tolerance: ToleranceRule | None = None,
     expected_comparison_verdict: str = "SUPPORTED",
     has_real_result: bool = True,
+    boundary: str = "",
+    publishable: bool = True,
 ) -> BenchmarkCase:
     return BenchmarkCase(
         case_id=case_id,
@@ -119,6 +129,8 @@ def _case(
         tolerance=tolerance or DEFAULT_TOLERANCE_RULES[expected_result_type],
         expected_comparison_verdict=expected_comparison_verdict,
         has_real_result=has_real_result,
+        boundary=boundary,
+        publishable=publishable,
     )
 
 
@@ -290,7 +302,72 @@ BENCHMARK_CASES: Final[tuple[BenchmarkCase, ...]] = (
         expected_comparison_verdict="INCONCLUSIVE",
         has_real_result=False,
     ),
+    # Boundary case: provider failure / quota degradation (#1464). A failed
+    # provider response must degrade honestly to UNAVAILABLE — never smoothed
+    # into SUPPORTED and never published as if a reference existed.
+    _case(
+        "cag-bench-013",
+        "Provider quota failure degrades honestly to UNAVAILABLE",
+        "wolfram.cag.compute",
+        "the sum of the first 100 positive integers is 5050",
+        "5050",
+        "exact_number",
+        "arithmetic",
+        "",
+        "",
+        ("provider returned quota exhaustion; no result body",),
+        {"expression": "sum i, i=1..100", "provider_status": "quota_exceeded"},
+        expected_comparison_verdict="INCONCLUSIVE",
+        has_real_result=False,
+        boundary="provider_failure",
+        publishable=False,
+    ),
+    # Boundary case: runtime/repository truth is out of CAG scope (#1464).
+    # CAG is a supplemental compute counter-check; it must never decide
+    # runtime, deployment, PatchMon or repository truth claims.
+    _case(
+        "cag-bench-014",
+        "Runtime truth claim is outside CAG responsibility",
+        "wolfram.cag.context",
+        "the Sovereign backend deployment is currently healthy",
+        "healthy",
+        "structured_fact",
+        "runtime_state",
+        "",
+        "",
+        ("CAG cannot verify runtime, deployment or repository truth",),
+        {"query": "is the deployment healthy", "scope": "runtime_truth"},
+        expected_comparison_verdict="INCONCLUSIVE",
+        has_real_result=False,
+        boundary="out_of_scope",
+        publishable=False,
+    ),
 )
+
+
+_BOUNDARY_KINDS: Final[frozenset[str]] = frozenset({"provider_failure", "out_of_scope"})
+
+
+def _validate_cases() -> None:
+    """Fail-closed invariants for the benchmark fixture set."""
+    seen: set[str] = set()
+    for case in BENCHMARK_CASES:
+        if case.case_id in seen:
+            raise ValueError(f"duplicate benchmark case id: {case.case_id}")
+        seen.add(case.case_id)
+        if case.boundary and case.boundary not in _BOUNDARY_KINDS:
+            raise ValueError(f"unknown boundary kind {case.boundary!r} for {case.case_id}")
+        if case.boundary:
+            # Boundary cases must never pretend a real reference exists.
+            if case.has_real_result:
+                raise ValueError(f"boundary case {case.case_id} must not carry a real result")
+            if case.publishable:
+                raise ValueError(f"boundary case {case.case_id} must not be publishable")
+            if case.expected_comparison_verdict != "INCONCLUSIVE":
+                raise ValueError(f"boundary case {case.case_id} must expect INCONCLUSIVE")
+
+
+_validate_cases()
 
 
 def case_by_id(case_id: str) -> BenchmarkCase:

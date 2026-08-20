@@ -57,10 +57,14 @@ mission / LLM claim
   `CagClaim`, `NormalizedCagResult`, `ToleranceRule`, `VerificationInput`,
   `WolframCagReceiptV1`, `verify_cag_claim`, `unavailable_receipt`,
   `compare_numeric_claim`, `compare_exact_claim`.
-- `backend/agent_runtime/wolfram_cag_benchmark_cases.py` (+ mirror): 12 public,
+- `backend/agent_runtime/wolfram_cag_benchmark_cases.py` (+ mirror): 14 public,
   reproducible, non-sensitive `LLM claim -> CAG check -> evidence verdict`
   benchmark cases covering all four CAG components and the result types
-  required by #1460.
+  required by #1460. Twelve are publishable reference cases; two are
+  non-publishable boundary cases required by #1464: one provider
+  failure/degradation case and one out-of-scope case where CAG is correctly
+  not responsible for runtime/repository truth. Boundary cases never carry a
+  reference result and are excluded from the evidence publication lane.
 
 ## Receipt contract (`WolframCagReceiptV1`)
 

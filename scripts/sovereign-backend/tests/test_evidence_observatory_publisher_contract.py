@@ -11,6 +11,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+from agent_runtime.wolfram_cag_benchmark_cases import BENCHMARK_CASES  # noqa: E402
 from evidence_observatory_contracts import canonical_json, sha256_text  # noqa: E402
 from evidence_observatory_publisher import (  # noqa: E402
     PUBLISHER_POLICY,
@@ -66,6 +67,15 @@ def test_cag_benchmark_builds_twelve_publishable_truth_bound_rows():
     assert verdicts["cag-bench-007"] == "REFUTED"
     assert verdicts["cag-bench-011"] == "UNPROVEN"
     assert verdicts["cag-bench-012"] == "UNPROVEN"
+
+
+def test_cag_boundary_cases_are_never_published():
+    # #1464 boundary cases (provider failure, out-of-scope) carry no
+    # independent Wolfram reference and must stay out of the publication lane.
+    boundary_ids = {case.case_id for case in BENCHMARK_CASES if not case.publishable}
+    assert boundary_ids, "expected non-publishable boundary cases in the benchmark set"
+    published_ids = {row["caseId"] for row in build_cag_benchmark_public_rows()}
+    assert published_ids.isdisjoint(boundary_ids)
 
 
 def test_identical_cag_batch_has_deterministic_manifest_and_all_1507_hash_surfaces():

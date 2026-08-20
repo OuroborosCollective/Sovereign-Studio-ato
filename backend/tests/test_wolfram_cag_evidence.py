@@ -843,6 +843,62 @@ class TestBenchmarkCases:
             receipt = verify_cag_claim(inputs)
             assert receipt.verdict is CagEvidenceVerdict.UNAVAILABLE, case.case_id
 
+    def test_benchmark_includes_provider_failure_case(self):
+        # #1464 requires at least one provider-failure/degradation case.
+        cases = [c for c in BENCHMARK_CASES if c.boundary == "provider_failure"]
+        assert cases, "benchmark set must include a provider-failure case"
+
+    def test_benchmark_includes_out_of_scope_case(self):
+        # #1464 requires a case where CAG is correctly not responsible for
+        # runtime/repository truth.
+        cases = [c for c in BENCHMARK_CASES if c.boundary == "out_of_scope"]
+        assert cases, "benchmark set must include an out-of-scope case"
+
+    def test_boundary_cases_never_carry_reference_or_publish(self):
+        for case in BENCHMARK_CASES:
+            if not case.boundary:
+                continue
+            assert case.has_real_result is False, case.case_id
+            assert case.publishable is False, case.case_id
+            assert case.expected_comparison_verdict == "INCONCLUSIVE", case.case_id
+
+    def test_provider_failure_case_degrades_to_unavailable(self):
+        # A quota-exhausted/degraded provider must degrade honestly; the
+        # verdict must never be smoothed into SUPPORTED.
+        for case in BENCHMARK_CASES:
+            if case.boundary != "provider_failure":
+                continue
+            for receipt_kwargs in (
+                {"component_status": "DEGRADED", "response_status": 200},
+                {"component_status": "READY", "response_status": 429},
+                {"component_status": "READY", "response_status": 503},
+            ):
+                inputs = _input(
+                    claim=case.to_claim(RUN_ID, REVISION),
+                    result=case.to_result(),
+                    tolerance=case.tolerance,
+                    transport_receipt=_transport_receipt(**receipt_kwargs),
+                )
+                receipt = verify_cag_claim(inputs)
+                assert receipt.verdict is CagEvidenceVerdict.UNAVAILABLE, (case.case_id, receipt_kwargs)
+
+    def test_out_of_scope_case_never_supported(self):
+        # Even with a fabricated READY transport receipt, CAG must never
+        # support a runtime/repository truth claim: with no reference value
+        # the honest verdict stays INCONCLUSIVE.
+        for case in BENCHMARK_CASES:
+            if case.boundary != "out_of_scope":
+                continue
+            inputs = _input(
+                claim=case.to_claim(RUN_ID, REVISION),
+                result=case.to_result(),
+                tolerance=case.tolerance,
+                transport_receipt=_transport_receipt(),
+            )
+            receipt = verify_cag_claim(inputs)
+            assert receipt.verdict is CagEvidenceVerdict.INCONCLUSIVE, case.case_id
+            assert receipt.verdict is not CagEvidenceVerdict.SUPPORTED, case.case_id
+
 
 # ---------------------------------------------------------------------------
 # Mirror parity
