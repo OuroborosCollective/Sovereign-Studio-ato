@@ -533,9 +533,12 @@ def register_security_routes(
             if not row:
                 return jsonify({"error": "Passkey already registered"}), 409
             return jsonify({"ok": True, "id": row["id"], "label": label})
-        except Exception as exc:
+        except (ValueError, SecurityRuntimeUnavailable) as exc:
             conn.rollback()
-            return jsonify({"error": str(exc)[:500]}), 400
+            return jsonify({"error": str(exc)}), 400
+        except Exception:
+            conn.rollback()
+            return jsonify({"error": "Passkey registration failed"}), 400
         finally:
             _close(conn)
 
@@ -653,9 +656,12 @@ def register_security_routes(
             conn.commit()
             response = make_response(jsonify(_user_api(dict(row))))
             return set_session_cookie(response, str(row["user_id"]))
-        except Exception as exc:
+        except (ValueError, SecurityRuntimeUnavailable) as exc:
             conn.rollback()
-            return jsonify({"error": str(exc)[:500]}), 401
+            return jsonify({"error": str(exc)}), 401
+        except Exception:
+            conn.rollback()
+            return jsonify({"error": "Passkey verification failed"}), 401
         finally:
             _close(conn)
 
@@ -846,9 +852,12 @@ def register_security_routes(
                 "contextHash": context_hash,
                 "expiresIn": STEP_UP_TTL_SECONDS,
             })
-        except Exception as exc:
+        except (ValueError, SecurityRuntimeUnavailable) as exc:
             conn.rollback()
-            return jsonify({"error": str(exc)[:500]}), 401
+            return jsonify({"error": str(exc)}), 401
+        except Exception:
+            conn.rollback()
+            return jsonify({"error": "Step-up verification failed"}), 401
         finally:
             _close(conn)
 

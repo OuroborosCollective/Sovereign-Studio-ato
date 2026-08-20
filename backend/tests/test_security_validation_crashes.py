@@ -148,6 +148,33 @@ class TestSecurityValidationCrashes(unittest.TestCase):
                 self.assertIn("error", response_body)
                 self.assertEqual(response_body["error"], "Malformed payload; dictionary required")
 
+    def test_unexpected_exceptions_fail_safely_with_generic_errors(self):
+        # Verify that unexpected exceptions in passkey/step-up verify routes return generic errors instead of leaking stack traces
+        handler = self.app.routes.get("/api/security/passkeys/register/verify")
+        security_runtime.request.get_json = lambda *args, **kwargs: {"challengeId": "invalid-uuid", "credential": {}}
+
+        # Mock _webauthn to return dummy functions so execution reaches challenge/credential verification logic
+        old_webauthn = security_runtime._webauthn
+        security_runtime._webauthn = lambda: {
+            "verify_registration_response": lambda **kwargs: None,
+            "verify_authentication_response": lambda **kwargs: None,
+            "base64url_to_bytes": lambda s: b"bytes",
+        }
+        try:
+            res = handler()
+            self.assertIsInstance(res, tuple)
+            response_body, status_code = res
+            self.assertEqual(status_code, 400)
+            self.assertIn("error", response_body)
+            # Should be generic message or expected validation error, not an unhandled raw traceback leakage
+            self.assertIn(response_body["error"], [
+                "Security challenge is invalid, expired or already used",
+                "Passkey registration failed",
+                "Passkey backend dependency 'webauthn' is not installed",
+            ])
+        finally:
+            security_runtime._webauthn = old_webauthn
+
 
 if __name__ == "__main__":
     unittest.main()
