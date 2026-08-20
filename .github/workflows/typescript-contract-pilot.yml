@@ -1,0 +1,50 @@
+name: TypeScript Contract Pilot
+
+on:
+  pull_request:
+    paths:
+      - "contracts/typescript/**"
+      - "backend/tests/test_typescript_contract_cross_language.py"
+      - ".github/workflows/typescript-contract-pilot.yml"
+  push:
+    branches: [main]
+    paths:
+      - "contracts/typescript/**"
+      - "backend/tests/test_typescript_contract_cross_language.py"
+      - ".github/workflows/typescript-contract-pilot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-pilot:
+    name: transformer-contract-and-cross-language-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.15.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: "pnpm"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install isolated locked toolchain
+        working-directory: contracts/typescript
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify transformer, negative stock-tsc proof and reproducible artifacts
+        working-directory: contracts/typescript
+        env:
+          CONTRACT_SOURCE_REVISION: ${{ github.sha }}
+          GOMAXPROCS: "2"
+        run: pnpm verify
+      - name: Verify cross-language fixtures against generated TypeScript artifact
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          PYTHONPATH=backend python -m pytest -q backend/tests/test_typescript_contract_cross_language.py

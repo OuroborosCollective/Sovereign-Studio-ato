@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0.0",
+  "requestId": "permission-001",
+  "ownerId": "owner-001",
+  "repositoryOwner": "OuroborosCollective",
+  "repositoryName": "Sovereign-Studio-ato",
+  "repositoryRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "capability": "github.write",
+  "scope": "repository",
+  "effect": "mutate",
+  "requestedAt": 1735689600000,
+  "justification": "Apply an attested isolated contract pilot.",
+  "expectedOutcome": "A PR is created and remains pending target readback."
+}
