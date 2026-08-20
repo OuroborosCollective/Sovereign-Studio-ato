@@ -321,13 +321,26 @@ export class HebbianAdaptor {
 
   private updateStats(countUpdate = true): void {
     if (countUpdate) this.stats.totalUpdates += 1;
-    const weights = Array.from(this.synapses.values()).map((synapse) => synapse.weight);
-    this.stats.synapseCount = weights.length;
+    const size = this.synapses.size;
+    this.stats.synapseCount = size;
 
-    if (weights.length > 0) {
-      this.stats.averageWeight = weights.reduce((sum, weight) => sum + weight, 0) / weights.length;
-      this.stats.maxWeight = Math.max(...weights);
-      this.stats.minWeight = Math.min(...weights);
+    if (size > 0) {
+      // ⚡ Bolt: Single-pass accumulation over synapse weights avoiding Array.from,
+      // intermediate .map allocations, .reduce passes, and Math.max/Math.min spread stack allocations.
+      let sum = 0;
+      let max = -Infinity;
+      let min = Infinity;
+
+      for (const synapse of this.synapses.values()) {
+        const w = synapse.weight;
+        sum += w;
+        if (w > max) max = w;
+        if (w < min) min = w;
+      }
+
+      this.stats.averageWeight = sum / size;
+      this.stats.maxWeight = max;
+      this.stats.minWeight = min;
     } else {
       this.stats.averageWeight = 0;
       this.stats.maxWeight = 0;
@@ -469,7 +482,8 @@ export class Synaptogenesis {
       if (correlation >= this.config.correlationThreshold) candidates.push({ node: targetNode, correlation });
     }
 
-    candidates.sort((a, b) => b.correlation - a.correlation || a.node.localeCompare(b.node));
+    // ⚡ Bolt: Fast native lexicographical comparison for tie-breakers replacing slow localeCompare
+    candidates.sort((a, b) => b.correlation - a.correlation || (a.node < b.node ? -1 : a.node > b.node ? 1 : 0));
     return candidates.slice(0, this.config.maxConnectionsPerNode);
   }
 
