@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Download, Trash2, Send, Sparkles, CheckCircle, AlertTriangle, 
   Lightbulb, Loader2, CircleX, Bot, User, ChevronDown, Zap,
-  Sparkle, Brain, Globe, Shield
+  Sparkle, Brain, Globe, Shield, History
 } from 'lucide-react';
 import { ChatMessage, Suggestion } from '../types';
 import {
@@ -220,7 +220,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
           </div>
         )}
 
-        {safeMessages.map((msg) => (
+        {safeMessages.map((msg) => {
+          const isRestore = msg.id === 'system:restore-age';
+          return (
           <div
             key={msg.id}
             className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
@@ -229,12 +231,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             <div className={`w-7 h-7 rounded-xl shrink-0 flex items-center justify-center ${
               msg.role === 'user' 
                 ? 'bg-indigo-500/20 border border-indigo-500/30' 
+                : isRestore
+                ? 'bg-emerald-500/20 border border-emerald-500/30'
                 : msg.role === 'system'
                 ? 'bg-amber-500/20 border border-amber-500/30'
                 : 'bg-cyan-500/20 border border-cyan-500/30'
             }`}>
               {msg.role === 'user' ? (
                 <User size={14} className="text-indigo-400" />
+              ) : isRestore ? (
+                <History size={14} className="text-emerald-400" />
               ) : msg.role === 'system' ? (
                 <AlertTriangle size={14} className="text-amber-400" />
               ) : (
@@ -248,6 +254,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
                   msg.role === 'user'
                     ? 'bg-indigo-600 text-white rounded-tr-sm'
+                    : isRestore
+                    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 rounded-tl-sm'
                     : msg.role === 'system'
                     ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded-tl-sm'
                     : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
@@ -263,7 +271,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
               )}
             </div>
           </div>
-        ))}
+        );
+        })}
 
         {/* Thinking Indicator */}
         {isAnalyzing && (
