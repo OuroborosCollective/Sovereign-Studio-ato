@@ -26,6 +26,15 @@ const frameClass: Record<OperatorLamp, string> = {
   red: 'border-rose-400/35 bg-rose-500/10',
 };
 
+const lampLabels: Record<OperatorLamp, string> = {
+  green: 'Status: Grün (Betriebsbereit)',
+  yellow: 'Status: Gelb (Hinweis)',
+  red: 'Status: Rot (Blockiert)',
+};
+
+const actionButtonClass =
+  'rounded-lg border border-slate-700/50 bg-slate-900/60 px-3 py-2 font-medium text-slate-200 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400';
+
 export function OperatorCoachPanel({
   lamp,
   headline,
@@ -38,16 +47,33 @@ export function OperatorCoachPanel({
   onLogs,
 }: OperatorCoachPanelProps) {
   return (
-    <section className={`mt-4 rounded-3xl border p-4 text-sm text-slate-100 ${frameClass[lamp]}`} data-testid="operator-coach-panel">
+    <section
+      className={`mt-4 rounded-3xl border p-4 text-sm text-slate-100 ${frameClass[lamp]}`}
+      data-testid="operator-coach-panel"
+      aria-labelledby="operator-coach-heading"
+    >
       <div className="flex flex-wrap items-start gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/30 bg-slate-950/70 text-2xl shadow-lg shadow-cyan-950/30" aria-hidden="true">
+        <div
+          className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/30 bg-slate-950/70 text-2xl shadow-lg shadow-cyan-950/30"
+          aria-hidden="true"
+        >
           🤖
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`h-3 w-3 rounded-full shadow-lg ${lampClass[lamp]}`} aria-label={`Status ${lamp}`} />
-            <h2 className="font-black tracking-tight text-white">Sovereign Bot · {headline}</h2>
-            {isThinking ? <span className="thinking-dots text-cyan-200" aria-label="arbeitet">...</span> : null}
+            <span
+              className={`h-3 w-3 rounded-full shadow-lg ${lampClass[lamp]}`}
+              aria-label={lampLabels[lamp]}
+              title={lampLabels[lamp]}
+            />
+            <h2 id="operator-coach-heading" className="font-black tracking-tight text-white">
+              Sovereign Bot · {headline}
+            </h2>
+            {isThinking ? (
+              <span className="thinking-dots text-cyan-200" aria-label="arbeitet">
+                ...
+              </span>
+            ) : null}
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-200">{message}</p>
           <p className="mt-1 text-xs font-bold leading-5 text-white">Naechster Schritt: {nextAction}</p>
@@ -55,10 +81,42 @@ export function OperatorCoachPanel({
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-        <button type="button" onClick={onRepo}>Repo</button>
-        <button type="button" onClick={onBuilder}>Builder</button>
-        <button type="button" onClick={onFiles}>Files / Diff</button>
-        <button type="button" onClick={onLogs}>Monitor</button>
+        <button
+          type="button"
+          onClick={onRepo}
+          className={actionButtonClass}
+          aria-label="Zum Repository-Bereich wechseln"
+          title="Zum Repository-Bereich wechseln"
+        >
+          Repo
+        </button>
+        <button
+          type="button"
+          onClick={onBuilder}
+          className={actionButtonClass}
+          aria-label="Zum Mission-Builder wechseln"
+          title="Zum Mission-Builder wechseln"
+        >
+          Builder
+        </button>
+        <button
+          type="button"
+          onClick={onFiles}
+          className={actionButtonClass}
+          aria-label="Zu Dateien und Diff-Vorschau wechseln"
+          title="Zu Dateien und Diff-Vorschau wechseln"
+        >
+          Files / Diff
+        </button>
+        <button
+          type="button"
+          onClick={onLogs}
+          className={actionButtonClass}
+          aria-label="Zum Runtime-Monitor wechseln"
+          title="Zum Runtime-Monitor wechseln"
+        >
+          Monitor
+        </button>
       </div>
     </section>
   );

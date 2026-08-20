@@ -20,6 +20,7 @@ import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
+import { OperatorCoachPanel } from './OperatorCoachPanel';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -943,6 +944,61 @@ describe('Palette Accessibility Enhancements', () => {
 
       const cancelBtn = screen.getByRole('button', { name: 'Erstellung abbrechen' });
       expect(cancelBtn).toHaveAttribute('title', 'Erstellung abbrechen');
+    });
+  });
+
+  describe('OperatorCoachPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders section with aria-labelledby and accessible status lamp and action buttons', () => {
+      const onRepo = vi.fn();
+      const onBuilder = vi.fn();
+      const onFiles = vi.fn();
+      const onLogs = vi.fn();
+
+      render(
+        <OperatorCoachPanel
+          lamp="green"
+          headline="Bereit fuer Auftrag"
+          message="Das Repository ist verbunden."
+          nextAction="Einen neuen Auftrag eingeben."
+          isThinking={false}
+          onRepo={onRepo}
+          onBuilder={onBuilder}
+          onFiles={onFiles}
+          onLogs={onLogs}
+        />
+      );
+
+      const section = screen.getByRole('region', { name: /Sovereign Bot · Bereit fuer Auftrag/i });
+      expect(section).toBeInTheDocument();
+      expect(section).toHaveAttribute('aria-labelledby', 'operator-coach-heading');
+
+      const lamp = screen.getByLabelText('Status: Grün (Betriebsbereit)');
+      expect(lamp).toHaveAttribute('title', 'Status: Grün (Betriebsbereit)');
+
+      const repoBtn = screen.getByRole('button', { name: 'Zum Repository-Bereich wechseln' });
+      expect(repoBtn).toHaveAttribute('title', 'Zum Repository-Bereich wechseln');
+      expect(repoBtn).toHaveClass('focus-visible:ring-2');
+
+      const builderBtn = screen.getByRole('button', { name: 'Zum Mission-Builder wechseln' });
+      expect(builderBtn).toHaveAttribute('title', 'Zum Mission-Builder wechseln');
+
+      const filesBtn = screen.getByRole('button', { name: 'Zu Dateien und Diff-Vorschau wechseln' });
+      expect(filesBtn).toHaveAttribute('title', 'Zu Dateien und Diff-Vorschau wechseln');
+
+      const logsBtn = screen.getByRole('button', { name: 'Zum Runtime-Monitor wechseln' });
+      expect(logsBtn).toHaveAttribute('title', 'Zum Runtime-Monitor wechseln');
+
+      fireEvent.click(repoBtn);
+      expect(onRepo).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(builderBtn);
+      expect(onBuilder).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(filesBtn);
+      expect(onFiles).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(logsBtn);
+      expect(onLogs).toHaveBeenCalledTimes(1);
     });
   });
 });
