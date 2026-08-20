@@ -18,7 +18,7 @@
   "scripts": {
     "build": "rm -rf dist artifacts && ttsc -p tsconfig.json && node scripts/build-contract-artifacts.mjs",
     "build:without-transformer": "node scripts/assert-stock-tsc-rejected.mjs",
-    "test": "pnpm build && node --test tests/*.mjs",
+    "test": "pnpm build && node --test tests/*.node.mjs",
     "typecheck": "ttsc --noEmit -p tsconfig.json",
     "test:reproducible": "node scripts/assert-reproducible-build.mjs",
     "verify": "pnpm typecheck && pnpm build:without-transformer && pnpm test && pnpm test:reproducible"
