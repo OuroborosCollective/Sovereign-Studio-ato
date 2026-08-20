@@ -101,19 +101,44 @@ def test_server_issued_github_access_scope_is_user_and_revision_bound():
         repository="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
         branch="main",
         revision="a" * 40,
+        purpose="github-access-validate",
         secret=secret,
         now=1_000,
     )
 
-    verified = verify_github_access_scope(scope, user_id="user-1", secret=secret, now=1_100)
+    verified = verify_github_access_scope(
+        scope,
+        user_id="user-1",
+        purpose="github-access-validate",
+        secret=secret,
+        now=1_100,
+    )
 
     assert verified is not None
     assert (verified.owner, verified.repo, verified.branch, verified.revision) == (
         "OuroborosCollective", "Sovereign-Studio-ato", "main", "a" * 40,
     )
-    assert verify_github_access_scope(scope, user_id="user-2", secret=secret, now=1_100) is None
-    assert verify_github_access_scope(scope + "x", user_id="user-1", secret=secret, now=1_100) is None
-    assert verify_github_access_scope(scope, user_id="user-1", secret=secret, now=1_601) is None
+    assert verify_github_access_scope(
+        scope,
+        user_id="user-2",
+        purpose="github-access-validate",
+        secret=secret,
+        now=1_100,
+    ) is None
+    assert verify_github_access_scope(
+        scope + "x",
+        user_id="user-1",
+        purpose="github-access-validate",
+        secret=secret,
+        now=1_100,
+    ) is None
+    assert verify_github_access_scope(
+        scope,
+        user_id="user-1",
+        purpose="github-access-validate",
+        secret=secret,
+        now=1_601,
+    ) is None
 
 
 def test_repo_scoped_github_access_rejects_invalid_target_before_network():

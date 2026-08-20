@@ -37,9 +37,11 @@ class GitHubAccessScope:
     repo: str
     branch: str
     revision: str
+    purpose: str
 
 
 _SCOPE_REVISION = re.compile(r"^[0-9a-f]{40}$")
+_SCOPE_PURPOSE = re.compile(r"^[a-z][a-z0-9._:-]{2,95}$")
 _SCOPE_TTL_SECONDS = 600
 
 
@@ -74,6 +76,7 @@ def issue_github_access_scope(
     repository: object,
     branch: object,
     revision: object,
+    purpose: object,
     secret: object,
     now: int | None = None,
 ) -> str:
@@ -83,11 +86,14 @@ def issue_github_access_scope(
     normalized_user = str(user_id or "").strip()
     normalized_branch = str(branch or "").strip()
     normalized_revision = str(revision or "").strip().lower()
+    normalized_purpose = str(purpose or "").strip().lower()
     signing_key = _scope_signing_key(secret)
     if target is None or not normalized_user or not normalized_branch or "\n" in normalized_branch:
         raise ValueError("github_access_scope_target_invalid")
     if not _SCOPE_REVISION.fullmatch(normalized_revision):
         raise ValueError("github_access_scope_revision_invalid")
+    if not _SCOPE_PURPOSE.fullmatch(normalized_purpose):
+        raise ValueError("github_access_scope_purpose_invalid")
     if signing_key is None:
         raise RuntimeError("github_access_scope_secret_unavailable")
     owner, repo = target
@@ -95,6 +101,7 @@ def issue_github_access_scope(
         "branch": normalized_branch,
         "iat": int(time.time() if now is None else now),
         "owner": owner,
+        "purpose": normalized_purpose,
         "repo": repo,
         "revision": normalized_revision,
         "userId": normalized_user,
@@ -109,6 +116,7 @@ def verify_github_access_scope(
     *,
     user_id: object,
     secret: object,
+    purpose: object,
     now: int | None = None,
     ttl_seconds: int = _SCOPE_TTL_SECONDS,
 ) -> GitHubAccessScope | None:
@@ -136,9 +144,25 @@ def verify_github_access_scope(
         target = _scope_target(repository)
         revision = str(payload.get("revision") or "").lower()
         branch = str(payload.get("branch") or "").strip()
-        if target is None or not _SCOPE_REVISION.fullmatch(revision) or not branch or "\n" in branch:
+        scope_purpose = str(payload.get("purpose") or "").strip().lower()
+        expected_purpose = str(purpose or "").strip().lower()
+        if (
+            target is None
+            or not _SCOPE_REVISION.fullmatch(revision)
+            or not branch
+            or "\n" in branch
+            or not _SCOPE_PURPOSE.fullmatch(scope_purpose)
+            or not _SCOPE_PURPOSE.fullmatch(expected_purpose)
+            or not hmac.compare_digest(scope_purpose, expected_purpose)
+        ):
             return None
-        return GitHubAccessScope(owner=target[0], repo=target[1], branch=branch, revision=revision)
+        return GitHubAccessScope(
+            owner=target[0],
+            repo=target[1],
+            branch=branch,
+            revision=revision,
+            purpose=scope_purpose,
+        )
     except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
         return None
 

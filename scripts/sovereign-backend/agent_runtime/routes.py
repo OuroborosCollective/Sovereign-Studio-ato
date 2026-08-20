@@ -1167,6 +1167,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 repository=revision["repository"],
                 branch=revision["baseBranch"],
                 revision=revision["baseSha"],
+                purpose="github-access-validate",
                 secret=_github_access_scope_secret(),
             )
         except RuntimeError as exc:
@@ -1200,6 +1201,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             body.get("scope"),
             user_id=user_id,
             secret=_github_access_scope_secret(),
+            purpose="github-access-validate",
         )
         target = (scope.owner, scope.repo) if scope else None
         if target is None:
