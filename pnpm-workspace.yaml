@@ -1,6 +1,7 @@
 packages:
   - "."
   - "launch-bot-v1"
+  - "contracts/typescript"
 allowBuilds:
   '@google/genai': false
   canvas: false
