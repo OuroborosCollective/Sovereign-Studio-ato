@@ -19,6 +19,7 @@ import { WorkbenchSidePanel } from './WorkbenchSidePanel';
 import { WorkflowWatchPanel } from './WorkflowWatchPanel';
 import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
+import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -897,6 +898,51 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(findingBtn);
       expect(onFindingClick).toHaveBeenCalledWith(mockRegistry.findings[0]);
+    });
+  });
+
+  describe('PromptLibraryPanel Accessibility and Micro-UX Enhancements', () => {
+    it('renders dialog and controls with descriptive title, aria-label, and aria-pressed attributes', () => {
+      const onSelectTemplate = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <PromptLibraryPanel
+          onSelectTemplate={onSelectTemplate}
+          onClose={onClose}
+        />
+      );
+
+      const closeBtn = screen.getByRole('button', { name: 'Prompt-Bibliothek schließen' });
+      expect(closeBtn).toHaveAttribute('title', 'Prompt-Bibliothek schließen');
+
+      const searchInput = screen.getByLabelText('Prompt-Templates suchen');
+      expect(searchInput).toHaveAttribute('title', 'Prompt-Templates suchen');
+
+      const allCategoryBtn = screen.getByRole('button', { name: 'Kategorie: Alle' });
+      expect(allCategoryBtn).toHaveAttribute('title', 'Kategorie: Alle');
+      expect(allCategoryBtn).toHaveAttribute('aria-pressed', 'true');
+
+      const createCustomBtn = screen.getByRole('button', { name: 'Eigenes Template erstellen' });
+      expect(createCustomBtn).toHaveAttribute('title', 'Eigenes Template erstellen');
+
+      // Expand custom template creation form
+      fireEvent.click(createCustomBtn);
+
+      const labelInput = screen.getByLabelText('Template Bezeichnung');
+      expect(labelInput).toHaveAttribute('title', 'Template Bezeichnung');
+
+      const promptTextarea = screen.getByLabelText('Template Prompt Text');
+      expect(promptTextarea).toHaveAttribute('title', 'Template Prompt Text');
+
+      const categorySelect = screen.getByLabelText('Template Kategorie');
+      expect(categorySelect).toHaveAttribute('title', 'Template Kategorie');
+
+      const saveBtn = screen.getByRole('button', { name: 'Template speichern' });
+      expect(saveBtn).toHaveAttribute('title', 'Template speichern');
+
+      const cancelBtn = screen.getByRole('button', { name: 'Erstellung abbrechen' });
+      expect(cancelBtn).toHaveAttribute('title', 'Erstellung abbrechen');
     });
   });
 });
