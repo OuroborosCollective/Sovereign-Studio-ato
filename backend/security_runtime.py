@@ -111,10 +111,10 @@ def canonical_context_hash(action: str, context: Any) -> str:
 
 def _request_origin() -> str:
     origin = str(request.headers.get("Origin") or "").strip().rstrip("/")
-    if origin and origin in PASSKEY_ALLOWED_ORIGINS:
+    if not origin:
+        raise ValueError("Origin header is required for passkey operations")
+    if origin in PASSKEY_ALLOWED_ORIGINS:
         return origin
-    if not origin and PASSKEY_ALLOWED_ORIGINS:
-        return PASSKEY_ALLOWED_ORIGINS[0]
     raise ValueError("Request origin is not allowed for passkeys")
 
 

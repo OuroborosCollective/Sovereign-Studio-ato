@@ -77,3 +77,8 @@
 **Vulnerability:** Duplicated or mirrored validation policy files (such as `free_revolver_provider_contracts.py` in `backend/` and `scripts/sovereign-backend/`) can drift, causing import/attribute exceptions and unaligned validation rules. Additionally, target public host check (`assert_public_https_host`) only validated domain IP ranges without verifying the transport protocol scheme, allowing plaintext unencrypted HTTP requests to bypass strict checks and leak credentials.
 **Learning:** Security policy contracts must be strictly synchronized and validated across all mirrored codebase locations. Furthermore, network boundary and SSRF validators must explicitly check and enforce transport scheme constraints (e.g. requiring `https`) as the primary layer of defense before resolving network addresses.
 **Prevention:** Always keep contract modules identical between root and deployment subdirectories, and strictly assert the transport scheme is secure (e.g. `https://`) in all network-gated check routines.
+
+## 2026-08-05 - Require Explicit Origin Header in Passkey Operations
+**Vulnerability:** Passkey WebAuthn challenge endpoints fell back to `PASSKEY_ALLOWED_ORIGINS[0]` when the `Origin` header was missing or empty, allowing unauthenticated or non-browser API clients to initiate passkey flows without proving their origin context.
+**Learning:** Fallbacks in origin verification undermine WebAuthn security mechanisms, which rely on strict origin matching to prevent cross-site origin reuse or spoofing.
+**Prevention:** Always require an explicit `Origin` header in WebAuthn/passkey endpoints, and raise an immediate `ValueError` if missing or unlisted.
