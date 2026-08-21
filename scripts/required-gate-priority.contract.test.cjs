@@ -87,6 +87,8 @@ test('supplemental coordinator script is syntactically valid and revision-bound'
   );
   assert.match(script, /workflow_id: 'sovereign-pr-review-evidence\.yml'/);
   assert.match(script, /workflow_id: 'sovereign-agent-supplemental\.yml'/);
+  assert.match(script, /workflow_id: 'sovereign-toolchain\.yml'/);
+  assert.match(script, /expected_head_sha: headSha/);
   assert.match(script, /workflow_id: 'android\.yml'/);
   assert.match(script, /workflow_id: 'sovereign-backend-image\.yml'/);
   assert.match(script, /pr_validation: 'true'/);

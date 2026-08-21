@@ -49,6 +49,11 @@ const MAIN_WORKFLOWS = Object.freeze([
 
 const IMPACT_WORKFLOWS = Object.freeze([
   {
+    name: 'Sovereign Toolchain',
+    workflowId: 'sovereign-toolchain.yml',
+    patterns: ['tools/sovereign-toolchain/**', 'tools/sovereign-legacy-mcp-common/github_app_auth.py', '.github/workflows/sovereign-toolchain.yml'],
+  },
+  {
     name: 'Sovereign ChatGPT MCP',
     workflowId: 'sovereign-chatgpt-mcp.yml',
     patterns: ['tools/sovereign-chatgpt-mcp/**', 'scripts/sovereign-backend/openrouter_provider_runtime.py', 'scripts/sovereign-backend/app.py', '.github/workflows/sovereign-chatgpt-mcp.yml'],
