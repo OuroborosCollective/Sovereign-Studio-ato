@@ -17,6 +17,12 @@ import requests
 
 REQUEST_ID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 ROUTE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
+WOLFRAM_CAG_COMPONENT_IDS = frozenset({
+    "wolfram.cag.hints",
+    "wolfram.cag.compute",
+    "wolfram.cag.results",
+    "wolfram.cag.context",
+})
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
 EVIDENCE_ID_RE = re.compile(r"^evidence-[0-9a-f]{32}$")
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,159}$")
@@ -40,6 +46,7 @@ ALLOWED_TARGETS = {
     "openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle",
     "openrouter_management_api_key": "OpenRouter Management API Key",
     "notion_integration_token": "Notion Integration Token",
+    "wolfram_cag_api_key": "Wolfram CAG API-Key",
     "hf_publication_rights": "HF-Publikationsrechte JSON-Receipt",
     "hf_cag_staging_publish_request": "Zum Publizieren exakt PUBLISH eingeben",
     "proven_learning_confirmation": "Exakter Learning-Plan-Hash",
@@ -276,6 +283,37 @@ class ProviderRuntimeClient(OwnerInputClient):
         if not ROUTE_ID_RE.fullmatch(selected):
             raise ValueError("route_id ist ungültig")
         return selected
+
+    def wolfram_cag_status(self) -> dict[str, Any]:
+        payload = self._request(
+            "GET",
+            "/api/internal/wolfram-cag/status",
+            timeout=30,
+        )
+        return {
+            **payload,
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
+
+    def wolfram_cag_canary(self, components: list[str] | None = None) -> dict[str, Any]:
+        selected = list(components or [])
+        if len(selected) > len(WOLFRAM_CAG_COMPONENT_IDS):
+            raise ValueError("zu viele Wolfram-CAG-Komponenten")
+        if any(component not in WOLFRAM_CAG_COMPONENT_IDS for component in selected):
+            raise ValueError("unbekannte Wolfram-CAG-Komponente")
+        payload = self._request(
+            "POST",
+            "/api/internal/wolfram-cag/canary",
+            json_body={"components": selected},
+            expected=(200, 400, 401, 409, 500, 502, 503),
+            timeout=300,
+        )
+        return {
+            **payload,
+            "protected_values_returned": False,
+            "secret_argument_accepted": False,
+        }
 
     def openrouter_status(self) -> dict[str, Any]:
         payload = self._request(

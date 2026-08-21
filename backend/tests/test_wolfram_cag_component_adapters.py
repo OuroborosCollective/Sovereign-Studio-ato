@@ -52,8 +52,10 @@ CagHttpOutcome = wolfram_module.CagHttpOutcome
 cag_retry_decision = wolfram_module.cag_retry_decision
 classify_cag_status = wolfram_module.classify_cag_status
 execute_cag_request = wolfram_module.execute_cag_request
+execute_live_cag_request = wolfram_module.execute_live_cag_request
 is_wolfram_capability = wolfram_module.is_wolfram_capability
 provision_cag_component = wolfram_module.provision_cag_component
+read_cag_secret_file = wolfram_module.read_cag_secret_file
 resolve_cag_credentials = wolfram_module.resolve_cag_credentials
 WOLFRAM_CAPABILITY_MAP = wolfram_module.WOLFRAM_CAPABILITY_MAP
 
@@ -89,8 +91,11 @@ def _json_schema_validator():
             except Exception:
                 return False
             return isinstance(data, dict) and "result" in data
-        if component.expected_content_type == "application/xml":
-            return b"<queryresult" in body
+        if component.expected_content_type == "text/plain":
+            try:
+                return bool(body.decode("utf-8").strip())
+            except UnicodeDecodeError:
+                return False
         return True
     return validator
 
@@ -128,6 +133,13 @@ def test_cag_component_map_covers_four_components_and_is_read_only():
         assert component.max_output_bytes > 0
         assert component.max_request_bytes > 0
         assert component.max_retries >= 0
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.hints"].base_url == "https://services.wolfram.com/api/cag/v1/WolframLanguageHints"
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.compute"].base_url == "https://services.wolfram.com/api/cag/v1/WolframLanguageCompute"
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.results"].base_url == "https://services.wolfram.com/api/cag/v1/WolframAlphaResult"
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.context"].base_url == "https://services.wolfram.com/api/cag/v1/WolframAlphaContext"
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.results"].expected_content_type == "text/plain"
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.results"].method == "GET"
+    assert WOLFRAM_CAG_COMPONENT_MAP["wolfram.cag.context"].method == "POST"
     # The Component APIs map to the named components from the issue.
     names = {c.component for c in WOLFRAM_CAG_COMPONENT_MAP.values()}
     assert names == {
@@ -240,6 +252,42 @@ def test_credentials_resolved_server_side_and_secret_never_returned_or_logged(mo
     assert resolve_cag_credentials(capability_id="wolfram.cag.hints") is None
 
 
+def test_owner_managed_credential_file_is_preferred_and_permission_bounded(monkeypatch, tmp_path):
+    secret_path = tmp_path / "wolfram_cag_api_key.txt"
+    secret_path.write_text(SECRET_VALUE + "\n", encoding="utf-8")
+    secret_path.chmod(0o600)
+    monkeypatch.setattr(wolfram_module, "DEFAULT_WOLFRAM_CAG_API_KEY_FILE", str(secret_path))
+    monkeypatch.setenv("WOLFRAM_CAG_API_KEY_FILE", str(secret_path))
+    monkeypatch.setenv("WOLFRAM_CAG_APP_ID", "legacy-must-not-win")
+
+    assert read_cag_secret_file(str(secret_path)) == SECRET_VALUE
+    credential = resolve_cag_credentials(capability_id="wolfram.cag.hints")
+    assert credential is not None
+    assert credential.provider == "wolfram-owner-file"
+    assert SECRET_VALUE not in repr(credential)
+
+    secret_path.chmod(0o644)
+    with pytest.raises(WolframCagError, match="permissions are too broad") as exc:
+        read_cag_secret_file(str(secret_path))
+    assert exc.value.family is WolframCagErrorFamily.AUTH
+
+    secret_path.chmod(0o600)
+    secret_path.write_bytes(b"x" * (wolfram_module.MAX_WOLFRAM_CAG_API_KEY_BYTES + 1))
+    with pytest.raises(WolframCagError, match="size is invalid") as exc:
+        read_cag_secret_file(str(secret_path))
+    assert exc.value.family is WolframCagErrorFamily.AUTH
+
+
+def test_non_allowlisted_cag_secret_path_is_rejected_before_open(monkeypatch, tmp_path):
+    canonical = tmp_path / "canonical.txt"
+    canonical.write_text(SECRET_VALUE, encoding="utf-8")
+    canonical.chmod(0o600)
+    monkeypatch.setattr(wolfram_module, "DEFAULT_WOLFRAM_CAG_API_KEY_FILE", str(canonical))
+    with pytest.raises(WolframCagError, match="path is not allowlisted") as exc:
+        read_cag_secret_file(str(tmp_path / "other.txt"))
+    assert exc.value.family is WolframCagErrorFamily.AUTH
+
+
 def test_provision_is_honest_unavailable_and_not_entitled():
     assert provision_cag_component(
         capability_id="wolfram.cag.hints",
@@ -257,6 +305,135 @@ def test_provision_is_honest_unavailable_and_not_entitled():
         capability_id="wolfram.cag.bogus",
         credential=_credential(),
     ) is WolframCagStatus.BLOCKED
+
+
+class _LiveResponse:
+    def __init__(self, status_code: int, content_type: str, body: bytes, *, headers=None) -> None:
+        self.status_code = status_code
+        self.headers = {"Content-Type": content_type, **(headers or {})}
+        self._body = body
+        self.closed = False
+
+    def iter_content(self, chunk_size=16384):
+        for start in range(0, len(self._body), chunk_size):
+            yield self._body[start:start + chunk_size]
+
+    def close(self):
+        self.closed = True
+
+
+class _LiveSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def request(self, method, url, **kwargs):
+        self.calls.append({"method": method, "url": url, **kwargs})
+        if not self.responses:
+            raise AssertionError("unexpected live CAG request")
+        return self.responses.pop(0)
+
+
+def _live_json(uuid_value: str) -> bytes:
+    return (
+        '{"result":"ok","code":0,"success":true,"uuid":"' + uuid_value + '"}'
+    ).encode("utf-8")
+
+
+def test_live_transport_uses_current_contract_and_authorization_only_at_http_boundary():
+    session = _LiveSession([
+        _LiveResponse(200, "application/json", _live_json("uuid-hints")),
+        _LiveResponse(200, "application/json; charset=utf-8", _live_json("uuid-compute")),
+        _LiveResponse(200, "text/plain; charset=utf-8", b"Query:\n2+2\n\nResult:\n4\n"),
+        _LiveResponse(200, "application/json", _live_json("uuid-context")),
+    ])
+
+    def resolver(*, capability_id):
+        assert capability_id in WOLFRAM_CAG_COMPONENT_MAP
+        return SECRET_VALUE, "wolfram-test"
+
+    requests_and_payloads = [
+        ("wolfram.cag.hints", {"context": "Draw a pentagram"}),
+        ("wolfram.cag.compute", {"code": "Sin[Pi]", "maxChars": 256}),
+        ("wolfram.cag.results", {"input": "2+2"}),
+        ("wolfram.cag.context", {"context": "speed of a cheetah", "count": 2}),
+    ]
+    receipts = [
+        execute_live_cag_request(
+            capability_id=capability_id,
+            payload=payload,
+            credential_resolver=resolver,
+            session=session,
+        )
+        for capability_id, payload in requests_and_payloads
+    ]
+
+    assert [call["method"] for call in session.calls] == ["POST", "POST", "GET", "POST"]
+    assert [call["url"] for call in session.calls] == [
+        "https://services.wolfram.com/api/cag/v1/WolframLanguageHints",
+        "https://services.wolfram.com/api/cag/v1/WolframLanguageCompute",
+        "https://services.wolfram.com/api/cag/v1/WolframAlphaResult",
+        "https://services.wolfram.com/api/cag/v1/WolframAlphaContext",
+    ]
+    for call in session.calls:
+        assert call["headers"]["Authorization"] == SECRET_VALUE
+        assert call["allow_redirects"] is False
+        assert "authorization" not in str(call.get("params") or {}).casefold()
+        assert SECRET_VALUE not in str(call.get("params") or {})
+        assert SECRET_VALUE not in str(call.get("data") or b"")
+    assert session.calls[2]["params"] == {"input": "2+2"}
+    assert "Content-Type" not in session.calls[2]["headers"]
+    assert session.calls[0]["headers"]["Content-Type"] == "application/json"
+    assert all(receipt.status is WolframCagStatus.SUCCEEDED_UNVERIFIED for receipt in receipts)
+    assert receipts[0].response_uuid == "uuid-hints"
+    assert receipts[1].response_uuid == "uuid-compute"
+    assert receipts[3].response_uuid == "uuid-context"
+    assert all(SECRET_VALUE not in repr(receipt) for receipt in receipts)
+
+
+def test_live_transport_rejects_credential_payload_and_501_without_retry():
+    def resolver(*, capability_id):
+        return SECRET_VALUE, "wolfram-test"
+
+    with pytest.raises(WolframCagError, match="credential-shaped") as exc:
+        execute_live_cag_request(
+            capability_id="wolfram.cag.hints",
+            payload={"context": "safe", "authorization": "forbidden"},
+            credential_resolver=resolver,
+            session=_LiveSession([]),
+        )
+    assert exc.value.family is WolframCagErrorFamily.SCHEMA
+
+    session = _LiveSession([
+        _LiveResponse(501, "text/plain; charset=utf-8", b"No result"),
+    ])
+    with pytest.raises(WolframCagError) as exc:
+        execute_live_cag_request(
+            capability_id="wolfram.cag.results",
+            payload={"input": "intentionally unavailable"},
+            credential_resolver=resolver,
+            session=session,
+        )
+    assert exc.value.family is WolframCagErrorFamily.RESULT_UNAVAILABLE
+    assert len(session.calls) == 1
+
+
+def test_live_transport_fails_closed_if_credential_rotates_between_projection_and_send():
+    values = iter(["first-secret", "second-secret"])
+
+    def resolver(*, capability_id):
+        return next(values), "wolfram-test"
+
+    session = _LiveSession([])
+    with pytest.raises(WolframCagError, match="changed before transport") as exc:
+        execute_live_cag_request(
+            capability_id="wolfram.cag.hints",
+            payload={"context": "safe"},
+            credential_resolver=resolver,
+            session=session,
+        )
+    assert exc.value.family is WolframCagErrorFamily.AUTH
+    assert session.calls == []
 
 
 def test_execute_succeeds_with_strict_schema_and_binds_request_ids():
@@ -331,6 +508,7 @@ def test_error_families_are_distinguishable():
     assert classify_cag_status(status=403, timed_out=False) is WolframCagErrorFamily.AUTH
     assert classify_cag_status(status=402, timed_out=False) is WolframCagErrorFamily.ENTITLEMENT
     assert classify_cag_status(status=429, timed_out=False) is WolframCagErrorFamily.RATE_LIMIT
+    assert classify_cag_status(status=501, timed_out=False) is WolframCagErrorFamily.RESULT_UNAVAILABLE
     assert classify_cag_status(status=503, timed_out=False) is WolframCagErrorFamily.UPSTREAM
     assert classify_cag_status(status=400, timed_out=False) is WolframCagErrorFamily.SCHEMA
     assert classify_cag_status(status=None, timed_out=True) is WolframCagErrorFamily.TIMEOUT

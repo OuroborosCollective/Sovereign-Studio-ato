@@ -36,9 +36,10 @@ services:
     environment:
       # Existing FreeLLMAPI contract intentionally remains unchanged.
       SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE: /opt/sovereign-owner-managed/freellmapi_unified_key.txt
-      # The protected owner widget persists one GitHub recovery credential outside
-      # the repository/container. The raw value is never carried in Compose.
-      SOVEREIGN_OWNER_INPUT_TARGETS_JSON: '{"github_token":{"label":"GitHub Owner recovery credential","fieldLabel":"GitHub Zugriffsschlüssel / PAT","path":"/opt/sovereign-owner-managed/github_owner_token.txt","maxBytes":8192,"kind":"credential"}}'
+      # Protected owner inputs are persisted outside the repository/container.
+      # Raw values are never carried in Compose, logs, receipts or MCP arguments.
+      SOVEREIGN_OWNER_INPUT_TARGETS_JSON: '{"github_token":{"label":"GitHub Owner recovery credential","fieldLabel":"GitHub Zugriffsschlüssel / PAT","path":"/opt/sovereign-owner-managed/github_owner_token.txt","maxBytes":8192,"kind":"credential"},"wolfram_cag_api_key":{"label":"Wolfram CAG credential","fieldLabel":"Wolfram CAG API-Key","path":"/opt/sovereign-owner-managed/wolfram_cag_api_key.txt","maxBytes":8192,"kind":"credential"}}'
+      WOLFRAM_CAG_API_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cag_api_key.txt
       SOVEREIGN_RUNTIME_ENVIRONMENT: production
       # Source revision is baked into the image; do not override it at runtime.
       SOVEREIGN_IMAGE_DIGEST: ${SOVEREIGN_IMAGE_DIGEST:-unverified}

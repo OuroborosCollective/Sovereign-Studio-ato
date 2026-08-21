@@ -86,6 +86,13 @@ DEFAULT_TARGETS: dict[str, dict[str, Any]] = {
         "maxBytes": 8192,
         "kind": "credential",
     },
+    "wolfram_cag_api_key": {
+        "label": "Wolfram CAG component API access",
+        "fieldLabel": "Wolfram CAG API-Key",
+        "path": "/opt/sovereign-owner-managed/wolfram_cag_api_key.txt",
+        "maxBytes": 8192,
+        "kind": "credential",
+    },
     "hf_publication_rights": {
         "label": "Evidence Observatory Hugging Face publication rights",
         "fieldLabel": "Exaktes HF-Publikationsrechte-JSON-Receipt",
@@ -136,6 +143,7 @@ def _target_map() -> dict[str, dict[str, Any]]:
     )
     targets["revolver_provider_key"]["path"] = str(_root() / "revolver_provider_key.txt")
     targets["notion_integration_token"]["path"] = str(_root() / "notion_integration_token.txt")
+    targets["wolfram_cag_api_key"]["path"] = str(_root() / "wolfram_cag_api_key.txt")
     targets["hf_publication_rights"]["path"] = str(_root() / "hf_publication_rights.json")
     targets["hf_cag_staging_publish_request"]["path"] = str(_root() / "hf_cag_staging_publish.action")
     targets["proven_learning_confirmation"]["path"] = str(_root() / "proven_learning_confirmation.txt")

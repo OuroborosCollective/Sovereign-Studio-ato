@@ -27,6 +27,8 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
     assert "owner_approval_widget_open" in workflow
+    assert "wolfram_cag_status" in workflow
+    assert "wolfram_cag_canary" in workflow
     assert "openrouter_provider_status" in workflow
     assert "openrouter_provider_activate" in workflow
     assert "openrouter_free_status" in workflow
@@ -71,6 +73,7 @@ def test_installer_generates_one_bridge_key_and_never_prints_it() -> None:
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_REFERENCE_ID "$OWNER_REFERENCE_ID"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_ADMIN_EMAIL "$OWNER_ADMIN_EMAIL"' in installer
     assert 'set_value "$BACKEND_MANAGED_ENV" SOVEREIGN_OWNER_INPUT_ROOT "/opt/sovereign-owner-managed"' in installer
+    assert 'set_value "$BACKEND_MANAGED_ENV" WOLFRAM_CAG_API_KEY_FILE "/opt/sovereign-owner-managed/wolfram_cag_api_key.txt"' in installer
     assert 'RETIRED_OWNER_GITHUB_PAT_FILE="$OWNER_INPUT_HOST_ROOT/github_pat.txt"' in installer
     assert 'rm -f "$RETIRED_OWNER_GITHUB_PAT_FILE"' in installer
     assert 'OWNER_MANAGED_GITHUB_TOKEN="$(cat "$OWNER_GITHUB_PAT_FILE")"' not in installer
@@ -138,6 +141,18 @@ def test_backend_deploy_mounts_only_owner_managed_subdirectory_writable() -> Non
     assert "--volume /opt/secure:/opt/secure:rw" not in deploy
 
 
+def test_backend_compose_wires_wolfram_cag_only_through_owner_managed_file() -> None:
+    compose = (
+        REPOSITORY_ROOT / "scripts" / "sovereign-backend" / "docker-compose.yml"
+    ).read_text("utf-8")
+
+    assert '"wolfram_cag_api_key"' in compose
+    assert '"path":"/opt/sovereign-owner-managed/wolfram_cag_api_key.txt"' in compose
+    assert "WOLFRAM_CAG_API_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cag_api_key.txt" in compose
+    assert "WOLFRAM_CAG_API_KEY:" not in compose
+    assert "WOLFRAM_CAG_APP_ID:" not in compose
+
+
 def test_backend_rollback_preserves_owner_managed_openai_key_mount() -> None:
     rollback = (ROOT / "deploy" / "rollback-sovereign-backend").read_text("utf-8")
 
@@ -178,6 +193,9 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"github_token": {' in backend_owner_input
     assert '"path": "/opt/sovereign-owner-managed/github_owner_token.txt"' in backend_owner_input
     assert 'targets["github_token"]["path"] = str(_root() / "github_owner_token.txt")' in backend_owner_input
+    assert '"wolfram_cag_api_key": {' in backend_owner_input
+    assert '"path": "/opt/sovereign-owner-managed/wolfram_cag_api_key.txt"' in backend_owner_input
+    assert 'targets["wolfram_cag_api_key"]["path"] = str(_root() / "wolfram_cag_api_key.txt")' in backend_owner_input
     assert 'DIRECT_UPLOAD_TARGET_IDS = frozenset({"github_token"})' in backend_owner_input
     assert 'DIRECT_UPLOAD_MAX_TTL_SECONDS = 300' in backend_owner_input
     assert 'def _direct_upload_token(' in backend_owner_input
@@ -201,6 +219,7 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert 'targets["github_pat"]["path"] = str(_root() / "github_pat.txt")' not in backend_owner_input
     assert 'RETIRED_TARGET_IDS = frozenset({"github_pat"})' in backend_owner_input
     assert 'Owner input target configuration restores a retired target' in backend_owner_input
+    assert '"wolfram_cag_api_key": "Wolfram CAG API-Key"' in client
     assert '"openrouter_api_key": "OpenRouter API-Key für bezahlte Modelle"' in client
     assert '"openrouter_free_api_key": "OpenRouter API-Key nur für kostenlose Modelle"' in client
     assert '"openrouter_management_api_key": "OpenRouter Management API Key"' in client
@@ -215,6 +234,12 @@ def test_mcp_server_contract_never_accepts_protected_value_argument() -> None:
     assert '"targetId": selected_target' in client
     assert "if selected_target not in ALLOWED_TARGETS" in client
     assert "owner_input.create_request(" in server
+    assert server.count("def wolfram_cag_status(") == 1
+    assert server.count("def wolfram_cag_canary(") == 1
+    assert "provider_runtime.wolfram_cag_status()" in server
+    assert "provider_runtime.wolfram_cag_canary(components)" in server
+    assert "def wolfram_cag_status(" in client
+    assert "def wolfram_cag_canary(" in client
     assert server.count("def openrouter_provider_status(") == 1
     assert server.count("def openrouter_provider_activate(") == 1
     assert server.count("def openrouter_free_status(") == 1

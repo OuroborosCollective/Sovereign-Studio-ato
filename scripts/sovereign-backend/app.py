@@ -89,6 +89,7 @@ from knowledge_library import register_admin_knowledge_routes, register_knowledg
 from security_runtime import consume_step_up_approval, register_security_routes
 from owner_input_runtime import register_owner_input_routes
 from proven_learning_runtime import register_proven_learning_routes
+from wolfram_cag_runtime import register_wolfram_cag_runtime
 from n_plus_one import register_n_plus_one_routes
 from openrouter_free_runtime import register_openrouter_free_runtime
 from openrouter_provider_runtime import register_openrouter_provider_runtime
@@ -6265,6 +6266,10 @@ register_owner_input_routes(
     get_current_admin=get_current_admin,
 )
 register_proven_learning_routes(
+    app,
+    get_connection=get_agent_runtime_connection,
+)
+register_wolfram_cag_runtime(
     app,
     get_connection=get_agent_runtime_connection,
 )

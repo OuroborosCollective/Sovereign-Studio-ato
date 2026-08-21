@@ -1503,6 +1503,18 @@ def memory_gateway_collection_canary() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=NETWORK_READ)
+def wolfram_cag_status() -> dict[str, Any]:
+    """Read current CAG contract, protected-credential presence and non-live status without exposing secrets."""
+    return provider_runtime.wolfram_cag_status()
+
+
+@mcp.tool(annotations=EXTERNAL_WRITE)
+def wolfram_cag_canary(components: list[str] | None = None) -> dict[str, Any]:
+    """Run fixed Wolfram CAG component canaries and persist secret-free partner analysis records; accepts no credential argument."""
+    return provider_runtime.wolfram_cag_canary(components)
+
+
+@mcp.tool(annotations=NETWORK_READ)
 def openrouter_provider_status() -> dict[str, Any]:
     """Read secret-free status and canary metadata for the direct OpenRouter transport."""
     return provider_runtime.openrouter_status()
