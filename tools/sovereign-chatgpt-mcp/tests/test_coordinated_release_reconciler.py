@@ -65,6 +65,64 @@ def test_release_gate_accepts_only_exact_successful_revision(monkeypatch) -> Non
     assert result["headSha"] == revision
 
 
+def test_scope_bound_in_progress_workflow_dispatch_gate_preempts_stale_failed_push(monkeypatch) -> None:
+    module = _load()
+    revision = "f" * 40
+    scope_run_id = 424242
+
+    def github_json(path: str):
+        if path.endswith(f"/actions/runs/{scope_run_id}"):
+            return {
+                "id": scope_run_id,
+                "run_attempt": 1,
+                "head_sha": revision,
+                "status": "in_progress",
+                "conclusion": None,
+                "event": "workflow_dispatch",
+                "path": ".github/workflows/sovereign-coordinated-release.yml@refs/heads/main",
+                "html_url": "https://github.test/run/424242",
+            }
+        raise AssertionError(f"unexpected GitHub API path: {path}")
+
+    monkeypatch.setattr(module, "_github_json", github_json)
+    result = module._release_gate(revision, expected_runtime_readback_run_id=scope_run_id)
+
+    assert result["ready"] is True
+    assert result["status"] == "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE"
+    assert result["selfRuntimeReadback"] is True
+    assert result["event"] == "workflow_dispatch"
+    assert result["runId"] == scope_run_id
+    assert result["headSha"] == revision
+
+
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda payload: payload.update({"head_sha": "a" * 40}),
+        lambda payload: payload.update({"event": "schedule"}),
+        lambda payload: payload.update({"path": ".github/workflows/other.yml@refs/heads/main"}),
+    ],
+)
+def test_scope_bound_gate_rejects_nonbinding_workflow_metadata(monkeypatch, mutator) -> None:
+    module = _load()
+    revision = "f" * 40
+    run_id = 31337
+    payload = {
+        "id": run_id,
+        "run_attempt": 1,
+        "head_sha": revision,
+        "status": "in_progress",
+        "conclusion": None,
+        "event": "workflow_dispatch",
+        "path": ".github/workflows/sovereign-coordinated-release.yml@refs/heads/main",
+    }
+    mutator(payload)
+    monkeypatch.setattr(module, "_github_json", lambda _path: payload)
+
+    with pytest.raises(module.ReconcileError, match="scope run"):
+        module._release_gate(revision, expected_runtime_readback_run_id=run_id)
+
+
 def test_waiting_release_gate_performs_no_image_or_runtime_mutation(monkeypatch, tmp_path) -> None:
     module = _load()
     revision = "c" * 40
@@ -689,10 +747,14 @@ def test_main_propagates_terminal_reconcile_failures(
 def test_self_runtime_readback_accepts_only_the_expected_in_progress_release_run_contract() -> None:
     source = SCRIPT.read_text("utf-8")
     assert "expected_runtime_readback_run_id: int | None = None" in source
-    assert 'evidence["runId"] == expected_runtime_readback_run_id' in source
+    assert "_scope_release_gate_run(revision, expected_runtime_readback_run_id)" in source
+    assert 'f"/repos/{REPOSITORY}/actions/runs/{run_id}"' in source
+    assert 'if evidence["runId"] != run_id:' in source
+    assert 'if event not in {"push", "workflow_dispatch"}:' in source
+    assert 'if not path.startswith(workflow_path):' in source
     assert '"status": "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE"' in source
     assert "expected_runtime_readback_run_id=scope[\"releaseGateRunId\"]" in source
-    assert 'return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **evidence}' in source
+    assert 'return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **run}' in source
 
 
 def _git(*arguments: str, cwd: Path) -> str:
