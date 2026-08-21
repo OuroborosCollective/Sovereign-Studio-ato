@@ -50,3 +50,9 @@ def test_toolchain_core_uses_shared_app_only_adapter() -> None:
     assert "GitHubAppInstallationConfig" in source
     assert 'os.getenv("GITHUB_TOKEN"' not in source
     assert "with self.auth.token() as issued" in source
+
+
+def test_runtime_imports_fastmcp_from_locked_mcp_sdk() -> None:
+    from sovereign_toolchain.app import app
+
+    assert app is not None
