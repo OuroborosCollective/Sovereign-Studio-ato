@@ -1,0 +1,74 @@
+services:
+  metamcp:
+    image: ${SOVEREIGN_METAMCP_IMAGE:?SOVEREIGN_METAMCP_IMAGE must be an immutable digest reference}
+    container_name: sovereign-metamcp
+    init: true
+    restart: unless-stopped
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 768
+    stop_grace_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${METAMCP_POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${METAMCP_POSTGRES_PASSWORD:?METAMCP_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${METAMCP_POSTGRES_DB:-metamcp_db}
+      DATABASE_URL: postgresql://${METAMCP_POSTGRES_USER:-metamcp_user}:${METAMCP_POSTGRES_PASSWORD}@postgres:5432/${METAMCP_POSTGRES_DB:-metamcp_db}
+      BETTER_AUTH_SECRET: ${METAMCP_BETTER_AUTH_SECRET:?METAMCP_BETTER_AUTH_SECRET is required}
+      APP_URL: ${SOVEREIGN_METAMCP_APP_URL:-http://127.0.0.1:32832}
+      NEXT_PUBLIC_APP_URL: ${SOVEREIGN_METAMCP_APP_URL:-http://127.0.0.1:32832}
+    ports:
+      - "127.0.0.1:32832:12008"
+    networks:
+      metamcp-internal:
+      supabase_default:
+        aliases:
+          - metamcp
+    labels:
+      sovereign.component: metamcp
+      sovereign.integration-role: mcp-aggregation-and-routing
+      sovereign.truth-role: traffic-and-discovery-surface-not-truth-authority
+      sovereign.image-policy: immutable-digest-required
+      sovereign.docker-socket: forbidden
+
+  postgres:
+    image: ${SOVEREIGN_METAMCP_POSTGRES_IMAGE:?SOVEREIGN_METAMCP_POSTGRES_IMAGE must be an immutable digest reference}
+    container_name: sovereign-metamcp-postgres
+    restart: unless-stopped
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: ${METAMCP_POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${METAMCP_POSTGRES_PASSWORD:?METAMCP_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${METAMCP_POSTGRES_DB:-metamcp_db}
+    volumes:
+      - sovereign-metamcp-postgres-data:/var/lib/postgresql/data
+    networks:
+      metamcp-internal:
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${METAMCP_POSTGRES_USER:-metamcp_user} -d ${METAMCP_POSTGRES_DB:-metamcp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    labels:
+      sovereign.component: metamcp-postgres
+      sovereign.network-exposure: internal-only
+
+networks:
+  metamcp-internal:
+    name: sovereign-metamcp-internal
+    internal: true
+  supabase_default:
+    external: true
+
+volumes:
+  sovereign-metamcp-postgres-data:
+    name: sovereign-metamcp-postgres-data
