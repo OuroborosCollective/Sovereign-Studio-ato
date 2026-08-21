@@ -44,7 +44,7 @@ cp -a "$COMMON_SOURCE/." "$TEMP/sovereign-legacy-mcp-common/"
 rm -rf "$TEMP/sovereign-toolchain/.venv"
 (
   cd "$TEMP/sovereign-toolchain"
-  uv sync --frozen --no-dev
+  uv lock --check
 )
 
 STAGE=metadata
@@ -69,9 +69,6 @@ ENV_BACKUP="$BACKUP_ROOT/runtime.env.$STAMP"
 [[ -f "$ENV_TARGET" ]] && cp -a "$ENV_TARGET" "$ENV_BACKUP" || :
 mv "$TEMP/sovereign-toolchain" "$TARGET"
 mv "$TEMP/sovereign-legacy-mcp-common" "$COMMON_TARGET"
-install -m 0644 -o root -g root "$UNIT_SOURCE" "$UNIT_TARGET"
-install -m 0600 -o root -g root "$TEMP/runtime.env" "$ENV_TARGET"
-systemctl daemon-reload
 rollback() {
   systemctl stop "$SERVICE" || true
   rm -rf "$TARGET" "$COMMON_TARGET"
@@ -80,6 +77,21 @@ rollback() {
   [[ -e "$ENV_BACKUP" ]] && cp -a "$ENV_BACKUP" "$ENV_TARGET" || true
   systemctl daemon-reload
   systemctl start "$SERVICE" || true
+}
+install -m 0644 -o root -g root "$UNIT_SOURCE" "$UNIT_TARGET"
+install -m 0600 -o root -g root "$TEMP/runtime.env" "$ENV_TARGET"
+systemctl daemon-reload
+STAGE=runtime
+if ! (
+  cd "$TARGET"
+  uv sync --frozen --no-dev
+); then
+  rollback
+  fail "final target runtime build failed"
+fi
+[[ -x "$TARGET/.venv/bin/uvicorn" ]] || {
+  rollback
+  fail "final target runtime executable missing"
 }
 if ! systemctl restart "$SERVICE"; then rollback; fail "service restart failed"; fi
 

@@ -30,6 +30,11 @@ def test_installer_requires_locked_runtime_and_tokenfree_process_readback() -> N
     assert "GitHub App private key mode is invalid" in installer
     assert ". /opt/sovereign-chatgpt-tools/broker.env" not in installer
     assert "read-broker-github-app-metadata.sh" in installer
+    assert "uv lock --check" in installer
+    assert 'cd "$TARGET"' in installer
+    assert 'final target runtime build failed' in installer
+    assert 'final target runtime executable missing' in installer
+    assert installer.index('mv "$TEMP/sovereign-toolchain" "$TARGET"') < installer.index('cd "$TARGET"')
 
 
 def test_metadata_reader_ignores_unrelated_non_shellsafe_dotenv_line(tmp_path: Path) -> None:
