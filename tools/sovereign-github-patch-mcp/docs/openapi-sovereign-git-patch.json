@@ -1,0 +1,71 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sovereign Git Patch",
+    "description": "Apply SEARCH/REPLACE blocks to GitHub files",
+    "version": "1.0"
+  },
+  "servers": [
+    {
+      "url": "https://sovereign-studio-worker.projectouroboroscollective.workers.dev"
+    }
+  ],
+  "paths": {
+    "/git/patch": {
+      "post": {
+        "operationId": "applyPatch",
+        "summary": "Apply SEARCH/REPLACE blocks and create Draft PR",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "repo": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "blocks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "search": {
+                          "type": "string"
+                        },
+                        "replace": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "owner",
+                  "repo",
+                  "path",
+                  "message",
+                  "blocks"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    }
+  }
+}
