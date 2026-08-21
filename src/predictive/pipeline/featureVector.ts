@@ -125,20 +125,40 @@ export function computeSignalHash(signals: OrderedSignal[]): string {
 
 /**
  * Computes mean of values.
+ * Optimized: Uses a standard for-loop instead of .reduce to prevent
+ * callback invocation overhead and unnecessary allocations.
  */
 export function computeMean(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  const len = values.length;
+  if (len === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < len; i++) {
+    sum += values[i];
+  }
+  return sum / len;
 }
 
 /**
  * Computes standard deviation of values.
+ * Optimized: Consolidates multi-pass reductions (.map, .reduce) into
+ * standard for-loops to eliminate array allocations and function call overhead.
  */
 export function computeStdDev(values: number[]): number {
-  if (values.length < 2) return 0;
-  const mean = computeMean(values);
-  const squaredDiffs = values.map((v) => (v - mean) ** 2);
-  const variance = squaredDiffs.reduce((a, b) => a + b, 0) / (values.length - 1);
+  const len = values.length;
+  if (len < 2) return 0;
+
+  let sum = 0;
+  for (let i = 0; i < len; i++) {
+    sum += values[i];
+  }
+  const mean = sum / len;
+
+  let sumSquaredDiffs = 0;
+  for (let i = 0; i < len; i++) {
+    sumSquaredDiffs += (values[i] - mean) ** 2;
+  }
+
+  const variance = sumSquaredDiffs / (len - 1);
   return Math.sqrt(variance);
 }
 

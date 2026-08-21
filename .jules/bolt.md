@@ -63,3 +63,7 @@
 ## 2026-08-16 - [Consolidating Multi-Pass Reductions and Slice Allocations in Mathematical Analysis]
 **Learning:** Calculating mathematical statistics (such as Pearson correlation) over array buffers using multiple `.slice()` subarray calls and sequential `.reduce()` passes creates significant garbage collection overhead and repeated array traversal costs. Consolidating all summations into a single indexed `for` loop pass drops loop overhead to a single $O(N)$ traversal with $O(1)$ memory allocations.
 **Action:** Always replace chained `.slice()` and multi-pass `.reduce()` calls in mathematical analysis routines with a single `for` loop that accumulates all required summations concurrently.
+
+## 2026-08-16 - [Consolidating Multi-Pass Reductions and Slice Allocations in Mathematical Analysis]
+**Learning:** Calculating mathematical statistics (such as Pearson correlation or standard deviation) over array buffers using sequential `.map()` and `.reduce()` passes creates significant garbage collection overhead and repeated array traversal costs. Consolidating all summations into a single indexed `for` loop pass drops loop overhead to a single $O(N)$ traversal with $O(1)$ memory allocations.
+**Action:** Always replace chained `.map()` and multi-pass `.reduce()` calls in mathematical analysis routines with a simple `for` loop that accumulates all required summations concurrently.
