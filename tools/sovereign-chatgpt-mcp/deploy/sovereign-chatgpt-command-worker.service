@@ -11,6 +11,7 @@ Group=sovereign-mcp
 EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/sovereign-chatgpt-tools/extensions
 Environment=SOVEREIGN_MCP_COMMAND_QUEUE=/opt/sovereign-chatgpt-tools/command-queue
 Environment=SOVEREIGN_MCP_COMMAND_WORKER_LOCK=/run/sovereign-chatgpt-command-worker/worker.lock
 WorkingDirectory=/opt/sovereign-chatgpt-tools/broker
@@ -25,7 +26,7 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=/opt/sovereign-chatgpt-tools /opt/secure
-ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue /opt/sovereign-chatgpt-tools/runtime-evidence /opt/sovereign-chatgpt-tools/maintenance /opt/sovereign-chatgpt-tools/workspaces /opt/sovereign-owner-managed /opt/sovereign-agent-workspaces /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-omniroute /run/sovereign-chatgpt-broker /run/sovereign-chatgpt-command-worker /etc/systemd/system/multi-user.target.wants
+ReadWritePaths=/opt/sovereign-chatgpt-tools/command-queue /opt/sovereign-chatgpt-tools/runtime-evidence /opt/sovereign-chatgpt-tools/maintenance /opt/sovereign-chatgpt-tools/workspaces /opt/sovereign-owner-managed /opt/sovereign-agent-workspaces /opt/sovereign-backend /opt/gpt-tools /opt/code-server-46bq /opt/pgbackweb-wq5r /opt/patchmon-sovereign /opt/milvus-sovereign /opt/sovereign-freellmapi /opt/sovereign-omniroute /opt/sovereign-bytebase /opt/sovereign-metamcp /run/sovereign-chatgpt-broker /run/sovereign-chatgpt-command-worker /etc/systemd/system/multi-user.target.wants
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=true
 RestrictRealtime=true
