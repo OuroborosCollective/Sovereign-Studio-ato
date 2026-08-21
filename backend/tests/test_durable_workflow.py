@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import pytest
 
-from backend.agent_runtime.durable_workflow import (
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "backend"))
+
+from backend.agent_runtime.durable_workflow import (  # noqa: E402
     CanonicalReadback,
     DurableWorkflowError,
     ExecutionVerdict,
