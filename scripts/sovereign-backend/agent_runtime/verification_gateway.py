@@ -928,7 +928,14 @@ def register_verification_gateway_routes(
             payload, status = _error_payload(exc)
             return jsonify(payload), status
 
-    def execute_request(body: Mapping[str, Any]):
+    def execute_request(body: Any):
+        if not isinstance(body, dict):
+            return jsonify({
+                "ok": False,
+                "error": "INVALID_VERIFICATION_REQUEST",
+                "message": "Request body must be a JSON object",
+                "credentialValuesReturned": False,
+            }), 400
         try:
             receipt, replayed = execute_paid_verification(
                 get_connection,
@@ -951,7 +958,8 @@ def register_verification_gateway_routes(
     @app.route("/api/user/agent/verification/verify", methods=["POST"])
     @require_session
     def user_execute_verification():
-        return execute_request(request.get_json(force=True) or {})
+        body = request.get_json(force=True, silent=True)
+        return execute_request({} if body is None else body)
 
     @app.route("/api/user/agent/verification/receipts/<request_id>", methods=["GET"])
     @require_session
@@ -984,7 +992,8 @@ def register_verification_gateway_routes(
             response.status_code = 400
             response.headers["A2A-Version"] = A2A_PROTOCOL_VERSION
             return response
-        response, status = execute_request(request.get_json(force=True) or {})
+        body = request.get_json(force=True, silent=True)
+        response, status = execute_request({} if body is None else body)
         response.status_code = status
         response.headers["A2A-Version"] = A2A_PROTOCOL_VERSION
         response.headers["X-Sovereign-A2A-Extension"] = "verification-v1"
