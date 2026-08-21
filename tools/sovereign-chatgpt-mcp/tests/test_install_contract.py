@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import ast
+import json
+import os
 from pathlib import Path
 import subprocess
+import sys
+import textwrap
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +20,83 @@ def test_installer_has_valid_bash_syntax() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_legacy_predecessor_registry_capture_uses_real_fastmcp_contracts(tmp_path: Path) -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    marker = (
+        'if ! "${PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND[@]}" <<\'PY\' '
+        '> "$PREVIOUS_MCP_REGISTRY_FILE"\n'
+    )
+    capture_program = installer.split(marker, 1)[1].split("\nPY\n  then", 1)[0]
+
+    module_root = tmp_path / "legacy-fastmcp"
+    module_root.mkdir()
+    (module_root / "launcher.py").write_text(
+        textwrap.dedent(
+            """
+            from types import SimpleNamespace
+
+            class ToolManager:
+                def list_tools(self):
+                    return [
+                        SimpleNamespace(
+                            name="workspace_prepare",
+                            description="Create an isolated repository workspace.",
+                            annotations=SimpleNamespace(
+                                readOnlyHint=False,
+                                destructiveHint=False,
+                                idempotentHint=False,
+                                openWorldHint=False,
+                            ),
+                            parameters={"type": "object", "additionalProperties": False},
+                            output_schema={"type": "object"},
+                        ),
+                        SimpleNamespace(
+                            name="repository_issue_list",
+                            description="List current open GitHub issues with authenticated readback.",
+                            annotations=SimpleNamespace(
+                                readOnlyHint=True,
+                                destructiveHint=False,
+                                idempotentHint=True,
+                                openWorldHint=True,
+                            ),
+                            parameters={"type": "object"},
+                            output_schema={"type": "object"},
+                        ),
+                    ]
+
+            mcp = SimpleNamespace(_tool_manager=ToolManager())
+            """
+        ).strip()
+        + "\n",
+        "utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", capture_program],
+        cwd=module_root,
+        env={**os.environ, "PYTHONPATH": str(module_root)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stderr
+    receipt = json.loads(result.stdout.strip().splitlines()[-1])
+    assert receipt["captureProvenance"] == "legacy-fastmcp-introspection-v1"
+    assert receipt["capabilityMetadata"] == "deterministically-derived-from-name-and-description"
+    assert receipt["toolCount"] == 2
+    assert [tool["name"] for tool in receipt["tools"]] == [
+        "repository_issue_list",
+        "workspace_prepare",
+    ]
+    assert receipt["tools"][0]["effect"] == "read"
+    assert receipt["tools"][1]["effect"] == "workspace-write"
+    assert {"repository", "ci"} <= set(receipt["tools"][0]["capabilities"])
+    assert "repository" in receipt["tools"][1]["capabilities"]
+    assert len(receipt["registrySnapshotSha256"]) == 64
 
 
 def _runtime_local_module_closure(entry_module: str) -> set[str]:

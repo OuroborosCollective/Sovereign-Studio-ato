@@ -1577,34 +1577,241 @@ esac
 if [[ "$PREVIOUS_MCP_CONTAINER_PRESENT" == "1" ]]; then
   if ! "${PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND[@]}" <<'PY' > "$PREVIOUS_MCP_REGISTRY_FILE"
 from dataclasses import asdict
+import hashlib
 import json
 
-import launcher
-import operational_governance_tools
 
-registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
-payload = asdict(registry)
-tools = sorted(payload.get("tools") or [], key=lambda item: str(item.get("name") or ""))
-names = [item.get("name") for item in tools]
-if (
-    registry.ok is not True
-    or registry.status != "MCP_TOOL_REGISTRY_READY"
-    or registry.runtimeVerified is not True
-    or registry.truncated is True
-    or registry.toolCount != len(tools)
-    or not tools
-    or any(not isinstance(name, str) or not name for name in names)
-    or names != sorted(set(names))
-):
-    raise SystemExit("predecessor MCP returned an invalid complete contract registry")
+def _canonical(value):
+    return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _sha256(value):
+    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _annotation_payload(annotations):
+    return {
+        "readOnlyHint": bool(getattr(annotations, "readOnlyHint", False)),
+        "destructiveHint": bool(getattr(annotations, "destructiveHint", False)),
+        "idempotentHint": bool(getattr(annotations, "idempotentHint", False)),
+        "openWorldHint": bool(getattr(annotations, "openWorldHint", False)),
+    }
+
+
+def _effect_from_annotations(annotations):
+    if annotations["destructiveHint"]:
+        return "external-write"
+    if annotations["readOnlyHint"]:
+        return "read"
+    if annotations["openWorldHint"]:
+        return "external-write"
+    return "workspace-write"
+
+
+_PREFIX_CAPABILITIES = (
+    ("neuro_", ("neuro", "deterministic", "runtime")),
+    ("teaching_", ("teaching", "learning", "mcp")),
+    ("repository_", ("repository", "ci")),
+    ("android_", ("android", "release")),
+    ("postgres_", ("database", "migration")),
+    ("vector_", ("database", "learning")),
+    ("litellm_", ("llm", "billing")),
+    ("controller_", ("agent", "runtime")),
+    ("a2a_", ("agent", "runtime")),
+    ("patchmon_", ("container", "runtime")),
+    ("document_", ("document", "runtime")),
+    ("deterministic_", ("deterministic", "repository")),
+    ("backend_", ("repository", "runtime", "security")),
+    ("freemium_", ("billing", "compliance")),
+    ("openai_", ("llm", "security")),
+    ("owner_", ("security", "ownership")),
+    ("mcp_", ("mcp", "runtime")),
+    ("vps_", ("container", "runtime")),
+    ("managed_compose_", ("container", "configuration")),
+    ("deploy_", ("release", "container")),
+    ("rollback_", ("release", "container")),
+    ("proven_learning_", ("learning", "compliance")),
+    ("skill_", ("mcp", "repository")),
+    ("tool_", ("mcp",)),
+    ("evidence_", ("compliance", "release")),
+    ("schema_", ("database", "migration")),
+    ("llm_route_", ("llm", "billing", "observability")),
+    ("agent_run_", ("agent", "runtime", "observability")),
+    ("semantic_intent_", ("security", "mcp", "repository")),
+    ("cost_credit_", ("billing", "database")),
+    ("backup_restore_", ("backup", "database", "runtime")),
+    ("slo_error_", ("observability", "runtime")),
+    ("configuration_drift_", ("configuration", "runtime", "container")),
+    ("runtime_runbook_", ("runtime", "observability")),
+    ("ownership_codeowners_", ("ownership", "security", "repository")),
+    ("compliance_evidence_", ("compliance", "release")),
+    ("vps_capacity_", ("container", "runtime", "observability", "performance")),
+    ("runtime_dependency_", ("runtime", "observability", "container")),
+    ("outbox_queue_", ("queue", "database", "runtime")),
+    ("scheduled_maintenance_", ("maintenance", "runtime", "release")),
+    ("runtime_topology_", ("topology", "container", "configuration")),
+    ("postgres_query_", ("database", "performance", "observability")),
+    ("data_integrity_", ("database", "deterministic", "compliance")),
+    ("data_repair_", ("database", "deterministic")),
+    ("vector_memory_", ("database", "learning", "queue")),
+    ("memory_poisoning_", ("learning", "security", "compliance")),
+    ("learning_pattern_", ("learning", "compliance")),
+    ("data_retention_", ("privacy", "compliance", "database")),
+    ("multi_tenant_", ("tenant", "security", "privacy")),
+    ("mcp_schema_", ("mcp", "configuration")),
+    ("mcp_protocol_", ("mcp", "security", "observability")),
+    ("tool_permission_", ("mcp", "security")),
+    ("dynamic_execution_", ("security", "repository", "runtime")),
+    ("skill_capability_", ("mcp", "repository")),
+    ("skill_lifecycle_", ("mcp", "compliance")),
+    ("skill_regression_", ("mcp", "ci")),
+    ("tool_idempotency_", ("mcp", "deterministic", "ci")),
+    ("owner_approval_policy_", ("ownership", "security", "compliance")),
+    ("secret_lifecycle_", ("security", "compliance")),
+    ("secret_literal_", ("security", "repository")),
+    ("sbom_provenance_", ("supply-chain", "release", "security")),
+    ("dependency_vulnerability_", ("supply-chain", "security", "repository")),
+    ("authentication_chaos_", ("authentication", "security", "ci")),
+)
+
+_TOKEN_CAPABILITIES = {
+    "repository": ("repository", "github", "pull request", "workspace", "codeowners"),
+    "ci": ("workflow", "check", "ci", "build", "test"),
+    "release": ("release", "deploy", "rollback", "artifact", "image"),
+    "runtime": ("runtime", "health", "canary", "container", "runbook"),
+    "container": ("docker", "container", "compose", "vps"),
+    "database": ("postgres", "database", "sql", "vector"),
+    "migration": ("migration", "schema", "table"),
+    "llm": ("llm", "model", "provider", "litellm"),
+    "agent": ("agent", "controller", "a2a", "swarm"),
+    "billing": ("billing", "credit", "cost", "settlement", "payment"),
+    "backup": ("backup", "restore", "recovery"),
+    "observability": ("slo", "error budget", "trace", "log", "failure"),
+    "configuration": ("configuration", "config", "environment", "drift"),
+    "mcp": ("mcp", "tool registry", "tool contract", "capability"),
+    "security": ("security", "auth", "secret", "policy", "permission"),
+    "ownership": ("owner", "codeowners", "approval"),
+    "compliance": ("compliance", "audit", "evidence", "control"),
+    "learning": ("learning", "memory", "pattern", "knowledge"),
+    "android": ("android", "gradle", "apk", "aab"),
+    "document": ("document", "pdf", "tika", "gotenberg"),
+    "deterministic": ("deterministic", "kappa", "replay", "invariant"),
+    "maintenance": ("maintenance", "window", "patchmon", "reindex", "certificate"),
+    "privacy": ("privacy", "retention", "pseudonym", "tenant"),
+    "performance": ("performance", "latency", "capacity", "pool", "index"),
+    "topology": ("topology", "network", "volume", "compose"),
+    "queue": ("queue", "outbox", "dead letter", "retry"),
+    "supply-chain": ("sbom", "provenance", "signature", "attestation", "vulnerability"),
+    "authentication": ("authentication", "oauth", "pkce", "passkey", "session", "token"),
+    "tenant": ("tenant", "isolation", "cross-tenant"),
+}
+
+
+def _capabilities_for(name, description):
+    capabilities = set()
+    for prefix, values in _PREFIX_CAPABILITIES:
+        if name.startswith(prefix):
+            capabilities.update(values)
+    haystack = f"{name} {description}".casefold()
+    for capability, markers in _TOKEN_CAPABILITIES.items():
+        if any(marker in haystack for marker in markers):
+            capabilities.add(capability)
+    return sorted(capabilities)
+
+
+def _legacy_fastmcp_registry():
+    try:
+        import launcher
+        mcp = launcher.mcp
+    except (ImportError, AttributeError):
+        import server
+        mcp = server.mcp
+    raw_tools = list(mcp._tool_manager.list_tools())
+    raw_tools.sort(key=lambda item: str(getattr(item, "name", "")))
+    tools = []
+    for tool in raw_tools:
+        name = str(getattr(tool, "name", "") or "")
+        description = str(getattr(tool, "description", "") or "")
+        annotations = _annotation_payload(getattr(tool, "annotations", None))
+        parameters = getattr(tool, "parameters", {}) or {}
+        output_schema = getattr(tool, "output_schema", {}) or {}
+        if (
+            not name
+            or not isinstance(parameters, dict)
+            or not isinstance(output_schema, dict)
+        ):
+            raise SystemExit("legacy predecessor MCP exposes an incomplete FastMCP contract")
+        contract = {
+            "name": name,
+            "description": description,
+            "capabilities": _capabilities_for(name, description),
+            "effect": _effect_from_annotations(annotations),
+            "annotations": annotations,
+            "parameters": parameters,
+            "outputSchema": output_schema,
+        }
+        contract["contractSha256"] = _sha256(contract)
+        tools.append(contract)
+    names = [item["name"] for item in tools]
+    if not tools or names != sorted(set(names)):
+        raise SystemExit("legacy predecessor MCP returned a non-canonical FastMCP registry")
+    snapshot_payload = [
+        {
+            key: item[key]
+            for key in (
+                "name",
+                "description",
+                "capabilities",
+                "effect",
+                "annotations",
+                "parameters",
+                "outputSchema",
+            )
+        }
+        for item in tools
+    ]
+    return {
+        "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
+        "registrySnapshotSha256": _sha256(snapshot_payload),
+        "toolCount": len(tools),
+        "tools": tools,
+        "captureProvenance": "legacy-fastmcp-introspection-v1",
+        "capabilityMetadata": "deterministically-derived-from-name-and-description",
+    }
+
+
+try:
+    import launcher
+    import operational_governance_tools
+
+    registry = operational_governance_tools.mcp_tool_contract_registry(include_schemas=True)
+    payload = asdict(registry)
+    tools = sorted(payload.get("tools") or [], key=lambda item: str(item.get("name") or ""))
+    names = [item.get("name") for item in tools]
+    if (
+        registry.ok is not True
+        or registry.status != "MCP_TOOL_REGISTRY_READY"
+        or registry.runtimeVerified is not True
+        or registry.truncated is True
+        or registry.toolCount != len(tools)
+        or not tools
+        or any(not isinstance(name, str) or not name for name in names)
+        or names != sorted(set(names))
+    ):
+        raise SystemExit("predecessor MCP returned an invalid complete contract registry")
+    result = {
+        "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
+        "registrySnapshotSha256": registry.registrySnapshotSha256,
+        "toolCount": len(tools),
+        "tools": tools,
+        "captureProvenance": "operational-governance-registry-v1",
+    }
+except (ImportError, AttributeError, RuntimeError):
+    result = _legacy_fastmcp_registry()
+
 print(
     json.dumps(
-        {
-            "schemaVersion": "sovereign.mcp-deployment-contract-surface.v1",
-            "registrySnapshotSha256": registry.registrySnapshotSha256,
-            "toolCount": len(tools),
-            "tools": tools,
-        },
+        result,
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),
