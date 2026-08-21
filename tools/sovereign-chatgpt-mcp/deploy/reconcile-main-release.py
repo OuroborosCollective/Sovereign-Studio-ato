@@ -27,7 +27,7 @@ DEPLOY_DIAGNOSTIC_RE = re.compile(
 )
 MCP_INSTALL_FAILURE_RE = re.compile(
     r"^install blocked: stage=(?P<stage>[A-Za-z0-9_:-]{1,160}) "
-    r"exit=[1-9][0-9]{0,2} reason=.* rollback_attempted=(?P<rollback>[01])$"
+    r"exit=[1-9][0-9]{0,2} reason=(?P<reason>.*) rollback_attempted=(?P<rollback>[01])$"
 )
 MUTATION_PROVEN_DEPLOY_STAGES = frozenset(
     {
@@ -536,6 +536,9 @@ def _safe_mcp_install_diagnostic(output: str) -> dict[str, Any] | None:
         if match is not None:
             return {
                 "stage": match.group("stage"),
+                "failureReasonSha256": hashlib.sha256(
+                    match.group("reason").encode("utf-8", errors="replace")
+                ).hexdigest(),
                 "rollbackAttempted": match.group("rollback") == "1",
             }
     return None
