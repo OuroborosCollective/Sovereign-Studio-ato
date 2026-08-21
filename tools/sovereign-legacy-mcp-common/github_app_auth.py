@@ -42,6 +42,10 @@ class GitHubAppInstallationConfig:
         app_id = os.getenv("SOVEREIGN_MCP_GITHUB_APP_ID", "").strip()
         installation_text = os.getenv("SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID", "").strip()
         key_path_text = os.getenv("SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE", "").strip()
+        if not key_path_text:
+            credentials_directory = os.getenv("CREDENTIALS_DIRECTORY", "").strip()
+            if credentials_directory:
+                key_path_text = str(Path(credentials_directory) / "github-app-private-key.pem")
         repository = os.getenv("SOVEREIGN_MCP_REPOSITORY", "").strip()
         if not app_id.isdecimal() or int(app_id) <= 0:
             raise RuntimeError("SOVEREIGN_MCP_GITHUB_APP_ID is invalid")

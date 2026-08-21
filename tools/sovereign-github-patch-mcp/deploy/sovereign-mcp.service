@@ -9,7 +9,6 @@ User=root
 WorkingDirectory=/opt/sovereign-legacy-mcp/sovereign-github-patch-mcp
 EnvironmentFile=/etc/sovereign-github-patch-mcp/runtime.env
 Environment=PYTHONPATH=/opt/sovereign-legacy-mcp/sovereign-legacy-mcp-common
-Environment=SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=%d/github-app-private-key.pem
 LoadCredential=github-app-private-key.pem:/opt/secure/sovereign-github-app/private-key.pem
 ExecStart=/opt/sovereign-legacy-mcp/sovereign-github-patch-mcp/.venv/bin/python /opt/sovereign-legacy-mcp/sovereign-github-patch-mcp/server.py
 Restart=on-failure
