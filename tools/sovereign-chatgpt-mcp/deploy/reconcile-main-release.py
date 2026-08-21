@@ -225,7 +225,50 @@ def _main_revision() -> str:
     return revision
 
 
+def _release_gate_evidence(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runId": int(run.get("id") or 0),
+        "runAttempt": int(run.get("run_attempt") or 0),
+        "runStatus": str(run.get("status") or ""),
+        "conclusion": str(run.get("conclusion") or "") or None,
+        "url": str(run.get("html_url") or ""),
+        "headSha": str(run.get("head_sha") or "").lower(),
+    }
+
+
+def _scope_release_gate_run(revision: str, run_id: int) -> dict[str, Any]:
+    payload = _github_json(f"/repos/{REPOSITORY}/actions/runs/{run_id}")
+    if not isinstance(payload, dict):
+        raise ReconcileError("release_gate", "scope run returned an invalid payload")
+    evidence = _release_gate_evidence(payload)
+    path = str(payload.get("path") or "")
+    event = str(payload.get("event") or "")
+    workflow_path = f".github/workflows/{WORKFLOW}@"
+    if evidence["runId"] != run_id:
+        raise ReconcileError("release_gate", "scope run id did not bind")
+    if evidence["headSha"] != revision:
+        raise ReconcileError("release_gate", "scope run revision did not bind")
+    if event not in {"push", "workflow_dispatch"}:
+        raise ReconcileError("release_gate", "scope run event is not authorized")
+    if not path.startswith(workflow_path):
+        raise ReconcileError("release_gate", "scope run workflow did not bind")
+    return {"event": event, **evidence}
+
+
 def _release_gate(revision: str, *, expected_runtime_readback_run_id: int | None = None) -> dict[str, Any]:
+    if expected_runtime_readback_run_id is not None:
+        run = _scope_release_gate_run(revision, expected_runtime_readback_run_id)
+        if run["runStatus"] != "completed":
+            return {
+                "ready": True,
+                "status": "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE",
+                "selfRuntimeReadback": True,
+                **run,
+            }
+        if run["conclusion"] != "success":
+            return {"ready": False, "status": "RELEASE_GATE_FAILED", **run}
+        return {"ready": True, "status": "RELEASE_GATE_VERIFIED", **run}
+
     workflow = urllib.parse.quote(WORKFLOW, safe="")
     payload = _github_json(
         f"/repos/{REPOSITORY}/actions/workflows/{workflow}/runs"
@@ -240,29 +283,14 @@ def _release_gate(revision: str, *, expected_runtime_readback_run_id: int | None
     exact.sort(key=lambda item: (int(item.get("run_attempt") or 0), int(item.get("id") or 0)), reverse=True)
     if not exact:
         return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", "runId": None}
-    run = exact[0]
-    run_status = str(run.get("status") or "")
-    conclusion = str(run.get("conclusion") or "")
-    evidence = {
-        "runId": int(run.get("id") or 0),
-        "runAttempt": int(run.get("run_attempt") or 0),
-        "runStatus": run_status,
-        "conclusion": conclusion or None,
-        "url": str(run.get("html_url") or ""),
-        "headSha": str(run.get("head_sha") or "").lower(),
-    }
-    if run_status != "completed":
-        if expected_runtime_readback_run_id is not None and evidence["runId"] == expected_runtime_readback_run_id:
-            return {
-                "ready": True,
-                "status": "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE",
-                "selfRuntimeReadback": True,
-                **evidence,
-            }
-        return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **evidence}
-    if conclusion != "success":
-        return {"ready": False, "status": "RELEASE_GATE_FAILED", **evidence}
-    return {"ready": True, "status": "RELEASE_GATE_VERIFIED", **evidence}
+    run = _release_gate_evidence(exact[0])
+    if run["runStatus"] != "completed":
+        return {"ready": False, "status": "WAITING_FOR_RELEASE_GATE", **run}
+    if run["conclusion"] != "success":
+        return {"ready": False, "status": "RELEASE_GATE_FAILED", **run}
+    return {"ready": True, "status": "RELEASE_GATE_VERIFIED", **run}
+
+
 
 
 def _run(
