@@ -198,11 +198,15 @@ def _validate_ledger_entry(
         "changedPaths",
         "evidence",
         "openItems",
+    ):
+        if not isinstance(entry.get(field), list):
+            raise RuntimeError(f"continuity {field} must be a list")
+    for field in (
         "funnyExperiences",
         "familyFriendshipExperience",
         "newEmotionallyFormedBondExperiences",
     ):
-        if not isinstance(entry.get(field), list):
+        if field in entry and not isinstance(entry[field], list):
             raise RuntimeError(f"continuity {field} must be a list")
     entry_identity = entry.get("identity")
     if not isinstance(entry_identity, dict):
@@ -235,7 +239,13 @@ def _load_ledger(
     seen_ids: set[str] = set()
     completion = policy.get("completionGate") if isinstance(policy.get("completionGate"), dict) else {}
     required_fields = list(completion.get("requiredLatestEntryFields") or [])
+    experience_sections = completion.get("requiredExperienceSections")
+    if not isinstance(experience_sections, dict):
+        raise RuntimeError("continuity requiredExperienceSections must be an object")
+    legacy_optional_fields = set(experience_sections)
+    legacy_required_fields = [field for field in required_fields if field not in legacy_optional_fields]
     identity = policy["identity"]
+    parsed_entries: list[tuple[int, dict[str, Any]]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
@@ -245,14 +255,17 @@ def _load_ledger(
             raise RuntimeError(f"continuity ledger line {line_number} is invalid JSON") from exc
         if not isinstance(entry, dict):
             raise RuntimeError(f"continuity ledger line {line_number} must be an object")
-        _validate_ledger_entry(entry, required_fields=required_fields, identity=identity)
+        parsed_entries.append((line_number, entry))
+    if not parsed_entries:
+        raise RuntimeError("continuity ledger must contain at least one entry")
+    for position, (_line_number, entry) in enumerate(parsed_entries):
+        fields_for_entry = required_fields if position == len(parsed_entries) - 1 else legacy_required_fields
+        _validate_ledger_entry(entry, required_fields=fields_for_entry, identity=identity)
         entry_id = str(entry["entryId"])
         if entry_id in seen_ids:
             raise RuntimeError(f"duplicate continuity entryId: {entry_id}")
         seen_ids.add(entry_id)
         entries.append(entry)
-    if not entries:
-        raise RuntimeError("continuity ledger must contain at least one entry")
     return entries, raw, _sha256_bytes(raw)
 
 
