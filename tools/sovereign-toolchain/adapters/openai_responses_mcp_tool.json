@@ -1,0 +1,6 @@
+{
+  "type": "mcp",
+  "server_label": "sovereign_universal_toolchain",
+  "server_url": "https://your-toolchain-domain.example/mcp",
+  "require_approval": "always"
+}

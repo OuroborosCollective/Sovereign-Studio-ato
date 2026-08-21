@@ -1,0 +1,65 @@
+{
+  "name": "Sovereign Universal Toolchain",
+  "version": "1.0.0",
+  "interfaces": {
+    "mcp": {
+      "endpoint": "/mcp",
+      "transport": "streamable-http"
+    },
+    "rest": {
+      "base_path": "/api",
+      "openapi": "/api/openapi.json"
+    },
+    "generic_dispatch": "/api/v1/tools/{name}",
+    "cli": "sovereign-toolchain <tool> --args '{...}'"
+  },
+  "safety": {
+    "write_actions_require_confirm": true,
+    "direct_main_writes": false,
+    "default_write_output": "Draft PR",
+    "repo_allowlist_env": "ALLOWED_REPOS",
+    "rest_secret_header": "X-Toolchain-Key"
+  },
+  "tools": [
+    {
+      "name": "toolchain_briefing",
+      "mode": "read"
+    },
+    {
+      "name": "list_archive_files",
+      "mode": "read"
+    },
+    {
+      "name": "read_archive_text",
+      "mode": "read"
+    },
+    {
+      "name": "plan_sandbox_commands",
+      "mode": "read"
+    },
+    {
+      "name": "preview_search_replace",
+      "mode": "read"
+    },
+    {
+      "name": "make_patch_payload",
+      "mode": "read"
+    },
+    {
+      "name": "github_read_file",
+      "mode": "read"
+    },
+    {
+      "name": "github_apply_search_replace_pr",
+      "mode": "write-preview-or-draft-pr"
+    },
+    {
+      "name": "apply_patch_worker",
+      "mode": "write-with-confirm"
+    },
+    {
+      "name": "apply_backend_guardrails_patch_pr",
+      "mode": "write-preview-or-draft-pr"
+    }
+  ]
+}

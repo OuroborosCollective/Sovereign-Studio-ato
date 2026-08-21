@@ -1,0 +1,16 @@
+{
+  "args": {
+    "owner": "OuroborosCollective",
+    "repo": "Sovereign-Studio-ato",
+    "path": "scripts/sovereign-backend/app.py",
+    "message": "fix(toolchain): apply backend patch guardrails",
+    "blocks": [
+      {
+        "search": "SEARCH TEXT",
+        "replace": "REPLACE TEXT"
+      }
+    ],
+    "expected_sha": "optional-file-sha",
+    "confirm": false
+  }
+}

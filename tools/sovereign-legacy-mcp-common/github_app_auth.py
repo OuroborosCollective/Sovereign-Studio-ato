@@ -7,7 +7,7 @@ and discards its local reference when the request context exits.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 import base64
 import json
@@ -147,6 +147,43 @@ class GitHubAppInstallationAuth:
         if len(token) < 20 or any(character.isspace() for character in token):
             raise RuntimeError("GitHub App installation token response is invalid")
         return token
+
+    def _issue_token_sync(self) -> str:
+        app_jwt = self._app_jwt()
+        repository_name = self.config.repository.split("/", 1)[1]
+        try:
+            with httpx.Client(timeout=20) as client:
+                response = client.post(
+                    f"https://api.github.com/app/installations/{self.config.installation_id}/access_tokens",
+                    headers={
+                        "Authorization": f"Bearer {app_jwt}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    json={"repositories": [repository_name]},
+                )
+        except httpx.HTTPError as exc:
+            raise RuntimeError("GitHub App installation token request failed") from exc
+        if response.status_code != 201:
+            raise RuntimeError(f"GitHub App installation token request rejected: HTTP {response.status_code}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("GitHub App installation token response is invalid") from exc
+        token = str(payload.get("token") or "").strip() if isinstance(payload, dict) else ""
+        if len(token) < 20 or any(character.isspace() for character in token):
+            raise RuntimeError("GitHub App installation token response is invalid")
+        return token
+
+    @contextmanager
+    def token(self):
+        """Yield one short-lived token for a synchronous trusted server operation."""
+
+        issued = self._issue_token_sync()
+        try:
+            yield issued
+        finally:
+            issued = ""
 
     @asynccontextmanager
     async def headers(self) -> AsyncIterator[dict[str, str]]:
