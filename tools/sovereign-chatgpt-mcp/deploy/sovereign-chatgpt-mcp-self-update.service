@@ -3,6 +3,7 @@ Description=Sovereign private ChatGPT MCP self-update
 After=network-online.target docker.service
 Requires=docker.service
 Wants=network-online.target
+ConditionPathExists=/run/sovereign-chatgpt-broker/self-update.request.json
 
 [Service]
 Type=oneshot
