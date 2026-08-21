@@ -626,8 +626,6 @@ jobs:
               'mcp_host_command_status',
               'owner_approval_request_create',
               'owner_approval_request_status',
-              'wolfram_cag_status',
-              'wolfram_cag_canary',
               'openrouter_provider_status',
               'openrouter_provider_activate',
               'openrouter_free_status',

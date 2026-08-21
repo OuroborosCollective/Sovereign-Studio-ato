@@ -27,8 +27,6 @@ def test_mcp_image_installer_and_workflow_include_owner_client() -> None:
     assert "owner_approval_request_create" in workflow
     assert "owner_approval_request_status" in workflow
     assert "owner_approval_widget_open" in workflow
-    assert "wolfram_cag_status" in workflow
-    assert "wolfram_cag_canary" in workflow
     assert "openrouter_provider_status" in workflow
     assert "openrouter_provider_activate" in workflow
     assert "openrouter_free_status" in workflow
