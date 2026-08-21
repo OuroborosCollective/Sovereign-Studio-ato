@@ -274,6 +274,95 @@ resolve_previous_mcp_registry_capture_mode
     assert attested_absence.returncode == 0, attested_absence.stderr
     assert attested_absence.stdout.strip() == "attested-first-install-no-predecessor"
 
+    capture_marker = (
+        'if ! "${PREVIOUS_MCP_REGISTRY_CAPTURE_COMMAND[@]}" <<\'PY\' '
+        '> "$PREVIOUS_MCP_REGISTRY_FILE"\n'
+    )
+    capture_program = script.split(capture_marker, 1)[1].split("\nPY\n  then", 1)[0]
+    legacy_module_root = tmp_path / "legacy-fastmcp"
+    legacy_module_root.mkdir()
+    (legacy_module_root / "launcher.py").write_text(
+        textwrap.dedent(
+            """
+            from types import SimpleNamespace
+
+            class ToolManager:
+                def list_tools(self):
+                    return [
+                        SimpleNamespace(
+                            name="workspace_prepare",
+                            description="Create an isolated repository workspace.",
+                            annotations=SimpleNamespace(
+                                readOnlyHint=False,
+                                destructiveHint=False,
+                                idempotentHint=False,
+                                openWorldHint=False,
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {"base_branch": {"type": "string"}},
+                                "additionalProperties": False,
+                            },
+                            output_schema={
+                                "type": "object",
+                                "properties": {"workspace_id": {"type": "string"}},
+                            },
+                        ),
+                        SimpleNamespace(
+                            name="repository_issue_list",
+                            description="List current open GitHub issues with authenticated readback.",
+                            annotations=SimpleNamespace(
+                                readOnlyHint=True,
+                                destructiveHint=False,
+                                idempotentHint=True,
+                                openWorldHint=True,
+                            ),
+                            parameters={
+                                "type": "object",
+                                "properties": {"limit": {"type": "integer"}},
+                            },
+                            output_schema={
+                                "type": "object",
+                                "properties": {"issues": {"type": "array"}},
+                            },
+                        ),
+                    ]
+
+            mcp = SimpleNamespace(_tool_manager=ToolManager())
+            """
+        ).strip()
+        + "\n",
+        "utf-8",
+    )
+    legacy_capture = subprocess.run(
+        [sys.executable, "-c", capture_program],
+        cwd=legacy_module_root,
+        env={**os.environ, "PYTHONPATH": str(legacy_module_root)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert legacy_capture.returncode == 0, legacy_capture.stderr
+    legacy_registry = json.loads(legacy_capture.stdout.strip().splitlines()[-1])
+    assert legacy_registry["captureProvenance"] == "legacy-fastmcp-introspection-v1"
+    assert legacy_registry["capabilityMetadata"] == "deterministically-derived-from-name-and-description"
+    assert legacy_registry["toolCount"] == 2
+    assert [item["name"] for item in legacy_registry["tools"]] == [
+        "repository_issue_list",
+        "workspace_prepare",
+    ]
+    legacy_issue_list = legacy_registry["tools"][0]
+    assert legacy_issue_list["effect"] == "read"
+    assert legacy_issue_list["parameters"]["properties"]["limit"]["type"] == "integer"
+    assert legacy_issue_list["outputSchema"]["properties"]["issues"]["type"] == "array"
+    assert {"repository", "ci"} <= set(legacy_issue_list["capabilities"])
+    legacy_workspace_prepare = legacy_registry["tools"][1]
+    assert legacy_workspace_prepare["effect"] == "workspace-write"
+    assert legacy_workspace_prepare["parameters"]["additionalProperties"] is False
+    assert legacy_workspace_prepare["outputSchema"]["properties"]["workspace_id"]["type"] == "string"
+    assert "repository" in legacy_workspace_prepare["capabilities"]
+
     comparator_section = script.split(
         'INSTALL_STAGE="verify_mcp_tool_surface_preservation"', 1
     )[1].split('INSTALL_STAGE="verify_isolated_neuro_runtime_canary"', 1)[0]
