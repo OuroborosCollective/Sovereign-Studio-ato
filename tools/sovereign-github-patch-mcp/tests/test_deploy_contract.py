@@ -11,7 +11,8 @@ SERVER = ROOT / "sovereign-github-patch-mcp" / "server.py"
 def test_unit_uses_systemd_credential_and_no_persistent_token() -> None:
     unit = SERVICE.read_text("utf-8")
     assert "LoadCredential=github-app-private-key.pem:/opt/secure/sovereign-github-app/private-key.pem" in unit
-    assert "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=%d/github-app-private-key.pem" in unit
+    assert "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE=" not in unit
+    assert "%d/github-app-private-key.pem" not in unit
     assert "EnvironmentFile=/etc/sovereign-github-patch-mcp/runtime.env" in unit
     assert "GITHUB_TOKEN=" not in unit
     assert "GH_TOKEN=" not in unit
@@ -37,4 +38,8 @@ def test_installer_builds_locked_runtime_and_readbacks_token_absence() -> None:
     assert "systemctl restart \"$SERVICE\"" in installer
     assert "persistent GitHub token inherited by service" in installer
     assert "runtime environment has persistent GitHub token" in installer
+    assert "[[ \"$KEY_UID\" == \"0\" ]] || fail \"GitHub App private key owner is invalid\"" in installer
+    assert "GitHub App private key mode is invalid" in installer
+    assert "KEY_GID=" not in installer
+    assert "SOVEREIGN_MCP_GID=" not in installer
     assert "GITHUB_TOKEN=ghp_" not in installer
