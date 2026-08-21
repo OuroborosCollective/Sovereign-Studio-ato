@@ -228,8 +228,15 @@ def test_chat_is_limited_to_typed_bubbles_and_firewalls_internal_reasoning() -> 
         ChatBubbleV1.create(bubble_kind="REQUIRED_QUESTION", text="Reasoning: internal chain-of-thought", canonical_reference_hashes=[])
 
 
+def _repo_root() -> Path:
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "backend").is_dir() and (candidate / "scripts/sovereign-backend").is_dir():
+            return candidate
+    raise AssertionError("repository root not found")
+
+
 def test_live_workspace_contract_is_byte_identical_in_deployment_mirror() -> None:
-    root = Path(__file__).resolve().parents[2]
+    root = _repo_root()
     canonical = root / "backend/agent_runtime/live_workspace.py"
     mirror = root / "scripts/sovereign-backend/agent_runtime/live_workspace.py"
     assert canonical.read_bytes() == mirror.read_bytes()
