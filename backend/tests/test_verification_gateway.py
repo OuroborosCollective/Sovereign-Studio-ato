@@ -478,3 +478,43 @@ def test_a2a_agent_card_advertises_verification_skill():
         source = (root / relative).read_text(encoding="utf-8")
         assert 'id="sovereign-verification"' in source
         assert "model agreement is never a truth rule" in source
+
+
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        ["list", "item"],
+        "string_payload",
+        123,
+        True,
+    ],
+)
+def test_verification_routes_reject_non_dictionary_payloads(monkeypatch, bad_payload):
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", "3" * 40)
+    user_id = str(uuid.uuid4())
+    conn = FakeConnection()
+    conn.add_user(user_id, credits=5)
+    app = create_app(conn)
+    client = app.test_client()
+
+    # REST endpoint check
+    resp_user = client.post(
+        "/api/user/agent/verification/verify",
+        headers={"X-Test-User": user_id},
+        json=bad_payload,
+    )
+    assert resp_user.status_code == 400
+    data_user = resp_user.get_json()
+    assert data_user["ok"] is False
+    assert data_user["error"] == "INVALID_VERIFICATION_REQUEST"
+
+    # A2A endpoint check
+    resp_a2a = client.post(
+        "/a2a/v1/verification:verify",
+        headers={"X-Test-User": user_id, "A2A-Version": "1.0"},
+        json=bad_payload,
+    )
+    assert resp_a2a.status_code == 400
+    data_a2a = resp_a2a.get_json()
+    assert data_a2a["ok"] is False
+    assert data_a2a["error"] == "INVALID_VERIFICATION_REQUEST"
