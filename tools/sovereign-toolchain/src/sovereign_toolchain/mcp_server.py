@@ -18,7 +18,12 @@ from .core import (
     preview_search_replace,
 )
 
-mcp = FastMCP("Sovereign Universal Toolchain", stateless_http=True, json_response=True)
+mcp = FastMCP(
+    "Sovereign Universal Toolchain",
+    stateless_http=True,
+    json_response=True,
+    streamable_http_path="/",
+)
 
 @mcp.tool()
 def toolchain_manifest() -> dict[str, Any]:

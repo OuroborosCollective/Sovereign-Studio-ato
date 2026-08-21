@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 import pytest
+from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "sovereign-legacy-mcp-common"))
@@ -56,3 +57,26 @@ def test_runtime_imports_fastmcp_from_locked_mcp_sdk() -> None:
     from sovereign_toolchain.app import app
 
     assert app is not None
+
+
+def test_streamable_mcp_is_served_at_documented_public_mount() -> None:
+    from sovereign_toolchain.app import app
+
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "toolchain-route-contract", "version": "1"},
+        },
+    }
+    with TestClient(app, base_url="http://127.0.0.1:8001") as client:
+        response = client.post(
+            "/mcp/",
+            json=request,
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+    assert response.status_code == 200
+    assert "result" in response.json()
