@@ -17,7 +17,7 @@ import {
   transitionIntentDetected,
   type AgentWorkSnapshot,
 } from '../runtime/agentWorkRuntime';
-import type { SovereignAgentJobSnapshot } from '../runtime/sovereignAgentRuntime';
+import type { SovereignAgentJobSnapshot, SovereignLiveProjection } from '../runtime/sovereignAgentRuntime';
 
 function intentSnapshot(repo = 'OuroborosCollective/Sovereign-Studio-ato'): AgentWorkSnapshot {
   return transitionIntentDetected(createIdleSnapshot('trace-aes'), repo, 'main');
@@ -139,6 +139,31 @@ describe('AgentEventStream', () => {
 
     expect(screen.getAllByText(/Auftrag erkannt/).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/unknown\/repo/i)).toBeNull();
+  });
+
+  it('renders receipt-bound terminal projection as observation, never as evidence truth', () => {
+    const projection: SovereignLiveProjection = {
+      projectionId: 'projection-1',
+      jobId: 'job-1',
+      workspaceId: 'workspace-1',
+      actionId: 'action-123',
+      sourceKind: 'PROCESS',
+      projectionKind: 'TERMINAL',
+      projectionState: 'REQUESTED',
+      repositoryHead: 'a'.repeat(40),
+      sourceReceiptRef: 'b'.repeat(64),
+      sourceIdentityHash: 'c'.repeat(64),
+      payload: { chunk: '1 passed', processState: 'EXITED', exitCode: 0 },
+      projectionHash: 'd'.repeat(64),
+      authoritative: false,
+      claim: 'OBSERVED',
+    };
+    render(<AgentEventStream snapshot={runningSnapshot()} job={runningJob({ jobId: 'job-1' })} projections={[projection]} />);
+
+    expect(screen.getByText(/Beobachtung, nicht Evidence/i)).toBeTruthy();
+    expect(screen.getByText('TERMINAL')).toBeTruthy();
+    expect(screen.getByText('1 passed')).toBeTruthy();
+    expect(screen.queryByText(/Runtime verifiziert/i)).toBeNull();
   });
 
   it('renders nothing for an idle snapshot without events', () => {

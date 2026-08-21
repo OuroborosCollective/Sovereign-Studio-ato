@@ -39,7 +39,7 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_event, append_agent_projection, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .pattern_gateway import (
     evaluate_pattern_learning,
     pattern_input_from_job,
@@ -49,6 +49,7 @@ from .pattern_gateway import (
 from .pattern_vector_memory import persist_pattern_vector, search_pattern_vectors
 from .reusable_memory import search_reusable_memory
 from .tool_events import append_tool_result_to_job, predictive_tool_signal
+from .live_workspace_projection import ProjectionContractError, projection_for_tool_result, public_projection_event
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
 from .repair_capsule import (
@@ -341,6 +342,25 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
             evidence_result = result if action == "janitor" else _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, job_id, evidence_result)
+            projection = None
+            if action in {"file", "diff", "test"}:
+                try:
+                    projection = projection_for_tool_result(
+                        job=job,
+                        route_action=action,
+                        parameters=body,
+                        result=evidence_result,
+                        workspace_root=_workspace_root(),
+                    )
+                    append_agent_projection(
+                        conn,
+                        job_id=job_id,
+                        projection=public_projection_event(projection),
+                    )
+                except ProjectionContractError:
+                    # The canonical tool/evidence outcome remains authoritative even when
+                    # an optional visual projection cannot be safely bound.
+                    projection = None
             tool_ok = result.status == "done"
             response_ok = tool_ok and (action == "janitor" or getattr(gate, "allowed", gate.passed))
             return jsonify({
@@ -348,6 +368,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
+                "projection": public_projection_event(projection) if projection else None,
             }), 200 if response_ok else 400
         finally:
             _close(conn)
@@ -1310,6 +1331,29 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/projections", methods=["GET"])
+    @require_session
+    def user_get_sovereign_agent_projections(job_id: str):
+        user_id = _current_session_user_id()
+        try:
+            limit = int(request.args.get("limit", "100"))
+        except ValueError:
+            return jsonify({"error": "Projection limit is invalid"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "workspaceId": job.workspace_id,
+                "projections": list_agent_projections(conn, user_id=user_id, job_id=job_id, limit=limit),
+            })
         finally:
             _close(conn)
 
