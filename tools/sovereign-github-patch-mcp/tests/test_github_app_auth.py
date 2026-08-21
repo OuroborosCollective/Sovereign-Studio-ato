@@ -81,6 +81,23 @@ def test_app_jwt_is_signed_by_the_configured_private_key(tmp_path: Path) -> None
     assert verification.stdout.strip() == "Verified OK"
 
 
+def test_app_config_uses_systemd_credential_directory_when_explicit_path_is_absent(tmp_path: Path) -> None:
+    key = tmp_path / "github-app-private-key.pem"
+    key.write_text("not-used", "utf-8")
+    key.chmod(0o400)
+    with _Environment(
+        {
+            "SOVEREIGN_MCP_GITHUB_APP_ID": "12345",
+            "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID": "67890",
+            "SOVEREIGN_MCP_GITHUB_APP_PRIVATE_KEY_FILE": None,
+            "SOVEREIGN_MCP_REPOSITORY": "OuroborosCollective/Sovereign-Studio-ato",
+            "CREDENTIALS_DIRECTORY": str(tmp_path),
+        }
+    ):
+        config = GitHubAppInstallationConfig.from_env()
+    assert config.private_key_file == key
+
+
 def test_app_config_rejects_a_group_readable_private_key(tmp_path: Path) -> None:
     key = tmp_path / "github-app.pem"
     key.write_text("not-used", "utf-8")
