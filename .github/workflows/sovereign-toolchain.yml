@@ -34,7 +34,7 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha || github.sha }}
         run: |
           test "$EXPECTED_HEAD_SHA" = "$(git rev-parse HEAD)"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
       - name: Build locked runtime
         working-directory: tools/sovereign-toolchain
         run: uv sync --frozen --no-dev

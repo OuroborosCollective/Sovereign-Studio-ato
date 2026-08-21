@@ -35,6 +35,8 @@ def test_ci_is_supplemental_and_exact_head_bound() -> None:
     assert "expected_head_sha:" in workflow
     assert "ref: ${{ inputs.expected_head_sha || github.sha }}" in workflow
     assert "Verify exact dispatch revision" in workflow
+    assert "astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4" in workflow
+    assert "astral-sh/setup-uv@v4" not in workflow
 
 
 def test_app_exposes_the_installer_health_contract() -> None:
