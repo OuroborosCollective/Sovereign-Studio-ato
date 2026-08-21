@@ -46,6 +46,26 @@ export interface SovereignAgentRuntimeEvent {
   message: string;
 }
 
+export type SovereignLiveProjectionKind = 'IDE_FILE' | 'IDE_DIFF' | 'TERMINAL' | 'WINDOW_FOCUS';
+export type SovereignLiveProjectionState = 'REQUESTED' | 'VISIBLE' | 'UNAVAILABLE' | 'STALE';
+
+export interface SovereignLiveProjection {
+  projectionId: string;
+  jobId: string;
+  workspaceId: string;
+  actionId: string;
+  sourceKind: 'REPOSITORY' | 'GIT' | 'PROCESS';
+  projectionKind: SovereignLiveProjectionKind;
+  projectionState: SovereignLiveProjectionState;
+  repositoryHead?: string | null;
+  sourceReceiptRef: string;
+  sourceIdentityHash: string;
+  payload: Record<string, unknown>;
+  projectionHash: string;
+  authoritative: false;
+  claim: 'OBSERVED';
+}
+
 export interface SovereignAgentJobSnapshot {
   jobId?: string;
   runtimeId?: string;

@@ -1210,8 +1210,8 @@ export async function* streamDevChatWorkerReply(
           }
 
           // OpenAI-compatible SSE format: { choices: [{ delta: { content: "..." } }] }
-          const choices = payload.choices;
-          if (isUnknownArray(choices) && choices.length > 0) {
+          const choices = (Array.isArray(payload.choices) ? payload.choices : []) as readonly unknown[];
+          if (choices.length > 0) {
             const delta = choices[0];
             if (delta && typeof delta === 'object') {
               const content = readOptionalStringField(delta, 'content');
