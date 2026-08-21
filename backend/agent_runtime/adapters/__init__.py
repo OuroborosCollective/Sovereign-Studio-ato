@@ -29,9 +29,11 @@ from .wolfram_agenttools import (
     cag_retry_decision,
     classify_cag_status,
     execute_cag_request,
+    execute_live_cag_request,
     is_wolfram_capability,
     normalize_wolfram_result,
     provision_cag_component,
+    read_cag_secret_file,
     resolve_cag_credentials,
 )
 
@@ -61,9 +63,11 @@ __all__ = [
     "cag_retry_decision",
     "classify_cag_status",
     "execute_cag_request",
+    "execute_live_cag_request",
     "is_wolfram_capability",
     "normalize_wolfram_result",
     "provision_cag_component",
+    "read_cag_secret_file",
     "resolve_cag_credentials",
     "retry_decision",
 ]

@@ -1502,6 +1502,16 @@ def memory_gateway_collection_canary() -> dict[str, Any]:
     return broker.call("memory_gateway_collection_canary", {}, timeout=240)
 
 
+def wolfram_cag_status() -> dict[str, Any]:
+    """Internal CAG status helper; public MCP access is via runtime_dependency_health_matrix."""
+    return provider_runtime.wolfram_cag_status()
+
+
+def wolfram_cag_canary(components: list[str] | None = None) -> dict[str, Any]:
+    """Internal fixed CAG canary helper; public MCP access is via runtime_dependency_health_matrix."""
+    return provider_runtime.wolfram_cag_canary(components)
+
+
 @mcp.tool(annotations=NETWORK_READ)
 def openrouter_provider_status() -> dict[str, Any]:
     """Read secret-free status and canary metadata for the direct OpenRouter transport."""

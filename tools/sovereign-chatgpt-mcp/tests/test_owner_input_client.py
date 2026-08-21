@@ -143,6 +143,36 @@ def test_create_request_allows_notion_target_without_exposing_protected_value(mo
     assert result["protected_value_transport"] == "owner_ui_only"
 
 
+def test_create_request_allows_wolfram_cag_target_without_exposing_key(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    request_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    session = FakeSession([
+        FakeResponse(201, {
+            "ok": True,
+            "request": {
+                "id": request_id,
+                "targetId": "wolfram_cag_api_key",
+                "status": "pending",
+            },
+        })
+    ])
+    client = OwnerInputClient(session=session)
+
+    result = client.create_request(
+        target_id="wolfram_cag_api_key",
+        title="Wolfram CAG Live-Activation",
+        reason="Die CAG-Canary-Lane benötigt eine geschützte Owner-Eingabe.",
+    )
+
+    call = session.calls[0]
+    assert call["json"]["targetId"] == "wolfram_cag_api_key"
+    assert call["json"]["fieldLabel"] == "Wolfram CAG API-Key"
+    assert "protectedValue" not in call["json"]
+    assert result["llm_can_receive_protected_value"] is False
+    assert result["protected_value_transport"] == "owner_ui_only"
+
+
 def test_create_request_allows_hf_publication_rights_receipt_without_exposing_value(monkeypatch) -> None:
     monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
     monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
@@ -630,6 +660,44 @@ def test_controller_external_event_rejects_secret_before_network(monkeypatch) ->
             payload={"token": "sk-proj-" + "x" * 30},
         )
     assert session.calls == []
+
+
+def test_wolfram_cag_status_and_canary_are_secret_free(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_BACKEND_INTERNAL_URL", "http://backend:8787")
+    session = FakeSession([
+        FakeResponse(200, {
+            "ok": True,
+            "status": "WOLFRAM_CAG_RUNTIME_STATUS",
+            "secretValuesReturned": False,
+        }),
+        FakeResponse(200, {
+            "ok": True,
+            "status": "WOLFRAM_CAG_CANARIES_SUCCEEDED_UNVERIFIED",
+            "secretValuesReturned": False,
+        }),
+    ])
+    client = ProviderRuntimeClient(session=session)
+
+    status = client.wolfram_cag_status()
+    canary = client.wolfram_cag_canary(["wolfram.cag.compute", "wolfram.cag.results"])
+
+    assert session.calls[0]["method"] == "GET"
+    assert session.calls[0]["url"] == "http://backend:8787/api/internal/wolfram-cag/status"
+    assert session.calls[1]["method"] == "POST"
+    assert session.calls[1]["url"] == "http://backend:8787/api/internal/wolfram-cag/canary"
+    assert session.calls[1]["json"] == {"components": ["wolfram.cag.compute", "wolfram.cag.results"]}
+    assert status["protected_values_returned"] is False
+    assert status["secret_argument_accepted"] is False
+    assert canary["protected_values_returned"] is False
+    assert canary["secret_argument_accepted"] is False
+
+
+def test_wolfram_cag_canary_rejects_unknown_component_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    client = ProviderRuntimeClient(session=FakeSession([]))
+    with pytest.raises(ValueError, match="unbekannte Wolfram-CAG-Komponente"):
+        client.wolfram_cag_canary(["wolfram.cag.agent-one"])
 
 
 def test_openrouter_status_is_read_without_protected_values(monkeypatch) -> None:

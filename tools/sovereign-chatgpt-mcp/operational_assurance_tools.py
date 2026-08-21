@@ -12,6 +12,8 @@ from typing import Annotated, Any, Final, Literal
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
+from owner_input_client import ProviderRuntimeClient
+
 
 LOCAL_READ_ONLY = ToolAnnotations(
     readOnlyHint=True,
@@ -631,11 +633,15 @@ def runtime_dependency_health_matrix(
     mcp = safe("MCP_CONTAINER", lambda: _BROKER.call("container_status", {"container": "sovereign-chatgpt-mcp"}, timeout=30)) if _BROKER is not None else {"ok": False}
     document = {"ok": None, "status": "NOT_REQUESTED"}
     milvus = {"ok": None, "status": "NOT_REQUESTED"}
+    wolfram_status = safe("WOLFRAM_CAG_STATUS", lambda: ProviderRuntimeClient().wolfram_cag_status())
+    wolfram_canary = {"ok": None, "status": "NOT_REQUESTED"}
     mutation = False
-    if include_ephemeral_canaries and _BROKER is not None:
-        document = safe("DOCUMENT_PIPELINE", lambda: _BROKER.call("document_pipeline_live_canary", {"marker": "SOVEREIGN_DEPENDENCY_MATRIX_CANARY"}, timeout=120))
-        milvus = safe("MILVUS_GATEWAY", lambda: _BROKER.call("memory_gateway_collection_canary", {}, timeout=240))
+    if include_ephemeral_canaries:
+        wolfram_canary = safe("WOLFRAM_CAG_CANARY", lambda: ProviderRuntimeClient().wolfram_cag_canary())
         mutation = True
+        if _BROKER is not None:
+            document = safe("DOCUMENT_PIPELINE", lambda: _BROKER.call("document_pipeline_live_canary", {"marker": "SOVEREIGN_DEPENDENCY_MATRIX_CANARY"}, timeout=120))
+            milvus = safe("MILVUS_GATEWAY", lambda: _BROKER.call("memory_gateway_collection_canary", {}, timeout=240))
     dependencies = [
         {"dependency": "postgresql", "ok": bool(postgres.get("ok")), "status": postgres.get("status"), "blockedFunctions": ["login", "credit verification", "agent runs", "knowledge source truth"]},
         {"dependency": "pgvector", "ok": bool(pgvector.get("ok")), "status": pgvector.get("status"), "blockedFunctions": ["semantic knowledge search", "proven learning lookup"]},
@@ -651,6 +657,12 @@ def runtime_dependency_health_matrix(
         },
         {"dependency": "document-pipeline", "ok": document.get("ok"), "status": document.get("status"), "blockedFunctions": ["DOCX to PDF", "PDF marker verification"]},
         {"dependency": "milvus-memory-gateway", "ok": milvus.get("ok"), "status": milvus.get("status"), "blockedFunctions": ["Milvus collection operations", "external vector memory canary"]},
+        {
+            "dependency": "wolfram-cag",
+            "ok": wolfram_canary.get("ok"),
+            "status": wolfram_canary.get("status") if include_ephemeral_canaries else wolfram_status.get("status"),
+            "blockedFunctions": ["CAG-backed claim verification", "Wolfram partner analysis receipts"],
+        },
     ]
     findings: list[dict[str, Any]] = []
     for item in dependencies:
@@ -671,11 +683,11 @@ def runtime_dependency_health_matrix(
         schema="sovereign.runtime-dependency-health-matrix.v1",
         ok=ok,
         status="DEPENDENCY_MATRIX_HEALTHY" if ok else "DEPENDENCY_MATRIX_DEGRADED",
-        evidence={"dependencies": dependencies, "unknownDependencies": unknown, "raw": {"broker": broker, "postgres": postgres, "pgvector": pgvector, "capacity": capacity, "backend": backend, "mcp": mcp, "document": document, "milvus": milvus}},
+        evidence={"dependencies": dependencies, "unknownDependencies": unknown, "raw": {"broker": broker, "postgres": postgres, "pgvector": pgvector, "capacity": capacity, "backend": backend, "mcp": mcp, "document": document, "milvus": milvus, "wolframStatus": wolfram_status, "wolframCanary": wolfram_canary}},
         findings=findings,
         next_actions=["stop functions whose authoritative dependency canary failed", "run ephemeral canaries only when their cleanup path is allowed"],
         runtime_verified=True,
-        truth_notice="Core broker, container, PostgreSQL, pgvector and host-capacity canaries are executed live. Document and Milvus functional canaries run only when explicitly requested and clean up their temporary artifacts.",
+        truth_notice="Core broker, container, PostgreSQL, pgvector and host-capacity canaries are executed live. Document, Milvus and Wolfram CAG functional canaries run only when explicitly requested. The Wolfram canary persists secret-free partner analysis evidence but remains SUCCEEDED_UNVERIFIED until exact deployed-revision, immutable-image, PatchMon and Docker readback are bound.",
         mutation_performed=mutation,
     )
 
