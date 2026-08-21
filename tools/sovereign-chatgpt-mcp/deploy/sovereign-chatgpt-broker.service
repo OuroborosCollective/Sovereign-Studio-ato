@@ -11,6 +11,7 @@ Group=sovereign-mcp
 EnvironmentFile=/opt/sovereign-chatgpt-tools/broker.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/sovereign-chatgpt-tools/extensions
 Environment=SOVEREIGN_MCP_BROKER_SOCKET=/run/sovereign-chatgpt-broker/operator.sock
 Environment=SOVEREIGN_MCP_BROKER_GROUP=sovereign-mcp
 WorkingDirectory=/opt/sovereign-chatgpt-tools/broker
