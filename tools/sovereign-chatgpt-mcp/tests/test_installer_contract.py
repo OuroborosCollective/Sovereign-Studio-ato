@@ -207,6 +207,7 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'immutable_image_label_and_ci_vector_comparison' in updater
     assert 'CURRENT_STAGE="completed"' in updater
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
+    assert "ConditionPathExists=/run/sovereign-chatgpt-broker/self-update.request.json" in service
 
 
 def test_github_vps_release_directory_uses_portable_bounded_creation() -> None:

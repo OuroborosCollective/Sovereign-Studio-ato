@@ -684,6 +684,7 @@ def test_private_mcp_self_update_is_installed_and_bound_to_exact_revision() -> N
     assert 'tunnel not required' in updater
     assert 'CURRENT_STAGE="completed"' in updater
     assert "StateDirectory=sovereign-chatgpt-self-update" in service
+    assert "ConditionPathExists=/run/sovereign-chatgpt-broker/self-update.request.json" in service
 
 
 def test_database_bootstrap_uses_real_binaries_and_authentication_canaries() -> None:
