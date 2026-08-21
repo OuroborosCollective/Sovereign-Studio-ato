@@ -41,6 +41,9 @@ _SECRET_MARKERS = (
 )
 
 PROJECTION_STATES = frozenset({"CONNECTING", "LIVE", "STALE", "DISCONNECTED", "BLOCKED"})
+VISUAL_PROJECTION_SOURCE_KINDS = frozenset({"MCP", "REPOSITORY", "GIT", "PROCESS", "PLAYWRIGHT", "RUNTIME", "GUI"})
+VISUAL_PROJECTION_KINDS = frozenset({"IDE_FILE", "IDE_DIFF", "TERMINAL", "BROWSER", "WINDOW_FOCUS"})
+VISUAL_PROJECTION_STATES = frozenset({"REQUESTED", "VISIBLE", "UNAVAILABLE", "STALE"})
 OBSERVATION_EVENT_TYPES = frozenset({
     "WORKSPACE_STREAM_CONNECTED",
     "WINDOW_FOCUSED",
@@ -421,6 +424,12 @@ class SessionReconciliationV1:
 
 @dataclass(frozen=True)
 class VisualProjectionEventV1:
+    """Canonical non-authoritative visual observation bound to one LiveWorkspaceSession.
+
+    Rich IDE/terminal/browser correlation fields are additive to the original
+    observation contract. They never create execution or evidence authority.
+    """
+
     event_id: str
     event_type: str
     session_id: str
@@ -428,6 +437,17 @@ class VisualProjectionEventV1:
     attempt_id: str
     action_id: str
     observation_hash: str
+    run_id: str = ""
+    task_id: str = ""
+    workspace_id: str = ""
+    source_kind: str = ""
+    projection_kind: str = ""
+    projection_state: str = ""
+    repository_head: str | None = None
+    source_receipt_ref: str = ""
+    source_identity_hash: str = ""
+    projection_hash: str = ""
+    payload: Mapping[str, Any] | None = None
 
     @classmethod
     def create(
@@ -460,10 +480,95 @@ class VisualProjectionEventV1:
             attempt_id=session.attempt_id,
             action_id=payload["actionId"],
             observation_hash=payload["observationHash"],
+            run_id=session.run_id,
+            task_id=session.task_id,
+            workspace_id=session.workspace_id,
+        )
+
+    @classmethod
+    def create_correlated(
+        cls,
+        *,
+        session: LiveWorkspaceSessionV1,
+        reconciliation: "SessionReconciliationV1",
+        event_type: str,
+        action_id: str,
+        source_kind: str,
+        projection_kind: str,
+        projection_state: str,
+        source_receipt_ref: str,
+        repository_head: str | None,
+        payload: Mapping[str, Any],
+    ) -> "VisualProjectionEventV1":
+        if reconciliation.session_binding_hash != session.session_binding_hash:
+            raise FleetContractError("visual projection reconciliation belongs to another session")
+        if reconciliation.projection_state != "LIVE":
+            raise FleetContractError("visual projection requires a fresh LIVE session reconciliation")
+        normalized_source = _text(source_kind, "source_kind", 40).upper()
+        normalized_kind = _text(projection_kind, "projection_kind", 40).upper()
+        normalized_state = _text(projection_state, "projection_state", 40).upper()
+        if normalized_source not in VISUAL_PROJECTION_SOURCE_KINDS:
+            raise FleetContractError("visual projection source kind is unsupported")
+        if normalized_kind not in VISUAL_PROJECTION_KINDS:
+            raise FleetContractError("visual projection kind is unsupported")
+        if normalized_state not in VISUAL_PROJECTION_STATES:
+            raise FleetContractError("visual projection state is unsupported")
+        receipt_ref = _hash(source_receipt_ref, "source_receipt_ref")
+        head = None if repository_head is None else _revision(repository_head, "repository_head")
+        safe_payload = dict(_mapping(payload, "projection_payload"))
+        normalized_action = _text(action_id, "action_id", 160)
+        source_identity_hash = stable_hash({
+            "sessionBindingHash": session.session_binding_hash,
+            "attemptId": session.attempt_id,
+            "actionId": normalized_action,
+            "sourceReceiptRef": receipt_ref,
+            "repositoryHead": head,
+        })
+        observation_hash = stable_hash({
+            "sourceIdentityHash": source_identity_hash,
+            "projectionKind": normalized_kind,
+            "projectionState": normalized_state,
+            "payload": safe_payload,
+        })
+        base = cls.create(
+            session=session,
+            event_type=event_type,
+            action_id=normalized_action,
+            observation_hash=observation_hash,
+        )
+        projection_hash = stable_hash({
+            **base.to_dict(),
+            "sourceKind": normalized_source,
+            "projectionKind": normalized_kind,
+            "projectionState": normalized_state,
+            "repositoryHead": head,
+            "sourceReceiptRef": receipt_ref,
+            "sourceIdentityHash": source_identity_hash,
+            "payload": safe_payload,
+        })
+        return cls(
+            event_id=base.event_id,
+            event_type=base.event_type,
+            session_id=base.session_id,
+            session_binding_hash=base.session_binding_hash,
+            attempt_id=base.attempt_id,
+            action_id=base.action_id,
+            observation_hash=base.observation_hash,
+            run_id=session.run_id,
+            task_id=session.task_id,
+            workspace_id=session.workspace_id,
+            source_kind=normalized_source,
+            projection_kind=normalized_kind,
+            projection_state=normalized_state,
+            repository_head=head,
+            source_receipt_ref=receipt_ref,
+            source_identity_hash=source_identity_hash,
+            projection_hash=projection_hash,
+            payload=safe_payload,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "schemaVersion": VISUAL_PROJECTION_SCHEMA_VERSION,
             "eventId": self.event_id,
             "eventType": self.event_type,
@@ -472,9 +577,25 @@ class VisualProjectionEventV1:
             "attemptId": self.attempt_id,
             "actionId": self.action_id,
             "observationHash": self.observation_hash,
+            "runId": self.run_id or None,
+            "taskId": self.task_id or None,
+            "workspaceId": self.workspace_id or None,
             "authoritative": False,
             "claim": "OBSERVED",
         }
+        if self.source_kind:
+            result.update({
+                "projectionId": self.event_id,
+                "sourceKind": self.source_kind,
+                "projectionKind": self.projection_kind,
+                "projectionState": self.projection_state,
+                "repositoryHead": self.repository_head,
+                "sourceReceiptRef": self.source_receipt_ref,
+                "sourceIdentityHash": self.source_identity_hash,
+                "projectionHash": self.projection_hash,
+                "payload": dict(self.payload or {}),
+            })
+        return result
 
 
 @dataclass(frozen=True)

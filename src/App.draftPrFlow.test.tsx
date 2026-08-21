@@ -10,6 +10,7 @@ const agent = vi.hoisted(() => ({
   startJob: vi.fn(),
   startToolchainJob: vi.fn(),
   getJob: vi.fn(),
+  getProjections: vi.fn(),
   cancelJob: vi.fn(),
   runJanitor: vi.fn(),
   prepareDraftPr: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('./features/product/runtime/sovereignAgentRuntime', () => ({
   }),
   createSovereignAgentIdleSnapshot: () => ({ status: 'idle', changedFiles: [], events: [] }),
   summarizeSovereignAgentJob: (job: { status: string }) => `status=${job.status}`,
+  isSovereignAgentTerminalStatus: (status: string) => ['blocked', 'failed', 'completed', 'cleaned'].includes(status),
 }));
 
 vi.mock('./features/product/containers/BuilderContainer', () => ({
@@ -123,6 +125,7 @@ function verifiedDraftPrCreate(jobId: string, prNumber: number) {
 beforeEach(() => {
   memory.searchReusableMemory.mockResolvedValue([]);
   memory.reusableMemoryContext.mockReturnValue('');
+  agent.getProjections.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -145,6 +148,19 @@ describe('App Draft-PR runtime flow', () => {
 
     expect(screen.getByTestId('flow-job-id')).toHaveTextContent('job-1');
     expect(agent.listJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes projections once for a terminal job and does not keep polling', async () => {
+    vi.useFakeTimers();
+    agent.listJobs.mockResolvedValue([snapshot({ status: 'completed' })]);
+
+    render(<Provider store={store}><App /></Provider>);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByTestId('flow-job-status')).toHaveTextContent('completed');
+    expect(agent.getProjections).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(agent.getProjections).toHaveBeenCalledTimes(1);
   });
 
   it('does not mark a failed persisted job as repository-ready', async () => {

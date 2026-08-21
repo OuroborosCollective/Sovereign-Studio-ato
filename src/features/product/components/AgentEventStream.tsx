@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { C } from "./builderConstants";
 import type { AgentWorkSnapshot, AgentWorkState } from "../runtime/agentWorkRuntime";
-import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent } from "../runtime/sovereignAgentRuntime";
+import type { SovereignAgentJobSnapshot, SovereignAgentRuntimeEvent, SovereignLiveProjection } from "../runtime/sovereignAgentRuntime";
 
 interface StreamEvent {
   readonly id: string;
@@ -30,6 +30,7 @@ interface StreamEvent {
 export interface AgentEventStreamProps {
   readonly snapshot: AgentWorkSnapshot;
   readonly job?: SovereignAgentJobSnapshot | null;
+  readonly projections?: readonly SovereignLiveProjection[];
   readonly onCancel?: () => void;
   readonly onOpenDraftPr?: () => void;
   readonly onOpenFile?: (path: string) => void;
@@ -199,6 +200,44 @@ function FileBadge({ path, onClick }: { path: string; onClick?: () => void }) {
   );
 }
 
+function projectionDetail(projection: SovereignLiveProjection): string {
+  const payload = projection.payload;
+  if (projection.projectionKind === 'IDE_FILE') return typeof payload.path === 'string' ? payload.path : 'gebundene Datei';
+  if (projection.projectionKind === 'IDE_DIFF') return `Diff · ${projection.repositoryHead?.slice(0, 12) || 'Head fehlt'}`;
+  if (projection.projectionKind === 'TERMINAL') return typeof payload.chunk === 'string' ? payload.chunk : 'Prozessausgabe nicht verfügbar';
+  return 'Keine darstellbare Oberfläche';
+}
+
+function ProjectionPanel({ projections }: { projections: readonly SovereignLiveProjection[] }) {
+  if (projections.length === 0) return null;
+  const visible = projections.slice(-6);
+  return (
+    <div aria-label="Live Workspace Beobachtungen" style={{ borderTop: `1px solid ${C.border}`, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontSize: 10.5, color: C.textMuted, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' }}>
+        Live Workspace · Beobachtung, nicht Evidence
+      </div>
+      {visible.map((projection) => {
+        const unavailable = projection.projectionState === 'UNAVAILABLE' || projection.projectionState === 'STALE';
+        const terminal = projection.projectionKind === 'TERMINAL';
+        return (
+          <div key={projection.projectionId} style={{ border: `1px solid ${unavailable ? C.rose : C.border}`, borderRadius: 6, padding: '6px 8px', background: '#0b0f14' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11 }}>
+              <strong style={{ color: unavailable ? C.rose : C.sky }}>{projection.projectionKind}</strong>
+              <span style={{ color: C.textMuted }}>{projection.projectionState}</span>
+              <span style={{ marginLeft: 'auto', color: C.textMuted, fontFamily: 'monospace' }}>{projection.actionId.slice(0, 16)}</span>
+            </div>
+            {terminal ? (
+              <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', maxHeight: 120, overflowY: 'auto', color: C.textSub, fontSize: 10.5, fontFamily: 'monospace' }}>{projectionDetail(projection)}</pre>
+            ) : (
+              <div style={{ marginTop: 4, color: C.textSub, fontSize: 11, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>{projectionDetail(projection)}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function headerLabelFor(snapshot: AgentWorkSnapshot, job: SovereignAgentJobSnapshot | null | undefined): string {
   if (snapshot.state === 'draft_pr_ready') return 'Status: Draft PR bereit';
   if (snapshot.state === 'blocked') return 'Status: Executor blockiert';
@@ -225,7 +264,7 @@ function headerColorFor(snapshot: AgentWorkSnapshot): string {
   return C.sky;
 }
 
-export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
+export function AgentEventStream({ snapshot, job, projections = [], onCancel, onOpenDraftPr, onOpenFile }: AgentEventStreamProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isActive = !isTerminalState(snapshot.state) && (
     isExecutorActive(snapshot.state) || job?.status === 'running' || job?.status === 'queued'
@@ -278,6 +317,8 @@ export function AgentEventStream({ snapshot, job, onCancel, onOpenDraftPr, onOpe
         <div ref={scrollRef} style={{ padding: '8px 12px', maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
           {stream.map((event) => <EventRow key={event.id} event={event} />)}
         </div>
+
+        <ProjectionPanel projections={projections} />
 
         {changedFiles.length > 0 && (
           <div style={{ padding: '6px 12px', borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>

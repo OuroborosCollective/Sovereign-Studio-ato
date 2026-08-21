@@ -184,6 +184,77 @@ def append_agent_event(conn: Any, job_id: str, event: SovereignAgentEvent) -> No
     conn.commit()
 
 
+def append_agent_projection(conn: Any, *, job_id: str, projection: Mapping[str, Any]) -> None:
+    """Persist a redacted projection observation without changing canonical job truth."""
+    payload = dict(projection)
+    if payload.get("schemaVersion") != "sovereign.visual-projection-event.v1":
+        raise ValueError("unsupported canonical visual projection schema")
+    projection_id = sanitize_agent_text(str(payload.get("projectionId") or ""), 120)
+    if not projection_id:
+        raise ValueError("projection id is required")
+    summary = {
+        "stage": "live_workspace_projection",
+        "level": "info",
+        "message": sanitize_agent_text(
+            f"Live workspace projection requested: {payload.get('projectionKind') or 'unknown'} ({payload.get('projectionState') or 'unknown'}).",
+            300,
+        ),
+        "at": int(__import__("time").time() * 1000),
+    }
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO sovereign_agent_events (job_id, stage, level, message, payload)
+            VALUES (%s, %s, %s, %s, %s::jsonb)
+            """,
+            (job_id, summary["stage"], summary["level"], summary["message"], _json(payload)),
+        )
+        cur.execute(
+            """
+            UPDATE sovereign_agent_jobs
+            SET events = COALESCE(events, '[]'::jsonb) || %s::jsonb
+            WHERE job_id = %s
+            """,
+            (_json([summary]), job_id),
+        )
+    conn.commit()
+
+
+def list_agent_projections(conn: Any, *, user_id: str, job_id: str, limit: int = 100) -> tuple[dict[str, Any], ...]:
+    """Return only projection observations belonging to the authenticated job owner."""
+    safe_limit = max(1, min(int(limit), 200))
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT recent.payload
+            FROM (
+                SELECT event.payload, event.created_at, event.id
+                FROM sovereign_agent_events AS event
+                JOIN sovereign_agent_jobs AS job ON job.job_id = event.job_id
+                WHERE event.job_id = %s
+                  AND job.user_id = %s
+                  AND event.stage = 'live_workspace_projection'
+                ORDER BY event.created_at DESC, event.id DESC
+                LIMIT %s
+            ) AS recent
+            ORDER BY recent.created_at ASC, recent.id ASC
+            """,
+            (job_id, user_id, safe_limit),
+        )
+        rows = cur.fetchall()
+    projections: list[dict[str, Any]] = []
+    for row in rows:
+        raw = row.get("payload") if isinstance(row, Mapping) else None
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(raw, Mapping) and raw.get("schemaVersion") == "sovereign.visual-projection-event.v1":
+            projections.append(dict(raw))
+    return tuple(projections)
+
+
 def update_agent_job_state(
     conn: Any,
     *,

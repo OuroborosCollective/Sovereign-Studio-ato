@@ -19,7 +19,9 @@ from agent_runtime.contracts import (  # noqa: E402
     SovereignAgentJobRequest,
     SovereignAgentJobResult,
 )
+from agent_runtime.evidence_gate import EvidenceGateResult  # noqa: E402
 from agent_runtime.job_store import create_agent_job_record, update_agent_job_state  # noqa: E402
+from agent_runtime.tools.base import ToolResult  # noqa: E402
 import agent_runtime.routes as routes_module  # noqa: E402
 from agent_runtime.routes import register_sovereign_agent_routes  # noqa: E402
 
@@ -138,7 +140,7 @@ def valid_request():
     )
 
 
-def create_test_app(conn: FakeConnection):
+def create_test_app(conn: FakeConnection, resolve_live_workspace_context=None):
     app = Flask(__name__)
 
     def require_session(fn):
@@ -152,7 +154,12 @@ def create_test_app(conn: FakeConnection):
         wrapped.__name__ = fn.__name__
         return wrapped
 
-    register_sovereign_agent_routes(app, require_session=require_session, get_connection=lambda: conn)
+    register_sovereign_agent_routes(
+        app,
+        require_session=require_session,
+        get_connection=lambda: conn,
+        resolve_live_workspace_context=resolve_live_workspace_context,
+    )
     return app
 
 
@@ -413,6 +420,58 @@ def test_get_job_is_user_scoped():
     assert owned.status_code == 200
     assert owned.get_json()["job"]["jobId"] == "agent-1"
     assert other.status_code == 404
+
+
+def test_optional_projection_failure_never_hides_successful_canonical_tool_result(monkeypatch):
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-projection", status="running")
+    calls = {"tool": 0, "resolver": 0}
+    result = ToolResult(
+        status="done",
+        tool="file",
+        output="file write completed",
+        stdout="file write completed",
+        metadata={
+            "actionId": "action-write-1",
+            "providerNeutralEvidenceSha256": "a" * 64,
+        },
+        changed_files=("src/log.txt",),
+        diff_summary="src/log.txt changed",
+        test_summary="1 passed",
+        exit_code=0,
+    )
+    gate = EvidenceGateResult(
+        passed=True,
+        reason="Canonical mutation evidence is sufficient.",
+        evidence_count=1,
+        can_prepare_draft_pr=True,
+    )
+    setattr(gate, "allowed", True)
+
+    def fake_tool(*args, **kwargs):
+        calls["tool"] += 1
+        return result
+
+    def broken_projection_resolver(connection, job):
+        calls["resolver"] += 1
+        raise RuntimeError("optional projection renderer unavailable")
+
+    monkeypatch.setattr(routes_module, "run_agent_job_tool", fake_tool)
+    monkeypatch.setattr(routes_module, "append_tool_result_to_job", lambda *args, **kwargs: gate)
+    app = create_test_app(conn, resolve_live_workspace_context=broken_projection_resolver)
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-projection/tools/file",
+        headers={"X-Test-User": "user-1"},
+        json={"path": "sub/../log.txt", "content": "one\n", "append": True},
+    )
+
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["tool"]["status"] == "done"
+    assert payload["projection"] is None
+    assert calls == {"tool": 1, "resolver": 1}
 
 
 def test_cancel_non_terminal_job_sets_blocked():
