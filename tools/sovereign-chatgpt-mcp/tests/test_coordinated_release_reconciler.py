@@ -79,7 +79,7 @@ def test_scope_bound_in_progress_workflow_dispatch_gate_preempts_stale_failed_pu
                 "status": "in_progress",
                 "conclusion": None,
                 "event": "workflow_dispatch",
-                "path": f"{module.REPOSITORY}/.github/workflows/sovereign-coordinated-release.yml@refs/heads/main",
+                "path": ".github/workflows/sovereign-coordinated-release.yml",
                 "html_url": "https://github.test/run/424242",
             }
         raise AssertionError(f"unexpected GitHub API path: {path}")
@@ -101,7 +101,7 @@ def test_scope_bound_in_progress_workflow_dispatch_gate_preempts_stale_failed_pu
         lambda payload: payload.update({"head_sha": "a" * 40}),
         lambda payload: payload.update({"event": "schedule"}),
         lambda payload: payload.update({"path": ".github/workflows/other.yml@refs/heads/main"}),
-        lambda payload: payload.update({"path": "other-owner/other-repo/.github/workflows/sovereign-coordinated-release.yml@refs/heads/main"}),
+        lambda payload: payload.update({"path": ".github/workflows/sovereign-chatgpt-mcp.yml"}),
     ],
 )
 def test_scope_bound_gate_rejects_nonbinding_workflow_metadata(monkeypatch, mutator) -> None:
@@ -115,7 +115,7 @@ def test_scope_bound_gate_rejects_nonbinding_workflow_metadata(monkeypatch, muta
         "status": "in_progress",
         "conclusion": None,
         "event": "workflow_dispatch",
-        "path": f"{module.REPOSITORY}/.github/workflows/sovereign-coordinated-release.yml@refs/heads/main",
+        "path": ".github/workflows/sovereign-coordinated-release.yml",
     }
     mutator(payload)
     monkeypatch.setattr(module, "_github_json", lambda _path: payload)
@@ -752,7 +752,7 @@ def test_self_runtime_readback_accepts_only_the_expected_in_progress_release_run
     assert 'f"/repos/{REPOSITORY}/actions/runs/{run_id}"' in source
     assert 'if evidence["runId"] != run_id:' in source
     assert 'if event not in {"push", "workflow_dispatch"}:' in source
-    assert 'workflow_path = f"{REPOSITORY}/.github/workflows/{WORKFLOW}@refs/heads/main"' in source
+    assert 'workflow_path = f".github/workflows/{WORKFLOW}"' in source
     assert 'if path != workflow_path:' in source
     assert '"status": "RELEASE_GATE_SELF_RUNTIME_READBACK_ACTIVE"' in source
     assert "expected_runtime_readback_run_id=scope[\"releaseGateRunId\"]" in source

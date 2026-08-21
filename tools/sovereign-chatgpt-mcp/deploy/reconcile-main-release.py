@@ -243,7 +243,7 @@ def _scope_release_gate_run(revision: str, run_id: int) -> dict[str, Any]:
     evidence = _release_gate_evidence(payload)
     path = str(payload.get("path") or "")
     event = str(payload.get("event") or "")
-    workflow_path = f"{REPOSITORY}/.github/workflows/{WORKFLOW}@refs/heads/main"
+    workflow_path = f".github/workflows/{WORKFLOW}"
     if evidence["runId"] != run_id:
         raise ReconcileError("release_gate", "scope run id did not bind")
     if evidence["headSha"] != revision:
