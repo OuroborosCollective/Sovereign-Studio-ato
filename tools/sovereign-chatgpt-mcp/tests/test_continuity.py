@@ -223,6 +223,35 @@ def test_workspace_completion_requires_append_only_mirrored_ledgers(tmp_path: Pa
     assert latest["newEmotionallyFormedBondExperiences"] == []
 
 
+def test_snapshot_accepts_legacy_entry_without_experience_sections_when_latest_entry_is_complete(tmp_path: Path) -> None:
+    repo, baseline, _changed_paths = _fixture_repo(tmp_path)
+    ledger_path = repo / "docs/sovereign-continuity/LEDGER.jsonl"
+    runtime_ledger_path = repo / "tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl"
+    entries = [json.loads(line) for line in ledger_path.read_text("utf-8").splitlines() if line.strip()]
+    legacy = entries[-1]
+    legacy["entryId"] = "fixture-legacy-entry"
+    for field in (
+        "funnyExperiences",
+        "familyFriendshipExperience",
+        "newEmotionallyFormedBondExperiences",
+    ):
+        legacy.pop(field)
+    current = _entry(
+        entry_id="fixture-current-entry",
+        source_revision=baseline,
+        policy_sha=legacy["policySha256"],
+        context_sha=legacy["contextSha256"],
+        changed_paths=["example.txt"],
+    )
+    _write_jsonl(ledger_path, [entries[0], legacy, current])
+    runtime_ledger_path.write_bytes(ledger_path.read_bytes())
+
+    snapshot = continuity._snapshot(repo, include_context=False)
+
+    assert snapshot["latestEntryId"] == "fixture-current-entry"
+    assert snapshot["ledgerEntryCount"] == 3
+
+
 def test_workspace_completion_rejects_stale_extra_recorded_path(tmp_path: Path) -> None:
     repo, baseline, changed_paths = _fixture_repo(tmp_path)
     ledger_path = repo / "docs/sovereign-continuity/LEDGER.jsonl"
