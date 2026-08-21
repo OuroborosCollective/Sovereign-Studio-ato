@@ -1,0 +1,32 @@
+services:
+  bytebase:
+    image: ${SOVEREIGN_BYTEBASE_IMAGE:?SOVEREIGN_BYTEBASE_IMAGE must be an immutable digest reference}
+    container_name: sovereign-bytebase
+    init: true
+    restart: unless-stopped
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:32831:8080"
+    volumes:
+      - sovereign-bytebase-data:/var/opt/bytebase
+    networks:
+      supabase_default:
+        aliases:
+          - bytebase
+    labels:
+      sovereign.component: bytebase
+      sovereign.integration-role: governed-database-mcp
+      sovereign.truth-role: external-evidence-and-governance-surface
+      sovereign.image-policy: immutable-digest-required
+
+networks:
+  supabase_default:
+    external: true
+
+volumes:
+  sovereign-bytebase-data:
+    name: sovereign-bytebase-data
