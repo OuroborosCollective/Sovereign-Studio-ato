@@ -5,7 +5,7 @@ description = "Reusable MCP + REST/OpenAPI toolchain for Sovereign Studio, Sandb
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "mcp[cli]>=1.9.0",
+  "mcp[cli]>=1.9.0,<2.0.0",
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "pydantic>=2.7.0",
