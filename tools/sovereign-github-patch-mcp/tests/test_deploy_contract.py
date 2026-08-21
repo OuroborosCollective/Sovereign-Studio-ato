@@ -37,4 +37,7 @@ def test_installer_builds_locked_runtime_and_readbacks_token_absence() -> None:
     assert "systemctl restart \"$SERVICE\"" in installer
     assert "persistent GitHub token inherited by service" in installer
     assert "runtime environment has persistent GitHub token" in installer
+    assert "SOVEREIGN_MCP_GID=\"$(getent group sovereign-mcp | awk -F: '{print $3}')\"" in installer
+    assert "GitHub App private key owner/group is invalid" in installer
+    assert "GitHub App private key mode is invalid" in installer
     assert "GITHUB_TOKEN=ghp_" not in installer

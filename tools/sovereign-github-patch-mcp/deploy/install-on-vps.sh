@@ -39,7 +39,12 @@ INSTALL_STAGE=validate_source
 [[ -f "$UNIT_SOURCE" && ! -L "$UNIT_SOURCE" ]] || fail "unit source is invalid"
 [[ -f "$BROKER_ENV" && ! -L "$BROKER_ENV" ]] || fail "broker environment is invalid"
 [[ -f "$KEY_SOURCE" && ! -L "$KEY_SOURCE" ]] || fail "GitHub App private key is unavailable"
-[[ "$(stat -c '%u:%g:%a' "$KEY_SOURCE")" == "0:0:600" ]] || fail "GitHub App private key metadata is invalid"
+KEY_UID="$(stat -c '%u' "$KEY_SOURCE")"
+KEY_GID="$(stat -c '%g' "$KEY_SOURCE")"
+KEY_MODE="$(stat -c '%a' "$KEY_SOURCE")"
+SOVEREIGN_MCP_GID="$(getent group sovereign-mcp | awk -F: '{print $3}')"
+[[ "$KEY_UID" == "0" && "$SOVEREIGN_MCP_GID" =~ ^[0-9]+$ && "$KEY_GID" == "$SOVEREIGN_MCP_GID" ]] || fail "GitHub App private key owner/group is invalid"
+[[ "$KEY_MODE" =~ ^0?6[04]0$ ]] || fail "GitHub App private key mode is invalid"
 ! grep -qE '^\s*(GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT)=' "$SOURCE_DIR/.env.example" || fail "token legacy variable remains in environment template"
 ! grep -qE '^\s*(GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT)=' "$UNIT_SOURCE" || fail "persistent token directive remains in unit source"
 
