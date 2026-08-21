@@ -71,6 +71,50 @@ class FakeBroker:
         raise AssertionError(action)
 
 
+class FakeProviderRuntimeClient:
+    def wolfram_cag_status(self) -> dict:
+        return {
+            "ok": True,
+            "status": "WOLFRAM_CAG_RUNTIME_STATUS",
+            "components": [
+                {"capabilityId": capability_id, "credentialConfigured": True}
+                for capability_id in (
+                    "wolfram.cag.hints",
+                    "wolfram.cag.compute",
+                    "wolfram.cag.results",
+                    "wolfram.cag.context",
+                )
+            ],
+            "providerCanaryExecuted": False,
+            "runtimeVerified": False,
+            "secretValuesReturned": False,
+        }
+
+    def wolfram_cag_canary(self, components=None) -> dict:
+        assert components is None
+        return {
+            "ok": True,
+            "status": "WOLFRAM_CAG_CANARIES_SUCCEEDED_UNVERIFIED",
+            "documentationPersisted": True,
+            "providerCanaryExecuted": True,
+            "runtimeVerified": False,
+            "secretValuesReturned": False,
+        }
+
+
+class FailingProviderRuntimeClient(FakeProviderRuntimeClient):
+    def wolfram_cag_canary(self, components=None) -> dict:
+        assert components is None
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_CANARIES_INCOMPLETE",
+            "documentationPersisted": True,
+            "providerCanaryExecuted": True,
+            "runtimeVerified": False,
+            "secretValuesReturned": False,
+        }
+
+
 class PressureBroker(FakeBroker):
     def call(self, action: str, arguments: dict, timeout: int = 30) -> dict:
         result = super().call(action, arguments, timeout)
@@ -116,6 +160,7 @@ def registered(repository: Path, monkeypatch):
     monkeypatch.setattr(tools, "_RUNTIME", None)
     monkeypatch.setattr(tools, "_DATABASE", None)
     monkeypatch.setattr(tools, "_BROKER", None)
+    monkeypatch.setattr(tools, "ProviderRuntimeClient", FakeProviderRuntimeClient)
     mcp = FastMCP("operational-assurance-test")
     tools.register(mcp, FakeRuntime(repository), FakeDatabase(), FakeBroker())
     return mcp
@@ -187,7 +232,11 @@ def test_dependency_matrix_maps_failures_and_optional_canaries(registered) -> No
     core = tools.runtime_dependency_health_matrix(include_ephemeral_canaries=False)
     assert core.ok is True
     assert core.mutationPerformed is False
-    assert set(core.evidence["unknownDependencies"]) == {"document-pipeline", "milvus-memory-gateway"}
+    assert set(core.evidence["unknownDependencies"]) == {"document-pipeline", "milvus-memory-gateway", "wolfram-cag"}
+    core_by_name = {item["dependency"]: item for item in core.evidence["dependencies"]}
+    assert core_by_name["wolfram-cag"]["ok"] is None
+    assert core_by_name["wolfram-cag"]["status"] == "WOLFRAM_CAG_RUNTIME_STATUS"
+    assert core.evidence["raw"]["wolframStatus"]["secretValuesReturned"] is False
 
     full = tools.runtime_dependency_health_matrix(include_ephemeral_canaries=True)
     assert full.ok is True
@@ -201,6 +250,30 @@ def test_dependency_matrix_maps_failures_and_optional_canaries(registered) -> No
     ]
     assert by_name["document-pipeline"]["ok"] is True
     assert by_name["milvus-memory-gateway"]["ok"] is True
+    assert by_name["wolfram-cag"]["ok"] is True
+    assert by_name["wolfram-cag"]["status"] == "WOLFRAM_CAG_CANARIES_SUCCEEDED_UNVERIFIED"
+    assert full.evidence["raw"]["wolframCanary"]["documentationPersisted"] is True
+    assert full.evidence["raw"]["wolframCanary"]["runtimeVerified"] is False
+    assert full.evidence["raw"]["wolframCanary"]["secretValuesReturned"] is False
+    assert "SUCCEEDED_UNVERIFIED" in full.truthNotice
+
+
+def test_dependency_matrix_blocks_cag_functions_on_failed_live_canary(registered, monkeypatch) -> None:
+    monkeypatch.setattr(tools, "ProviderRuntimeClient", FailingProviderRuntimeClient)
+
+    result = tools.runtime_dependency_health_matrix(include_ephemeral_canaries=True)
+
+    assert result.ok is False
+    assert result.status == "DEPENDENCY_MATRIX_DEGRADED"
+    by_name = {item["dependency"]: item for item in result.evidence["dependencies"]}
+    assert by_name["wolfram-cag"]["ok"] is False
+    assert by_name["wolfram-cag"]["status"] == "WOLFRAM_CAG_CANARIES_INCOMPLETE"
+    finding = next(item for item in result.findings if item["dependency"] == "wolfram-cag")
+    assert finding["blockedFunctions"] == [
+        "CAG-backed claim verification",
+        "Wolfram partner analysis receipts",
+    ]
+    assert result.evidence["raw"]["wolframCanary"]["runtimeVerified"] is False
 
 
 def test_dependency_matrix_propagates_capacity_pressure(registered, monkeypatch) -> None:

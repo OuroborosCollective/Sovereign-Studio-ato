@@ -4,9 +4,13 @@ import hashlib
 import json
 import os
 import re
+import stat
+import urllib.parse
 from dataclasses import dataclass
 from enum import Enum
-from typing import Mapping
+from typing import Any, Mapping
+
+import requests
 
 SUPPLEMENTAL_ONLY = "SUPPLEMENTAL_ONLY"
 
@@ -201,7 +205,7 @@ WOLFRAM_CAG_COMPONENT_MAP: Mapping[str, WolframCagComponent] = {
     "wolfram.cag.hints": WolframCagComponent(
         capability_id="wolfram.cag.hints",
         component="WolframLanguageHints",
-        base_url="https://www.wolframcloud.com/api/v1/hints",
+        base_url="https://services.wolfram.com/api/cag/v1/WolframLanguageHints",
         endpoint_id="cag.hints",
         method="POST",
         expected_content_type="application/json",
@@ -213,7 +217,7 @@ WOLFRAM_CAG_COMPONENT_MAP: Mapping[str, WolframCagComponent] = {
     "wolfram.cag.compute": WolframCagComponent(
         capability_id="wolfram.cag.compute",
         component="WolframLanguageComputation",
-        base_url="https://www.wolframcloud.com/api/v1/computation",
+        base_url="https://services.wolfram.com/api/cag/v1/WolframLanguageCompute",
         endpoint_id="cag.compute",
         method="POST",
         expected_content_type="application/json",
@@ -225,10 +229,10 @@ WOLFRAM_CAG_COMPONENT_MAP: Mapping[str, WolframCagComponent] = {
     "wolfram.cag.results": WolframCagComponent(
         capability_id="wolfram.cag.results",
         component="WolframAlphaResults",
-        base_url="https://api.wolframalpha.com/v2/query",
+        base_url="https://services.wolfram.com/api/cag/v1/WolframAlphaResult",
         endpoint_id="cag.results",
         method="GET",
-        expected_content_type="application/xml",
+        expected_content_type="text/plain",
         timeout_seconds=20,
         max_output_bytes=512 * 1024,
         max_request_bytes=8 * 1024,
@@ -237,9 +241,9 @@ WOLFRAM_CAG_COMPONENT_MAP: Mapping[str, WolframCagComponent] = {
     "wolfram.cag.context": WolframCagComponent(
         capability_id="wolfram.cag.context",
         component="WolframAlphaContext",
-        base_url="https://www.wolframalpha.com/api/v1/context",
+        base_url="https://services.wolfram.com/api/cag/v1/WolframAlphaContext",
         endpoint_id="cag.context",
-        method="GET",
+        method="POST",
         expected_content_type="application/json",
         timeout_seconds=20,
         max_output_bytes=256 * 1024,
@@ -287,34 +291,120 @@ class WolframCagCredential:
             )
 
 
-def resolve_cag_credentials(
-    *,
-    capability_id: str,
-    credential_resolver=None,
-) -> WolframCagCredential | None:
-    """Resolve a CAG credential server-side.
+DEFAULT_WOLFRAM_CAG_API_KEY_FILE = "/opt/sovereign-owner-managed/wolfram_cag_api_key.txt"
+MAX_WOLFRAM_CAG_API_KEY_BYTES = 8192
 
-    ``credential_resolver`` is an optional callable returning either a
-    ``(secret_value, provider)`` tuple or ``None``. When omitted the runtime
-    looks up ``WOLFRAM_CAG_APP_ID`` from the environment. The secret value is
-    consumed only to compute a hash and is never stored on the returned object,
-    logged or surfaced to the caller.
+
+def read_cag_secret_file(path: str = DEFAULT_WOLFRAM_CAG_API_KEY_FILE) -> str:
+    """Read the one fixed owner-managed CAG credential file fail-closed.
+
+    The path is intentionally not caller-selectable: production code may only
+    read the owner-managed location. The owner-input runtime writes this file
+    with mode ``0600``. Symlinks, non-regular files, empty/oversized values or
+    broader permissions are rejected before any provider call.
     """
+    selected = str(path or "").strip()
+    if selected != DEFAULT_WOLFRAM_CAG_API_KEY_FILE:
+        raise WolframCagError(
+            "CAG credential file path is not allowlisted",
+            family=WolframCagErrorFamily.AUTH,
+        )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(selected, flags)
+    except OSError as exc:
+        raise WolframCagError(
+            "CAG credential file is unavailable",
+            family=WolframCagErrorFamily.AUTH,
+        ) from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise WolframCagError(
+                "CAG credential source is not a regular file",
+                family=WolframCagErrorFamily.AUTH,
+            )
+        if metadata.st_size <= 0 or metadata.st_size > MAX_WOLFRAM_CAG_API_KEY_BYTES:
+            raise WolframCagError(
+                "CAG credential file size is invalid",
+                family=WolframCagErrorFamily.AUTH,
+            )
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise WolframCagError(
+                "CAG credential file permissions are too broad",
+                family=WolframCagErrorFamily.AUTH,
+            )
+        raw = os.read(descriptor, MAX_WOLFRAM_CAG_API_KEY_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) > MAX_WOLFRAM_CAG_API_KEY_BYTES:
+        raise WolframCagError(
+            "CAG credential file exceeds the byte limit",
+            family=WolframCagErrorFamily.AUTH,
+        )
+    try:
+        secret_value = raw.decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise WolframCagError(
+            "CAG credential file is not UTF-8",
+            family=WolframCagErrorFamily.AUTH,
+        ) from exc
+    if not secret_value or "\x00" in secret_value:
+        raise WolframCagError(
+            "CAG credential file is empty or invalid",
+            family=WolframCagErrorFamily.AUTH,
+        )
+    return secret_value
+
+
+def _resolve_cag_secret_value(*, capability_id: str, credential_resolver=None) -> tuple[str, str] | None:
     if capability_id not in WOLFRAM_CAG_COMPONENT_MAP:
         raise WolframCagError(
             "unknown CAG capability",
             family=WolframCagErrorFamily.SCHEMA,
         )
-    secret_value: str | None = None
-    provider = "wolfram"
     if credential_resolver is not None:
         resolved = credential_resolver(capability_id=capability_id)
-        if resolved is not None:
-            secret_value, provider = resolved
-    else:
-        secret_value = os.getenv("WOLFRAM_CAG_APP_ID")
-    if not secret_value:
+        if resolved is None:
+            return None
+        secret_value, provider = resolved
+        selected = str(secret_value or "").strip()
+        if not selected:
+            return None
+        return selected, str(provider or "wolfram").strip() or "wolfram"
+
+    configured_file = os.getenv("WOLFRAM_CAG_API_KEY_FILE", "").strip()
+    if configured_file:
+        # A configured pointer must resolve to the one fixed owner-managed path.
+        secret_value = read_cag_secret_file(configured_file)
+        return secret_value, "wolfram-owner-file"
+
+    # Backward-compatible server-side alias for pre-owner-input deployments.
+    legacy = str(os.getenv("WOLFRAM_CAG_APP_ID") or "").strip()
+    if legacy:
+        return legacy, "wolfram-legacy-env"
+    return None
+
+
+def resolve_cag_credentials(
+    *,
+    capability_id: str,
+    credential_resolver=None,
+) -> WolframCagCredential | None:
+    """Resolve only a non-reversible credential projection server-side.
+
+    The owner-managed file is preferred. ``WOLFRAM_CAG_APP_ID`` remains a
+    compatibility fallback only. Raw credential material never leaves this
+    resolver; live transport resolves it again just-in-time and verifies the
+    hash before placing it in the provider Authorization header.
+    """
+    resolved = _resolve_cag_secret_value(
+        capability_id=capability_id,
+        credential_resolver=credential_resolver,
+    )
+    if resolved is None:
         return None
+    secret_value, provider = resolved
     credential_hash = hashlib.sha256(secret_value.encode("utf-8")).hexdigest()
     return WolframCagCredential(
         credential_hash=credential_hash,
@@ -484,6 +574,8 @@ def classify_cag_status(
         return WolframCagErrorFamily.ENTITLEMENT
     if status == 429:
         return WolframCagErrorFamily.RATE_LIMIT
+    if status == 501:
+        return WolframCagErrorFamily.RESULT_UNAVAILABLE
     if status in (503, 504):
         return WolframCagErrorFamily.UPSTREAM
     if 400 <= status < 500:
@@ -522,6 +614,208 @@ def _normalize_header(value: str | None) -> str:
     return value.strip()
 
 
+_CAG_REQUIRED_PAYLOAD_KEYS: Mapping[str, frozenset[str]] = {
+    "wolfram.cag.hints": frozenset({"context"}),
+    "wolfram.cag.compute": frozenset({"code"}),
+    "wolfram.cag.results": frozenset({"input"}),
+    "wolfram.cag.context": frozenset({"context"}),
+}
+_CAG_ALLOWED_PAYLOAD_KEYS: Mapping[str, frozenset[str]] = {
+    "wolfram.cag.hints": frozenset({"context"}),
+    "wolfram.cag.compute": frozenset({"code", "line", "maxChars", "timeConstraint"}),
+    "wolfram.cag.results": frozenset({"input"}),
+    "wolfram.cag.context": frozenset({"context", "count"}),
+}
+
+
+def _normalize_live_cag_payload(capability_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    component = WOLFRAM_CAG_COMPONENT_MAP.get(capability_id)
+    if component is None:
+        raise WolframCagError("unknown CAG capability", family=WolframCagErrorFamily.SCHEMA)
+    if not isinstance(payload, Mapping):
+        raise WolframCagError("CAG payload must be an object", family=WolframCagErrorFamily.SCHEMA)
+    keys = {str(key) for key in payload.keys()}
+    if any(key.casefold() in _FORBIDDEN_PAYLOAD_KEYS for key in keys):
+        raise WolframCagError("credential-shaped CAG payload fields are forbidden", family=WolframCagErrorFamily.SCHEMA)
+    allowed = _CAG_ALLOWED_PAYLOAD_KEYS[capability_id]
+    required = _CAG_REQUIRED_PAYLOAD_KEYS[capability_id]
+    if not required.issubset(keys) or not keys.issubset(allowed):
+        raise WolframCagError("CAG payload does not match the component contract", family=WolframCagErrorFamily.SCHEMA)
+    normalized: dict[str, Any] = {}
+    for key in sorted(keys):
+        value = payload[key]
+        if isinstance(value, bool) or value is None or isinstance(value, (dict, list, tuple, set)):
+            raise WolframCagError("CAG payload contains an unsupported value type", family=WolframCagErrorFamily.SCHEMA)
+        if not isinstance(value, (str, int, float)):
+            raise WolframCagError("CAG payload contains an unsupported value type", family=WolframCagErrorFamily.SCHEMA)
+        if isinstance(value, str):
+            value = value.strip()
+            if key in required and not value:
+                raise WolframCagError("required CAG payload text is empty", family=WolframCagErrorFamily.SCHEMA)
+        normalized[key] = value
+    return normalized
+
+
+def _live_cag_schema_validator(body: bytes, content_type: str, component: WolframCagComponent) -> bool:
+    normalized_type = _normalize_header(content_type).casefold()
+    if component.expected_content_type == "text/plain":
+        if "text/plain" not in normalized_type or not body.strip():
+            return False
+        try:
+            body.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        return True
+    if "application/json" not in normalized_type:
+        return False
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or "result" not in payload:
+        return False
+    if "success" in payload and not isinstance(payload["success"], bool):
+        return False
+    if "code" in payload and (isinstance(payload["code"], bool) or not isinstance(payload["code"], int)):
+        return False
+    if "uuid" in payload and not isinstance(payload["uuid"], str):
+        return False
+    return True
+
+
+def _bounded_cag_response_body(response: Any, limit: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=16 * 1024):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > limit:
+            raise WolframCagError("CAG response exceeds output limit", family=WolframCagErrorFamily.SCHEMA, status=int(response.status_code))
+        chunks.append(bytes(chunk))
+    return b"".join(chunks)
+
+
+def execute_live_cag_request(
+    *,
+    capability_id: str,
+    payload: Mapping[str, Any],
+    credential_resolver=None,
+    session: Any | None = None,
+) -> WolframCagReceipt:
+    """Execute one live CAG request through the current official v1 contract.
+
+    Raw credentials are resolved twice: once to create the secret-free
+    credential fingerprint and again immediately before the HTTP request. The
+    two hashes must match, so a concurrent rotation fails closed instead of
+    sending a credential under a stale evidence identity. The raw value is
+    placed only in ``Authorization`` and is never returned by this function.
+    """
+    component = WOLFRAM_CAG_COMPONENT_MAP.get(capability_id)
+    if component is None:
+        raise WolframCagError("unknown CAG capability", family=WolframCagErrorFamily.SCHEMA)
+    normalized_payload = _normalize_live_cag_payload(capability_id, payload)
+    if component.method == "GET":
+        request_bytes = urllib.parse.urlencode(normalized_payload).encode("utf-8")
+        body_bytes = b""
+        query_hash = hashlib.sha256(request_bytes).hexdigest()
+    else:
+        body_bytes = json.dumps(normalized_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        request_bytes = body_bytes
+        query_hash = ""
+    if len(request_bytes) > component.max_request_bytes:
+        raise WolframCagError("request payload exceeds component limit", family=WolframCagErrorFamily.SCHEMA)
+    schema_identity = {
+        "capabilityId": capability_id,
+        "method": component.method,
+        "contentType": component.expected_content_type,
+        "endpoint": component.endpoint_id,
+        "contract": "wolfram-cag-v1-2026-08-21",
+    }
+    response_schema_hash = hashlib.sha256(
+        json.dumps(schema_identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    request = WolframCagRequest(
+        capability_id=capability_id,
+        body_hash=hashlib.sha256(body_bytes).hexdigest(),
+        query_hash=query_hash,
+        response_schema_hash=response_schema_hash,
+        request_size_bytes=len(request_bytes),
+    )
+    credential = resolve_cag_credentials(
+        capability_id=capability_id,
+        credential_resolver=credential_resolver,
+    )
+    if credential is None:
+        raise WolframCagError("CAG component not provisioned", family=WolframCagErrorFamily.RESULT_UNAVAILABLE)
+    http = session or requests.Session()
+
+    def transport(*, request, component, credential, credential_secret):
+        if credential_secret is not None:
+            raise WolframCagError("raw credential must not cross the executor boundary", family=WolframCagErrorFamily.AUTH)
+        resolved = _resolve_cag_secret_value(
+            capability_id=request.capability_id,
+            credential_resolver=credential_resolver,
+        )
+        if resolved is None:
+            raise WolframCagError("CAG credential disappeared before transport", family=WolframCagErrorFamily.AUTH)
+        live_secret, _provider = resolved
+        live_hash = hashlib.sha256(live_secret.encode("utf-8")).hexdigest()
+        if live_hash != credential.credential_hash:
+            raise WolframCagError("CAG credential changed before transport", family=WolframCagErrorFamily.AUTH)
+        headers = {
+            "Authorization": live_secret,
+            "Accept": component.expected_content_type,
+        }
+        kwargs: dict[str, Any] = {
+            "headers": headers,
+            "timeout": component.timeout_seconds,
+            "allow_redirects": False,
+            "stream": True,
+        }
+        if component.method == "GET":
+            kwargs["params"] = normalized_payload
+        else:
+            headers["Content-Type"] = "application/json"
+            kwargs["data"] = body_bytes
+        try:
+            response = http.request(component.method, component.base_url, **kwargs)
+        except requests.Timeout as exc:
+            raise TimeoutError("CAG provider request timed out") from exc
+        except requests.RequestException as exc:
+            raise WolframCagError("CAG provider transport failed", family=WolframCagErrorFamily.UPSTREAM) from exc
+        try:
+            response_body = _bounded_cag_response_body(response, component.max_output_bytes)
+            content_type = str(response.headers.get("Content-Type") or "")
+            response_uuid = str(response.headers.get("X-Wolfram-UUID") or "")
+            if "application/json" in content_type.casefold() and response_body:
+                try:
+                    parsed = json.loads(response_body)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    parsed = None
+                if isinstance(parsed, dict) and isinstance(parsed.get("uuid"), str):
+                    response_uuid = parsed["uuid"].strip()
+            return CagHttpOutcome(
+                status=int(response.status_code),
+                content_type=content_type,
+                body=response_body,
+                response_uuid=response_uuid,
+                request_id=str(response.headers.get("X-Request-Id") or response.headers.get("X-Wolfram-Request-Id") or ""),
+                rate_limit_remaining=str(response.headers.get("X-RateLimit-Remaining") or ""),
+                quota_remaining=str(response.headers.get("X-Quota-Remaining") or ""),
+                timed_out=False,
+            )
+        finally:
+            response.close()
+
+    return execute_cag_request(
+        request,
+        credential=credential,
+        transport=transport,
+        schema_validator=_live_cag_schema_validator,
+    )
+
+
 def execute_cag_request(
     request: WolframCagRequest,
     *,
@@ -532,12 +826,11 @@ def execute_cag_request(
     """Execute a bounded CAG transport call.
 
     ``transport(request, component, credential, credential_secret)`` is an
-    adapter boundary (mocked only in tests) returning a ``CagHttpOutcome``.
-    ``schema_validator(body_bytes, content_type, component)`` returns ``True``
-    only when the response matches the declared schema. Strict validation:
+    adapter boundary returning a ``CagHttpOutcome``. This low-level executor
+    intentionally passes ``credential_secret=None``; the live transport
+    resolves the owner-managed credential just-in-time at the final HTTP
+    boundary and verifies it against ``credential_hash``. Strict validation:
     a 2xx without a valid schema or content type is never accepted as success.
-    The credential secret is fetched fresh via ``credential_resolver`` and is
-    never embedded in the receipt, logged or returned.
     """
     component = request.validate()
     provision = provision_cag_component(
@@ -574,10 +867,15 @@ def execute_cag_request(
             )
         except TimeoutError as exc:
             family = WolframCagErrorFamily.TIMEOUT
-            last_error = WolframCagError(str(exc), family=family)
+            last_error = WolframCagError("CAG provider request timed out", family=family)
             if cag_retry_decision(family, attempt, component.max_retries) is WolframCagRetryDecision.SAFE_TO_RETRY:
                 continue
-            raise last_error
+            raise last_error from exc
+        except WolframCagError as exc:
+            last_error = exc
+            if cag_retry_decision(exc.family, attempt, component.max_retries) is WolframCagRetryDecision.SAFE_TO_RETRY:
+                continue
+            raise
         if outcome is None:
             family = WolframCagErrorFamily.UPSTREAM
             last_error = WolframCagError("transport returned no outcome", family=family)
