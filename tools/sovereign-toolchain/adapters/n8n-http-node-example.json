@@ -1,0 +1,31 @@
+{
+  "name": "Sovereign Toolchain - Create Draft PR",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://your-toolchain-domain.example/api/v1/tools/github_apply_search_replace_pr",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Toolchain-Key",
+              "value": "={{$env.TOOLCHAIN_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "jsonBody": "={\"args\":{\"owner\":\"OuroborosCollective\",\"repo\":\"Sovereign-Studio-ato\",\"path\":\"scripts/sovereign-backend/app.py\",\"message\":\"fix(toolchain): patch via toolchain\",\"blocks\":[],\"confirm\":false}}"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "sovereign-toolchain-pr",
+      "name": "Sovereign Toolchain PR"
+    }
+  ],
+  "connections": {}
+}

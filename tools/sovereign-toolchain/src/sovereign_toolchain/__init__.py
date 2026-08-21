@@ -1,0 +1,2 @@
+"""Sovereign Universal Toolchain package."""
+__version__ = "1.0.0"

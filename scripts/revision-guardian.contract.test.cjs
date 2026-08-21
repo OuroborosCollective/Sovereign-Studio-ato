@@ -73,6 +73,14 @@ test('path impact preserves blocking product gates while acceleration makes only
     'Sovereign ChatGPT MCP',
   ]);
 
+  const toolchainPrSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-toolchain/src/sovereign_toolchain/core.py'], 'enforced');
+  assert.deepEqual(toolchainPrSpecs.map((item) => item.name), [
+    'Release Verification',
+    'Sovereign Agent Backend',
+    'Sovereign Continuity Gate',
+    'Sovereign Toolchain',
+  ]);
+
   const accelerationPrSpecs = guardian.workflowSpecs('pr', ['tools/sovereign-chatgpt-mcp/server.py'], 'acceleration');
   assert.deepEqual(accelerationPrSpecs.map((item) => item.name), [
     'Release Verification',

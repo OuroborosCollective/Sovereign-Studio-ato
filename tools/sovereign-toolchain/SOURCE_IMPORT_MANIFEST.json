@@ -1,0 +1,125 @@
+{
+  "files": [
+    {
+      "path": ".github/workflows/toolchain-ci.yml",
+      "sha256": "38d3f59acf0d2be329f061e722bae014581011dfef5c36ab878ee7007dbbfa2a",
+      "size": 491
+    },
+    {
+      "path": "README.md",
+      "sha256": "8608d35bf80eb5d4a327566175f66880b1cd10963f27f8ac9f5236870fbb0477",
+      "size": 3407
+    },
+    {
+      "path": "adapters/langchain_tool_adapter.py",
+      "sha256": "ca2718cc7717048980be38dbecde5102beb4ae83ec286b0118de0cf0ec3cf1b8",
+      "size": 734
+    },
+    {
+      "path": "adapters/n8n-http-node-example.json",
+      "sha256": "0885d3ebadb862c4b3fe77f0cce572acdd0aac28c97dc5c72ad92692407dd271",
+      "size": 948
+    },
+    {
+      "path": "adapters/openai_responses_mcp_tool.json",
+      "sha256": "6e21f5995f22bd85caed6e5a4b8adcbf62d38518d51e63dd2623dde7502e72f1",
+      "size": 163
+    },
+    {
+      "path": "data/source_manifest.json",
+      "sha256": "976804013357ffd096cce9f5ec39efafbfb2ccbb326efb686bb537181b5ea54e",
+      "size": 8056
+    },
+    {
+      "path": "data/sovereign_archive_profile.json",
+      "sha256": "3f5fb19def27f4df3730b5d28285ad6bb7010ba8619c1f72ef8808c0990c03c2",
+      "size": 46509
+    },
+    {
+      "path": "docker-compose.yml",
+      "sha256": "54e090ca6695ba62c42005d5db174b5e6896e399f5399724fb35eb5cdff6f347",
+      "size": 212
+    },
+    {
+      "path": "docs/AGENT_INSTRUCTIONS.md",
+      "sha256": "ae94c4889808e5e44f32aac1b078f84a36195d6d3055eeb99b544f58762082f3",
+      "size": 920
+    },
+    {
+      "path": "docs/NO_CODE_INTEGRATION.md",
+      "sha256": "cdb4bfe7bb5ec741c3af4a0630b2452c5b01cbf65b0b55b7999073c1897e33fd",
+      "size": 1411
+    },
+    {
+      "path": "docs/SECURITY_POLICY.md",
+      "sha256": "82d0f04dc38a32346fef75df64b24cf8480311d9b7fa23fb7a46dae43a1f6a19",
+      "size": 790
+    },
+    {
+      "path": "docs/WORKSPACE_EMBEDDING.md",
+      "sha256": "0c2cd9979eef5fb29147bc8d43da607ce375caf0b508e0508b1eecbf233441b3",
+      "size": 743
+    },
+    {
+      "path": "examples/apply_patch_worker_payload.json",
+      "sha256": "cf6394eda688dc38fafa769c1e2a0f674e911ca01ad535ac8cd7dd22a3a32c12",
+      "size": 372
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "08f21051b461a1731c877e48bc9e72ebd5443b8535d4f5b3eefa4e88d41708ac",
+      "size": 536
+    },
+    {
+      "path": "schemas/agent-toolchain.manifest.json",
+      "sha256": "f84071a9274ded76e1bee54e4df4b3fa4d09841901397c000e9bc5a997009f79",
+      "size": 1387
+    },
+    {
+      "path": "schemas/openapi.json",
+      "sha256": "6bd3a0e354694afeac8ee65b69f447bceb8cba54ccafc66e1c725e096d7344eb",
+      "size": 5680
+    },
+    {
+      "path": "scripts/patches/apply_toolchain_patch_guardrails.py",
+      "sha256": "f3066837968333f055c8e736ca4cceddc1c5a1517f9309a2eab315dbc219c42b",
+      "size": 10650
+    },
+    {
+      "path": "scripts/patches/apply_toolchain_patch_guardrails_via_github_api.sh",
+      "sha256": "bc909907e0e8f8e82f25d33f17c5fb80b68b32d4aba0eece07481900a98dd4b8",
+      "size": 6037
+    },
+    {
+      "path": "src/sovereign_toolchain/__init__.py",
+      "sha256": "feb36daaf35bfaf1e96c648301726ab222a64e0809296c05fce6bfb339be6080",
+      "size": 67
+    },
+    {
+      "path": "src/sovereign_toolchain/api_server.py",
+      "sha256": "7f6a1d187bfdc0b9a7975089e2f253f9801e109bfabcd75d912818149904871f",
+      "size": 2740
+    },
+    {
+      "path": "src/sovereign_toolchain/app.py",
+      "sha256": "950ddb465c7e379e8b1f1288fdb16659b755ed4f7618944bbd0825f97b270df7",
+      "size": 758
+    },
+    {
+      "path": "src/sovereign_toolchain/cli.py",
+      "sha256": "99629f97193803489c7201d35aaaabf9f93c22dd4cc173457db3573abecbafc5",
+      "size": 604
+    },
+    {
+      "path": "src/sovereign_toolchain/core.py",
+      "sha256": "b59859f61a581309a7dbecdab796815475595379dd274aea042a31e01122042a",
+      "size": 31527
+    },
+    {
+      "path": "src/sovereign_toolchain/mcp_server.py",
+      "sha256": "9ceaa1cdd5fd0340b9454ac366cbfd2a1dd6c76ee6e69fcb00811135d8077807",
+      "size": 4635
+    }
+  ],
+  "sourceRoot": "/opt/sovereign-toolchain"
+}

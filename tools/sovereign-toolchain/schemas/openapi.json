@@ -1,0 +1,248 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sovereign Universal Toolchain",
+    "version": "1.0.0",
+    "description": "Reusable REST/OpenAPI facade for LLM agents and no-code workspaces. Use /mcp for MCP clients."
+  },
+  "servers": [
+    {
+      "url": "https://your-toolchain-domain.example/api"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ToolchainKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Toolchain-Key"
+      }
+    },
+    "schemas": {
+      "ToolCall": {
+        "type": "object",
+        "properties": {
+          "args": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "args"
+        ]
+      },
+      "PatchBlock": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string"
+          },
+          "replace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "search",
+          "replace"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthz",
+        "summary": "Service health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/manifest": {
+      "get": {
+        "operationId": "toolchainManifest",
+        "summary": "List reusable tools",
+        "responses": {
+          "200": {
+            "description": "Manifest"
+          }
+        }
+      }
+    },
+    "/v1/briefing": {
+      "get": {
+        "operationId": "toolchainBriefing",
+        "summary": "Project and sandbox briefing",
+        "parameters": [
+          {
+            "name": "include_rules",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Briefing"
+          }
+        }
+      }
+    },
+    "/v1/tools/{name}": {
+      "post": {
+        "operationId": "invokeToolByName",
+        "summary": "Generic tool dispatcher for no-code and LLM routers",
+        "security": [
+          {
+            "ToolchainKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result"
+          }
+        }
+      }
+    },
+    "/v1/github/read-file": {
+      "post": {
+        "operationId": "githubReadFile",
+        "summary": "Read GitHub file",
+        "security": [
+          {
+            "ToolchainKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCall"
+              },
+              "examples": {
+                "default": {
+                  "value": {
+                    "args": {
+                      "owner": "OuroborosCollective",
+                      "repo": "Sovereign-Studio-ato",
+                      "path": "README.md",
+                      "ref": "main"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File content"
+          }
+        }
+      }
+    },
+    "/v1/github/apply-search-replace-pr": {
+      "post": {
+        "operationId": "githubApplySearchReplacePr",
+        "summary": "Create Draft PR after guarded SEARCH/REPLACE",
+        "security": [
+          {
+            "ToolchainKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview or PR result"
+          }
+        }
+      }
+    },
+    "/v1/patch-worker/apply": {
+      "post": {
+        "operationId": "applyPatchWorker",
+        "summary": "Send /git/patch payload to external worker",
+        "security": [
+          {
+            "ToolchainKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Worker response"
+          }
+        }
+      }
+    },
+    "/v1/sovereign/apply-backend-guardrails-pr": {
+      "post": {
+        "operationId": "applyBackendGuardrailsPr",
+        "summary": "Apply embedded backend guardrails patch as Draft PR",
+        "security": [
+          {
+            "ToolchainKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview or PR result"
+          }
+        }
+      }
+    }
+  }
+}

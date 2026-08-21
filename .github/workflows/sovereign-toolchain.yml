@@ -1,0 +1,50 @@
+name: Sovereign Toolchain
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sovereign-toolchain.yml'
+      - 'tools/sovereign-toolchain/**'
+      - 'tools/sovereign-legacy-mcp-common/github_app_auth.py'
+      - 'docs/sovereign-continuity/LEDGER.jsonl'
+      - 'tools/sovereign-chatgpt-mcp/continuity-data/LEDGER.jsonl'
+  workflow_dispatch:
+    inputs:
+      expected_head_sha:
+        description: Exact PR-head SHA supplied by the trusted supplemental coordinator.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate sovereign-toolchain app-only runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_head_sha || github.sha }}
+          fetch-depth: 1
+      - name: Verify exact dispatch revision
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha || github.sha }}
+        run: |
+          test "$EXPECTED_HEAD_SHA" = "$(git rev-parse HEAD)"
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+      - name: Build locked runtime
+        working-directory: tools/sovereign-toolchain
+        run: uv sync --frozen --no-dev
+      - name: Run toolchain contracts
+        working-directory: tools/sovereign-toolchain
+        env:
+          PYTHONPATH: ../sovereign-legacy-mcp-common
+        run: uv run --no-sync --with pytest pytest -q tests
+      - name: Verify runtime and deploy syntax
+        working-directory: tools/sovereign-toolchain
+        run: |
+          python -m py_compile src/sovereign_toolchain/core.py src/sovereign_toolchain/mcp_server.py src/sovereign_toolchain/api_server.py src/sovereign_toolchain/app.py ../sovereign-legacy-mcp-common/github_app_auth.py
+          bash -n deploy/install-on-vps.sh

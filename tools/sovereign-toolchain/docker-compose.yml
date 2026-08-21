@@ -1,0 +1,10 @@
+services:
+  sovereign-toolchain:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Optional: mount large archives for live archive access
+      - ./archives:/archives:ro
