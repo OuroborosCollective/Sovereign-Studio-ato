@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -631,6 +632,7 @@ def test_mcp_installer_failure_returns_stage_without_reason(monkeypatch) -> None
     evidence = caught.value.safe_evidence
     assert evidence["installerDiagnostic"] == {
         "stage": "replace_mcp_container",
+        "failureReasonSha256": hashlib.sha256(raw_secret.encode("utf-8")).hexdigest(),
         "rollbackAttempted": True,
     }
     assert raw_secret not in json.dumps(evidence)
