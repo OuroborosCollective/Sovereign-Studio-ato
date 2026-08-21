@@ -227,11 +227,16 @@ async def lifespan(app: FastAPI):
         yield
 
 app = FastAPI(title="Sovereign MCP", lifespan=lifespan)
-app.mount("/", mcp.streamable_http_app())
+
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"ok": "true", "service": "sovereign-github-patch-mcp"}
+
+
+# Keep the health route above the catch-all MCP mount so the deployment
+# contract can distinguish a live application from a mounted MCP 404.
+app.mount("/", mcp.streamable_http_app())
 
 if __name__ == "__main__":
     import uvicorn
