@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "115d6ea6163ef3c433f9a317da211b209836baf8",
+  "sourceRevision": "a9618ed6567a652ca0b589e4bf39da23d152cd4b",
   "rawCandidateCount": 95,
   "canonicalCandidateCount": 76,
   "entries": [
@@ -723,12 +723,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_assurance_tools.py",
       "mirrorPaths": [],
       "symbol": "dynamic_execution_containment_audit",
-      "line": 1191,
+      "line": 1203,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "2667ea628ae0a2a9d23f9984e8a062c3da4901e49da849cefb5aa9724b2b2700",
+      "fileSha256": "7037b64bb211729bf6a5bf9e0c825001bb895033c792cc7db7efe2e96a64d7cd",
       "anchorSha256": "16dc240a74167a3c40217562ca69d333413f5dc0988d99bab3341e3c112d60b2",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:d5f9a0a09d29a3ab6c6c50ff",
+      "candidateId": "llm-boundary:b41a7ec4b756613f4dd8d2c2",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "dynamic_execution_containment_audit scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
@@ -736,12 +736,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_assurance_tools.py",
       "mirrorPaths": [],
       "symbol": "dynamic_execution_containment_audit",
-      "line": 1200,
+      "line": 1212,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "2667ea628ae0a2a9d23f9984e8a062c3da4901e49da849cefb5aa9724b2b2700",
+      "fileSha256": "7037b64bb211729bf6a5bf9e0c825001bb895033c792cc7db7efe2e96a64d7cd",
       "anchorSha256": "1691d7c6f878c986585e88fa703e0880e9b7cb3d6db6eb4955cfaa645bbbf7a9",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:3bd4cbbeb9882f92d6ef4b23",
+      "candidateId": "llm-boundary:bbb2373f925e101be204f56e",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "dynamic_execution_containment_audit scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
@@ -749,12 +749,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/operational_assurance_tools.py",
       "mirrorPaths": [],
       "symbol": "_classify_secret_literal",
-      "line": 1521,
+      "line": 1533,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "2667ea628ae0a2a9d23f9984e8a062c3da4901e49da849cefb5aa9724b2b2700",
+      "fileSha256": "7037b64bb211729bf6a5bf9e0c825001bb895033c792cc7db7efe2e96a64d7cd",
       "anchorSha256": "62b1dbbc20d2c228fee1ba1a88580f0cacd8036dc5b624c517fb7b5771fc0d89",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:184464acbc6933752012045f",
+      "candidateId": "llm-boundary:d68b9c36ea9eb7e94f558279",
       "classification": "TEST_OR_ANALYSIS",
       "rationale": "_classify_secret_literal scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     },
@@ -918,12 +918,12 @@
       "canonicalPath": "tools/sovereign-chatgpt-mcp/server.py",
       "mirrorPaths": [],
       "symbol": "_patchmon_revision_from_payload",
-      "line": 1805,
+      "line": 1803,
       "patternFamily": "python_keyword_intent",
-      "fileSha256": "69c01e6957a229fe1fd43926977696f6832cdb72ade87b832fdf444069fdf07d",
+      "fileSha256": "6670765420e72f0c70fc32cfccc0cff250407678dd5be0aa8fc402544129ccf1",
       "anchorSha256": "89d6ce923bec8929a1cc3e2eab5011cafb2dd1164ae34ea15f09c2615b60e43a",
       "reopenOnChange": true,
-      "candidateId": "llm-boundary:58b90b951200249b133efe22",
+      "candidateId": "llm-boundary:77707d02f7602a47b04a7564",
       "classification": "STRUCTURED_POLICY",
       "rationale": "_patchmon_revision_from_payload reads only fixed SHA field names from structured GitHub evidence; it neither infers free-language intent nor authorizes execution."
     },
@@ -1032,5 +1032,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "500c1ee7f0bc59aa069ad9c8ef0bc51f169235adfd193ed5b3b477d204fe24c9"
+  "ledgerSha256": "351afa5568d81650f398583a8d10031182ce541e3961e6b943b1a979c0034525"
 }
