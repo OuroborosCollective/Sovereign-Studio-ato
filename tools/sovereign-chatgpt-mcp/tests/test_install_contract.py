@@ -170,6 +170,14 @@ def test_patchmon_agent_paths_are_prepared_under_managed_root_before_worker_star
     assert 'ln -s "$PATCHMON_AGENT_CONFIG_TARGET" "$PATCHMON_AGENT_CONFIG_LINK"' in script
     assert 'ln -s "$PATCHMON_AGENT_UNIT_TARGET" "$PATCHMON_AGENT_UNIT_LINK"' in script
     assert 'INSTALL_STAGE="prepare_patchmon_agent_sandbox_paths"' in script
+    assert '/opt/sovereign-bytebase' in script
+    assert '/opt/sovereign-metamcp' in script
+    managed_root_line = next(
+        line for line in script.splitlines() if line.startswith("for MANAGED_COMPOSE_ROOT in ")
+    )
+    assert '/opt/sovereign-bytebase' in managed_root_line
+    assert '/opt/sovereign-metamcp' in managed_root_line
+    assert script.index('for MANAGED_COMPOSE_ROOT in ') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
     assert script.index('prepare_patchmon_agent_sandbox_paths\n') < script.index('systemctl enable --now sovereign-chatgpt-command-worker.service')
     assert '/opt/patchmon-sovereign' in worker_service
     assert '/etc/systemd/system/multi-user.target.wants' in worker_service
