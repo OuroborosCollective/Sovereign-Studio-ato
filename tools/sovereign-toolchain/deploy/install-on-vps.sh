@@ -48,15 +48,14 @@ rm -rf "$TEMP/sovereign-toolchain/.venv"
 )
 
 STAGE=metadata
-set -a
-# broker.env is root-controlled and supplies only non-secret App metadata here.
-. /opt/sovereign-chatgpt-tools/broker.env
-set +a
-: "${SOVEREIGN_MCP_GITHUB_APP_ID:?missing GitHub App ID}"
-: "${SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID:?missing GitHub App installation ID}"
-: "${SOVEREIGN_MCP_REPOSITORY:?missing repository}"
-printf 'SOVEREIGN_MCP_GITHUB_APP_ID=%s\nSOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID=%s\nSOVEREIGN_MCP_REPOSITORY=%s\nALLOWED_REPOS=%s\nGITHUB_TIMEOUT_SECONDS=60\n' \
-  "$SOVEREIGN_MCP_GITHUB_APP_ID" "$SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID" "$SOVEREIGN_MCP_REPOSITORY" "$SOVEREIGN_MCP_REPOSITORY" > "$TEMP/runtime.env"
+METADATA_READER="$SOURCE_DIR/deploy/read-broker-github-app-metadata.sh"
+[[ -f "$METADATA_READER" && ! -L "$METADATA_READER" ]] || fail "broker metadata reader source invalid"
+# Read only required literal App metadata. Never execute broker.env as shell code.
+"$METADATA_READER" /opt/sovereign-chatgpt-tools/broker.env > "$TEMP/runtime.env"
+SOVEREIGN_MCP_REPOSITORY="$(awk -F= '$1 == "SOVEREIGN_MCP_REPOSITORY" { print $2 }' "$TEMP/runtime.env")"
+[[ -n "$SOVEREIGN_MCP_REPOSITORY" ]] || fail "missing repository metadata"
+printf 'ALLOWED_REPOS=%s\nGITHUB_TIMEOUT_SECONDS=60\n' \
+  "$SOVEREIGN_MCP_REPOSITORY" >> "$TEMP/runtime.env"
 chmod 0600 "$TEMP/runtime.env"
 ! grep -Eq '^(GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT)=' "$TEMP/runtime.env" || fail "runtime environment has persistent GitHub token"
 

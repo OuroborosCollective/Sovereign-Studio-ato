@@ -1,9 +1,11 @@
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UNIT = ROOT / "sovereign-toolchain" / "deploy" / "sovereign-toolchain.service"
 INSTALLER = ROOT / "sovereign-toolchain" / "deploy" / "install-on-vps.sh"
 APP = ROOT / "sovereign-toolchain" / "src" / "sovereign_toolchain" / "app.py"
+METADATA_READER = ROOT / "sovereign-toolchain" / "deploy" / "read-broker-github-app-metadata.sh"
 WORKFLOW = ROOT.parent / ".github" / "workflows" / "sovereign-toolchain.yml"
 
 
@@ -26,6 +28,45 @@ def test_installer_requires_locked_runtime_and_tokenfree_process_readback() -> N
     assert "runtime environment has persistent GitHub token" in installer
     assert "GitHub App private key owner is invalid" in installer
     assert "GitHub App private key mode is invalid" in installer
+    assert ". /opt/sovereign-chatgpt-tools/broker.env" not in installer
+    assert "read-broker-github-app-metadata.sh" in installer
+
+
+def test_metadata_reader_ignores_unrelated_non_shellsafe_dotenv_line(tmp_path: Path) -> None:
+    broker_env = tmp_path / "broker.env"
+    broker_env.write_text(
+        "SOVEREIGN_MCP_GITHUB_APP_ID=12345\n"
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID=67890\n"
+        "SOVEREIGN_MCP_REPOSITORY=OuroborosCollective/Sovereign-Studio-ato\n"
+        "UNRELATED_NOTE=NOCode command-shaped text\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(METADATA_READER), str(broker_env)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.stderr == ""
+    assert result.stdout.splitlines() == [
+        "SOVEREIGN_MCP_GITHUB_APP_ID=12345",
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID=67890",
+        "SOVEREIGN_MCP_REPOSITORY=OuroborosCollective/Sovereign-Studio-ato",
+    ]
+
+
+def test_metadata_reader_rejects_duplicate_required_literal(tmp_path: Path) -> None:
+    broker_env = tmp_path / "broker.env"
+    broker_env.write_text(
+        "SOVEREIGN_MCP_GITHUB_APP_ID=12345\n"
+        "SOVEREIGN_MCP_GITHUB_APP_ID=54321\n"
+        "SOVEREIGN_MCP_GITHUB_APP_INSTALLATION_ID=67890\n"
+        "SOVEREIGN_MCP_REPOSITORY=OuroborosCollective/Sovereign-Studio-ato\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(["bash", str(METADATA_READER), str(broker_env)], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "cardinality invalid" in result.stderr
 
 
 def test_ci_is_supplemental_and_exact_head_bound() -> None:
