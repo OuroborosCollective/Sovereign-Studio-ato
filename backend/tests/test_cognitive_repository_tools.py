@@ -1,6 +1,9 @@
 import hashlib
+import json
 from pathlib import Path
+import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,10 +21,17 @@ from agent_runtime.cognitive_repository_tools import (
     _safe_path,
     build_repository_fleet_bindings,
 )
+import agent_runtime.cognitive_repository_tools as repository_tools
 from agent_runtime.cognitive_swarm_manifest import WORKER_ROLES
+from agent_runtime.fleet_attempts import create_worker_attempt
+from agent_runtime.fleet_attempt_worktrees import (
+    create_attempt_worktree_release,
+    resolve_active_attempt_worktree,
+)
 from agent_runtime.fleet_supervisor import FleetContractError
 from agent_runtime.job_store import update_agent_job_state
 from agent_runtime.tools.file_tool import FileReadTool
+from agent_runtime.tools.base import ToolResult
 
 
 def _toolset(*, write_confirmed: bool) -> BoundRepositoryToolset:
@@ -195,3 +205,155 @@ def test_tool_output_redacts_known_secret_shapes() -> None:
     assert "secret-value-that-is-long" not in output
     assert "sk-proj-" not in output
     assert output.count("[REDACTED]") == 2
+
+
+def _bound_real_fleet_toolset(monkeypatch, tmp_path: Path):
+    root = tmp_path / "workspaces"
+    workspace_id = "agent-fleet-worktree"
+    repo = root / workspace_id / "repo"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, text=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "fleet@example.invalid"], cwd=repo, check=True, text=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Fleet Test"], cwd=repo, check=True, text=True, capture_output=True)
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, text=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "base"], cwd=repo, check=True, text=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/OuroborosCollective/Sovereign-Studio-ato"],
+        cwd=repo,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, text=True, capture_output=True).stdout.strip()
+    bindings = build_repository_fleet_bindings(
+        run_id="run-test-runtime",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        workspace_id=workspace_id,
+        workspace_branch="main",
+        base_revision=head,
+        task_ids_by_agent={role: f"task-{role}" for role in WORKER_ROLES},
+    )
+    job = SimpleNamespace(
+        workspace_id=workspace_id,
+        repo_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+        changed_files=(),
+        diff_summary=None,
+        test_summary=None,
+    )
+    toolset = BoundRepositoryToolset(
+        get_connection=lambda: SimpleNamespace(close=lambda: None),
+        user_id="00000000-0000-0000-0000-000000000000",
+        run_id="run-test-runtime",
+        job_id="agent-fleet-worktree",
+        task_ids_by_agent={role: f"task-{role}" for role in WORKER_ROLES},
+        workspace_root=root,
+        write_confirmed=True,
+    )
+    toolset.bind_fleet_execution(bindings)
+    monkeypatch.setattr(repository_tools, "read_agent_job", lambda *_args, **_kwargs: job)
+    workspaces = toolset.provision_fleet_attempt_workspaces()
+    return root, repo, head, bindings, toolset, workspaces
+
+
+def test_fleet_repository_tool_receipt_uses_only_its_active_attempt_worktree(monkeypatch, tmp_path: Path) -> None:
+    _, repo, head, bindings, toolset, workspaces = _bound_real_fleet_toolset(monkeypatch, tmp_path)
+    assert toolset.read_fleet_workspace_head() == head
+    role = WORKER_ROLES[0]
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(repository_tools, "read_mcp_runtime_identity", lambda **_kwargs: SimpleNamespace(
+        revision=head,
+        image_digest="sha256:" + ("a" * 64),
+        revision_verified=True,
+    ))
+    def fake_start(*_args, **kwargs):
+        captured["arguments"] = kwargs["arguments"]
+        return "tool-call-worktree"
+
+    monkeypatch.setattr(repository_tools, "start_agent_tool_call", fake_start)
+    monkeypatch.setattr(repository_tools, "append_tool_result_to_job", lambda *_args, **_kwargs: SimpleNamespace(
+        passed=True,
+        reason="evidence accepted",
+        can_prepare_draft_pr=False,
+        can_learn_pattern=False,
+    ))
+
+    def fake_tool(_job_id, action, _parameters, workspace_path):
+        captured["action"] = action
+        captured["workspace"] = Path(workspace_path)
+        return ToolResult(status="done", tool=action, output="clean", predictive_signal="agent_git_status_completed")
+
+    monkeypatch.setattr(repository_tools, "run_agent_job_tool", fake_tool)
+    monkeypatch.setattr(repository_tools, "finish_agent_tool_call", lambda *_args, **kwargs: captured.setdefault("finished", kwargs))
+
+    assignment = bindings.assignments_by_role[role]
+    with toolset.activate_fleet_lane(assignment.lane_id, (role,)):
+        payload = json.loads(toolset._execute(role, "git-status", {}))
+
+    assert captured["workspace"] == workspaces[role].worktree_path
+    assert captured["workspace"] != repo
+    arguments = captured["arguments"]
+    assert arguments["fleetAttempt"]["attemptId"] == workspaces[role].attempt_id
+    assert arguments["attemptWorktree"]["worktreeBindingHash"] == workspaces[role].binding_hash
+    assert str(workspaces[role].worktree_path) not in json.dumps(arguments, sort_keys=True)
+    finished = captured["finished"]
+    assert finished["result_summary"]["attemptWorktree"]["attemptId"] == workspaces[role].attempt_id
+    assert f"attempt:{workspaces[role].attempt_id}" in finished["operation_identity"]
+    assert payload["attemptWorktree"]["worktreePathSha256"]
+
+    # The preflight is deliberately a worktree readback, not a read of the outer
+    # job clone.  A committed attempt cannot silently become a later lane's base.
+    (workspaces[role].worktree_path / "committed.txt").write_text("head drift\n", encoding="utf-8")
+    subprocess.run(["git", "add", "committed.txt"], cwd=workspaces[role].worktree_path, check=True, text=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "attempt commit"], cwd=workspaces[role].worktree_path, check=True, text=True, capture_output=True)
+    with pytest.raises(FleetContractError, match="heads no longer match"):
+        toolset.read_fleet_workspace_head()
+
+
+def test_fleet_attempt_rebind_requires_a_higher_server_attempt_and_retains_old_worktree(monkeypatch, tmp_path: Path) -> None:
+    root, _, head, bindings, toolset, workspaces = _bound_real_fleet_toolset(monkeypatch, tmp_path)
+    role = WORKER_ROLES[0]
+    assignment = bindings.assignments_by_role[role]
+    first_attempt = create_worker_attempt(assignment, attempt_sequence=1)
+    retry_attempt = create_worker_attempt(assignment, attempt_sequence=2)
+    original = workspaces[role]
+
+    with toolset.activate_fleet_lane(assignment.lane_id, (role,)):
+        with pytest.raises(FleetContractError, match="active lane"):
+            toolset.rebind_fleet_attempt_workspace(role, retry_attempt)
+
+    replacement = toolset.rebind_fleet_attempt_workspace(role, retry_attempt)
+    assert replacement.attempt_id == retry_attempt.attempt_id
+    assert replacement.worktree_path != original.worktree_path
+    assert original.attempt_id in toolset.settled_fleet_attempt_receipts()
+    assert str(original.worktree_path) not in json.dumps(toolset.settled_fleet_attempt_receipts(), sort_keys=True)
+
+    with pytest.raises(FleetContractError, match="higher"):
+        toolset.rebind_fleet_attempt_workspace(role, retry_attempt)
+    with pytest.raises(FleetContractError, match="higher"):
+        toolset.rebind_fleet_attempt_workspace(role, first_attempt)
+    with pytest.raises(FleetContractError, match="stale worker attempt"):
+        resolve_active_attempt_worktree(
+            assignment=assignment,
+            attempt=first_attempt,
+            active_attempt=retry_attempt,
+            attempt_workspace=original,
+            repository_url="https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            root=root,
+        )
+
+    # Re-provision is idempotent after rebind and preserves the higher active retry.
+    replayed = toolset.provision_fleet_attempt_workspaces()
+    assert replayed[role].attempt_id == retry_attempt.attempt_id
+    assert toolset.read_fleet_workspace_head() == head
+
+    release = create_attempt_worktree_release(
+        assignment,
+        first_attempt,
+        controller_state="SUPERSEDED",
+        controller_state_ref="f" * 64,
+    )
+    toolset.cleanup_released_fleet_attempt_workspace(release)
+    assert not original.worktree_path.exists()
+    assert original.attempt_id not in toolset.settled_fleet_attempt_receipts()

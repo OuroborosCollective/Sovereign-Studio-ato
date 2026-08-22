@@ -383,6 +383,8 @@ def execute_persisted_swarm(
             safe_payload["fleetTaskIdsByRole"] = dict(stage["fleetTaskIdsByRole"])
         if isinstance(stage.get("fleetAssignmentsByRole"), dict):
             safe_payload["fleetAssignmentsByRole"] = dict(stage["fleetAssignmentsByRole"])
+        if isinstance(stage.get("fleetAttemptsByRole"), dict):
+            safe_payload["fleetAttemptsByRole"] = dict(stage["fleetAttemptsByRole"])
         conn = get_connection()
         try:
             record_agent_stage_event(
@@ -406,6 +408,7 @@ def execute_persisted_swarm(
         if repository_toolset is not None and repository_toolset.has_repository_fleet_workers():
             fleet_bindings = repository_toolset.resolve_fleet_bindings()
             repository_toolset.bind_fleet_execution(fleet_bindings)
+            fleet_attempt_workspaces = repository_toolset.provision_fleet_attempt_workspaces()
             persist_stage_event({
                 "agentId": "dispatcher",
                 "eventType": "fleet_plan_persisted",
@@ -418,6 +421,10 @@ def execute_persisted_swarm(
                 "fleetAssignmentsByRole": {
                     role: assignment.to_dict()
                     for role, assignment in fleet_bindings.assignments_by_role.items()
+                },
+                "fleetAttemptsByRole": {
+                    role: workspace.receipt_binding()
+                    for role, workspace in fleet_attempt_workspaces.items()
                 },
             })
         result = asyncio.run(

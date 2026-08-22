@@ -29,6 +29,14 @@ from .cognitive_run_store import (
     start_agent_tool_call,
 )
 from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
+from .fleet_attempts import FleetWorkerAttempt, create_worker_attempt, require_active_attempt
+from .fleet_attempt_worktrees import (
+    AttemptWorkspace,
+    AttemptWorktreeRelease,
+    cleanup_settled_attempt_worktree,
+    provision_attempt_worktree,
+    resolve_active_attempt_worktree,
+)
 from .fleet_supervisor import (
     FleetContractError,
     FleetPlan,
@@ -490,6 +498,11 @@ class BoundRepositoryToolset:
     _open_circuits: set[str] = field(default_factory=set)
     _active_fleet_lane_id: str | None = None
     _active_fleet_roles: frozenset[str] = field(default_factory=frozenset)
+    _fleet_attempts_by_role: dict[str, FleetWorkerAttempt] = field(default_factory=dict)
+    _active_fleet_attempts_by_role: dict[str, FleetWorkerAttempt] = field(default_factory=dict)
+    _fleet_workspaces_by_role: dict[str, AttemptWorkspace] = field(default_factory=dict)
+    _settled_fleet_attempts_by_id: dict[str, FleetWorkerAttempt] = field(default_factory=dict)
+    _settled_fleet_workspaces_by_attempt_id: dict[str, AttemptWorkspace] = field(default_factory=dict)
     _lock: Lock = field(default_factory=Lock)
 
     def has_repository_fleet_workers(self) -> bool:
@@ -541,8 +554,227 @@ class BoundRepositoryToolset:
                 raise FleetContractError("a different FleetPlan is already bound to this toolset")
             self.fleet_bindings = bindings
 
+    def provision_fleet_attempt_workspaces(self) -> dict[str, AttemptWorkspace]:
+        """Create deterministic physical worktrees before repository workers run.
+
+        Attempt identity is generated from the already server-bound assignment; callers
+        cannot choose an attempt id, branch, or worktree path.  A later retry must
+        bind a fresh attempt explicitly instead of reusing this mapping.
+        """
+
+        bindings = self.fleet_bindings
+        if bindings is None or self.workspace_root is None:
+            raise FleetContractError("Fleet attempt worktrees require a bound plan and workspace root")
+        conn = self.get_connection()
+        try:
+            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+            if not job:
+                raise FleetContractError("linked Sovereign Agent Job was not found")
+            workspace_id = str(job.workspace_id or self.job_id).strip()
+            if workspace_id != bindings.workspace_id:
+                raise FleetContractError("Fleet attempt worktree workspace changed after plan binding")
+            repository_url = str(job.repo_url or "").strip()
+            with self._lock:
+                if self._active_fleet_lane_id is not None:
+                    raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
+                existing_attempts = dict(self._active_fleet_attempts_by_role)
+                existing_workspaces = dict(self._fleet_workspaces_by_role)
+            expected_roles = frozenset(bindings.assignments_by_role)
+            if existing_attempts or existing_workspaces:
+                if frozenset(existing_attempts) != expected_roles or frozenset(existing_workspaces) != expected_roles:
+                    raise FleetContractError("Fleet active attempt bindings are incomplete")
+                attempts = existing_attempts
+            else:
+                attempts = {
+                    role: create_worker_attempt(assignment, attempt_sequence=1)
+                    for role, assignment in bindings.assignments_by_role.items()
+                }
+            workspaces = {
+                role: provision_attempt_worktree(
+                    assignment=assignment,
+                    attempt=attempts[role],
+                    active_attempt=attempts[role],
+                    repository_url=repository_url,
+                    root=self.workspace_root,
+                )
+                for role, assignment in bindings.assignments_by_role.items()
+            }
+            with self._lock:
+                if self._active_fleet_lane_id is not None:
+                    raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
+                if existing_attempts and self._active_fleet_attempts_by_role != existing_attempts:
+                    raise FleetContractError("Fleet active attempt changed while worktrees were being read back")
+                self._fleet_attempts_by_role = attempts
+                self._active_fleet_attempts_by_role = dict(attempts)
+                self._fleet_workspaces_by_role = workspaces
+            return dict(workspaces)
+        finally:
+            _close(conn)
+
+    def rebind_fleet_attempt_workspace(
+        self,
+        role: str,
+        active_attempt: FleetWorkerAttempt,
+    ) -> AttemptWorkspace:
+        """Atomically make one higher, server-issued retry attempt active.
+
+        This is a controller-only transition: a caller supplies no path or branch,
+        and the higher attempt must round-trip through the hash-bound
+        ``FleetWorkerAttempt`` contract for this role's existing assignment.  The
+        previous worktree remains retained by attempt id until an explicit
+        controller release authorizes targeted cleanup.
+        """
+
+        bindings = self.fleet_bindings
+        if bindings is None or self.workspace_root is None:
+            raise FleetContractError("Fleet attempt rebind requires a bound plan and workspace root")
+        assignment = bindings.assignments_by_role.get(role)
+        if assignment is None:
+            raise FleetContractError("repository worker is not bound to a Fleet assignment")
+        if not isinstance(active_attempt, FleetWorkerAttempt):
+            raise FleetContractError("Fleet attempt rebind requires a server-issued FleetWorkerAttempt")
+        # Reparse to reject a forged dataclass with fields that do not bind its hash.
+        selected = FleetWorkerAttempt.from_dict(active_attempt.to_dict())
+        require_active_attempt(selected, selected, assignment)
+        with self._lock:
+            if self._active_fleet_lane_id is not None:
+                raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
+            previous_attempt = self._active_fleet_attempts_by_role.get(role)
+            previous_workspace = self._fleet_workspaces_by_role.get(role)
+            if previous_attempt is None or previous_workspace is None:
+                raise FleetContractError("Fleet attempt rebind requires an existing active worktree")
+            if selected.attempt_sequence <= previous_attempt.attempt_sequence:
+                raise FleetContractError("Fleet retry attempt sequence must be higher than the active attempt")
+        conn = self.get_connection()
+        try:
+            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+            if not job:
+                raise FleetContractError("linked Sovereign Agent Job was not found")
+            workspace_id = str(job.workspace_id or self.job_id).strip()
+            if workspace_id != assignment.workspace_id:
+                raise FleetContractError("Fleet attempt worktree workspace changed after assignment")
+            replacement = provision_attempt_worktree(
+                assignment=assignment,
+                attempt=selected,
+                active_attempt=selected,
+                repository_url=str(job.repo_url or "").strip(),
+                root=self.workspace_root,
+            )
+        finally:
+            _close(conn)
+        with self._lock:
+            if self._active_fleet_lane_id is not None:
+                raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
+            if (
+                self._active_fleet_attempts_by_role.get(role) != previous_attempt
+                or self._fleet_workspaces_by_role.get(role) != previous_workspace
+            ):
+                raise FleetContractError("Fleet active attempt changed during retry rebind")
+            self._settled_fleet_attempts_by_id[previous_attempt.attempt_id] = previous_attempt
+            self._settled_fleet_workspaces_by_attempt_id[previous_attempt.attempt_id] = previous_workspace
+            self._fleet_attempts_by_role[role] = selected
+            self._active_fleet_attempts_by_role[role] = selected
+            self._fleet_workspaces_by_role[role] = replacement
+        return replacement
+
+    def settled_fleet_attempt_receipts(self) -> dict[str, dict[str, Any]]:
+        """Return controller-visible, path-free retained-attempt evidence only."""
+
+        with self._lock:
+            return {
+                attempt_id: workspace.receipt_binding()
+                for attempt_id, workspace in self._settled_fleet_workspaces_by_attempt_id.items()
+            }
+
+    def cleanup_released_fleet_attempt_workspace(self, release: AttemptWorktreeRelease) -> None:
+        """Apply one explicit controller release to one retained attempt worktree."""
+
+        if not isinstance(release, AttemptWorktreeRelease):
+            raise FleetContractError("Fleet attempt cleanup requires a controller release")
+        bindings = self.fleet_bindings
+        if bindings is None or self.workspace_root is None:
+            raise FleetContractError("Fleet attempt cleanup requires a bound plan and workspace root")
+        with self._lock:
+            settled_attempt = self._settled_fleet_attempts_by_id.get(release.attempt_id)
+            settled_workspace = self._settled_fleet_workspaces_by_attempt_id.get(release.attempt_id)
+            role = next(
+                (
+                    worker_role
+                    for worker_role, candidate in bindings.assignments_by_role.items()
+                    if candidate.task_id == release.task_id
+                    and candidate.assignment_hash == release.assignment_hash
+                ),
+                None,
+            )
+            assignment = bindings.assignments_by_role.get(role) if role is not None else None
+            active_attempt = self._active_fleet_attempts_by_role.get(role) if role is not None else None
+        if settled_attempt is None or settled_workspace is None or assignment is None or active_attempt is None:
+            raise FleetContractError("Fleet attempt cleanup target is not a retained controller attempt")
+        conn = self.get_connection()
+        try:
+            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+            if not job:
+                raise FleetContractError("linked Sovereign Agent Job was not found")
+            cleanup_settled_attempt_worktree(
+                assignment=assignment,
+                attempt=settled_attempt,
+                active_attempt=active_attempt,
+                attempt_workspace=settled_workspace,
+                release=release,
+                repository_url=str(job.repo_url or "").strip(),
+                root=self.workspace_root,
+            )
+        finally:
+            _close(conn)
+        with self._lock:
+            if self._settled_fleet_workspaces_by_attempt_id.get(release.attempt_id) == settled_workspace:
+                self._settled_fleet_workspaces_by_attempt_id.pop(release.attempt_id, None)
+                self._settled_fleet_attempts_by_id.pop(release.attempt_id, None)
+
+    def _resolve_active_fleet_worktree(
+        self,
+        *,
+        role: str,
+        assignment: FleetWorkerAssignment,
+        job: Any,
+    ) -> tuple[FleetWorkerAttempt, AttemptWorkspace]:
+        """Resolve only the current server-bound worktree for one worker action."""
+
+        if self.workspace_root is None:
+            raise FleetContractError("Fleet attempt worktree requires an isolated workspace root")
+        with self._lock:
+            attempt = self._fleet_attempts_by_role.get(role)
+            active_attempt = self._active_fleet_attempts_by_role.get(role)
+            workspace = self._fleet_workspaces_by_role.get(role)
+        if attempt is None or active_attempt is None or workspace is None:
+            raise FleetContractError("repository Fleet worker has no active attempt worktree binding")
+        selected = require_active_attempt(attempt, active_attempt, assignment)
+        workspace_id = str(job.workspace_id or self.job_id).strip()
+        if workspace_id != assignment.workspace_id:
+            raise FleetContractError("Fleet attempt worktree job workspace changed after assignment")
+        refreshed = resolve_active_attempt_worktree(
+            assignment=assignment,
+            attempt=selected,
+            active_attempt=active_attempt,
+            attempt_workspace=workspace,
+            repository_url=str(job.repo_url or "").strip(),
+            root=self.workspace_root,
+        )
+        with self._lock:
+            self._fleet_workspaces_by_role[role] = refreshed
+        return selected, refreshed
+
     def read_fleet_workspace_head(self) -> str:
-        """Re-read the only admitted workspace HEAD before a Fleet worker pass."""
+        """Re-read every active Fleet attempt head before a worker pass.
+
+        The outer Agent Job clone is only the immutable provenance boundary.  It
+        must never stand in for a worker's physical worktree readback: every role
+        in the bound plan needs an active, server-derived attempt binding first.
+        A Fleet plan is still based on one exact revision, so a committed attempt
+        head is intentionally rejected here rather than silently being used as a
+        later lane's preflight base.  A later Draft-PR flow must use the explicit
+        attempt handoff gate instead.
+        """
 
         bindings = self.fleet_bindings
         if bindings is None or self.workspace_root is None:
@@ -555,8 +787,24 @@ class BoundRepositoryToolset:
             workspace_id = str(job.workspace_id or self.job_id).strip()
             if workspace_id != bindings.workspace_id:
                 raise FleetContractError("Fleet workspace identity changed after plan binding")
-            repository_path = repo_dir_for_workspace(workspace_id, self.workspace_root)
-            return read_git_workspace_identity(repository_path, repository=job.repo_url).base_commit_sha
+            with self._lock:
+                provisioned_roles = frozenset(self._fleet_workspaces_by_role)
+            expected_roles = frozenset(bindings.assignments_by_role)
+            if provisioned_roles != expected_roles:
+                raise FleetContractError("Fleet workspace readback requires every active attempt worktree")
+            observed_heads = {
+                role: self._resolve_active_fleet_worktree(
+                    role=role,
+                    assignment=assignment,
+                    job=job,
+                )[1].head_revision
+                for role, assignment in bindings.assignments_by_role.items()
+            }
+            if any(head != bindings.base_revision for head in observed_heads.values()):
+                raise FleetContractError(
+                    "Fleet attempt worktree heads no longer match the plan base revision"
+                )
+            return bindings.base_revision
         finally:
             _close(conn)
 
@@ -655,15 +903,27 @@ class BoundRepositoryToolset:
         job: Any = None
         before_git: Any = None
         mcp_identity: Any = None
+        assignment: FleetWorkerAssignment | None = None
+        attempt: FleetWorkerAttempt | None = None
+        attempt_workspace: AttemptWorkspace | None = None
+        repository_path: Path | None = None
         try:
             assignment = self._assert_fleet_lane_admission(role, task_id)
             job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
             if not job:
                 raise LookupError("linked Sovereign Agent Job was not found")
-            repository_path = repo_dir_for_workspace(
-                str(job.workspace_id or self.job_id),
-                self.workspace_root,
-            )
+            if assignment is not None:
+                attempt, attempt_workspace = self._resolve_active_fleet_worktree(
+                    role=role,
+                    assignment=assignment,
+                    job=job,
+                )
+                repository_path = attempt_workspace.worktree_path
+            else:
+                repository_path = repo_dir_for_workspace(
+                    str(job.workspace_id or self.job_id),
+                    self.workspace_root,
+                )
             before_git = read_git_workspace_identity(
                 repository_path,
                 repository=job.repo_url,
@@ -679,6 +939,10 @@ class BoundRepositoryToolset:
                     "laneId": assignment.lane_id,
                     "taskId": assignment.task_id,
                 }
+                receipt_arguments["fleetAttempt"] = attempt.to_dict() if attempt else {}
+                receipt_arguments["attemptWorktree"] = (
+                    attempt_workspace.receipt_binding() if attempt_workspace else {}
+                )
             tool_call_id = start_agent_tool_call(
                 conn,
                 run_id=self.run_id,
@@ -691,6 +955,12 @@ class BoundRepositoryToolset:
             result = run_agent_job_tool(self.job_id, action, parameters, repository_path)
             merged = _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, self.job_id, merged)
+            if assignment is not None:
+                attempt, attempt_workspace = self._resolve_active_fleet_worktree(
+                    role=role,
+                    assignment=assignment,
+                    job=job,
+                )
             after_git = read_git_workspace_identity(
                 repository_path,
                 repository=job.repo_url,
@@ -730,6 +1000,8 @@ class BoundRepositoryToolset:
                         "assignmentHash": assignment.assignment_hash,
                         "fleetLaneId": assignment.lane_id,
                         "fleetTaskId": assignment.task_id,
+                        "fleetAttempt": attempt.to_dict() if attempt else {},
+                        "attemptWorktree": attempt_workspace.receipt_binding() if attempt_workspace else {},
                     } if assignment is not None else {}),
                 },
                 repository=job.repo_url,
@@ -738,7 +1010,7 @@ class BoundRepositoryToolset:
                 mcp_image_digest=mcp_identity.image_digest,
                 mcp_revision_verified=mcp_identity.revision_verified,
                 operation_identity=(
-                    f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}"
+                    f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}:attempt:{attempt.attempt_id if attempt else 'missing'}:worktree:{attempt_workspace.binding_hash if attempt_workspace else 'missing'}"
                     if assignment is not None
                     else f"agent-repository-tool:{role}:{action}"
                 ),
@@ -766,7 +1038,7 @@ class BoundRepositoryToolset:
             )
         except Exception as exc:
             self._record_call(role, mutation=False, failed=True)
-            if tool_call_id and job is not None and before_git is not None and mcp_identity is not None:
+            if tool_call_id and job is not None and before_git is not None and mcp_identity is not None and repository_path is not None:
                 try:
                     failed_git = read_git_workspace_identity(
                         repository_path,
@@ -783,7 +1055,7 @@ class BoundRepositoryToolset:
                         mcp_image_digest=mcp_identity.image_digest,
                         mcp_revision_verified=mcp_identity.revision_verified,
                         operation_identity=(
-                            f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}"
+                            f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}:attempt:{attempt.attempt_id if attempt else 'missing'}:worktree:{attempt_workspace.binding_hash if attempt_workspace else 'missing'}"
                             if assignment is not None
                             else f"agent-repository-tool:{role}:{action}"
                         ),
@@ -828,6 +1100,9 @@ class BoundRepositoryToolset:
                 "canLearnPattern": gate.can_learn_pattern,
             },
         }
+        if assignment is not None and attempt is not None and attempt_workspace is not None:
+            payload["fleetAttempt"] = attempt.to_dict()
+            payload["attemptWorktree"] = attempt_workspace.receipt_binding()
         findings = result.metadata.get("findings") if isinstance(result.metadata, dict) else None
         if isinstance(findings, list):
             payload["findings"] = findings[:20]
