@@ -8,6 +8,7 @@ against the linked Sovereign Agent Job and persists sanitized runtime evidence.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import importlib
 import json
@@ -15,7 +16,7 @@ from pathlib import Path, PurePosixPath
 import re
 from threading import Lock
 import uuid
-from typing import Any, Final
+from typing import Any, Final, Iterator
 
 from .agent_run_receipts import (
     canonical_sha256,
@@ -27,11 +28,20 @@ from .cognitive_run_store import (
     finish_agent_tool_call,
     start_agent_tool_call,
 )
-from .cognitive_swarm_manifest import WORKER_ROLES
+from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
+from .fleet_supervisor import (
+    FleetContractError,
+    FleetPlan,
+    FleetTask,
+    FleetWorkerAssignment,
+    build_fleet_plan,
+    create_worker_assignment,
+)
 from .job_store import read_agent_job
 from .tool_events import append_tool_result_to_job
 from .tool_runner import run_agent_job_tool
 from .tools.base import ToolResult
+from .workspace_policy import repo_dir_for_workspace
 
 
 ConnectionFactory = Callable[[], Any]
@@ -201,6 +211,126 @@ def _merge_job_evidence(job: Any, result: ToolResult) -> ToolResult:
     )
 
 
+@dataclass(frozen=True)
+class RepositoryFleetBindings:
+    """One real repository-worker schedule bound to a cloned workspace readback.
+
+    The object is deliberately transient: canonical task/evidence persistence remains
+    in ``agent_tasks``/``agent_evidence``.  It supplies the exact plan and worker
+    assignment envelope that the execution path must persist before model workers
+    may receive repository tools.
+    """
+
+    plan: FleetPlan
+    task_ids_by_role: dict[str, str]
+    assignments_by_role: dict[str, FleetWorkerAssignment]
+    repository: str
+    workspace_id: str
+    base_revision: str
+
+
+def _required_worker_task_ids(task_ids_by_agent: dict[str, str]) -> dict[str, str]:
+    resolved = {
+        role: str(task_ids_by_agent.get(role) or "").strip()
+        for role in WORKER_ROLES
+    }
+    if any(not task_id for task_id in resolved.values()):
+        raise FleetContractError("every repository worker requires one persisted task id")
+    if len(set(resolved.values())) != len(resolved):
+        raise FleetContractError("repository worker task ids must be unique")
+    return resolved
+
+
+def build_repository_fleet_bindings(
+    *,
+    run_id: str,
+    repository: str,
+    workspace_id: str,
+    workspace_branch: str,
+    base_revision: str,
+    task_ids_by_agent: dict[str, str],
+) -> RepositoryFleetBindings:
+    """Build the fail-closed FleetPlan used by real repository worker execution.
+
+    The current runtime has one physical Agent Job clone.  Until #1524 provides
+    separate attempt worktrees and an architecture receipt proves non-overlap, every
+    worker shares its workspace mutation/lock scope and therefore receives a serial
+    lane.  This is a deliberate safety property, not a claim that workers are
+    independent.
+    """
+
+    role_task_ids = _required_worker_task_ids(task_ids_by_agent)
+    normalized_repository = str(repository or "").strip()
+    normalized_workspace = str(workspace_id or "").strip()
+    normalized_branch = str(workspace_branch or "").strip()
+    normalized_run = str(run_id or "").strip()
+    if not normalized_repository or not normalized_workspace or not normalized_branch or not normalized_run:
+        raise FleetContractError("repository Fleet binding requires run, repository and workspace identity")
+
+    shared_scope = f"workspace:{normalized_workspace}"
+    tasks = tuple(
+        FleetTask(
+            task_id=role_task_ids[role],
+            source_type="integration_step",
+            source_id=role,
+            expected_base_revision=base_revision,
+            changed_paths=ROLE_PATH_PREFIXES[role],
+            architecture_domains=("repository_execution", role),
+            canonical_owners=(role,),
+            invariant_scopes=(shared_scope,),
+            required_gates=("git_readback", "agent_tool_receipt"),
+            required_capabilities=READ_REPOSITORY_TOOL_NAMES + WRITE_REPOSITORY_TOOL_NAMES,
+            mutation_resources=(shared_scope,),
+            lock_scopes=(shared_scope,),
+            # No architecture receipt currently proves these role scopes independent.
+            independence_proven=False,
+        )
+        for role in WORKER_ROLES
+    )
+    plan = build_fleet_plan(
+        integration_id=normalized_run,
+        repository=normalized_repository,
+        base_revision=base_revision,
+        tasks=tasks,
+        architecture_receipt_hashes=(),
+        max_parallel_lanes=len(WORKER_ROLES),
+    )
+    manifest_hash = canonical_sha256(manifest_payload())
+    run_envelope_hash = canonical_sha256({
+        "schemaVersion": "sovereign.repository-fleet-envelope.v1",
+        "runId": normalized_run,
+        "repository": normalized_repository,
+        "workspaceId": normalized_workspace,
+        "workspaceBranch": normalized_branch,
+        "baseRevision": base_revision,
+        "fleetPlanHash": plan.plan_hash,
+    })
+    assignments: dict[str, FleetWorkerAssignment] = {}
+    for lane in plan.lanes:
+        for task_id in lane.task_ids:
+            role = next(role for role, bound_task_id in role_task_ids.items() if bound_task_id == task_id)
+            assignments[role] = create_worker_assignment(
+                plan,
+                lane_id=lane.lane_id,
+                task_id=task_id,
+                controller_run_id=normalized_run,
+                workspace_id=normalized_workspace,
+                workspace_branch=normalized_branch,
+                run_envelope_hash=run_envelope_hash,
+                capability_manifest_hash=manifest_hash,
+            )
+    if set(assignments) != set(WORKER_ROLES):
+        raise FleetContractError("FleetPlan did not assign every repository worker")
+    return RepositoryFleetBindings(
+        plan=plan,
+        task_ids_by_role=role_task_ids,
+        assignments_by_role=assignments,
+        repository=normalized_repository,
+        workspace_id=normalized_workspace,
+        base_revision=base_revision,
+    )
+
+
 def create_repository_swarm_tasks(
     conn: Any,
     *,
@@ -353,11 +483,127 @@ class BoundRepositoryToolset:
     task_ids_by_agent: dict[str, str]
     workspace_root: Path | None
     write_confirmed: bool = False
+    fleet_bindings: RepositoryFleetBindings | None = None
     _call_counts: dict[str, int] = field(default_factory=dict)
     _mutation_counts: dict[str, int] = field(default_factory=dict)
     _consecutive_failures: dict[str, int] = field(default_factory=dict)
     _open_circuits: set[str] = field(default_factory=set)
+    _active_fleet_lane_id: str | None = None
+    _active_fleet_roles: frozenset[str] = field(default_factory=frozenset)
     _lock: Lock = field(default_factory=Lock)
+
+    def has_repository_fleet_workers(self) -> bool:
+        return set(WORKER_ROLES).issubset(self.task_ids_by_agent)
+
+    def resolve_fleet_bindings(self) -> RepositoryFleetBindings:
+        """Read the exact cloned repository identity before any worker is scheduled."""
+
+        if not self.has_repository_fleet_workers():
+            raise FleetContractError("the toolset does not contain all six repository workers")
+        if self.workspace_root is None:
+            raise FleetContractError("repository Fleet execution requires an isolated workspace root")
+        conn = self.get_connection()
+        try:
+            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+            if not job:
+                raise FleetContractError("linked Sovereign Agent Job was not found")
+            workspace_id = str(job.workspace_id or self.job_id).strip()
+            repository_path = repo_dir_for_workspace(workspace_id, self.workspace_root)
+            git_identity = read_git_workspace_identity(repository_path, repository=job.repo_url)
+            repository_url = str(job.repo_url or "").strip().removesuffix(".git")
+            prefix = "https://github.com/"
+            if not repository_url.startswith(prefix):
+                raise FleetContractError("repository Fleet execution requires a GitHub repository URL")
+            repository = repository_url[len(prefix):]
+            return build_repository_fleet_bindings(
+                run_id=self.run_id,
+                repository=repository,
+                workspace_id=workspace_id,
+                workspace_branch=str(job.branch or "main"),
+                base_revision=git_identity.base_commit_sha,
+                task_ids_by_agent=self.task_ids_by_agent,
+            )
+        finally:
+            _close(conn)
+
+    def bind_fleet_execution(self, bindings: RepositoryFleetBindings) -> None:
+        if not self.has_repository_fleet_workers():
+            raise FleetContractError("the toolset does not contain all six repository workers")
+        if set(bindings.task_ids_by_role) != set(WORKER_ROLES):
+            raise FleetContractError("Fleet bindings are missing a worker role")
+        if any(
+            self.task_ids_by_agent.get(role) != task_id
+            for role, task_id in bindings.task_ids_by_role.items()
+        ):
+            raise FleetContractError("Fleet bindings do not match persisted worker tasks")
+        with self._lock:
+            if self.fleet_bindings and self.fleet_bindings.plan.plan_hash != bindings.plan.plan_hash:
+                raise FleetContractError("a different FleetPlan is already bound to this toolset")
+            self.fleet_bindings = bindings
+
+    def read_fleet_workspace_head(self) -> str:
+        """Re-read the only admitted workspace HEAD before a Fleet worker pass."""
+
+        bindings = self.fleet_bindings
+        if bindings is None or self.workspace_root is None:
+            raise FleetContractError("Fleet workspace readback requires a bound plan and workspace root")
+        conn = self.get_connection()
+        try:
+            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+            if not job:
+                raise FleetContractError("linked Sovereign Agent Job was not found")
+            workspace_id = str(job.workspace_id or self.job_id).strip()
+            if workspace_id != bindings.workspace_id:
+                raise FleetContractError("Fleet workspace identity changed after plan binding")
+            repository_path = repo_dir_for_workspace(workspace_id, self.workspace_root)
+            return read_git_workspace_identity(repository_path, repository=job.repo_url).base_commit_sha
+        finally:
+            _close(conn)
+
+    @contextmanager
+    def activate_fleet_lane(self, lane_id: str, roles: tuple[str, ...]) -> Iterator[None]:
+        """Admit repository tools only for the exact roles in one current Fleet lane."""
+
+        bindings = self.fleet_bindings
+        if bindings is None:
+            raise FleetContractError("repository Fleet tools require a bound FleetPlan")
+        lane = next((item for item in bindings.plan.lanes if item.lane_id == lane_id), None)
+        if lane is None:
+            raise FleetContractError("Fleet lane is not part of the bound plan")
+        expected_roles = frozenset(
+            role
+            for role, task_id in bindings.task_ids_by_role.items()
+            if task_id in lane.task_ids
+        )
+        actual_roles = frozenset(roles)
+        if not actual_roles or actual_roles != expected_roles:
+            raise FleetContractError("Fleet lane roles do not match the bound plan")
+        with self._lock:
+            if self._active_fleet_lane_id is not None:
+                raise FleetContractError("another Fleet lane is already active")
+            self._active_fleet_lane_id = lane_id
+            self._active_fleet_roles = actual_roles
+        try:
+            yield
+        finally:
+            with self._lock:
+                if self._active_fleet_lane_id == lane_id:
+                    self._active_fleet_lane_id = None
+                    self._active_fleet_roles = frozenset()
+
+    def _assert_fleet_lane_admission(self, role: str, task_id: str) -> FleetWorkerAssignment | None:
+        bindings = self.fleet_bindings
+        if bindings is None:
+            return None
+        assignment = bindings.assignments_by_role.get(role)
+        if assignment is None or assignment.task_id != task_id:
+            raise FleetContractError("repository worker is not bound to the Fleet assignment")
+        with self._lock:
+            active_lane = self._active_fleet_lane_id
+            active_roles = self._active_fleet_roles
+        if active_lane != assignment.lane_id or role not in active_roles:
+            raise FleetContractError("repository worker attempted a tool outside its active Fleet lane")
+        return assignment
 
     def allowed_paths(self, role: str) -> tuple[str, ...]:
         if role == "free_single_agent":
@@ -410,30 +656,43 @@ class BoundRepositoryToolset:
         before_git: Any = None
         mcp_identity: Any = None
         try:
+            assignment = self._assert_fleet_lane_admission(role, task_id)
             job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
             if not job:
                 raise LookupError("linked Sovereign Agent Job was not found")
-            before_git = read_git_workspace_identity(
+            repository_path = repo_dir_for_workspace(
+                str(job.workspace_id or self.job_id),
                 self.workspace_root,
+            )
+            before_git = read_git_workspace_identity(
+                repository_path,
                 repository=job.repo_url,
             )
             mcp_identity = read_mcp_runtime_identity(
                 expected_revision=before_git.base_commit_sha,
             )
+            receipt_arguments = dict(parameters)
+            if assignment is not None:
+                receipt_arguments["fleetBinding"] = {
+                    "planHash": assignment.plan_hash,
+                    "assignmentHash": assignment.assignment_hash,
+                    "laneId": assignment.lane_id,
+                    "taskId": assignment.task_id,
+                }
             tool_call_id = start_agent_tool_call(
                 conn,
                 run_id=self.run_id,
                 task_id=task_id,
                 agent_id=role,
                 tool_name=action,
-                arguments=parameters,
+                arguments=receipt_arguments,
                 mutating=mutation,
             )
-            result = run_agent_job_tool(job, action, parameters, self.workspace_root)
+            result = run_agent_job_tool(self.job_id, action, parameters, repository_path)
             merged = _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, self.job_id, merged)
             after_git = read_git_workspace_identity(
-                self.workspace_root,
+                repository_path,
                 repository=job.repo_url,
             )
             mutation_performed = bool(
@@ -466,13 +725,23 @@ class BoundRepositoryToolset:
                     "hasDiff": bool(merged.diff_summary),
                     "hasTests": bool(merged.test_summary),
                     "evidencePassed": gate.passed,
+                    **({
+                        "fleetPlanHash": assignment.plan_hash,
+                        "assignmentHash": assignment.assignment_hash,
+                        "fleetLaneId": assignment.lane_id,
+                        "fleetTaskId": assignment.task_id,
+                    } if assignment is not None else {}),
                 },
                 repository=job.repo_url,
                 base_commit_sha=before_git.base_commit_sha,
                 mcp_revision=mcp_identity.revision,
                 mcp_image_digest=mcp_identity.image_digest,
                 mcp_revision_verified=mcp_identity.revision_verified,
-                operation_identity=f"agent-repository-tool:{role}:{action}",
+                operation_identity=(
+                    f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}"
+                    if assignment is not None
+                    else f"agent-repository-tool:{role}:{action}"
+                ),
                 diff_sha256=after_git.diff_sha256,
                 test_evidence_sha256=canonical_sha256({
                     "exit_code": int(result.exit_code or 0),
@@ -500,7 +769,7 @@ class BoundRepositoryToolset:
             if tool_call_id and job is not None and before_git is not None and mcp_identity is not None:
                 try:
                     failed_git = read_git_workspace_identity(
-                        self.workspace_root,
+                        repository_path,
                         repository=job.repo_url,
                     )
                     finish_agent_tool_call(
@@ -513,7 +782,11 @@ class BoundRepositoryToolset:
                         mcp_revision=mcp_identity.revision,
                         mcp_image_digest=mcp_identity.image_digest,
                         mcp_revision_verified=mcp_identity.revision_verified,
-                        operation_identity=f"agent-repository-tool:{role}:{action}",
+                        operation_identity=(
+                            f"agent-repository-tool:{role}:{action}:fleet:{assignment.plan_hash}:assignment:{assignment.assignment_hash}"
+                            if assignment is not None
+                            else f"agent-repository-tool:{role}:{action}"
+                        ),
                         diff_sha256=failed_git.diff_sha256,
                         test_evidence_sha256=canonical_sha256({"exit_code": 1, "test_summary": ""}),
                         evidence_gate_result="FAIL",
@@ -658,4 +931,6 @@ class BoundRepositoryToolset:
                 "openCircuits": sorted(self._open_circuits),
                 "rolesWithCalls": sorted(role for role, count in self._call_counts.items() if count > 0),
                 "rolesWithMutations": sorted(role for role, count in self._mutation_counts.items() if count > 0),
+                "fleetPlanHash": self.fleet_bindings.plan.plan_hash if self.fleet_bindings else None,
+                "activeFleetLaneId": self._active_fleet_lane_id,
             }

@@ -16,8 +16,10 @@ from agent_runtime.cognitive_repository_tools import (
     _path_in_role_scope,
     _redact,
     _safe_path,
+    build_repository_fleet_bindings,
 )
 from agent_runtime.cognitive_swarm_manifest import WORKER_ROLES
+from agent_runtime.fleet_supervisor import FleetContractError
 from agent_runtime.job_store import update_agent_job_state
 from agent_runtime.tools.file_tool import FileReadTool
 
@@ -31,6 +33,17 @@ def _toolset(*, write_confirmed: bool) -> BoundRepositoryToolset:
         task_ids_by_agent={role: f"task-{role}" for role in WORKER_ROLES},
         workspace_root=Path("/tmp/sovereign-test-workspaces"),
         write_confirmed=write_confirmed,
+    )
+
+
+def _repository_fleet_bindings():
+    return build_repository_fleet_bindings(
+        run_id="run-test-runtime",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        workspace_id="agent-test-runtime",
+        workspace_branch="main",
+        base_revision="a" * 40,
+        task_ids_by_agent={role: f"task-{role}" for role in WORKER_ROLES},
     )
 
 
@@ -68,6 +81,42 @@ def test_write_tool_exists_only_after_authenticated_execution_intent() -> None:
     assert read_only.allowed_tool_names("predictive_qa") == READ_REPOSITORY_TOOL_NAMES
     assert not any(tool in read_only.allowed_tool_names("predictive_qa") for tool in WRITE_REPOSITORY_TOOL_NAMES)
     assert all(tool in mutating.allowed_tool_names("predictive_qa") for tool in WRITE_REPOSITORY_TOOL_NAMES)
+
+
+def test_repository_fleet_plan_is_hash_bound_and_serial_without_independence_receipts() -> None:
+    bindings = _repository_fleet_bindings()
+
+    assert bindings.plan.repository == "OuroborosCollective/Sovereign-Studio-ato"
+    assert bindings.plan.base_revision == "a" * 40
+    assert tuple(lane.sequence for lane in bindings.plan.lanes) == tuple(range(1, len(WORKER_ROLES) + 1))
+    assert all(lane.parallel_safe is False for lane in bindings.plan.lanes)
+    assert {task.task_id for task in bindings.plan.tasks} == set(bindings.task_ids_by_role.values())
+    assert set(bindings.assignments_by_role) == set(WORKER_ROLES)
+    assert "ARCHITECTURE_RECEIPTS_MISSING" in bindings.plan.risk_codes
+    assert "UNPROVEN_INDEPENDENCE" in bindings.plan.risk_codes
+    assert all(
+        assignment.plan_hash == bindings.plan.plan_hash
+        and assignment.task_id == bindings.task_ids_by_role[role]
+        and assignment.expected_base_revision == bindings.plan.base_revision
+        for role, assignment in bindings.assignments_by_role.items()
+    )
+
+
+def test_repository_tool_calls_require_the_current_bound_fleet_lane() -> None:
+    toolset = _toolset(write_confirmed=True)
+    bindings = _repository_fleet_bindings()
+    toolset.bind_fleet_execution(bindings)
+    role = WORKER_ROLES[0]
+    assignment = bindings.assignments_by_role[role]
+
+    with pytest.raises(FleetContractError, match="active Fleet lane"):
+        toolset._assert_fleet_lane_admission(role, assignment.task_id)
+
+    with toolset.activate_fleet_lane(assignment.lane_id, (role,)):
+        assert toolset._assert_fleet_lane_admission(role, assignment.task_id) == assignment
+
+    with pytest.raises(FleetContractError, match="active Fleet lane"):
+        toolset._assert_fleet_lane_admission(role, assignment.task_id)
 
 
 def test_circuit_opens_after_three_consecutive_tool_failures() -> None:

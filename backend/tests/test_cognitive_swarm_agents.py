@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import contextmanager
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ PRODUCTION_BACKEND = BACKEND.parent / "scripts" / "sovereign-backend"
 sys.path.insert(0, str(BACKEND))
 
 import agent_runtime.cognitive_swarm_agents as swarm_module
+from agent_runtime.cognitive_repository_tools import build_repository_fleet_bindings
 from agent_runtime.llm_contract import LlmRouteBinding
 from agent_runtime.cognitive_swarm_agents import (
     ALLOWED_LITELLM_MODEL_ALIASES,
@@ -165,6 +167,136 @@ def test_stage_observer_reports_each_core_agent_in_both_loops(monkeypatch) -> No
     assert all(event["status"] in {"RUNNING", "VERIFYING", "COMPLETED", "BLOCKED"} for event in events)
     assert sum(event["status"] == "BLOCKED" for event in events) == 12
     assert all("prompt" not in event and "output" not in event for event in events)
+
+
+def test_repository_workers_follow_persisted_serial_fleet_lanes(monkeypatch) -> None:
+    monkeypatch.setattr(swarm_module, "_require_agents_sdk", lambda: (object(), object()))
+    monkeypatch.setattr(
+        swarm_module,
+        "build_route_run_config",
+        lambda route, output_token_limit: SimpleNamespace(
+            model="openai/gpt-5.4-mini",
+            transport="openrouter",
+            run_config=object(),
+        ),
+    )
+    dispatcher = object()
+    workers = tuple(object() for _ in range(6))
+    judge = object()
+    fake_swarm = CognitiveSwarm(
+        dispatcher=dispatcher,
+        workers=workers,
+        specialists=(),
+        judge=judge,
+    )
+    worker_roles = {
+        id(worker): role
+        for worker, role in zip(workers, swarm_module.WORKER_ROLES, strict=True)
+    }
+    monkeypatch.setattr(swarm_module, "build_cognitive_swarm", lambda **kwargs: fake_swarm)
+
+    worker_order: list[str] = []
+
+    async def fake_run_stage(runner_class, agent, prompt, *, stage, **kwargs):
+        if agent is dispatcher:
+            return SimpleNamespace(final_output=DispatchPlan(
+                mission="Inspect Fleet binding.",
+                ordered_work=[f"work-{index}" for index in range(6)],
+                required_evidence=["fleet plan"],
+                initial_blockers=[],
+            ))
+        if agent is judge:
+            return SimpleNamespace(final_output=JudgeVerdict(
+                loop=0,
+                verdict="blocked",
+                blockers=["runtime evidence remains bounded"],
+                accepted_evidence=[],
+                rejected_claims=[],
+                required_next_actions=["retain evidence"],
+                draft_pr_ready=False,
+                human_approval_required=False,
+            ))
+        role = worker_roles[id(agent)]
+        worker_order.append(role)
+        assert "Repository Fleet binding (immutable for this pass):" in prompt
+        return SimpleNamespace(final_output=WorkerReport(
+            role=role,
+            loop=0,
+            status="blocked",
+            findings=["No unbounded repository action was taken."],
+            required_actions=["preserve Fleet evidence"],
+            evidence_observed=["Fleet lane binding"],
+            evidence_missing=[],
+            blocked=True,
+        ))
+
+    monkeypatch.setattr(swarm_module, "_run_stage", fake_run_stage)
+    bindings = build_repository_fleet_bindings(
+        run_id="run-test-runtime",
+        repository="OuroborosCollective/Sovereign-Studio-ato",
+        workspace_id="agent-test-runtime",
+        workspace_branch="main",
+        base_revision="a" * 40,
+        task_ids_by_agent={role: f"task-{role}" for role in swarm_module.WORKER_ROLES},
+    )
+    admitted_lanes: list[tuple[str, tuple[str, ...]]] = []
+
+    @contextmanager
+    def fleet_lane_guard(lane_id: str, roles: tuple[str, ...]):
+        admitted_lanes.append((lane_id, roles))
+        yield
+
+    events: list[dict[str, object]] = []
+    result = asyncio.run(run_cognitive_swarm(
+        "Inspect the persisted Fleet lanes.",
+        main_route={"id": "paid-main"},
+        agent_route={"id": "paid-main"},
+        repository_tool_factory=lambda role: [],
+        fleet_plan=bindings.plan,
+        fleet_task_ids_by_role=bindings.task_ids_by_role,
+        fleet_assignments_by_role=bindings.assignments_by_role,
+        fleet_lane_guard=fleet_lane_guard,
+        fleet_head_readback=lambda: "a" * 40,
+        stage_observer=events.append,
+    ))
+
+    expected_roles = [
+        next(
+            role
+            for role, task_id in bindings.task_ids_by_role.items()
+            if task_id == lane.task_ids[0]
+        )
+        for lane in bindings.plan.lanes
+    ]
+    assert worker_order == expected_roles * 2
+    assert admitted_lanes == [
+        (lane.lane_id, (role,))
+        for lane in bindings.plan.lanes
+        for role in [next(
+            role
+            for role, task_id in bindings.task_ids_by_role.items()
+            if task_id == lane.task_ids[0]
+        )]
+    ] * 2
+    assert result["fleetPlanHash"] == bindings.plan.plan_hash
+    assert result["fleetTaskIdsByRole"] == bindings.task_ids_by_role
+    assert all(lane.parallel_safe is False for lane in bindings.plan.lanes)
+    lane_events = [event for event in events if event["eventType"] == "fleet_lane_started"]
+    assert len(lane_events) == len(bindings.plan.lanes) * 2
+    assert all(event["fleetPlanHash"] == bindings.plan.plan_hash for event in lane_events)
+
+
+def test_repository_workers_fail_closed_without_a_persisted_fleet_plan() -> None:
+    with pytest.raises(SwarmExecutionError) as captured:
+        asyncio.run(run_cognitive_swarm(
+            "Inspect the repository execution boundary.",
+            main_route={"id": "paid-main"},
+            agent_route={"id": "paid-main"},
+            repository_tool_factory=lambda role: [],
+        ))
+
+    assert captured.value.family == "FLEET_PLAN_REQUIRED_FOR_REPOSITORY_WORKERS"
+    assert captured.value.next_action == "BUILD_AND_PERSIST_A_HASH_BOUND_FLEET_PLAN"
 
 
 def test_explicit_mission_completion_finishes_without_approval(monkeypatch) -> None:
