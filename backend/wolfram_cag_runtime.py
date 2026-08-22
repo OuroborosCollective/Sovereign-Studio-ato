@@ -1,10 +1,11 @@
 """Internal, secret-free runtime endpoints for Wolfram CAG live evidence.
 
-Only fixed canaries are exposed. Arbitrary CAG prompts are deliberately not an
-operator API here: semantic claim verification remains owned by the existing
-CAG receipt/evidence lane. The protected provider credential is resolved only
-inside ``execute_live_cag_request`` and never enters Flask request/response
-payloads.
+CAG provider credentials, Wolfram Cloud secured-authentication credentials and
+partner/public projections are deliberately separate trust domains. Fixed CAG
+canaries remain non-semantic transport checks. The Wolfram Cloud extension may
+render the already-redacted partner pack into one fixed private notebook and
+perform bounded read-only Bitcoin mainnet queries; no transaction mutation,
+signing or submission capability is exposed here.
 """
 
 from __future__ import annotations
@@ -87,6 +88,25 @@ def _selected_components(value: Any) -> list[str]:
     return selected
 
 
+def _cloud_notebook_status() -> dict[str, Any]:
+    try:
+        from agent_runtime.wolfram_partner_notebook import wolfram_cloud_notebook_status
+
+        return wolfram_cloud_notebook_status()
+    except Exception as exc:
+        return {
+            "configured": False,
+            "credentialFilesValid": False,
+            "targetPath": None,
+            "targetPathValid": False,
+            "authenticated": False,
+            "syncExecuted": False,
+            "errorFamily": "CLOUD_NOTEBOOK_STATUS",
+            "message": type(exc).__name__,
+            "secretValuesReturned": False,
+        }
+
+
 def cag_runtime_status() -> dict[str, Any]:
     components: list[dict[str, Any]] = []
     for capability_id, component in WOLFRAM_CAG_COMPONENT_MAP.items():
@@ -111,6 +131,13 @@ def cag_runtime_status() -> dict[str, Any]:
         "contractVersion": CONTRACT_VERSION,
         "sourceRevision": _revision(),
         "components": components,
+        "cloudNotebook": _cloud_notebook_status(),
+        "bitcoinReadback": {
+            "network": "Bitcoin-Mainnet",
+            "operations": ["network", "block", "transaction"],
+            "readOnly": True,
+            "transactionMutationAvailable": False,
+        },
         "providerCanaryExecuted": False,
         "runtimeVerified": False,
         "secretValuesReturned": False,
@@ -245,12 +272,7 @@ def run_cag_canaries(*, get_connection: ConnectionFactory, components: list[str]
 
 
 def build_partner_report(*, get_connection: ConnectionFactory) -> dict[str, Any]:
-    """Deterministic partner handoff pack over all persisted analysis records.
-
-    The report is a bounded public projection gated by the ledger redaction
-    gate; it contains no credential fingerprints, secrets or raw provider
-    payloads. Rendering the markdown artifact is display-only.
-    """
+    """Deterministic partner handoff pack over all persisted analysis records."""
     connection = None
     try:
         connection = get_connection()
@@ -293,6 +315,79 @@ def build_partner_report(*, get_connection: ConnectionFactory) -> dict[str, Any]
     }
 
 
+def build_partner_notebook_preview(*, get_connection: ConnectionFactory) -> dict[str, Any]:
+    report = build_partner_report(get_connection=get_connection)
+    if not report.get("ok"):
+        return report
+    try:
+        from agent_runtime.wolfram_partner_notebook import build_partner_notebook_projection
+
+        projection = build_partner_notebook_projection(report["pack"])
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CLOUD_NOTEBOOK_PREVIEW_FAILED",
+            "errorFamily": getattr(exc, "family", "NOTEBOOK_PROJECTION"),
+            "message": type(exc).__name__,
+            "secretValuesReturned": False,
+        }
+    return {
+        "ok": True,
+        "status": "WOLFRAM_CLOUD_NOTEBOOK_PREVIEW",
+        "sourceRevision": _revision(),
+        "projection": projection,
+        "notebookProjectionSha256": projection["notebookProjectionSha256"],
+        "cloudWriteExecuted": False,
+        "secretValuesReturned": False,
+        "truthNotice": "Notebook preview is a deterministic projection only; no Wolfram Cloud write or readback occurred.",
+    }
+
+
+def sync_partner_notebook_report(*, get_connection: ConnectionFactory) -> dict[str, Any]:
+    report = build_partner_report(get_connection=get_connection)
+    if not report.get("ok"):
+        return report
+    try:
+        from agent_runtime.wolfram_partner_notebook import sync_partner_notebook
+
+        return sync_partner_notebook(report["pack"])
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CLOUD_NOTEBOOK_SYNC_FAILED",
+            "errorFamily": getattr(exc, "family", "CLOUD_NOTEBOOK_SYNC"),
+            "message": type(exc).__name__,
+            "secretValuesReturned": False,
+        }
+
+
+def run_bitcoin_research_readback(body: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(body, dict) or set(body) - {"operation", "identifier", "properties"}:
+        return {
+            "ok": False,
+            "status": "WOLFRAM_BITCOIN_READBACK_FAILED",
+            "errorFamily": "READBACK_SCHEMA",
+            "message": "invalid_request",
+            "secretValuesReturned": False,
+        }
+    try:
+        from agent_runtime.wolfram_blockchain_readback import run_bitcoin_readback
+
+        return run_bitcoin_readback(
+            operation=body.get("operation"),
+            identifier=body.get("identifier"),
+            properties=body.get("properties"),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "WOLFRAM_BITCOIN_READBACK_FAILED",
+            "errorFamily": getattr(exc, "family", "BLOCKCHAIN_READBACK"),
+            "message": type(exc).__name__,
+            "secretValuesReturned": False,
+        }
+
+
 def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory) -> None:
     @app.route("/api/internal/wolfram-cag/status", methods=["GET"])
     def _status():
@@ -321,10 +416,38 @@ def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory)
         result = build_partner_report(get_connection=get_connection)
         return jsonify(result), (200 if result.get("ok") else 500)
 
+    @app.route("/api/internal/wolfram-cag/partner-notebook", methods=["GET"])
+    def _partner_notebook_preview():
+        if not _service_authorized():
+            return jsonify({"ok": False, "error": "service_unauthorized"}), 401
+        result = build_partner_notebook_preview(get_connection=get_connection)
+        return jsonify(result), (200 if result.get("ok") else 500)
+
+    @app.route("/api/internal/wolfram-cag/partner-notebook/sync", methods=["POST"])
+    def _partner_notebook_sync():
+        if not _service_authorized():
+            return jsonify({"ok": False, "error": "service_unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        if body != {}:
+            return jsonify({"ok": False, "error": "invalid_request"}), 400
+        result = sync_partner_notebook_report(get_connection=get_connection)
+        return jsonify(result), (200 if result.get("ok") else 409)
+
+    @app.route("/api/internal/wolfram-cag/blockchain/readback", methods=["POST"])
+    def _blockchain_readback():
+        if not _service_authorized():
+            return jsonify({"ok": False, "error": "service_unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        result = run_bitcoin_research_readback(body)
+        return jsonify(result), (200 if result.get("ok") else 409)
+
 
 __all__ = [
-    "cag_runtime_status",
-    "run_cag_canaries",
+    "build_partner_notebook_preview",
     "build_partner_report",
+    "cag_runtime_status",
     "register_wolfram_cag_runtime",
+    "run_bitcoin_research_readback",
+    "run_cag_canaries",
+    "sync_partner_notebook_report",
 ]
