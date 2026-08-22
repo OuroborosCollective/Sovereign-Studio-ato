@@ -273,6 +273,53 @@ describe('SovereignAgentClient', () => {
     expect(jobs).toMatchObject([{ jobId: 'job-latest', workspaceId: 'ws-latest', status: 'running' }]);
   });
 
+  it('reads only canonical session-bound visual projections from the owned job route', async () => {
+    const canonical = {
+      schemaVersion: 'sovereign.visual-projection-event.v1',
+      projectionId: 'visual-1',
+      eventId: 'visual-1',
+      eventType: 'TERMINAL_VIEW_PROJECTED',
+      sessionId: 'livews-1234567890abcdef12345678',
+      sessionBindingHash: 'a'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      runId: 'run-1',
+      taskId: 'task-1',
+      workspaceId: 'ws-1',
+      actionId: 'action-1',
+      sourceKind: 'PROCESS',
+      projectionKind: 'TERMINAL',
+      projectionState: 'REQUESTED',
+      repositoryHead: 'b'.repeat(40),
+      sourceReceiptRef: 'c'.repeat(64),
+      sourceIdentityHash: 'd'.repeat(64),
+      payload: { chunk: '1 failed', exitCode: 1, processState: 'EXITED' },
+      projectionHash: 'e'.repeat(64),
+      authoritative: false,
+      claim: 'OBSERVED',
+    };
+    const legacy = { ...canonical, schemaVersion: 'sovereign.live-workspace-projection.v1', projectionId: 'legacy-1' };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ projections: [legacy, canonical] }), { status: 200 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const projections = await client.getProjections('job-1');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://agent.example.test/api/user/agent/jobs/job-1/projections?limit=100',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(projections).toHaveLength(1);
+    expect(projections[0]).toMatchObject({
+      projectionId: 'visual-1',
+      sessionBindingHash: 'a'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      projectionKind: 'TERMINAL',
+      projectionState: 'REQUESTED',
+      payload: { exitCode: 1 },
+      authoritative: false,
+      claim: 'OBSERVED',
+    });
+  });
+
   it('runs the deterministic janitor only through the owned job tool route', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       ok: true,

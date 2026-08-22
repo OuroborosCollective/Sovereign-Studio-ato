@@ -168,6 +168,7 @@ import {
   resolveSovereignAgentConfig,
   type SovereignAgentConfig,
   type SovereignAgentJobSnapshot,
+  type SovereignLiveProjection,
 } from "../runtime/sovereignAgentRuntime";
 import type { SovereignPatternLearningEvidence } from "../runtime/sovereignAgentClient";
 import {
@@ -282,6 +283,7 @@ export interface BuilderContainerProps {
   agentReady?: boolean;
   agentConfig?: SovereignAgentConfig;
   agentJob?: SovereignAgentJobSnapshot;
+  agentProjections?: readonly SovereignLiveProjection[];
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
@@ -2606,6 +2608,7 @@ export function BuilderContainer({
   agentReady,
   agentConfig,
   agentJob,
+  agentProjections,
   patternLearningEvidence,
   agentJobStatus,
   agentIsRunning,
@@ -4228,7 +4231,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
 
     if (isReviewableExecutionPreset) {
       appendActionEvent(buildRouteSelectionEvent({
-        route: 'agent',
+        route: 'sovereign-agent',
         reason: 'Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen; Browser-ARE wird nicht verwendet.',
         state: 'running',
       }));
@@ -4812,7 +4815,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         }
       }
 
-      if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown' || offlineIntent === 'status')) {
+      if (interpretationResult.rawContent && (offlineIntent === 'question' || offlineIntent === 'unknown')) {
         await quarantineOnlineObservation(interpretationResult.rawContent, routeDecision.modelId);
         appendGuardedWorkerText(interpretationResult.rawContent);
         appendActionEvent({
@@ -4835,7 +4838,6 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           ok: false,
           route: SOVEREIGN_WORKER_HEALTH,
           status: diagnostic.status,
-          statusText: diagnostic.statusText,
           error: interpretationResult.error || diagnostic.nextAction,
           bodySnippet: diagnostic.bodySnippet,
         };
@@ -5848,7 +5850,7 @@ Das echte Repo-Setup wurde geöffnet.`,
     }
 
     appendActionEvent(buildRouteSelectionEvent({
-      route: 'agent',
+      route: 'sovereign-agent',
       reason: `${action.label} benötigt einen echten Repository-Executor; Browser-ARE und lokale Code-Synthese werden übersprungen.`,
       state: 'running',
     }));
@@ -6532,6 +6534,9 @@ Das echte Repo-Setup wurde geöffnet.`,
                 <AgentEventStream
                   snapshot={agentWorkSnapshot}
                   job={scopedAgentJob}
+                  projections={(agentProjections ?? []).filter((projection) => (
+                    !scopedAgentJob?.workspaceId || projection.workspaceId === scopedAgentJob.workspaceId
+                  ))}
                   onCancel={onCancelAgent}
                   onOpenDraftPr={
                     (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)

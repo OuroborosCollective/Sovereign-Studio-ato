@@ -4,6 +4,7 @@ import {
   type SovereignAgentJobRequest,
   type SovereignAgentJobSnapshot,
   type SovereignAgentRuntimeEvent,
+  type SovereignLiveProjection,
   resolveSovereignAgentConfig,
 } from './sovereignAgentRuntime';
 
@@ -45,7 +46,7 @@ export interface SovereignAgentStartJobInput {
   mission: string;
   provisionWorkspace?: boolean;
   cloneRepo?: boolean;
-  stagedFiles?: SovereignStagedFile[];
+  stagedFiles?: readonly SovereignStagedFile[];
   testCommand?: string;
   githubAccessToken?: string;
 }
@@ -311,6 +312,56 @@ function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
 }
+function projectionArray(value: unknown): SovereignLiveProjection[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isObject).flatMap((item): SovereignLiveProjection[] => {
+    if (stringValue(item.schemaVersion) !== 'sovereign.visual-projection-event.v1') return [];
+    const kind = stringValue(item.projectionKind);
+    const state = stringValue(item.projectionState);
+    const source = stringValue(item.sourceKind);
+    const claim = stringValue(item.claim);
+    const payload = isObject(item.payload) ? item.payload : undefined;
+    const authoritative = item.authoritative === false;
+    if (!kind || !state || !source || !payload || !authoritative || claim !== 'OBSERVED') return [];
+    if (!['IDE_FILE', 'IDE_DIFF', 'TERMINAL', 'BROWSER', 'WINDOW_FOCUS'].includes(kind)) return [];
+    if (!['REQUESTED', 'VISIBLE', 'UNAVAILABLE', 'STALE'].includes(state)) return [];
+    if (!['MCP', 'REPOSITORY', 'GIT', 'PROCESS', 'PLAYWRIGHT', 'RUNTIME', 'GUI'].includes(source)) return [];
+    const projectionId = stringValue(item.projectionId) || stringValue(item.eventId);
+    const eventId = stringValue(item.eventId) || projectionId;
+    const sessionId = stringValue(item.sessionId);
+    const sessionBindingHash = stringValue(item.sessionBindingHash);
+    const attemptId = stringValue(item.attemptId);
+    const workspaceId = stringValue(item.workspaceId);
+    const actionId = stringValue(item.actionId);
+    const sourceReceiptRef = stringValue(item.sourceReceiptRef);
+    const sourceIdentityHash = stringValue(item.sourceIdentityHash);
+    const projectionHash = stringValue(item.projectionHash);
+    if (!projectionId || !eventId || !sessionId || !sessionBindingHash || !attemptId || !workspaceId || !actionId || !sourceReceiptRef || !sourceIdentityHash || !projectionHash) return [];
+    return [{
+      projectionId,
+      eventId,
+      sessionId,
+      sessionBindingHash,
+      attemptId,
+      runId: stringValue(item.runId),
+      taskId: stringValue(item.taskId),
+      jobId: stringValue(item.jobId),
+      workspaceId,
+      actionId,
+      sourceKind: source as SovereignLiveProjection['sourceKind'],
+      projectionKind: kind as SovereignLiveProjection['projectionKind'],
+      projectionState: state as SovereignLiveProjection['projectionState'],
+      repositoryHead: stringValue(item.repositoryHead) ?? null,
+      sourceReceiptRef,
+      sourceIdentityHash,
+      payload,
+      projectionHash,
+      authoritative: false,
+      claim: 'OBSERVED',
+    }];
+  });
+}
+
 function eventArray(value: unknown, now: () => number): SovereignAgentRuntimeEvent[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isObject).map((item): SovereignAgentRuntimeEvent => ({
@@ -603,6 +654,17 @@ export class SovereignAgentClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId)), init: { method: 'GET', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
+  }
+  async getProjections(jobId: string): Promise<SovereignLiveProjection[]> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/projections?limit=100')),
+      init: { method: 'GET', headers: headers(), credentials: 'include' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Live Workspace projections',
+    });
+    return projectionArray(body.projections);
   }
   async cancelJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);

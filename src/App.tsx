@@ -12,9 +12,11 @@ import {
 } from './features/product/runtime/sovereignAgentClient';
 import {
   createSovereignAgentIdleSnapshot,
+  isSovereignAgentTerminalStatus,
   resolveSovereignAgentConfig,
   summarizeSovereignAgentJob,
   type SovereignAgentJobSnapshot,
+  type SovereignLiveProjection,
 } from './features/product/runtime/sovereignAgentRuntime';
 import {
   reusableMemoryContext,
@@ -40,6 +42,7 @@ function SovereignChatApp() {
     () => createSovereignAgentIdleSnapshot(),
   );
   const [janitorPreview, setJanitorPreview] = useState('');
+  const [liveProjections, setLiveProjections] = useState<SovereignLiveProjection[]>([]);
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
   >();
@@ -106,6 +109,38 @@ function SovereignChatApp() {
       }
     };
     void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [agentClient, agentConfig.ready, agentJob.jobId, agentJob.status]);
+
+  useEffect(() => {
+    const jobId = agentJob.jobId;
+    if (!agentConfig.ready || !jobId || agentJob.status === 'idle' || agentJob.status === 'cleaned') {
+      setLiveProjections([]);
+      return;
+    }
+    let cancelled = false;
+    let polling = false;
+    const refresh = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const projections = await agentClient.getProjections(jobId);
+        if (!cancelled) setLiveProjections(projections);
+      } catch {
+        // Projection is optional observation. A readback failure must neither
+        // mutate the canonical job state nor invent a replacement event.
+      } finally {
+        polling = false;
+      }
+    };
+    void refresh();
+    if (isSovereignAgentTerminalStatus(agentJob.status)) {
+      return () => { cancelled = true; };
+    }
     const timer = window.setInterval(() => { void refresh(); }, 1500);
     return () => {
       cancelled = true;
@@ -378,6 +413,7 @@ function SovereignChatApp() {
           agentReady={agentConfig.ready}
           agentConfig={agentConfig}
           agentJob={agentJob}
+          agentProjections={liveProjections}
           patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning ? 'Sovereign Agent Auftrag läuft' : agentJob.lastError}
           agentIsRunning={agentIsRunning}

@@ -403,7 +403,7 @@ def _route_result(action: str, tool_name: str, execution: ToolExecution) -> Tool
         output=output,
         error=error or None,
         blocker=result.blocker,
-        metadata=result.metadata,
+        metadata={**dict(result.metadata or {}), "actionId": execution.call_id},
         tool=action,
         allowed=result.status == "done",
         stdout=output,
@@ -435,7 +435,7 @@ def run_agent_job_tool(
     params = parameters or {}
     normalized_tool, normalized_params = _normalize_route_tool(tool_name, params)
     resolved_workspace = _resolve_workspace_path(job_or_id, workspace_path)
-    call_id = f"{_resolve_job_id(job_or_id)[:8]}-{normalized_tool[:8]}"
+    call_id = f"{_resolve_job_id(job_or_id)[:8]}-{normalized_tool[:8]}-{uuid.uuid4().hex[:12]}"
 
     runner = ToolRunner(resolved_workspace)
     execution = runner._execute_single(
