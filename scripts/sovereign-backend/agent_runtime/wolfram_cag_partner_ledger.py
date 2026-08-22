@@ -92,6 +92,51 @@ def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
 
 
+def _causal_block(
+    *,
+    component: str,
+    normalized_question: str,
+    normalized_input_sha256: Any,
+    provider_response_sha256: Any,
+    credential_fingerprint_sha256: Any,
+    verdict: str,
+    derived_conclusion: str,
+    repository_revision: Any,
+    runtime_revision: Any,
+    provider_request_id: Any,
+    provider_response_uuid: Any,
+    documentation_class: str,
+    assumptions: Any,
+    limitations: Any,
+    source_refs: Any,
+    evidence_passport_hash: Any,
+    hf_publication_ref: Any,
+    hf_target_revision: Any,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "cagComponent": component,
+        "cagContractVersion": CONTRACT_VERSION,
+        "repositoryRevision": _revision(repository_revision),
+        "runtimeRevision": _revision(runtime_revision),
+        "normalizedQuestion": normalized_question,
+        "normalizedInputSha256": _sha(normalized_input_sha256, required=True),
+        "providerRequestId": _clean_optional_id(provider_request_id),
+        "providerResponseUuid": _clean_optional_id(provider_response_uuid),
+        "providerResponseSha256": _sha(provider_response_sha256),
+        "credentialFingerprintSha256": _sha(credential_fingerprint_sha256),
+        "verdict": verdict,
+        "derivedConclusion": derived_conclusion,
+        "documentationClass": documentation_class,
+        "assumptions": _clean_list(assumptions),
+        "limitations": _clean_list(limitations),
+        "sourceRefs": _clean_list(source_refs, limit=64),
+        "evidencePassportHash": _sha(evidence_passport_hash),
+        "hfPublicationRef": _clean_text(hf_publication_ref, limit=500) or None,
+        "hfTargetRevision": _clean_text(hf_target_revision, limit=200) or None,
+    }
+
+
 def build_partner_analysis_record(
     *,
     component: str,
@@ -132,28 +177,26 @@ def build_partner_analysis_record(
     if selected_class == "HF_PUBLISHED_VERIFIED" and (not hf_publication_ref or not hf_target_revision):
         raise PartnerAnalysisError("HF_PUBLISHED_VERIFIED requires publication and target readback")
 
-    causal = {
-        "schemaVersion": SCHEMA_VERSION,
-        "cagComponent": selected_component,
-        "cagContractVersion": CONTRACT_VERSION,
-        "repositoryRevision": _revision(repository_revision),
-        "runtimeRevision": _revision(runtime_revision),
-        "normalizedQuestion": question,
-        "normalizedInputSha256": _sha(normalized_input_sha256, required=True),
-        "providerRequestId": _clean_optional_id(provider_request_id),
-        "providerResponseUuid": _clean_optional_id(provider_response_uuid),
-        "providerResponseSha256": _sha(provider_response_sha256),
-        "credentialFingerprintSha256": _sha(credential_fingerprint_sha256),
-        "verdict": selected_verdict,
-        "derivedConclusion": conclusion,
-        "documentationClass": selected_class,
-        "assumptions": _clean_list(assumptions),
-        "limitations": _clean_list(limitations),
-        "sourceRefs": _clean_list(source_refs, limit=64),
-        "evidencePassportHash": _sha(evidence_passport_hash),
-        "hfPublicationRef": _clean_text(hf_publication_ref, limit=500) or None,
-        "hfTargetRevision": _clean_text(hf_target_revision, limit=200) or None,
-    }
+    causal = _causal_block(
+        component=selected_component,
+        normalized_question=question,
+        normalized_input_sha256=normalized_input_sha256,
+        provider_response_sha256=provider_response_sha256,
+        credential_fingerprint_sha256=credential_fingerprint_sha256,
+        verdict=selected_verdict,
+        derived_conclusion=conclusion,
+        repository_revision=repository_revision,
+        runtime_revision=runtime_revision,
+        provider_request_id=provider_request_id,
+        provider_response_uuid=provider_response_uuid,
+        documentation_class=selected_class,
+        assumptions=assumptions,
+        limitations=limitations,
+        source_refs=source_refs,
+        evidence_passport_hash=evidence_passport_hash,
+        hf_publication_ref=hf_publication_ref,
+        hf_target_revision=hf_target_revision,
+    )
     record_sha256 = hashlib.sha256(_canonical_json(causal).encode("utf-8")).hexdigest()
     return {
         **causal,
@@ -222,13 +265,146 @@ def persist_partner_analysis(connection: Any, record: Mapping[str, Any]) -> str:
     return str(record["analysisId"])
 
 
+REPORTABLE_CLASSES = frozenset({
+    "PARTNER_REPORTABLE",
+    "PUBLIC_DERIVED_RECEIPT",
+    "HF_PUBLISHED_VERIFIED",
+})
+REPORT_SCHEMA_VERSION = "sovereign.wolfram-cag-partner-report.v1"
+_REPORT_ENTRY_LIMITS = {
+    "normalizedQuestion": 1_024,
+    "derivedConclusion": 2_048,
+}
+
+
+def _recompute_record_sha(record: Mapping[str, Any]) -> str:
+    """Recompute the causal hash of a canonical record and fail on tampering."""
+    causal = _causal_block(
+        component=_clean_text(record.get("cagComponent"), limit=120),
+        normalized_question=_clean_text(record.get("normalizedQuestion"), limit=8_192),
+        normalized_input_sha256=record.get("normalizedInputSha256"),
+        provider_response_sha256=record.get("providerResponseSha256"),
+        credential_fingerprint_sha256=record.get("credentialFingerprintSha256"),
+        verdict=_clean_text(record.get("verdict"), limit=40).upper(),
+        derived_conclusion=_clean_text(record.get("derivedConclusion"), limit=8_192),
+        repository_revision=record.get("repositoryRevision"),
+        runtime_revision=record.get("runtimeRevision"),
+        provider_request_id=record.get("providerRequestId"),
+        provider_response_uuid=record.get("providerResponseUuid"),
+        documentation_class=_clean_text(record.get("documentationClass"), limit=64).upper(),
+        assumptions=record.get("assumptions"),
+        limitations=record.get("limitations"),
+        source_refs=record.get("sourceRefs"),
+        evidence_passport_hash=record.get("evidencePassportHash"),
+        hf_publication_ref=record.get("hfPublicationRef"),
+        hf_target_revision=record.get("hfTargetRevision"),
+    )
+    return hashlib.sha256(_canonical_json(causal).encode("utf-8")).hexdigest()
+
+
+def build_partner_report(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    title: str = "Wolfram CAG partner analysis report",
+) -> dict[str, Any]:
+    """Build a deterministic, secret-free partner report index.
+
+    Same normalized record set always produces the same ``reportSha256``,
+    regardless of input order or timestamps. ``PRIVATE_PROVIDER_EVIDENCE``
+    records fail closed: a partner report can never carry private classes.
+    Credential fingerprints never enter the report.
+    """
+    if isinstance(records, (str, bytes)) or not isinstance(records, Sequence):
+        raise PartnerAnalysisError("partner report requires a sequence of analysis records")
+    selected_title = _clean_text(title, limit=300)
+    if not selected_title:
+        raise PartnerAnalysisError("partner report requires a title")
+
+    entries = []
+    verdict_counts = {verdict: 0 for verdict in sorted(VERDICTS)}
+    unresolved = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise PartnerAnalysisError("partner report entries must be canonical analysis records")
+        documentation_class = _clean_text(record.get("documentationClass"), limit=64).upper()
+        if documentation_class not in REPORTABLE_CLASSES:
+            raise PartnerAnalysisError(
+                "partner report rejects private or unknown documentation classes"
+            )
+        declared_sha = _sha(record.get("analysisRecordSha256"), required=True)
+        if _recompute_record_sha(record) != declared_sha:
+            raise PartnerAnalysisError("analysis record hash mismatch; refusing tampered input")
+        analysis_id = _clean_text(record.get("analysisId"), limit=64)
+        verdict = _clean_text(record.get("verdict"), limit=40).upper()
+        if verdict not in VERDICTS:
+            raise PartnerAnalysisError("partner report found an invalid verdict")
+        verdict_counts[verdict] += 1
+
+        hf_publication = None
+        if documentation_class == "HF_PUBLISHED_VERIFIED":
+            hf_publication = {
+                "hfPublicationRef": _clean_text(record.get("hfPublicationRef"), limit=500),
+                "hfTargetRevision": _clean_text(record.get("hfTargetRevision"), limit=200),
+            }
+
+        question = _clean_text(record.get("normalizedQuestion"), limit=_REPORT_ENTRY_LIMITS["normalizedQuestion"])
+        conclusion = _clean_text(record.get("derivedConclusion"), limit=_REPORT_ENTRY_LIMITS["derivedConclusion"])
+        entry = {
+            "analysisId": analysis_id,
+            "analysisRecordSha256": declared_sha,
+            "cagComponent": _clean_text(record.get("cagComponent"), limit=120),
+            "verdict": verdict,
+            "documentationClass": documentation_class,
+            "normalizedQuestion": question,
+            "normalizedInputSha256": _sha(record.get("normalizedInputSha256"), required=True),
+            "derivedConclusion": conclusion,
+            "assumptions": _clean_list(record.get("assumptions")),
+            "limitations": _clean_list(record.get("limitations")),
+            "sourceRefs": _clean_list(record.get("sourceRefs"), limit=64),
+            "providerRequestId": _clean_optional_id(record.get("providerRequestId")),
+            "providerResponseUuid": _clean_optional_id(record.get("providerResponseUuid")),
+            "providerResponseSha256": _sha(record.get("providerResponseSha256")),
+            "evidencePassportHash": _sha(record.get("evidencePassportHash")),
+            "hfPublication": hf_publication,
+        }
+        entries.append(entry)
+        if verdict in {"INCONCLUSIVE", "UNAVAILABLE"}:
+            unresolved.append({
+                "analysisId": analysis_id,
+                "analysisRecordSha256": declared_sha,
+                "verdict": verdict,
+                "normalizedQuestion": question,
+            })
+
+    entries.sort(key=lambda entry: entry["analysisRecordSha256"])
+    unresolved.sort(key=lambda item: item["analysisRecordSha256"])
+    causal_report = {
+        "schemaVersion": REPORT_SCHEMA_VERSION,
+        "title": selected_title,
+        "recordCount": len(entries),
+        "components": sorted({entry["cagComponent"] for entry in entries}),
+        "verdictCounts": verdict_counts,
+        "records": entries,
+        "unresolvedQuestions": unresolved,
+    }
+    return {
+        **causal_report,
+        "reportSha256": hashlib.sha256(
+            _canonical_json(causal_report).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "CONTRACT_VERSION",
     "VERDICTS",
     "DOCUMENTATION_CLASSES",
+    "REPORTABLE_CLASSES",
+    "REPORT_SCHEMA_VERSION",
     "PartnerAnalysisError",
     "build_partner_analysis_record",
+    "build_partner_report",
     "public_partner_projection",
     "persist_partner_analysis",
 ]
