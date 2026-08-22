@@ -1,8 +1,11 @@
 name: Sovereign Studio V3 ATO Pipeline
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
+  # No schedule: the ATO pipeline entrypoint scripts/ato/autonomous-pipeline.ts
+  # is not implemented (never existed in repository history), so every
+  # scheduled run failed with ERR_MODULE_NOT_FOUND and marked the head commit
+  # red. The lane reactivates automatically via the paths-scoped push trigger
+  # once the pipeline script lands.
   workflow_dispatch:
     inputs:
       force_optimization:
@@ -31,6 +34,13 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preflight ATO pipeline contract
+        run: |
+          if [ ! -f scripts/ato/autonomous-pipeline.ts ]; then
+            echo "::error title=ATO pipeline not implemented::scripts/ato/autonomous-pipeline.ts is missing from the repository. This workflow stays inactive until the pipeline entrypoint lands; it reactivates automatically through the paths-scoped push trigger."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
