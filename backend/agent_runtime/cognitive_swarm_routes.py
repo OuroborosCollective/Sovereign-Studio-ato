@@ -343,12 +343,14 @@ def execute_persisted_swarm(
     response_context: dict[str, object] | None = None,
     repository_tool_factory: RepositoryToolFactory | None = None,
     repository_tool_summary: Callable[[], dict[str, Any]] | None = None,
+    repository_toolset: BoundRepositoryToolset | None = None,
     job_id: str | None = None,
     task_ids_by_agent: dict[str, str] | None = None,
     worker_routes: dict[str, dict[str, Any]] | None = None,
     stage_billing: AgentStageBilling | None = None,
 ) -> tuple[dict[str, object], int]:
     manifest = manifest_payload()
+    fleet_bindings = None
 
     def persist_stage_event(stage: dict[str, object]) -> None:
         agent_id = str(stage.get("agentId") or "orchestrator").strip()
@@ -366,6 +368,23 @@ def execute_persisted_swarm(
         }
         if isinstance(loop_value, int):
             safe_payload["loop"] = loop_value
+        for key, payload_key in (
+            ("fleetPlanHash", "fleetPlanHash"),
+            ("fleetLaneId", "fleetLaneId"),
+            ("fleetTaskId", "fleetTaskId"),
+            ("assignmentHash", "assignmentHash"),
+        ):
+            value = stage.get(key)
+            if isinstance(value, str) and value.strip():
+                safe_payload[payload_key] = value.strip()
+        if isinstance(stage.get("fleetPlan"), dict):
+            safe_payload["fleetPlan"] = dict(stage["fleetPlan"])
+        if isinstance(stage.get("fleetTaskIdsByRole"), dict):
+            safe_payload["fleetTaskIdsByRole"] = dict(stage["fleetTaskIdsByRole"])
+        if isinstance(stage.get("fleetAssignmentsByRole"), dict):
+            safe_payload["fleetAssignmentsByRole"] = dict(stage["fleetAssignmentsByRole"])
+        if isinstance(stage.get("fleetAttemptsByRole"), dict):
+            safe_payload["fleetAttemptsByRole"] = dict(stage["fleetAttemptsByRole"])
         conn = get_connection()
         try:
             record_agent_stage_event(
@@ -386,6 +405,28 @@ def execute_persisted_swarm(
             _close_connection(conn)
 
     try:
+        if repository_toolset is not None and repository_toolset.has_repository_fleet_workers():
+            fleet_bindings = repository_toolset.resolve_fleet_bindings()
+            repository_toolset.bind_fleet_execution(fleet_bindings)
+            fleet_attempt_workspaces = repository_toolset.provision_fleet_attempt_workspaces()
+            persist_stage_event({
+                "agentId": "dispatcher",
+                "eventType": "fleet_plan_persisted",
+                "status": "RUNNING",
+                "summary": "A hash-bound FleetPlan was persisted before repository workers received tools.",
+                "nextAction": "EXECUTE_FLEET_LANES",
+                "fleetPlanHash": fleet_bindings.plan.plan_hash,
+                "fleetPlan": fleet_bindings.plan.to_dict(),
+                "fleetTaskIdsByRole": fleet_bindings.task_ids_by_role,
+                "fleetAssignmentsByRole": {
+                    role: assignment.to_dict()
+                    for role, assignment in fleet_bindings.assignments_by_role.items()
+                },
+                "fleetAttemptsByRole": {
+                    role: workspace.receipt_binding()
+                    for role, workspace in fleet_attempt_workspaces.items()
+                },
+            })
         result = asyncio.run(
             run_cognitive_swarm(
                 mission,
@@ -396,6 +437,11 @@ def execute_persisted_swarm(
                 worker_routes=worker_routes,
                 stage_observer=persist_stage_event,
                 repository_tool_factory=repository_tool_factory,
+                fleet_plan=fleet_bindings.plan if fleet_bindings else None,
+                fleet_task_ids_by_role=fleet_bindings.task_ids_by_role if fleet_bindings else None,
+                fleet_assignments_by_role=fleet_bindings.assignments_by_role if fleet_bindings else None,
+                fleet_lane_guard=repository_toolset.activate_fleet_lane if fleet_bindings else None,
+                fleet_head_readback=repository_toolset.read_fleet_workspace_head if fleet_bindings else None,
                 stage_billing=stage_billing,
             )
         )
@@ -488,6 +534,10 @@ def execute_persisted_swarm(
             result["status"] = final_status
             result["blocker"] = execution_gate.reason if execution_gate else "Repository execution evidence is unavailable."
         result["repositoryTools"] = repository_summary
+        if fleet_bindings is not None:
+            result["fleetPlan"] = fleet_bindings.plan.to_dict()
+            result["fleetPlanHash"] = fleet_bindings.plan.plan_hash
+            result["fleetTaskIdsByRole"] = dict(fleet_bindings.task_ids_by_role)
         result["jobEvidence"] = job_evidence
         result["learningEvidence"] = learning_evidence
         result["missingRepositoryToolRoles"] = missing_tool_roles
@@ -537,6 +587,9 @@ def execute_persisted_swarm(
             "finalVerdictDigest": _digest_json(final_verdict),
             "releaseHunt": release_hunt,
             "repositoryTools": repository_summary,
+            "fleetPlanHash": fleet_bindings.plan.plan_hash if fleet_bindings else None,
+            "fleetPlan": fleet_bindings.plan.to_dict() if fleet_bindings else None,
+            "fleetTaskIdsByRole": dict(fleet_bindings.task_ids_by_role) if fleet_bindings else {},
             "jobEvidence": job_evidence,
             "learningEvidence": learning_evidence,
             "learningState": str(learning_evidence.get("state") or "PENDING_EVIDENCE"),
@@ -1849,6 +1902,7 @@ def start_cognitive_swarm_run(
         agent_route=execution_resolution.agent_route,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
+        repository_toolset=repository_toolset,
         job_id=implementation_job.job_id if implementation_job else None,
         task_id=task_ids_by_agent.get("judge"),
         task_ids_by_agent=task_ids_by_agent,
@@ -2306,6 +2360,7 @@ def resume_cognitive_swarm_run(
         lease_token=claim.lease_token,
         repository_tool_factory=(repository_toolset.tools_for_role if repository_toolset else None),
         repository_tool_summary=(repository_toolset.summary if repository_toolset else None),
+        repository_toolset=repository_toolset,
         job_id=claim.run.job_id,
         task_ids_by_agent=task_ids_by_agent,
         worker_routes=worker_routes,
