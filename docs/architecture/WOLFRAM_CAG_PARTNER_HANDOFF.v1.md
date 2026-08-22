@@ -14,6 +14,12 @@ screenshots. No chain-of-thought is ever exported: records bind verifiable
 inputs, provider/receipt identities, results, derivations, assumptions, limits
 and publication references only.
 
+The same deterministic handoff pack can also be projected into one **private
+Wolfram Cloud notebook** for partner review. That notebook remains a projection,
+not a new truth store. Historical/web research and Bitcoin-chain readbacks are
+kept as distinct evidence classes instead of allowing a notebook or a Wolfram
+calculation to manufacture attribution claims.
+
 ## Canonical analysis record
 
 `build_partner_analysis_record` (schema
@@ -78,6 +84,82 @@ enter the ledger in the first place.
 human-readable artifact suitable for the #1553 document/report adapter. Render
 success is never verification.
 
+## Wolfram Cloud notebook projection
+
+The CAG API credential is **not** a Wolfram Cloud login and is never reused as
+one. Cloud access uses a separate Wolfram **Secured Authentication Key** pair
+through the official Python client:
+
+```text
+/opt/sovereign-owner-managed/wolfram_cloud_consumer_key.txt
+/opt/sovereign-owner-managed/wolfram_cloud_consumer_secret.txt
+        ↓
+SecuredAuthenticationKey
+        ↓
+WolframCloudSession
+        ↓
+private CloudObject: Sovereign/Wolfram-CAG/Partner-Analysis.nb
+```
+
+Both secret files are fixed-path, regular-file, no-symlink, bounded-size and
+no-group/no-world-permission inputs. Raw values never enter Flask payloads,
+ledger rows, logs, receipts or the notebook.
+
+`build_partner_notebook_projection(pack)` creates
+`sovereign.wolfram-partner-notebook-projection.v1`. The projection contains the
+partner-safe analyses, limits, unresolved questions and evidence/HF references,
+plus an explicit research truth boundary. `build_wolfram_notebook_expression`
+turns only this data projection into `Notebook`/`Cell` expressions; arbitrary
+Wolfram code from users is never interpolated or executed.
+
+A sync can become `WOLFRAM_CLOUD_NOTEBOOK_SYNC_VERIFIED` only after:
+
+1. an authenticated Wolfram Cloud session is proven;
+2. the notebook is deployed with `Permissions -> "Private"`;
+3. `CloudGet` reads the stored notebook back;
+4. the exact canonical JSON `Program` cell is extracted and its Wolfram-side
+   SHA-256 equals the locally expected SHA-256;
+5. the target's `Permissions` option reads back as `Private`.
+
+Notebook display/render success alone is never green.
+
+## Satoshi / online research / Bitcoin evidence boundary
+
+Sovereign uses a **hybrid** research lane rather than pretending Wolfram is a
+general-purpose source authority:
+
+```text
+primary sources / bounded web research
+        ↓
+claim + source identity + retrieval evidence
+        ↓
+Wolfram CAG / Wolfram Language computation
+        ├─ mathematical or statistical checks
+        └─ read-only Bitcoin blockchain readback
+        ↓
+canonical partner analysis record
+        ↓
+private Wolfram Cloud notebook for review
+```
+
+For Satoshi Nakamoto research, historical statements, authorship claims,
+mailing-list material and identity attribution require primary-source/search
+evidence. Wolfram can independently calculate, normalize and test quantities,
+and can provide blockchain evidence for transaction facts. **A transaction
+history, address graph or timing pattern cannot by itself establish an identity.**
+
+`run_bitcoin_readback` exposes only Bitcoin-mainnet read operations:
+
+- `network` → bounded `BlockchainData` chain state;
+- `block` → allowlisted `BlockchainBlockData` properties;
+- `transaction` → allowlisted `BlockchainTransactionData` properties.
+
+The runtime contract does not expose transaction construction,
+`BlockchainTransactionSign`, private-key handling or
+`BlockchainTransactionSubmit`, even though Wolfram Language itself supports
+those functions. A request such as `submit` fails schema validation before
+cloud credentials are touched.
+
 ## Runtime wiring
 
 - `run_cag_canaries` (#1625 lane) automatically builds and persists one
@@ -87,6 +169,13 @@ success is never verification.
   loads persisted records via `load_partner_analyses`, builds the pack and the
   markdown artifact, and fails closed with an error family on readback or
   redaction problems.
+- `GET /api/internal/wolfram-cag/partner-notebook` returns only the deterministic
+  notebook projection; it performs no cloud write.
+- `POST /api/internal/wolfram-cag/partner-notebook/sync` performs the explicit
+  private CloudObject write plus hash/permission readback. It accepts no
+  caller-controlled target path or notebook body.
+- `POST /api/internal/wolfram-cag/blockchain/readback` accepts only the bounded
+  `network | block | transaction` read schema.
 - Persistence is idempotent (`ON CONFLICT (record_sha256) DO NOTHING`) into
   `wolfram_cag_analysis_records` (migrations 058 + 059).
 
@@ -94,23 +183,30 @@ success is never verification.
 
 - The ledger references canonical receipts/passports; it is not a second truth
   store.
-- A tool result, model answer, UI state or render success can never create
-  `RUNTIME_VERIFIED`.
+- A tool result, model answer, UI state, notebook or render success can never
+  create `RUNTIME_VERIFIED`.
+- A blockchain readback proves only the bounded chain data observed through
+  Wolfram for that query; it never proves human identity or authorship.
 - No record promotes itself; HF publication state requires real target
-  readback.
-- The pack contains no API keys, tokens, Authorization headers, private
-  repository contents, private prompts/chain-of-thought, unrelated user data or
-  unrestricted raw provider payloads.
+  readback and remains separately rights-gated.
+- The pack and notebook contain no API keys, tokens, Authorization headers,
+  private repository contents, private prompts/chain-of-thought, unrelated user
+  data or unrestricted raw provider payloads.
 
 ## Components
 
 - `backend/agent_runtime/wolfram_cag_partner_ledger.py` (canonical) with
-  byte-equal mirror at
-  `scripts/sovereign-backend/agent_runtime/wolfram_cag_partner_ledger.py`.
-- `backend/wolfram_cag_runtime.py` (+ byte-equal mirror): canary persistence
-  and partner-report endpoint.
+  byte-equal deployment mirror.
+- `backend/agent_runtime/wolfram_partner_notebook.py` (+ byte-equal mirror):
+  separate Cloud auth, deterministic notebook projection, private deploy,
+  canonical-cell SHA-256 and permission readback.
+- `backend/agent_runtime/wolfram_blockchain_readback.py` (+ byte-equal mirror):
+  bounded read-only Bitcoin mainnet queries.
+- `backend/wolfram_cag_runtime.py` (+ byte-equal mirror): canary persistence,
+  partner report, notebook preview/sync and blockchain readback endpoints.
 - `backend/migrations/058_wolfram_cag_partner_analysis.sql`,
   `backend/migrations/059_wolfram_cag_partner_analysis_observations.sql`
   (+ mirrors).
 - Tests: `backend/tests/test_wolfram_cag_partner_ledger.py`,
-  `backend/tests/test_wolfram_cag_runtime.py`.
+  `backend/tests/test_wolfram_cag_runtime.py`,
+  `backend/tests/test_wolfram_partner_notebook.py`.
