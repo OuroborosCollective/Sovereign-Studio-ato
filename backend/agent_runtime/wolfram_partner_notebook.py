@@ -8,9 +8,10 @@ This module deliberately keeps three identities separate:
 * the secret-free partner handoff pack that is rendered into a private cloud
   notebook and hash-read back after deployment.
 
-A successful render is not evidence.  A cloud notebook sync is reported as
-verified only when the exact notebook expression deployed to the fixed private
-CloudObject is fetched back and its Wolfram-side SHA-256 matches.
+A successful render is not evidence. A cloud notebook sync is reported as
+verified only when the canonical projection cell is fetched from the fixed
+private CloudObject, its SHA-256 matches, and the target permissions read back
+as private.
 """
 
 from __future__ import annotations
@@ -220,6 +221,23 @@ def _hash_string(value: Any, *, label: str) -> str:
     return text
 
 
+def _program_cell_readback_hash_expression(target: Any, *, wl_factory: Any) -> Any:
+    text_symbol = wl_factory.sovereignProjectionText
+    program_pattern = wl_factory.Cell(
+        wl_factory.Pattern(text_symbol, wl_factory.Blank(wl_factory.String)),
+        "Program",
+        wl_factory.BlankNullSequence(),
+    )
+    extracted = wl_factory.First(
+        wl_factory.Cases(
+            wl_factory.CloudGet(target),
+            wl_factory.RuleDelayed(program_pattern, text_symbol),
+            wl_factory.Infinity,
+        )
+    )
+    return wl_factory.Hash(extracted, "SHA256", "HexString")
+
+
 def sync_partner_notebook(
     pack: Mapping[str, Any],
     *,
@@ -227,7 +245,7 @@ def sync_partner_notebook(
     credentials_factory: Any | None = None,
     wl_factory: Any | None = None,
 ) -> dict[str, Any]:
-    """Deploy one fixed private notebook and verify exact Wolfram-side hash readback."""
+    """Deploy one fixed private notebook and verify canonical-cell + permission readback."""
     projection = build_partner_notebook_projection(pack)
     notebook_path = _selected_notebook_path()
     consumer_key, consumer_secret = _cloud_credentials()
@@ -250,11 +268,9 @@ def sync_partner_notebook(
             raise WolframCloudNotebookError("Wolfram Cloud session is not authorized", family="CLOUD_AUTH")
 
         notebook = build_wolfram_notebook_expression(projection, wl_factory=wl_factory)
+        canonical_projection = _canonical_json(dict(projection))
+        expected_hash = hashlib.sha256(canonical_projection.encode("utf-8")).hexdigest()
         target = wl_factory.CloudObject(notebook_path)
-        expected_hash = _hash_string(
-            session.evaluate(wl_factory.Hash(notebook, "SHA256", "HexString")),
-            label="pre-deploy notebook hash",
-        )
         session.evaluate(
             wl_factory.CloudDeploy(
                 notebook,
@@ -263,30 +279,33 @@ def sync_partner_notebook(
             )
         )
         observed_hash = _hash_string(
-            session.evaluate(
-                wl_factory.Hash(
-                    wl_factory.CloudGet(target),
-                    "SHA256",
-                    "HexString",
-                )
-            ),
-            label="cloud notebook readback hash",
+            session.evaluate(_program_cell_readback_hash_expression(target, wl_factory=wl_factory)),
+            label="cloud canonical projection readback hash",
+        )
+        permissions_private = session.evaluate(
+            wl_factory.MemberQ(
+                wl_factory.Options(target, wl_factory.Permissions),
+                wl_factory.Rule(wl_factory.Permissions, "Private"),
+            )
         )
         if observed_hash != expected_hash:
-            raise WolframCloudNotebookError("Wolfram Cloud notebook hash readback mismatch", family="CLOUD_READBACK")
+            raise WolframCloudNotebookError("Wolfram Cloud canonical projection hash mismatch", family="CLOUD_READBACK")
+        if permissions_private is not True:
+            raise WolframCloudNotebookError("Wolfram Cloud notebook is not private on readback", family="CLOUD_PERMISSIONS")
         return {
             "ok": True,
             "status": "WOLFRAM_CLOUD_NOTEBOOK_SYNC_VERIFIED",
             "targetPath": notebook_path,
             "sourcePackSha256": projection["sourcePackSha256"],
             "notebookProjectionSha256": projection["notebookProjectionSha256"],
-            "notebookExpressionSha256": expected_hash,
+            "canonicalProjectionCellSha256": expected_hash,
             "cloudReadbackSha256": observed_hash,
             "permissions": "Private",
+            "permissionsReadbackVerified": True,
             "authenticated": True,
             "syncExecuted": True,
             "secretValuesReturned": False,
-            "truthNotice": "Notebook sync is verified only for this private CloudObject content hash; it does not verify the claims contained in the notebook.",
+            "truthNotice": "Notebook sync is verified only for the canonical projection cell and private permission readback; it does not verify the claims contained in the notebook.",
         }
     finally:
         if started:
