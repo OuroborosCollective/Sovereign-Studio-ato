@@ -770,30 +770,8 @@ class ChatBubbleV1:
 
 
 def _assignment_from_dict(value: Mapping[str, Any]) -> FleetWorkerAssignment:
-    """Parse a signed assignment without trusting client-provided convenience fields."""
-    raw = _mapping(value, "assignment")
-    required = (
-        "assignmentId", "planHash", "laneId", "taskId", "controllerRunId", "workspaceId",
-        "workspaceBranch", "expectedBaseRevision", "runEnvelopeHash", "capabilityManifestHash", "assignmentHash",
-    )
-    if any(name not in raw for name in required):
-        raise FleetContractError("assignment lacks canonical signed fields")
-    return FleetWorkerAssignment(
-        assignment_id=_text(raw["assignmentId"], "assignment_id", 160),
-        plan_hash=_hash(raw["planHash"], "plan_hash"),
-        lane_id=_text(raw["laneId"], "lane_id", 120),
-        task_id=_text(raw["taskId"], "task_id", 120),
-        controller_run_id=_text(raw["controllerRunId"], "controller_run_id", 160),
-        workspace_id=_text(raw["workspaceId"], "workspace_id", 160),
-        workspace_branch=_text(raw["workspaceBranch"], "workspace_branch", 200),
-        expected_base_revision=_revision(raw["expectedBaseRevision"], "expected_base_revision"),
-        expected_head_revision=str(raw.get("expectedHeadRevision") or "").strip().lower(),
-        run_envelope_hash=_hash(raw["runEnvelopeHash"], "run_envelope_hash"),
-        capability_manifest_hash=_hash(raw["capabilityManifestHash"], "capability_manifest_hash"),
-        permission_receipt_hashes=_bounded_hashes(raw.get("permissionReceiptHashes", []), "permission_receipt_hashes"),
-        allowed_effects=tuple(str(item) for item in raw.get("allowedEffects", [])),
-        assignment_hash=_hash(raw["assignmentHash"], "assignment_hash"),
-    )
+    """Parse a signed assignment without trusting convenience fields."""
+    return FleetWorkerAssignment.from_dict(_mapping(value, "assignment"))
 
 
 __all__ = [
