@@ -28,8 +28,11 @@ from agent_runtime.adapters.wolfram_agenttools import (
 from agent_runtime.wolfram_cag_partner_ledger import (
     CONTRACT_VERSION,
     build_partner_analysis_record,
+    build_partner_handoff_pack,
+    load_partner_analyses,
     persist_partner_analysis,
     public_partner_projection,
+    render_partner_handoff_markdown,
 )
 
 ConnectionFactory = Callable[[], Any]
@@ -144,6 +147,13 @@ def run_cag_canaries(*, get_connection: ConnectionFactory, components: list[str]
                     provider_request_id=receipt.request_id or None,
                     provider_response_uuid=receipt.response_uuid or None,
                     documentation_class="PARTNER_REPORTABLE",
+                    quota_metadata=(
+                        {"quotaRemaining": receipt.quota_remaining} if receipt.quota_remaining else None
+                    ),
+                    rate_limit_metadata=(
+                        {"rateLimitRemaining": receipt.rate_limit_remaining}
+                        if receipt.rate_limit_remaining else None
+                    ),
                     limitations=[
                         "Provider success remains SUCCEEDED_UNVERIFIED until immutable runtime and PatchMon/Docker readback are bound.",
                         "This fixed canary does not promote any semantic claim to SUPPORTED.",
@@ -182,6 +192,7 @@ def run_cag_canaries(*, get_connection: ConnectionFactory, components: list[str]
                     provider_request_id=exc.request_id or None,
                     provider_response_uuid=exc.response_uuid or None,
                     documentation_class="PARTNER_REPORTABLE",
+                    failure_family=exc.family.value,
                     limitations=["No semantic claim may be supported or contradicted without usable provider evidence."],
                     source_refs=["wolfram-official-cag-v1-contract"],
                     created_at=_now(),
@@ -233,6 +244,55 @@ def run_cag_canaries(*, get_connection: ConnectionFactory, components: list[str]
     }
 
 
+def build_partner_report(*, get_connection: ConnectionFactory) -> dict[str, Any]:
+    """Deterministic partner handoff pack over all persisted analysis records.
+
+    The report is a bounded public projection gated by the ledger redaction
+    gate; it contains no credential fingerprints, secrets or raw provider
+    payloads. Rendering the markdown artifact is display-only.
+    """
+    connection = None
+    try:
+        connection = get_connection()
+        records = load_partner_analyses(connection)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_PARTNER_REPORT_FAILED",
+            "errorFamily": "ANALYSIS_LEDGER_READBACK",
+            "message": type(exc).__name__,
+            "secretValuesReturned": False,
+        }
+    finally:
+        if connection is not None:
+            _close(connection)
+    try:
+        pack = build_partner_handoff_pack(records, generated_at=_now())
+        markdown = render_partner_handoff_markdown(pack)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "WOLFRAM_CAG_PARTNER_REPORT_FAILED",
+            "errorFamily": "ANALYSIS_LEDGER_REDACTION",
+            "message": type(exc).__name__,
+            "secretValuesReturned": False,
+        }
+    return {
+        "ok": True,
+        "status": "WOLFRAM_CAG_PARTNER_REPORT",
+        "contractVersion": CONTRACT_VERSION,
+        "sourceRevision": _revision(),
+        "pack": pack,
+        "markdown": markdown,
+        "recordCount": pack["recordCount"],
+        "secretValuesReturned": False,
+        "truthNotice": (
+            "The partner report is a redaction-gated projection of persisted analysis "
+            "records; a successful render is never a verification."
+        ),
+    }
+
+
 def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory) -> None:
     @app.route("/api/internal/wolfram-cag/status", methods=["GET"])
     def _status():
@@ -254,9 +314,17 @@ def register_wolfram_cag_runtime(app: Any, *, get_connection: ConnectionFactory)
         result = run_cag_canaries(get_connection=get_connection, components=selected)
         return jsonify(result), (200 if result.get("ok") else 409)
 
+    @app.route("/api/internal/wolfram-cag/partner-report", methods=["GET"])
+    def _partner_report():
+        if not _service_authorized():
+            return jsonify({"ok": False, "error": "service_unauthorized"}), 401
+        result = build_partner_report(get_connection=get_connection)
+        return jsonify(result), (200 if result.get("ok") else 500)
+
 
 __all__ = [
     "cag_runtime_status",
     "run_cag_canaries",
+    "build_partner_report",
     "register_wolfram_cag_runtime",
 ]

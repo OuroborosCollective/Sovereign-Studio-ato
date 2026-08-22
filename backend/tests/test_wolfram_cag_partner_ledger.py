@@ -13,9 +13,15 @@ ledger = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(ledger)
 
 PartnerAnalysisError = ledger.PartnerAnalysisError
+assert_partner_safe = ledger.assert_partner_safe
+attach_hf_publication = ledger.attach_hf_publication
 build_partner_analysis_record = ledger.build_partner_analysis_record
+build_partner_handoff_pack = ledger.build_partner_handoff_pack
+evidence_passport_reference = ledger.evidence_passport_reference
+load_partner_analyses = ledger.load_partner_analyses
 persist_partner_analysis = ledger.persist_partner_analysis
 public_partner_projection = ledger.public_partner_projection
+render_partner_handoff_markdown = ledger.render_partner_handoff_markdown
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 REV = "c" * 40
@@ -130,6 +136,191 @@ def test_canonical_and_deployment_mirrors_match_byte_for_byte():
     mirror = (ROOT / "scripts" / "sovereign-backend" / "agent_runtime" / "wolfram_cag_partner_ledger.py").read_bytes()
     assert canonical == mirror
 
-    migration = (ROOT / "backend" / "migrations" / "058_wolfram_cag_partner_analysis.sql").read_bytes()
-    migration_mirror = (ROOT / "scripts" / "sovereign-backend" / "migrations" / "058_wolfram_cag_partner_analysis.sql").read_bytes()
-    assert migration == migration_mirror
+    for name in (
+        "058_wolfram_cag_partner_analysis.sql",
+        "059_wolfram_cag_partner_analysis_observations.sql",
+    ):
+        migration = (ROOT / "backend" / "migrations" / name).read_bytes()
+        migration_mirror = (ROOT / "scripts" / "sovereign-backend" / "migrations" / name).read_bytes()
+        assert migration == migration_mirror
+
+
+def test_same_evidence_same_hash_regardless_of_metadata_and_list_order():
+    first = _record(created_at="2026-08-21T20:00:00Z", limitations=["b limit", "a limit"])
+    second = _record(created_at="2026-08-22T20:00:00Z", limitations=["a limit", "b limit", "a limit"])
+    assert first["analysisRecordSha256"] == second["analysisRecordSha256"]
+    assert first["limitations"] == ["a limit", "b limit"]
+
+
+def test_redaction_regression_corpus_is_hard_rejected_at_build_time():
+    corpus = [
+        "Authorization: Bearer abcdefgh12345678",
+        "Bearer abcdefgh12345678",
+        "api_key: abcd1234",
+        "token=abcdefgh",
+        "secret: hunter2secret",
+        "password = correct-horse-battery",
+        "ghp_" + "a" * 24,
+        "-----BEGIN PRIVATE KEY-----",
+        "contact: someone@example.com",
+        "raw chain-of-thought transcript",
+        "<|im_start|>system prompt leak",
+    ]
+    for payload in corpus:
+        with pytest.raises(PartnerAnalysisError, match="secret-shaped"):
+            _record(derived_conclusion=payload)
+
+
+def test_redaction_gate_rejects_secret_keys_and_values_in_projections():
+    with pytest.raises(PartnerAnalysisError, match="forbidden key marker"):
+        assert_partner_safe({"nested": {"api_key": "redacted-shape"}})
+    with pytest.raises(PartnerAnalysisError, match="secret-shaped"):
+        assert_partner_safe({"entries": ["fine", "someone@example.com"]})
+    with pytest.raises(PartnerAnalysisError, match="secret-shaped"):
+        assert_partner_safe(["Authorization: Bearer abcdefgh12345678"])
+    assert_partner_safe(public_partner_projection(_record()))
+
+
+def test_quota_and_rate_limit_metadata_are_bounded_and_secret_checked():
+    record = _record(
+        quota_metadata={"quotaRemaining": "99"},
+        rate_limit_metadata={"rateLimitRemaining": "9"},
+    )
+    assert record["quotaMetadata"] == {"quotaRemaining": "99"}
+    assert record["rateLimitMetadata"] == {"rateLimitRemaining": "9"}
+    with pytest.raises(PartnerAnalysisError, match="secret-shaped"):
+        _record(quota_metadata={"quotaRemaining": "api_key: abcd1234"})
+    with pytest.raises(PartnerAnalysisError, match="scalar"):
+        _record(rate_limit_metadata={"nested": {"too": "deep"}})
+
+
+def test_pack_is_deterministic_for_same_record_set():
+    supported = _record(
+        verdict="SUPPORTED",
+        derived_conclusion="CAG result matches the claim within tolerance.",
+        component="WolframAlphaResults",
+    )
+    contradicted = _record(
+        verdict="CONTRADICTED",
+        derived_conclusion="CAG result contradicts the claim.",
+        component="WolframAlphaContext",
+        limitations=["Contradiction retained honestly for partner review."],
+    )
+    first = build_partner_handoff_pack([supported, contradicted], generated_at="2026-08-22T00:00:00Z")
+    second = build_partner_handoff_pack([contradicted, supported], generated_at="2026-08-23T00:00:00Z")
+    assert first["packSha256"] == second["packSha256"]
+    assert first["recordCount"] == 2
+    assert first["summary"]["verdictCounts"] == {"CONTRADICTED": 1, "SUPPORTED": 1}
+    assert first["generatedAt"] != second["generatedAt"]
+
+
+def test_pack_keeps_source_contradiction_visible_and_public():
+    supported = _record(verdict="SUPPORTED", derived_conclusion="CAG supports the claim.")
+    contradicted = _record(
+        verdict="CONTRADICTED",
+        derived_conclusion="CAG contradicts the same claim.",
+        component="WolframLanguageHints",
+    )
+    pack = build_partner_handoff_pack([supported, contradicted])
+    verdicts = {entry["verdict"] for entry in pack["analyses"]}
+    assert verdicts == {"SUPPORTED", "CONTRADICTED"}
+    assert all("credentialFingerprintSha256" not in entry for entry in pack["analyses"])
+    rendered = repr(pack)
+    assert "credentialFingerprintSha256" not in rendered
+
+
+def test_pack_quota_observations_only_when_actually_observed():
+    observed = _record(quota_metadata={"quotaRemaining": "99"})
+    unobserved = _record(component="WolframAlphaResults")
+    pack = build_partner_handoff_pack([observed, unobserved])
+    assert len(pack["quotaObservations"]) == 1
+    assert pack["quotaObservations"][0]["quotaMetadata"] == {"quotaRemaining": "99"}
+
+
+def test_pack_redaction_gate_blocks_smuggled_secret_material():
+    record = _record()
+    tampered = dict(record)
+    tampered["derivedConclusion"] = "leaked someone@example.com"
+    with pytest.raises(PartnerAnalysisError):
+        build_partner_handoff_pack([tampered])
+
+
+def test_attach_hf_publication_requires_target_readback_and_rebinds_identity():
+    record = _record()
+    with pytest.raises(PartnerAnalysisError, match="target readback"):
+        attach_hf_publication(record, hf_publication_ref="Thorsu/sovereign-evidence-observatory:batch-1", hf_target_revision="")
+    published = attach_hf_publication(
+        record,
+        hf_publication_ref="Thorsu/sovereign-evidence-observatory:batch-1",
+        hf_target_revision="target-revision-1",
+    )
+    assert published["documentationClass"] == "HF_PUBLISHED_VERIFIED"
+    assert published["analysisRecordSha256"] != record["analysisRecordSha256"]
+    assert record["documentationClass"] == "PARTNER_REPORTABLE"
+
+
+def test_evidence_passport_reference_is_hash_only():
+    record = _record(evidence_passport_hash=None)
+    reference = evidence_passport_reference(record)
+    assert reference["analysisRecordSha256"] == record["analysisRecordSha256"]
+    assert reference["schemaVersion"] == record["schemaVersion"]
+    assert "derivedConclusion" not in reference
+    assert "normalizedQuestion" not in reference
+    assert "credentialFingerprintSha256" not in reference
+
+
+def test_markdown_render_is_deterministic_and_secret_free():
+    record = _record(quota_metadata={"quotaRemaining": "99"})
+    pack = build_partner_handoff_pack([record], generated_at="2026-08-22T00:00:00Z")
+    first = render_partner_handoff_markdown(pack)
+    second = render_partner_handoff_markdown(pack)
+    assert first == second
+    assert "Wolfram CAG Partner Handoff Pack" in first
+    assert pack["packSha256"] in first
+    assert "credentialFingerprintSha256" not in first
+    assert "never constitutes verification" in first or "never a verification" in first
+
+
+def test_load_partner_analyses_maps_rows_and_orders_by_hash():
+    class _LoadCursor:
+        def __init__(self, rows):
+            self.rows = rows
+            self.closed = False
+
+        def execute(self, sql):
+            self.sql = sql
+
+        def fetchall(self):
+            return self.rows
+
+        def close(self):
+            self.closed = True
+
+    class _LoadConnection:
+        def __init__(self, rows):
+            self.cursor_instance = _LoadCursor(rows)
+
+        def cursor(self):
+            return self.cursor_instance
+
+    record = _record()
+    row = (
+        record["analysisId"], record["schemaVersion"], record["analysisRecordSha256"], REV, REV,
+        None, None, record["cagComponent"], record["cagContractVersion"],
+        record["normalizedQuestion"], record["normalizedInputSha256"], "request-1",
+        "uuid-1", record["providerResponseSha256"], "d" * 64, record["verdict"],
+        record["documentationClass"], record["derivedConclusion"], None,
+        '{"quotaRemaining": "99"}', '{}',
+        '["assumption"]', '["limitation"]', '["wolfram-official-cag-v1-contract"]',
+        None, None, None, "2026-08-21 20:00:00+00",
+    )
+    connection = _LoadConnection([row])
+    records = load_partner_analyses(connection)
+    assert "ORDER BY record_sha256 ASC" in connection.cursor_instance.sql
+    assert connection.cursor_instance.closed is True
+    assert len(records) == 1
+    loaded = records[0]
+    assert loaded["analysisRecordSha256"] == record["analysisRecordSha256"]
+    assert loaded["quotaMetadata"] == {"quotaRemaining": "99"}
+    assert loaded["assumptions"] == ["assumption"]
+    assert loaded["createdAt"] is not None

@@ -134,8 +134,31 @@ def test_failed_provider_canary_is_persisted_as_unavailable(monkeypatch):
     assert result["status"] == "WOLFRAM_CAG_CANARIES_INCOMPLETE"
     assert result["documentationPersisted"] is True
     assert persisted[0]["verdict"] == "UNAVAILABLE"
+    assert persisted[0]["failureFamily"] == "AUTH"
     assert result["results"][0]["error"]["family"] == "AUTH"
     assert result["secretValuesReturned"] is False
+
+
+def test_canary_binds_quota_and_rate_limit_observations_only_when_observed(monkeypatch):
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", REV)
+    connection = _Connection()
+    persisted = []
+
+    monkeypatch.setattr(runtime, "execute_live_cag_request", lambda **kwargs: _receipt(kwargs["capability_id"]))
+    monkeypatch.setattr(runtime, "persist_partner_analysis", lambda conn, record: persisted.append(record) or record["analysisId"])
+
+    runtime.run_cag_canaries(get_connection=lambda: connection, components=["wolfram.cag.compute"])
+    assert persisted[0]["quotaMetadata"] == {"quotaRemaining": "99"}
+    assert persisted[0]["rateLimitMetadata"] == {"rateLimitRemaining": "9"}
+
+    persisted.clear()
+    receipt = _receipt("wolfram.cag.compute")
+    receipt.quota_remaining = ""
+    receipt.rate_limit_remaining = ""
+    monkeypatch.setattr(runtime, "execute_live_cag_request", lambda **kwargs: receipt)
+    runtime.run_cag_canaries(get_connection=lambda: connection, components=["wolfram.cag.compute"])
+    assert persisted[0]["quotaMetadata"] == {}
+    assert persisted[0]["rateLimitMetadata"] == {}
 
 
 class _App:
@@ -155,11 +178,15 @@ def test_runtime_routes_require_owner_bridge_and_reject_arbitrary_input(monkeypa
     runtime.register_wolfram_cag_runtime(app, get_connection=lambda: _Connection())
     status_route = app.routes[("/api/internal/wolfram-cag/status", ("GET",))]
     canary_route = app.routes[("/api/internal/wolfram-cag/canary", ("POST",))]
+    report_route = app.routes[("/api/internal/wolfram-cag/partner-report", ("GET",))]
 
     runtime.request.headers = {}
     denied_body, denied_status = status_route()
     assert denied_status == 401
     assert denied_body["error"] == "service_unauthorized"
+    denied_report_body, denied_report_status = report_route()
+    assert denied_report_status == 401
+    assert denied_report_body["error"] == "service_unauthorized"
 
     runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
     runtime.request.get_json = lambda silent=True: {"prompt": "arbitrary provider input is forbidden"}
@@ -171,6 +198,104 @@ def test_runtime_routes_require_owner_bridge_and_reject_arbitrary_input(monkeypa
     invalid_component_body, invalid_component_status = canary_route()
     assert invalid_component_status == 400
     assert "unknown CAG capability" in invalid_component_body["error"]
+
+
+class _ReportCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute(self, sql, params=None):
+        self.sql = sql
+
+    def fetchall(self):
+        return self.rows
+
+    def close(self):
+        pass
+
+
+class _ReportConnection:
+    def __init__(self, rows):
+        self.rows = rows
+        self.closed = False
+
+    def cursor(self):
+        return _ReportCursor(self.rows)
+
+    def close(self):
+        self.closed = True
+
+
+def _persisted_row(record):
+    return (
+        record["analysisId"], record["schemaVersion"], record["analysisRecordSha256"], REV, REV,
+        None, None, record["cagComponent"], record["cagContractVersion"],
+        record["normalizedQuestion"], record["normalizedInputSha256"], "request-1",
+        "uuid-1", record["providerResponseSha256"], None, record["verdict"],
+        record["documentationClass"], record["derivedConclusion"], None,
+        record["quotaMetadata"], record["rateLimitMetadata"],
+        record["assumptions"], record["limitations"], record["sourceRefs"],
+        None, None, None, None,
+    )
+
+
+def test_partner_report_is_deterministic_secret_free_projection(monkeypatch):
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", REV)
+    record = ledger.build_partner_analysis_record(
+        component="WolframLanguageComputation",
+        normalized_question='{"code":"2+2"}',
+        normalized_input_sha256="a" * 64,
+        provider_response_sha256="b" * 64,
+        credential_fingerprint_sha256="d" * 64,
+        verdict="INCONCLUSIVE",
+        derived_conclusion="Transport canary succeeded; no semantic claim evaluated.",
+        documentation_class="PARTNER_REPORTABLE",
+        quota_metadata={"quotaRemaining": "99"},
+        limitations=["Provider success is not runtime verification."],
+        source_refs=["wolfram-official-cag-v1-contract"],
+        created_at="2026-08-22T00:00:00Z",
+    )
+    connection = _ReportConnection([_persisted_row(record)])
+    app = _App()
+    runtime.register_wolfram_cag_runtime(app, get_connection=lambda: connection)
+    report_route = app.routes[("/api/internal/wolfram-cag/partner-report", ("GET",))]
+    runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
+
+    first_body, first_status = report_route()
+    connection.closed = False
+    second_body, second_status = report_route()
+    assert first_status == 200 and second_status == 200
+    assert first_body["ok"] is True
+    assert first_body["status"] == "WOLFRAM_CAG_PARTNER_REPORT"
+    assert first_body["recordCount"] == 1
+    assert first_body["pack"]["packSha256"] == second_body["pack"]["packSha256"]
+    assert first_body["secretValuesReturned"] is False
+    rendered = repr(first_body)
+    assert "credentialFingerprintSha256" not in rendered
+    assert "Wolfram CAG Partner Handoff Pack" in first_body["markdown"]
+    assert first_body["pack"]["analyses"][0]["quotaMetadata"] == {"quotaRemaining": "99"}
+
+
+def test_partner_report_fails_closed_on_readback_error(monkeypatch):
+    monkeypatch.setenv("SOVEREIGN_OWNER_REQUEST_KEY", "bridge-key")
+
+    class _BrokenConnection:
+        def cursor(self):
+            raise RuntimeError("database unavailable")
+
+        def close(self):
+            pass
+
+    app = _App()
+    runtime.register_wolfram_cag_runtime(app, get_connection=lambda: _BrokenConnection())
+    report_route = app.routes[("/api/internal/wolfram-cag/partner-report", ("GET",))]
+    runtime.request.headers = {"X-Sovereign-Owner-Request-Key": "bridge-key"}
+    body, status = report_route()
+    assert status == 500
+    assert body["ok"] is False
+    assert body["errorFamily"] == "ANALYSIS_LEDGER_READBACK"
+    assert body["secretValuesReturned"] is False
 
 
 def test_runtime_and_deployment_mirror_match_compile_and_app_registers_routes():
