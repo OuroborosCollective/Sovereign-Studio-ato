@@ -10,6 +10,12 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+# test_wolfram_cag_runtime intentionally installs a package stub during pytest
+# collection. Restore only its package search path here so these real modules
+# can be imported without depending on collection order.
+if "agent_runtime" in sys.modules:
+    sys.modules["agent_runtime"].__path__ = [str(BACKEND / "agent_runtime")]
+
 from agent_runtime import wolfram_blockchain_readback as blockchain
 from agent_runtime import wolfram_cag_partner_ledger as ledger
 from agent_runtime import wolfram_partner_notebook as notebook
