@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import sys
 
@@ -38,13 +39,14 @@ class _WL:
 
 
 class _Session:
-    def __init__(self, *, expected: str = "a" * 64, observed: str | None = None, result: str = "<|\"Blocks\" -> 1|>"):
-        self.expected = expected
-        self.observed = observed if observed is not None else expected
+    def __init__(self, *, observed: str | None = None, result: str = "<|\"Blocks\" -> 1|>", permissions_private: bool = True):
+        self.observed = observed
         self.result = result
+        self.permissions_private = permissions_private
         self.started = False
         self.terminated = False
         self.deploy_calls = 0
+        self.program_text: str | None = None
 
     def start(self):
         self.started = True
@@ -56,17 +58,25 @@ class _Session:
         assert expr[0] == "CALL"
         name = expr[1]
         args = expr[2]
-        if name == "Hash":
-            hashed = args[0]
-            if isinstance(hashed, tuple) and len(hashed) > 1 and hashed[1] == "CloudGet":
-                return self.observed
-            return self.expected
         if name == "CloudDeploy":
             self.deploy_calls += 1
             rendered = repr(expr)
             assert "Permissions" in rendered
             assert "Private" in rendered
+            notebook_expr = args[0]
+            for cell in notebook_expr[2][0]:
+                if cell[0] == "CALL" and cell[1] == "Cell" and len(cell[2]) >= 2 and cell[2][1] == "Program":
+                    self.program_text = cell[2][0]
+                    break
+            assert self.program_text
             return "CloudObject"
+        if name == "Hash":
+            if self.observed is not None:
+                return self.observed
+            assert self.program_text is not None
+            return hashlib.sha256(self.program_text.encode("utf-8")).hexdigest()
+        if name == "MemberQ":
+            return self.permissions_private
         if name == "ToString":
             return self.result
         raise AssertionError(f"unexpected expression {name}")
@@ -117,7 +127,7 @@ def test_notebook_path_is_fixed_relative_and_rejects_traversal(monkeypatch):
     assert exc.value.family == "NOTEBOOK_PATH"
 
 
-def test_private_notebook_sync_requires_exact_hash_readback(monkeypatch):
+def test_private_notebook_sync_requires_exact_cell_and_permission_readback(monkeypatch):
     monkeypatch.setattr(notebook, "_cloud_credentials", lambda: ("consumer-key-value", "consumer-secret-value"))
     session = _Session()
     captured = {}
@@ -134,8 +144,9 @@ def test_private_notebook_sync_requires_exact_hash_readback(monkeypatch):
         wl_factory=_WL(),
     )
     assert result["status"] == "WOLFRAM_CLOUD_NOTEBOOK_SYNC_VERIFIED"
-    assert result["notebookExpressionSha256"] == result["cloudReadbackSha256"]
+    assert result["canonicalProjectionCellSha256"] == result["cloudReadbackSha256"]
     assert result["permissions"] == "Private"
+    assert result["permissionsReadbackVerified"] is True
     assert result["secretValuesReturned"] is False
     assert session.deploy_calls == 1
     assert session.terminated is True
@@ -146,7 +157,7 @@ def test_private_notebook_sync_requires_exact_hash_readback(monkeypatch):
 
 def test_private_notebook_sync_fails_closed_on_hash_mismatch(monkeypatch):
     monkeypatch.setattr(notebook, "_cloud_credentials", lambda: ("key", "secret"))
-    session = _Session(expected="a" * 64, observed="b" * 64)
+    session = _Session(observed="b" * 64)
     with pytest.raises(notebook.WolframCloudNotebookError) as exc:
         notebook.sync_partner_notebook(
             _pack(),
@@ -155,6 +166,20 @@ def test_private_notebook_sync_fails_closed_on_hash_mismatch(monkeypatch):
             wl_factory=_WL(),
         )
     assert exc.value.family == "CLOUD_READBACK"
+    assert session.terminated is True
+
+
+def test_private_notebook_sync_fails_closed_when_permissions_are_not_private(monkeypatch):
+    monkeypatch.setattr(notebook, "_cloud_credentials", lambda: ("key", "secret"))
+    session = _Session(permissions_private=False)
+    with pytest.raises(notebook.WolframCloudNotebookError) as exc:
+        notebook.sync_partner_notebook(
+            _pack(),
+            session_factory=lambda credentials: session,
+            credentials_factory=lambda key, secret: object(),
+            wl_factory=_WL(),
+        )
+    assert exc.value.family == "CLOUD_PERMISSIONS"
     assert session.terminated is True
 
 
