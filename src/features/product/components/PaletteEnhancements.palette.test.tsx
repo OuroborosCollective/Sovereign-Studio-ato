@@ -21,6 +21,7 @@ import { CompactRepoSetupSheet } from './CompactRepoSetupSheet';
 import { ErrorCategoriesPanel } from './ErrorCategoriesPanel';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { OperatorCoachPanel } from './OperatorCoachPanel';
+import { PaywallModal } from '../../billing/PaywallModal';
 import { store } from '../../../store';
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -999,6 +1000,31 @@ describe('Palette Accessibility Enhancements', () => {
 
       fireEvent.click(logsBtn);
       expect(onLogs).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PaywallModal Accessibility and Micro-UX Enhancements', () => {
+    it('renders dialog with ARIA attributes, close button title/aria-label, linked payment method label, and contextual action buttons', () => {
+      const onClose = vi.fn();
+
+      renderWithProviders(<PaywallModal isOpen={true} onClose={onClose} />);
+
+      const dialog = screen.getByRole('dialog', { name: 'Bereit für das nächste Level?' });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(dialog).toHaveAttribute('aria-labelledby', 'paywall-title');
+      expect(dialog).toHaveAttribute('aria-describedby', 'paywall-description');
+
+      const closeBtn = screen.getByRole('button', { name: 'Paywall schließen' });
+      expect(closeBtn).toHaveAttribute('title', 'Paywall schließen');
+      expect(closeBtn).toHaveClass('focus-visible:ring-2');
+
+      const paymentSelect = screen.getByLabelText('Bestätigte Zahlungsmethode');
+      expect(paymentSelect).toHaveAttribute('id', 'paywall-payment-method-select');
+      expect(paymentSelect).toHaveClass('focus-visible:ring-2');
+
+      const closeClickRes = fireEvent.click(closeBtn);
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 });

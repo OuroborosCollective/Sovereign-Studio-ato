@@ -129,13 +129,21 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
         onClick={onClose}
       />
       
-      <div className="relative w-full max-w-6xl bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden border border-slate-200 dark:border-white/10 animate-in zoom-in-95 duration-300">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="paywall-title"
+        aria-describedby="paywall-description"
+        className="relative w-full max-w-6xl bg-white dark:bg-slate-950 rounded-[2.5rem] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden border border-slate-200 dark:border-white/10 animate-in zoom-in-95 duration-300"
+      >
         <button 
           type="button"
           onClick={onClose}
-          className="absolute top-8 right-8 p-2.5 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 transition-all z-20"
+          aria-label="Paywall schließen"
+          title="Paywall schließen"
+          className="absolute top-8 right-8 p-2.5 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none transition-all z-20"
         >
-          <X className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+          <X className="w-5 h-5 text-slate-500 dark:text-slate-400" aria-hidden="true" />
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[600px]">
@@ -145,23 +153,24 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Premium Access</span>
               </div>
-              <h2 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4 tracking-tight leading-tight">
+              <h2 id="paywall-title" className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4 tracking-tight leading-tight">
                 Bereit für das nächste Level?
               </h2>
-              <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl">
+              <p id="paywall-description" className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl">
                 Wähle deinen Plan und schalte sofortige Design-Power frei. 
                 Keine versteckten Gebühren, volle Transparenz.
               </p>
             </div>
 
             <div className="mb-8 max-w-xl mx-auto">
-              <label className="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+              <label htmlFor="paywall-payment-method-select" className="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
                 Bestätigte Zahlungsmethode
               </label>
               <select
+                id="paywall-payment-method-select"
                 value={selectedPaymentMethod}
                 onChange={event => setSelectedPaymentMethod(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-4 py-3 text-slate-900 dark:text-white"
+                className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-4 py-3 text-slate-900 dark:text-white focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none"
               >
                 {!supportedPaymentMethods.length && <option value="">Keine Methode verfügbar</option>}
                 {supportedPaymentMethods.map(method => (
@@ -242,7 +251,9 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                         type="button"
                         onClick={() => handlePurchase(pkg.id)}
                         disabled={isCurrent || isProcessing || !selectedPaymentMethod}
-                        className={`relative w-full py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.97] ${
+                        aria-label={isCurrent ? `${pkg.name}: Aktiver Plan` : `${pkg.name} auswählen für ${pkg.currency === 'EUR' ? '€' : pkg.currency}${pkg.price}`}
+                        title={isCurrent ? 'Dies ist Ihr aktueller Plan' : `${pkg.name} für ${pkg.currency === 'EUR' ? '€' : pkg.currency}${pkg.price} auswählen`}
+                        className={`relative w-full py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${
                           isCurrent
                             ? 'bg-slate-100 dark:bg-white/5 text-slate-400 cursor-default'
                             : isPopular
