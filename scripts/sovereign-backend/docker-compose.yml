@@ -38,8 +38,12 @@ services:
       SOVEREIGN_FREELLMAPI_UNIFIED_KEY_FILE: /opt/sovereign-owner-managed/freellmapi_unified_key.txt
       # Protected owner inputs are persisted outside the repository/container.
       # Raw values are never carried in Compose, logs, receipts or MCP arguments.
-      SOVEREIGN_OWNER_INPUT_TARGETS_JSON: '{"github_token":{"label":"GitHub Owner recovery credential","fieldLabel":"GitHub Zugriffsschlüssel / PAT","path":"/opt/sovereign-owner-managed/github_owner_token.txt","maxBytes":8192,"kind":"credential"},"wolfram_cag_api_key":{"label":"Wolfram CAG credential","fieldLabel":"Wolfram CAG API-Key","path":"/opt/sovereign-owner-managed/wolfram_cag_api_key.txt","maxBytes":8192,"kind":"credential"}}'
+      # Wolfram CAG and Wolfram Cloud use intentionally separate credentials.
+      SOVEREIGN_OWNER_INPUT_TARGETS_JSON: '{"github_token":{"label":"GitHub Owner recovery credential","fieldLabel":"GitHub Zugriffsschlüssel / PAT","path":"/opt/sovereign-owner-managed/github_owner_token.txt","maxBytes":8192,"kind":"credential"},"wolfram_cag_api_key":{"label":"Wolfram CAG credential","fieldLabel":"Wolfram CAG API-Key","path":"/opt/sovereign-owner-managed/wolfram_cag_api_key.txt","maxBytes":8192,"kind":"credential"},"wolfram_cloud_consumer_key":{"label":"Wolfram Cloud secured authentication consumer key","fieldLabel":"Wolfram Cloud Consumer Key","path":"/opt/sovereign-owner-managed/wolfram_cloud_consumer_key.txt","maxBytes":8192,"kind":"credential"},"wolfram_cloud_consumer_secret":{"label":"Wolfram Cloud secured authentication consumer secret","fieldLabel":"Wolfram Cloud Consumer Secret","path":"/opt/sovereign-owner-managed/wolfram_cloud_consumer_secret.txt","maxBytes":8192,"kind":"credential"}}'
       WOLFRAM_CAG_API_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cag_api_key.txt
+      WOLFRAM_CLOUD_CONSUMER_KEY_FILE: /opt/sovereign-owner-managed/wolfram_cloud_consumer_key.txt
+      WOLFRAM_CLOUD_CONSUMER_SECRET_FILE: /opt/sovereign-owner-managed/wolfram_cloud_consumer_secret.txt
+      WOLFRAM_PARTNER_NOTEBOOK_PATH: Sovereign/Wolfram-CAG/Partner-Analysis.nb
       SOVEREIGN_RUNTIME_ENVIRONMENT: production
       # Source revision is baked into the image; do not override it at runtime.
       SOVEREIGN_IMAGE_DIGEST: ${SOVEREIGN_IMAGE_DIGEST:-unverified}
