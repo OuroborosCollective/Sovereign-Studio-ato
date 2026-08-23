@@ -153,6 +153,8 @@ function run() {
   requireFile('src/features/product/runtime/sovereignProductTemplate.ts', 'Product template contract is required.');
   requireFile('scripts/frontend_endpoint_contracts.py', 'Frontend endpoint contract compiler is required.');
   requireFile('scripts/tests/test_frontend_endpoint_contracts.py', 'Frontend endpoint compiler regressions are required.');
+  requireFile('scripts/vitest_causal_runner.py', 'Bounded Vitest causal evidence runner is required.');
+  requireFile('scripts/tests/test_vitest_causal_runner.py', 'Vitest causal evidence runner regressions are required.');
   requireFile('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', 'Built-browser endpoint smoke is required.');
   requireFile('src/features/admin/api/adminApiClient.ownerInput.test.ts', 'Protected owner-input endpoint regression is required.');
   requireFile('src/features/billing/billingSlice.test.ts', 'Billing endpoint regression is required.');
@@ -178,6 +180,11 @@ function run() {
   requireText('scripts/frontend_endpoint_contracts.py', /FRONTEND_MUTATION_TEST_EVIDENCE_MISSING/, 'frontend-endpoints:mutation-test-gate', 'Endpoint compiler rejects active mutation requests without test evidence.');
   requireText('scripts/frontend_endpoint_contracts.py', /activeMutationWithoutTestEvidenceCount/, 'frontend-endpoints:mutation-test-count', 'Endpoint report exposes the mutation test-evidence count.');
   requireText('package.json', /adminApiClient\.ownerInput\.test\.ts[\s\S]*billingSlice\.test\.ts[\s\S]*knowledgeApi\.test\.ts[\s\S]*rescueClient\.test\.ts[\s\S]*toolchainApi\.test\.ts[\s\S]*skillsApi\.test\.ts/, 'frontend-endpoints:targeted-client-tests', 'Frontend endpoint package gate executes all targeted client regression suites.');
+  requireText('package.json', /vitest_causal_runner\.py --label frontend-endpoint-clients/, 'frontend-endpoints:targeted-causal-runner', 'Targeted endpoint clients use the bounded causal Vitest runner.');
+  requireText('package.json', /vitest_causal_runner\.py --label frontend-smoke/, 'frontend-endpoints:broad-causal-runner', 'The broad frontend smoke uses the bounded causal Vitest runner.');
+  requireText('scripts/vitest_causal_runner.py', /print\(f"FAILED \{causal\}"\)/, 'frontend-endpoints:causal-failure-identity', 'The causal runner emits a Pytest-compatible file and test identity.');
+  requireText('scripts/vitest_causal_runner.py', /stdout=subprocess\.DEVNULL[\s\S]*stderr=subprocess\.DEVNULL/, 'frontend-endpoints:no-raw-vitest-output', 'The causal runner does not project raw Vitest stdout or stderr.');
+  forbidText('scripts/vitest_causal_runner.py', /shell\s*=\s*True/, 'frontend-endpoints:no-shell-runner', 'The causal runner must never invoke Vitest through a shell.');
   requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /legacyImportViolationCount\)\.toBe\(0\)/, 'frontend-endpoints:e2e-import-readback', 'Browser smoke reads the import-boundary verdict from the exact report.');
   requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /activeMutationWithoutTestEvidenceCount\)\.toBe\(0\)/, 'frontend-endpoints:e2e-mutation-test-readback', 'Browser smoke reads the mutation test-evidence verdict from the exact report.');
   requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /unexpectedApiRequests\)\.toEqual\(\[\]\)/, 'frontend-endpoints:e2e-unexpected-api-denial', 'Browser smoke fails when the tested journey emits an unexpected first-party API request.');

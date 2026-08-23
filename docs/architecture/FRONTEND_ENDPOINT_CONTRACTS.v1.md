@@ -141,7 +141,10 @@ Phantom routes such as `/api/billing/cancel` and `/api/billing/restore` are forb
 ### Deterministic Python regression
 
 ```text
-python3 -m pytest scripts/tests/test_frontend_endpoint_contracts.py -q
+python3 -m pytest \
+  scripts/tests/test_frontend_endpoint_contracts.py \
+  scripts/tests/test_vitest_causal_runner.py \
+  -q
 ```
 
 Coverage includes:
@@ -156,7 +159,18 @@ Coverage includes:
 - helper-transformer false-positive denial;
 - static artifacts;
 - explicit non-active surfaces;
-- the complete current repository contract.
+- the complete current repository contract;
+- bounded Vitest JSON parsing, aggregate counts, relative file/test identity, secret-shaped title redaction and shell-free execution.
+
+### Causal Vitest runner
+
+```text
+scripts/vitest_causal_runner.py
+```
+
+Both the targeted endpoint-client suites and the subsequent broad frontend smoke run through this package-free wrapper. Vitest writes a JSON report below `.security-reports`; the wrapper emits only aggregate counts and the first failed `file::test` identity in the Pytest-compatible form consumed by Sovereign's revision-bound workflow failure extractor.
+
+Raw Vitest stdout, stderr and failure messages are not projected through this lane. The command is executed as an argument vector without a shell. This improves diagnosis only: the original Vitest exit code and every assertion remain release-blocking.
 
 ### Package gate
 
@@ -164,7 +178,7 @@ Coverage includes:
 pnpm run test:frontend-endpoints
 ```
 
-This compiles the report with `--check`, runs the Python compiler regressions and executes the targeted Vitest client suites for Admin owner input, Billing, Knowledge, Rescue, Toolchain and Skills.
+This compiles the report with `--check`, runs the compiler and causal-runner Python regressions, then executes the targeted Vitest client suites for Admin owner input, Billing, Knowledge, Rescue, Toolchain and Skills through the bounded causal runner. The canonical broad `test:smoke` uses the same runner after this targeted gate.
 
 ### Browser E2E smoke
 
