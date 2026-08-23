@@ -58,10 +58,9 @@ test.describe('BuilderContainer Smoke Tests', () => {
     await expect(composer).toHaveValue('');
   });
 
-  test('3. Missing repository evidence is explicit and never claims global readiness', async ({ page }) => {
-    const repoReason = page.getByText('GitHub-URL direkt im Chat einfügen.');
-    await expect(repoReason).toBeVisible();
+  test('3. Missing repository evidence stays outside Primary chat and never claims readiness', async ({ page }) => {
     await expect(page.getByText('Repo fehlt').first()).toBeVisible();
+    await expect(page.getByText('GitHub-URL direkt im Chat einfügen.')).toHaveCount(0);
   });
 
   test('4. LLM runtime remains unverified until real evidence exists', async ({ page }) => {

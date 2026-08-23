@@ -1222,3 +1222,129 @@ def test_rescue_capsule_blocks_stale_workspace_base(monkeypatch, tmp_path: Path)
     assert response.status_code == 409
     assert response.get_json()["blocker"] == "capsule_workspace_base_stale"
     assert response.get_json()["mutationPerformed"] is False
+
+
+def _chat_session_stub(user_id: str = "user-1"):
+    return SimpleNamespace(
+        session_id="livechat-" + ("a" * 24),
+        user_id=user_id,
+        to_public_dict=lambda: {
+            "schemaVersion": "sovereign.live-workspace-chat-session.v1",
+            "sessionId": "livechat-" + ("a" * 24),
+            "repositoryIdentity": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "repositoryBranch": "main",
+            "recordedAt": "2026-08-23T01:00:00+00:00",
+            "persistence": "postgresql",
+            "authoritative": False,
+        },
+    )
+
+
+def test_live_workspace_chat_routes_use_server_identity_and_typed_mission_only(monkeypatch) -> None:
+    conn = FakeConnection()
+    session = _chat_session_stub()
+    captured = {}
+
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_live_workspace_chat_session",
+        lambda _conn, **kwargs: session,
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "read_live_workspace_chat_session",
+        lambda _conn, **kwargs: session if kwargs["user_id"] == "user-1" else None,
+    )
+    monkeypatch.setattr(
+        routes_module,
+        "list_live_workspace_chat_bubbles",
+        lambda _conn, **kwargs: [],
+    )
+
+    def append_bubble(_conn, **kwargs):
+        captured.update(kwargs)
+        return {
+            "schemaVersion": "sovereign.live-workspace-chat-bubble.v1",
+            "persistenceSchemaVersion": "sovereign.live-workspace-chat-persistence.v1",
+            "sessionId": session.session_id,
+            "clientMessageId": kwargs["client_message_id"],
+            "bubbleKind": kwargs["bubble_kind"],
+            "sourceKind": kwargs["source_kind"],
+            "text": kwargs["text"],
+            "canonicalReferenceHashes": [],
+            "sessionBindingHash": None,
+            "runId": None,
+            "attemptId": None,
+            "workflowState": kwargs["workflow_state"],
+            "boundRevision": None,
+            "effectKind": None,
+            "targetHash": None,
+            "consentBindingHash": None,
+            "bubbleHash": "b" * 64,
+            "recordedAt": "2026-08-23T01:00:00+00:00",
+            "authoritative": False,
+        }
+
+    monkeypatch.setattr(routes_module, "append_live_workspace_chat_bubble", append_bubble)
+    client = create_test_app(conn).test_client()
+
+    resolved = client.post(
+        "/api/user/agent/live-workspace/chat-session",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "repositoryIdentity": "https://github.com/OuroborosCollective/Sovereign-Studio-ato",
+            "repositoryBranch": "main",
+            "userId": "attacker-controlled",
+        },
+    )
+    assert resolved.status_code == 200
+    assert resolved.get_json()["session"]["persistence"] == "postgresql"
+
+    mission = client.post(
+        f"/api/user/agent/live-workspace/chat-session/{session.session_id}/mission",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "clientMessageId": "mission-1",
+            "text": "Repariere den Login.",
+            "bubbleKind": "FINAL_RESULT",
+            "workflowState": "VERIFIED",
+        },
+    )
+    assert mission.status_code == 201
+    assert mission.get_json()["bubble"]["bubbleKind"] == "MISSION_INPUT"
+    assert captured["user_id"] == "user-1"
+    assert captured["bubble_kind"] == "MISSION_INPUT"
+    assert captured["source_kind"] == "USER_INPUT"
+    assert captured["canonical_reference_hashes"] == ()
+
+
+def test_live_workspace_chat_readback_is_user_scoped(monkeypatch) -> None:
+    conn = FakeConnection()
+    monkeypatch.setattr(
+        routes_module,
+        "read_live_workspace_chat_session",
+        lambda _conn, **kwargs: None,
+    )
+    client = create_test_app(conn).test_client()
+    response = client.get(
+        "/api/user/agent/live-workspace/chat-session/livechat-" + ("a" * 24) + "/bubbles",
+        headers={"X-Test-User": "other-user"},
+    )
+    assert response.status_code == 404
+
+
+def test_live_workspace_chat_persistence_failure_is_blocking(monkeypatch) -> None:
+    conn = FakeConnection()
+    monkeypatch.setattr(
+        routes_module,
+        "resolve_live_workspace_chat_session",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+    client = create_test_app(conn).test_client()
+    response = client.post(
+        "/api/user/agent/live-workspace/chat-session",
+        headers={"X-Test-User": "user-1"},
+        json={"repositoryIdentity": "UNBOUND", "repositoryBranch": "main"},
+    )
+    assert response.status_code == 503
+    assert response.get_json()["reason"] == "CHAT_POSTGRES_PERSISTENCE_UNAVAILABLE"

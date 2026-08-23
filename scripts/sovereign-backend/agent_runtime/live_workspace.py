@@ -749,7 +749,19 @@ class ChatBubbleV1:
         if kind not in CHAT_BUBBLE_KINDS:
             raise FleetContractError("chat bubble kind is forbidden")
         body = _text(text, "bubble_text", 2000)
-        forbidden = ("chain-of-thought", "reasoning:", "system prompt", "tool schema")
+        # Structural bubble kind/source/binding validation is the primary gate.
+        # These markers are defense in depth for already-typed committed segments.
+        forbidden = (
+            "here's a thinking process",
+            "chain-of-thought",
+            "reasoning:",
+            "system prompt",
+            "tool schema",
+            "runtime_flags",
+            "provider_request_id",
+            '"role":"system"',
+            "<|system|>",
+        )
         if any(marker in body.casefold() for marker in forbidden):
             raise FleetContractError("chat bubble contains internal reasoning or schema")
         refs = _bounded_hashes(canonical_reference_hashes, "canonical_reference_hashes")

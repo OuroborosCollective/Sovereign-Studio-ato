@@ -12,6 +12,7 @@ import {
   type DevChatWorkerMessage,
 } from "./devChatWorkerBridge";
 import { splitFilePath } from "./builderContainerHelpers";
+import { projectSituationalChatLines } from "./situationalBubbleRuntime";
 import {
   detectAndroidQuickRepoUrl,
 } from "./androidQuickInteractionRuntime";
@@ -195,65 +196,10 @@ export function buildChatLines(args: {
   readonly chatHistory: readonly ChatLine[];
   readonly restoredSessionAge?: string | null;
 }): ChatLine[] {
-  const lines: ChatLine[] = [];
-  const firstFile = splitFilePath(
-    args.agentJob?.changedFiles?.[0] ?? args.chatRepoSnapshot?.lastFile,
-  );
-  const effectiveRepoReady = args.repoReady || Boolean(args.chatRepoSnapshot);
-
-  lines.push({
-    id: "system:repo",
-    role: "system",
-    text: effectiveRepoReady
-      ? `Repo verbunden · ${args.chatRepoSnapshot ? summarizeDevChatRepoSnapshot(args.chatRepoSnapshot) : "echte Runtime-Gates aktiv"}`
-      : `Repo fehlt · ${args.repoReason}`,
-  });
-
-  if (args.restoredSessionAge) {
-    lines.push({
-      id: "system:restore-age",
-      role: "system",
-      text: `Session wiederhergestellt (Alter: ${args.restoredSessionAge})`,
-    });
-  }
-
-  if (args.chatRepoError)
-    lines.push({
-      id: "system:repo-error",
-      role: "system",
-      text: `Repo-Ladefehler: ${args.chatRepoError}`,
-    });
-  if (args.sovereignSummary.trim())
-    lines.push({
-      id: "assistant:summary",
-      role: "assistant",
-      text: args.sovereignSummary.trim(),
-      ...firstFile,
-    });
-
-  lines.push(...args.chatHistory);
-
-  if (
-    args.cuteThinkingLabel.trim() &&
-    (args.runtimeThinkingActive ||
-      args.chatHistory.length > 0 ||
-      args.chatRepoSnapshot ||
-      args.disabledReason?.trim())
-  ) {
-    lines.push({
-      id: "thought:runtime",
-      role: "thought",
-      text: args.cuteThinkingLabel,
-    });
-  }
-
-  if (args.disabledReason?.trim())
-    lines.push({
-      id: "system:blocked",
-      role: "system",
-      text: args.disabledReason.trim(),
-    });
-  return lines;
+  // #1620: Primary conversation is a projection of committed typed bubbles only.
+  // Repo state, restored-session age, worker status, diagnostics and thinking
+  // remain in their canonical non-chat inspector/action surfaces.
+  return projectSituationalChatLines(args.chatHistory);
 }
 
 export function createChatLineId(

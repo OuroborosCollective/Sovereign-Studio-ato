@@ -41,6 +41,14 @@ from .github_access import (
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
 from .job_store import append_agent_event, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .fleet_supervisor import FleetContractError
+from .live_workspace_chat_store import (
+    LiveWorkspaceChatStoreError,
+    append_live_workspace_chat_bubble,
+    list_live_workspace_chat_bubbles,
+    read_live_workspace_chat_session,
+    resolve_live_workspace_chat_session,
+)
 from .pattern_gateway import (
     evaluate_pattern_learning,
     pattern_input_from_job,
@@ -270,6 +278,9 @@ def register_sovereign_agent_routes(
     """Register neutral user-facing Sovereign Agent job routes.
 
     Routes:
+    - POST /api/user/agent/live-workspace/chat-session
+    - GET  /api/user/agent/live-workspace/chat-session/<session_id>/bubbles
+    - POST /api/user/agent/live-workspace/chat-session/<session_id>/mission
     - GET  /api/user/agent/jobs
     - POST /api/user/agent/jobs
     - GET  /api/user/agent/jobs/<job_id>
@@ -1363,6 +1374,134 @@ def register_sovereign_agent_routes(
                 "runtime": "sovereign-agent",
                 "job": _result_to_api(lifecycle.result),
             }), status_code
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/live-workspace/chat-session", methods=["POST"])
+    @require_session
+    def user_resolve_live_workspace_chat_session():
+        """Resolve one immutable real-PostgreSQL chat session from server identity."""
+
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        conn = _connection()
+        try:
+            session = resolve_live_workspace_chat_session(
+                conn,
+                user_id=user_id,
+                repository_identity=body.get("repositoryIdentity") or "UNBOUND",
+                repository_branch=body.get("repositoryBranch") or "main",
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "session": session.to_public_dict(),
+            })
+        except (LiveWorkspaceChatStoreError, FleetContractError, ValueError):
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_SESSION_SCOPE_INVALID",
+            }), 400
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_POSTGRES_PERSISTENCE_UNAVAILABLE",
+            }), 503
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/live-workspace/chat-session/<session_id>/bubbles", methods=["GET"])
+    @require_session
+    def user_list_live_workspace_chat_bubbles(session_id: str):
+        user_id = _current_session_user_id()
+        try:
+            limit = max(1, min(int(request.args.get("limit", "200")), 500))
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit must be an integer"}), 400
+        conn = _connection()
+        try:
+            session = read_live_workspace_chat_session(conn, user_id=user_id, session_id=session_id)
+            if session is None:
+                return jsonify({"error": "Chat session not found"}), 404
+            bubbles = list_live_workspace_chat_bubbles(
+                conn,
+                session=session,
+                user_id=user_id,
+                limit=limit,
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "session": session.to_public_dict(),
+                "bubbles": bubbles,
+            })
+        except LiveWorkspaceChatStoreError:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_PERSISTED_PAYLOAD_INVALID",
+            }), 409
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_POSTGRES_READBACK_UNAVAILABLE",
+            }), 503
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/live-workspace/chat-session/<session_id>/mission", methods=["POST"])
+    @require_session
+    def user_append_live_workspace_mission(session_id: str):
+        """Append only a typed user mission; clients cannot create result/consent truth."""
+
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        conn = _connection()
+        try:
+            session = read_live_workspace_chat_session(conn, user_id=user_id, session_id=session_id)
+            if session is None:
+                return jsonify({"error": "Chat session not found"}), 404
+            bubble = append_live_workspace_chat_bubble(
+                conn,
+                session=session,
+                user_id=user_id,
+                client_message_id=body.get("clientMessageId"),
+                bubble_kind="MISSION_INPUT",
+                text=body.get("text"),
+                source_kind="USER_INPUT",
+                workflow_state="RECORDED",
+                canonical_reference_hashes=(),
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "bubble": bubble,
+            }), 201
+        except (LiveWorkspaceChatStoreError, FleetContractError, ValueError):
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "MISSION_OUTPUT_FIREWALL_REJECTED",
+            }), 400
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_POSTGRES_PERSISTENCE_UNAVAILABLE",
+            }), 503
         finally:
             _close(conn)
 
