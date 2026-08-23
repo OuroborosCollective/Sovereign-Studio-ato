@@ -16,15 +16,23 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('Vorgemerktes Review-Preset wird direkt über den Repository-Executor wiederaufgenommen');
   });
 
-  it('starts the executable swarm, restores persisted jobs, and forwards GitHub access at publication', () => {
+  it('routes executable swarm, recovery, and publication through the typed engine boundary', () => {
     const app = source('src/App.tsx');
+    const boundary = source('src/features/product/runtime/sovereignEngineBoundary.ts');
     const client = source('src/features/product/runtime/sovereignAgentClient.ts');
     const runtime = source('src/features/product/runtime/sovereignAgentRuntime.ts');
 
-    expect(app).toContain('agentClient.startRepositoryExecution({');
-    expect(app).toContain('agentClient.listJobs()');
+    expect(app).toContain("'START_REPOSITORY_EXECUTION'");
+    expect(app).toContain("'RESTORE_LATEST_JOB'");
+    expect(app).toContain("'CREATE_DRAFT_PR'");
+    expect(app).toContain('executeSovereignEngineCommand(command, agentClient)');
     expect(app).toContain('expectedHeadSha: input.expectedHeadSha');
-    expect(app).toContain('agentClient.createDraftPr(jobId, input?.githubAccessToken)');
+    expect(app).not.toContain('agentClient.startRepositoryExecution(');
+    expect(app).not.toContain('agentClient.listJobs(');
+    expect(app).not.toContain('agentClient.createDraftPr(');
+    expect(boundary).toContain('await transport.startRepositoryExecution(command.payload.input)');
+    expect(boundary).toContain('await transport.createDraftPr(command.payload.jobId, command.payload.githubAccessToken)');
+    expect(boundary).toContain("'CANONICAL_JOB_SNAPSHOT_ACCEPTED'");
     expect(client).toContain("'/api/user/agent/swarm/run'");
     expect(client).toContain('expectedHeadSha: input.expectedHeadSha.trim()');
     expect(client).toContain('async listJobs(): Promise<SovereignAgentJobSnapshot[]>');
@@ -41,10 +49,12 @@ describe('DevChat Draft PR execution contract', () => {
     expect(builder).toContain('githubAccessToken: githubTokenRef.current || undefined');
   });
 
-  it('shows Rescue only for a real blocked or failed runtime state', () => {
+  it('opens Rescue from canonical runtime failure or a typed local boundary notice', () => {
     const app = source('src/App.tsx');
 
-    expect(app).toContain("!rescueOpen && ['blocked', 'failed'].includes(agentJob.status)");
+    expect(app).toContain("['blocked', 'failed'].includes(canonicalAgentJob.status)");
+    expect(app).toContain('|| Boolean(engineState.clientNotice)');
+    expect(app).not.toContain("['blocked', 'failed'].includes(agentJob.status)");
   });
 
   it('requires a concrete action preview before menu or slash Draft PR publication', () => {

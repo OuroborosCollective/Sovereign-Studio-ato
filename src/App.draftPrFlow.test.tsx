@@ -39,6 +39,7 @@ vi.mock('./features/product/runtime/sovereignAgentRuntime', () => ({
     agentApiUrl: 'https://agent.example.test',
   }),
   createSovereignAgentIdleSnapshot: () => ({ status: 'idle', changedFiles: [], events: [] }),
+  maskSovereignAgentSensitiveText: (value: string) => value,
   summarizeSovereignAgentJob: (job: { status: string }) => `status=${job.status}`,
   isSovereignAgentTerminalStatus: (status: string) => ['blocked', 'failed', 'completed', 'cleaned'].includes(status),
 }));
