@@ -256,7 +256,9 @@ function isNonEmptyString(value: unknown): value is string {
 function eventId(prefix: string): string {
   const uuid = typeof globalThis.crypto?.randomUUID === 'function'
     ? globalThis.crypto.randomUUID().replaceAll('-', '')
-    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+    : typeof globalThis.crypto?.getRandomValues === 'function'
+      ? Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+      : `${Date.now().toString(36)}00000000000000000000000000000000`;
   return `${prefix}-${uuid.slice(0, 32)}`;
 }
 
