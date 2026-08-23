@@ -29,6 +29,7 @@ def test_endpoint_mode_has_fixed_shell_free_stage_order() -> None:
     )
     assert stages[1].command[:4] == ("python3", "-m", "pytest", "scripts/tests/test_frontend_endpoint_contracts.py")
     assert "scripts/tests/test_frontend_test_gate.py" in stages[1].command
+    assert stages[1].forward_causal_output is True
     assert stages[2].command[:5] == (
         "python3",
         "scripts/vitest_causal_runner.py",
@@ -107,6 +108,44 @@ def test_failed_non_causal_stage_preserves_exit_and_emits_fixed_identity(
     assert '<testcase name="compiler.py::repository_contract">' in output
     assert '<failure message="bounded-stage-failure"/>' in output
     assert "compiler rejected contract" not in output
+
+
+def test_pytest_stage_extracts_precise_failure_token_without_replaying_message(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=(
+                "........F\n"
+                "FAILED scripts/tests/test_frontend_endpoint_contracts.py::test_current_repository_has_no_active_frontend_backend_contract_gap - AssertionError: bounded detail\n"
+                "1 failed, 30 passed in 1.0s\n"
+            ),
+            stderr="raw traceback must not be replayed",
+        ),
+    )
+    stage = MODULE.GateStage(
+        name="endpoint-python-regressions",
+        command=("python3", "-m", "pytest"),
+        failure_identity="scripts/tests::frontend_endpoint_python",
+        forward_causal_output=True,
+    )
+
+    exit_code = MODULE.run_stage(stage, root=tmp_path, timeout_seconds=30)
+
+    output = capsys.readouterr().out
+    token = "scripts/tests/test_frontend_endpoint_contracts.py::test_current_repository_has_no_active_frontend_backend_contract_gap"
+    assert exit_code == 1
+    assert "failed=1 passed=30" in output
+    assert f"FAILED {token}" in output
+    assert f'<testcase name="{token}">' in output
+    assert "FAILED scripts/tests::frontend_endpoint_python" not in output
+    assert "AssertionError" not in output
+    assert "traceback" not in output
 
 
 def test_causal_stage_forwards_only_safe_summary_and_failed_identity(

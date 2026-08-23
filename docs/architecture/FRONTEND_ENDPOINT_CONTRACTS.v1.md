@@ -162,7 +162,8 @@ Coverage includes:
 - explicit non-active surfaces;
 - the complete current repository contract;
 - bounded Vitest JSON parsing, aggregate counts, relative file/test identity, secret-shaped title redaction and shell-free execution;
-- fixed gate ordering, stop-on-first-failure, exit-code preservation, raw-output denial and causal-marker forwarding.
+- fixed gate ordering, stop-on-first-failure, exit-code preservation, raw-output denial and causal-marker forwarding;
+- precise extraction of whitespace-free Pytest `FAILED path::test - …` and collection `ERROR path::test` identities without assertion text or tracebacks.
 
 ### Frontend test gate orchestrator
 
@@ -172,7 +173,7 @@ scripts/frontend_test_gate.py
 
 The package scripts contain no nested shell test chain. `--mode endpoint` executes the compiler, all Python regressions and the six targeted client suites. `--mode smoke` executes the same stages and then the broad frontend Vitest smoke with the repository's existing exclusions. Every subprocess is a fixed argument vector with `shell=False`; raw stage stdout/stderr is captured but never replayed.
 
-The orchestrator stops at the first non-zero stage, preserves that exit code and emits either the redacted `FAILED file::test` produced by the causal runner or a fixed stage identity such as `FAILED frontend-smoke::vitest_runner`. Every failure identity is also represented as one bounded single-test JUnit fragment (`<testcase name="…"><failure message="bounded-stage-failure"/>`). The existing revision-bound extractor can therefore resolve the cause through either its Pytest-token or JUnit grammar, without relying on npm-shell control-flow or raw logs.
+The orchestrator stops at the first non-zero stage, preserves that exit code and emits either a redacted causal identity or a fixed stage identity such as `FAILED frontend-smoke::vitest_runner`. For Pytest, it accepts only the first whitespace-free token from `FAILED path::test - …` or `ERROR path::test`; assertion messages and tracebacks remain unprojected. Every failure identity is also represented as one bounded single-test JUnit fragment (`<testcase name="…"><failure message="bounded-stage-failure"/>`). The existing revision-bound extractor can therefore resolve the cause through either its Pytest-token or JUnit grammar, without relying on npm-shell control-flow or raw logs.
 
 ### Causal Vitest runner
 

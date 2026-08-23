@@ -64,8 +64,14 @@ def _causal_lines(text: str) -> tuple[str, ...]:
     output: list[str] = []
     for raw in str(text or "").splitlines():
         line = _redact(raw)
-        if line.startswith("SOVEREIGN_VITEST_SUMMARY ") or re.fullmatch(r"FAILED\s+[^\s]+", line):
+        if line.startswith("SOVEREIGN_VITEST_SUMMARY "):
             output.append(line)
+            continue
+        match = re.match(r"^(?:FAILED|ERROR)\s+([^\s]+)", line)
+        if match:
+            token = match.group(1)
+            if _FAILURE_IDENTITY_RE.fullmatch(token):
+                output.append(f"FAILED {token}")
     return tuple(output[:8])
 
 
@@ -120,6 +126,7 @@ def build_stages(mode: str, *, python_executable: str | None = None) -> tuple[Ga
                 "-q",
             ),
             failure_identity="scripts/tests::frontend_endpoint_python",
+            forward_causal_output=True,
         ),
         GateStage(
             name="endpoint-client-vitest",
@@ -214,7 +221,7 @@ def run_stage(stage: GateStage, *, root: Path, timeout_seconds: int) -> int:
         f"failed={failed} passed={passed} skipped={skipped}"
     )
 
-    forwarded = _causal_lines(completed.stdout) if stage.forward_causal_output else ()
+    forwarded = _causal_lines(combined) if stage.forward_causal_output else ()
     failure_emitted = False
     for line in forwarded:
         if line.startswith("FAILED "):
