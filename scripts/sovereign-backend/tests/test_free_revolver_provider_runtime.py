@@ -87,6 +87,10 @@ def test_provider_surface_contract_routes_only_canonical_actions() -> None:
         api_base="http://freellmpool:8080/v1",
         last_error_code="freellmpool_replaced_by_omniroute",
     )
+    retired_even_without_marker = classify_provider_surface(
+        api_base="http://freellmpool:8080/v1",
+        last_error_code=None,
+    )
 
     assert generic == {
         "providerSurfaceKind": "free-revolver",
@@ -103,6 +107,7 @@ def test_provider_surface_contract_routes_only_canonical_actions() -> None:
         "lifecycle": "historical",
         "canonicalAction": "none",
     }
+    assert retired_even_without_marker == retired
 
 
 def test_omniroute_is_not_added_to_generic_ssrf_allowlist() -> None:
@@ -118,6 +123,15 @@ def test_omniroute_is_not_added_to_generic_ssrf_allowlist() -> None:
         "models_url_candidates("
     )
     assert "canonical_provider_action_required" in discover
+
+    create_start = runtime.index("    def admin_create_free_revolver_provider(")
+    create_end = runtime.index("    @app.route(", create_start + 1)
+    create = runtime[create_start:create_end]
+    assert create.index("control = classify_provider_surface(") < create.index(
+        '"""INSERT INTO llm_revolver_provider_sources'
+    )
+    assert 'control["providerSurfaceKind"] != "free-revolver"' in create
+    assert "canonical_provider_action_required" in create
 
     # Internal owner-authenticated entrypoints are equally constrained: a
     # historical source or OmniRoute must fail before it can claim, reconcile,

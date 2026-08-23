@@ -39,6 +39,7 @@ _MANAGED_INTERNAL_SOURCES = {
 }
 _MANAGED_KEY_FILENAME = "freellmapi_unified_key.txt"
 _OMNIROUTE_API_BASE = "http://omniroute:20128/v1"
+_RETIRED_FREELLMPOOL_API_BASE = "http://freellmpool:8080/v1"
 _RETIRED_FREELLMPOOL_ERROR = "freellmpool_replaced_by_omniroute"
 _TEXT_CHAT_CAPABILITIES = frozenset({
     "chat",
@@ -182,7 +183,10 @@ def classify_provider_surface(
     """
     normalized_base = str(api_base or "").strip().rstrip("/")
     error_code = str(last_error_code or "").strip()
-    if error_code == _RETIRED_FREELLMPOOL_ERROR:
+    if (
+        normalized_base == _RETIRED_FREELLMPOOL_API_BASE
+        or error_code == _RETIRED_FREELLMPOOL_ERROR
+    ):
         return {
             "providerSurfaceKind": "retired-reference",
             "lifecycle": "historical",

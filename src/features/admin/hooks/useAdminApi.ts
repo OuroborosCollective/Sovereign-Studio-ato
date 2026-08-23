@@ -248,6 +248,19 @@ export function useAdminLlmRoutes(): UseAdminLlmRoutesResult {
 
 // ── useAdminFreeRevolverProviders ────────────────────────────────────────────
 
+export async function refreshOmniRouteAndReload(
+  refresh: () => Promise<unknown>,
+  reload: () => void,
+): Promise<void> {
+  try {
+    await refresh();
+  } finally {
+    // A failed double-canary is still a canonical runtime event. Always obtain
+    // the subsequent typed readback instead of leaving product state stale.
+    reload();
+  }
+}
+
 export interface UseAdminFreeRevolverProvidersResult {
   providers: FreeRevolverProviderSource[];
   omniRoute: OmniRouteRuntimeStatus | null;
@@ -356,8 +369,10 @@ export function useAdminFreeRevolverProviders(): UseAdminFreeRevolverProvidersRe
 
   const refreshOmniRoute = useCallback(async () => {
     setError(null);
-    await adminApiClient.refreshOmniRoute();
-    reload();
+    await refreshOmniRouteAndReload(
+      () => adminApiClient.refreshOmniRoute(),
+      reload,
+    );
   }, [reload]);
 
   return {

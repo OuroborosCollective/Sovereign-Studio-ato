@@ -519,7 +519,10 @@ def register_omniroute_execution_runtime(
     @require_admin
     def admin_omniroute_refresh():
         result = service.scan_once()
-        return jsonify(result), 200 if result.get("ok") else 503
+        # Mutating execution evidence is never itself the UI state contract.
+        # Return the canonical status projection after the scan so success,
+        # degraded and busy outcomes all have one typed readback shape.
+        return jsonify(service.status()), 200 if result.get("ok") else 503
 
     service.start()
     return service

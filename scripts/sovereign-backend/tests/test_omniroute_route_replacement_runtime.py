@@ -277,3 +277,80 @@ def test_omniroute_401_canary_degrades_only_its_dedicated_route(
     assert "freellmapi:3001" not in all_material
     assert "freellmpool:8080" not in all_material
     assert "sovereign-omniroute-auto" in all_material
+
+
+class _RouteApp:
+    def __init__(self) -> None:
+        self.routes: dict[tuple[str, tuple[str, ...]], object] = {}
+
+    def route(self, path: str, methods: list[str]):
+        def register(handler):
+            self.routes[(path, tuple(methods))] = handler
+            return handler
+        return register
+
+
+def test_refresh_returns_canonical_status_projection_after_success_or_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = {
+        "id": "sovereign-omniroute-auto",
+        "model_id": "sovereign-omniroute:auto",
+        "base_url": OMNIROUTE_BASE_URL,
+        "disabled": True,
+        "config": {
+            "selectable": False,
+            "canaryVerified": False,
+            "activationState": "blocked",
+            "activationBlocker": "omniroute_canary_http_401",
+            "canaryConfirmationCount": 0,
+        },
+    }
+
+    def query(sql: str, _params=None, *, one=False, **_kwargs):
+        assert "FROM llm_routes WHERE id=%s" in sql
+        assert one is True
+        return route
+
+    app = _RouteApp()
+    monkeypatch.setattr(runtime, "jsonify", lambda payload: payload)
+    monkeypatch.setattr(runtime.OmniRouteExecutionRuntime, "start", lambda _self: None)
+    service = runtime.register_omniroute_execution_runtime(
+        app,
+        require_admin=lambda handler: handler,
+        query=query,
+        get_connection=lambda: _Connection(),
+        audit=lambda *_args, **_kwargs: None,
+    )
+    refresh = app.routes[("/api/admin/llm/omniroute/refresh", ("POST",))]
+    assert callable(refresh)
+
+    expected_keys = {
+        "ok",
+        "routeSource",
+        "routeId",
+        "modelId",
+        "apiBase",
+        "disabled",
+        "activationState",
+        "blocker",
+        "confirmationCount",
+        "receiptSha256",
+        "sourceRevision",
+        "imageDigest",
+        "freeLlmApiChanged",
+        "rawProviderResponsesReturned",
+    }
+
+    monkeypatch.setattr(service, "scan_once", lambda: {"ok": True})
+    success_payload, success_status = refresh()
+    assert success_status == 200
+    assert expected_keys <= success_payload.keys()
+    assert success_payload["routeSource"] == "omniroute"
+    assert success_payload["activationState"] == "blocked"
+
+    monkeypatch.setattr(service, "scan_once", lambda: {"ok": False, "status": "degraded"})
+    failure_payload, failure_status = refresh()
+    assert failure_status == 503
+    assert expected_keys <= failure_payload.keys()
+    assert failure_payload["blocker"] == "omniroute_canary_http_401"

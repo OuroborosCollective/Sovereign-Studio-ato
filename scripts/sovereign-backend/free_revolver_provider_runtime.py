@@ -1510,6 +1510,20 @@ def register_free_revolver_provider_runtime(
                 )
         except ValueError as exc:
             return jsonify({"error": str(exc), "blocker": "free_provider_url_invalid"}), 400
+        control = classify_provider_surface(
+            api_base=api_base,
+            last_error_code=None,
+        )
+        if (
+            control["canonicalAction"] != "revolver-discover"
+            or control["providerSurfaceKind"] != "free-revolver"
+        ):
+            return jsonify({
+                "error": "Dieser Provider kann nur über seine kanonische typisierte Aktion erstellt oder verändert werden.",
+                "blocker": "canonical_provider_action_required",
+                "providerSurfaceKind": control["providerSurfaceKind"],
+                "canonicalAction": control["canonicalAction"],
+            }), 409
         existing = query(
             "SELECT id::text FROM llm_revolver_provider_sources WHERE lower(api_base)=lower(%s) LIMIT 1",
             (api_base,), one=True,
