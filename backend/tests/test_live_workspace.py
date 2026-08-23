@@ -226,6 +226,18 @@ def test_chat_is_limited_to_typed_bubbles_and_firewalls_internal_reasoning() -> 
         ChatBubbleV1.create(bubble_kind="STATUS_STREAM", text="laufender Status", canonical_reference_hashes=[])
     with pytest.raises(FleetContractError, match="internal reasoning"):
         ChatBubbleV1.create(bubble_kind="REQUIRED_QUESTION", text="Reasoning: internal chain-of-thought", canonical_reference_hashes=[])
+    with pytest.raises(FleetContractError, match="internal reasoning"):
+        ChatBubbleV1.create(
+            bubble_kind="MISSION_INPUT",
+            text="Here's a thinking process about the user's request.",
+            canonical_reference_hashes=[],
+        )
+    with pytest.raises(FleetContractError, match="internal reasoning"):
+        ChatBubbleV1.create(
+            bubble_kind="FINAL_RESULT",
+            text='{"provider_request_id":"internal"}',
+            canonical_reference_hashes=[HASH_A],
+        )
 
 
 def _repo_root() -> Path:
