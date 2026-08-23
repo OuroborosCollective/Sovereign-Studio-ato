@@ -41,7 +41,7 @@ services:
           create_host_path: false
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700
-      - /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0700
+      - /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0711
       - /home/desktop:rw,nosuid,nodev,noexec,size=128m,uid=10001,gid=10001,mode=0700
     healthcheck:
       test: ["CMD-SHELL", "test -S /run/desktop-control/worker.sock && pgrep -f 'websockify' >/dev/null"]

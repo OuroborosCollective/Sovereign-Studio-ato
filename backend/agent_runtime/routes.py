@@ -262,6 +262,10 @@ def register_sovereign_agent_routes(
     get_live_workspace_context: Callable[[Any, Any], Any | None] | None = None,
     issue_desktop_activation: Callable[[Any], Any | None] | None = None,
     get_desktop_frame: Callable[[Any], Any | None] | None = None,
+    take_desktop_control: Callable[[Any, str], Mapping[str, Any] | None] | None = None,
+    give_back_desktop_control: Callable[[Any, str, str, str], Mapping[str, Any] | None] | None = None,
+    send_desktop_user_input: Callable[[Any, str, str, str, dict[str, Any]], Mapping[str, Any] | None] | None = None,
+    desktop_frame_allowed: Callable[[Any], bool] | None = None,
 ) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
@@ -297,6 +301,23 @@ def register_sovereign_agent_routes(
 
     def _connection():
         return get_connection()
+
+    def _resolve_live_workspace_context(conn: Any, job: Any) -> Any | None:
+        if get_live_workspace_context is None:
+            return None
+        try:
+            return get_live_workspace_context(conn, job)
+        except Exception:
+            return None
+
+    def _desktop_control_block(job_id: str, reason: str):
+        return jsonify({
+            "ok": False,
+            "runtime": "sovereign-agent",
+            "jobId": job_id,
+            "state": "BLOCKED",
+            "reason": reason,
+        }), 409
 
     def _close(conn) -> None:
         close = getattr(conn, "close", None)
@@ -1450,6 +1471,103 @@ def register_sovereign_agent_routes(
         finally:
             _close(conn)
 
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/takeover", methods=["POST"])
+    @require_session
+    def user_take_live_workspace_desktop_control(job_id: str):
+        """Transfer GUI input to the signed-in user; it grants no other authority."""
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict) or body:
+            return jsonify({"error": "Takeover accepts no capability or authority fields"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or take_desktop_control is None:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            try:
+                result = take_desktop_control(context, user_id)
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            if not isinstance(result, Mapping) or _contains_live_workspace_path(result):
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            return jsonify({
+                "ok": bool(result.get("ok")),
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "desktopActivation": result.get("desktopActivation"),
+                "control": result.get("control"),
+            }), 200 if bool(result.get("ok")) else 409
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/give-back", methods=["POST"])
+    @require_session
+    def user_give_back_live_workspace_desktop_control(job_id: str):
+        """Return GUI input only after the fresh resolver has rebuilt current evidence."""
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) != {"activationId", "leaseId"}:
+            return jsonify({"error": "Give-back requires only activationId and leaseId"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or give_back_desktop_control is None:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            try:
+                result = give_back_desktop_control(context, user_id, body["activationId"], body["leaseId"])
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            if not isinstance(result, Mapping) or _contains_live_workspace_path(result):
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            return jsonify({
+                "ok": bool(result.get("ok")),
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "control": result.get("control"),
+                "reason": result.get("reason"),
+            }), 200 if bool(result.get("ok")) else 409
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/input", methods=["POST"])
+    @require_session
+    def user_send_live_workspace_desktop_input(job_id: str):
+        """Deliver one bounded human GUI action; payload text is never persisted here."""
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) != {"activationId", "leaseId", "input"} or not isinstance(body.get("input"), dict):
+            return jsonify({"error": "Desktop input requires activationId, leaseId and one input object"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or send_desktop_user_input is None:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            try:
+                result = send_desktop_user_input(context, user_id, body["activationId"], body["leaseId"], body["input"])
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_INPUT_LEASE_UNAVAILABLE")
+            if not isinstance(result, Mapping) or _contains_live_workspace_path(result):
+                return _desktop_control_block(job_id, "DESKTOP_INPUT_LEASE_UNAVAILABLE")
+            return jsonify({
+                "ok": bool(result.get("ok")),
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "desktopInput": result,
+            }), 200 if bool(result.get("ok")) else 409
+        finally:
+            _close(conn)
+
     @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/frame", methods=["GET"])
     @require_session
     def user_get_live_workspace_desktop_frame(job_id: str):
@@ -1468,6 +1586,12 @@ def register_sovereign_agent_routes(
                 except Exception:
                     context = None
             frame = None
+            if context is not None and desktop_frame_allowed is not None:
+                try:
+                    if desktop_frame_allowed(context) is not True:
+                        return _desktop_control_block(job_id, "DESKTOP_FRAME_WITHHELD_DURING_USER_CONTROL")
+                except Exception:
+                    return _desktop_control_block(job_id, "DESKTOP_FRAME_UNAVAILABLE")
             if context is not None and get_desktop_frame is not None:
                 try:
                     frame = get_desktop_frame(context)

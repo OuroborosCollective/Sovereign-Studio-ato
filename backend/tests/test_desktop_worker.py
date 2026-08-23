@@ -714,11 +714,21 @@ def test_native_desktop_worker_assets_are_digest_bound_and_non_privileged() -> N
     assert "DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH" in compose
     assert "DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH" in compose
     assert "DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH" in compose
+    assert "/run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0711" in compose
+    assert "--tmpfs /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0711" in canary
     assert "--read-only" in canary and "--cap-drop ALL" in canary
     assert "--local-canary-only" in canary and "DESKTOP_LOCAL_IMAGE_READBACK_REF" in canary
-    assert canary.index('python3 tools/sovereign-desktop-worker/operator-validate.py --require-gateway --local-canary-only') < canary.index('sudo chown 10002:10002 "$key_file"')
+    assert 'fields["requestHash"] = stable_hash(fields)\n          fields["payload"] = payload' in canary
+    assert '"admissionId": os.environ["DESKTOP_GATEWAY_ADMISSION_ID"]' in canary
+    assert canary.index('python3 tools/sovereign-desktop-worker/operator-validate.py --require-gateway --local-canary-only') < canary.index('view_token="$(')
+    assert canary.index('view_token="$(') < canary.index('sudo chown 10002:10002 "$key_file"')
     assert canary.index('sudo chown 10002:10002 "$key_file"') < canary.index('gateway="desktop-view-gateway-canary-$GITHUB_RUN_ID"')
     assert 'sudo rm -rf -- "$attempt_parent"' in canary
     assert "--network none" not in canary
+    assert "--entrypoint curl" not in canary
+    assert "http.client.HTTPConnection" in canary
+    assert "CANARY_VIEW_TOKEN" in canary
     assert "continuity" not in canary.casefold()
     assert "workflow_dispatch:" in canary
+    assert "uses: ./.github/actions/setup-backend-python" in canary
+    assert "python-version: '3.11'" in canary

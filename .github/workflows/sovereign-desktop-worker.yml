@@ -35,6 +35,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Setup verified backend Python runtime
+        uses: ./.github/actions/setup-backend-python
+        with:
+          python-version: '3.11'
+
       - name: Run revision-bound hardened desktop canary
         shell: bash
         run: |
@@ -139,7 +144,6 @@ jobs:
             exit 1
           fi
           docker compose -f tools/sovereign-desktop-worker/compose.yaml config >/dev/null
-          sudo chown 10002:10002 "$key_file"
 
           docker network create --internal "$backplane" >/dev/null
           docker network create --internal "$client_network" >/dev/null
@@ -147,8 +151,43 @@ jobs:
           view_client_network_identity="$(docker network inspect --format '{{.Id}}' "$client_network" | sha256sum | cut -d ' ' -f1)"
           export DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH="$worker_backplane_network_identity"
           export DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH="$view_client_network_identity"
+
+          view_token="$(
+            CANARY_KEY_FILE="$key_file" CANARY_GRANT_ID="$grant_id" CANARY_SUBJECT_HASH="$subject_hash" python3 - <<'PY'
+          import base64, hashlib, hmac, json, os, secrets, time
+          def encode(value):
+              return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+          claims = {
+              "sessionId": os.environ["DESKTOP_SESSION_ID"],
+              "sessionBindingHash": os.environ["DESKTOP_SESSION_BINDING_HASH"],
+              "admissionId": os.environ["DESKTOP_GATEWAY_ADMISSION_ID"],
+              "grantId": os.environ["CANARY_GRANT_ID"],
+              "subjectHash": os.environ["CANARY_SUBJECT_HASH"],
+              "viewScopeHash": os.environ["DESKTOP_VIEW_SCOPE_HASH"],
+              "runtimeIdentityHash": os.environ["DESKTOP_RUNTIME_IDENTITY_HASH"],
+              "containerIdentityHash": os.environ["DESKTOP_CONTAINER_IDENTITY_HASH"],
+              "gatewayRuntimeIdentityHash": os.environ["DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH"],
+              "gatewayContainerIdentityHash": os.environ["DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH"],
+              "gatewayImageDigest": os.environ["DESKTOP_GATEWAY_IMAGE_DIGEST"],
+              "workerBackplaneNetworkIdentityHash": os.environ["DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH"],
+              "viewClientNetworkIdentityHash": os.environ["DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH"],
+              "attemptId": os.environ["DESKTOP_ATTEMPT_ID"],
+              "attemptHash": os.environ["DESKTOP_ATTEMPT_HASH"],
+              "worktreeIdentityHash": os.environ["DESKTOP_WORKTREE_IDENTITY_HASH"],
+              "observedHeadRevision": os.environ["DESKTOP_HEAD_REVISION"],
+              "issuedAtEpoch": int(time.time()) - 1,
+              "expiresAtEpoch": int(time.time()) + 90,
+              "nonce": secrets.token_urlsafe(16),
+          }
+          body = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode("utf-8")
+          key = open(os.environ["CANARY_KEY_FILE"], "rb").read().strip()
+          print(encode(body) + "." + encode(hmac.new(key, body, hashlib.sha256).digest()))
+          PY
+          )"
+          sudo chown 10002:10002 "$key_file"
+
           worker="desktop-worker-canary-$GITHUB_RUN_ID"
-          docker run --detach             --name "$worker"             --user 10001:10001             --read-only             --cap-drop ALL             --security-opt no-new-privileges             --pids-limit 256             --memory 1g             --cpus 1             --restart no             --network "$backplane"             --network-alias desktop-worker             --mount "type=bind,src=$attempt_worktree,dst=/workspace"             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700             --tmpfs /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0700             --tmpfs /home/desktop:rw,nosuid,nodev,noexec,size=128m,uid=10001,gid=10001,mode=0700             --env DESKTOP_SESSION_ID="$session_id"             --env DESKTOP_SESSION_BINDING_HASH="$session_binding"             --env DESKTOP_RUNTIME_IDENTITY_HASH="$runtime_identity"             --env DESKTOP_CONTAINER_IDENTITY_HASH="$container_identity"             --env DESKTOP_INPUT_SCOPE_HASH="$input_scope"             --env DESKTOP_VIEW_SCOPE_HASH="$view_scope"             --env DESKTOP_ATTEMPT_ID="$attempt_id"             --env DESKTOP_ATTEMPT_HASH="$attempt_hash"             --env DESKTOP_WORKTREE_IDENTITY_HASH="$worktree_hash"             --env DESKTOP_HEAD_REVISION="$revision"             --env DESKTOP_IMAGE_DIGEST="$image_digest"             --env DESKTOP_ADMISSION_ID=""             --env DESKTOP_MAX_LIFETIME_SECONDS=600             --env DESKTOP_MAX_IDLE_SECONDS=300             "$image"
+          docker run --detach             --name "$worker"             --user 10001:10001             --read-only             --cap-drop ALL             --security-opt no-new-privileges             --pids-limit 256             --memory 1g             --cpus 1             --restart no             --network "$backplane"             --network-alias desktop-worker             --mount "type=bind,src=$attempt_worktree,dst=/workspace"             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700             --tmpfs /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0711             --tmpfs /home/desktop:rw,nosuid,nodev,noexec,size=128m,uid=10001,gid=10001,mode=0700             --env DESKTOP_SESSION_ID="$session_id"             --env DESKTOP_SESSION_BINDING_HASH="$session_binding"             --env DESKTOP_RUNTIME_IDENTITY_HASH="$runtime_identity"             --env DESKTOP_CONTAINER_IDENTITY_HASH="$container_identity"             --env DESKTOP_INPUT_SCOPE_HASH="$input_scope"             --env DESKTOP_VIEW_SCOPE_HASH="$view_scope"             --env DESKTOP_ATTEMPT_ID="$attempt_id"             --env DESKTOP_ATTEMPT_HASH="$attempt_hash"             --env DESKTOP_WORKTREE_IDENTITY_HASH="$worktree_hash"             --env DESKTOP_HEAD_REVISION="$revision"             --env DESKTOP_IMAGE_DIGEST="$image_digest"             --env DESKTOP_ADMISSION_ID=""             --env DESKTOP_MAX_LIFETIME_SECONDS=600             --env DESKTOP_MAX_IDLE_SECONDS=300             "$image"
 
           ready=0
           for _ in $(seq 1 45); do
@@ -241,6 +280,7 @@ jobs:
               "requestedAtEpoch": requested,
           }
           fields["requestHash"] = stable_hash(fields)
+          fields["payload"] = payload
           print(json.dumps(fields, sort_keys=True, separators=(",", ":")))
           PY
           }
@@ -311,60 +351,69 @@ jobs:
           done
           test "$gateway_ready" = 1
 
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' http://desktop-view-gateway:8080/vnc.html)" = 401
-          if docker run --rm --network "$client_network" --entrypoint python3 "$image" -c 'import socket; socket.gethostbyname("desktop-worker")'; then
-            echo "view client reached the worker backplane name" >&2
-            exit 1
-          fi
+          docker run --rm \
+            --network "$client_network" \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 64 \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --env CANARY_VIEW_TOKEN="$view_token" \
+            --entrypoint python3 \
+            "$image" - <<'PY'
+          import http.client
+          import os
+          import socket
+          import urllib.parse
 
-          view_token="$(
-            CANARY_KEY_FILE="$key_file" CANARY_GRANT_ID="$grant_id" CANARY_SUBJECT_HASH="$subject_hash" python3 - <<'PY'
-          import base64, hashlib, hmac, json, os, secrets, time
-          def encode(value):
-              return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
-          claims = {
-              "sessionId": os.environ["DESKTOP_SESSION_ID"],
-              "sessionBindingHash": os.environ["DESKTOP_SESSION_BINDING_HASH"],
-              "admissionId": os.environ["CANARY_ADMISSION_ID"],
-              "grantId": os.environ["CANARY_GRANT_ID"],
-              "subjectHash": os.environ["CANARY_SUBJECT_HASH"],
-              "viewScopeHash": os.environ["DESKTOP_VIEW_SCOPE_HASH"],
-              "runtimeIdentityHash": os.environ["DESKTOP_RUNTIME_IDENTITY_HASH"],
-              "containerIdentityHash": os.environ["DESKTOP_CONTAINER_IDENTITY_HASH"],
-              "gatewayRuntimeIdentityHash": os.environ["DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH"],
-              "gatewayContainerIdentityHash": os.environ["DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH"],
-              "gatewayImageDigest": os.environ["DESKTOP_GATEWAY_IMAGE_DIGEST"],
-              "workerBackplaneNetworkIdentityHash": os.environ["DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH"],
-              "viewClientNetworkIdentityHash": os.environ["DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH"],
-              "attemptId": os.environ["DESKTOP_ATTEMPT_ID"],
-              "attemptHash": os.environ["DESKTOP_ATTEMPT_HASH"],
-              "worktreeIdentityHash": os.environ["DESKTOP_WORKTREE_IDENTITY_HASH"],
-              "observedHeadRevision": os.environ["DESKTOP_HEAD_REVISION"],
-              "issuedAtEpoch": int(time.time()) - 1,
-              "expiresAtEpoch": int(time.time()) + 90,
-              "nonce": secrets.token_urlsafe(16),
-          }
-          body = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode("utf-8")
-          key = open(os.environ["CANARY_KEY_FILE"], "rb").read().strip()
-          print(encode(body) + "." + encode(hmac.new(key, body, hashlib.sha256).digest()))
+          token = os.environ["CANARY_VIEW_TOKEN"]
+
+          def request(method, path, headers=None):
+              connection = http.client.HTTPConnection("desktop-view-gateway", 8080, timeout=5)
+              connection.request(method, path, headers=headers or {})
+              response = connection.getresponse()
+              result = response.status, {
+                  name.lower(): value for name, value in response.getheaders()
+              }
+              if response.status != 101:
+                  response.read()
+              connection.close()
+              return result
+
+          assert request("GET", "/vnc.html")[0] == 401
+          try:
+              socket.gethostbyname("desktop-worker")
+          except socket.gaierror:
+              pass
+          else:
+              raise AssertionError("view client reached worker backplane DNS")
+
+          encoded = urllib.parse.quote(token, safe="")
+          status, headers = request("GET", "/?view_token=" + encoded)
+          assert status == 303
+          cookie = headers.get("set-cookie", "")
+          assert cookie.startswith("desktop_view_session=")
+          assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+          assert request("GET", "/?view_token=" + encoded)[0] == 401
+
+          authorized = {"Cookie": cookie}
+          assert request("GET", "/vnc.html", authorized)[0] == 200
+          assert request("POST", "/", authorized)[0] == 405
+          assert request("CONNECT", "/", authorized)[0] == 405
+          for _ in range(2):
+              status, _ = request(
+                  "GET",
+                  "/websockify",
+                  {
+                      "Cookie": cookie,
+                      "Connection": "Upgrade",
+                      "Upgrade": "websocket",
+                      "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                      "Sec-WebSocket-Version": "13",
+                  },
+              )
+              assert status == 101
           PY
-          )"
-          headers="$attempt_parent/view-headers"
-          docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -D "$headers" -o /dev/null "http://desktop-view-gateway:8080/?view_token=$view_token"
-          grep -q '^HTTP/1.1 303' "$headers"
-          grep -qi '^Set-Cookie: desktop_view_session=.*HttpOnly.*SameSite=Strict' "$headers"
-          cookie="$(awk -F ': ' '/^Set-Cookie:/ {sub(/\r$/, "", $2); print $2}' "$headers")"
-          test -n "$cookie"
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' "http://desktop-view-gateway:8080/?view_token=$view_token")" = 401
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -H "Cookie: $cookie" http://desktop-view-gateway:8080/vnc.html)" = 200
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -X POST -H "Cookie: $cookie" http://desktop-view-gateway:8080/)" = 405
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -X CONNECT -H "Cookie: $cookie" http://desktop-view-gateway:8080/)" = 405
-
-          for sequence in 1 2; do
-            websocket_headers="$attempt_parent/websocket-$sequence-headers"
-            docker run --rm --network "$client_network" --entrypoint curl "$image" --http1.1 --max-time 3 -sS -D "$websocket_headers" -o /dev/null               -H "Cookie: $cookie"               -H "Connection: Upgrade"               -H "Upgrade: websocket"               -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="               -H "Sec-WebSocket-Version: 13"               http://desktop-view-gateway:8080/websockify || true
-            grep -q ' 101 ' "$websocket_headers"
-          done
 
           docker inspect "$worker" > "$worker_inspect"
           docker inspect "$gateway" > "$gateway_inspect"

@@ -159,3 +159,56 @@ def test_controller_input_is_bounded_host_only_and_redacts_typed_content(tmp_pat
     )
     assert blocked["status"] == "BLOCKED"
     assert blocked["failure_family"] == "DESKTOP_INPUT_ARGUMENT_INVALID"
+
+
+def _write_control_record(runtime: DesktopWorkerRuntime, activation_id: str, payload: dict, *, state: str) -> None:
+    record = {
+        "schemaVersion": "sovereign.desktop-control.v1",
+        "leaseId": "livelease-" + "1" * 24,
+        "sessionBindingHash": payload["sessionBindingHash"],
+        "ownerSubjectHash": "2" * 64,
+        "runId": "run-live-workspace",
+        "attemptId": payload["attemptId"],
+        "workspaceId": payload["workspaceId"],
+        "worktreeIdentityHash": payload["worktreeIdentityHash"],
+        "inputScopeHash": "3" * 64,
+        "state": state,
+        "issuedReadbackHash": "4" * 64,
+        "reconciledReadbackHash": "5" * 64 if state == "AGENT_CONTROLLED_REBOUND" else None,
+        "issuedAt": 100,
+        "expiresAt": 200,
+    }
+    record["recordHash"] = hashlib.sha256(
+        json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    _write(runtime.activation_root / f"{activation_id}.control.json", json.dumps(record).encode("utf-8"))
+
+
+def test_controller_input_is_exclusively_blocked_while_human_lease_is_active(tmp_path: Path) -> None:
+    runtime, activation_id, payload = _activation(tmp_path)
+    calls = []
+    runtime.readback = lambda **_kwargs: {"ok": True, "status": "OBSERVED"}  # type: ignore[method-assign]
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout='{"status":"SENT","inputKind":"CLICK","requestHash":"a"}')
+
+    runtime._runner = runner  # type: ignore[assignment]
+    _write_control_record(runtime, activation_id, payload, state="USER_CONTROLLED")
+
+    blocked = runtime.controller_input(
+        activation_id=activation_id,
+        arguments={"action_id": "controller-after-takeover", "action": "click", "x": 1, "y": 1},
+    )
+
+    assert blocked["status"] == "BLOCKED"
+    assert blocked["failure_family"] == "DESKTOP_INPUT_LEASE_UNAVAILABLE"
+    assert calls == []
+
+    _write_control_record(runtime, activation_id, payload, state="AGENT_CONTROLLED_REBOUND")
+    rebound = runtime.controller_input(
+        activation_id=activation_id,
+        arguments={"action_id": "controller-after-readback", "action": "click", "x": 1, "y": 1},
+    )
+    assert rebound["ok"] is True
+    assert any("docker" in argv for argv in calls)

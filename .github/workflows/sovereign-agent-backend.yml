@@ -61,6 +61,7 @@ jobs:
             backend/tests/test_agent_github_access.py \
             backend/tests/test_github_access_scope_authority_contract.py \
             backend/tests/test_security_validation_crashes.py \
+            backend/tests/test_desktop_worker.py \
             -q 2>&1 | tee agent-runtime-pytest.log
           test_status=${PIPESTATUS[0]}
           exit "${test_status}"

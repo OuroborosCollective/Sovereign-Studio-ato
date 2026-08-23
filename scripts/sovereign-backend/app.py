@@ -83,6 +83,7 @@ from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
 from agent_runtime.desktop_activation import DesktopActivationIssuerV1
+from agent_runtime.desktop_control import DesktopControlGatewayV1
 from agent_runtime.desktop_projection import DesktopFrameProxyV1
 from agent_runtime.live_workspace_context import build_live_workspace_context_resolver
 from agent_runtime.routes import register_sovereign_agent_routes
@@ -1664,6 +1665,24 @@ register_sovereign_agent_routes(
     get_desktop_frame=lambda context: DesktopFrameProxyV1.from_env().frame(
         handle=DesktopActivationIssuerV1.from_env().issue(context=context),
     ),
+    take_desktop_control=lambda context, user_id: DesktopControlGatewayV1.from_env().takeover(
+        context=context,
+        user_id=user_id,
+    ),
+    give_back_desktop_control=lambda context, user_id, activation_id, lease_id: DesktopControlGatewayV1.from_env().give_back(
+        context=context,
+        user_id=user_id,
+        activation_id=activation_id,
+        lease_id=lease_id,
+    ),
+    send_desktop_user_input=lambda context, user_id, activation_id, lease_id, arguments: DesktopControlGatewayV1.from_env().user_input(
+        context=context,
+        user_id=user_id,
+        activation_id=activation_id,
+        lease_id=lease_id,
+        arguments=arguments,
+    ),
+    desktop_frame_allowed=lambda context: DesktopControlGatewayV1.from_env().frame_allowed(context=context),
 )
 register_cognitive_swarm_routes(
     app,
