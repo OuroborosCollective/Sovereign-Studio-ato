@@ -53,9 +53,32 @@ def _canonical_omniroute_route() -> dict:
     return {
         "id": runtime._ROUTE_ID,
         "model_id": runtime._MODEL_ALIAS,
+        "provider": "freellm",
+        "runtime_kind": "freellm",
         "base_url": OMNIROUTE_BASE_URL,
         "disabled": True,
-        "config": {},
+        "source_present": True,
+        "model_present": True,
+        "config": {
+            "transport": "freellm",
+            "routeSource": "omniroute",
+            "sourceType": "omniroute",
+            "providerModel": "auto",
+            "executionProfile": "free_single_agent",
+            "billingCategory": "free",
+            "billingClass": "free",
+            "fundingMode": "provider_free_quota",
+            "pricingVerified": False,
+            "markupMultiplier": 0,
+            "minimumMultiplier": 0,
+            "userChargeCredits": 0,
+            "quotaScope": "freellm:omniroute:auto",
+            "quotaEvidence": {
+                "scope": "freellm:omniroute:auto",
+                "stateOwner": "postgresql-revolver-state",
+            },
+            "direct": True,
+        },
     }
 
 
@@ -95,7 +118,12 @@ def test_omniroute_is_keyless_but_freellmapi_keeps_protected_key(
 class _Cursor:
     def __init__(self) -> None:
         self.executed: list[tuple[str, tuple]] = []
+        self.rowcount = 1
         self._row = {"acquired": True}
+        self.route = _canonical_omniroute_route()
+        self.source = {"id": runtime._SOURCE_ID}
+        self.model = {"id": "omniroute-auto-model"}
+        self.rowcount_by_sql: dict[str, int] = {}
 
     def __enter__(self):
         return self
@@ -105,8 +133,21 @@ class _Cursor:
 
     def execute(self, sql: str, params=()) -> None:
         self.executed.append((sql, tuple(params)))
+        self.rowcount = next(
+            (count for marker, count in self.rowcount_by_sql.items() if marker in sql),
+            1,
+        )
 
     def fetchone(self):
+        sql = self.executed[-1][0] if self.executed else ""
+        if "pg_try_advisory_xact_lock" in sql:
+            return self._row
+        if "FROM llm_routes WHERE id=%s FOR UPDATE" in sql:
+            return self.route
+        if "FROM llm_revolver_provider_sources" in sql and "FOR UPDATE" in sql:
+            return self.source
+        if "FROM llm_revolver_provider_models" in sql and "FOR UPDATE" in sql:
+            return self.model
         return self._row
 
 
@@ -135,7 +176,7 @@ def test_runtime_double_canary_promotes_only_omniroute(
 ) -> None:
     connection = _Connection()
     writes: list[tuple[str, tuple]] = []
-    audits: list[tuple[str, str | None, dict]] = []
+    audits: list[tuple[str, str | None, dict, int]] = []
     confirmations: list[int] = []
 
     def query(sql: str, params=None, *, one=False, write=False):
@@ -174,7 +215,9 @@ def test_runtime_double_canary_promotes_only_omniroute(
     service = runtime.OmniRouteExecutionRuntime(
         query=query,
         get_connection=lambda: connection,
-        audit=lambda action, target, changes: audits.append((action, target, changes)),
+        audit=lambda action, target, changes: audits.append(
+            (action, target, changes, connection.commits)
+        ),
     )
 
     result = service.scan_once()
@@ -186,12 +229,17 @@ def test_runtime_double_canary_promotes_only_omniroute(
     assert connection.commits == 1
     assert connection.closed == 1
     assert audits and audits[-1][0] == "omniroute_runtime_double_canary_verified"
-    all_sql = "\n".join(sql for sql, _params in writes)
-    assert "sovereign-omniroute-auto" not in all_sql or "llm_routes" in all_sql
+    assert audits[-1][3] == 1
+    assert writes == []
+    all_sql = "\n".join(
+        sql for sql, _params in connection.cursor_instance.executed
+    )
+    assert "FROM llm_routes WHERE id=%s FOR UPDATE" in all_sql
+    assert "llm_revolver_provider_sources" in all_sql
+    assert "llm_revolver_provider_models" in all_sql
+    assert "UPDATE llm_routes" in all_sql
     assert "freellmapi:3001" not in all_sql
     assert "freellmpool:8080" not in all_sql
-    assert any("UPDATE llm_routes" in sql for sql, _params in writes)
-    assert any("llm_revolver_provider_models" in sql for sql, _params in writes)
 
 
 def test_runtime_failure_disables_only_omniroute_and_never_freellmapi(
@@ -235,11 +283,13 @@ def test_runtime_failure_disables_only_omniroute_and_never_freellmapi(
         "freeLlmApiChanged": False,
     }
     all_material = "\n".join(
-        sql + " " + repr(params) for sql, params in writes
+        sql + " " + repr(params)
+        for sql, params in connection.cursor_instance.executed
     )
     assert "freellmapi:3001" not in all_material
     assert "freellmpool:8080" not in all_material
     assert "sovereign-omniroute-auto" in all_material
+    assert connection.commits == 1
 
 
 def test_omniroute_401_canary_degrades_only_its_dedicated_route(
@@ -288,22 +338,288 @@ def test_omniroute_401_canary_degrades_only_its_dedicated_route(
         "freeLlmApiChanged": False,
     }
     all_material = "\n".join(
-        sql + " " + repr(params) for sql, params in writes
+        sql + " " + repr(params)
+        for sql, params in connection.cursor_instance.executed
     )
     assert "freellmapi:3001" not in all_material
     assert "freellmpool:8080" not in all_material
     assert "sovereign-omniroute-auto" in all_material
+    assert connection.commits == 1
+    assert "SET disabled=false" not in all_material
+
+
+def test_activation_projection_rowcount_conflict_rolls_back_without_ready_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    connection.cursor_instance.rowcount_by_sql["UPDATE llm_routes"] = 0
+    query_writes: list[str] = []
+
+    def query(_sql: str, _params=None, *, write=False, **_kwargs):
+        if write:
+            query_writes.append(_sql)
+        return None
+
+    monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
+        "sourceRevision": "a" * 40,
+        "sourceRevisionVerified": True,
+        "imageDigest": "sha256:" + "b" * 64,
+        "imageDigestVerified": True,
+    })
+    monkeypatch.setattr(runtime, "_models_readback", lambda: {
+        "modelCount": 7,
+        "modelSetSha256": "c" * 64,
+        "rawModelCatalogPersisted": False,
+    })
+    monkeypatch.setattr(runtime, "_completion_canary", lambda confirmation: {
+        "confirmation": confirmation,
+        "upstreamRequestId": f"req-{confirmation}",
+        "providerGenerationId": f"gen-{confirmation}",
+        "responseModel": "keyless-model",
+        "providerCostUsd": 0.0,
+        "latencyMs": 10,
+        "textualChatResponseVerified": True,
+        "rawProviderResponsePersisted": False,
+        "requestAuthorizationHeaderSent": False,
+    })
+    service = runtime.OmniRouteExecutionRuntime(
+        query=query,
+        get_connection=lambda: connection,
+        audit=lambda *_args, **_kwargs: pytest.fail("audit requires a commit"),
+    )
+
+    result = service.scan_once()
+
+    assert result["ok"] is False
+    assert result["blocker"] == "omniroute_canonical_state_rows_missing"
+    assert query_writes == []
+    assert connection.commits == 0
+    assert connection.rollbacks >= 2
+    all_sql = "\n".join(
+        sql for sql, _params in connection.cursor_instance.executed
+    )
+    assert "UPDATE llm_revolver_provider_sources" in all_sql
+    assert "UPDATE llm_revolver_provider_models" in all_sql
+    assert "SET disabled=false" in all_sql
+
+
+def test_audit_failure_after_committed_activation_does_not_project_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+
+    monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
+        "sourceRevision": "a" * 40,
+        "sourceRevisionVerified": True,
+        "imageDigest": "sha256:" + "b" * 64,
+        "imageDigestVerified": True,
+    })
+    monkeypatch.setattr(runtime, "_models_readback", lambda: {
+        "modelCount": 7,
+        "modelSetSha256": "c" * 64,
+        "rawModelCatalogPersisted": False,
+    })
+    monkeypatch.setattr(runtime, "_completion_canary", lambda confirmation: {
+        "confirmation": confirmation,
+        "upstreamRequestId": f"req-{confirmation}",
+        "providerGenerationId": f"gen-{confirmation}",
+        "responseModel": "keyless-model",
+        "providerCostUsd": 0.0,
+        "latencyMs": 10,
+        "textualChatResponseVerified": True,
+        "rawProviderResponsePersisted": False,
+        "requestAuthorizationHeaderSent": False,
+    })
+    service = runtime.OmniRouteExecutionRuntime(
+        query=lambda *_args, **_kwargs: None,
+        get_connection=lambda: connection,
+        audit=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("audit down")),
+    )
+
+    result = service.scan_once()
+
+    assert result["ok"] is True
+    assert connection.commits == 1
+    all_sql = "\n".join(
+        sql for sql, _params in connection.cursor_instance.executed
+    )
+    assert "SET disabled=true" not in all_sql
+
+
+def test_status_is_ready_only_for_a_real_execution_verified_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = {
+        "sourceRevision": "a" * 40,
+        "sourceRevisionVerified": True,
+        "imageDigest": "sha256:" + "b" * 64,
+        "imageDigestVerified": True,
+    }
+    monkeypatch.setenv("SOVEREIGN_SOURCE_REVISION", identity["sourceRevision"])
+    monkeypatch.setenv("SOVEREIGN_IMAGE_DIGEST", identity["imageDigest"])
+    receipt = runtime._receipt(identity, {
+        "modelSetSha256": "c" * 64,
+    }, [
+        {
+            "upstreamRequestId": "req-1",
+            "providerCostUsd": 0.0,
+            "requestAuthorizationHeaderSent": False,
+        },
+        {
+            "upstreamRequestId": "req-2",
+            "providerCostUsd": 0.0,
+            "requestAuthorizationHeaderSent": False,
+        },
+    ])
+    route = _canonical_omniroute_route()
+    route["disabled"] = False
+    route["config"].update({
+        "providerModel": "auto",
+        "executionProfile": "free_single_agent",
+        "billingCategory": "free",
+        "billingClass": "free",
+        "fundingMode": "provider_free_quota",
+        "pricingVerified": False,
+        "freeEligible": True,
+        "quotaContractVerified": True,
+        "userChargeCredits": 0,
+        "markupMultiplier": 0,
+        "canaryVerified": True,
+        "canaryConfirmationCount": 2,
+        "catalogVerified": True,
+        "transportCanaryVerified": True,
+        "selectable": True,
+        "quotaScope": "freellm:omniroute:auto",
+        "quotaEvidence": {
+            "scope": "freellm:omniroute:auto",
+            "stateOwner": "postgresql-revolver-state",
+        },
+        "runtimeIdentity": identity,
+        "canaryReceipt": receipt,
+    })
+    service = runtime.OmniRouteExecutionRuntime(
+        query=lambda *_args, **_kwargs: route,
+        get_connection=lambda: _Connection(),
+        audit=lambda *_args, **_kwargs: None,
+    )
+
+    status = service.status()
+
+    assert status["ok"] is True
+    assert status["disabled"] is False
+    assert status["activationState"] == "ready"
+    assert status["blocker"] is None
+
+
+@pytest.mark.parametrize("missing_field", ["source_present", "model_present"])
+def test_status_blocks_when_the_canonical_source_or_model_readback_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_field: str,
+) -> None:
+    route = _canonical_omniroute_route()
+    route["disabled"] = False
+    route[missing_field] = False
+    monkeypatch.setattr(
+        runtime,
+        "verify_free_route_reason",
+        lambda _route: pytest.fail("supporting-row drift must block before verifier"),
+    )
+    service = runtime.OmniRouteExecutionRuntime(
+        query=lambda *_args, **_kwargs: route,
+        get_connection=lambda: _Connection(),
+        audit=lambda *_args, **_kwargs: None,
+    )
+
+    status = service.status()
+
+    assert status["ok"] is False
+    assert status["disabled"] is True
+    assert status["activationState"] == "blocked"
+    assert status["blocker"] == "omniroute_canonical_state_rows_missing"
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("executionProfile", "paid_swarm_6"),
+    ("providerModel", "not-auto"),
+    ("markupMultiplier", True),
+])
+def test_static_execution_identity_drift_blocks_before_canary_or_write(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    connection = _Connection()
+    connection.cursor_instance.route["config"][field] = value
+    service = runtime.OmniRouteExecutionRuntime(
+        query=lambda *_args, **_kwargs: None,
+        get_connection=lambda: connection,
+        audit=lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_models_readback",
+        lambda: pytest.fail("static identity drift must block before upstream canaries"),
+    )
+
+    result = service.scan_once()
+
+    assert result == {
+        "ok": False,
+        "status": "blocked",
+        "routeSource": "omniroute",
+        "blocker": "omniroute_route_identity_invalid",
+        "freeLlmApiChanged": False,
+    }
+    assert connection.commits == 0
+    assert connection.rollbacks == 1
+    assert not any(
+        "UPDATE " in sql or "INSERT INTO llm_revolver_provider_checks" in sql
+        for sql, _params in connection.cursor_instance.executed
+    )
+
+
+def test_status_uses_execution_verifier_and_never_renders_stale_ready_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route = _canonical_omniroute_route()
+    route["disabled"] = False
+    route["config"].update({
+        "selectable": True,
+        "canaryVerified": True,
+        "canaryConfirmationCount": "not-a-number",
+        "activationState": "ready",
+        "activationBlocker": None,
+    })
+    monkeypatch.setattr(runtime, "verify_free_route_reason", lambda _route: {
+        "ok": False,
+        "failureFamilies": ["free_runtime_source_revision_mismatch"],
+    })
+    service = runtime.OmniRouteExecutionRuntime(
+        query=lambda *_args, **_kwargs: route,
+        get_connection=lambda: _Connection(),
+        audit=lambda *_args, **_kwargs: None,
+    )
+
+    status = service.status()
+
+    assert status["ok"] is False
+    assert status["disabled"] is True
+    assert status["activationState"] == "blocked"
+    assert status["blocker"] == "free_runtime_source_revision_mismatch"
+    assert status["confirmationCount"] == 0
 
 
 @pytest.mark.parametrize("invalid_route", [
     {"model_id": "wrong-model-id"},
     {"base_url": f"{OMNIROUTE_BASE_URL}/"},
+    {"base_url": OMNIROUTE_BASE_URL.replace("/v1", "/V1")},
 ])
 def test_invalid_canonical_route_identity_fails_before_canary_or_mutation(
     monkeypatch: pytest.MonkeyPatch,
     invalid_route: dict[str, str],
 ) -> None:
     connection = _Connection()
+    connection.cursor_instance.route.update(invalid_route)
     calls: list[tuple[str, bool]] = []
 
     def query(sql: str, _params=None, *, one=False, write=False):
@@ -343,6 +659,7 @@ def test_connection_failure_never_strands_the_local_omniroute_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = _Connection()
+    connection.cursor_instance.route["model_id"] = "wrong-model-id"
     attempts: list[object] = [RuntimeError("temporary postgres outage"), connection]
 
     def get_connection():
@@ -367,8 +684,6 @@ def test_connection_failure_never_strands_the_local_omniroute_lock(
         get_connection=get_connection,
         audit=lambda *_args, **_kwargs: None,
     )
-    monkeypatch.setattr(service, "_mark_failed", lambda _family: None)
-
     first = service.scan_once()
 
     assert first == {
@@ -410,9 +725,31 @@ def test_refresh_returns_canonical_status_projection_after_success_or_failure(
     route = {
         "id": "sovereign-omniroute-auto",
         "model_id": "sovereign-omniroute:auto",
+        "provider": "freellm",
+        "runtime_kind": "freellm",
         "base_url": OMNIROUTE_BASE_URL,
         "disabled": True,
+        "source_present": True,
+        "model_present": True,
         "config": {
+            "transport": "freellm",
+            "routeSource": "omniroute",
+            "sourceType": "omniroute",
+            "providerModel": "auto",
+            "executionProfile": "free_single_agent",
+            "billingCategory": "free",
+            "billingClass": "free",
+            "fundingMode": "provider_free_quota",
+            "pricingVerified": False,
+            "markupMultiplier": 0,
+            "minimumMultiplier": 0,
+            "userChargeCredits": 0,
+            "quotaScope": "freellm:omniroute:auto",
+            "quotaEvidence": {
+                "scope": "freellm:omniroute:auto",
+                "stateOwner": "postgresql-revolver-state",
+            },
+            "direct": True,
             "selectable": False,
             "canaryVerified": False,
             "activationState": "blocked",

@@ -221,6 +221,10 @@ describe('adminApiClient typed provider surface read model', () => {
     })).toBe(true);
     expect(isAcceptedLlmProviderSurfaceReadModel({
       ...valid,
+      omniRoute: { ...readyOmniRoute, ok: false },
+    })).toBe(false);
+    expect(isAcceptedLlmProviderSurfaceReadModel({
+      ...valid,
       omniRoute: { ...readyOmniRoute, receiptSha256: null },
     })).toBe(false);
     expect(isAcceptedLlmProviderSurfaceReadModel({

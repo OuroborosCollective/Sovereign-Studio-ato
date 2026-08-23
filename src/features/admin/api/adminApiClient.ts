@@ -306,6 +306,7 @@ const providerStatuses = [
 ] as const;
 const providerModelStatuses = ['discovered', 'ready', 'blocked', 'disabled'] as const;
 const providerCostStates = ['zero', 'unreported', 'nonzero'] as const;
+const blockedOmniRouteActivationStates = ['blocked', 'degraded'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -442,15 +443,18 @@ function isAcceptedOmniRouteStatus(value: unknown): value is OmniRouteRuntimeSta
   ) {
     return false;
   }
-  return !value.ok || (
-    value.disabled === false
-    && value.activationState === 'ready'
-    && value.blocker === null
-    && value.confirmationCount >= 2
-    && isCanonicalSha256(value.receiptSha256)
-    && isCanonicalSourceRevision(value.sourceRevision)
-    && isCanonicalImageDigest(value.imageDigest)
-  );
+  if (value.ok) {
+    return value.disabled === false
+      && value.activationState === 'ready'
+      && value.blocker === null
+      && value.confirmationCount >= 2
+      && isCanonicalSha256(value.receiptSha256)
+      && isCanonicalSourceRevision(value.sourceRevision)
+      && isCanonicalImageDigest(value.imageDigest);
+  }
+  return value.disabled === true
+    && isOneOf(value.activationState, blockedOmniRouteActivationStates)
+    && isNonEmptyString(value.blocker);
 }
 
 function isAcceptedOpenRouterPaidStatus(value: unknown): value is OpenRouterPaidRuntimeStatus {
