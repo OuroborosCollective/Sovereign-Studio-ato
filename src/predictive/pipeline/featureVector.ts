@@ -128,7 +128,12 @@ export function computeSignalHash(signals: OrderedSignal[]): string {
  */
 export function computeMean(values: number[]): number {
   if (values.length === 0) return 0;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  // ⚡ Bolt: Consolidate reductions into a single for loop to avoid closure overhead
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+  }
+  return sum / values.length;
 }
 
 /**
@@ -137,8 +142,13 @@ export function computeMean(values: number[]): number {
 export function computeStdDev(values: number[]): number {
   if (values.length < 2) return 0;
   const mean = computeMean(values);
-  const squaredDiffs = values.map((v) => (v - mean) ** 2);
-  const variance = squaredDiffs.reduce((a, b) => a + b, 0) / (values.length - 1);
+  // ⚡ Bolt: Replace chained .map() and .reduce() passes with a single loop to eliminate GC pressure
+  let sumSquaredDiffs = 0;
+  for (let i = 0; i < values.length; i++) {
+    const diff = values[i] - mean;
+    sumSquaredDiffs += diff * diff;
+  }
+  const variance = sumSquaredDiffs / (values.length - 1);
   return Math.sqrt(variance);
 }
 
@@ -185,7 +195,14 @@ export function extractFeatures(
   const stdDev = cfg.includeStats ? computeStdDev(values) : 0;
   const minMax = toMinMax(values);
   const range = minMax ? minMax[1] - minMax[0] : 0;
-  const sum = cfg.includeStats ? values.reduce((a, b) => a + b, 0) : 0;
+
+  // ⚡ Bolt: Calculate sum via loop instead of .reduce() to prevent closure allocations
+  let sum = 0;
+  if (cfg.includeStats) {
+    for (let i = 0; i < values.length; i++) {
+      sum += values[i];
+    }
+  }
 
   // Temporal features
   const deltas = cfg.includeDeltas ? [...runningDifference(values)] : [];
