@@ -502,7 +502,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'INSTALL_STAGE="verify_workspace_write_boundary"' in installer
     assert 'sovereign_cognitive_widget.WIDGET_MANIFEST.get("agentCount") == 8' not in installer
     assert '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' in compose
-    assert 'command_contract.py command_queue.py broker_client.py' in dockerfile
+    assert 'command_contract.py command_queue.py desktop_worker.py broker_client.py' in dockerfile
     assert '"running no-health"' not in installer
 
 
