@@ -151,6 +151,17 @@ def test_omniroute_is_not_added_to_generic_ssrf_allowlist() -> None:
         assert 'control["providerSurfaceKind"] != "free-revolver"' in handler
         assert "canonical_provider_action_required" in handler
 
+    app = (BACKEND / "app.py").read_text("utf-8")
+    reset_start = app.index("def admin_reset_llm_revolver_route(")
+    reset_end = app.index("\n\n@app.route(", reset_start)
+    reset = app[reset_start:reset_end]
+    assert "provider, runtime_kind, config" in reset
+    assert reset.index('if transport == "freellm" or managed_endpoint:') < reset.index(
+        '"""INSERT INTO llm_route_revolver_state'
+    )
+    assert "free_revolver_managed_route" in reset
+    assert "/api/admin/llm/revolver-v3/providers" in reset
+
     assert (
         (BACKEND / "free_revolver_provider_contracts.py").read_bytes()
         == (REPO / "backend" / "free_revolver_provider_contracts.py").read_bytes()
