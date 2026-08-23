@@ -1,5 +1,5 @@
 import './runtime-adapter';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
   BuilderContainer,
   type SovereignDraftPrPublishInput,
@@ -11,14 +11,24 @@ import {
   type SovereignPatternLearningEvidence,
 } from './features/product/runtime/sovereignAgentClient';
 import {
-  createSovereignAgentIdleSnapshot,
   isSovereignAgentTerminalStatus,
   resolveSovereignAgentConfig,
   summarizeSovereignAgentJob,
-  type SovereignAgentJobSnapshot,
-  type SovereignLiveProjection,
-  type SovereignWorkspaceEvidenceAnchor,
 } from './features/product/runtime/sovereignAgentRuntime';
+import {
+  createInitialSovereignEngineState,
+  createSovereignClientBoundaryBlockedEvent,
+  createSovereignEngineCommand,
+  createSovereignEngineCommandAcceptedEvent,
+  createSovereignEngineCommandFailedEvent,
+  executeSovereignEngineCommand,
+  hasSovereignEnginePendingCommand,
+  selectSovereignEngineJobProjection,
+  sovereignEngineJobFromEvent,
+  sovereignEngineOperationResultFromEvent,
+  sovereignEngineReducer,
+  type SovereignEngineCommandV1,
+} from './features/product/runtime/sovereignEngineBoundary';
 import {
   reusableMemoryContext,
   searchReusableMemory,
@@ -39,12 +49,16 @@ function SovereignChatApp() {
     () => createSovereignAgentClient({ config: agentConfig }),
     [agentConfig],
   );
-  const [agentJob, setAgentJob] = useState<SovereignAgentJobSnapshot>(
-    () => createSovereignAgentIdleSnapshot(),
+  const [engineState, dispatchEngineEvent] = useReducer(
+    sovereignEngineReducer,
+    undefined,
+    () => createInitialSovereignEngineState(),
   );
+  const canonicalAgentJob = engineState.canonicalJob;
+  const agentJob = selectSovereignEngineJobProjection(engineState);
+  const liveProjections = engineState.projections;
+  const liveEvidenceAnchors = engineState.evidenceAnchors;
   const [janitorPreview, setJanitorPreview] = useState('');
-  const [liveProjections, setLiveProjections] = useState<SovereignLiveProjection[]>([]);
-  const [liveEvidenceAnchors, setLiveEvidenceAnchors] = useState<SovereignWorkspaceEvidenceAnchor[]>([]);
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
   >();
@@ -53,59 +67,81 @@ function SovereignChatApp() {
       && new URLSearchParams(window.location.search).get('rescue') === '1',
   );
 
+  const runEngineCommand = useCallback(async (command: SovereignEngineCommandV1) => {
+    dispatchEngineEvent(createSovereignEngineCommandAcceptedEvent(command));
+    try {
+      const event = await executeSovereignEngineCommand(command, agentClient);
+      dispatchEngineEvent(event);
+      return event;
+    } catch (error) {
+      dispatchEngineEvent(createSovereignEngineCommandFailedEvent(command, error));
+      throw error;
+    }
+  }, [agentClient]);
+
+  const blockClientBoundary = useCallback((
+    operation: string,
+    message: string,
+    context: { repoUrl?: string; branch?: string } = {},
+  ) => {
+    dispatchEngineEvent(createSovereignClientBoundaryBlockedEvent(
+      engineState.sessionId,
+      operation,
+      message,
+      context,
+    ));
+  }, [engineState.sessionId]);
+
   useEffect(() => {
-    if (!agentConfig.ready || agentJob.status !== 'idle') return;
+    if (!agentConfig.ready || canonicalAgentJob.status !== 'idle') return;
     let cancelled = false;
     let loading = false;
     const restoreLatestJob = async () => {
       if (loading) return;
       loading = true;
+      const command = createSovereignEngineCommand(
+        engineState.sessionId,
+        'RESTORE_LATEST_JOB',
+        {},
+      );
       try {
-        const jobs = await agentClient.listJobs();
-        if (cancelled || jobs.length === 0) return;
-        setAgentJob((current) => current.status === 'idle' ? jobs[0] : current);
+        await runEngineCommand(command);
       } catch {
-        // The first app render may precede login. Retry while idle so a later
-        // authenticated session can recover its persisted runtime truth.
+        // The first app render may precede login. The typed failure event is
+        // intentionally non-user-visible and the restore is retried while idle.
       } finally {
         loading = false;
       }
     };
     void restoreLatestJob();
-    const timer = window.setInterval(() => { void restoreLatestJob(); }, 5000);
+    const timer = window.setInterval(() => {
+      if (!cancelled) void restoreLatestJob();
+    }, 5000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentClient, agentConfig.ready, agentJob.status]);
+  }, [agentConfig.ready, canonicalAgentJob.status, engineState.sessionId, runEngineCommand]);
 
   useEffect(() => {
-    const jobId = agentJob.jobId;
-    const active = ['queued', 'provisioning', 'running', 'validating'].includes(agentJob.status);
+    const jobId = canonicalAgentJob.jobId;
+    const active = ['queued', 'provisioning', 'running', 'validating'].includes(canonicalAgentJob.status);
     if (!agentConfig.ready || !jobId || !active) return;
     let cancelled = false;
     let polling = false;
     const refresh = async () => {
-      if (polling) return;
+      if (polling || cancelled) return;
       polling = true;
+      const command = createSovereignEngineCommand(
+        engineState.sessionId,
+        'READ_JOB',
+        { jobId },
+      );
       try {
-        const snapshot = await agentClient.getJob(jobId);
-        if (!cancelled) {
-          setAgentJob((current) => current.jobId === jobId ? snapshot : current);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Agent-Status konnte nicht aktualisiert werden.';
-        if (!cancelled) {
-          setAgentJob((current) => {
-            if (current.jobId !== jobId) return current;
-            const alreadyReported = current.events.some((event) => event.stage === 'agent-poll-blocked' && event.message === message);
-            return alreadyReported ? current : {
-              ...current,
-              lastError: message,
-              events: [...current.events, { at: Date.now(), level: 'warning', stage: 'agent-poll-blocked', message }],
-            };
-          });
-        }
+        await runEngineCommand(command);
+      } catch {
+        // Poll failures remain bounded control observations. They never patch
+        // the last canonical job snapshot or invent a replacement status.
       } finally {
         polling = false;
       }
@@ -116,36 +152,39 @@ function SovereignChatApp() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentClient, agentConfig.ready, agentJob.jobId, agentJob.status]);
+  }, [agentConfig.ready, canonicalAgentJob.jobId, canonicalAgentJob.status, engineState.sessionId, runEngineCommand]);
 
   useEffect(() => {
-    const jobId = agentJob.jobId;
-    if (!agentConfig.ready || !jobId || agentJob.status === 'idle' || agentJob.status === 'cleaned') {
-      setLiveProjections([]);
-      setLiveEvidenceAnchors([]);
+    const jobId = canonicalAgentJob.jobId;
+    if (!agentConfig.ready || !jobId || canonicalAgentJob.status === 'idle' || canonicalAgentJob.status === 'cleaned') {
       return;
     }
     let cancelled = false;
     let polling = false;
     const refresh = async () => {
-      if (polling) return;
+      if (polling || cancelled) return;
       polling = true;
+      const projectionCommand = createSovereignEngineCommand(
+        engineState.sessionId,
+        'READ_PROJECTIONS',
+        { jobId },
+      );
+      const evidenceCommand = createSovereignEngineCommand(
+        engineState.sessionId,
+        'READ_EVIDENCE_ANCHORS',
+        { jobId },
+      );
       try {
-        const [projectionResult, evidenceResult] = await Promise.allSettled([
-          agentClient.getProjections(jobId),
-          agentClient.getEvidenceAnchors(jobId),
+        await Promise.allSettled([
+          runEngineCommand(projectionCommand),
+          runEngineCommand(evidenceCommand),
         ]);
-        if (!cancelled && projectionResult.status === 'fulfilled') setLiveProjections(projectionResult.value);
-        if (!cancelled && evidenceResult.status === 'fulfilled') setLiveEvidenceAnchors(evidenceResult.value);
-      } catch {
-        // Projection is optional observation. A readback failure must neither
-        // mutate the canonical job state nor invent a replacement event.
       } finally {
         polling = false;
       }
     };
     void refresh();
-    if (isSovereignAgentTerminalStatus(agentJob.status)) {
+    if (isSovereignAgentTerminalStatus(canonicalAgentJob.status)) {
       return () => { cancelled = true; };
     }
     const timer = window.setInterval(() => { void refresh(); }, 1500);
@@ -153,7 +192,7 @@ function SovereignChatApp() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentClient, agentConfig.ready, agentJob.jobId, agentJob.status]);
+  }, [agentConfig.ready, canonicalAgentJob.jobId, canonicalAgentJob.status, engineState.sessionId, runEngineCommand]);
 
   const evidenceWithReusableMemory = async (query: string): Promise<string> => {
     try {
@@ -172,94 +211,79 @@ function SovereignChatApp() {
     setJanitorPreview('');
     setPatternLearningEvidence(undefined);
     if (!agentConfig.ready) {
-      setAgentJob({
-        status: 'blocked',
-        changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'agent-config', message: agentConfig.reason }],
-        lastError: agentConfig.reason,
-      });
+      blockClientBoundary('agent-config', agentConfig.reason);
       return;
     }
     if (!input?.repoUrl) {
-      setAgentJob({
-        status: 'blocked',
-        changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'agent-request', message: 'Repository URL fehlt.' }],
-        lastError: 'Repository URL fehlt.',
-      });
+      blockClientBoundary('agent-request', 'Repository URL fehlt.');
       return;
     }
-    setAgentJob({
-      status: 'queued',
-      repoUrl: input.repoUrl,
-      branch: input.branch || 'main',
-      changedFiles: [],
-      events: [{ at: Date.now(), level: 'info', stage: 'agent-request', message: 'Auftrag an die Sovereign Agent Runtime übergeben.' }],
-    });
     try {
       const evidenceText = await evidenceWithReusableMemory(nextMission);
-      const snapshot = await agentClient.startRepositoryExecution({
-        repoUrl: input.repoUrl,
-        branch: input.branch,
-        expectedHeadSha: input.expectedHeadSha,
-        mission: nextMission,
-        evidenceText,
-        githubAccessToken: input.githubAccessToken,
-      });
-      setAgentJob(snapshot);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Agent Runtime Start fehlgeschlagen.';
-      setAgentJob({
-        status: 'failed',
-        repoUrl: input.repoUrl,
-        branch: input.branch || 'main',
-        changedFiles: [],
-        events: [{ at: Date.now(), level: 'error', stage: 'agent-start', message }],
-        lastError: message,
-      });
+      const command = createSovereignEngineCommand(
+        engineState.sessionId,
+        'START_REPOSITORY_EXECUTION',
+        {
+          input: {
+            repoUrl: input.repoUrl,
+            branch: input.branch,
+            expectedHeadSha: input.expectedHeadSha,
+            mission: nextMission,
+            evidenceText,
+            githubAccessToken: input.githubAccessToken,
+          },
+        },
+      );
+      await runEngineCommand(command);
+    } catch {
+      // The typed command-failure event carries the bounded UI notice. It does
+      // not fabricate a failed canonical runtime snapshot.
     }
   };
 
   const cancelChatOnlyTask = async () => {
-    const jobId = agentJob.jobId;
+    const jobId = canonicalAgentJob.jobId;
     if (!agentConfig.ready || !jobId) return;
+    const command = createSovereignEngineCommand(
+      engineState.sessionId,
+      'CANCEL_JOB',
+      { jobId },
+    );
     try {
-      const snapshot = await agentClient.cancelJob(jobId);
-      setAgentJob(snapshot);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Agent Runtime Stop fehlgeschlagen.';
-      setAgentJob((current) => ({
-        ...current,
-        status: 'failed',
-        lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'error', stage: 'agent-cancel', message }],
-      }));
+      await runEngineCommand(command);
+    } catch {
+      // Failure is represented by a typed local notice; canonical job truth is
+      // left at the last backend-confirmed snapshot.
     }
   };
 
   const runJanitorScan = async () => {
     setMission('Fehleranalyse');
-    const jobId = agentJob.jobId;
+    const jobId = canonicalAgentJob.jobId;
     if (!agentConfig.ready || !jobId) {
-      const message = 'Für den Janitor zuerst ein Repository als Sovereign-Agent-Job laden.';
-      setAgentJob((current) => ({
-        ...current,
-        lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'janitor-requires-repo', message }],
-      }));
+      blockClientBoundary(
+        'janitor-requires-repo',
+        'Für den Janitor zuerst ein Repository als Sovereign-Agent-Job laden.',
+      );
       return;
     }
-    setAgentJob((current) => ({
-      ...current,
-      events: [...current.events, { at: Date.now(), level: 'info', stage: 'janitor-scan', message: 'Deterministischer Janitor-Scan gestartet.' }],
-    }));
+    const command = createSovereignEngineCommand(
+      engineState.sessionId,
+      'RUN_JANITOR',
+      {
+        jobId,
+        input: {
+          mode: 'scan',
+          family: 'Runtime-Wahrheit, Zustandswidersprüche, sichere Repo-Automation',
+          maxFindings: 10,
+          maxFiles: 200,
+        },
+      },
+    );
     try {
-      const response = await agentClient.runJanitor(jobId, {
-        mode: 'scan',
-        family: 'Runtime-Wahrheit, Zustandswidersprüche, sichere Repo-Automation',
-        maxFindings: 10,
-        maxFiles: 200,
-      });
+      const event = await runEngineCommand(command);
+      const response = sovereignEngineOperationResultFromEvent(event, 'JANITOR');
+      if (!response) throw new Error('Janitor-Readback hat den typisierten Boundary-Vertrag nicht erfüllt.');
       const findings = Array.isArray(response.tool.metadata.findings) ? response.tool.metadata.findings : [];
       const recommendedTestCommand = typeof response.tool.metadata.recommendedTestCommand === 'string'
         ? response.tool.metadata.recommendedTestCommand
@@ -271,96 +295,93 @@ function SovereignChatApp() {
         recommendedTestCommand,
         writeAction: false,
       }, null, 2));
-      setAgentJob((current) => ({
-        ...current,
-        lastError: undefined,
-        events: [...current.events, {
-          at: Date.now(),
-          level: 'success',
-          stage: 'janitor-scan-completed',
-          message: `${findings.length} Janitor-Befund(e) gefunden. Es wurde keine Datei verändert.`,
-        }],
-      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Janitor-Scan fehlgeschlagen.';
-      setAgentJob((current) => ({
-        ...current,
-        lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'error', stage: 'janitor-scan-failed', message }],
-      }));
+      blockClientBoundary('janitor-scan', message);
     }
   };
 
-  const agentIsRunning = agentJob.status === 'queued' || agentJob.status === 'provisioning' || agentJob.status === 'running' || agentJob.status === 'validating';
-  const repoReady = Boolean(
-    agentJob.repoUrl
-    && agentJob.workspaceId
-    && ['running', 'waiting-for-user', 'validating', 'completed'].includes(agentJob.status),
+  const canonicalRuntimeRunning = ['queued', 'provisioning', 'running', 'validating'].includes(
+    canonicalAgentJob.status,
   );
-  const repoBusy = agentJob.status === 'queued' || agentJob.status === 'provisioning';
+  const engineStartBusy = hasSovereignEnginePendingCommand(engineState, [
+    'START_REPOSITORY_EXECUTION',
+    'START_TOOLCHAIN_JOB',
+  ]);
+  const agentIsRunning = canonicalRuntimeRunning || engineStartBusy;
+  const repoReady = Boolean(
+    canonicalAgentJob.repoUrl
+    && canonicalAgentJob.workspaceId
+    && ['running', 'waiting-for-user', 'validating', 'completed'].includes(canonicalAgentJob.status),
+  );
+  const repoBusy = engineStartBusy
+    || canonicalAgentJob.status === 'queued'
+    || canonicalAgentJob.status === 'provisioning';
+  const isPublishing = canonicalAgentJob.status === 'validating'
+    || hasSovereignEnginePendingCommand(engineState, ['PREPARE_DRAFT_PR', 'CREATE_DRAFT_PR']);
   const runtimeSummary = summarizeSovereignAgentJob(agentJob);
 
   const publishDraftPr = async (
     input?: SovereignDraftPrPublishInput,
   ) => {
-    let jobId = agentJob.jobId;
-    let repoUrl = agentJob.repoUrl;
+    let jobId = canonicalAgentJob.jobId;
+    let repoUrl = canonicalAgentJob.repoUrl;
 
     if (!jobId && input?.changes && input.changes.length > 0) {
       try {
         const evidenceText = await evidenceWithReusableMemory(input.mission);
-        const snapshot = await agentClient.startToolchainJob({
-          repoUrl: input.repoUrl,
-          branch: input.branch,
-          expectedHeadSha: input.expectedHeadSha,
-          mission: input.mission,
-          evidenceText,
-          provisionWorkspace: true,
-          cloneRepo: true,
-          stagedFiles: input.changes,
-          githubAccessToken: input.githubAccessToken,
-        });
-        setAgentJob(snapshot);
+        const startCommand = createSovereignEngineCommand(
+          engineState.sessionId,
+          'START_TOOLCHAIN_JOB',
+          {
+            input: {
+              repoUrl: input.repoUrl,
+              branch: input.branch,
+              expectedHeadSha: input.expectedHeadSha,
+              mission: input.mission,
+              evidenceText,
+              provisionWorkspace: true,
+              cloneRepo: true,
+              stagedFiles: input.changes,
+              githubAccessToken: input.githubAccessToken,
+            },
+          },
+        );
+        const startEvent = await runEngineCommand(startCommand);
+        const snapshot = sovereignEngineJobFromEvent(startEvent);
+        if (!snapshot?.jobId || !snapshot.repoUrl) {
+          throw new Error('Staged Agent Start lieferte keinen kanonischen Job-Readback.');
+        }
         jobId = snapshot.jobId;
         repoUrl = snapshot.repoUrl;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Agent Runtime Start (Staged) fehlgeschlagen.';
-        setAgentJob((current) => ({
-          ...current,
-          status: 'failed',
-          lastError: message,
-          events: [...current.events, { at: Date.now(), level: 'error', stage: 'agent-start-staged', message }],
-        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Agent Runtime Start (Staged) fehlgeschlagen.';
+        blockClientBoundary('agent-start-staged', message);
         return;
       }
     }
 
     if (!repoUrl || !jobId) {
       const message = 'Draft PR benötigt zuerst einen belegten Sovereign-Agent-Job mit Repository.';
-      setAgentJob((current) => ({
-        ...current,
-        status: 'blocked',
-        lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'warning', stage: 'draft-pr-requires-job', message }],
-      }));
+      blockClientBoundary('draft-pr-requires-job', message);
       throw new Error(message);
     }
 
-    setAgentJob((current) => ({
-      ...current,
-      status: 'validating',
-      lastError: undefined,
-      events: [...current.events, {
-        at: Date.now(),
-        level: 'info',
-        stage: 'draft-pr-prepare',
-        message: 'Persistierte Changed-File-, Diff- und Test-Evidence wird geprüft.',
-      }],
-    }));
-
     try {
       setPatternLearningEvidence(undefined);
-      const preparation = await agentClient.prepareDraftPr(jobId);
+      const prepareCommand = createSovereignEngineCommand(
+        engineState.sessionId,
+        'PREPARE_DRAFT_PR',
+        { jobId },
+      );
+      const prepareEvent = await runEngineCommand(prepareCommand);
+      const preparation = sovereignEngineOperationResultFromEvent(
+        prepareEvent,
+        'DRAFT_PR_PREPARATION',
+      );
+      if (!preparation) {
+        throw new Error('Draft-PR-Vorbereitung lieferte keinen typisierten Runtime-Readback.');
+      }
       setPatternLearningEvidence(preparation.learningEvidence);
       if (!preparation.ok || !preparation.draftPrPreparation.allowed) {
         throw new Error(
@@ -370,35 +391,53 @@ function SovereignChatApp() {
         );
       }
 
-      const creation = await agentClient.createDraftPr(jobId, input?.githubAccessToken);
-      if (!creation.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
+      const createCommand = createSovereignEngineCommand(
+        engineState.sessionId,
+        'CREATE_DRAFT_PR',
+        { jobId, githubAccessToken: input?.githubAccessToken },
+      );
+      const createEvent = await runEngineCommand(createCommand);
+      const creation = sovereignEngineOperationResultFromEvent(createEvent, 'DRAFT_PR_CREATE');
+      if (!creation?.ok || !creation.draftPrCreate.allowed || !creation.draftPrCreate.prUrl) {
         throw new Error(
-          creation.draftPrCreate.blocker
-          || creation.draftPrCreate.summary
+          creation?.draftPrCreate.blocker
+          || creation?.draftPrCreate.summary
           || 'GitHub hat keinen belegten Draft PR bestätigt.',
         );
       }
 
-      const snapshot = await agentClient.getJob(jobId);
-      setAgentJob({
-        ...snapshot,
-        draftPrUrl: snapshot.draftPrUrl || creation.draftPrCreate.prUrl,
-      });
+      const readbackCommand = createSovereignEngineCommand(
+        engineState.sessionId,
+        'READ_JOB',
+        { jobId },
+      );
+      const readbackEvent = await runEngineCommand(readbackCommand);
+      const snapshot = sovereignEngineJobFromEvent(readbackEvent);
+      if (!snapshot || snapshot.draftPrUrl !== creation.draftPrCreate.prUrl) {
+        throw new Error('Persistierter Job-Readback bestätigt die erstellte Draft-PR-URL noch nicht.');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Draft-PR-Übergabe fehlgeschlagen.';
-      setAgentJob((current) => ({
-        ...current,
-        status: 'blocked',
-        lastError: message,
-        events: [...current.events, { at: Date.now(), level: 'error', stage: 'draft-pr-blocked', message }],
-      }));
+      blockClientBoundary('draft-pr-blocked', message);
     }
   };
 
   const adoptRescueJob = async (jobId: string) => {
-    const snapshot = await agentClient.getJob(jobId);
-    setAgentJob(snapshot);
-    setMission('Sovereign Rescue');
+    const command = createSovereignEngineCommand(
+      engineState.sessionId,
+      'READ_JOB',
+      { jobId, adopt: true },
+    );
+    try {
+      const event = await runEngineCommand(command);
+      if (!sovereignEngineJobFromEvent(event)) {
+        throw new Error('Rescue-Job lieferte keinen kanonischen Job-Readback.');
+      }
+      setMission('Sovereign Rescue');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Rescue-Job konnte nicht übernommen werden.';
+      blockClientBoundary('rescue-adopt', message);
+    }
   };
 
   return (
@@ -407,10 +446,10 @@ function SovereignChatApp() {
         <BuilderContainer
           mission={mission}
           repoReady={repoReady}
-          repoReason={repoReady ? `Runtime-Repository: ${agentJob.repoUrl}` : 'GitHub-URL direkt im Chat einfügen.'}
+          repoReason={repoReady ? `Runtime-Repository: ${canonicalAgentJob.repoUrl}` : 'GitHub-URL direkt im Chat einfügen.'}
           repoBusy={repoBusy}
           runtimeBusy={agentIsRunning}
-          isPublishing={agentJob.status === 'validating'}
+          isPublishing={isPublishing}
           sovereignSummary={runtimeSummary}
           sovereignPreview={janitorPreview}
           onMissionChange={setMission}
@@ -423,12 +462,17 @@ function SovereignChatApp() {
           agentProjections={liveProjections}
           agentEvidenceAnchors={liveEvidenceAnchors}
           patternLearningEvidence={patternLearningEvidence}
-          agentJobStatus={agentIsRunning ? 'Sovereign Agent Auftrag läuft' : agentJob.lastError}
+          agentJobStatus={agentIsRunning
+            ? 'Sovereign Agent Auftrag läuft'
+            : engineState.clientNotice?.message || agentJob.lastError}
           agentIsRunning={agentIsRunning}
           onStartAgent={startChatOnlyTask}
           onCancelAgent={cancelChatOnlyTask}
         />
-        {!rescueOpen && ['blocked', 'failed'].includes(agentJob.status) && (
+        {!rescueOpen && (
+          ['blocked', 'failed'].includes(canonicalAgentJob.status)
+          || Boolean(engineState.clientNotice)
+        ) && (
           <button
             type="button"
             onClick={() => setRescueOpen(true)}
@@ -454,8 +498,8 @@ function SovereignChatApp() {
         <RescuePanel
           open={rescueOpen}
           apiBaseUrl={agentConfig.agentApiUrl}
-          currentJobId={agentJob.jobId}
-          draftPrUrl={agentJob.draftPrUrl}
+          currentJobId={canonicalAgentJob.jobId}
+          draftPrUrl={canonicalAgentJob.draftPrUrl}
           onClose={() => setRescueOpen(false)}
           onJobReady={adoptRescueJob}
           onPublishDraftPr={() => publishDraftPr()}
