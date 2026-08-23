@@ -346,28 +346,69 @@ jobs:
           done
           test "$gateway_ready" = 1
 
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' http://desktop-view-gateway:8080/vnc.html)" = 401
-          if docker run --rm --network "$client_network" --entrypoint python3 "$image" -c 'import socket; socket.gethostbyname("desktop-worker")'; then
-            echo "view client reached the worker backplane name" >&2
-            exit 1
-          fi
+          docker run --rm \
+            --network "$client_network" \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 64 \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --env CANARY_VIEW_TOKEN="$view_token" \
+            --entrypoint python3 \
+            "$image" - <<'PY'
+          import http.client
+          import os
+          import socket
+          import urllib.parse
 
-          headers="$attempt_parent/view-headers"
-          docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -D "$headers" -o /dev/null "http://desktop-view-gateway:8080/?view_token=$view_token"
-          grep -q '^HTTP/1.1 303' "$headers"
-          grep -qi '^Set-Cookie: desktop_view_session=.*HttpOnly.*SameSite=Strict' "$headers"
-          cookie="$(awk -F ': ' '/^Set-Cookie:/ {sub(/\r$/, "", $2); print $2}' "$headers")"
-          test -n "$cookie"
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' "http://desktop-view-gateway:8080/?view_token=$view_token")" = 401
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -H "Cookie: $cookie" http://desktop-view-gateway:8080/vnc.html)" = 200
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -X POST -H "Cookie: $cookie" http://desktop-view-gateway:8080/)" = 405
-          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -X CONNECT -H "Cookie: $cookie" http://desktop-view-gateway:8080/)" = 405
+          token = os.environ["CANARY_VIEW_TOKEN"]
 
-          for sequence in 1 2; do
-            websocket_headers="$attempt_parent/websocket-$sequence-headers"
-            docker run --rm --network "$client_network" --entrypoint curl "$image" --http1.1 --max-time 3 -sS -D "$websocket_headers" -o /dev/null               -H "Cookie: $cookie"               -H "Connection: Upgrade"               -H "Upgrade: websocket"               -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="               -H "Sec-WebSocket-Version: 13"               http://desktop-view-gateway:8080/websockify || true
-            grep -q ' 101 ' "$websocket_headers"
-          done
+          def request(method, path, headers=None):
+              connection = http.client.HTTPConnection("desktop-view-gateway", 8080, timeout=5)
+              connection.request(method, path, headers=headers or {})
+              response = connection.getresponse()
+              result = response.status, {
+                  name.lower(): value for name, value in response.getheaders()
+              }
+              if response.status != 101:
+                  response.read()
+              connection.close()
+              return result
+
+          assert request("GET", "/vnc.html")[0] == 401
+          try:
+              socket.gethostbyname("desktop-worker")
+          except socket.gaierror:
+              pass
+          else:
+              raise AssertionError("view client reached worker backplane DNS")
+
+          encoded = urllib.parse.quote(token, safe="")
+          status, headers = request("GET", "/?view_token=" + encoded)
+          assert status == 303
+          cookie = headers.get("set-cookie", "")
+          assert cookie.startswith("desktop_view_session=")
+          assert "HttpOnly" in cookie and "SameSite=Strict" in cookie
+          assert request("GET", "/?view_token=" + encoded)[0] == 401
+
+          authorized = {"Cookie": cookie}
+          assert request("GET", "/vnc.html", authorized)[0] == 200
+          assert request("POST", "/", authorized)[0] == 405
+          assert request("CONNECT", "/", authorized)[0] == 405
+          for _ in range(2):
+              status, _ = request(
+                  "GET",
+                  "/websockify",
+                  {
+                      "Cookie": cookie,
+                      "Connection": "Upgrade",
+                      "Upgrade": "websocket",
+                      "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                      "Sec-WebSocket-Version": "13",
+                  },
+              )
+              assert status == 101
+          PY
 
           docker inspect "$worker" > "$worker_inspect"
           docker inspect "$gateway" > "$gateway_inspect"
