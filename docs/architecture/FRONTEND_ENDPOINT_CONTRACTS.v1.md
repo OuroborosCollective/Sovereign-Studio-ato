@@ -144,6 +144,7 @@ Phantom routes such as `/api/billing/cancel` and `/api/billing/restore` are forb
 python3 -m pytest \
   scripts/tests/test_frontend_endpoint_contracts.py \
   scripts/tests/test_vitest_causal_runner.py \
+  scripts/tests/test_frontend_test_gate.py \
   -q
 ```
 
@@ -160,7 +161,18 @@ Coverage includes:
 - static artifacts;
 - explicit non-active surfaces;
 - the complete current repository contract;
-- bounded Vitest JSON parsing, aggregate counts, relative file/test identity, secret-shaped title redaction and shell-free execution.
+- bounded Vitest JSON parsing, aggregate counts, relative file/test identity, secret-shaped title redaction and shell-free execution;
+- fixed gate ordering, stop-on-first-failure, exit-code preservation, raw-output denial and causal-marker forwarding.
+
+### Frontend test gate orchestrator
+
+```text
+scripts/frontend_test_gate.py
+```
+
+The package scripts contain no nested shell test chain. `--mode endpoint` executes the compiler, all Python regressions and the six targeted client suites. `--mode smoke` executes the same stages and then the broad frontend Vitest smoke with the repository's existing exclusions. Every subprocess is a fixed argument vector with `shell=False`; raw stage stdout/stderr is captured but never replayed.
+
+The orchestrator stops at the first non-zero stage, preserves that exit code and emits either the redacted `FAILED file::test` produced by the causal runner or a fixed stage identity such as `FAILED frontend-smoke::vitest_runner`. This makes the release artifact independently diagnosable without relying on npm-shell control-flow behavior.
 
 ### Causal Vitest runner
 
@@ -172,7 +184,7 @@ Both the targeted endpoint-client suites and the subsequent broad frontend smoke
 
 Raw Vitest stdout, stderr, JSON and failure messages are not persisted or projected through this lane. The command is executed as an argument vector without a shell. This improves diagnosis only: the original Vitest exit code and every assertion remain release-blocking.
 
-If the compiler, Python regression family or Vitest wrapper exits before a precise test identity can be parsed, the fixed package command emits a bounded stage identity such as `FAILED frontend-smoke::vitest_runner` while preserving the original non-zero exit code. The revision-bound failure extractor therefore never needs raw logs and must not return a nameless red step.
+If the compiler, Python regression family or Vitest wrapper exits before a precise test identity can be parsed, the frontend test gate emits a bounded stage identity such as `FAILED frontend-smoke::vitest_runner` while preserving the original non-zero exit code. The revision-bound failure extractor therefore never needs raw logs and must not return a nameless red step.
 
 ### Package gate
 
@@ -180,7 +192,7 @@ If the compiler, Python regression family or Vitest wrapper exits before a preci
 pnpm run test:frontend-endpoints
 ```
 
-This compiles the report with `--check`, runs the compiler and causal-runner Python regressions, then executes the targeted Vitest client suites for Admin owner input, Billing, Knowledge, Rescue, Toolchain and Skills through the bounded causal runner. The canonical broad `test:smoke` uses the same runner after this targeted gate.
+This invokes `scripts/frontend_test_gate.py --mode endpoint`, which compiles the report with `--check`, runs the compiler, causal-runner and gate-orchestrator Python regressions, then executes the targeted Vitest client suites for Admin owner input, Billing, Knowledge, Rescue, Toolchain and Skills through the bounded causal runner. The canonical broad `test:smoke` invokes the same orchestrator with `--mode smoke`.
 
 ### Browser E2E smoke
 

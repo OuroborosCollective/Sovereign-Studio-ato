@@ -48,7 +48,7 @@ def test_extracts_first_failed_vitest_identity_without_failure_message(tmp_path:
         "passed": 1,
         "failed": 1,
         "skipped": 1,
-        "causalTest": "src/feature.test.ts::endpoint contract > rejects an unbound mutation",
+        "causalTest": "src/feature.test.ts::endpoint-contract::rejects-an-unbound-mutation",
     }
     assert "raw provider output" not in str(result)
 
@@ -73,7 +73,8 @@ def test_derives_counts_when_top_level_counts_are_absent(tmp_path: Path) -> None
     assert result["passed"] == 1
     assert result["failed"] == 1
     assert result["skipped"] == 1
-    assert result["causalTest"] == "tests/runtime.test.ts::blocks drift"
+    assert result["causalTest"] == "tests/runtime.test.ts::blocks-drift"
+    assert not any(character.isspace() for character in result["causalTest"])
 
 
 def test_redacts_secret_shaped_test_names(tmp_path: Path) -> None:
@@ -97,7 +98,8 @@ def test_redacts_secret_shaped_test_names(tmp_path: Path) -> None:
     result = MODULE.extract_causal_summary(payload, root=tmp_path, label="security")
 
     assert synthetic_secret_shape not in str(result)
-    assert "[REDACTED]" in str(result)
+    assert "REDACTED" in str(result)
+    assert " " not in str(result["causalTest"])
 
 
 def test_builds_shell_free_pnpm_vitest_command() -> None:

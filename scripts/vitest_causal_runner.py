@@ -25,6 +25,7 @@ SCHEMA_VERSION = "sovereign.vitest-causal-runner.v1"
 DEFAULT_TIMEOUT_SECONDS = 900
 _MAX_IDENTITY = 320
 _SAFE_LABEL_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_SAFE_IDENTITY_RE = re.compile(r"[^A-Za-z0-9._/:-]+")
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
@@ -46,6 +47,12 @@ def _safe_label(value: object) -> str:
     return label[:80] or "vitest"
 
 
+def _identity_token(value: object, maximum: int = _MAX_IDENTITY) -> str:
+    redacted = _bounded_text(value, maximum)
+    token = _SAFE_IDENTITY_RE.sub("-", redacted).strip("-._:")
+    return token[:maximum] or "unknown"
+
+
 def _integer(value: object) -> int:
     return int(value) if isinstance(value, int) and value >= 0 else 0
 
@@ -60,7 +67,7 @@ def _relative_test_path(value: object, root: Path) -> str:
         relative = resolved.relative_to(root.resolve()).as_posix()
     except (OSError, ValueError):
         relative = path.name or "vitest"
-    return _bounded_text(relative, 240)
+    return _identity_token(relative, 240)
 
 
 def _assertions(test_result: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
@@ -102,15 +109,15 @@ def extract_causal_summary(payload: Mapping[str, Any], *, root: Path, label: str
                 continue
             ancestor = assertion.get("ancestorTitles")
             parts = [
-                _bounded_text(item, 120)
+                _identity_token(item, 120)
                 for item in ancestor
                 if str(item or "").strip()
             ] if isinstance(ancestor, list) else []
-            title = _bounded_text(
+            title = _identity_token(
                 assertion.get("title") or assertion.get("fullName") or assertion.get("name"),
                 180,
             )
-            causal = f"{file_name}::{' > '.join([*parts, title])}"[:_MAX_IDENTITY]
+            causal = "::".join([file_name, *parts, title])[:_MAX_IDENTITY]
             break
         if causal:
             break

@@ -155,6 +155,8 @@ function run() {
   requireFile('scripts/tests/test_frontend_endpoint_contracts.py', 'Frontend endpoint compiler regressions are required.');
   requireFile('scripts/vitest_causal_runner.py', 'Bounded Vitest causal evidence runner is required.');
   requireFile('scripts/tests/test_vitest_causal_runner.py', 'Vitest causal evidence runner regressions are required.');
+  requireFile('scripts/frontend_test_gate.py', 'Shell-free frontend test gate orchestrator is required.');
+  requireFile('scripts/tests/test_frontend_test_gate.py', 'Frontend test gate orchestrator regressions are required.');
   requireFile('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', 'Built-browser endpoint smoke is required.');
   requireFile('src/features/admin/api/adminApiClient.ownerInput.test.ts', 'Protected owner-input endpoint regression is required.');
   requireFile('src/features/billing/billingSlice.test.ts', 'Billing endpoint regression is required.');
@@ -173,18 +175,21 @@ function run() {
   requireScriptGroup(scripts, 'script:frontend-endpoints-e2e', ['test:e2e:frontend-endpoints'], 'Frontend endpoint Playwright smoke script is available.');
 
   requireText('.github/workflows/sovereign-contract-scan.yml', /run_first_present test:smoke/, 'workflow:frontend-endpoint-contracts', 'Runtime contract workflow executes the canonical smoke gate.');
-  requireText('package.json', /"test:smoke"\s*:\s*"pnpm run test:frontend-endpoints &&/, 'workflow:frontend-endpoint-smoke-chain', 'The canonical smoke gate begins with the frontend endpoint compiler and regressions.');
+  requireText('package.json', /"test:smoke"\s*:\s*"python3 scripts\/frontend_test_gate\.py --mode smoke"/, 'workflow:frontend-endpoint-smoke-chain', 'The canonical smoke gate runs the fixed shell-free frontend test orchestrator.');
+  requireText('package.json', /"test:frontend-endpoints"\s*:\s*"python3 scripts\/frontend_test_gate\.py --mode endpoint"/, 'workflow:frontend-endpoint-targeted-chain', 'The targeted endpoint gate runs the same fixed shell-free orchestrator in endpoint mode.');
   requireText('.github/workflows/e2e-testing.yml', /pnpm run test:e2e/, 'workflow:frontend-endpoint-e2e', 'Current App E2E workflow executes the endpoint browser smoke through the full Playwright suite.');
   requireText('scripts/frontend_endpoint_contracts.py', /"externalCalls"/, 'frontend-endpoints:external-inventory', 'Endpoint compiler preserves third-party request inventory separately from backend routes.');
   requireText('scripts/frontend_endpoint_contracts.py', /legacyImportViolationCount/, 'frontend-endpoints:legacy-import-gate', 'Endpoint compiler rejects active reactivation of legacy endpoint surfaces.');
   requireText('scripts/frontend_endpoint_contracts.py', /FRONTEND_MUTATION_TEST_EVIDENCE_MISSING/, 'frontend-endpoints:mutation-test-gate', 'Endpoint compiler rejects active mutation requests without test evidence.');
   requireText('scripts/frontend_endpoint_contracts.py', /activeMutationWithoutTestEvidenceCount/, 'frontend-endpoints:mutation-test-count', 'Endpoint report exposes the mutation test-evidence count.');
-  requireText('package.json', /adminApiClient\.ownerInput\.test\.ts[\s\S]*billingSlice\.test\.ts[\s\S]*knowledgeApi\.test\.ts[\s\S]*rescueClient\.test\.ts[\s\S]*toolchainApi\.test\.ts[\s\S]*skillsApi\.test\.ts/, 'frontend-endpoints:targeted-client-tests', 'Frontend endpoint package gate executes all targeted client regression suites.');
-  requireText('package.json', /vitest_causal_runner\.py --label frontend-endpoint-clients/, 'frontend-endpoints:targeted-causal-runner', 'Targeted endpoint clients use the bounded causal Vitest runner.');
-  requireText('package.json', /vitest_causal_runner\.py --label frontend-smoke/, 'frontend-endpoints:broad-causal-runner', 'The broad frontend smoke uses the bounded causal Vitest runner.');
-  requireText('package.json', /FAILED scripts\/frontend_endpoint_contracts\.py::repository_contract/, 'frontend-endpoints:compiler-stage-fallback', 'The endpoint compiler stage emits a bounded failure identity.');
-  requireText('package.json', /FAILED frontend-endpoint-clients::vitest_runner/, 'frontend-endpoints:client-stage-fallback', 'The targeted client stage emits a bounded fallback identity if its runner aborts.');
-  requireText('package.json', /FAILED frontend-smoke::vitest_runner/, 'frontend-endpoints:smoke-stage-fallback', 'The broad smoke stage emits a bounded fallback identity if its runner aborts.');
+  requireText('scripts/frontend_test_gate.py', /adminApiClient\.ownerInput\.test\.ts[\s\S]*billingSlice\.test\.ts[\s\S]*knowledgeApi\.test\.ts[\s\S]*rescueClient\.test\.ts[\s\S]*toolchainApi\.test\.ts[\s\S]*skillsApi\.test\.ts/, 'frontend-endpoints:targeted-client-tests', 'Frontend test gate executes all targeted client regression suites.');
+  requireText('scripts/frontend_test_gate.py', /frontend-endpoint-clients/, 'frontend-endpoints:targeted-causal-runner', 'Targeted endpoint clients use the bounded causal Vitest runner.');
+  requireText('scripts/frontend_test_gate.py', /frontend-smoke/, 'frontend-endpoints:broad-causal-runner', 'The broad frontend smoke uses the bounded causal Vitest runner.');
+  requireText('scripts/frontend_test_gate.py', /scripts\/frontend_endpoint_contracts\.py::repository_contract/, 'frontend-endpoints:compiler-stage-fallback', 'The endpoint compiler stage emits a bounded failure identity.');
+  requireText('scripts/frontend_test_gate.py', /frontend-endpoint-clients::vitest_runner/, 'frontend-endpoints:client-stage-fallback', 'The targeted client stage emits a bounded fallback identity if its runner aborts.');
+  requireText('scripts/frontend_test_gate.py', /frontend-smoke::vitest_runner/, 'frontend-endpoints:smoke-stage-fallback', 'The broad smoke stage emits a bounded fallback identity if its runner aborts.');
+  requireText('scripts/frontend_test_gate.py', /stdout=subprocess\.PIPE[\s\S]*stderr=subprocess\.PIPE/, 'frontend-endpoints:bounded-stage-capture', 'The frontend test gate captures stage output instead of replaying raw logs.');
+  forbidText('scripts/frontend_test_gate.py', /shell\s*=\s*True/, 'frontend-endpoints:no-shell-gate', 'The frontend test gate must never execute through a shell.');
   requireText('scripts/vitest_causal_runner.py', /print\(f"FAILED \{causal\}"\)/, 'frontend-endpoints:causal-failure-identity', 'The causal runner emits a Pytest-compatible file and test identity.');
   requireText('scripts/vitest_causal_runner.py', /stdout=subprocess\.DEVNULL[\s\S]*stderr=subprocess\.DEVNULL/, 'frontend-endpoints:no-raw-vitest-output', 'The causal runner does not project raw Vitest stdout or stderr.');
   requireText('scripts/vitest_causal_runner.py', /tempfile\.TemporaryDirectory/, 'frontend-endpoints:ephemeral-raw-vitest-report', 'Raw Vitest JSON exists only in an automatically deleted temporary directory.');
