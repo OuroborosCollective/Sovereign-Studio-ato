@@ -11,6 +11,7 @@ const agent = vi.hoisted(() => ({
   startToolchainJob: vi.fn(),
   getJob: vi.fn(),
   getProjections: vi.fn(),
+  getEvidenceAnchors: vi.fn(),
   cancelJob: vi.fn(),
   runJanitor: vi.fn(),
   prepareDraftPr: vi.fn(),
@@ -126,6 +127,7 @@ beforeEach(() => {
   memory.searchReusableMemory.mockResolvedValue([]);
   memory.reusableMemoryContext.mockReturnValue('');
   agent.getProjections.mockResolvedValue([]);
+  agent.getEvidenceAnchors.mockResolvedValue([]);
 });
 
 afterEach(() => {

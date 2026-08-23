@@ -174,6 +174,7 @@ import {
   type SovereignAgentConfig,
   type SovereignAgentJobSnapshot,
   type SovereignLiveProjection,
+  type SovereignWorkspaceEvidenceAnchor,
 } from "../runtime/sovereignAgentRuntime";
 import type { SovereignPatternLearningEvidence } from "../runtime/sovereignAgentClient";
 import {
@@ -289,6 +290,7 @@ export interface BuilderContainerProps {
   agentConfig?: SovereignAgentConfig;
   agentJob?: SovereignAgentJobSnapshot;
   agentProjections?: readonly SovereignLiveProjection[];
+  agentEvidenceAnchors?: readonly SovereignWorkspaceEvidenceAnchor[];
   patternLearningEvidence?: SovereignPatternLearningEvidence;
   agentJobStatus?: string;
   agentIsRunning?: boolean;
@@ -2664,6 +2666,7 @@ export function BuilderContainer({
   agentConfig,
   agentJob,
   agentProjections,
+  agentEvidenceAnchors,
   patternLearningEvidence,
   agentJobStatus,
   agentIsRunning,
@@ -6613,6 +6616,7 @@ Das echte Repo-Setup wurde geöffnet.`,
                   projections={(agentProjections ?? []).filter((projection) => (
                     !scopedAgentJob?.workspaceId || projection.workspaceId === scopedAgentJob.workspaceId
                   ))}
+                  evidenceAnchors={agentEvidenceAnchors ?? []}
                   onCancel={onCancelAgent}
                   onOpenDraftPr={
                     (scopedAgentJob?.draftPrUrl ?? agentWorkSnapshot.draftPrUrl)

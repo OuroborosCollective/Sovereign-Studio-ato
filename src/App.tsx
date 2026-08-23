@@ -17,6 +17,7 @@ import {
   summarizeSovereignAgentJob,
   type SovereignAgentJobSnapshot,
   type SovereignLiveProjection,
+  type SovereignWorkspaceEvidenceAnchor,
 } from './features/product/runtime/sovereignAgentRuntime';
 import {
   reusableMemoryContext,
@@ -43,6 +44,7 @@ function SovereignChatApp() {
   );
   const [janitorPreview, setJanitorPreview] = useState('');
   const [liveProjections, setLiveProjections] = useState<SovereignLiveProjection[]>([]);
+  const [liveEvidenceAnchors, setLiveEvidenceAnchors] = useState<SovereignWorkspaceEvidenceAnchor[]>([]);
   const [patternLearningEvidence, setPatternLearningEvidence] = useState<
     SovereignPatternLearningEvidence | undefined
   >();
@@ -120,6 +122,7 @@ function SovereignChatApp() {
     const jobId = agentJob.jobId;
     if (!agentConfig.ready || !jobId || agentJob.status === 'idle' || agentJob.status === 'cleaned') {
       setLiveProjections([]);
+      setLiveEvidenceAnchors([]);
       return;
     }
     let cancelled = false;
@@ -128,8 +131,12 @@ function SovereignChatApp() {
       if (polling) return;
       polling = true;
       try {
-        const projections = await agentClient.getProjections(jobId);
-        if (!cancelled) setLiveProjections(projections);
+        const [projectionResult, evidenceResult] = await Promise.allSettled([
+          agentClient.getProjections(jobId),
+          agentClient.getEvidenceAnchors(jobId),
+        ]);
+        if (!cancelled && projectionResult.status === 'fulfilled') setLiveProjections(projectionResult.value);
+        if (!cancelled && evidenceResult.status === 'fulfilled') setLiveEvidenceAnchors(evidenceResult.value);
       } catch {
         // Projection is optional observation. A readback failure must neither
         // mutate the canonical job state nor invent a replacement event.
@@ -414,6 +421,7 @@ function SovereignChatApp() {
           agentConfig={agentConfig}
           agentJob={agentJob}
           agentProjections={liveProjections}
+          agentEvidenceAnchors={liveEvidenceAnchors}
           patternLearningEvidence={patternLearningEvidence}
           agentJobStatus={agentIsRunning ? 'Sovereign Agent Auftrag läuft' : agentJob.lastError}
           agentIsRunning={agentIsRunning}
