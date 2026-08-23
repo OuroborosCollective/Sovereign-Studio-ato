@@ -1,5 +1,6 @@
 /**
  * useProviderFallback Hook
+ * sovereign-endpoint-surface: legacy-unreferenced
  * Provides automatic fallback to free LLM providers when primary fails
  */
 

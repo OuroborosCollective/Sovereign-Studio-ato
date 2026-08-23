@@ -1,3 +1,4 @@
+// sovereign-endpoint-surface: legacy-unreferenced
 import { callMlvoCa, callGroq, callHuggingFace, callTogether, callOpenRouter, callPollinations, type ProviderType } from './providerManager';
 import { geminiService } from './geminiService';
 import { toolchainApi, type DraftPrResponse } from '../toolchain/toolchainApi';

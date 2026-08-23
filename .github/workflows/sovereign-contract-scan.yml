@@ -93,6 +93,11 @@ jobs:
         shell: bash
         run: pnpm exec vitest run scripts/runtime-canary-matrix-gate.test.mjs
 
+      - name: Compile and regress frontend endpoint contracts
+        id: frontend_endpoint_contracts
+        shell: bash
+        run: pnpm run test:frontend-endpoints
+
       - name: Prepare report directory
         shell: bash
         run: |
@@ -276,6 +281,7 @@ jobs:
             echo "- Revision integrity: ${{ steps.revision_integrity.outcome }}"
             echo "- Runtime canary matrix contract: ${{ steps.runtime_canary_contract.outcome }}"
             echo "- Runtime canary matrix tests: ${{ steps.runtime_canary_tests.outcome }}"
+            echo "- Frontend endpoint contracts: ${{ steps.frontend_endpoint_contracts.outcome }}"
             echo "- Type-check: completed before this summary if the job reached this step"
             echo "- Tests: completed before this summary if the job reached this step"
             echo "- Build: completed before this summary if the job reached this step"

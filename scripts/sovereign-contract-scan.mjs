@@ -151,12 +151,30 @@ function run() {
   requireFile('src/features/product/runtime/runtimeOutcomeGuard.ts', 'Outcome guard runtime is required.');
   requireFile('src/features/product/runtime/sequentialRuntimeGuard.ts', 'Sequential runtime guard is required.');
   requireFile('src/features/product/runtime/sovereignProductTemplate.ts', 'Product template contract is required.');
+  requireFile('scripts/frontend_endpoint_contracts.py', 'Frontend endpoint contract compiler is required.');
+  requireFile('scripts/tests/test_frontend_endpoint_contracts.py', 'Frontend endpoint compiler regressions are required.');
+  requireFile('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', 'Built-browser endpoint smoke is required.');
+  requireFile('docs/architecture/FRONTEND_ENDPOINT_CONTRACTS.v1.md', 'Frontend endpoint truth-boundary documentation is required.');
 
   const scripts = getPackageScripts();
   requireScriptGroup(scripts, 'script:type-check', ['type-check', 'typecheck', 'check:types'], 'TypeScript check script is available.');
   requireScriptGroup(scripts, 'script:test', ['test:ci', 'test:run', 'test'], 'Unit test script is available.');
   requireScriptGroup(scripts, 'script:build', ['build', 'web:build'], 'Build script is available.');
   warnScriptGroup(scripts, 'script:lint', ['lint'], 'Lint script is available.');
+  requireScriptGroup(scripts, 'script:frontend-endpoints', ['test:frontend-endpoints'], 'Frontend endpoint compiler and regression script is available.');
+  requireScriptGroup(scripts, 'script:frontend-endpoints-e2e', ['test:e2e:frontend-endpoints'], 'Frontend endpoint Playwright smoke script is available.');
+
+  requireText('.github/workflows/sovereign-contract-scan.yml', /pnpm run test:frontend-endpoints/, 'workflow:frontend-endpoint-contracts', 'Runtime contract workflow executes the frontend endpoint gate.');
+  requireText('.github/workflows/e2e-testing.yml', /pnpm run test:e2e/, 'workflow:frontend-endpoint-e2e', 'Current App E2E workflow executes the endpoint browser smoke through the full Playwright suite.');
+  requireText('scripts/frontend_endpoint_contracts.py', /"externalCalls"/, 'frontend-endpoints:external-inventory', 'Endpoint compiler preserves third-party request inventory separately from backend routes.');
+  requireText('scripts/frontend_endpoint_contracts.py', /legacyImportViolationCount/, 'frontend-endpoints:legacy-import-gate', 'Endpoint compiler rejects active reactivation of legacy endpoint surfaces.');
+  requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /legacyImportViolationCount\)\.toBe\(0\)/, 'frontend-endpoints:e2e-import-readback', 'Browser smoke reads the import-boundary verdict from the exact report.');
+  requireText('tests/e2e/frontend-endpoint-contract-smoke.spec.ts', /externalTargetReachabilityProven:\s*false/, 'frontend-endpoints:e2e-truth-boundary', 'Browser smoke does not promote adapter observations to external runtime truth.');
+  requireText('src/features/ai/providerManager.ts', /sovereign-endpoint-surface:\s*legacy-unreferenced/, 'providers:legacy-direct-manager-classified', 'Historical direct provider manager is explicitly outside the current production graph.');
+  requireText('src/features/product/llm/sovereignLlmAdapters.ts', /createPrimaryBridgeAdapter/, 'providers:backend-bridge-active', 'Current product LLM adapters retain the backend-owned online bridge.');
+  requireText('src/features/product/llm/sovereignLlmAdapters.ts', /createLocalSafeAdapter/, 'providers:local-safe-active', 'Current product LLM adapters retain the local non-network fallback.');
+  forbidText('src/features/product/llm/sovereignLlmAdapters.ts', /create(?:Groq|HuggingFace|Mlvoca|OpenRouter|Pollinations|Together)Adapter/, 'providers:no-direct-browser-adapters', 'Current product LLM assembly must not reactivate direct browser provider adapters.');
+  forbidText('src/features/billing/billingSlice.ts', /\/api\/billing\/(?:cancel|restore)/, 'billing:no-phantom-endpoints', 'Billing frontend must not call unimplemented cancel or restore routes.');
 
   requireImport('src/main.tsx', /\.\/SovereignAppWrapper$/, 'main:imports-wrapper', 'main.tsx imports the Sovereign runtime wrapper.');
   requireText('src/main.tsx', /<App\s*\/>|<App[\s>]/, 'main:renders-app', 'main.tsx renders App through the wrapper import.');

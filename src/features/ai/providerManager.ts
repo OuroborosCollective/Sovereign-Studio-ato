@@ -1,5 +1,6 @@
 /**
  * Provider Manager - Free LLM API Fallback System
+ * sovereign-endpoint-surface: legacy-unreferenced
  * Auto-switches between providers when primary fails (auth errors, quota, etc.)
  * 
  * Supported Free Tier Providers (Priority Order):

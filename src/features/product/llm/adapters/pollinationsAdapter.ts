@@ -1,3 +1,4 @@
+// sovereign-endpoint-surface: legacy-unreferenced
 import { callPollinations } from '../../../ai/providerManager';
 import { assertSovereignBrainResult, parseSovereignBrainJson } from '../../brain/sovereignBrainContract';
 import { assertPushableBrain } from '../llmRuntimeChecks';

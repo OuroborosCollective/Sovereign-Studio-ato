@@ -181,42 +181,6 @@ export const fetchEnabledPaymentMethods = createAsyncThunk(
   }
 );
 
-export const cancelSubscription = createAsyncThunk(
-  'billing/cancelSubscription',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/billing/cancel`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error('Kündigung konnte nicht verarbeitet werden');
-      }
-      return await response.json();
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Fehler bei der Kündigung');
-    }
-  }
-);
-
-export const restorePurchases = createAsyncThunk(
-  'billing/restorePurchases',
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/billing/restore`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error('Wiederherstellung fehlgeschlagen');
-      }
-      return await response.json();
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Fehler bei der Wiederherstellung');
-    }
-  }
-);
-
 const updateAccessState = (state: BillingState, subscription: Subscription | null) => {
   if (!subscription) {
     state.tier = 'free';
@@ -313,29 +277,6 @@ const billingSlice = createSlice({
         }
       })
       .addCase(purchasePackage.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
-      })
-      .addCase(cancelSubscription.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(cancelSubscription.fulfilled, (state, action: PayloadAction<any>) => {
-        state.loading = false;
-        updateAccessState(state, action.payload.subscription);
-      })
-      .addCase(cancelSubscription.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
-      })
-      .addCase(restorePurchases.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(restorePurchases.fulfilled, (state, action: PayloadAction<any>) => {
-        state.loading = false;
-        updateAccessState(state, action.payload.subscription);
-      })
-      .addCase(restorePurchases.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })

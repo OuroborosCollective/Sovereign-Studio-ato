@@ -1,9 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { configureStore } from '@reduxjs/toolkit';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import reducer, {
   BillingState,
   Subscription,
-  fetchBillingData
+  fetchBillingData,
+  fetchEnabledPaymentMethods,
+  fetchUserCredits,
 } from './billingSlice';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('billingSlice reducer', () => {
   const initialState: BillingState = {
@@ -85,6 +92,48 @@ describe('billingSlice reducer', () => {
 
     expect(state.isSubscribed).toBe(false);
     expect(state.isPaywallActive).toBe(true);
+  });
+
+  it('uses only existing read-only billing endpoints for initial runtime state', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/billing')) {
+        return new Response(JSON.stringify({
+          subscription: null,
+          invoices: [],
+          availablePackages: [],
+          packages: [],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (url.endsWith('/api/billing/payment-methods')) {
+        return new Response(JSON.stringify({ methods: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.endsWith('/api/billing/credits')) {
+        return new Response(JSON.stringify({ credits: 17 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: 'unexpected endpoint' }), { status: 404 });
+    });
+    const store = configureStore({ reducer: { billing: reducer } });
+
+    await store.dispatch(fetchBillingData());
+    await store.dispatch(fetchEnabledPaymentMethods());
+    await store.dispatch(fetchUserCredits());
+
+    const calls = fetchMock.mock.calls.map(([input]) => String(input));
+    expect(calls).toEqual([
+      expect.stringMatching(/\/api\/billing$/),
+      expect.stringMatching(/\/api\/billing\/payment-methods$/),
+      expect.stringMatching(/\/api\/billing\/credits$/),
+    ]);
+    expect(calls.some(url => url.endsWith('/api/billing/cancel'))).toBe(false);
+    expect(calls.some(url => url.endsWith('/api/billing/restore'))).toBe(false);
+    expect(store.getState().billing.credits).toBe(17);
   });
 
   it('should handle null subscription', () => {

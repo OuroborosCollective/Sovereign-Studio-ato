@@ -283,7 +283,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 </div>
               </div>
               <p className="text-xs font-medium text-slate-400 dark:text-slate-500 text-center md:text-right max-w-sm leading-relaxed">
-                Preise inkl. MwSt. Abonnements können jederzeit in den Kontoeinstellungen gekündigt werden. Es gelten unsere AGB.
+                Credit-Pakete sind einmalige Käufe. Credits werden erst nach serverseitig bestätigter Zahlung gutgeschrieben. Es gelten unsere AGB.
               </p>
             </div>
           </div>
