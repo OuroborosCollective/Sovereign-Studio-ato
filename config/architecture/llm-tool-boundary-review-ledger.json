@@ -1,9 +1,9 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "0d0eef84707299e78395d90ae8c9844a4e05958b",
-  "rawCandidateCount": 95,
-  "canonicalCandidateCount": 76,
+  "sourceRevision": "126c3092762163a38bce86e74a89c34a126e90ac",
+  "rawCandidateCount": 97,
+  "canonicalCandidateCount": 77,
   "entries": [
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/cognitive_llm_transport.py",
@@ -139,6 +139,21 @@
       "candidateId": "llm-boundary:f2f9e19a6dbc146874576101",
       "classification": "STRUCTURED_POLICY",
       "rationale": "collect_provider compares explicit route-health booleans, a revision and a SHA-256 truth-boundary identifier to build read-only provider evidence; it does not interpret free language or select or authorize a provider effect."
+    },
+    {
+      "canonicalPath": "scripts/sovereign-backend/agent_runtime/live_workspace_chat_store.py",
+      "mirrorPaths": [
+        "backend/agent_runtime/live_workspace_chat_store.py"
+      ],
+      "symbol": "build_persistable_chat_bubble",
+      "line": 253,
+      "patternFamily": "python_keyword_intent",
+      "fileSha256": "c378693cb72940d6a65fe34e90ac451523e023dbd90426a170ad061f2383cea0",
+      "anchorSha256": "2ce62a3b8fedb0c4e1aca3f2e4b612fa0af980ada1d3417c75090d4383c139e3",
+      "reopenOnChange": true,
+      "candidateId": "llm-boundary:d5e9bc40e40834750def2d5c",
+      "classification": "STRUCTURED_POLICY",
+      "rationale": "build_persistable_chat_bubble validates explicit bubble, source and workflow enums plus exact hash and revision bindings; it does not infer semantic intent from free user language or authorize an effect."
     },
     {
       "canonicalPath": "scripts/sovereign-backend/agent_runtime/pattern_gateway.py",
@@ -1032,5 +1047,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "754c227a878d70e7141ff331eca9c8934289996063cecb3a61df960b382c0335"
+  "ledgerSha256": "4b8d1380b6b4ca4711df48fde46f3dc0fa73aa11272b361830e4aaec9158dcac"
 }
