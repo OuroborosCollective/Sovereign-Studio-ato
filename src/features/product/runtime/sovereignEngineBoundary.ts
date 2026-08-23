@@ -253,19 +253,13 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-let deterministicEventCounter = 0;
-
 function eventId(prefix: string): string {
-  const identity = typeof globalThis.crypto?.randomUUID === 'function'
+  const uuid = typeof globalThis.crypto?.randomUUID === 'function'
     ? globalThis.crypto.randomUUID().replaceAll('-', '')
     : typeof globalThis.crypto?.getRandomValues === 'function'
-      ? (() => {
-          const bytes = new Uint8Array(16);
-          globalThis.crypto.getRandomValues(bytes);
-          return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-        })()
-      : `${Date.now().toString(36)}${(++deterministicEventCounter).toString(36)}`;
-  return `${prefix}-${identity.slice(0, 32)}`;
+      ? Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+      : `${Date.now().toString(36)}00000000000000000000000000000000`;
+  return `${prefix}-${uuid.slice(0, 32)}`;
 }
 
 function boundedMessage(value: unknown): string {
