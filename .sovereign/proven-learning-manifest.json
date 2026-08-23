@@ -1,7 +1,7 @@
 {
-  "expectedPrHeadSha": null,
-  "generatedAt": "2026-08-18T16:29:00+02:00",
-  "generatedFromRepositoryRevision": "38b669351a8300c3e4e9fb7e5750d1a04b839801",
+  "expectedPrHeadSha": "e7022f535fb95775370a3e0133eb07d79d9f9351",
+  "generatedAt": "2026-08-23T09:13:01.693000Z",
+  "generatedFromRepositoryRevision": "e7022f535fb95775370a3e0133eb07d79d9f9351",
   "importantManifestFiles": [
     {
       "bytes": 15396,
@@ -84,6 +84,11 @@
       "sha256": "6fe81bd557f768db79fc0240f1f3de5bb8e1d7c8fad42995f0460f7d750dabd3"
     },
     {
+      "bytes": 3918,
+      "path": ".github/workflows/desktop-worker.yml",
+      "sha256": "87772af2abcf46a963b42ac809307ab9dcbf7d34358d70f6a0307dfaeb67fc7a"
+    },
+    {
       "bytes": 5425,
       "path": ".github/workflows/e2e-testing.yml",
       "sha256": "5591f4d5d21a2ab259be8149f3f112f25ef74239637805a2c4e77aa58bfb404f"
@@ -104,9 +109,9 @@
       "sha256": "ad43eee270e0a8bf566e48f2032ed6031ca45c9b3c5f9ff863f54b2ebb7eec6e"
     },
     {
-      "bytes": 6494,
+      "bytes": 6622,
       "path": ".github/workflows/integration-plan-lane-gate.yml",
-      "sha256": "6fe10402a708f61bc8e9756749d76ec1a4a43a49c14f044d5b9c06c3ab11c6bb"
+      "sha256": "70ace41f469bddde2a7520e9d0d97891ce2685f0e5f805fe38590a738610ea00"
     },
     {
       "bytes": 2421,
@@ -149,9 +154,9 @@
       "sha256": "eef8a19f02c70ed22ab5dc74c49eb2a6a071e1a204ab319e92c91000d53e3ff6"
     },
     {
-      "bytes": 11596,
+      "bytes": 11732,
       "path": ".github/workflows/revision-guardian-continuity-repair-pr.yml",
-      "sha256": "c6de154dc51ff84043322d7fad8bd1fef7cfc02cd992d90c28ea44c8baa88bfc"
+      "sha256": "d805bffb91c1763d3e85379893bb073a48a9eb5355951fc7c97025945daf7183"
     },
     {
       "bytes": 11508,
@@ -164,9 +169,9 @@
       "sha256": "244d256ec3fd2349e2c1816790bbbfe3d8bb96f8e5d85fc0b70464bd082b570b"
     },
     {
-      "bytes": 3415,
+      "bytes": 4008,
       "path": ".github/workflows/sovereign-agent-backend.yml",
-      "sha256": "e52674f41931e4646f6b6b561ec66419e7033df863e7ba943009eca9445b872f"
+      "sha256": "e67dcc04186e58b2764e6f248fea392262dc0db0121990112323e104d91d11a5"
     },
     {
       "bytes": 2684,
@@ -204,6 +209,16 @@
       "sha256": "ec444ca38839961ea713aa3cdace135ed2b0bd20e54a832cceb120314567ca1f"
     },
     {
+      "bytes": 780,
+      "path": ".github/workflows/sovereign-copilot-customization.yml",
+      "sha256": "7dde5afd1dde357ea0edb4e8dbac1e9a2c251a9f0c9c33fd56fe91a10101feaf"
+    },
+    {
+      "bytes": 28562,
+      "path": ".github/workflows/sovereign-desktop-worker.yml",
+      "sha256": "1e83c24b4294bafa605d7d79ee5caad42cfe90a32bca01e8b2f1d23f649e0c87"
+    },
+    {
       "bytes": 12552,
       "path": ".github/workflows/sovereign-freellmpool-overlay-verify.yml",
       "sha256": "795c2d3a95e48cb0296104b09d11d7bf6d9f22be905135a4fe7b288da2f76ca3"
@@ -239,14 +254,19 @@
       "sha256": "ae43afa2c3d2f233b5ff801f3f02bcabf873b2be56822938bdaf3e2b152e67ec"
     },
     {
-      "bytes": 1119,
-      "path": ".github/workflows/sovereign-validation.yml",
-      "sha256": "e2c6db1b3e1bbb2f0a6861c9f9c5d699a50ae12254e56a8c35373f28cf0edd8f"
+      "bytes": 1846,
+      "path": ".github/workflows/sovereign-toolchain.yml",
+      "sha256": "c433c4d93c259291f6b3f47a569b73001d9f8d0a7b52d2808c975b6092936305"
     },
     {
-      "bytes": 13849,
+      "bytes": 1773,
+      "path": ".github/workflows/sovereign-validation.yml",
+      "sha256": "fe840ad5ba01cf47ae1bf252979c02459490a6562a2b6de44402104d0e22afbc"
+    },
+    {
+      "bytes": 14228,
       "path": ".github/workflows/supplemental-check-coordinator.yml",
-      "sha256": "75cebdb32dca30afd13d29c370bef730870b92c2bbf943aaf318c78aa6752cd5"
+      "sha256": "4dd81061677e02ba5a4890106cf3e84709f7b6e047ec234cb483d0be05a811bc"
     },
     {
       "bytes": 3763,
@@ -279,6 +299,11 @@
       "sha256": "4bc2ed6ec384cb666289a2d37092a83b5c58d0a29bdb7b4a1685c7f824d0be5d"
     },
     {
+      "bytes": 1416,
+      "path": "containers/sovereign-desktop-worker/Dockerfile",
+      "sha256": "e4df98a7146298a8911689eee91dd329b2eff9ea268222b0e05a8b24b7fb81f0"
+    },
+    {
       "bytes": 266,
       "path": "deploy/sovereign-litellm/config.yaml",
       "sha256": "36e650c52afa1d7b8402fdab0cb33150fb18ab96963c349a55be527f3e79d596"
@@ -299,9 +324,9 @@
       "sha256": "bb279727b0663949f83184dee95ee7da55aea9134ccb3409b8071745a52b53a2"
     },
     {
-      "bytes": 41171,
+      "bytes": 44029,
       "path": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-      "sha256": "a5aebc79ea6d1e8660b29a7e967965fefa0706a2dc8f8e7bc48a895b9d87d8a1"
+      "sha256": "55abd6abf2c44a2ae8826b4d899d6ee4dde829b83aade43664b78501805b8440"
     },
     {
       "bytes": 7682,
@@ -309,9 +334,9 @@
       "sha256": "6f3f5fa549e836055862b7b7b0c47d13d48811c7c18f0d273f77031823f34f4d"
     },
     {
-      "bytes": 186360,
+      "bytes": 191412,
       "path": "pnpm-lock.yaml",
-      "sha256": "4b4f4cbe4d2ba7337517d7de9dad3c6f28f181825d77afe9a5a0ca6ff391199d"
+      "sha256": "515dcc55630e59dfdee2110d6e6d3bfe9b6fd3eca39a74122a8c47bb22986851"
     },
     {
       "bytes": 1824,
@@ -319,9 +344,9 @@
       "sha256": "4d12d65e359de8044878b9b184730524654fe5a749fd05c64ce229df8a39a87d"
     },
     {
-      "bytes": 4347,
+      "bytes": 5701,
       "path": "scripts/sovereign-backend/docker-compose.yml",
-      "sha256": "589d21c2e23901b8bfd581688ba4c5b06910dccc9f728ede62c25ebf3b856829"
+      "sha256": "ec4671b4305bfc945d09cdde4332859c1c74c6592483f439b7ec41effb2cc01a"
     },
     {
       "bytes": 11620,
@@ -639,6 +664,26 @@
       "sha256": "6515d2137602f448c43a481653cea825895dd1bb98a09b24b318bbfb929ee9e7"
     },
     {
+      "bytes": 3007,
+      "path": "scripts/sovereign-backend/migrations/056_evidence_observatory_publication_receipts_v2.sql",
+      "sha256": "6aa98ad7e8dc94553a6672a9c7784f95d34900e9442a68661b85208eaae8d3c0"
+    },
+    {
+      "bytes": 8164,
+      "path": "scripts/sovereign-backend/migrations/057_durable_workflow_permission_receipts.sql",
+      "sha256": "60b154b040b0aa06d53eba5e84b2d016f0ce501ba62e6812c28feb61338931bb"
+    },
+    {
+      "bytes": 2767,
+      "path": "scripts/sovereign-backend/migrations/058_wolfram_cag_partner_analysis.sql",
+      "sha256": "eeacf4b24cbef9389c6f4363c9033872e92e03c3bd9cd274507ff1e93f682774"
+    },
+    {
+      "bytes": 8692,
+      "path": "scripts/sovereign-backend/migrations/059_live_workspace_chat_bubbles.sql",
+      "sha256": "951547a4f0cd6898df7beca1e83c5eea07570709e3bc48532f10e3ac1da23eab"
+    },
+    {
       "bytes": 5099,
       "path": "scripts/sovereign-backend/migrations/AGENTS_MIGRATION_SKILL.md",
       "sha256": "0752a607c7d8b71446026767e7aed1cdad6db32e5c878b47fcbd47c6b6968ccb"
@@ -654,9 +699,9 @@
       "sha256": "982f64b2bc772c4ae05fcb3f0f18ddecf06aff4074a57cb551069fa4227102bd"
     },
     {
-      "bytes": 2524,
+      "bytes": 2542,
       "path": "tools/sovereign-chatgpt-mcp/Dockerfile",
-      "sha256": "f70920dcd507fed937a8cb1c6c865c49c0ed14b5e86ec46ee3cb89df066f06c5"
+      "sha256": "086b52c53d1d40717d096b896a0748a7efe7a1869e2265a58d7a4df034c99909"
     },
     {
       "bytes": 1949,
@@ -689,6 +734,11 @@
       "sha256": "c580690b272dfafb32fa819e29be0eda411dabe41d731516b18eeac1098becd7"
     },
     {
+      "bytes": 856,
+      "path": "tools/sovereign-chatgpt-mcp/templates/sovereign-bytebase/docker-compose.yml",
+      "sha256": "939b004e41359919e2ce1275b6ab095d4cbb178276efcf398a6a6a72cef99112"
+    },
+    {
       "bytes": 1537,
       "path": "tools/sovereign-chatgpt-mcp/templates/sovereign-freellmapi/docker-compose.yml",
       "sha256": "6a94283b546a8c89cb17e4d54f597db5a3477e48a509cac2e7570f3763e4c924"
@@ -704,6 +754,46 @@
       "sha256": "ab795f6f62df503ca3383b47c5f3e69f337097174d5d4c8bdcf2d44cfa8ec72c"
     },
     {
+      "bytes": 2668,
+      "path": "tools/sovereign-chatgpt-mcp/templates/sovereign-metamcp/docker-compose.yml",
+      "sha256": "ba1cd88f39913412db3b4f88178f4488bf781ebc208acb706aef09a77ddcf2c5"
+    },
+    {
+      "bytes": 1730,
+      "path": "tools/sovereign-chatgpt-mcp/templates/sovereign-omniroute/docker-compose.yml",
+      "sha256": "97cc91812a3f7353ae7d7162c7af2094bf03d906d75b71712203fa0f6f40d741"
+    },
+    {
+      "bytes": 2283,
+      "path": "tools/sovereign-desktop-worker/Dockerfile",
+      "sha256": "6f5a166718c203219b3be3979e110bd804de088484f28014db886b78f602217a"
+    },
+    {
+      "bytes": 5075,
+      "path": "tools/sovereign-desktop-worker/compose.yaml",
+      "sha256": "a40afbd8d2b299993f379e38c70a2424df81c96c2ba3efcd58ae45dcf26e4a93"
+    },
+    {
+      "bytes": 297,
+      "path": "tools/sovereign-github-patch-mcp/Dockerfile",
+      "sha256": "bbd42f8ac728bdcaf007d6d4ba85ae6ed1052c32784fa69fef435a11bcc62386"
+    },
+    {
+      "bytes": 385,
+      "path": "tools/sovereign-github-patch-mcp/pyproject.toml",
+      "sha256": "74e572feea17837fce2f31d83ccd9388ff2c6a67c27f24988c0ab2d1876d95b2"
+    },
+    {
+      "bytes": 212,
+      "path": "tools/sovereign-toolchain/docker-compose.yml",
+      "sha256": "54e090ca6695ba62c42005d5db174b5e6896e399f5399724fb35eb5cdff6f347"
+    },
+    {
+      "bytes": 638,
+      "path": "tools/sovereign-toolchain/pyproject.toml",
+      "sha256": "43f64ee0de95001b50e6d381cfa9da70c955ec601c0142c1b22ef6d34b019e6d"
+    },
+    {
       "bytes": 985,
       "path": "tsconfig.json",
       "sha256": "05423f920b2002945057fc6f363b9176948afb77785d1ebe60438e0df1ad4628"
@@ -714,7 +804,7 @@
       "sha256": "82b80c0312430fcb68651dfa43e0f44ca65a2e732249b7c461145c7966bb4c65"
     }
   ],
-  "latestPatternSha256": "da22d3d5f6daa4dd95d5c13b39db1a51c94006606d989666eb724b406bfd11ff",
+  "latestPatternSha256": "700ee2ee661ba3d1f1fe8dda716d5b6fbb3462c17ce558d99dc9f8639dc27a55",
   "learningPatternSha256": [
     "088ce8cbad71def77653928323e51ad3cabe9fbefd91bb94f3f267842443c17e",
     "0d31aca077a3030a12a983c043e3601980980f7cd75982e00fce822536eb3d49",
@@ -724,13 +814,14 @@
     "4c01019fedf1e058c640e42c8150cb1c307b1defd3f8245ff89796ff79cd5e87",
     "554ab837fad61bd97dd2aa1ebb54cd337fd863f9b2729b20911ead497d5d87a2",
     "55ffd93ae01bc44cd139bc6b1de37ef6a5fe054ae30b718bba16bd69294ee30f",
+    "700ee2ee661ba3d1f1fe8dda716d5b6fbb3462c17ce558d99dc9f8639dc27a55",
     "9c4317080cb2c5057eb9962e7d7f143f5f103c79c7341d458b66b2b3a3ec064a",
     "c6bff5e4a01f06cb5417c35a3771ff71e42dfaa81b28b93bef82cae7ecf1e49d",
     "cb268ab1ff7cac28f4f380f2377e6e3513a92a385902fa51f7deff6c7dd026d1",
     "da22d3d5f6daa4dd95d5c13b39db1a51c94006606d989666eb724b406bfd11ff"
   ],
   "logbookPath": "docs/SOVEREIGN_LEARNING_LOGBOOK.md",
-  "logbookSha256": "a5aebc79ea6d1e8660b29a7e967965fefa0706a2dc8f8e7bc48a895b9d87d8a1",
+  "logbookSha256": "55abd6abf2c44a2ae8826b4d899d6ee4dde829b83aade43664b78501805b8440",
   "mergeTarget": "main",
   "schemaVersion": "sovereign.proven-learning-manifest.v1",
   "selfHashExcluded": true
