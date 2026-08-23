@@ -119,6 +119,24 @@ def test_omniroute_is_not_added_to_generic_ssrf_allowlist() -> None:
     )
     assert "canonical_provider_action_required" in discover
 
+    # Internal owner-authenticated entrypoints are equally constrained: a
+    # historical source or OmniRoute must fail before it can claim, reconcile,
+    # write models/routes, or overwrite its migration evidence.
+    for function_name in (
+        "internal_discover_managed_freellm_provider",
+        "internal_reconcile_freellm_provider",
+    ):
+        handler_start = runtime.index(f"    def {function_name}(")
+        handler_end = runtime.index("    @app.route(", handler_start + 1)
+        handler = runtime[handler_start:handler_end]
+        assert "last_error_code" in handler
+        assert handler.index("classify_provider_surface(") < handler.index(
+            '"""UPDATE '
+        )
+        assert 'control["canonicalAction"] != "revolver-discover"' in handler
+        assert 'control["providerSurfaceKind"] != "free-revolver"' in handler
+        assert "canonical_provider_action_required" in handler
+
     assert (
         (BACKEND / "free_revolver_provider_contracts.py").read_bytes()
         == (REPO / "backend" / "free_revolver_provider_contracts.py").read_bytes()
