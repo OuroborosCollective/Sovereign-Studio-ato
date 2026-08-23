@@ -35,6 +35,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Setup verified backend Python runtime
+        uses: ./.github/actions/setup-backend-python
+        with:
+          python-version: '3.11'
+
       - name: Run revision-bound hardened desktop canary
         shell: bash
         run: |
