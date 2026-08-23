@@ -710,10 +710,10 @@ class WorkspaceEvidenceAnchorV1:
         if normalized_claim in _FORBIDDEN_EVIDENCE_CLAIMS or normalized_claim.startswith(("EVERYTHING_", "ALL_")):
             raise FleetContractError("evidence claim must be granular")
         normalized_scope = _text(scope, "scope", 500)
-        if normalized_verdict == "VERIFIED" and (not refs or normalized_source_kind == "FRAME_OBSERVATION"):
-            raise FleetContractError("screen observation cannot verify a claim")
         if not refs:
             raise FleetContractError("canonical evidence references are required")
+        if normalized_verdict == "VERIFIED" and normalized_source_kind == "FRAME_OBSERVATION":
+            raise FleetContractError("screen observation cannot verify a claim")
         repository_head = _revision(
             repository_revision or source_revision,
             "repository_revision",

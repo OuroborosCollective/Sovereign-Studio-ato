@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sovereign.llm-tool-boundary-review-ledger.v1",
   "detector": "tools/sovereign-chatgpt-mcp/llm_boundary_contract.py",
-  "sourceRevision": "b8c972e9a20998ab869a4999ea9edb30187e6620",
+  "sourceRevision": "2056d840b0cee2fc429927e6fc81191a4fa7108b",
   "rawCandidateCount": 99,
   "canonicalCandidateCount": 78,
   "entries": [
@@ -148,7 +148,7 @@
       "symbol": "WorkspaceEvidenceAnchorV1._image_digest",
       "line": 668,
       "patternFamily": "javascript_keyword_intent",
-      "fileSha256": "0c4a2acd6c71e3e76f6f3c1a32cbc62c879c984db9c21c66c878384f6fd88f1b",
+      "fileSha256": "4664f2d4a50d7ec9c48db52c8ac866aca0e34f5af65e5c3eed5f0b948ba352af",
       "anchorSha256": "e7e8b303c044889a0a2268314d033057923a86cddcf8271ed24b308739706353",
       "reopenOnChange": true,
       "candidateId": "llm-boundary:17ab29f34803d5c9bccb8b48",
@@ -1062,5 +1062,5 @@
       "rationale": "android_ui_surface_map scans repository, workflow, artifact, commit or diagnostic evidence for review; its text matching does not route user intent or authorize execution."
     }
   ],
-  "ledgerSha256": "c9ed0d3a8ae25ebcf04b25509785372c466f6b043a839f1a8e549b648d6ca0d9"
+  "ledgerSha256": "bc12f33a9deed58e588a66be0efffd9a702018b7d2f501260fa5e41ce93de5e2"
 }
