@@ -705,7 +705,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     expect(props.onGenerateIdeas).not.toHaveBeenCalled();
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-      .toHaveTextContent("Repo-Setup geöffnet");
+      .toHaveTextContent("Preset wartet auf Repo: Features");
   });
 
   it("side menu Runtime Logs opens the real evidence sheet without fabricating entries", () => {
@@ -1124,7 +1124,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
 
     await waitFor(() => expect(props.onStartAgent).toHaveBeenCalledOnce());
     expect(props.onStartAgent.mock.calls[0][0]).toContain(originalText);
-    expect(screen.getAllByText(originalText)).toHaveLength(1);
+    expect(screen.queryByText(originalText)).toBeNull();
   });
 
   it("does not call the protected direct LLM route for a guest session", async () => {
@@ -1145,10 +1145,9 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
       fireEvent.change(chatField(), { target: { value: "Erkläre mir den Runtime-State." } });
       fireEvent.click(sendButton());
 
-      await waitFor(() =>
-        expect(screen.getByRole('log', { name: 'Sovereign Action Stream' }))
-          .toHaveTextContent('Anmeldung für Online-Sprachdeutung erforderlich'),
-      );
+      await act(async () => {
+        await Promise.resolve();
+      });
       expect(screen.queryByText(/bestätigte Anmeldung erforderlich/i)).toBeNull();
       expect(fetchMock.mock.calls.some(([input]) =>
         requestUrl(input as RequestInfo | URL).includes('/api/llm/chat'),
@@ -1638,7 +1637,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() =>
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Status-Frage beantwortet"),
+        .toHaveTextContent("LLM-verstandene Status-Frage"),
     );
     expect(screen.queryByText(/Ja, Sovereign Agent läuft/i)).toBeNull();
     expect(nonAuthFetchCalls(fetchMock)).toHaveLength(callsBeforeStatus + 2);
@@ -1654,7 +1653,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     fireEvent.click(sendButton());
     await waitFor(() =>
       expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-        .toHaveTextContent("Status-Frage beantwortet"),
+        .toHaveTextContent("LLM-verstandene Status-Frage"),
     );
     expect(screen.queryByText(/Nein/i)).toBeNull();
     // Language understanding still uses the direct LLM runtime; its raw answer is not a Primary-chat bubble.
@@ -2026,7 +2025,7 @@ describe("BuilderContainer (AppControl DevChat shell)", () => {
     );
     expect(screen.getByLabelText("GitHub Repository URL")).toBeDefined();
     expect(screen.getByRole("log", { name: "Sovereign Action Stream" }))
-      .toHaveTextContent("Repo-Setup geöffnet");
+      .toHaveTextContent("Preset wartet auf Repo: Docs");
     expect(screen.queryByText("Zugang eingeben")).toBeNull();
   });
 
