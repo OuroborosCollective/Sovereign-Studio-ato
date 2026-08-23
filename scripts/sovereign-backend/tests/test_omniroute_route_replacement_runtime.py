@@ -3,8 +3,19 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 import sys
+import types
 
 import pytest
+
+# The runtime helpers under test only need Flask for route-adapter construction.
+# Keep these deterministic boundary tests runnable in the isolated Python gate,
+# which intentionally does not install the production web stack.
+try:
+    import flask  # noqa: F401
+except ModuleNotFoundError:
+    flask_stub = types.ModuleType("flask")
+    flask_stub.jsonify = lambda *args, **kwargs: (args, kwargs)
+    sys.modules["flask"] = flask_stub
 
 BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
@@ -207,6 +218,57 @@ def test_runtime_failure_disables_only_omniroute_and_never_freellmapi(
         "status": "degraded",
         "routeSource": "omniroute",
         "blocker": "omniroute_models_unavailable",
+        "freeLlmApiChanged": False,
+    }
+    all_material = "\n".join(
+        sql + " " + repr(params) for sql, params in writes
+    )
+    assert "freellmapi:3001" not in all_material
+    assert "freellmpool:8080" not in all_material
+    assert "sovereign-omniroute-auto" in all_material
+
+
+def test_omniroute_401_canary_degrades_only_its_dedicated_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    writes: list[tuple[str, tuple]] = []
+
+    def query(sql: str, params=None, *, one=False, write=False):
+        writes.append((sql, tuple(params or ())))
+        return None
+
+    monkeypatch.setattr(runtime, "_runtime_identity", lambda: {
+        "sourceRevision": "a" * 40,
+        "sourceRevisionVerified": True,
+        "imageDigest": "sha256:" + "b" * 64,
+        "imageDigestVerified": True,
+    })
+    monkeypatch.setattr(runtime, "_models_readback", lambda: {
+        "modelCount": 42,
+        "modelSetSha256": "c" * 64,
+        "rawModelCatalogPersisted": False,
+    })
+    monkeypatch.setattr(
+        runtime,
+        "_completion_canary",
+        lambda _confirmation: (_ for _ in ()).throw(
+            runtime.OmniRouteActivationError("omniroute_canary_http_401")
+        ),
+    )
+
+    service = runtime.OmniRouteExecutionRuntime(
+        query=query,
+        get_connection=lambda: connection,
+        audit=lambda *_args, **_kwargs: None,
+    )
+    result = service.scan_once()
+
+    assert result == {
+        "ok": False,
+        "status": "degraded",
+        "routeSource": "omniroute",
+        "blocker": "omniroute_canary_http_401",
         "freeLlmApiChanged": False,
     }
     all_material = "\n".join(
