@@ -82,6 +82,8 @@ from free_revolver_provider_runtime import register_free_revolver_provider_runti
 from llm_route_scanner import register_llm_route_scanner
 
 from agent_runtime.cognitive_swarm_routes import register_cognitive_swarm_routes
+from agent_runtime.desktop_activation import DesktopActivationIssuerV1
+from agent_runtime.desktop_projection import DesktopFrameProxyV1
 from agent_runtime.live_workspace_context import build_live_workspace_context_resolver
 from agent_runtime.routes import register_sovereign_agent_routes
 from agent_runtime.skills.routes import register_progressive_skill_routes
@@ -1658,6 +1660,10 @@ register_sovereign_agent_routes(
     # Read-only reconnect resolution consumes only persisted stage evidence and an
     # existing exact AttemptWorkspace; generic /tools routes remain unprojected.
     get_live_workspace_context=build_live_workspace_context_resolver(),
+    issue_desktop_activation=lambda context: DesktopActivationIssuerV1.from_env().issue(context=context),
+    get_desktop_frame=lambda context: DesktopFrameProxyV1.from_env().frame(
+        handle=DesktopActivationIssuerV1.from_env().issue(context=context),
+    ),
 )
 register_cognitive_swarm_routes(
     app,
