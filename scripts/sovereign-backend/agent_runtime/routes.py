@@ -8,6 +8,7 @@ thin and keeps the internal Sovereign Agent routes as the only job truth source.
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
@@ -40,7 +41,7 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_event, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
 from .fleet_supervisor import FleetContractError
 from .live_workspace_chat_store import (
     LiveWorkspaceChatStoreError,
@@ -285,6 +286,7 @@ def register_sovereign_agent_routes(
     - POST /api/user/agent/jobs
     - GET  /api/user/agent/jobs/<job_id>
     - GET  /api/user/agent/jobs/<job_id>/live-workspace
+    - GET  /api/user/agent/jobs/<job_id>/evidence-anchors
     - POST /api/user/agent/jobs/<job_id>/live-workspace/desktop/activation
     - GET  /api/user/agent/jobs/<job_id>/live-workspace/desktop/frame
     - POST /api/user/agent/jobs/<job_id>/cancel
@@ -1777,6 +1779,70 @@ def register_sovereign_agent_routes(
         finally:
             _close(conn)
 
+    @app.route("/api/user/agent/jobs/<job_id>/evidence-anchors", methods=["GET"])
+    @require_session
+    def user_get_sovereign_agent_evidence_anchors(job_id: str):
+        """Project current-attempt anchors without attaching historical attempts."""
+
+        from .live_workspace import WorkspaceEvidenceAnchorV1
+
+        user_id = _current_session_user_id()
+        try:
+            limit = int(request.args.get("limit", "100"))
+        except ValueError:
+            return jsonify({"error": "Evidence anchor limit is invalid"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            stored = list_agent_evidence_anchors(conn, user_id=user_id, job_id=job_id, limit=limit)
+            context = _resolve_live_workspace_context(conn, job)
+            current: list[dict[str, Any]] = []
+            historical: list[dict[str, Any]] = []
+            latest_historical_key: tuple[str, str] | None = None
+            if context is None and stored:
+                try:
+                    latest_anchor = WorkspaceEvidenceAnchorV1.from_dict(stored[-1])
+                    latest_historical_key = (latest_anchor.session_binding_hash, latest_anchor.attempt_id)
+                except (FleetContractError, TypeError, ValueError):
+                    latest_historical_key = None
+            for raw in stored:
+                try:
+                    anchor = WorkspaceEvidenceAnchorV1.from_dict(raw)
+                except (FleetContractError, TypeError, ValueError):
+                    continue
+                if context is None:
+                    if (anchor.session_binding_hash, anchor.attempt_id) == latest_historical_key:
+                        current.append(anchor.to_read_model(verdict="STALE", freshness_reasons=("SESSION_NOT_ACTIVE",)))
+                    else:
+                        historical.append(anchor.to_read_model(verdict="STALE", freshness_reasons=("ATTEMPT_NOT_CURRENT",)))
+                    continue
+                if (
+                    anchor.session_binding_hash != context.session.session_binding_hash
+                    or anchor.attempt_id != context.session.attempt_id
+                ):
+                    historical.append(anchor.to_read_model(verdict="STALE", freshness_reasons=("ATTEMPT_NOT_CURRENT",)))
+                    continue
+                verdict, reasons = anchor.current_verdict(
+                    session=context.session,
+                    repository_revision=context.attempt_workspace.head_revision,
+                    runtime_identity_hash=context.session.desktop_runtime_identity_hash,
+                )
+                current.append(anchor.to_read_model(verdict=verdict, freshness_reasons=reasons))
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "sessionBindingHash": context.session.session_binding_hash if context is not None else None,
+                "attemptId": context.session.attempt_id if context is not None else None,
+                "evidenceAnchors": current,
+                "historicalEvidenceAnchors": historical,
+                "authoritative": False,
+            })
+        finally:
+            _close(conn)
+
     @app.route("/api/user/agent/jobs/<job_id>/editor/open", methods=["POST"])
     @require_session
     def user_open_sovereign_agent_workspace_editor(job_id: str):
@@ -2221,6 +2287,44 @@ def register_sovereign_agent_routes(
                 charged_credits = credit_cost
             elif not is_admin:
                 remaining_credits = available_credits
+
+            # The GitHub gate remains the canonical source. Persist a bounded
+            # source readback plus one projection anchor in the existing event
+            # store when an exact Fleet Attempt binding already exists.
+            try:
+                stored_anchors = list_agent_evidence_anchors(
+                    conn,
+                    user_id=user_id,
+                    job_id=job_id,
+                    limit=200,
+                )
+                if stored_anchors:
+                    from .live_workspace import WorkspaceEvidenceAnchorV1
+
+                    binding_anchor = WorkspaceEvidenceAnchorV1.from_dict(stored_anchors[-1])
+                    github_readback = draft_pr_create_signal(result)
+                    source_ref = append_agent_github_draft_pr_readback(
+                        conn,
+                        job_id=job_id,
+                        readback=github_readback,
+                        commit=False,
+                    )
+                    github_anchor = WorkspaceEvidenceAnchorV1.from_github_draft_pr_readback(
+                        binding_anchor=binding_anchor,
+                        readback=github_readback,
+                        source_ref=source_ref,
+                        observed_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    )
+                    append_agent_evidence_anchor(
+                        conn,
+                        job_id=job_id,
+                        anchor=github_anchor.to_dict(),
+                        commit=False,
+                    )
+            except Exception:
+                # Projection failure cannot change the already-created PR or its
+                # exact GitHub readback result.
+                pass
 
             mark_draft_pr_created(
                 conn,

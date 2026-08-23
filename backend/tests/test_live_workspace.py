@@ -9,6 +9,7 @@ if str(RUNTIME_ROOT) not in sys.path:
 
 from agent_runtime.fleet_attempts import create_worker_attempt
 from agent_runtime.fleet_supervisor import FleetContractError, FleetTask, build_fleet_plan, create_worker_assignment
+from agent_runtime.agent_run_receipts import build_agent_run_receipt
 from agent_runtime.live_workspace import (
     ChatBubbleV1,
     DesktopRuntimeContractV1,
@@ -186,22 +187,184 @@ def test_evidence_anchor_requires_canonical_receipts_and_attempt_binding() -> No
     observed = VisualProjectionEventV1.create(session=session, event_type="TERMINAL_VIEW_PROJECTED", action_id="tool-call-1", observation_hash=HASH_A)
     anchor = WorkspaceEvidenceAnchorV1.create(
         session=session,
-        claim_type="TEST_PROCESS_EXIT_0",
+        claim_kind="TEST_PROCESS_EXIT_0",
         verdict="VERIFIED",
-        source_receipt_hashes=[HASH_B],
-        source_revision=HEAD,
+        scope="command=python -m pytest backend/tests/test_live_workspace.py",
+        source_kind="AGENT_RUN_RECEIPT",
+        source_refs=[HASH_B],
+        repository_revision=HEAD,
+        observed_at="2026-08-23T03:30:00Z",
         observation_event=observed,
     )
-    assert anchor.to_dict()["sourceReceiptHashes"] == [HASH_B]
+    assert anchor.to_dict()["sourceRefs"] == [HASH_B]
     assert anchor.to_dict()["authoritative"] is False
-    with pytest.raises(FleetContractError, match="canonical evidence receipts"):
+    assert WorkspaceEvidenceAnchorV1.from_dict(anchor.to_dict()) == anchor
+    with pytest.raises(FleetContractError, match="canonical evidence references"):
         WorkspaceEvidenceAnchorV1.create(
             session=session,
-            claim_type="TEST_PROCESS_EXIT_0",
+            claim_kind="TEST_PROCESS_EXIT_0",
             verdict="VERIFIED",
-            source_receipt_hashes=[],
-            source_revision=HEAD,
+            scope="command=pytest",
+            source_kind="AGENT_RUN_RECEIPT",
+            source_refs=[],
+            repository_revision=HEAD,
+            action_id="tool-call-1",
+            observed_at="2026-08-23T03:30:00Z",
         )
+
+
+def test_frame_bytes_never_upgrade_to_verified_and_generic_claims_are_rejected() -> None:
+    session, _, _ = bind_session()
+    frame = VisualProjectionEventV1.create(
+        session=session,
+        event_type="FRAME_OBSERVED",
+        action_id="frame-1",
+        observation_hash=HASH_A,
+    )
+    observed = WorkspaceEvidenceAnchorV1.create(
+        session=session,
+        claim_kind="FRAME_BYTES_OBSERVED",
+        verdict="OBSERVED",
+        scope="frame=desktop-worker",
+        source_kind="FRAME_OBSERVATION",
+        source_refs=[HASH_A],
+        repository_revision=HEAD,
+        observed_at="2026-08-23T03:30:00Z",
+        observation_event=frame,
+    )
+    assert observed.verdict == "OBSERVED"
+    with pytest.raises(FleetContractError, match="screen observation"):
+        WorkspaceEvidenceAnchorV1.create(
+            session=session,
+            claim_kind="TEST_PROCESS_EXIT_0",
+            verdict="VERIFIED",
+            scope="visible text=39 passed",
+            source_kind="FRAME_OBSERVATION",
+            source_refs=[HASH_A],
+            repository_revision=HEAD,
+            observed_at="2026-08-23T03:30:00Z",
+            observation_event=frame,
+        )
+    with pytest.raises(FleetContractError, match="granular"):
+        WorkspaceEvidenceAnchorV1.create(
+            session=session,
+            claim_kind="EVERYTHING_WORKS",
+            verdict="VERIFIED",
+            scope="all",
+            source_kind="AGENT_RUN_RECEIPT",
+            source_refs=[HASH_A],
+            repository_revision=HEAD,
+            action_id="tool-call-1",
+            observed_at="2026-08-23T03:30:00Z",
+        )
+
+
+def test_anchor_freshness_is_attempt_revision_and_contradiction_first() -> None:
+    session, assignment, _ = bind_session()
+    anchor = WorkspaceEvidenceAnchorV1.create(
+        session=session,
+        claim_kind="PATCHMON_RUNTIME_REVISION_MATCH",
+        verdict="VERIFIED",
+        scope="service=desktop-worker",
+        source_kind="PATCHMON_READBACK",
+        source_refs=[HASH_A],
+        repository_revision=HEAD,
+        target_revision=HEAD,
+        image_digest="sha256:" + HASH_B,
+        runtime_identity_hash=HASH_C,
+        requires_patchmon=True,
+        action_id="patchmon-readback-1",
+        observed_at="2026-08-23T03:30:00Z",
+    )
+    assert anchor.current_verdict(
+        session=session,
+        repository_revision=HEAD,
+        target_revision=HEAD,
+        image_digest="sha256:" + HASH_B,
+        runtime_identity_hash=HASH_C,
+    ) == ("VERIFIED", ())
+    verdict, reasons = anchor.current_verdict(
+        session=session,
+        repository_revision=BASE,
+        target_revision=BASE,
+        image_digest="sha256:" + HASH_A,
+        runtime_identity_hash=HASH_A,
+    )
+    assert verdict == "CONTRADICTED"
+    assert "REPOSITORY_REVISION_CHANGED" in reasons
+    assert "IMAGE_DIGEST_CONTRADICTED" in reasons
+    newer_attempt = create_worker_attempt(assignment, attempt_sequence=2)
+    stale_session = LiveWorkspaceSessionV1.bind(
+        assignment=assignment,
+        attempt=newer_attempt,
+        active_attempt=newer_attempt,
+        workspace_readback=readback(assignment=assignment),
+        projection_source_hashes=[HASH_A],
+    )
+    with pytest.raises(FleetContractError, match="another attempt"):
+        anchor.current_verdict(session=stale_session, repository_revision=HEAD)
+
+
+def test_agent_run_receipt_creates_claim_granular_anchor_without_llm_authority() -> None:
+    session, _, _ = bind_session()
+    observed = VisualProjectionEventV1.create(
+        session=session,
+        event_type="TERMINAL_VIEW_PROJECTED",
+        action_id="tool-call-1",
+        observation_hash=HASH_A,
+    )
+    receipt = build_agent_run_receipt(
+        sequence=0,
+        repository=session.repository,
+        base_commit_sha=HEAD,
+        mcp_revision=BASE,
+        mcp_image_digest="sha256:" + HASH_A,
+        mcp_revision_verified=True,
+        agent_run_id=session.run_id,
+        tool_name="test",
+        call_id="tool-call-1",
+        operation_identity=f"agent-repository-tool:predictive_qa:test:fleet:{session.fleet_plan_hash}:assignment:{session.assignment_hash}:attempt:{session.attempt_id}:worktree:{HASH_A}",
+        input_sha256=HASH_A,
+        output_sha256=HASH_B,
+        diff_sha256=HASH_C,
+        test_evidence_sha256=HASH_B,
+        evidence_gate_result="PASS",
+        mutation_performed=False,
+        observed_effect="read",
+        authoritative_readback_sha256=HASH_C,
+        previous_receipt_sha256="0" * 64,
+        test_execution_kind="qualifying-test",
+    )
+    anchor = WorkspaceEvidenceAnchorV1.from_agent_run_receipt(
+        session=session,
+        receipt=receipt,
+        observation_event=observed,
+        observed_at="2026-08-23T03:30:00Z",
+    )
+    assert anchor.claim_kind == "TEST_EXECUTION_RECEIPT_MATCH"
+    assert anchor.verdict == "VERIFIED"
+    assert anchor.source_kind == "AGENT_RUN_RECEIPT"
+    assert receipt["header"]["hash"] in anchor.source_refs
+
+    github = WorkspaceEvidenceAnchorV1.from_github_draft_pr_readback(
+        binding_anchor=anchor,
+        readback={
+            "prUrl": "https://github.com/OuroborosCollective/Sovereign-Studio-ato/pull/1658",
+            "prNumber": 1658,
+            "headSha": BASE,
+            "publishedHeadSha": BASE,
+            "readbackHeadSha": BASE,
+            "draftVerified": True,
+            "prStateVerified": "open",
+            "readbackVerified": True,
+            "checksReadbackVerified": True,
+        },
+        source_ref=HASH_A,
+        observed_at="2026-08-23T03:31:00Z",
+    )
+    assert github.claim_kind == "DRAFT_PR_EXISTS_AT_EXACT_HEAD"
+    assert github.repository_revision == BASE
+    assert github.source_kind == "GITHUB_READBACK"
 
 
 def test_takeover_and_give_back_require_fresh_readback_and_fail_closed_on_drift() -> None:
