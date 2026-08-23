@@ -1373,11 +1373,28 @@ def admin_update_llm_route(rid):
 @require_admin
 def admin_reset_llm_revolver_route(rid):
     route = query(
-        "SELECT id::text, config FROM llm_routes WHERE id::text=%s LIMIT 1",
+        """SELECT id::text, provider, runtime_kind, config
+           FROM llm_routes WHERE id::text=%s LIMIT 1""",
         (rid,), one=True,
     )
     if not route:
         return jsonify({"error": "Route nicht gefunden"}), 404
+    transport = str(
+        route.get("runtime_kind") or route.get("provider") or ""
+    ).strip().lower()
+    config = dict(route.get("config") or {})
+    routing_owner = str(config.get("routingOwner") or "")
+    managed_endpoint = {
+        "free-revolver-v3": "/api/admin/llm/revolver-v3/providers",
+        "openrouter-free-revolver": "/api/admin/llm/openrouter/free/status",
+    }.get(routing_owner)
+    if transport == "freellm" or managed_endpoint:
+        return jsonify({
+            "error": "Diese Free-Revolver-Route wird ausschließlich über ihren getrennten Providervertrag verwaltet.",
+            "blocker": "free_revolver_managed_route",
+            "requiredEndpoint": managed_endpoint
+            or "/api/admin/llm/revolver-v3/providers",
+        }), 409
     try:
         quota_scope = route_quota_scope(dict(route))
     except ValueError as exc:

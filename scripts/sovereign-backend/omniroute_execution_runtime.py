@@ -18,6 +18,7 @@ from typing import Any, Callable
 import requests
 from flask import jsonify
 
+from llm_revolver import verify_free_route_reason
 from llm_transport import OMNIROUTE_BASE_URL
 
 _SOURCE_ID = "0609e75c-8c48-59db-80a4-3155b823205b"
@@ -66,6 +67,20 @@ def _runtime_identity() -> dict[str, Any]:
         "imageDigest": digest,
         "imageDigestVerified": _IMAGE_DIGEST_RE.fullmatch(digest) is not None,
     }
+
+
+def _is_zero_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value == 0
+
+
+def _safe_nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed >= 0 else 0
 
 
 def _read_response(response: requests.Response) -> dict[str, Any]:
@@ -242,8 +257,108 @@ class OmniRouteExecutionRuntime:
             86_400,
         )
 
-    def _mark_failed(self, family: str) -> None:
-        self._query(
+    @staticmethod
+    def _is_canonical_route(route: Any) -> bool:
+        if not isinstance(route, dict):
+            return False
+        config = route.get("config") if isinstance(route.get("config"), dict) else {}
+        quota_evidence = (
+            config.get("quotaEvidence")
+            if isinstance(config.get("quotaEvidence"), dict)
+            else {}
+        )
+        return (
+            str(route.get("id") or "") == _ROUTE_ID
+            and str(route.get("model_id") or "") == _MODEL_ALIAS
+            and str(route.get("provider") or "") == "freellm"
+            and str(route.get("runtime_kind") or "") == "freellm"
+            and str(route.get("base_url") or "") == OMNIROUTE_BASE_URL
+            and config.get("routeSource") == "omniroute"
+            and config.get("sourceType") == "omniroute"
+            and config.get("transport") == "freellm"
+            and config.get("providerModel") == "auto"
+            and config.get("executionProfile") == "free_single_agent"
+            and config.get("billingCategory") == "free"
+            and config.get("billingClass") == "free"
+            and config.get("fundingMode") == "provider_free_quota"
+            and config.get("pricingVerified") is False
+            and _is_zero_int(config.get("markupMultiplier"))
+            and _is_zero_int(config.get("minimumMultiplier"))
+            and _is_zero_int(config.get("userChargeCredits"))
+            and config.get("quotaScope") == "freellm:omniroute:auto"
+            and quota_evidence.get("scope") == "freellm:omniroute:auto"
+            and quota_evidence.get("stateOwner") == "postgresql-revolver-state"
+            and config.get("routingOwner") == "free-revolver-v3"
+            and config.get("resolverMode") == "revolver"
+            and config.get("direct") is True
+        )
+
+    def _canonical_route(self) -> dict[str, Any] | None:
+        route = self._query(
+            """SELECT id::text, model_id, provider, runtime_kind, base_url, disabled, config, updated_at,
+                      EXISTS(
+                          SELECT 1 FROM llm_revolver_provider_sources
+                          WHERE id=%s::uuid AND api_base=%s AND auth_mode='none'
+                      ) AS source_present,
+                      EXISTS(
+                          SELECT 1 FROM llm_revolver_provider_models
+                          WHERE source_id=%s::uuid
+                            AND upstream_model_id='auto'
+                            AND litellm_alias=%s
+                      ) AS model_present
+               FROM llm_routes WHERE id=%s LIMIT 1""",
+            (_SOURCE_ID, OMNIROUTE_BASE_URL, _SOURCE_ID, _MODEL_ALIAS, _ROUTE_ID),
+            one=True,
+        )
+        return route if self._is_canonical_route(route) else None
+
+    @staticmethod
+    def _has_canonical_supporting_state(route: dict[str, Any]) -> bool:
+        return (
+            route.get("source_present") is True
+            and route.get("model_present") is True
+        )
+
+    def _locked_canonical_state(self, cursor: Any) -> dict[str, Any] | None:
+        cursor.execute(
+            """SELECT id::text, model_id, provider, runtime_kind, base_url, disabled, config, updated_at
+               FROM llm_routes WHERE id=%s FOR UPDATE""",
+            (_ROUTE_ID,),
+        )
+        route = cursor.fetchone()
+        if not self._is_canonical_route(route):
+            return None
+        cursor.execute(
+            """SELECT id::text
+               FROM llm_revolver_provider_sources
+               WHERE id=%s::uuid AND api_base=%s AND auth_mode='none'
+               FOR UPDATE""",
+            (_SOURCE_ID, OMNIROUTE_BASE_URL),
+        )
+        if not isinstance(cursor.fetchone(), dict):
+            return None
+        cursor.execute(
+            """SELECT id::text
+               FROM llm_revolver_provider_models
+               WHERE source_id=%s::uuid
+                 AND upstream_model_id='auto'
+                 AND litellm_alias=%s
+               FOR UPDATE""",
+            (_SOURCE_ID, _MODEL_ALIAS),
+        )
+        if not isinstance(cursor.fetchone(), dict):
+            return None
+        return route
+
+    @staticmethod
+    def _write_exact(cursor: Any, sql: str, params: tuple[Any, ...]) -> None:
+        cursor.execute(sql, params)
+        if getattr(cursor, "rowcount", -1) != 1:
+            raise OmniRouteActivationError("omniroute_canonical_state_rows_missing")
+
+    def _mark_failed(self, cursor: Any, family: str) -> None:
+        self._write_exact(
+            cursor,
             """UPDATE llm_routes
                SET disabled=true,
                    config=COALESCE(config,'{}'::jsonb) || jsonb_build_object(
@@ -256,32 +371,60 @@ class OmniRouteExecutionRuntime:
                        'activationBlocker', %s
                    ),
                    updated_at=NOW()
-               WHERE id=%s""",
-            (family, _ROUTE_ID),
-            write=True,
+               WHERE id=%s
+                 AND model_id=%s
+                 AND provider='freellm'
+                 AND runtime_kind='freellm'
+                 AND COALESCE(base_url,'')=%s
+                 AND COALESCE(config->>'routeSource','')='omniroute'
+                 AND COALESCE(config->>'sourceType','')='omniroute'
+                 AND COALESCE(config->>'transport','')='freellm'
+                 AND COALESCE(config->>'routingOwner','')='free-revolver-v3'
+                 AND COALESCE(config->>'resolverMode','')='revolver'
+                 AND COALESCE(config->>'direct','')='true'""",
+            (family, _ROUTE_ID, _MODEL_ALIAS, OMNIROUTE_BASE_URL),
         )
-        self._query(
+        self._write_exact(
+            cursor,
             """UPDATE llm_revolver_provider_models
                SET status='discovered', enabled=false, free_verified=false,
                    free_eligible=false, last_error_code=%s, updated_at=NOW()
-               WHERE source_id=%s::uuid AND upstream_model_id='auto'""",
-            (family, _SOURCE_ID),
-            write=True,
+               WHERE source_id=%s::uuid
+                 AND upstream_model_id='auto'
+                 AND litellm_alias=%s""",
+            (family, _SOURCE_ID, _MODEL_ALIAS),
         )
-        self._query(
+        self._write_exact(
+            cursor,
             """UPDATE llm_revolver_provider_sources
                SET status='degraded', last_error_code=%s,
                    last_checked_at=NOW(), updated_at=NOW()
-               WHERE id=%s::uuid""",
-            (family, _SOURCE_ID),
-            write=True,
+               WHERE id=%s::uuid AND api_base=%s AND auth_mode='none'""",
+            (family, _SOURCE_ID, OMNIROUTE_BASE_URL),
         )
+
+    def _project_failure(self, connection: Any, family: str) -> bool:
+        try:
+            with connection.cursor() as cursor:
+                if self._locked_canonical_state(cursor) is None:
+                    connection.rollback()
+                    return False
+                self._mark_failed(cursor, family)
+            connection.commit()
+            return True
+        except Exception:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            return False
 
     def scan_once(self) -> dict[str, Any]:
         if not self._local_lock.acquire(blocking=False):
             return {"ok": False, "status": "busy", "routeSource": "omniroute"}
-        lock_connection = self._get_connection()
+        lock_connection: Any | None = None
         try:
+            lock_connection = self._get_connection()
             with lock_connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT pg_try_advisory_xact_lock(%s,%s) AS acquired",
@@ -291,6 +434,16 @@ class OmniRouteExecutionRuntime:
                 if not bool(row.get("acquired")):
                     lock_connection.rollback()
                     return {"ok": False, "status": "busy", "routeSource": "omniroute"}
+
+                if self._locked_canonical_state(cursor) is None:
+                    lock_connection.rollback()
+                    return {
+                        "ok": False,
+                        "status": "blocked",
+                        "routeSource": "omniroute",
+                        "blocker": "omniroute_route_identity_invalid",
+                        "freeLlmApiChanged": False,
+                    }
 
                 identity = _runtime_identity()
                 if not (
@@ -312,16 +465,17 @@ class OmniRouteExecutionRuntime:
                 costs = [item.get("providerCostUsd") for item in confirmations]
                 cost_state = "zero" if all(value == 0.0 for value in costs) else "unreported"
 
-                self._query(
+                self._write_exact(
+                    cursor,
                     """UPDATE llm_revolver_provider_sources
                        SET status='healthy', last_http_status=200,
                            last_error_code=NULL, last_discovered_at=NOW(),
                            last_checked_at=NOW(), enabled=true, updated_at=NOW()
-                       WHERE id=%s::uuid""",
-                    (_SOURCE_ID,),
-                    write=True,
+                       WHERE id=%s::uuid AND api_base=%s AND auth_mode='none'""",
+                    (_SOURCE_ID, OMNIROUTE_BASE_URL),
                 )
-                self._query(
+                self._write_exact(
+                    cursor,
                     """UPDATE llm_revolver_provider_models
                        SET status='ready', enabled=true, free_verified=true,
                            free_eligible=true,
@@ -331,14 +485,16 @@ class OmniRouteExecutionRuntime:
                            canary_cost_state=%s,
                            last_provider_cost_usd_micros=%s,
                            last_error_code=NULL, updated_at=NOW()
-                       WHERE source_id=%s::uuid AND upstream_model_id='auto'""",
+                       WHERE source_id=%s::uuid
+                         AND upstream_model_id='auto'
+                         AND litellm_alias=%s""",
                     (
                         last_request_id or None,
                         cost_state,
                         0 if cost_state == "zero" else None,
                         _SOURCE_ID,
+                        _MODEL_ALIAS,
                     ),
-                    write=True,
                 )
                 runtime_config = {
                     "freeEligible": True,
@@ -358,16 +514,32 @@ class OmniRouteExecutionRuntime:
                     "sourceType": "omniroute",
                     "rawProviderResponsePersisted": False,
                 }
-                self._query(
+                self._write_exact(
+                    cursor,
                     """UPDATE llm_routes
                        SET disabled=false,
                            config=COALESCE(config,'{}'::jsonb) || %s::jsonb,
                            updated_at=NOW()
-                       WHERE id=%s""",
-                    (json.dumps(runtime_config, separators=(",", ":")), _ROUTE_ID),
-                    write=True,
+                       WHERE id=%s
+                         AND model_id=%s
+                         AND provider='freellm'
+                         AND runtime_kind='freellm'
+                         AND COALESCE(base_url,'')=%s
+                         AND COALESCE(config->>'routeSource','')='omniroute'
+                         AND COALESCE(config->>'sourceType','')='omniroute'
+                         AND COALESCE(config->>'transport','')='freellm'
+                         AND COALESCE(config->>'routingOwner','')='free-revolver-v3'
+                         AND COALESCE(config->>'resolverMode','')='revolver'
+                         AND COALESCE(config->>'direct','')='true'""",
+                    (
+                        json.dumps(runtime_config, separators=(",", ":")),
+                        _ROUTE_ID,
+                        _MODEL_ALIAS,
+                        OMNIROUTE_BASE_URL,
+                    ),
                 )
-                self._query(
+                self._write_exact(
+                    cursor,
                     """INSERT INTO llm_revolver_provider_checks
                            (source_id, check_kind, models_url, http_status,
                             outcome, model_count, free_model_count, evidence)
@@ -387,18 +559,20 @@ class OmniRouteExecutionRuntime:
                             "rawProviderResponsesPersisted": False,
                         }, separators=(",", ":")),
                     ),
-                    write=True,
                 )
-                self._audit("omniroute_runtime_double_canary_verified", _ROUTE_ID, {
-                    "routeSource": "omniroute",
-                    "confirmationCount": 2,
-                    "catalogSha256": catalog["modelSetSha256"],
-                    "receiptSha256": receipt["receiptSha256"],
-                    "sourceRevision": identity["sourceRevision"],
-                    "imageDigest": identity["imageDigest"],
-                    "rawProviderResponsesPersisted": False,
-                })
                 lock_connection.commit()
+                try:
+                    self._audit("omniroute_runtime_double_canary_verified", _ROUTE_ID, {
+                        "routeSource": "omniroute",
+                        "confirmationCount": 2,
+                        "catalogSha256": catalog["modelSetSha256"],
+                        "receiptSha256": receipt["receiptSha256"],
+                        "sourceRevision": identity["sourceRevision"],
+                        "imageDigest": identity["imageDigest"],
+                        "rawProviderResponsesPersisted": False,
+                    })
+                except Exception:
+                    pass
                 return {
                     "ok": True,
                     "status": "ready",
@@ -413,8 +587,13 @@ class OmniRouteExecutionRuntime:
                     "freeLlmApiChanged": False,
                 }
         except OmniRouteActivationError as exc:
-            lock_connection.rollback()
-            self._mark_failed(exc.family)
+            if lock_connection is not None:
+                try:
+                    lock_connection.rollback()
+                except Exception:
+                    pass
+            if lock_connection is not None:
+                self._project_failure(lock_connection, exc.family)
             return {
                 "ok": False,
                 "status": "degraded",
@@ -423,8 +602,16 @@ class OmniRouteExecutionRuntime:
                 "freeLlmApiChanged": False,
             }
         except Exception:
-            lock_connection.rollback()
-            self._mark_failed("omniroute_activation_internal_failure")
+            if lock_connection is not None:
+                try:
+                    lock_connection.rollback()
+                except Exception:
+                    pass
+            if lock_connection is not None:
+                self._project_failure(
+                    lock_connection,
+                    "omniroute_activation_internal_failure",
+                )
             return {
                 "ok": False,
                 "status": "degraded",
@@ -433,35 +620,92 @@ class OmniRouteExecutionRuntime:
                 "freeLlmApiChanged": False,
             }
         finally:
-            lock_connection.close()
+            if lock_connection is not None:
+                try:
+                    lock_connection.close()
+                except Exception:
+                    pass
             self._local_lock.release()
 
-    def status(self) -> dict[str, Any]:
-        route = self._query(
-            """SELECT id::text, model_id, base_url, disabled, config, updated_at
-               FROM llm_routes WHERE id=%s LIMIT 1""",
-            (_ROUTE_ID,),
-            one=True,
-        ) or {}
-        config = route.get("config") if isinstance(route.get("config"), dict) else {}
+    def _blocked_status(
+        self,
+        blocker: str,
+        route: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        current = route or {}
+        config = current.get("config") if isinstance(current.get("config"), dict) else {}
         receipt = config.get("canaryReceipt") if isinstance(config.get("canaryReceipt"), dict) else {}
         identity = config.get("runtimeIdentity") if isinstance(config.get("runtimeIdentity"), dict) else {}
         return {
-            "ok": bool(
-                route
-                and not route.get("disabled")
-                and config.get("selectable") is True
-                and config.get("canaryVerified") is True
-                and int(config.get("canaryConfirmationCount") or 0) >= 2
+            "ok": False,
+            "routeSource": "omniroute",
+            "routeId": str(current.get("id") or _ROUTE_ID),
+            "modelId": str(current.get("model_id") or _MODEL_ALIAS),
+            "apiBase": str(current.get("base_url") or OMNIROUTE_BASE_URL),
+            "disabled": True,
+            "activationState": "blocked",
+            "blocker": blocker,
+            "confirmationCount": _safe_nonnegative_int(
+                config.get("canaryConfirmationCount")
             ),
+            "receiptSha256": receipt.get("receiptSha256"),
+            "sourceRevision": identity.get("sourceRevision"),
+            "imageDigest": identity.get("imageDigest"),
+            "freeLlmApiChanged": False,
+            "rawProviderResponsesReturned": False,
+        }
+
+    def status(self) -> dict[str, Any]:
+        route = self._canonical_route()
+        if route is None:
+            return self._blocked_status("omniroute_route_identity_invalid")
+        if not self._has_canonical_supporting_state(route):
+            return self._blocked_status(
+                "omniroute_canonical_state_rows_missing",
+                route,
+            )
+        config = route.get("config") if isinstance(route.get("config"), dict) else {}
+        receipt = config.get("canaryReceipt") if isinstance(config.get("canaryReceipt"), dict) else {}
+        identity = config.get("runtimeIdentity") if isinstance(config.get("runtimeIdentity"), dict) else {}
+        try:
+            verification = verify_free_route_reason(route)
+        except Exception:
+            verification = {
+                "ok": False,
+                "failureFamilies": ["omniroute_execution_verification_failed"],
+            }
+        verification_failures = verification.get("failureFamilies")
+        failure_families = (
+            [str(item) for item in verification_failures if str(item)]
+            if isinstance(verification_failures, list)
+            else []
+        )
+        execution_eligible = (
+            verification.get("ok") is True
+            and not bool(route.get("disabled"))
+        )
+        configured_blocker = config.get("activationBlocker")
+        if execution_eligible:
+            blocker = None
+        elif isinstance(configured_blocker, str) and configured_blocker:
+            blocker = configured_blocker
+        elif failure_families:
+            blocker = failure_families[0]
+        else:
+            blocker = "omniroute_route_disabled"
+        confirmation_count = _safe_nonnegative_int(
+            config.get("canaryConfirmationCount")
+        )
+        return {
+            "ok": execution_eligible,
             "routeSource": "omniroute",
             "routeId": str(route.get("id") or _ROUTE_ID),
             "modelId": str(route.get("model_id") or _MODEL_ALIAS),
             "apiBase": str(route.get("base_url") or OMNIROUTE_BASE_URL),
-            "disabled": bool(route.get("disabled", True)),
-            "activationState": str(config.get("activationState") or "unknown"),
-            "blocker": config.get("activationBlocker"),
-            "confirmationCount": int(config.get("canaryConfirmationCount") or 0),
+            "disabled": not execution_eligible,
+            "activationState": "ready" if execution_eligible else "blocked",
+            "blocker": blocker,
+            "confirmationCount": confirmation_count,
             "receiptSha256": receipt.get("receiptSha256"),
             "sourceRevision": identity.get("sourceRevision"),
             "imageDigest": identity.get("imageDigest"),
@@ -519,7 +763,10 @@ def register_omniroute_execution_runtime(
     @require_admin
     def admin_omniroute_refresh():
         result = service.scan_once()
-        return jsonify(result), 200 if result.get("ok") else 503
+        # Mutating execution evidence is never itself the UI state contract.
+        # Return the canonical status projection after the scan so success,
+        # degraded and busy outcomes all have one typed readback shape.
+        return jsonify(service.status()), 200 if result.get("ok") else 503
 
     service.start()
     return service

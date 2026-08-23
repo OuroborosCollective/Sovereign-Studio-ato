@@ -276,10 +276,12 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
     <div className="llm-control-center">
       <nav className="llm-runtime-tabs" aria-label="LLM-Laufzeitbereiche">
         <button type="button" className={surface === 'paid' ? 'llm-runtime-tab llm-runtime-tab--active' : 'llm-runtime-tab'}
+          data-testid="provider-surface-tab-paid"
           aria-pressed={surface === 'paid'} onClick={() => setSurface('paid')}>
           <BadgeDollarSign size={18} /> OpenRouter Paid
         </button>
         <button type="button" className={surface === 'free' ? 'llm-runtime-tab llm-runtime-tab--active' : 'llm-runtime-tab'}
+          data-testid="provider-surface-tab-free"
           aria-pressed={surface === 'free'} onClick={() => setSurface('free')}>
           <RotateCcw size={18} /> Free Revolver
         </button>
@@ -334,6 +336,23 @@ export function LlmRouteEditor({ api }: { api: UseAdminLlmRoutesResult }) {
               </button>
             </div>
           </div>
+
+          {freeApi.openRouterPaid && (
+            <section className="llm-catalog" data-testid="provider-surface-openrouter-paid">
+              <div className="llm-section-title">
+                <div><BadgeDollarSign size={21} /><div>
+                  <h2>OpenRouter Paid Runtime</h2>
+                  <p>Dedizierter Paid-Transport; seine Ausführung bleibt vom Free-Revolver getrennt.</p>
+                </div></div>
+              </div>
+              <div className="free-revolver-provider__facts">
+                <div><span>Deployment</span><strong>{freeApi.openRouterPaid.deploymentStatus}</strong></div>
+                <div><span>Wählbare Modelle</span><strong>{freeApi.openRouterPaid.selectableModels}</strong></div>
+                <div><span>Key</span><strong>{freeApi.openRouterPaid.keyStored ? freeApi.openRouterPaid.keyHint ?? 'vorhanden' : 'nicht vorhanden'}</strong></div>
+                <div><span>Blocker</span><strong>{freeApi.openRouterPaid.lastErrorCode ?? '—'}</strong></div>
+              </div>
+            </section>
+          )}
 
           <div className="llm-stat-grid">
             <div><Activity /><span>Aktive Paid-Routen</span><strong>{activePaidRoutes}</strong></div>
