@@ -7,6 +7,8 @@ a mode-0600, non-symlink activation document in the host-only activation root.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -460,30 +462,93 @@ class DesktopWorkerRuntime:
             payload["windowId"] = window_id
         return payload
 
+    @contextmanager
+    def _control_lock(self, activation: DesktopActivation):
+        """Use the same per-activation lock as the backend handoff gateway."""
+        lock_path = self.activation_root / f"{activation.activation_id}.control.lock"
+        try:
+            descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        except OSError as exc:
+            raise DesktopWorkerError("desktop control lock is unavailable") from exc
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+                raise DesktopWorkerError("desktop control lock is unsafe")
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+    def _assert_agent_input_control(self, activation: DesktopActivation) -> None:
+        """Allow controller GUI input only when no human lease or a rebound exists."""
+        path = self.activation_root / f"{activation.activation_id}.control.json"
+        if not path.exists():
+            return
+        raw = self._load_json_file(self._under(path, self.activation_root, "desktop control record"))
+        if raw.get("schemaVersion") != "sovereign.desktop-control.v1":
+            raise DesktopWorkerError("desktop control record is invalid")
+        payload = {
+            "schemaVersion": raw.get("schemaVersion"),
+            "leaseId": raw.get("leaseId"),
+            "sessionBindingHash": raw.get("sessionBindingHash"),
+            "ownerSubjectHash": raw.get("ownerSubjectHash"),
+            "runId": raw.get("runId"),
+            "attemptId": raw.get("attemptId"),
+            "workspaceId": raw.get("workspaceId"),
+            "worktreeIdentityHash": raw.get("worktreeIdentityHash"),
+            "inputScopeHash": raw.get("inputScopeHash"),
+            "state": raw.get("state"),
+            "issuedReadbackHash": raw.get("issuedReadbackHash"),
+            "reconciledReadbackHash": raw.get("reconciledReadbackHash"),
+            "issuedAt": raw.get("issuedAt"),
+            "expiresAt": raw.get("expiresAt"),
+        }
+        expected_hash = hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if (
+            not isinstance(raw.get("recordHash"), str)
+            or raw["recordHash"] != expected_hash
+            or raw.get("sessionBindingHash") != activation.session_binding_hash
+            or raw.get("attemptId") != activation.attempt_id
+            or raw.get("workspaceId") != activation.workspace_id
+            or raw.get("worktreeIdentityHash") != activation.worktree_identity_hash
+            or raw.get("state") != "AGENT_CONTROLLED_REBOUND"
+        ):
+            raise DesktopWorkerError("desktop input lease is unavailable")
+
     def controller_input(self, *, activation_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
         activation = self._load_activation(activation_id)
-        readback = self.readback(activation_id=activation_id)
-        if not readback.get("ok"):
-            return {"ok": False, "status": "BLOCKED", "failure_family": "DESKTOP_INPUT_PRECONDITION_FAILED", **self._public_plan(activation)}
         try:
-            payload = self._controller_input_payload(arguments)
+            with self._control_lock(activation):
+                self._assert_agent_input_control(activation)
+                readback = self.readback(activation_id=activation_id)
+                if not readback.get("ok"):
+                    return {"ok": False, "status": "BLOCKED", "failure_family": "DESKTOP_INPUT_PRECONDITION_FAILED", **self._public_plan(activation)}
+                try:
+                    payload = self._controller_input_payload(arguments)
+                except DesktopWorkerError:
+                    return {"ok": False, "status": "BLOCKED", "failure_family": "DESKTOP_INPUT_ARGUMENT_INVALID", **self._public_plan(activation)}
+                script = (
+                    "import json,sys; from pathlib import Path; from urllib.request import Request,urlopen; "
+                    "scope=Path('/opt/desktop-scopes/input').read_text('utf-8').strip(); body=sys.stdin.buffer.read(); "
+                    "request=Request('http://127.0.0.1:8765/input',data=body,headers={'Content-Type':'application/json','X-Sovereign-Desktop-Scope':scope},method='POST'); "
+                    "response=urlopen(request,timeout=8); print(response.read().decode('utf-8'))"
+                )
+                encoded = json.dumps(payload, separators=(",", ":"))
+                completed = self._runner(
+                    ["docker", "exec", "-i", activation.container_name, "python3", "-c", script],
+                    input=encoded,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    check=False,
+                )
         except DesktopWorkerError:
-            return {"ok": False, "status": "BLOCKED", "failure_family": "DESKTOP_INPUT_ARGUMENT_INVALID", **self._public_plan(activation)}
-        script = (
-            "import json,sys; from pathlib import Path; from urllib.request import Request,urlopen; "
-            "scope=Path('/opt/desktop-scopes/input').read_text('utf-8').strip(); body=sys.stdin.buffer.read(); "
-            "request=Request('http://127.0.0.1:8765/input',data=body,headers={'Content-Type':'application/json','X-Sovereign-Desktop-Scope':scope},method='POST'); "
-            "response=urlopen(request,timeout=8); print(response.read().decode('utf-8'))"
-        )
-        encoded = json.dumps(payload, separators=(",", ":"))
-        completed = self._runner(
-            ["docker", "exec", "-i", activation.container_name, "python3", "-c", script],
-            input=encoded,
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
+            return {"ok": False, "status": "BLOCKED", "failure_family": "DESKTOP_INPUT_LEASE_UNAVAILABLE", **self._public_plan(activation)}
         try:
             response = json.loads(completed.stdout)
         except json.JSONDecodeError:

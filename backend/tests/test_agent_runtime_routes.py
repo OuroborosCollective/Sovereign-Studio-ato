@@ -145,6 +145,10 @@ def create_test_app(
     get_live_workspace_context=None,
     issue_desktop_activation=None,
     get_desktop_frame=None,
+    take_desktop_control=None,
+    give_back_desktop_control=None,
+    send_desktop_user_input=None,
+    desktop_frame_allowed=None,
 ):
     app = Flask(__name__)
 
@@ -166,6 +170,10 @@ def create_test_app(
         get_live_workspace_context=get_live_workspace_context,
         issue_desktop_activation=issue_desktop_activation,
         get_desktop_frame=get_desktop_frame,
+        take_desktop_control=take_desktop_control,
+        give_back_desktop_control=give_back_desktop_control,
+        send_desktop_user_input=send_desktop_user_input,
+        desktop_frame_allowed=desktop_frame_allowed,
     )
     return app
 
@@ -1120,6 +1128,81 @@ def test_rescue_capsule_rejects_request_fields_and_cross_tenant_access(monkeypat
     assert forbidden.get_json()["blocker"] == "capsule_request_fields_forbidden"
     assert cross_tenant.status_code == 404
     assert cross_tenant.content_type.startswith("application/json")
+
+
+def test_desktop_control_routes_are_user_scoped_and_accept_no_extra_authority() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-control", status="running")
+    context = SimpleNamespace(to_public_dict=lambda: {"sessionBindingHash": "a" * 64})
+    captured = {}
+
+    def takeover(current, user_id):
+        captured["takeover"] = (current, user_id)
+        return {
+            "ok": True,
+            "desktopActivation": {"activationId": "b" * 64, "authoritative": False},
+            "control": {"leaseId": "livelease-1", "state": "USER_CONTROLLED", "authoritative": False},
+        }
+
+    def give_back(current, user_id, activation_id, lease_id):
+        captured["giveBack"] = (current, user_id, activation_id, lease_id)
+        return {"ok": True, "control": {"leaseId": lease_id, "state": "AGENT_CONTROLLED_REBOUND"}, "reason": None}
+
+    def user_input(current, user_id, activation_id, lease_id, arguments):
+        captured["input"] = (current, user_id, activation_id, lease_id, arguments)
+        return {"ok": True, "status": "SENT", "actionId": arguments["actionId"], "authoritative": False}
+
+    app = create_test_app(
+        conn,
+        get_live_workspace_context=lambda _conn, _job: context,
+        take_desktop_control=takeover,
+        give_back_desktop_control=give_back,
+        send_desktop_user_input=user_input,
+    )
+    client = app.test_client()
+
+    rejected = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/takeover",
+        headers={"X-Test-User": "user-1"},
+        json={"deploy": True},
+    )
+    assert rejected.status_code == 400
+
+    active = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/takeover",
+        headers={"X-Test-User": "user-1"},
+        json={},
+    )
+    assert active.status_code == 200
+    assert active.get_json()["control"]["state"] == "USER_CONTROLLED"
+    assert captured["takeover"][1] == "user-1"
+
+    sent = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/input",
+        headers={"X-Test-User": "user-1"},
+        json={
+            "activationId": "b" * 64,
+            "leaseId": "livelease-1",
+            "input": {"actionId": "human-1", "action": "click", "x": 1, "y": 1},
+        },
+    )
+    assert sent.status_code == 200
+    assert captured["input"][-1]["action"] == "click"
+
+    rebound = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/give-back",
+        headers={"X-Test-User": "user-1"},
+        json={"activationId": "b" * 64, "leaseId": "livelease-1"},
+    )
+    assert rebound.status_code == 200
+    assert rebound.get_json()["control"]["state"] == "AGENT_CONTROLLED_REBOUND"
+
+    other = client.post(
+        "/api/user/agent/jobs/agent-control/live-workspace/desktop/takeover",
+        headers={"X-Test-User": "user-2"},
+        json={},
+    )
+    assert other.status_code == 404
 
 
 def test_rescue_capsule_blocks_stale_workspace_base(monkeypatch, tmp_path: Path):
