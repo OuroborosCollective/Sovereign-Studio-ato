@@ -170,7 +170,8 @@ function run() {
   requireScriptGroup(scripts, 'script:frontend-endpoints', ['test:frontend-endpoints'], 'Frontend endpoint compiler and regression script is available.');
   requireScriptGroup(scripts, 'script:frontend-endpoints-e2e', ['test:e2e:frontend-endpoints'], 'Frontend endpoint Playwright smoke script is available.');
 
-  requireText('.github/workflows/sovereign-contract-scan.yml', /pnpm run test:frontend-endpoints/, 'workflow:frontend-endpoint-contracts', 'Runtime contract workflow executes the frontend endpoint gate.');
+  requireText('.github/workflows/sovereign-contract-scan.yml', /run_first_present test:smoke/, 'workflow:frontend-endpoint-contracts', 'Runtime contract workflow executes the canonical smoke gate.');
+  requireText('package.json', /"test:smoke"\s*:\s*"pnpm run test:frontend-endpoints &&/, 'workflow:frontend-endpoint-smoke-chain', 'The canonical smoke gate begins with the frontend endpoint compiler and regressions.');
   requireText('.github/workflows/e2e-testing.yml', /pnpm run test:e2e/, 'workflow:frontend-endpoint-e2e', 'Current App E2E workflow executes the endpoint browser smoke through the full Playwright suite.');
   requireText('scripts/frontend_endpoint_contracts.py', /"externalCalls"/, 'frontend-endpoints:external-inventory', 'Endpoint compiler preserves third-party request inventory separately from backend routes.');
   requireText('scripts/frontend_endpoint_contracts.py', /legacyImportViolationCount/, 'frontend-endpoints:legacy-import-gate', 'Endpoint compiler rejects active reactivation of legacy endpoint surfaces.');
