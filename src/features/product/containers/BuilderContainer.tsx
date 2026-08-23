@@ -6797,9 +6797,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                   buildStatus={resolveDraftPrBuildStatus({
                     draftPrUrl: scopedAgentJob.draftPrUrl,
                   })}
-                  onOpenBrowser={() =>
-                    window.open(scopedAgentJob.draftPrUrl, "_blank")
-                  }
+                  onOpenBrowser={() => {
+                    const safeUrl = safeHttpsUrl(scopedAgentJob.draftPrUrl);
+                    if (safeUrl) {
+                      window.open(safeUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
                   onDiscussInChat={() =>
                     setWishText(`Erkläre mir die Änderungen im Draft PR.`)
                   }
@@ -6810,7 +6813,12 @@ Das echte Repo-Setup wurde geöffnet.`,
               {agentWorkSnapshot.state === 'draft_pr_ready' && agentWorkSnapshot.draftPrUrl && (
                 <AgentResultCard
                   snapshot={agentWorkSnapshot}
-                  onOpen={() => window.open(agentWorkSnapshot.draftPrUrl!, '_blank')}
+                  onOpen={() => {
+                    const safeUrl = safeHttpsUrl(agentWorkSnapshot.draftPrUrl);
+                    if (safeUrl) {
+                      window.open(safeUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
                   onViewDiff={() =>
                     setWishText('Erkläre mir die Änderungen im Draft PR.')
                   }
