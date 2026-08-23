@@ -14,6 +14,7 @@ from typing import Any
 from admin_mode import PrivateAdminRuntime
 from browserless_reader import BrowserlessReplayReader
 from command_contract import is_mutating_action
+from desktop_worker import DesktopWorkerRuntime
 from document_pipeline import DocumentPipelineRuntime
 from fleet_maintenance import FleetMaintenanceRuntime
 from github_admin import GitHubAdminRuntime
@@ -54,6 +55,7 @@ class BrokerRuntime:
         self.issue_closure = IssueClosureCanaryRuntime()
         self.programming_language_catalog = ProgrammingLanguageCatalogRuntime()
         self.managed_compose = ManagedComposeRuntime()
+        self.desktop_worker = DesktopWorkerRuntime()
         self.patchmon = PatchmonOperatorRuntime()
         self.patchmon_fleet = PatchmonFleetRuntime(self.patchmon)
         self.fleet_maintenance = FleetMaintenanceRuntime(
@@ -602,6 +604,25 @@ class BrokerRuntime:
             "deploy_managed_compose_stack": lambda values: self.managed_compose.deploy(
                 stack_id=str(values.get("stack_id") or ""),
                 confirmation_sha256=str(values.get("confirmation_sha256") or ""),
+            ),
+            "desktop_worker_plan": lambda values: self.desktop_worker.plan(
+                activation_id=str(values.get("activation_id") or ""),
+            ),
+            "desktop_worker_readback": lambda values: self.desktop_worker.readback(
+                activation_id=str(values.get("activation_id") or ""),
+            ),
+            "desktop_worker_canary": lambda values: self.desktop_worker.canary(
+                activation_id=str(values.get("activation_id") or ""),
+            ),
+            "desktop_worker_start": lambda values: self.desktop_worker.start(
+                activation_id=str(values.get("activation_id") or ""),
+            ),
+            "desktop_worker_input": lambda values: self.desktop_worker.controller_input(
+                activation_id=str(values.get("activation_id") or ""),
+                arguments=values,
+            ),
+            "desktop_worker_remove": lambda values: self.desktop_worker.remove(
+                activation_id=str(values.get("activation_id") or ""),
             ),
             "patchmon_tool_inventory": lambda _values: self.patchmon_fleet.tool_inventory(),
             "patchmon_runtime_inventory": lambda values: self.patchmon.runtime_inventory(

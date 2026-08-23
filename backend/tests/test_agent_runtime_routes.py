@@ -140,7 +140,12 @@ def valid_request():
     )
 
 
-def create_test_app(conn: FakeConnection, get_live_workspace_context=None):
+def create_test_app(
+    conn: FakeConnection,
+    get_live_workspace_context=None,
+    issue_desktop_activation=None,
+    get_desktop_frame=None,
+):
     app = Flask(__name__)
 
     def require_session(fn):
@@ -159,6 +164,8 @@ def create_test_app(conn: FakeConnection, get_live_workspace_context=None):
         require_session=require_session,
         get_connection=lambda: conn,
         get_live_workspace_context=get_live_workspace_context,
+        issue_desktop_activation=issue_desktop_activation,
+        get_desktop_frame=get_desktop_frame,
     )
     return app
 
@@ -558,6 +565,101 @@ def test_live_workspace_get_blocks_windows_and_unc_path_shaped_payloads() -> Non
 
         assert response.status_code == 409
         assert unsafe_path not in response.get_data(as_text=True)
+
+
+
+def test_desktop_activation_is_owner_scoped_and_path_free() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+    calls = {"resolver": 0, "issuer": 0}
+
+    class Activation:
+        def to_dict(self):
+            return {
+                "activationId": "a" * 64,
+                "sessionBindingHash": "b" * 64,
+                "attemptId": "attempt-" + "c" * 24,
+                "workspaceId": "job-live-workspace",
+                "worktreeIdentityHash": "d" * 64,
+                "imageReference": "ghcr.io/example/desktop@sha256:" + "e" * 64,
+                "runtimeIdentityHash": "f" * 64,
+                "handleHash": "0" * 64,
+                "authoritative": False,
+                "verificationAuthority": False,
+            }
+
+    def resolver(_conn, _job):
+        calls["resolver"] += 1
+        return object()
+
+    def issuer(_context):
+        calls["issuer"] += 1
+        return Activation()
+
+    app = create_test_app(
+        conn,
+        get_live_workspace_context=resolver,
+        issue_desktop_activation=issuer,
+    )
+    foreign = app.test_client().post(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/activation",
+        headers={"X-Test-User": "user-2"},
+    )
+    assert foreign.status_code == 404
+    assert calls == {"resolver": 0, "issuer": 0}
+
+    response = app.test_client().post(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/activation",
+        headers={"X-Test-User": "user-1"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["desktopActivation"]["activationId"] == "a" * 64
+    assert "worktreePath" not in response.get_data(as_text=True)
+    assert calls == {"resolver": 1, "issuer": 1}
+
+
+def test_desktop_frame_is_observational_and_failure_preserves_job_state() -> None:
+    conn = FakeConnection()
+    seed_job(conn, "user-1", "agent-live", status="running")
+
+    class Frame:
+        content = b"\x89PNG\r\n\x1a\nframe"
+
+        @staticmethod
+        def observation():
+            return {
+                "frameHash": "a" * 64,
+                "authoritative": False,
+                "targetEffectVerified": False,
+            }
+
+    app = create_test_app(
+        conn,
+        get_live_workspace_context=lambda _conn, _job: object(),
+        get_desktop_frame=lambda _context: Frame(),
+    )
+    response = app.test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/frame",
+        headers={"X-Test-User": "user-1"},
+    )
+    assert response.status_code == 200
+    assert response.content_type == "image/png"
+    assert response.headers["X-Sovereign-Observation"] == "OBSERVED"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert conn.jobs["agent-live"]["status"] == "running"
+
+    unavailable = create_test_app(
+        conn,
+        get_live_workspace_context=lambda _conn, _job: object(),
+        get_desktop_frame=lambda _context: None,
+    ).test_client().get(
+        "/api/user/agent/jobs/agent-live/live-workspace/desktop/frame",
+        headers={"X-Test-User": "user-1"},
+    )
+    assert unavailable.status_code == 409
+    assert unavailable.get_json()["reason"] == "DESKTOP_FRAME_UNAVAILABLE"
+    assert conn.jobs["agent-live"]["status"] == "running"
 
 
 def test_cancel_non_terminal_job_sets_blocked():

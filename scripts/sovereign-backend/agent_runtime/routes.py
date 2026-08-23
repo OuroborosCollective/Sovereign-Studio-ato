@@ -260,6 +260,8 @@ def register_sovereign_agent_routes(
     require_session,
     get_connection: ConnectionFactory,
     get_live_workspace_context: Callable[[Any, Any], Any | None] | None = None,
+    issue_desktop_activation: Callable[[Any], Any | None] | None = None,
+    get_desktop_frame: Callable[[Any], Any | None] | None = None,
 ) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
@@ -268,6 +270,8 @@ def register_sovereign_agent_routes(
     - POST /api/user/agent/jobs
     - GET  /api/user/agent/jobs/<job_id>
     - GET  /api/user/agent/jobs/<job_id>/live-workspace
+    - POST /api/user/agent/jobs/<job_id>/live-workspace/desktop/activation
+    - GET  /api/user/agent/jobs/<job_id>/live-workspace/desktop/frame
     - POST /api/user/agent/jobs/<job_id>/cancel
     - POST /api/user/agent/jobs/<job_id>/cleanup
     - POST /api/user/agent/jobs/<job_id>/editor/open
@@ -1394,6 +1398,96 @@ def register_sovereign_agent_routes(
                 "jobId": job_id,
                 "liveWorkspace": payload,
             })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/activation", methods=["POST"])
+    @require_session
+    def user_issue_live_workspace_desktop_activation(job_id: str):
+        """Issue a path-free, opaque activation for the current exact AttemptWorkspace."""
+
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = None
+            if get_live_workspace_context is not None:
+                try:
+                    context = get_live_workspace_context(conn, job)
+                except Exception:
+                    context = None
+            activation = None
+            if context is not None and issue_desktop_activation is not None:
+                try:
+                    activation = issue_desktop_activation(context)
+                except Exception:
+                    activation = None
+            if activation is None or not callable(getattr(activation, "to_dict", None)):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "DESKTOP_ACTIVATION_UNAVAILABLE",
+                }), 409
+            payload = activation.to_dict()
+            if not isinstance(payload, dict) or _contains_live_workspace_path(payload):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "DESKTOP_ACTIVATION_UNAVAILABLE",
+                }), 409
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "desktopActivation": payload,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/frame", methods=["GET"])
+    @require_session
+    def user_get_live_workspace_desktop_frame(job_id: str):
+        """Read one reconnect-safe desktop frame; no stream failure changes job state."""
+
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = None
+            if get_live_workspace_context is not None:
+                try:
+                    context = get_live_workspace_context(conn, job)
+                except Exception:
+                    context = None
+            frame = None
+            if context is not None and get_desktop_frame is not None:
+                try:
+                    frame = get_desktop_frame(context)
+                except Exception:
+                    frame = None
+            content = getattr(frame, "content", None)
+            observation = frame.observation() if callable(getattr(frame, "observation", None)) else None
+            if not isinstance(content, bytes) or not isinstance(observation, dict) or _contains_live_workspace_path(observation):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "DESKTOP_FRAME_UNAVAILABLE",
+                }), 409
+            response = Response(content, status=200, content_type="image/png")
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Sovereign-Observation"] = "OBSERVED"
+            response.headers["X-Sovereign-Frame-Hash"] = str(observation.get("frameHash") or "")
+            return response
         finally:
             _close(conn)
 
