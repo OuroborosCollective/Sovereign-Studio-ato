@@ -535,16 +535,81 @@ def provision_attempt_worktree(
     )
 
 
-def resolve_active_attempt_worktree(
+def discard_unpersisted_attempt_worktree(
+    *,
+    assignment: FleetWorkerAssignment,
+    attempt: FleetWorkerAttempt | Mapping[str, Any],
+    current_active_attempt: FleetWorkerAttempt | Mapping[str, Any],
+    attempt_workspace: AttemptWorkspace,
+    repository_url: str,
+    root: Path | None = None,
+) -> None:
+    """Remove one just-provisioned retry that never became controller-active.
+
+    This is intentionally narrower than settled-attempt cleanup.  It exists only
+    to compensate a failed persistence handoff between provisioning a higher
+    retry and making that retry active in the controller.  The candidate must be
+    a strictly higher, exact deterministic worktree, while the supplied current
+    attempt remains the active lower attempt.  It never accepts a caller path or
+    performs a global worktree cleanup.
+    """
+
+    selected = _verified_attempt(attempt)
+    current = _active_attempt(assignment, current_active_attempt, current_active_attempt)
+    if (
+        selected.task_id != assignment.task_id
+        or selected.assignment_hash != assignment.assignment_hash
+        or selected.controller_run_id != assignment.controller_run_id
+        or selected.expected_base_revision != assignment.expected_base_revision
+        or selected.capability_manifest_hash != assignment.capability_manifest_hash
+        or selected.attempt_sequence <= current.attempt_sequence
+    ):
+        raise FleetContractError("unpersisted Fleet retry is not a higher attempt for the active assignment")
+    current_candidate = read_active_attempt_worktree(
+        assignment=assignment,
+        attempt=selected,
+        active_attempt=selected,
+        repository_url=repository_url,
+        root=root,
+    )
+    if (
+        attempt_workspace.binding_hash != current_candidate.binding_hash
+        or attempt_workspace.worktree_path != current_candidate.worktree_path
+        or attempt_workspace.base_repository_path != current_candidate.base_repository_path
+        or attempt_workspace.attempt_id != current_candidate.attempt_id
+    ):
+        raise FleetContractError("unpersisted Fleet retry worktree changed before discard")
+    removed = run_git_command(
+        ("git", "worktree", "remove", "--force", str(current_candidate.worktree_path)),
+        current_candidate.base_repository_path,
+        120,
+    )
+    if removed.returncode != 0:
+        raise FleetContractError("unpersisted Fleet retry worktree discard failed")
+    if (
+        current_candidate.worktree_path.exists()
+        or current_candidate.worktree_path in _worktree_records(current_candidate.base_repository_path)
+    ):
+        raise FleetContractError("unpersisted Fleet retry worktree discard readback failed")
+
+
+def read_active_attempt_worktree(
     *,
     assignment: FleetWorkerAssignment,
     attempt: FleetWorkerAttempt | Mapping[str, Any],
     active_attempt: FleetWorkerAttempt | Mapping[str, Any],
-    attempt_workspace: AttemptWorkspace,
     repository_url: str,
     root: Path | None = None,
 ) -> AttemptWorkspace:
-    """Re-read a bound active worktree and reject stale path/branch/revision drift."""
+    """Read the deterministic worktree for an already-active server attempt.
+
+    Unlike :func:`provision_attempt_worktree`, this function never creates a
+    directory, branch, or Git worktree.  It derives the only admissible path from
+    the signed assignment and active attempt, verifies it against the base clone's
+    registered worktree inventory, and returns a fresh filesystem/Git readback.
+    It is the safe reconnect/read path for consumers that do not possess an
+    in-memory ``AttemptWorkspace`` from the original executor.
+    """
 
     selected = _active_attempt(assignment, attempt, active_attempt)
     base_repo, safe_url = _base_clone(
@@ -557,20 +622,6 @@ def resolve_active_attempt_worktree(
         expected_path = fleet_attempt_worktree_path(assignment.workspace_id, selected.attempt_id, root)
     except WorkspacePolicyError as exc:
         raise FleetContractError("Fleet attempt worktree path is invalid") from exc
-    if (
-        attempt_workspace.workspace_id != assignment.workspace_id
-        or attempt_workspace.run_id != assignment.controller_run_id
-        or attempt_workspace.task_id != assignment.task_id
-        or attempt_workspace.assignment_hash != assignment.assignment_hash
-        or attempt_workspace.attempt_id != selected.attempt_id
-        or attempt_workspace.attempt_sequence != selected.attempt_sequence
-        or attempt_workspace.attempt_hash != selected.attempt_hash
-        or attempt_workspace.base_repository_path != base_repo
-        or attempt_workspace.worktree_path != expected_path
-        or attempt_workspace.branch_name != branch_name
-        or attempt_workspace.base_revision != assignment.expected_base_revision
-    ):
-        raise FleetContractError("Fleet attempt worktree binding no longer matches the active attempt")
     identity = _validate_registered_worktree(
         base_repo=base_repo,
         worktree=expected_path,
@@ -579,7 +630,7 @@ def resolve_active_attempt_worktree(
         expected_base_revision=assignment.expected_base_revision,
         require_head_at_base=False,
     )
-    refreshed = _attempt_workspace(
+    return _attempt_workspace(
         assignment=assignment,
         attempt=selected,
         repository_url=safe_url,
@@ -588,6 +639,41 @@ def resolve_active_attempt_worktree(
         branch_name=branch_name,
         identity=identity,
     )
+
+
+def resolve_active_attempt_worktree(
+    *,
+    assignment: FleetWorkerAssignment,
+    attempt: FleetWorkerAttempt | Mapping[str, Any],
+    active_attempt: FleetWorkerAttempt | Mapping[str, Any],
+    attempt_workspace: AttemptWorkspace,
+    repository_url: str,
+    root: Path | None = None,
+) -> AttemptWorkspace:
+    """Re-read a bound active worktree and reject stale path/branch/revision drift."""
+
+    selected = _active_attempt(assignment, attempt, active_attempt)
+    refreshed = read_active_attempt_worktree(
+        assignment=assignment,
+        attempt=selected,
+        active_attempt=selected,
+        repository_url=repository_url,
+        root=root,
+    )
+    if (
+        attempt_workspace.workspace_id != assignment.workspace_id
+        or attempt_workspace.run_id != assignment.controller_run_id
+        or attempt_workspace.task_id != assignment.task_id
+        or attempt_workspace.assignment_hash != assignment.assignment_hash
+        or attempt_workspace.attempt_id != selected.attempt_id
+        or attempt_workspace.attempt_sequence != selected.attempt_sequence
+        or attempt_workspace.attempt_hash != selected.attempt_hash
+        or attempt_workspace.base_repository_path != refreshed.base_repository_path
+        or attempt_workspace.worktree_path != refreshed.worktree_path
+        or attempt_workspace.branch_name != refreshed.branch_name
+        or attempt_workspace.base_revision != assignment.expected_base_revision
+    ):
+        raise FleetContractError("Fleet attempt worktree binding no longer matches the active attempt")
     if refreshed.binding_hash != attempt_workspace.binding_hash:
         raise FleetContractError("Fleet attempt worktree static binding changed during readback")
     return refreshed
@@ -744,8 +830,10 @@ __all__ = [
     "AttemptWorktreeRelease",
     "cleanup_settled_attempt_worktree",
     "create_attempt_worktree_release",
+    "discard_unpersisted_attempt_worktree",
     "deterministic_attempt_branch",
     "provision_attempt_worktree",
+    "read_active_attempt_worktree",
     "read_active_attempt_draft_pr_handoff",
     "resolve_active_attempt_worktree",
 ]

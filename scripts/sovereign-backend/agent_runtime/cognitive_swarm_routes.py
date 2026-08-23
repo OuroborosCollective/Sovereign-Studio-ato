@@ -43,12 +43,15 @@ from .cognitive_swarm_agents import (
 )
 from .cognitive_repository_tools import (
     BoundRepositoryToolset,
+    FleetAttemptSnapshot,
+    FleetAttemptSnapshotEvidence,
     create_repository_single_agent_task,
     create_repository_swarm_tasks,
 )
 from .cognitive_swarm_manifest import WORKER_ROLES, manifest_payload
 from .cognitive_usage_billing import AgentBillingError, AgentStageBilling
 from .evidence_gate import EvidenceGateInput, evaluate_agent_evidence
+from .fleet_supervisor import stable_hash
 from .job_lifecycle import create_sovereign_agent_job
 from .job_store import read_agent_job
 from .pattern_gateway import (
@@ -352,7 +355,7 @@ def execute_persisted_swarm(
     manifest = manifest_payload()
     fleet_bindings = None
 
-    def persist_stage_event(stage: dict[str, object]) -> None:
+    def persist_stage_event(stage: dict[str, object]) -> dict[str, str]:
         agent_id = str(stage.get("agentId") or "orchestrator").strip()
         event_type = str(stage.get("eventType") or "agent_stage").strip()
         status = str(stage.get("status") or "RUNNING").strip()
@@ -387,7 +390,7 @@ def execute_persisted_swarm(
             safe_payload["fleetAttemptsByRole"] = dict(stage["fleetAttemptsByRole"])
         conn = get_connection()
         try:
-            record_agent_stage_event(
+            recorded = record_agent_stage_event(
                 conn,
                 user_id=user_id,
                 run_id=run_id,
@@ -401,6 +404,12 @@ def execute_persisted_swarm(
                 task_id=stage_task_id,
                 expected_lease_token=lease_token,
             )
+            return {
+                **recorded,
+                # ``record_agent_stage_event`` uses the same canonical JSON
+                # serialization as ``stable_hash`` for the evidence SHA.
+                "evidenceSha256": stable_hash(safe_payload),
+            }
         finally:
             _close_connection(conn)
 
@@ -427,6 +436,75 @@ def execute_persisted_swarm(
                     for role, workspace in fleet_attempt_workspaces.items()
                 },
             })
+
+            def persist_fleet_attempt_rebound(
+                snapshot: FleetAttemptSnapshot,
+            ) -> FleetAttemptSnapshotEvidence:
+                """Persist the complete active snapshot before a retry becomes live.
+
+                The toolset invokes this while no Fleet lane is active.  Reconnect
+                consumers accept only this complete, signed snapshot; they never
+                infer that a higher physical worktree is current from a path or a
+                partial retry event.
+                """
+
+                if (
+                    snapshot.fleet_plan_hash != fleet_bindings.plan.plan_hash
+                    or snapshot.controller_run_id != run_id
+                    or {item.role for item in snapshot.bindings} != set(fleet_bindings.assignments_by_role)
+                    or set(snapshot.attempt_receipts_by_role) != set(fleet_bindings.assignments_by_role)
+                ):
+                    raise ValueError("Fleet retry snapshot does not cover the bound controller roles")
+                by_role = {item.role: item for item in snapshot.bindings}
+                for role, assignment in fleet_bindings.assignments_by_role.items():
+                    binding = by_role.get(role)
+                    receipt = snapshot.attempt_receipts_by_role.get(role)
+                    if (
+                        binding is None
+                        or not isinstance(receipt, dict)
+                        or binding.assignment_hash != assignment.assignment_hash
+                        or binding.task_id != assignment.task_id
+                        or binding.receipt_hash != stable_hash(receipt)
+                        or receipt.get("attemptId") != binding.attempt_id
+                        or receipt.get("attemptSequence") != binding.attempt_sequence
+                        or receipt.get("attemptHash") != binding.attempt_hash
+                        or receipt.get("worktreeBindingHash") != binding.worktree_binding_hash
+                    ):
+                        raise ValueError("Fleet retry snapshot receipt is not bound to the selected attempt")
+                recorded = persist_stage_event({
+                    "agentId": "dispatcher",
+                    "eventType": "fleet_attempt_rebound",
+                    "status": "RUNNING",
+                    "summary": "A higher Fleet attempt snapshot was persisted before the retry became active.",
+                    "nextAction": "START_NEXT_FLEET_LANE",
+                    "fleetPlanHash": fleet_bindings.plan.plan_hash,
+                    "fleetPlan": fleet_bindings.plan.to_dict(),
+                    "fleetTaskIdsByRole": fleet_bindings.task_ids_by_role,
+                    "fleetAssignmentsByRole": {
+                        role: assignment.to_dict()
+                        for role, assignment in fleet_bindings.assignments_by_role.items()
+                    },
+                    "fleetAttemptsByRole": {
+                        role: dict(receipt)
+                        for role, receipt in snapshot.attempt_receipts_by_role.items()
+                    },
+                })
+                evidence = FleetAttemptSnapshotEvidence(
+                    fleet_plan_hash=snapshot.fleet_plan_hash,
+                    controller_run_id=snapshot.controller_run_id,
+                    snapshot_hash=snapshot.snapshot_hash,
+                    evidence_id=str(recorded.get("evidenceId") or ""),
+                    evidence_sha256=str(recorded.get("evidenceSha256") or "").lower(),
+                )
+                evidence.verify_for(snapshot)
+                return evidence
+
+            # A retry is rejected before provisioning unless this persistence
+            # observer is installed.  It must therefore be in place before any
+            # worker can run a rebind-capable repository tool.
+            repository_toolset.set_fleet_attempt_workspace_snapshot_observer(
+                persist_fleet_attempt_rebound,
+            )
         result = asyncio.run(
             run_cognitive_swarm(
                 mission,

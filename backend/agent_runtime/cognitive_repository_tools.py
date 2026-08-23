@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 import re
 from threading import Lock
 import uuid
-from typing import Any, Final, Iterator
+from typing import Any, Final, Iterator, Mapping
 
 from .agent_run_receipts import (
     canonical_sha256,
@@ -34,6 +34,7 @@ from .fleet_attempt_worktrees import (
     AttemptWorkspace,
     AttemptWorktreeRelease,
     cleanup_settled_attempt_worktree,
+    discard_unpersisted_attempt_worktree,
     provision_attempt_worktree,
     resolve_active_attempt_worktree,
 )
@@ -44,6 +45,7 @@ from .fleet_supervisor import (
     FleetWorkerAssignment,
     build_fleet_plan,
     create_worker_assignment,
+    stable_hash,
 )
 from .job_store import read_agent_job
 from .tool_events import append_tool_result_to_job
@@ -235,6 +237,119 @@ class RepositoryFleetBindings:
     repository: str
     workspace_id: str
     base_revision: str
+
+
+FLEET_ATTEMPT_SNAPSHOT_SCHEMA_VERSION: Final[str] = "sovereign.fleet.active-attempt-snapshot.v1"
+
+
+@dataclass(frozen=True)
+class FleetAttemptSnapshotBinding:
+    """One path-free role binding in a persisted active-attempt snapshot."""
+
+    role: str
+    assignment_hash: str
+    task_id: str
+    attempt_id: str
+    attempt_sequence: int
+    attempt_hash: str
+    worktree_binding_hash: str
+    receipt_hash: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "role": self.role,
+            "assignmentHash": self.assignment_hash,
+            "taskId": self.task_id,
+            "attemptId": self.attempt_id,
+            "attemptSequence": self.attempt_sequence,
+            "attemptHash": self.attempt_hash,
+            "worktreeBindingHash": self.worktree_binding_hash,
+            "receiptHash": self.receipt_hash,
+        }
+
+
+@dataclass(frozen=True)
+class FleetAttemptSnapshot:
+    """Exact path-free controller input for a retry persistence handoff."""
+
+    fleet_plan_hash: str
+    controller_run_id: str
+    bindings: tuple[FleetAttemptSnapshotBinding, ...]
+    attempt_receipts_by_role: dict[str, dict[str, Any]]
+    snapshot_hash: str
+
+    @classmethod
+    def from_workspaces(
+        cls,
+        *,
+        fleet_bindings: RepositoryFleetBindings,
+        workspaces_by_role: Mapping[str, AttemptWorkspace],
+    ) -> "FleetAttemptSnapshot":
+        if set(workspaces_by_role) != set(fleet_bindings.assignments_by_role):
+            raise FleetContractError("Fleet active-attempt snapshot is missing a worker role")
+        records: list[FleetAttemptSnapshotBinding] = []
+        receipts: dict[str, dict[str, Any]] = {}
+        for role in WORKER_ROLES:
+            assignment = fleet_bindings.assignments_by_role.get(role)
+            workspace = workspaces_by_role.get(role)
+            if assignment is None or workspace is None:
+                raise FleetContractError("Fleet active-attempt snapshot role is incomplete")
+            receipt = workspace.receipt_binding()
+            if (
+                workspace.run_id != assignment.controller_run_id
+                or workspace.task_id != assignment.task_id
+                or workspace.assignment_hash != assignment.assignment_hash
+                or receipt.get("assignmentHash") != assignment.assignment_hash
+                or receipt.get("attemptId") != workspace.attempt_id
+                or receipt.get("attemptHash") != workspace.attempt_hash
+                or receipt.get("worktreeBindingHash") != workspace.binding_hash
+            ):
+                raise FleetContractError("Fleet active-attempt snapshot binding is inconsistent")
+            receipts[role] = dict(receipt)
+            records.append(FleetAttemptSnapshotBinding(
+                role=role,
+                assignment_hash=assignment.assignment_hash,
+                task_id=assignment.task_id,
+                attempt_id=workspace.attempt_id,
+                attempt_sequence=workspace.attempt_sequence,
+                attempt_hash=workspace.attempt_hash,
+                worktree_binding_hash=workspace.binding_hash,
+                receipt_hash=stable_hash(receipt),
+            ))
+        payload = {
+            "schemaVersion": FLEET_ATTEMPT_SNAPSHOT_SCHEMA_VERSION,
+            "fleetPlanHash": fleet_bindings.plan.plan_hash,
+            "controllerRunId": fleet_bindings.plan.integration_id,
+            "bindings": [record.to_dict() for record in records],
+        }
+        return cls(
+            fleet_plan_hash=fleet_bindings.plan.plan_hash,
+            controller_run_id=fleet_bindings.plan.integration_id,
+            bindings=tuple(records),
+            attempt_receipts_by_role=receipts,
+            snapshot_hash=stable_hash(payload),
+        )
+
+
+@dataclass(frozen=True)
+class FleetAttemptSnapshotEvidence:
+    """Durable evidence returned by the snapshot observer before activation."""
+
+    fleet_plan_hash: str
+    controller_run_id: str
+    snapshot_hash: str
+    evidence_id: str
+    evidence_sha256: str
+
+    def verify_for(self, snapshot: FleetAttemptSnapshot) -> None:
+        if (
+            self.fleet_plan_hash != snapshot.fleet_plan_hash
+            or self.controller_run_id != snapshot.controller_run_id
+            or self.snapshot_hash != snapshot.snapshot_hash
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{2,159}", self.evidence_id)
+            or not re.fullmatch(r"[0-9a-f]{64}", self.evidence_sha256)
+        ):
+            raise FleetContractError("Fleet retry snapshot persistence receipt is not bound to the candidate")
 
 
 def _required_worker_task_ids(task_ids_by_agent: dict[str, str]) -> dict[str, str]:
@@ -503,6 +618,8 @@ class BoundRepositoryToolset:
     _fleet_workspaces_by_role: dict[str, AttemptWorkspace] = field(default_factory=dict)
     _settled_fleet_attempts_by_id: dict[str, FleetWorkerAttempt] = field(default_factory=dict)
     _settled_fleet_workspaces_by_attempt_id: dict[str, AttemptWorkspace] = field(default_factory=dict)
+    _fleet_attempt_workspace_snapshot_observer: Callable[[FleetAttemptSnapshot], FleetAttemptSnapshotEvidence] | None = None
+    _fleet_attempt_rebind_pending: bool = False
     _lock: Lock = field(default_factory=Lock)
 
     def has_repository_fleet_workers(self) -> bool:
@@ -550,9 +667,34 @@ class BoundRepositoryToolset:
         ):
             raise FleetContractError("Fleet bindings do not match persisted worker tasks")
         with self._lock:
+            if self._fleet_attempt_rebind_pending:
+                raise FleetContractError("Fleet bindings cannot change during a pending retry transition")
             if self.fleet_bindings and self.fleet_bindings.plan.plan_hash != bindings.plan.plan_hash:
                 raise FleetContractError("a different FleetPlan is already bound to this toolset")
             self.fleet_bindings = bindings
+
+    def set_fleet_attempt_workspace_snapshot_observer(
+        self,
+        observer: Callable[[FleetAttemptSnapshot], FleetAttemptSnapshotEvidence],
+    ) -> None:
+        """Install the required persistence hook for active-attempt transitions.
+
+        The hook receives a typed, path-free snapshot and must return a durable
+        evidence receipt for that exact plan/role/assignment/attempt binding.
+        Retrying a worker without recording its new active attempt would leave
+        reconnect consumers unable to distinguish a retained historical worktree
+        from the current one, so rebinding fails closed until this observer is
+        installed.
+        """
+
+        if not callable(observer):
+            raise FleetContractError("Fleet attempt snapshot observer is invalid")
+        with self._lock:
+            if self._active_fleet_lane_id is not None or self._fleet_attempt_rebind_pending:
+                raise FleetContractError("Fleet attempt snapshot observer cannot change during an active lane")
+            if self._fleet_attempt_workspace_snapshot_observer is not None:
+                raise FleetContractError("Fleet attempt snapshot observer is immutable once installed")
+            self._fleet_attempt_workspace_snapshot_observer = observer
 
     def provision_fleet_attempt_workspaces(self) -> dict[str, AttemptWorkspace]:
         """Create deterministic physical worktrees before repository workers run.
@@ -575,7 +717,7 @@ class BoundRepositoryToolset:
                 raise FleetContractError("Fleet attempt worktree workspace changed after plan binding")
             repository_url = str(job.repo_url or "").strip()
             with self._lock:
-                if self._active_fleet_lane_id is not None:
+                if self._active_fleet_lane_id is not None or self._fleet_attempt_rebind_pending:
                     raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
                 existing_attempts = dict(self._active_fleet_attempts_by_role)
                 existing_workspaces = dict(self._fleet_workspaces_by_role)
@@ -600,7 +742,7 @@ class BoundRepositoryToolset:
                 for role, assignment in bindings.assignments_by_role.items()
             }
             with self._lock:
-                if self._active_fleet_lane_id is not None:
+                if self._active_fleet_lane_id is not None or self._fleet_attempt_rebind_pending:
                     raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
                 if existing_attempts and self._active_fleet_attempts_by_role != existing_attempts:
                     raise FleetContractError("Fleet active attempt changed while worktrees were being read back")
@@ -636,46 +778,104 @@ class BoundRepositoryToolset:
         # Reparse to reject a forged dataclass with fields that do not bind its hash.
         selected = FleetWorkerAttempt.from_dict(active_attempt.to_dict())
         require_active_attempt(selected, selected, assignment)
+        replacement: AttemptWorkspace | None = None
+        repository_url = ""
+        pending = False
         with self._lock:
             if self._active_fleet_lane_id is not None:
                 raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
+            if self._fleet_attempt_rebind_pending:
+                raise FleetContractError("another Fleet retry transition is already pending")
             previous_attempt = self._active_fleet_attempts_by_role.get(role)
             previous_workspace = self._fleet_workspaces_by_role.get(role)
             if previous_attempt is None or previous_workspace is None:
                 raise FleetContractError("Fleet attempt rebind requires an existing active worktree")
             if selected.attempt_sequence <= previous_attempt.attempt_sequence:
                 raise FleetContractError("Fleet retry attempt sequence must be higher than the active attempt")
-        conn = self.get_connection()
+            snapshot_observer = self._fleet_attempt_workspace_snapshot_observer
+            if snapshot_observer is None:
+                # Check before provisioning: an unrecorded retry worktree is not a
+                # reconnect target and must never be created merely to discover
+                # that no persistence handoff was installed.
+                raise FleetContractError("Fleet retry rebind requires a persisted active-attempt snapshot observer")
+            # Fence provisioning, durable evidence and the in-memory active switch
+            # as one serialized transition.  No lane can start or observer change
+            # while the candidate is being persisted.
+            self._fleet_attempt_rebind_pending = True
+            pending = True
         try:
-            job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
-            if not job:
-                raise FleetContractError("linked Sovereign Agent Job was not found")
-            workspace_id = str(job.workspace_id or self.job_id).strip()
-            if workspace_id != assignment.workspace_id:
-                raise FleetContractError("Fleet attempt worktree workspace changed after assignment")
-            replacement = provision_attempt_worktree(
-                assignment=assignment,
-                attempt=selected,
-                active_attempt=selected,
-                repository_url=str(job.repo_url or "").strip(),
-                root=self.workspace_root,
+            conn = self.get_connection()
+            try:
+                job = read_agent_job(conn, user_id=self.user_id, job_id=self.job_id)
+                if not job:
+                    raise FleetContractError("linked Sovereign Agent Job was not found")
+                workspace_id = str(job.workspace_id or self.job_id).strip()
+                if workspace_id != assignment.workspace_id:
+                    raise FleetContractError("Fleet attempt worktree workspace changed after assignment")
+                repository_url = str(job.repo_url or "").strip()
+                replacement = provision_attempt_worktree(
+                    assignment=assignment,
+                    attempt=selected,
+                    active_attempt=selected,
+                    repository_url=repository_url,
+                    root=self.workspace_root,
+                )
+            finally:
+                _close(conn)
+            with self._lock:
+                if (
+                    self._active_fleet_lane_id is not None
+                    or not self._fleet_attempt_rebind_pending
+                    or self._active_fleet_attempts_by_role.get(role) != previous_attempt
+                    or self._fleet_workspaces_by_role.get(role) != previous_workspace
+                    or self._fleet_attempt_workspace_snapshot_observer is not snapshot_observer
+                ):
+                    raise FleetContractError("Fleet retry binding changed during candidate provisioning")
+                workspaces = dict(self._fleet_workspaces_by_role)
+                workspaces[role] = replacement
+            snapshot = FleetAttemptSnapshot.from_workspaces(
+                fleet_bindings=bindings,
+                workspaces_by_role=workspaces,
             )
+            persisted = snapshot_observer(snapshot)
+            if not isinstance(persisted, FleetAttemptSnapshotEvidence):
+                raise FleetContractError("Fleet retry observer did not return a typed persistence receipt")
+            persisted.verify_for(snapshot)
+            with self._lock:
+                if (
+                    self._active_fleet_lane_id is not None
+                    or not self._fleet_attempt_rebind_pending
+                    or self._active_fleet_attempts_by_role.get(role) != previous_attempt
+                    or self._fleet_workspaces_by_role.get(role) != previous_workspace
+                    or self._fleet_attempt_workspace_snapshot_observer is not snapshot_observer
+                ):
+                    raise FleetContractError("Fleet retry binding changed before activation")
+                self._settled_fleet_attempts_by_id[previous_attempt.attempt_id] = previous_attempt
+                self._settled_fleet_workspaces_by_attempt_id[previous_attempt.attempt_id] = previous_workspace
+                self._fleet_attempts_by_role[role] = selected
+                self._active_fleet_attempts_by_role[role] = selected
+                self._fleet_workspaces_by_role[role] = replacement
+                self._fleet_attempt_rebind_pending = False
+                pending = False
+            return replacement
+        except Exception:
+            if replacement is not None:
+                try:
+                    discard_unpersisted_attempt_worktree(
+                        assignment=assignment,
+                        attempt=selected,
+                        current_active_attempt=previous_attempt,
+                        attempt_workspace=replacement,
+                        repository_url=repository_url,
+                        root=self.workspace_root,
+                    )
+                except Exception as cleanup_exc:
+                    raise FleetContractError("Fleet retry rebind failed and candidate cleanup failed") from cleanup_exc
+            raise
         finally:
-            _close(conn)
-        with self._lock:
-            if self._active_fleet_lane_id is not None:
-                raise FleetContractError("Fleet attempt worktrees cannot change during an active lane")
-            if (
-                self._active_fleet_attempts_by_role.get(role) != previous_attempt
-                or self._fleet_workspaces_by_role.get(role) != previous_workspace
-            ):
-                raise FleetContractError("Fleet active attempt changed during retry rebind")
-            self._settled_fleet_attempts_by_id[previous_attempt.attempt_id] = previous_attempt
-            self._settled_fleet_workspaces_by_attempt_id[previous_attempt.attempt_id] = previous_workspace
-            self._fleet_attempts_by_role[role] = selected
-            self._active_fleet_attempts_by_role[role] = selected
-            self._fleet_workspaces_by_role[role] = replacement
-        return replacement
+            if pending:
+                with self._lock:
+                    self._fleet_attempt_rebind_pending = False
 
     def settled_fleet_attempt_receipts(self) -> dict[str, dict[str, Any]]:
         """Return controller-visible, path-free retained-attempt evidence only."""
@@ -827,7 +1027,7 @@ class BoundRepositoryToolset:
         if not actual_roles or actual_roles != expected_roles:
             raise FleetContractError("Fleet lane roles do not match the bound plan")
         with self._lock:
-            if self._active_fleet_lane_id is not None:
+            if self._active_fleet_lane_id is not None or self._fleet_attempt_rebind_pending:
                 raise FleetContractError("another Fleet lane is already active")
             self._active_fleet_lane_id = lane_id
             self._active_fleet_roles = actual_roles
