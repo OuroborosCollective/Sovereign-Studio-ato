@@ -296,6 +296,9 @@ const OMNIROUTE_API_BASE = 'http://omniroute:20128/v1';
 const OMNIROUTE_ROUTE_ID = 'sovereign-omniroute-auto';
 const OMNIROUTE_MODEL_ID = 'sovereign-omniroute:auto';
 const RETIRED_FREELLMPOOL_API_BASE = 'http://freellmpool:8080/v1';
+const FREE_REVOLVER_TRUTH_OWNER = 'postgresql-owner-input-direct-freellm';
+const FREE_REVOLVER_KEY_STORAGE = 'owner-managed-direct-freellm';
+const FREE_REVOLVER_ACTIVATION_RULE = 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction';
 
 const providerAuthModes = ['bearer', 'x-api-key', 'none', 'managed-bearer'] as const;
 const providerStatuses = [
@@ -487,9 +490,9 @@ function isAcceptedOpenRouterFreeStatus(value: unknown): value is OpenRouterFree
 function isAcceptedFreeRevolverProviderReadback(value: unknown): boolean {
   return isRecord(value)
     && value.ok === true
-    && value.truthOwner === 'backend'
-    && value.keyStorage === 'owner-managed'
-    && value.activationRule === 'canonical'
+    && value.truthOwner === FREE_REVOLVER_TRUTH_OWNER
+    && value.keyStorage === FREE_REVOLVER_KEY_STORAGE
+    && value.activationRule === FREE_REVOLVER_ACTIVATION_RULE
     && Array.isArray(value.providers)
     && value.providers.every(isAcceptedProviderControl);
 }

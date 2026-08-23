@@ -33,6 +33,9 @@ def test_canonical_free_provider_runtime_contract_is_present_without_optional_fl
     assert '"/api/internal/llm/freellm/providers/<source_id>/discover"' in source
     assert '"/api/internal/llm/freellm/providers/<source_id>/reconcile"' in source
     assert "canonical_provider_action_required" in source
+    assert '"truthOwner": "postgresql-owner-input-direct-freellm"' in source
+    assert '"keyStorage": "owner-managed-direct-freellm"' in source
+    assert '"activationRule": "managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction"' in source
 
 
 def _build_app(

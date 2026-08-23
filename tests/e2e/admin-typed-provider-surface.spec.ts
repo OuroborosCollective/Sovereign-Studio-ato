@@ -101,9 +101,9 @@ async function installAdminMock(page: Page, calls: Call[]): Promise<void> {
     if (method === 'GET' && path === '/api/admin/llm/revolver-v3/providers') {
       await json(route, {
         ok: true,
-        truthOwner: 'backend',
-        keyStorage: 'owner-managed',
-        activationRule: 'canonical',
+        truthOwner: 'postgresql-owner-input-direct-freellm',
+        keyStorage: 'owner-managed-direct-freellm',
+        activationRule: 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction',
         providers: [
           provider('freellmapi-source'),
           provider('0609e75c-8c48-59db-80a4-3155b823205b', {

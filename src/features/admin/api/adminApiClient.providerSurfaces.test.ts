@@ -31,6 +31,7 @@ afterEach(() => {
 describe('adminApiClient typed provider surface read model', () => {
   it('reads paid, free, OmniRoute, and generic provider evidence from their dedicated endpoints', async () => {
     const calls: string[] = [];
+    let useNonCanonicalEnvelope = false;
     setAdminKey('test-admin-key');
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -39,9 +40,11 @@ describe('adminApiClient typed provider surface read model', () => {
       const payloadByPath: Record<string, unknown> = {
         '/api/admin/llm/revolver-v3/providers': {
           ok: true,
-          truthOwner: 'backend',
-          keyStorage: 'owner-managed',
-          activationRule: 'canonical',
+          truthOwner: useNonCanonicalEnvelope
+            ? 'backend'
+            : 'postgresql-owner-input-direct-freellm',
+          keyStorage: 'owner-managed-direct-freellm',
+          activationRule: 'managed-free-quota-plus-revision-bound-double-canary-without-positive-cost-contradiction',
           providers: [],
         },
         '/api/admin/llm/omniroute/status': omniRoute,
@@ -94,6 +97,10 @@ describe('adminApiClient typed provider surface read model', () => {
       '/api/admin/llm/openrouter/status',
       '/api/admin/llm/revolver-v3/providers',
     ]);
+
+    useNonCanonicalEnvelope = true;
+    await expect(adminApiClient.getLlmProviderSurfaceReadModel())
+      .rejects.toThrow('Free-Provider-Readback verletzt die kanonische typisierte Aktionsgrenze.');
   });
 
   it('sends the only accepted OmniRoute mutation to its dedicated runtime endpoint', async () => {
