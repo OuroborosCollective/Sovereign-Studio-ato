@@ -730,3 +730,5 @@ def test_native_desktop_worker_assets_are_digest_bound_and_non_privileged() -> N
     assert "CANARY_VIEW_TOKEN" in canary
     assert "continuity" not in canary.casefold()
     assert "workflow_dispatch:" in canary
+    assert "uses: ./.github/actions/setup-backend-python" in canary
+    assert "python-version: '3.11'" in canary
