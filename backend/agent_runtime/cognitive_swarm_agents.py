@@ -1447,18 +1447,21 @@ async def run_cognitive_swarm(
             reports_by_role: dict[str, WorkerReport] = {}
             for lane in sorted(resolved_fleet_plan.lanes, key=lambda item: item.sequence):
                 lane_roles = tuple(task_to_role[task_id] for task_id in lane.task_ids)
-                _emit_stage(
-                    stage_observer,
-                    agent_id="dispatcher",
-                    event_type="fleet_lane_started",
-                    status="RUNNING",
-                    summary=f"Fleet lane {lane.lane_id} started for double-loop pass {loop}.",
-                    next_action="WAIT_FOR_FLEET_LANE_COMPLETION",
-                    loop=loop,
-                    fleet_plan_hash=resolved_fleet_plan.plan_hash,
-                    fleet_lane_id=lane.lane_id,
-                )
                 with resolved_lane_guard(lane.lane_id, lane_roles):
+                    # Persist RUNNING only after the controller admitted this exact
+                    # lane.  A guard failure must not manufacture a reconnectable
+                    # live lane from a pre-admission observability event.
+                    _emit_stage(
+                        stage_observer,
+                        agent_id="dispatcher",
+                        event_type="fleet_lane_started",
+                        status="RUNNING",
+                        summary=f"Fleet lane {lane.lane_id} started for double-loop pass {loop}.",
+                        next_action="WAIT_FOR_FLEET_LANE_COMPLETION",
+                        loop=loop,
+                        fleet_plan_hash=resolved_fleet_plan.plan_hash,
+                        fleet_lane_id=lane.lane_id,
+                    )
                     if lane.parallel_safe and len(lane_roles) > 1:
                         lane_reports = list(await asyncio.gather(*(
                             execute_worker(
@@ -1478,18 +1481,22 @@ async def run_cognitive_swarm(
                                 fleet_lane_id=lane.lane_id,
                                 fleet_task_id=resolved_fleet_task_ids[role],
                             ))
-                reports_by_role.update({report.role: report for report in lane_reports})
-                _emit_stage(
-                    stage_observer,
-                    agent_id="dispatcher",
-                    event_type="fleet_lane_completed",
-                    status="COMPLETED",
-                    summary=f"Fleet lane {lane.lane_id} reached terminal worker reports for double-loop pass {loop}.",
-                    next_action="START_NEXT_FLEET_LANE",
-                    loop=loop,
-                    fleet_plan_hash=resolved_fleet_plan.plan_hash,
-                    fleet_lane_id=lane.lane_id,
-                )
+                    reports_by_role.update({report.role: report for report in lane_reports})
+                    # Keep the durable terminal event within the controller's lane
+                    # admission.  Releasing the guard first would leave a window
+                    # where persisted evidence still says RUNNING after the worker
+                    # lane has already been released.
+                    _emit_stage(
+                        stage_observer,
+                        agent_id="dispatcher",
+                        event_type="fleet_lane_completed",
+                        status="COMPLETED",
+                        summary=f"Fleet lane {lane.lane_id} reached terminal worker reports for double-loop pass {loop}.",
+                        next_action="START_NEXT_FLEET_LANE",
+                        loop=loop,
+                        fleet_plan_hash=resolved_fleet_plan.plan_hash,
+                        fleet_lane_id=lane.lane_id,
+                    )
             reports = [reports_by_role[role] for role in WORKER_ROLES]
 
         _emit_stage(

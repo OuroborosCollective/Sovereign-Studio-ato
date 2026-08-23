@@ -60,6 +60,11 @@ NON_RESUMABLE_RUN_STATUSES: Final[frozenset[str]] = frozenset({
     "WAITING_FOR_OWNER",
 })
 
+# A live-workspace reconnect may bind only to a controller state that can still
+# own one current Fleet lane.  Waiting/terminal states remain historical or
+# indeterminate and must not manufacture a live desktop/session projection.
+LIVE_WORKSPACE_RUN_STATUSES: Final[tuple[str, ...]] = ("RUNNING", "VERIFYING")
+
 RECOVERY_RESOLUTION_STATUSES: Final[frozenset[str]] = frozenset({
     "BLOCKED",
     "WAITING_FOR_OWNER",
@@ -1748,6 +1753,126 @@ def read_agent_run(conn: Any, *, user_id: str, run_id: str) -> StoredAgentRun | 
         )
         row = cur.fetchone()
     return stored_run_from_row(row) if row else None
+
+
+def read_active_agent_run_for_job(
+    conn: Any,
+    *,
+    user_id: str,
+    job_id: str,
+) -> StoredAgentRun | None:
+    """Return exactly one live run bound to an owned Agent Job, else ``None``.
+
+    A reconnect cannot choose a run by a client-provided id.  More than one live
+    run for the same job is an ambiguity, not a reason to pick the newest row.
+    """
+
+    normalized_job_id = _validated_id(job_id, "job_id")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT *,
+                   (lease_token IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
+            FROM agent_runs
+            WHERE user_id = %s::uuid
+              AND job_id = %s
+              AND status = ANY(%s)
+            ORDER BY updated_at DESC, run_id DESC
+            LIMIT 2
+            """,
+            (str(user_id), normalized_job_id, list(LIVE_WORKSPACE_RUN_STATUSES)),
+        )
+        rows = cur.fetchall()
+    if len(rows) != 1:
+        return None
+    return stored_run_from_row(rows[0])
+
+
+def read_live_workspace_stage_evidence(
+    conn: Any,
+    *,
+    user_id: str,
+    run_id: str,
+    job_id: str,
+    limit: int = 500,
+) -> tuple[dict[str, object], ...]:
+    """Read only owner-scoped Fleet timeline evidence needed for reconnect.
+
+    The result contains no job filesystem paths and is intentionally limited to
+    controller-persisted stage events.  Callers must still validate each payload
+    hash and every assignment/attempt binding before creating a session.
+    """
+
+    safe_limit = max(1, min(int(limit), 1000))
+    event_types = [
+        "fleet_plan_persisted",
+        "fleet_attempt_rebound",
+        "fleet_lane_started",
+        "fleet_lane_completed",
+    ]
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT event.event_id, event.run_id, event.agent_id AS event_agent_id,
+                   event.type, event.status, event.source AS event_source, event.created_at,
+                   event.evidence_id, evidence.run_id AS evidence_run_id,
+                   evidence.agent_id AS evidence_agent_id, evidence.source AS evidence_source,
+                   evidence.sha256, evidence.payload, run.user_id, run.job_id
+            FROM agent_events AS event
+            JOIN agent_evidence AS evidence
+              ON evidence.evidence_id = event.evidence_id
+             AND evidence.run_id = event.run_id
+            JOIN agent_runs AS run ON run.run_id = event.run_id
+            WHERE run.user_id = %s::uuid
+              AND event.run_id = %s
+              AND run.job_id = %s
+              AND evidence.kind = 'agent_stage'
+              AND event.source = 'agents-sdk'
+              AND evidence.source = 'agents-sdk'
+              AND event.agent_id = 'dispatcher'
+              AND evidence.agent_id = 'dispatcher'
+              AND event.type = ANY(%s)
+            ORDER BY event.created_at DESC, event.event_id DESC
+            LIMIT %s
+            """,
+            (
+                str(user_id),
+                _validated_id(run_id, "run_id"),
+                _validated_id(job_id, "job_id"),
+                event_types,
+                safe_limit,
+            ),
+        )
+        rows = cur.fetchall()
+    records: list[dict[str, object]] = []
+    for row in rows:
+        payload = row.get("payload") if isinstance(row, Mapping) else None
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = None
+        records.append({
+            "eventId": str(row.get("event_id") or ""),
+            "runId": str(row.get("run_id") or ""),
+            "jobId": str(row.get("job_id") or ""),
+            "evidenceRunId": str(row.get("evidence_run_id") or ""),
+            "eventAgentId": str(row.get("event_agent_id") or ""),
+            "evidenceAgentId": str(row.get("evidence_agent_id") or ""),
+            "eventType": str(row.get("type") or ""),
+            "status": str(row.get("status") or ""),
+            "eventSource": str(row.get("event_source") or ""),
+            "evidenceSource": str(row.get("evidence_source") or ""),
+            "createdAt": _timestamp_text(row.get("created_at")),
+            "evidenceId": str(row.get("evidence_id") or ""),
+            "evidenceSha256": str(row.get("sha256") or "").strip().lower(),
+            "payload": dict(payload) if isinstance(payload, Mapping) else None,
+        })
+    # The query intentionally fetches the newest bounded window first so an old
+    # active lane cannot win merely because it appears before a long historical
+    # timeline.  Consumers still process chronological order after this reversal.
+    records.reverse()
+    return tuple(records)
 
 
 def _agent_run_filters(

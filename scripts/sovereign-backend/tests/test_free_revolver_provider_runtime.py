@@ -16,6 +16,7 @@ from free_revolver_provider_contracts import (
     ManagedKeyContractError,
     assert_provider_target_allowed,
     assert_public_https_host,
+    classify_provider_surface,
     general_chat_response_verified,
     is_managed_internal_provider_url,
     managed_internal_source_spec,
@@ -71,6 +72,100 @@ def test_only_exact_managed_free_endpoints_bypass_public_https_resolution() -> N
     ):
         with pytest.raises(ValueError):
             normalize_api_base(blocked)
+
+
+def test_provider_surface_contract_routes_only_canonical_actions() -> None:
+    generic = classify_provider_surface(
+        api_base="https://api.example.test/v1",
+        last_error_code=None,
+    )
+    omniroute = classify_provider_surface(
+        api_base="http://omniroute:20128/v1",
+        last_error_code=None,
+    )
+    retired = classify_provider_surface(
+        api_base="http://freellmpool:8080/v1",
+        last_error_code="freellmpool_replaced_by_omniroute",
+    )
+    retired_even_without_marker = classify_provider_surface(
+        api_base="http://freellmpool:8080/v1",
+        last_error_code=None,
+    )
+
+    assert generic == {
+        "providerSurfaceKind": "free-revolver",
+        "lifecycle": "active",
+        "canonicalAction": "revolver-discover",
+    }
+    assert omniroute == {
+        "providerSurfaceKind": "omniroute-auto",
+        "lifecycle": "active",
+        "canonicalAction": "omniroute-refresh",
+    }
+    assert retired == {
+        "providerSurfaceKind": "retired-reference",
+        "lifecycle": "historical",
+        "canonicalAction": "none",
+    }
+    assert retired_even_without_marker == retired
+
+
+def test_omniroute_is_not_added_to_generic_ssrf_allowlist() -> None:
+    with pytest.raises(ValueError):
+        normalize_api_base("http://omniroute:20128/v1")
+    assert is_managed_internal_provider_url("http://omniroute:20128/v1") is False
+
+    runtime = (BACKEND / "free_revolver_provider_runtime.py").read_text("utf-8")
+    discover_start = runtime.index("    def admin_discover_free_revolver_provider(")
+    discover_end = runtime.index("    @app.route(", discover_start + 1)
+    discover = runtime[discover_start:discover_end]
+    assert discover.index("classify_provider_surface(") < discover.index(
+        "models_url_candidates("
+    )
+    assert "canonical_provider_action_required" in discover
+
+    create_start = runtime.index("    def admin_create_free_revolver_provider(")
+    create_end = runtime.index("    @app.route(", create_start + 1)
+    create = runtime[create_start:create_end]
+    assert create.index("control = classify_provider_surface(") < create.index(
+        '"""INSERT INTO llm_revolver_provider_sources'
+    )
+    assert 'control["providerSurfaceKind"] != "free-revolver"' in create
+    assert "canonical_provider_action_required" in create
+
+    # Internal owner-authenticated entrypoints are equally constrained: a
+    # historical source or OmniRoute must fail before it can claim, reconcile,
+    # write models/routes, or overwrite its migration evidence.
+    for function_name in (
+        "internal_discover_managed_freellm_provider",
+        "internal_reconcile_freellm_provider",
+    ):
+        handler_start = runtime.index(f"    def {function_name}(")
+        handler_end = runtime.index("    @app.route(", handler_start + 1)
+        handler = runtime[handler_start:handler_end]
+        assert "last_error_code" in handler
+        assert handler.index("classify_provider_surface(") < handler.index(
+            '"""UPDATE '
+        )
+        assert 'control["canonicalAction"] != "revolver-discover"' in handler
+        assert 'control["providerSurfaceKind"] != "free-revolver"' in handler
+        assert "canonical_provider_action_required" in handler
+
+    app = (BACKEND / "app.py").read_text("utf-8")
+    reset_start = app.index("def admin_reset_llm_revolver_route(")
+    reset_end = app.index("\n\n@app.route(", reset_start)
+    reset = app[reset_start:reset_end]
+    assert "provider, runtime_kind, config" in reset
+    assert reset.index('if transport == "freellm" or managed_endpoint:') < reset.index(
+        '"""INSERT INTO llm_route_revolver_state'
+    )
+    assert "free_revolver_managed_route" in reset
+    assert "/api/admin/llm/revolver-v3/providers" in reset
+
+    assert (
+        (BACKEND / "free_revolver_provider_contracts.py").read_bytes()
+        == (REPO / "backend" / "free_revolver_provider_contracts.py").read_bytes()
+    )
 
 
 def test_managed_key_contract_reads_only_the_exact_owner_file(tmp_path: Path) -> None:
