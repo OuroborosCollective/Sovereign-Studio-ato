@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Run Vitest with bounded, machine-readable causal failure evidence.
 
-The wrapper never returns raw test stdout/stderr. Vitest writes its JSON reporter
-into ``.security-reports``; this script emits only aggregate counts and the first
-failed ``file::test`` identity in the Pytest-compatible form already understood
-by Sovereign's revision-bound workflow failure extractor.
+The wrapper never returns raw test stdout/stderr. Vitest writes its raw JSON
+reporter into an automatically deleted temporary directory; this script persists
+only a redacted aggregate summary and emits the first failed ``file::test``
+identity in the Pytest-compatible form already understood by Sovereign's
+revision-bound workflow failure extractor.
 
 This is test evidence only. It grants no runtime, consent or effect authority.
 """
@@ -17,6 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 from typing import Any, Mapping, Sequence
 
 SCHEMA_VERSION = "sovereign.vitest-causal-runner.v1"
@@ -154,43 +156,77 @@ def _arguments(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
     return parsed, vitest_args
 
 
+def _write_summary(path: Path, summary: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(dict(summary), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args, vitest_args = _arguments(argv if argv is not None else sys.argv[1:])
     root = Path.cwd().resolve()
     label = _safe_label(args.label)
-    report_path = Path(args.report) if args.report else Path(".security-reports") / f"vitest-{label}.json"
-    if not report_path.is_absolute():
-        report_path = root / report_path
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.unlink(missing_ok=True)
+    summary_path = (
+        Path(args.report)
+        if args.report
+        else Path(".security-reports") / f"vitest-{label}-summary.json"
+    )
+    if not summary_path.is_absolute():
+        summary_path = root / summary_path
+    summary_path.unlink(missing_ok=True)
 
-    command = build_vitest_command(report_path.relative_to(root), vitest_args)
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=args.timeout_seconds,
-        )
-        exit_code = int(completed.returncode)
-    except FileNotFoundError:
-        print(f"FAILED {label}::vitest_runner_unavailable")
-        return 127
-    except subprocess.TimeoutExpired:
-        print(f"FAILED {label}::vitest_timeout")
-        return 124
+    with tempfile.TemporaryDirectory(prefix=f"sovereign-vitest-{label}-") as temporary:
+        raw_report_path = Path(temporary) / "vitest-raw.json"
+        command = build_vitest_command(raw_report_path, vitest_args)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=args.timeout_seconds,
+            )
+            exit_code = int(completed.returncode)
+        except FileNotFoundError:
+            print(f"FAILED {label}::vitest_runner_unavailable")
+            return 127
+        except subprocess.TimeoutExpired:
+            print(f"FAILED {label}::vitest_timeout")
+            return 124
 
-    try:
-        raw = json.loads(report_path.read_text("utf-8"))
-        if not isinstance(raw, Mapping):
-            raise ValueError("Vitest JSON report must be an object")
-        summary = extract_causal_summary(raw, root=root, label=label)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        print(f"FAILED {label}::vitest_report_unavailable")
-        return exit_code or 1
+        try:
+            raw = json.loads(raw_report_path.read_text("utf-8"))
+            if not isinstance(raw, Mapping):
+                raise ValueError("Vitest JSON report must be an object")
+            summary = extract_causal_summary(raw, root=root, label=label)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            failure_summary = {
+                "schemaVersion": SCHEMA_VERSION,
+                "label": label,
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "causalTest": None,
+                "exitCode": exit_code,
+                "status": "report-unavailable",
+                "rawReportPersisted": False,
+            }
+            _write_summary(summary_path, failure_summary)
+            print(f"FAILED {label}::vitest_report_unavailable")
+            return exit_code or 1
+
+    persisted_summary = {
+        **summary,
+        "exitCode": exit_code,
+        "status": "passed" if exit_code == 0 and int(summary["failed"]) == 0 else "failed",
+        "rawReportPersisted": False,
+    }
+    _write_summary(summary_path, persisted_summary)
 
     print(
         "SOVEREIGN_VITEST_SUMMARY "

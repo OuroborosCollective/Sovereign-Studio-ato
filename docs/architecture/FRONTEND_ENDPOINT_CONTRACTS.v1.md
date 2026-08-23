@@ -168,9 +168,11 @@ Coverage includes:
 scripts/vitest_causal_runner.py
 ```
 
-Both the targeted endpoint-client suites and the subsequent broad frontend smoke run through this package-free wrapper. Vitest writes a JSON report below `.security-reports`; the wrapper emits only aggregate counts and the first failed `file::test` identity in the Pytest-compatible form consumed by Sovereign's revision-bound workflow failure extractor.
+Both the targeted endpoint-client suites and the subsequent broad frontend smoke run through this package-free wrapper. Vitest writes its raw JSON into an automatically deleted temporary directory. The wrapper persists only a redacted `vitest-<label>-summary.json` below `.security-reports`, containing bounded counts, exit code, optional `file::test` identity and `rawReportPersisted: false`.
 
-Raw Vitest stdout, stderr and failure messages are not projected through this lane. The command is executed as an argument vector without a shell. This improves diagnosis only: the original Vitest exit code and every assertion remain release-blocking.
+Raw Vitest stdout, stderr, JSON and failure messages are not persisted or projected through this lane. The command is executed as an argument vector without a shell. This improves diagnosis only: the original Vitest exit code and every assertion remain release-blocking.
+
+If the compiler, Python regression family or Vitest wrapper exits before a precise test identity can be parsed, the fixed package command emits a bounded stage identity such as `FAILED frontend-smoke::vitest_runner` while preserving the original non-zero exit code. The revision-bound failure extractor therefore never needs raw logs and must not return a nameless red step.
 
 ### Package gate
 

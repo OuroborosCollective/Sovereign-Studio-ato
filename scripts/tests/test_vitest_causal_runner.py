@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "vitest_causal_runner.py"
@@ -116,6 +118,87 @@ def test_builds_shell_free_pnpm_vitest_command() -> None:
         "**/*.e2e.test.ts",
     ]
     assert all("&&" not in item and ";" not in item for item in command)
+
+
+def test_main_emits_fallback_identity_for_nonzero_vitest_without_failed_assertion(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    raw_report_paths: list[Path] = []
+
+    def fake_run(command, **kwargs):
+        report_argument = next(item for item in command if item.startswith("--outputFile="))
+        report_path = Path(report_argument.split("=", 1)[1])
+        raw_report_paths.append(report_path)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps({
+            "numTotalTests": 5,
+            "numPassedTests": 5,
+            "numFailedTests": 0,
+            "testResults": [],
+        }), encoding="utf-8")
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(MODULE.subprocess, "run", fake_run)
+
+    exit_code = MODULE.main([
+        "--label",
+        "frontend-clients",
+        "--",
+        "src/client.test.ts",
+    ])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "passed=5 failed=0" in output
+    assert "FAILED frontend-clients::vitest_exit_1" in output
+    summary = json.loads(
+        (tmp_path / ".security-reports/vitest-frontend-clients-summary.json").read_text("utf-8")
+    )
+    assert summary == {
+        "causalTest": None,
+        "exitCode": 1,
+        "failed": 0,
+        "label": "frontend-clients",
+        "passed": 5,
+        "rawReportPersisted": False,
+        "schemaVersion": "sovereign.vitest-causal-runner.v1",
+        "skipped": 0,
+        "status": "failed",
+        "total": 5,
+    }
+    assert raw_report_paths and all(not path.exists() for path in raw_report_paths)
+
+
+def test_main_emits_bounded_identity_when_vitest_report_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        MODULE.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(returncode=2),
+    )
+
+    exit_code = MODULE.main([
+        "--label",
+        "frontend-smoke",
+        "--",
+        "src/smoke.test.ts",
+    ])
+
+    assert exit_code == 2
+    assert capsys.readouterr().out.strip() == "FAILED frontend-smoke::vitest_report_unavailable"
+    summary = json.loads(
+        (tmp_path / ".security-reports/vitest-frontend-smoke-summary.json").read_text("utf-8")
+    )
+    assert summary["status"] == "report-unavailable"
+    assert summary["exitCode"] == 2
+    assert summary["rawReportPersisted"] is False
 
 
 def test_runner_source_does_not_emit_raw_vitest_output() -> None:
