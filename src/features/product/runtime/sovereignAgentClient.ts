@@ -4,6 +4,8 @@ import {
   type SovereignAgentJobRequest,
   type SovereignAgentJobSnapshot,
   type SovereignAgentRuntimeEvent,
+  type SovereignLiveProjection,
+  type SovereignWorkspaceEvidenceAnchor,
   resolveSovereignAgentConfig,
 } from './sovereignAgentRuntime';
 
@@ -45,7 +47,7 @@ export interface SovereignAgentStartJobInput {
   mission: string;
   provisionWorkspace?: boolean;
   cloneRepo?: boolean;
-  stagedFiles?: SovereignStagedFile[];
+  stagedFiles?: readonly SovereignStagedFile[];
   testCommand?: string;
   githubAccessToken?: string;
 }
@@ -311,6 +313,129 @@ function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim());
 }
+function projectionArray(value: unknown): SovereignLiveProjection[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isObject).flatMap((item): SovereignLiveProjection[] => {
+    if (stringValue(item.schemaVersion) !== 'sovereign.visual-projection-event.v1') return [];
+    const kind = stringValue(item.projectionKind);
+    const state = stringValue(item.projectionState);
+    const source = stringValue(item.sourceKind);
+    const claim = stringValue(item.claim);
+    const payload = isObject(item.payload) ? item.payload : undefined;
+    const authoritative = item.authoritative === false;
+    if (!kind || !state || !source || !payload || !authoritative || claim !== 'OBSERVED') return [];
+    if (!['IDE_FILE', 'IDE_DIFF', 'TERMINAL', 'BROWSER', 'WINDOW_FOCUS'].includes(kind)) return [];
+    if (!['REQUESTED', 'VISIBLE', 'UNAVAILABLE', 'STALE'].includes(state)) return [];
+    if (!['MCP', 'REPOSITORY', 'GIT', 'PROCESS', 'PLAYWRIGHT', 'RUNTIME', 'GUI'].includes(source)) return [];
+    const projectionId = stringValue(item.projectionId) || stringValue(item.eventId);
+    const eventId = stringValue(item.eventId) || projectionId;
+    const sessionId = stringValue(item.sessionId);
+    const sessionBindingHash = stringValue(item.sessionBindingHash);
+    const attemptId = stringValue(item.attemptId);
+    const workspaceId = stringValue(item.workspaceId);
+    const actionId = stringValue(item.actionId);
+    const sourceReceiptRef = stringValue(item.sourceReceiptRef);
+    const sourceIdentityHash = stringValue(item.sourceIdentityHash);
+    const projectionHash = stringValue(item.projectionHash);
+    if (!projectionId || !eventId || !sessionId || !sessionBindingHash || !attemptId || !workspaceId || !actionId || !sourceReceiptRef || !sourceIdentityHash || !projectionHash) return [];
+    return [{
+      projectionId,
+      eventId,
+      sessionId,
+      sessionBindingHash,
+      attemptId,
+      runId: stringValue(item.runId),
+      taskId: stringValue(item.taskId),
+      jobId: stringValue(item.jobId),
+      workspaceId,
+      actionId,
+      sourceKind: source as SovereignLiveProjection['sourceKind'],
+      projectionKind: kind as SovereignLiveProjection['projectionKind'],
+      projectionState: state as SovereignLiveProjection['projectionState'],
+      repositoryHead: stringValue(item.repositoryHead) ?? null,
+      sourceReceiptRef,
+      sourceIdentityHash,
+      payload,
+      projectionHash,
+      authoritative: false,
+      claim: 'OBSERVED',
+    }];
+  });
+}
+
+const EVIDENCE_VERDICTS = new Set(['OBSERVED', 'UNVERIFIED', 'VERIFIED', 'BLOCKED', 'CONTRADICTED', 'STALE']);
+const EVIDENCE_SOURCE_KINDS = new Set(['AGENT_RUN_RECEIPT', 'GITHUB_READBACK', 'PATCHMON_READBACK', 'DATABASE_READBACK', 'TARGET_READBACK', 'FRAME_OBSERVATION']);
+const SHA256_RE = /^[0-9a-f]{64}$/;
+const REVISION_RE = /^[0-9a-f]{40}$/;
+const IMAGE_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
+const FORBIDDEN_EVIDENCE_TEXT = ['chain-of-thought', 'reasoning:', 'system prompt', 'tool schema', 'provider_request_id', 'runtime_flags'];
+
+function evidenceAnchorArray(value: unknown): SovereignWorkspaceEvidenceAnchor[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isObject).flatMap((item): SovereignWorkspaceEvidenceAnchor[] => {
+    if (stringValue(item.schemaVersion) !== 'sovereign.workspace-evidence-anchor.v1' || item.authoritative !== false) return [];
+    const anchorId = stringValue(item.anchorId);
+    const claimKind = stringValue(item.claimKind)?.toUpperCase();
+    const verdict = stringValue(item.verdict)?.toUpperCase();
+    const sourceVerdict = stringValue(item.sourceVerdict)?.toUpperCase();
+    const sourceKind = stringValue(item.sourceKind)?.toUpperCase();
+    const sessionBindingHash = stringValue(item.sessionBindingHash)?.toLowerCase();
+    const repositoryRevision = stringValue(item.repositoryRevision)?.toLowerCase();
+    const evidenceHash = stringValue(item.evidenceHash)?.toLowerCase();
+    const sourceRefs = stringArray(item.sourceRefs).map((entry) => entry.toLowerCase());
+    const scope = stringValue(item.scope);
+    const foldedText = `${claimKind ?? ''} ${scope ?? ''}`.toLowerCase();
+    if (
+      !anchorId || !/^evidence-[0-9a-f]{24}$/.test(anchorId)
+      || !claimKind || ['EVERYTHING_WORKS', 'READY', 'DONE', 'GREEN', 'ALL_GREEN'].includes(claimKind)
+      || !verdict || !EVIDENCE_VERDICTS.has(verdict)
+      || !sourceVerdict || !EVIDENCE_VERDICTS.has(sourceVerdict)
+      || !sourceKind || !EVIDENCE_SOURCE_KINDS.has(sourceKind)
+      || !sessionBindingHash || !SHA256_RE.test(sessionBindingHash)
+      || !repositoryRevision || !REVISION_RE.test(repositoryRevision)
+      || !evidenceHash || !SHA256_RE.test(evidenceHash)
+      || !scope || FORBIDDEN_EVIDENCE_TEXT.some((marker) => foldedText.includes(marker))
+      || sourceRefs.length === 0 || sourceRefs.length > 32 || sourceRefs.some((entry) => !SHA256_RE.test(entry))
+      || (sourceKind === 'FRAME_OBSERVATION' && verdict === 'VERIFIED')
+    ) return [];
+    const runId = stringValue(item.runId);
+    const taskId = stringValue(item.taskId);
+    const attemptId = stringValue(item.attemptId);
+    const actionId = stringValue(item.actionId);
+    const observedAt = stringValue(item.observedAt);
+    if (!runId || !taskId || !attemptId || !actionId || !observedAt || !Number.isFinite(Date.parse(observedAt))) return [];
+    const targetRevision = stringValue(item.targetRevision)?.toLowerCase();
+    const imageDigest = stringValue(item.imageDigest)?.toLowerCase();
+    const runtimeIdentityHash = stringValue(item.runtimeIdentityHash)?.toLowerCase();
+    if (targetRevision && !REVISION_RE.test(targetRevision)) return [];
+    if (imageDigest && !IMAGE_DIGEST_RE.test(imageDigest)) return [];
+    if (runtimeIdentityHash && !SHA256_RE.test(runtimeIdentityHash)) return [];
+    return [{
+      anchorId,
+      claimKind,
+      verdict: verdict as SovereignWorkspaceEvidenceAnchor['verdict'],
+      sourceVerdict: sourceVerdict as SovereignWorkspaceEvidenceAnchor['sourceVerdict'],
+      sessionBindingHash,
+      runId,
+      taskId,
+      attemptId,
+      actionId,
+      scope,
+      sourceKind: sourceKind as SovereignWorkspaceEvidenceAnchor['sourceKind'],
+      sourceRefs,
+      repositoryRevision,
+      ...(targetRevision ? { targetRevision } : {}),
+      ...(imageDigest ? { imageDigest } : {}),
+      ...(runtimeIdentityHash ? { runtimeIdentityHash } : {}),
+      ...(stringValue(item.frameObservationId) ? { frameObservationId: stringValue(item.frameObservationId) } : {}),
+      observedAt,
+      freshnessReasons: stringArray(item.freshnessReasons),
+      evidenceHash,
+      authoritative: false,
+    }];
+  });
+}
+
 function eventArray(value: unknown, now: () => number): SovereignAgentRuntimeEvent[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isObject).map((item): SovereignAgentRuntimeEvent => ({
@@ -603,6 +728,28 @@ export class SovereignAgentClient {
     assertReady(this.config);
     if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
     return requestSnapshot({ url: endpoint(this.config.agentApiUrl, jobPath(jobId)), init: { method: 'GET', headers: headers(), credentials: 'include' }, fetcher: this.fetcher, now: this.now });
+  }
+  async getProjections(jobId: string): Promise<SovereignLiveProjection[]> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/projections?limit=100')),
+      init: { method: 'GET', headers: headers(), credentials: 'include' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Live Workspace projections',
+    });
+    return projectionArray(body.projections);
+  }
+  async getEvidenceAnchors(jobId: string): Promise<SovereignWorkspaceEvidenceAnchor[]> {
+    assertReady(this.config);
+    if (!jobId.trim()) throw new Error('Sovereign Agent job id is required.');
+    const body = await requestObject({
+      url: endpoint(this.config.agentApiUrl, jobPath(jobId, '/evidence-anchors?limit=100')),
+      init: { method: 'GET', headers: headers(), credentials: 'include' },
+      fetcher: this.fetcher,
+      fallback: 'Sovereign Live Workspace evidence anchors',
+    });
+    return evidenceAnchorArray(body.evidenceAnchors);
   }
   async cancelJob(jobId: string): Promise<SovereignAgentJobSnapshot> {
     assertReady(this.config);

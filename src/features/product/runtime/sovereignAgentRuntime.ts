@@ -46,6 +46,59 @@ export interface SovereignAgentRuntimeEvent {
   message: string;
 }
 
+export type SovereignLiveProjectionKind = 'IDE_FILE' | 'IDE_DIFF' | 'TERMINAL' | 'BROWSER' | 'WINDOW_FOCUS';
+export type SovereignLiveProjectionState = 'REQUESTED' | 'VISIBLE' | 'UNAVAILABLE' | 'STALE';
+
+export interface SovereignLiveProjection {
+  projectionId: string;
+  eventId: string;
+  sessionId: string;
+  sessionBindingHash: string;
+  attemptId: string;
+  runId?: string;
+  taskId?: string;
+  jobId?: string;
+  workspaceId: string;
+  actionId: string;
+  sourceKind: 'MCP' | 'REPOSITORY' | 'GIT' | 'PROCESS' | 'PLAYWRIGHT' | 'RUNTIME' | 'GUI';
+  projectionKind: SovereignLiveProjectionKind;
+  projectionState: SovereignLiveProjectionState;
+  repositoryHead?: string | null;
+  sourceReceiptRef: string;
+  sourceIdentityHash: string;
+  payload: Record<string, unknown>;
+  projectionHash: string;
+  authoritative: false;
+  claim: 'OBSERVED';
+}
+
+export type SovereignEvidenceVerdict = 'OBSERVED' | 'UNVERIFIED' | 'VERIFIED' | 'BLOCKED' | 'CONTRADICTED' | 'STALE';
+export type SovereignEvidenceSourceKind = 'AGENT_RUN_RECEIPT' | 'GITHUB_READBACK' | 'PATCHMON_READBACK' | 'DATABASE_READBACK' | 'TARGET_READBACK' | 'FRAME_OBSERVATION';
+
+export interface SovereignWorkspaceEvidenceAnchor {
+  anchorId: string;
+  claimKind: string;
+  verdict: SovereignEvidenceVerdict;
+  sourceVerdict: SovereignEvidenceVerdict;
+  sessionBindingHash: string;
+  runId: string;
+  taskId: string;
+  attemptId: string;
+  actionId: string;
+  scope: string;
+  sourceKind: SovereignEvidenceSourceKind;
+  sourceRefs: readonly string[];
+  repositoryRevision: string;
+  targetRevision?: string;
+  imageDigest?: string;
+  runtimeIdentityHash?: string;
+  frameObservationId?: string;
+  observedAt: string;
+  freshnessReasons: readonly string[];
+  evidenceHash: string;
+  authoritative: false;
+}
+
 export interface SovereignAgentJobSnapshot {
   jobId?: string;
   runtimeId?: string;

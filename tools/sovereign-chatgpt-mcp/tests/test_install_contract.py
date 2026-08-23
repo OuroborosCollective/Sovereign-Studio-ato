@@ -136,6 +136,15 @@ def test_runtime_local_modules_are_packaged_and_installed() -> None:
         assert filename in installer, f"runtime import is missing from VPS install copy set: {filename}"
 
 
+def test_desktop_worker_module_is_installed_in_control_plane_and_broker() -> None:
+    installer = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
+    runtime_copy_loop = installer.split('INSTALL_STAGE="copy_control_plane_files"', 1)[1].split("\ndone", 1)[0]
+    broker_copy_loop = installer.split("for file in broker.py", 1)[1].split("\ndone", 1)[0]
+
+    assert "desktop_worker.py" in runtime_copy_loop
+    assert "desktop_worker.py" in broker_copy_loop
+
+
 def test_installer_assigns_workspace_to_container_user_and_probes_write_access() -> None:
     script = (ROOT / "deploy" / "install-on-vps.sh").read_text("utf-8")
 
@@ -502,7 +511,7 @@ def test_android_hardening_runtime_uses_lightweight_orchestrator_image() -> None
     assert 'INSTALL_STAGE="verify_workspace_write_boundary"' in installer
     assert 'sovereign_cognitive_widget.WIDGET_MANIFEST.get("agentCount") == 8' not in installer
     assert '/opt/sovereign-chatgpt-tools/command-queue:/opt/sovereign-chatgpt-tools/command-queue' in compose
-    assert 'command_contract.py command_queue.py broker_client.py' in dockerfile
+    assert 'command_contract.py command_queue.py desktop_worker.py broker_client.py' in dockerfile
     assert '"running no-health"' not in installer
 
 

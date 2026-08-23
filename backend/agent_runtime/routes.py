@@ -8,8 +8,10 @@ thin and keeps the internal Sovereign Agent routes as the only job truth source.
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 import os
 from pathlib import Path
+import re
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -39,7 +41,15 @@ from .github_access import (
     verify_github_access_scope,
 )
 from .job_lifecycle import create_sovereign_agent_job, generate_agent_job_id
-from .job_store import append_agent_event, list_agent_jobs, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .job_store import append_agent_evidence_anchor, append_agent_event, append_agent_github_draft_pr_readback, list_agent_evidence_anchors, list_agent_jobs, list_agent_projections, mark_draft_pr_created, mark_draft_pr_prepared, read_agent_job, update_agent_job_state
+from .fleet_supervisor import FleetContractError
+from .live_workspace_chat_store import (
+    LiveWorkspaceChatStoreError,
+    append_live_workspace_chat_bubble,
+    list_live_workspace_chat_bubbles,
+    read_live_workspace_chat_session,
+    resolve_live_workspace_chat_session,
+)
 from .pattern_gateway import (
     evaluate_pattern_learning,
     pattern_input_from_job,
@@ -226,13 +236,59 @@ def _workspace_root() -> Path | None:
     return Path(configured) if configured else None
 
 
-def register_sovereign_agent_routes(app, *, require_session, get_connection: ConnectionFactory) -> None:
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"^[A-Za-z]:[\\\\/]")
+
+
+def _contains_live_workspace_path(value: object) -> bool:
+    """Reject accidental raw filesystem data from a reconnect response."""
+
+    forbidden_keys = {
+        "worktreepath", "baserepositorypath", "workspacepath", "repositorypath",
+        "absolutepath", "filesystempath",
+    }
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized_key = str(key or "").replace("_", "").replace("-", "").lower()
+            if normalized_key in forbidden_keys or _contains_live_workspace_path(item):
+                return True
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(_contains_live_workspace_path(item) for item in value)
+    if isinstance(value, str):
+        return (
+            value.startswith(("/", "\\", "//", "\\\\"))
+            or bool(_WINDOWS_ABSOLUTE_PATH_RE.match(value))
+            or "\x00" in value
+        )
+    return False
+
+
+def register_sovereign_agent_routes(
+    app,
+    *,
+    require_session,
+    get_connection: ConnectionFactory,
+    get_live_workspace_context: Callable[[Any, Any], Any | None] | None = None,
+    issue_desktop_activation: Callable[[Any], Any | None] | None = None,
+    get_desktop_frame: Callable[[Any], Any | None] | None = None,
+    take_desktop_control: Callable[[Any, str], Mapping[str, Any] | None] | None = None,
+    give_back_desktop_control: Callable[[Any, str, str, str], Mapping[str, Any] | None] | None = None,
+    send_desktop_user_input: Callable[[Any, str, str, str, dict[str, Any]], Mapping[str, Any] | None] | None = None,
+    desktop_frame_allowed: Callable[[Any], bool] | None = None,
+) -> None:
     """Register neutral user-facing Sovereign Agent job routes.
 
     Routes:
+    - POST /api/user/agent/live-workspace/chat-session
+    - GET  /api/user/agent/live-workspace/chat-session/<session_id>/bubbles
+    - POST /api/user/agent/live-workspace/chat-session/<session_id>/mission
     - GET  /api/user/agent/jobs
     - POST /api/user/agent/jobs
     - GET  /api/user/agent/jobs/<job_id>
+    - GET  /api/user/agent/jobs/<job_id>/live-workspace
+    - GET  /api/user/agent/jobs/<job_id>/evidence-anchors
+    - POST /api/user/agent/jobs/<job_id>/live-workspace/desktop/activation
+    - GET  /api/user/agent/jobs/<job_id>/live-workspace/desktop/frame
     - POST /api/user/agent/jobs/<job_id>/cancel
     - POST /api/user/agent/jobs/<job_id>/cleanup
     - POST /api/user/agent/jobs/<job_id>/editor/open
@@ -258,6 +314,23 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
     def _connection():
         return get_connection()
+
+    def _resolve_live_workspace_context(conn: Any, job: Any) -> Any | None:
+        if get_live_workspace_context is None:
+            return None
+        try:
+            return get_live_workspace_context(conn, job)
+        except Exception:
+            return None
+
+    def _desktop_control_block(job_id: str, reason: str):
+        return jsonify({
+            "ok": False,
+            "runtime": "sovereign-agent",
+            "jobId": job_id,
+            "state": "BLOCKED",
+            "reason": reason,
+        }), 409
 
     def _close(conn) -> None:
         close = getattr(conn, "close", None)
@@ -341,6 +414,11 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
 
             evidence_result = result if action == "janitor" else _merge_job_evidence(job, result)
             gate = append_tool_result_to_job(conn, job_id, evidence_result)
+            # These generic tools operate against the outer Agent Job clone.  That
+            # clone is provenance only, never a #1524 AttemptWorkspace.  Do not
+            # call the live reconnect resolver or create an attempt-labelled
+            # projection here; only a future exact-AttemptWorkspace executor may
+            # attach such a projection.
             tool_ok = result.status == "done"
             response_ok = tool_ok and (action == "janitor" or getattr(gate, "allowed", gate.passed))
             return jsonify({
@@ -348,6 +426,7 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 "runtime": "sovereign-agent",
                 "jobId": job_id,
                 "tool": _tool_result_to_api(evidence_result, gate),
+                "projection": None,
             }), 200 if response_ok else 400
         finally:
             _close(conn)
@@ -1300,6 +1379,134 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
         finally:
             _close(conn)
 
+    @app.route("/api/user/agent/live-workspace/chat-session", methods=["POST"])
+    @require_session
+    def user_resolve_live_workspace_chat_session():
+        """Resolve one immutable real-PostgreSQL chat session from server identity."""
+
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        conn = _connection()
+        try:
+            session = resolve_live_workspace_chat_session(
+                conn,
+                user_id=user_id,
+                repository_identity=body.get("repositoryIdentity") or "UNBOUND",
+                repository_branch=body.get("repositoryBranch") or "main",
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "session": session.to_public_dict(),
+            })
+        except (LiveWorkspaceChatStoreError, FleetContractError, ValueError):
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_SESSION_SCOPE_INVALID",
+            }), 400
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_POSTGRES_PERSISTENCE_UNAVAILABLE",
+            }), 503
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/live-workspace/chat-session/<session_id>/bubbles", methods=["GET"])
+    @require_session
+    def user_list_live_workspace_chat_bubbles(session_id: str):
+        user_id = _current_session_user_id()
+        try:
+            limit = max(1, min(int(request.args.get("limit", "200")), 500))
+        except (TypeError, ValueError):
+            return jsonify({"error": "limit must be an integer"}), 400
+        conn = _connection()
+        try:
+            session = read_live_workspace_chat_session(conn, user_id=user_id, session_id=session_id)
+            if session is None:
+                return jsonify({"error": "Chat session not found"}), 404
+            bubbles = list_live_workspace_chat_bubbles(
+                conn,
+                session=session,
+                user_id=user_id,
+                limit=limit,
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "session": session.to_public_dict(),
+                "bubbles": bubbles,
+            })
+        except LiveWorkspaceChatStoreError:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_PERSISTED_PAYLOAD_INVALID",
+            }), 409
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_POSTGRES_READBACK_UNAVAILABLE",
+            }), 503
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/live-workspace/chat-session/<session_id>/mission", methods=["POST"])
+    @require_session
+    def user_append_live_workspace_mission(session_id: str):
+        """Append only a typed user mission; clients cannot create result/consent truth."""
+
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "A JSON object is required"}), 400
+        conn = _connection()
+        try:
+            session = read_live_workspace_chat_session(conn, user_id=user_id, session_id=session_id)
+            if session is None:
+                return jsonify({"error": "Chat session not found"}), 404
+            bubble = append_live_workspace_chat_bubble(
+                conn,
+                session=session,
+                user_id=user_id,
+                client_message_id=body.get("clientMessageId"),
+                bubble_kind="MISSION_INPUT",
+                text=body.get("text"),
+                source_kind="USER_INPUT",
+                workflow_state="RECORDED",
+                canonical_reference_hashes=(),
+            )
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "bubble": bubble,
+            }), 201
+        except (LiveWorkspaceChatStoreError, FleetContractError, ValueError):
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "MISSION_OUTPUT_FIREWALL_REJECTED",
+            }), 400
+        except Exception:
+            return jsonify({
+                "ok": False,
+                "runtime": "sovereign-agent",
+                "state": "BLOCKED",
+                "reason": "CHAT_POSTGRES_PERSISTENCE_UNAVAILABLE",
+            }), 503
+        finally:
+            _close(conn)
+
     @app.route("/api/user/agent/jobs/<job_id>", methods=["GET"])
     @require_session
     def user_get_sovereign_agent_job(job_id: str):
@@ -1310,6 +1517,329 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
             if not job:
                 return jsonify({"error": "Job nicht gefunden"}), 404
             return jsonify({"runtime": "sovereign-agent", "job": _job_to_api(job)})
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace", methods=["GET"])
+    @require_session
+    def user_get_live_workspace(job_id: str):
+        """Reconnect to one server-derived active attempt without exposing paths."""
+
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = None
+            if get_live_workspace_context is not None:
+                try:
+                    context = get_live_workspace_context(conn, job)
+                except Exception:
+                    context = None
+            if context is None or not callable(getattr(context, "to_public_dict", None)):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "LIVE_WORKSPACE_CONTEXT_UNAVAILABLE",
+                }), 409
+            payload = context.to_public_dict()
+            if not isinstance(payload, dict) or _contains_live_workspace_path(payload):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "LIVE_WORKSPACE_CONTEXT_UNAVAILABLE",
+                }), 409
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "liveWorkspace": payload,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/activation", methods=["POST"])
+    @require_session
+    def user_issue_live_workspace_desktop_activation(job_id: str):
+        """Issue a path-free, opaque activation for the current exact AttemptWorkspace."""
+
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = None
+            if get_live_workspace_context is not None:
+                try:
+                    context = get_live_workspace_context(conn, job)
+                except Exception:
+                    context = None
+            activation = None
+            if context is not None and issue_desktop_activation is not None:
+                try:
+                    activation = issue_desktop_activation(context)
+                except Exception:
+                    activation = None
+            if activation is None or not callable(getattr(activation, "to_dict", None)):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "DESKTOP_ACTIVATION_UNAVAILABLE",
+                }), 409
+            payload = activation.to_dict()
+            if not isinstance(payload, dict) or _contains_live_workspace_path(payload):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "DESKTOP_ACTIVATION_UNAVAILABLE",
+                }), 409
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "desktopActivation": payload,
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/takeover", methods=["POST"])
+    @require_session
+    def user_take_live_workspace_desktop_control(job_id: str):
+        """Transfer GUI input to the signed-in user; it grants no other authority."""
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if body is None:
+            body = {}
+        if not isinstance(body, dict) or body:
+            return jsonify({"error": "Takeover accepts no capability or authority fields"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or take_desktop_control is None:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            try:
+                result = take_desktop_control(context, user_id)
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            if not isinstance(result, Mapping) or _contains_live_workspace_path(result):
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            return jsonify({
+                "ok": bool(result.get("ok")),
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "desktopActivation": result.get("desktopActivation"),
+                "control": result.get("control"),
+            }), 200 if bool(result.get("ok")) else 409
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/give-back", methods=["POST"])
+    @require_session
+    def user_give_back_live_workspace_desktop_control(job_id: str):
+        """Return GUI input only after the fresh resolver has rebuilt current evidence."""
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) != {"activationId", "leaseId"}:
+            return jsonify({"error": "Give-back requires only activationId and leaseId"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or give_back_desktop_control is None:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            try:
+                result = give_back_desktop_control(context, user_id, body["activationId"], body["leaseId"])
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            if not isinstance(result, Mapping) or _contains_live_workspace_path(result):
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            return jsonify({
+                "ok": bool(result.get("ok")),
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "control": result.get("control"),
+                "reason": result.get("reason"),
+            }), 200 if bool(result.get("ok")) else 409
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/input", methods=["POST"])
+    @require_session
+    def user_send_live_workspace_desktop_input(job_id: str):
+        """Deliver one bounded human GUI action; payload text is never persisted here."""
+        user_id = _current_session_user_id()
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) != {"activationId", "leaseId", "input"} or not isinstance(body.get("input"), dict):
+            return jsonify({"error": "Desktop input requires activationId, leaseId and one input object"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = _resolve_live_workspace_context(conn, job)
+            if context is None or send_desktop_user_input is None:
+                return _desktop_control_block(job_id, "DESKTOP_CONTROL_UNAVAILABLE")
+            try:
+                result = send_desktop_user_input(context, user_id, body["activationId"], body["leaseId"], body["input"])
+            except Exception:
+                return _desktop_control_block(job_id, "DESKTOP_INPUT_LEASE_UNAVAILABLE")
+            if not isinstance(result, Mapping) or _contains_live_workspace_path(result):
+                return _desktop_control_block(job_id, "DESKTOP_INPUT_LEASE_UNAVAILABLE")
+            return jsonify({
+                "ok": bool(result.get("ok")),
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "desktopInput": result,
+            }), 200 if bool(result.get("ok")) else 409
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/live-workspace/desktop/frame", methods=["GET"])
+    @require_session
+    def user_get_live_workspace_desktop_frame(job_id: str):
+        """Read one reconnect-safe desktop frame; no stream failure changes job state."""
+
+        user_id = _current_session_user_id()
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            context = None
+            if get_live_workspace_context is not None:
+                try:
+                    context = get_live_workspace_context(conn, job)
+                except Exception:
+                    context = None
+            frame = None
+            if context is not None and desktop_frame_allowed is not None:
+                try:
+                    if desktop_frame_allowed(context) is not True:
+                        return _desktop_control_block(job_id, "DESKTOP_FRAME_WITHHELD_DURING_USER_CONTROL")
+                except Exception:
+                    return _desktop_control_block(job_id, "DESKTOP_FRAME_UNAVAILABLE")
+            if context is not None and get_desktop_frame is not None:
+                try:
+                    frame = get_desktop_frame(context)
+                except Exception:
+                    frame = None
+            content = getattr(frame, "content", None)
+            observation = frame.observation() if callable(getattr(frame, "observation", None)) else None
+            if not isinstance(content, bytes) or not isinstance(observation, dict) or _contains_live_workspace_path(observation):
+                return jsonify({
+                    "ok": False,
+                    "runtime": "sovereign-agent",
+                    "jobId": job_id,
+                    "state": "BLOCKED",
+                    "reason": "DESKTOP_FRAME_UNAVAILABLE",
+                }), 409
+            response = Response(content, status=200, content_type="image/png")
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Sovereign-Observation"] = "OBSERVED"
+            response.headers["X-Sovereign-Frame-Hash"] = str(observation.get("frameHash") or "")
+            return response
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/projections", methods=["GET"])
+    @require_session
+    def user_get_sovereign_agent_projections(job_id: str):
+        user_id = _current_session_user_id()
+        try:
+            limit = int(request.args.get("limit", "100"))
+        except ValueError:
+            return jsonify({"error": "Projection limit is invalid"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "workspaceId": job.workspace_id,
+                "projections": list_agent_projections(conn, user_id=user_id, job_id=job_id, limit=limit),
+            })
+        finally:
+            _close(conn)
+
+    @app.route("/api/user/agent/jobs/<job_id>/evidence-anchors", methods=["GET"])
+    @require_session
+    def user_get_sovereign_agent_evidence_anchors(job_id: str):
+        """Project current-attempt anchors without attaching historical attempts."""
+
+        from .live_workspace import WorkspaceEvidenceAnchorV1
+
+        user_id = _current_session_user_id()
+        try:
+            limit = int(request.args.get("limit", "100"))
+        except ValueError:
+            return jsonify({"error": "Evidence anchor limit is invalid"}), 400
+        conn = _connection()
+        try:
+            job = _read_owned_job(conn, user_id, job_id)
+            if not job:
+                return jsonify({"error": "Job nicht gefunden"}), 404
+            stored = list_agent_evidence_anchors(conn, user_id=user_id, job_id=job_id, limit=limit)
+            context = _resolve_live_workspace_context(conn, job)
+            current: list[dict[str, Any]] = []
+            historical: list[dict[str, Any]] = []
+            latest_historical_key: tuple[str, str] | None = None
+            if context is None and stored:
+                try:
+                    latest_anchor = WorkspaceEvidenceAnchorV1.from_dict(stored[-1])
+                    latest_historical_key = (latest_anchor.session_binding_hash, latest_anchor.attempt_id)
+                except (FleetContractError, TypeError, ValueError):
+                    latest_historical_key = None
+            for raw in stored:
+                try:
+                    anchor = WorkspaceEvidenceAnchorV1.from_dict(raw)
+                except (FleetContractError, TypeError, ValueError):
+                    continue
+                if context is None:
+                    if (anchor.session_binding_hash, anchor.attempt_id) == latest_historical_key:
+                        current.append(anchor.to_read_model(verdict="STALE", freshness_reasons=("SESSION_NOT_ACTIVE",)))
+                    else:
+                        historical.append(anchor.to_read_model(verdict="STALE", freshness_reasons=("ATTEMPT_NOT_CURRENT",)))
+                    continue
+                if (
+                    anchor.session_binding_hash != context.session.session_binding_hash
+                    or anchor.attempt_id != context.session.attempt_id
+                ):
+                    historical.append(anchor.to_read_model(verdict="STALE", freshness_reasons=("ATTEMPT_NOT_CURRENT",)))
+                    continue
+                verdict, reasons = anchor.current_verdict(
+                    session=context.session,
+                    repository_revision=context.attempt_workspace.head_revision,
+                    runtime_identity_hash=context.session.desktop_runtime_identity_hash,
+                )
+                current.append(anchor.to_read_model(verdict=verdict, freshness_reasons=reasons))
+            return jsonify({
+                "ok": True,
+                "runtime": "sovereign-agent",
+                "jobId": job_id,
+                "sessionBindingHash": context.session.session_binding_hash if context is not None else None,
+                "attemptId": context.session.attempt_id if context is not None else None,
+                "evidenceAnchors": current,
+                "historicalEvidenceAnchors": historical,
+                "authoritative": False,
+            })
         finally:
             _close(conn)
 
@@ -1757,6 +2287,44 @@ def register_sovereign_agent_routes(app, *, require_session, get_connection: Con
                 charged_credits = credit_cost
             elif not is_admin:
                 remaining_credits = available_credits
+
+            # The GitHub gate remains the canonical source. Persist a bounded
+            # source readback plus one projection anchor in the existing event
+            # store when an exact Fleet Attempt binding already exists.
+            try:
+                stored_anchors = list_agent_evidence_anchors(
+                    conn,
+                    user_id=user_id,
+                    job_id=job_id,
+                    limit=200,
+                )
+                if stored_anchors:
+                    from .live_workspace import WorkspaceEvidenceAnchorV1
+
+                    binding_anchor = WorkspaceEvidenceAnchorV1.from_dict(stored_anchors[-1])
+                    github_readback = draft_pr_create_signal(result)
+                    source_ref = append_agent_github_draft_pr_readback(
+                        conn,
+                        job_id=job_id,
+                        readback=github_readback,
+                        commit=False,
+                    )
+                    github_anchor = WorkspaceEvidenceAnchorV1.from_github_draft_pr_readback(
+                        binding_anchor=binding_anchor,
+                        readback=github_readback,
+                        source_ref=source_ref,
+                        observed_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    )
+                    append_agent_evidence_anchor(
+                        conn,
+                        job_id=job_id,
+                        anchor=github_anchor.to_dict(),
+                        commit=False,
+                    )
+            except Exception:
+                # Projection failure cannot change the already-created PR or its
+                # exact GitHub readback result.
+                pass
 
             mark_draft_pr_created(
                 conn,

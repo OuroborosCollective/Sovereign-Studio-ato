@@ -261,7 +261,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     : 'bg-slate-800/80 text-slate-200 border border-cyan-500/10 rounded-tl-sm'
                 }`}
               >
-                {msg.content}
+                {isRestore ? `↻ ${msg.content}` : msg.content}
               </div>
               {msg.role === 'assistant' && msg.metadata?.modelId && msg.metadata.modelId !== selectedModel && (
                 <div className="text-[10px] text-amber-500/70 px-2 flex items-center gap-1 opacity-80" title="Aufgrund eines Fehlers wurde auf ein alternatives Modell zurückgegriffen">

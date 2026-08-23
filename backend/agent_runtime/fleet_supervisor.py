@@ -406,7 +406,11 @@ def build_fleet_plan(
     """Build deterministic lanes and serialize anything that lacks proof of independence."""
 
     normalized_tasks = tuple(
-        item if isinstance(item, FleetTask) else FleetTask.from_dict(item)
+        # Reparse dataclass inputs through their canonical wire form as well.
+        # ``FleetTask`` tuple fields may otherwise preserve caller ordering while
+        # ``FleetTask.from_dict`` normalizes it, producing a plan hash that cannot
+        # round-trip through the persisted FleetPlan contract.
+        FleetTask.from_dict(item.to_dict() if isinstance(item, FleetTask) else item)
         for item in tasks
     )
     if not normalized_tasks:
@@ -482,6 +486,79 @@ class FleetWorkerAssignment:
     permission_receipt_hashes: tuple[str, ...]
     allowed_effects: tuple[str, ...]
     assignment_hash: str
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "FleetWorkerAssignment":
+        """Parse and verify one persisted worker assignment envelope.
+
+        This is deliberately stricter than a convenience deserializer: the
+        assignment id and hash must be recomputable from the exact controller
+        fields.  A later consumer still has to verify that the assignment belongs
+        to the selected :class:`FleetPlan`; this method only proves that its own
+        envelope was not altered in transit.
+        """
+
+        if not isinstance(value, Mapping):
+            raise FleetContractError("assignment must be an object")
+        required = frozenset((
+            "schemaVersion", "assignmentId", "planHash", "laneId", "taskId",
+            "controllerRunId", "workspaceId", "workspaceBranch",
+            "expectedBaseRevision", "runEnvelopeHash", "capabilityManifestHash",
+            "permissionReceiptHashes", "allowedEffects", "assignmentHash",
+            "expectedHeadRevision",
+        ))
+        if set(value) != required:
+            raise FleetContractError("assignment lacks canonical signed fields")
+        if value.get("schemaVersion") != SCHEMA_VERSION:
+            raise FleetContractError("assignment schema version is unsupported")
+        effects = _strings(value.get("allowedEffects"), "allowed_effects")
+        if set(effects).difference({"READ", "PROPOSE_CHANGE", "REPORT_EVIDENCE"}):
+            raise FleetContractError("worker effects must remain bounded and non-authoritative")
+        payload = {
+            "schemaVersion": SCHEMA_VERSION,
+            "planHash": _revision(value.get("planHash"), "plan_hash"),
+            "laneId": _text(value.get("laneId"), "lane_id", maximum=120),
+            "taskId": _text(value.get("taskId"), "task_id", maximum=120),
+            "controllerRunId": _text(value.get("controllerRunId"), "controller_run_id", maximum=160),
+            "workspaceId": _text(value.get("workspaceId"), "workspace_id", maximum=160),
+            "workspaceBranch": _text(value.get("workspaceBranch"), "workspace_branch", maximum=200),
+            "expectedBaseRevision": _revision(value.get("expectedBaseRevision"), "expected_base_revision"),
+            "expectedHeadRevision": _revision(
+                value.get("expectedHeadRevision") or "",
+                "expected_head_revision",
+                optional=True,
+            ) or None,
+            "runEnvelopeHash": _revision(value.get("runEnvelopeHash"), "run_envelope_hash"),
+            "capabilityManifestHash": _revision(value.get("capabilityManifestHash"), "capability_manifest_hash"),
+            "permissionReceiptHashes": list(_revisions(value.get("permissionReceiptHashes"), "permission_receipt_hashes")),
+            "allowedEffects": list(effects),
+        }
+        assignment_hash = _revision(value.get("assignmentHash"), "assignment_hash")
+        expected_hash = stable_hash(payload)
+        if assignment_hash != expected_hash:
+            raise FleetContractError("assignment hash does not bind the submitted envelope")
+        assignment_id = _text(value.get("assignmentId"), "assignment_id", maximum=160)
+        if assignment_id != f"assignment-{expected_hash[:24]}":
+            raise FleetContractError("assignment id does not bind the submitted assignment hash")
+        parsed = cls(
+            assignment_id=assignment_id,
+            plan_hash=payload["planHash"],
+            lane_id=payload["laneId"],
+            task_id=payload["taskId"],
+            controller_run_id=payload["controllerRunId"],
+            workspace_id=payload["workspaceId"],
+            workspace_branch=payload["workspaceBranch"],
+            expected_base_revision=payload["expectedBaseRevision"],
+            expected_head_revision=str(payload["expectedHeadRevision"] or ""),
+            run_envelope_hash=payload["runEnvelopeHash"],
+            capability_manifest_hash=payload["capabilityManifestHash"],
+            permission_receipt_hashes=tuple(payload["permissionReceiptHashes"]),
+            allowed_effects=effects,
+            assignment_hash=assignment_hash,
+        )
+        if dict(value) != parsed.to_dict():
+            raise FleetContractError("assignment fields are not canonical")
+        return parsed
 
     def to_dict(self) -> dict[str, Any]:
         return {

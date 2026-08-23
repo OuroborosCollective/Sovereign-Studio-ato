@@ -153,20 +153,49 @@ describe('buildChatLines', () => {
     chatHistory: [],
   };
 
-  it('includes restoredSessionAge system line when provided', () => {
+  const mission = {
+    id: 'mission',
+    role: 'user' as const,
+    text: 'Repariere den Login.',
+    bubble: {
+      schemaVersion: 'sovereign.live-workspace-chat-bubble.v1' as const,
+      persistenceSchemaVersion: 'sovereign.live-workspace-chat-persistence.v1',
+      sessionId: 'livechat-' + 'a'.repeat(24),
+      clientMessageId: 'mission-1',
+      bubbleKind: 'MISSION_INPUT' as const,
+      sourceKind: 'USER_INPUT' as const,
+      text: 'Repariere den Login.',
+      canonicalReferenceHashes: [],
+      workflowState: 'RECORDED',
+      bubbleHash: 'b'.repeat(64),
+      recordedAt: '2026-08-23T01:00:00+00:00',
+      authoritative: false as const,
+    },
+  };
+
+  it('renders only committed typed situational bubbles', () => {
     const lines = buildChatLines({
       ...baseArgs,
       restoredSessionAge: '2m',
+      sovereignSummary: 'Tests laufen gerade.',
+      cuteThinkingLabel: 'Ich denke nach.',
+      runtimeThinkingActive: true,
+      chatHistory: [
+        mission,
+        { id: 'raw-assistant', role: 'assistant', text: 'Tests laufen gerade.' },
+        { id: 'system', role: 'system', text: 'Repo verbunden.' },
+        { id: 'thought', role: 'thought', text: 'Ich öffne jetzt Datei X.' },
+      ],
     });
-    const restoreLine = lines.find((l) => l.id === 'system:restore-age');
-    expect(restoreLine).toBeDefined();
-    expect(restoreLine?.role).toBe('system');
-    expect(restoreLine?.text).toBe('Session wiederhergestellt (Alter: 2m)');
+    expect(lines).toEqual([mission]);
   });
 
-  it('does not include restoredSessionAge system line when not provided', () => {
-    const lines = buildChatLines(baseArgs);
-    const restoreLine = lines.find((l) => l.id === 'system:restore-age');
-    expect(restoreLine).toBeUndefined();
+  it('does not turn repo, restore age or disabled state into primary chat messages', () => {
+    const lines = buildChatLines({
+      ...baseArgs,
+      restoredSessionAge: '2m',
+      disabledReason: 'Worker blockiert',
+    });
+    expect(lines).toEqual([]);
   });
 });

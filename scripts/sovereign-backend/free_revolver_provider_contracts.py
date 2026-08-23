@@ -38,6 +38,9 @@ _MANAGED_INTERNAL_SOURCES = {
     },
 }
 _MANAGED_KEY_FILENAME = "freellmapi_unified_key.txt"
+_OMNIROUTE_API_BASE = "http://omniroute:20128/v1"
+_RETIRED_FREELLMPOOL_API_BASE = "http://freellmpool:8080/v1"
+_RETIRED_FREELLMPOOL_ERROR = "freellmpool_replaced_by_omniroute"
 _TEXT_CHAT_CAPABILITIES = frozenset({
     "chat",
     "completion",
@@ -165,6 +168,41 @@ def normalize_max_auto_activate(value: Any) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError("maxAutoActivate muss eine ganze Zahl sein")
     return max(1, min(value, _MAX_AUTO_ACTIVATE))
+
+
+def classify_provider_surface(
+    *,
+    api_base: Any,
+    last_error_code: Any,
+) -> dict[str, str]:
+    """Return the sole allowed admin control for a persisted provider surface.
+
+    This intentionally does not reuse the generic managed-provider URL allowlist:
+    OmniRoute has a dedicated runtime and must never become a generic discovery
+    target merely because it is visible in the free-provider read model.
+    """
+    normalized_base = str(api_base or "").strip().rstrip("/")
+    error_code = str(last_error_code or "").strip()
+    if (
+        normalized_base == _RETIRED_FREELLMPOOL_API_BASE
+        or error_code == _RETIRED_FREELLMPOOL_ERROR
+    ):
+        return {
+            "providerSurfaceKind": "retired-reference",
+            "lifecycle": "historical",
+            "canonicalAction": "none",
+        }
+    if normalized_base == _OMNIROUTE_API_BASE:
+        return {
+            "providerSurfaceKind": "omniroute-auto",
+            "lifecycle": "active",
+            "canonicalAction": "omniroute-refresh",
+        }
+    return {
+        "providerSurfaceKind": "free-revolver",
+        "lifecycle": "active",
+        "canonicalAction": "revolver-discover",
+    }
 
 
 def managed_internal_source_id(value: Any) -> str | None:

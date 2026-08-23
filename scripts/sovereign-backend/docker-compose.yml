@@ -9,6 +9,7 @@
 # - areloria_arelorian-network: Network for Areloria services
 # - sovereign-private: direct OpenRouter and FreeLLM routing network; FreeLLMAPI
 #   stays intact and OmniRoute replaces only the retired FreeLLMPool route source.
+# - sovereign-desktop: internal-only bridge to the per-attempt desktop worker.
 # =============================================================================
 
 services:
@@ -55,15 +56,22 @@ services:
       SOVEREIGN_AGENT_WORKSPACE_ROOT: /var/lib/sovereign-agent/workspaces
       SOVEREIGN_AGENT_WORKSPACE_UID: "10001"
       SOVEREIGN_AGENT_WORKSPACE_GID: "10001"
+      # Activation data is opaque, scoped and host-private; the backend never
+      # returns its filesystem paths or scope values to the user-facing API.
+      SOVEREIGN_DESKTOP_ACTIVATION_ROOT: /var/lib/sovereign-desktop-activations
+      SOVEREIGN_DESKTOP_ACTIVATION_KEY_FILE: /opt/sovereign-owner-managed/desktop_activation_key.txt
+      SOVEREIGN_DESKTOP_WORKER_IMAGE: ${SOVEREIGN_DESKTOP_WORKER_IMAGE:-}
     volumes:
       - /opt/secure:/opt/secure:ro
       - /opt/sovereign-owner-managed:/opt/sovereign-owner-managed:rw
       - /opt/sovereign-agent-workspaces:/var/lib/sovereign-agent/workspaces:rw
+      - /opt/sovereign-desktop-activations:/var/lib/sovereign-desktop-activations:rw
     restart: unless-stopped
     networks:
       - supabase_default
       - areloria_arelorian-network
       - sovereign-private
+      - sovereign-desktop
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/health/ready', timeout=8)"]
       interval: 30s
@@ -121,6 +129,9 @@ networks:
     external: true
   sovereign-private:
     external: true
+  sovereign-desktop:
+    name: sovereign-desktop
+    internal: true
 
 volumes:
   sovereign-omniroute-data:

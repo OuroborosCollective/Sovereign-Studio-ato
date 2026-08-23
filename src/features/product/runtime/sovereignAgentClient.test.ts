@@ -273,6 +273,95 @@ describe('SovereignAgentClient', () => {
     expect(jobs).toMatchObject([{ jobId: 'job-latest', workspaceId: 'ws-latest', status: 'running' }]);
   });
 
+  it('reads only canonical session-bound visual projections from the owned job route', async () => {
+    const canonical = {
+      schemaVersion: 'sovereign.visual-projection-event.v1',
+      projectionId: 'visual-1',
+      eventId: 'visual-1',
+      eventType: 'TERMINAL_VIEW_PROJECTED',
+      sessionId: 'livews-1234567890abcdef12345678',
+      sessionBindingHash: 'a'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      runId: 'run-1',
+      taskId: 'task-1',
+      workspaceId: 'ws-1',
+      actionId: 'action-1',
+      sourceKind: 'PROCESS',
+      projectionKind: 'TERMINAL',
+      projectionState: 'REQUESTED',
+      repositoryHead: 'b'.repeat(40),
+      sourceReceiptRef: 'c'.repeat(64),
+      sourceIdentityHash: 'd'.repeat(64),
+      payload: { chunk: '1 failed', exitCode: 1, processState: 'EXITED' },
+      projectionHash: 'e'.repeat(64),
+      authoritative: false,
+      claim: 'OBSERVED',
+    };
+    const legacy = { ...canonical, schemaVersion: 'sovereign.live-workspace-projection.v1', projectionId: 'legacy-1' };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ projections: [legacy, canonical] }), { status: 200 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const projections = await client.getProjections('job-1');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://agent.example.test/api/user/agent/jobs/job-1/projections?limit=100',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(projections).toHaveLength(1);
+    expect(projections[0]).toMatchObject({
+      projectionId: 'visual-1',
+      sessionBindingHash: 'a'.repeat(64),
+      attemptId: 'attempt-1234567890abcdef12345678',
+      projectionKind: 'TERMINAL',
+      projectionState: 'REQUESTED',
+      payload: { exitCode: 1 },
+      authoritative: false,
+      claim: 'OBSERVED',
+    });
+  });
+
+  it('reads only typed claim-granular evidence anchors and rejects frame-based verified claims', async () => {
+    const canonical = {
+      schemaVersion: 'sovereign.workspace-evidence-anchor.v1',
+      anchorId: `evidence-${'a'.repeat(24)}`,
+      claimKind: 'TEST_EXECUTION_RECEIPT_MATCH',
+      verdict: 'VERIFIED',
+      sourceVerdict: 'VERIFIED',
+      sessionBindingHash: 'b'.repeat(64),
+      runId: 'run-1',
+      taskId: 'task-1',
+      attemptId: 'attempt-1',
+      actionId: 'tool-call-1',
+      scope: `tool=test;input=${'c'.repeat(64)};effect=read`,
+      sourceKind: 'AGENT_RUN_RECEIPT',
+      sourceRefs: ['d'.repeat(64)],
+      repositoryRevision: 'e'.repeat(40),
+      observedAt: '2026-08-23T03:30:00Z',
+      freshnessReasons: [],
+      evidenceHash: 'f'.repeat(64),
+      authoritative: false,
+    };
+    const frameClaim = { ...canonical, anchorId: `evidence-${'1'.repeat(24)}`, sourceKind: 'FRAME_OBSERVATION' };
+    const generic = { ...canonical, anchorId: `evidence-${'2'.repeat(24)}`, claimKind: 'EVERYTHING_WORKS' };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ evidenceAnchors: [frameClaim, generic, canonical] }), { status: 200 }));
+    const client = new SovereignAgentClient({ config, fetcher: fetcher as unknown as typeof fetch });
+
+    const anchors = await client.getEvidenceAnchors('job-1');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://agent.example.test/api/user/agent/jobs/job-1/evidence-anchors?limit=100',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]).toMatchObject({
+      claimKind: 'TEST_EXECUTION_RECEIPT_MATCH',
+      verdict: 'VERIFIED',
+      sourceKind: 'AGENT_RUN_RECEIPT',
+      repositoryRevision: 'e'.repeat(40),
+      authoritative: false,
+    });
+  });
+
   it('runs the deterministic janitor only through the owned job tool route', async () => {
     const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       ok: true,
