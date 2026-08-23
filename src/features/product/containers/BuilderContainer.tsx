@@ -66,7 +66,6 @@ import {
 import { Ampel } from "../components/Ampel";
 import { FileBadge } from "../components/FileBadge";
 import { ThoughtBubble } from "../components/ThoughtBubble";
-import { ThinkingDots } from "../components/ThinkingDots";
 import { OutcomeHints } from "../components/OutcomeHints";
 import { C, STATUS_COLOR, STATUS_LABEL } from "../components/builderConstants";
 import { WorkbenchStatusChips } from "../components/WorkbenchStatusChips";
@@ -111,12 +110,18 @@ import {
   type SovereignPresetActionId,
 } from "../runtime/sovereignPresetActionRuntime";
 import {
+  appendMissionInput,
   downloadSessionMarkdown,
   formatPersistedSessionAge,
   getOrCreateCurrentSession,
-  saveSession,
+  loadSession,
+  sessionMessageToChatLine,
   type PersistedSession,
 } from "../runtime/sessionPersistenceRuntime";
+import {
+  bubbleKindLabel,
+  projectSituationalChatLine,
+} from "../runtime/situationalBubbleRuntime";
 import { runTests, type TestRunnerResult } from "../runtime/testRunnerRuntime";
 import {
   requestAutoCodeReview,
@@ -1094,6 +1099,8 @@ function Bubble({
 }) {
   const isUser = msg.role === "user";
   const [showMenu, setShowMenu] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+  const bubbleKind = msg.bubble?.bubbleKind;
 
   // ── Issue #429: Haptic feedback helper using runtime
   const triggerHaptic = useCallback(
@@ -1127,6 +1134,29 @@ function Bubble({
   }
   if (msg.role === "thought") return <ThoughtBubble text={msg.text} />;
 
+  if (!isUser && minimized && msg.bubble) {
+    return (
+      <div style={{ padding: "4px 12px" }}>
+        <button
+          type="button"
+          data-testid={`restore-bubble-${msg.bubble.bubbleHash}`}
+          onClick={() => setMinimized(false)}
+          aria-label={`${bubbleKindLabel(msg.bubble.bubbleKind)} wieder öffnen`}
+          style={{
+            minHeight: 44,
+            borderRadius: 22,
+            padding: "8px 14px",
+            border: `1px solid ${C.border}`,
+            background: C.surface,
+            color: C.textSub,
+          }}
+        >
+          {bubbleKindLabel(msg.bubble.bubbleKind)} · ausstehende UI-Projektion
+        </button>
+      </div>
+    );
+  }
+
   // ── Issue #429: Long-press for copy/follow-up using runtime helpers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1149,6 +1179,9 @@ function Bubble({
 
   return (
     <div
+      data-bubble-kind={bubbleKind}
+      role={bubbleKind === "MATERIAL_BLOCKER" ? "alert" : undefined}
+      aria-label={bubbleKind ? bubbleKindLabel(bubbleKind) : undefined}
       style={{
         display: "flex",
         alignItems: "flex-end",
@@ -1187,6 +1220,11 @@ function Bubble({
           gap: 2,
         }}
       >
+        {!isUser && bubbleKind && (
+          <span style={{ fontSize: 10, color: C.textMuted, paddingInline: 2 }}>
+            {bubbleKindLabel(bubbleKind)}
+          </span>
+        )}
         <FileBadge path={msg.path} file={msg.file} onOpenFile={onOpenFile} />
         <div style={{ position: "relative" }}>
           {/* ── Issue #427: Markdown rendering for assistant bubbles */}
@@ -1263,11 +1301,28 @@ function Bubble({
             </div>
           )}
         </div>
-        <span
-          style={{ fontFamily: "monospace", fontSize: 9, color: C.textMuted }}
-        >
-          {fmtTime(msg.createdAt || now)}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 9, color: C.textMuted }}>
+            {fmtTime(msg.createdAt || now)}
+          </span>
+          {!isUser && msg.bubble && (
+            <button
+              type="button"
+              onClick={() => setMinimized(true)}
+              aria-label={`${bubbleKindLabel(msg.bubble.bubbleKind)} minimieren`}
+              style={{
+                minWidth: 44,
+                minHeight: 44,
+                border: "none",
+                background: "transparent",
+                color: C.textMuted,
+                cursor: "pointer",
+              }}
+            >
+              −
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2646,7 +2701,7 @@ export function BuilderContainer({
   const [chatHistory, setChatHistory] = useState<ChatLine[]>([]);
   const [restoredSessionAge, setRestoredSessionAge] = useState<string | null>(null);
   const [chatResponseBusy, setChatResponseBusy] = useState(false);
-  const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [, setStreamingText] = useState<string | null>(null);
   const [workerBlocker, setWorkerBlocker] =
     useState<WorkerRuntimeBlocker | null>(null);
   const [workerHealthEvidence, setWorkerHealthEvidence] =
@@ -3074,14 +3129,14 @@ export function BuilderContainer({
     ) => {
       chatLineIndexRef.current += 1;
       const createdAt = line.createdAt ?? Date.now();
-      setChatHistory((previous) => [
-        ...previous,
-        {
-          ...line,
-          id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
-          createdAt,
-        },
-      ]);
+      const candidate: ChatLine = {
+        ...line,
+        id: line.id ?? createChatLineId(line.role, chatLineIndexRef.current),
+        createdAt,
+      };
+      const committed = projectSituationalChatLine(candidate);
+      if (!committed) return;
+      setChatHistory((previous) => [...previous, committed]);
       nowRef.current = createdAt;
     },
     [],
@@ -3101,6 +3156,62 @@ export function BuilderContainer({
     }
     appendChatLine({ role: 'assistant', text: guardedText });
   }, [addLog, agentWorkSnapshot, appendChatLine]);
+
+  const persistMissionInput = useCallback(async (text: string): Promise<boolean> => {
+    if (!authUser) {
+      setShowLogin(true);
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Mission nicht gespeichert',
+        detail: 'Eine bestätigte Sitzung ist für die reale PostgreSQL-Persistenz erforderlich.',
+        kind: 'blocked',
+      }));
+      return false;
+    }
+
+    const repositoryIdentity = chatRepoSnapshot?.repoUrl ?? 'UNBOUND';
+    const repositoryBranch = chatRepoSnapshot?.branch ?? 'main';
+    try {
+      const normalizedRepository = repositoryIdentity.replace(/\.git$/i, '');
+      let session = persistedSessionRef.current;
+      if (
+        !session
+        || session.repoUrl !== normalizedRepository
+        || session.repoBranch !== repositoryBranch
+      ) {
+        session = await getOrCreateCurrentSession(
+          SOVEREIGN_WORKER_BASE,
+          repositoryIdentity,
+          repositoryBranch,
+        );
+      }
+      const persisted = await appendMissionInput(
+        SOVEREIGN_WORKER_BASE,
+        session,
+        text,
+      );
+      const message = persisted.messages.at(-1);
+      if (!message) throw new Error('persisted mission readback missing');
+      persistedSessionRef.current = persisted;
+      appendChatLine(sessionMessageToChatLine(message));
+      return true;
+    } catch {
+      appendActionEvent(buildBlockedActionEvent({
+        route: 'runtime',
+        label: 'Mission nicht gespeichert',
+        detail: 'Der PostgreSQL-Commit oder sein typisierter Readback ist nicht verfügbar.',
+        kind: 'blocked',
+      }));
+      addLog('warn', 'Mission persistence blocked; no localStorage fallback was used.', 'router');
+      return false;
+    }
+  }, [
+    addLog,
+    appendActionEvent,
+    appendChatLine,
+    authUser,
+    chatRepoSnapshot,
+  ]);
 
   const recordOnlineLanguageObservation = useCallback(async (input: {
     readonly prompt: string;
@@ -3179,67 +3290,58 @@ export function BuilderContainer({
   ]);
 
   useEffect(() => {
-    if (!chatRepoSnapshot || !currentRepoScopeKey) {
+    if (!authUser || !chatRepoSnapshot || !currentRepoScopeKey) {
       persistedSessionRef.current = null;
       hydratedSessionScopeRef.current = null;
       setRestoredSessionAge(null);
       return;
     }
-    if (hydratedSessionScopeRef.current === currentRepoScopeKey) return;
-    const session = getOrCreateCurrentSession(
-      localStorage,
-      chatRepoSnapshot.repoUrl,
-      chatRepoSnapshot.branch,
-    );
-    persistedSessionRef.current = session;
-    hydratedSessionScopeRef.current = currentRepoScopeKey;
-    if (session.messages.length === 0 || chatHistory.length > 0) {
-      setRestoredSessionAge(null);
-      return;
-    }
-    const restored = session.messages.map((message, index) => ({
-      id: message.id || createChatLineId(message.role, index + 1),
-      role: message.role,
-      text: message.content,
-      createdAt: message.timestamp,
-    })) as ChatLine[];
-    chatLineIndexRef.current = restored.length;
-    nowRef.current = restored[restored.length - 1]?.createdAt ?? Date.now();
-    setChatHistory(restored);
 
-    const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
-    const ageLabel = isStale
-      ? `${formattedAge} · veraltet – bitte Status prüfen`
-      : formattedAge;
-    setRestoredSessionAge(ageLabel);
+    const authenticatedScope = `${String((authUser as { id?: string }).id ?? '')}:${currentRepoScopeKey}`;
+    if (hydratedSessionScopeRef.current === authenticatedScope) return;
+    hydratedSessionScopeRef.current = authenticatedScope;
+    let cancelled = false;
 
-    addLog('info', 'Chat session restored with ' + restored.length + ' messages (Age: ' + ageLabel + ')', 'sys');
-  }, [addLog, chatHistory.length, chatRepoSnapshot, currentRepoScopeKey]);
+    void (async () => {
+      try {
+        const resolved = await getOrCreateCurrentSession(
+          SOVEREIGN_WORKER_BASE,
+          chatRepoSnapshot.repoUrl,
+          chatRepoSnapshot.branch,
+        );
+        const session = await loadSession(
+          SOVEREIGN_WORKER_BASE,
+          resolved.sessionId,
+        );
+        if (cancelled) return;
+        persistedSessionRef.current = session;
+        chatLineIndexRef.current = session.messages.length;
+        const restored = session.messages.map(sessionMessageToChatLine);
+        nowRef.current = restored.at(-1)?.createdAt ?? Date.now();
+        setChatHistory(restored);
 
-  useEffect(() => {
-    if (
-      !chatRepoSnapshot
-      || !currentRepoScopeKey
-      || hydratedSessionScopeRef.current !== currentRepoScopeKey
-      || !persistedSessionRef.current
-    ) return;
-    const current = persistedSessionRef.current;
-    const messages = chatHistory
-      .filter((line) => line.role === 'user' || line.role === 'assistant' || line.role === 'system')
-      .map((line) => ({
-        id: line.id,
-        role: line.role as 'user' | 'assistant' | 'system',
-        content: line.text,
-        timestamp: line.createdAt ?? Date.now(),
-      }));
-    persistedSessionRef.current = saveSession(localStorage, {
-      sessionId: current.sessionId,
-      repoUrl: chatRepoSnapshot.repoUrl,
-      repoBranch: chatRepoSnapshot.branch,
-      messages,
-      createdAt: current.createdAt,
-    });
-  }, [chatHistory, chatRepoSnapshot, currentRepoScopeKey]);
+        const { text: formattedAge, isStale } = formatPersistedSessionAge(session);
+        setRestoredSessionAge(isStale
+          ? `${formattedAge} · veraltet – bitte Status prüfen`
+          : formattedAge);
+        addLog(
+          'info',
+          `PostgreSQL bubble session restored: ${session.messageCount} message(s)`,
+          'sys',
+        );
+      } catch {
+        if (cancelled) return;
+        persistedSessionRef.current = null;
+        setRestoredSessionAge(null);
+        setChatHistory([]);
+        addLog('warn', 'PostgreSQL bubble persistence is unavailable; no local fallback was used.', 'sys');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [addLog, authUser, chatRepoSnapshot, currentRepoScopeKey]);
 
   // ── Issue #447: Project only server-accepted learning evidence into local cache
   usePatternMemoryStore({
@@ -3259,7 +3361,7 @@ export function BuilderContainer({
   // Every new chat line, action-stream event, or freshly-started stream
   // counts as one unit of "unseen" activity while the user has scrolled away.
   const chatActivitySignal =
-    chatHistory.length + actionStream.events.length + (streamingText !== null ? 1 : 0);
+    chatHistory.length + actionStream.events.length;
   const lastChatActivitySignalRef = useRef(chatActivitySignal);
   useEffect(() => {
     if (chatActivitySignal > lastChatActivitySignalRef.current) {
@@ -3523,7 +3625,6 @@ export function BuilderContainer({
     chatLines.length,
     outcomeHints.length,
     runtimeThinkingActive,
-    streamingText,
     actionStream.events.length,
     workerBlocker,
     showGitHubAccessOverride,
@@ -4065,7 +4166,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
         setPalDecisions([]);
         setBudgetLedger(createBudgetLedger());
         triggerHaptic("light");
-        appendRuntimeNotice("Chat-Verlauf gelöscht. Repository und Token bleiben erhalten.");
+        appendRuntimeNotice("Primary-Ansicht geleert. Der append-only PostgreSQL-Verlauf und Workflowzustand bleiben unverändert.");
         return;
       }
       if (command.action === "test") {
@@ -4101,23 +4202,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
           appendRuntimeNotice('Export blockiert: Für die aktuelle Ansicht existiert noch keine repo-gebundene Sitzung.');
           return;
         }
-        const messages = chatHistory
-          .filter((line) => line.role === 'user' || line.role === 'assistant' || line.role === 'system')
-          .map((line) => ({
-            id: line.id,
-            role: line.role as 'user' | 'assistant' | 'system',
-            content: line.text,
-            timestamp: line.createdAt ?? Date.now(),
-          }));
-        const saved = saveSession(localStorage, {
-          sessionId: current.sessionId,
-          repoUrl: current.repoUrl,
-          repoBranch: current.repoBranch,
-          messages,
-          createdAt: current.createdAt,
-        });
-        persistedSessionRef.current = saved;
-        const outcome = downloadSessionMarkdown(saved);
+        const outcome = downloadSessionMarkdown(current);
         appendRuntimeNotice(outcome === 'downloaded'
           ? 'Sitzung als Markdown exportiert. Secret-Muster wurden im Export redigiert.'
           : 'Sitzungsexport ist in dieser Umgebung nicht verfügbar.');
@@ -4180,7 +4265,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
       }
       if (command.action === "skill-run" && command.adapted_prompt) {
         triggerHaptic("light");
-        appendChatLine({ role: "user", text: submittedText });
+        if (!(await persistMissionInput(submittedText))) return;
         appendActionEvent({
           kind: 'route_selected',
           route: 'runtime',
@@ -4206,7 +4291,7 @@ Es wurde kein Job gestartet und keine Datei geändert.`);
     triggerHaptic("light");
 
     if (!options.resumePendingIntent && !options.inputAlreadyRecorded) {
-      appendChatLine({ role: "user", text: submittedText });
+      if (!(await persistMissionInput(submittedText))) return;
       appendActionEvent(buildInputReceivedEvent(submittedText));
     }
 
@@ -5738,7 +5823,7 @@ Sovereign Agent Runtime ist nicht Pflicht, solange Direct Patch den Auftrag bele
       agentReady: agentReady ?? false,
     });
 
-    appendChatLine({ role: 'user', text: submitted });
+    if (!(await persistMissionInput(submitted))) return;
     appendActionEvent(buildInputReceivedEvent(submitted));
 
     if (!gate.canStart) {
@@ -6279,20 +6364,6 @@ Das echte Repo-Setup wurde geöffnet.`,
                   onOpenFile={openRepoExplorerFromFileBadge}
                 />
               ))}
-              {streamingText !== null && (
-                <Bubble
-                  msg={{
-                    id: "stream",
-                    role: "assistant",
-                    text: streamingText,
-                    createdAt: Date.now(),
-                  }}
-                  now={nowRef.current}
-                />
-              )}
-              {agentStatus === "thinking" && streamingText === null && (
-                <ThinkingDots />
-              )}
               <OutcomeHints hints={outcomeHints} />
               {testRunnerBusy && (
                 <div role="status" style={{ margin: '8px 12px', padding: 10, border: `1px solid ${C.sky}44`, borderRadius: 10, color: C.sky }}>
@@ -6316,7 +6387,12 @@ Das echte Repo-Setup wurde geöffnet.`,
                   onCancel={() => setWishText('Behebe die blockierenden Auto-Code-Review-Findings im echten Workspace, führe die relevanten Tests erneut aus und bereite danach nur einen Draft PR vor.')}
                 />
               )}
-              <SovereignActionStreamPanel stream={actionStream} />
+              <details style={{ margin: '8px 12px' }}>
+                <summary style={{ cursor: 'pointer', color: C.textSub, minHeight: 44 }}>
+                  Evidence / technische Details
+                </summary>
+                <SovereignActionStreamPanel stream={actionStream} />
+              </details>
 
               {/* ── Issue #520 + #522: Integration Intent Draft Card — runtime-contracted routing */}
               {hasPendingDraft(intentDraftState) && (() => {
