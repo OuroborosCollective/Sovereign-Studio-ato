@@ -1,0 +1,414 @@
+name: Sovereign Desktop Worker Canary
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/agent_runtime/desktop_worker.py'
+      - 'backend/tests/test_desktop_worker.py'
+      - 'scripts/sovereign-backend/agent_runtime/desktop_worker.py'
+      - 'tools/sovereign-desktop-worker/**'
+      - 'docs/architecture/LIVE_WORKSPACE_DESKTOP_WORKER.v1.md'
+      - '.github/workflows/sovereign-desktop-worker.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/agent_runtime/desktop_worker.py'
+      - 'backend/tests/test_desktop_worker.py'
+      - 'scripts/sovereign-backend/agent_runtime/desktop_worker.py'
+      - 'tools/sovereign-desktop-worker/**'
+      - 'docs/architecture/LIVE_WORKSPACE_DESKTOP_WORKER.v1.md'
+      - '.github/workflows/sovereign-desktop-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-worker-canary:
+    name: Isolated native desktop worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run revision-bound hardened desktop canary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          image="sovereign-desktop-worker:canary"
+          worker=""
+          gateway=""
+          backplane="desktop-worker-backplane-$GITHUB_RUN_ID"
+          client_network="desktop-view-client-$GITHUB_RUN_ID"
+          attempt_parent="$(mktemp -d)"
+          attempt_worktree="$attempt_parent/worktree"
+          key_file="$attempt_parent/gateway-hmac"
+          worker_inspect="$attempt_parent/worker-inspect.json"
+          gateway_inspect="$attempt_parent/gateway-inspect.json"
+          backplane_inspect="$attempt_parent/backplane-inspect.json"
+          client_network_inspect="$attempt_parent/client-network-inspect.json"
+
+          cleanup() {
+            if [ -n "${gateway:-}" ]; then docker rm --force "$gateway" >/dev/null 2>&1 || true; fi
+            if [ -n "${worker:-}" ]; then docker rm --force "$worker" >/dev/null 2>&1 || true; fi
+            docker network rm "$client_network" >/dev/null 2>&1 || true
+            docker network rm "$backplane" >/dev/null 2>&1 || true
+            sudo rm -rf -- "$attempt_parent"
+          }
+          trap cleanup EXIT
+
+          revision="$(git rev-parse --verify HEAD)"
+          test "$revision" = "${GITHUB_SHA:?checkout must equal the workflow revision}"
+          git clone --no-local --no-checkout "$GITHUB_WORKSPACE" "$attempt_worktree"
+          git -C "$attempt_worktree" checkout --detach "$revision"
+          git -C "$attempt_worktree" remote remove origin
+          sudo chown -R --no-dereference 10001:10001 "$attempt_worktree"
+          test "$(git -C "$attempt_worktree" rev-parse HEAD)" = "$revision"
+          test "$(git -C "$attempt_worktree" remote)" = ""
+
+          docker build --pull=false --build-arg SOURCE_REVISION="$revision" --tag "$image" tools/sovereign-desktop-worker
+          image_digest="$(docker image inspect --format '{{.Id}}' "$image")"
+          image_hex="${image_digest#sha256:}"
+          test "${#image_hex}" = 64
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$revision"
+
+          session_id="desktop-canary-$GITHUB_RUN_ID"
+          session_binding="$(printf 'a%.0s' {1..64})"
+          runtime_identity="$(printf 'b%.0s' {1..64})"
+          container_identity="$(printf 'c%.0s' {1..64})"
+          input_scope="$(printf 'd%.0s' {1..64})"
+          view_scope="$(printf 'e%.0s' {1..64})"
+          attempt_id="attempt-$(printf '%s' "$GITHUB_RUN_ID:$revision" | sha256sum | cut -c1-24)"
+          attempt_hash="$(printf '%s' "$attempt_id:$revision" | sha256sum | cut -d ' ' -f1)"
+          worktree_hash="$(printf '%s:%s:%s' "$attempt_id" "$revision" "$(git -C "$attempt_worktree" rev-parse "$revision^{tree}")" | sha256sum | cut -d ' ' -f1)"
+          admission_id="desktop-admission-$(printf '%s' "$session_binding:$container_identity:$image_digest:$attempt_id" | sha256sum | cut -c1-24)"
+          gateway_runtime_identity="$(printf '%s' "gateway-runtime:$image_digest:$revision" | sha256sum | cut -d ' ' -f1)"
+          worker_backplane_network_identity="$(printf '%s' "planned-worker-backplane:$GITHUB_RUN_ID:$revision" | sha256sum | cut -d ' ' -f1)"
+          view_client_network_identity="$(printf '%s' "planned-view-client:$GITHUB_RUN_ID:$revision" | sha256sum | cut -d ' ' -f1)"
+          gateway_container_identity="$(printf '%s' "gateway:$GITHUB_RUN_ID:$revision" | sha256sum | cut -d ' ' -f1)"
+          grant_id="desktop-view-$(printf '%s' "view:$GITHUB_RUN_ID:$revision" | sha256sum | cut -c1-24)"
+          input_grant_id="desktop-input-$(printf '%s' "input:$GITHUB_RUN_ID:$revision" | sha256sum | cut -c1-24)"
+          lease_id="livelease-$(printf '%s' "lease:$GITHUB_RUN_ID:$revision" | sha256sum | cut -c1-24)"
+          lease_readback_hash="$(printf '%s' "lease-readback:$GITHUB_RUN_ID:$revision" | sha256sum | cut -d ' ' -f1)"
+          subject_hash="$(printf 'f%.0s' {1..64})"
+
+          export DESKTOP_WORKER_IMAGE="example.invalid/sovereign-desktop-worker@sha256:$image_hex"
+          export DESKTOP_IMAGE_DIGEST="$image_digest"
+          export DESKTOP_LOCAL_IMAGE_READBACK_REF="$image"
+          export DESKTOP_SESSION_ID="$session_id"
+          export DESKTOP_SESSION_BINDING_HASH="$session_binding"
+          export DESKTOP_RUNTIME_IDENTITY_HASH="$runtime_identity"
+          export DESKTOP_CONTAINER_IDENTITY_HASH="$container_identity"
+          export DESKTOP_INPUT_SCOPE_HASH="$input_scope"
+          export DESKTOP_VIEW_SCOPE_HASH="$view_scope"
+          export DESKTOP_ATTEMPT_ID="$attempt_id"
+          export DESKTOP_ATTEMPT_HASH="$attempt_hash"
+          export DESKTOP_WORKTREE_IDENTITY_HASH="$worktree_hash"
+          export DESKTOP_HEAD_REVISION="$revision"
+          export ATTEMPT_WORKTREE="$attempt_worktree"
+          export DESKTOP_ADMISSION_ID=""
+          export DESKTOP_GATEWAY_IMAGE_DIGEST="$image_digest"
+          export DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH="$gateway_runtime_identity"
+          export DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH="$gateway_container_identity"
+          export DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH="$worker_backplane_network_identity"
+          export DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH="$view_client_network_identity"
+          export DESKTOP_GATEWAY_ADMISSION_ID="$admission_id"
+
+          umask 077
+          openssl rand -hex 32 > "$key_file"
+          export DESKTOP_VIEW_GATEWAY_KEY_FILE="$key_file"
+
+          python3 tools/sovereign-desktop-worker/operator-validate.py --require-gateway --local-canary-only
+          zero_digest="$(printf '0%.0s' {1..64})"
+          wrong_revision="$(printf '0%.0s' {1..40})"
+          if DESKTOP_IMAGE_DIGEST="sha256:$zero_digest" python3 tools/sovereign-desktop-worker/operator-validate.py --require-gateway --local-canary-only; then
+            echo "validator accepted a mismatched local image identity" >&2
+            exit 1
+          fi
+          if DESKTOP_HEAD_REVISION="$wrong_revision" python3 tools/sovereign-desktop-worker/operator-validate.py --require-gateway --local-canary-only; then
+            echo "validator accepted a mismatched attempt revision" >&2
+            exit 1
+          fi
+          if ATTEMPT_WORKTREE="$attempt_parent" python3 tools/sovereign-desktop-worker/operator-validate.py --require-gateway --local-canary-only; then
+            echo "validator accepted a non-attempt workspace" >&2
+            exit 1
+          fi
+          docker compose -f tools/sovereign-desktop-worker/compose.yaml config >/dev/null
+
+          docker network create --internal "$backplane" >/dev/null
+          docker network create --internal "$client_network" >/dev/null
+          worker_backplane_network_identity="$(docker network inspect --format '{{.Id}}' "$backplane" | sha256sum | cut -d ' ' -f1)"
+          view_client_network_identity="$(docker network inspect --format '{{.Id}}' "$client_network" | sha256sum | cut -d ' ' -f1)"
+          export DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH="$worker_backplane_network_identity"
+          export DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH="$view_client_network_identity"
+
+          view_token="$(
+            CANARY_KEY_FILE="$key_file" CANARY_GRANT_ID="$grant_id" CANARY_SUBJECT_HASH="$subject_hash" python3 - <<'PY'
+          import base64, hashlib, hmac, json, os, secrets, time
+          def encode(value):
+              return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+          claims = {
+              "sessionId": os.environ["DESKTOP_SESSION_ID"],
+              "sessionBindingHash": os.environ["DESKTOP_SESSION_BINDING_HASH"],
+              "admissionId": os.environ["DESKTOP_GATEWAY_ADMISSION_ID"],
+              "grantId": os.environ["CANARY_GRANT_ID"],
+              "subjectHash": os.environ["CANARY_SUBJECT_HASH"],
+              "viewScopeHash": os.environ["DESKTOP_VIEW_SCOPE_HASH"],
+              "runtimeIdentityHash": os.environ["DESKTOP_RUNTIME_IDENTITY_HASH"],
+              "containerIdentityHash": os.environ["DESKTOP_CONTAINER_IDENTITY_HASH"],
+              "gatewayRuntimeIdentityHash": os.environ["DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH"],
+              "gatewayContainerIdentityHash": os.environ["DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH"],
+              "gatewayImageDigest": os.environ["DESKTOP_GATEWAY_IMAGE_DIGEST"],
+              "workerBackplaneNetworkIdentityHash": os.environ["DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH"],
+              "viewClientNetworkIdentityHash": os.environ["DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH"],
+              "attemptId": os.environ["DESKTOP_ATTEMPT_ID"],
+              "attemptHash": os.environ["DESKTOP_ATTEMPT_HASH"],
+              "worktreeIdentityHash": os.environ["DESKTOP_WORKTREE_IDENTITY_HASH"],
+              "observedHeadRevision": os.environ["DESKTOP_HEAD_REVISION"],
+              "issuedAtEpoch": int(time.time()) - 1,
+              "expiresAtEpoch": int(time.time()) + 90,
+              "nonce": secrets.token_urlsafe(16),
+          }
+          body = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode("utf-8")
+          key = open(os.environ["CANARY_KEY_FILE"], "rb").read().strip()
+          print(encode(body) + "." + encode(hmac.new(key, body, hashlib.sha256).digest()))
+          PY
+          )"
+          sudo chown 10002:10002 "$key_file"
+
+          worker="desktop-worker-canary-$GITHUB_RUN_ID"
+          docker run --detach             --name "$worker"             --user 10001:10001             --read-only             --cap-drop ALL             --security-opt no-new-privileges             --pids-limit 256             --memory 1g             --cpus 1             --restart no             --network "$backplane"             --network-alias desktop-worker             --mount "type=bind,src=$attempt_worktree,dst=/workspace"             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700             --tmpfs /run:rw,nosuid,nodev,noexec,size=32m,uid=10001,gid=10001,mode=0711             --tmpfs /home/desktop:rw,nosuid,nodev,noexec,size=128m,uid=10001,gid=10001,mode=0700             --env DESKTOP_SESSION_ID="$session_id"             --env DESKTOP_SESSION_BINDING_HASH="$session_binding"             --env DESKTOP_RUNTIME_IDENTITY_HASH="$runtime_identity"             --env DESKTOP_CONTAINER_IDENTITY_HASH="$container_identity"             --env DESKTOP_INPUT_SCOPE_HASH="$input_scope"             --env DESKTOP_VIEW_SCOPE_HASH="$view_scope"             --env DESKTOP_ATTEMPT_ID="$attempt_id"             --env DESKTOP_ATTEMPT_HASH="$attempt_hash"             --env DESKTOP_WORKTREE_IDENTITY_HASH="$worktree_hash"             --env DESKTOP_HEAD_REVISION="$revision"             --env DESKTOP_IMAGE_DIGEST="$image_digest"             --env DESKTOP_ADMISSION_ID=""             --env DESKTOP_MAX_LIFETIME_SECONDS=600             --env DESKTOP_MAX_IDLE_SECONDS=300             "$image"
+
+          ready=0
+          for _ in $(seq 1 45); do
+            if docker exec --user 10001 "$worker" sh -c 'test -S /run/desktop-control/worker.sock && pgrep -f websockify >/dev/null && pgrep -f xterm >/dev/null && pgrep -f mousepad >/dev/null'; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          docker exec --user 10001 "$worker" sh -ec 'test -r /workspace/README.md && test -w /workspace && touch /workspace/.desktop-canary && test "$(git -C /workspace rev-parse HEAD)" = "$1"' sh "$revision"
+          docker exec --user 10001 "$worker" sh -ec 'ps -eo args | grep -E "[x]11vnc.*-viewonly" >/dev/null'
+          docker exec --user 10001 "$worker" sh -ec 'test "$(stat -c %a /run/desktop-control/worker.sock)" = 666'
+
+          make_admission_bind() {
+            python3 - <<'PY'
+          import json, os
+          fields = {
+              "operation": "ADMISSION_BIND",
+              "sessionId": os.environ["DESKTOP_SESSION_ID"],
+              "sessionBindingHash": os.environ["DESKTOP_SESSION_BINDING_HASH"],
+              "runtimeIdentityHash": os.environ["DESKTOP_RUNTIME_IDENTITY_HASH"],
+              "containerIdentityHash": os.environ["DESKTOP_CONTAINER_IDENTITY_HASH"],
+              "imageDigest": os.environ["DESKTOP_IMAGE_DIGEST"],
+              "attemptId": os.environ["DESKTOP_ATTEMPT_ID"],
+              "attemptHash": os.environ["DESKTOP_ATTEMPT_HASH"],
+              "worktreeIdentityHash": os.environ["DESKTOP_WORKTREE_IDENTITY_HASH"],
+              "observedHeadRevision": os.environ["DESKTOP_HEAD_REVISION"],
+              "admissionId": os.environ["CANARY_ADMISSION_ID"],
+          }
+          print(json.dumps(fields, sort_keys=True, separators=(",", ":")))
+          PY
+          }
+
+          make_lease_update() {
+            python3 - <<'PY'
+          import json, os
+          state = os.environ["CANARY_LEASE_STATE"]
+          fields = {
+              "operation": "LEASE_UPDATE",
+              "sessionId": os.environ["DESKTOP_SESSION_ID"],
+              "sessionBindingHash": os.environ["DESKTOP_SESSION_BINDING_HASH"],
+              "admissionId": os.environ["CANARY_ADMISSION_ID"],
+              "inputScopeHash": os.environ["DESKTOP_INPUT_SCOPE_HASH"],
+              "controlLeaseState": state,
+          }
+          if state == "USER_CONTROLLED":
+              fields.update({
+                  "grantId": os.environ["CANARY_INPUT_GRANT_ID"],
+                  "controlLeaseId": os.environ["CANARY_LEASE_ID"],
+                  "controlLeaseReadbackHash": os.environ["CANARY_LEASE_READBACK_HASH"],
+                  "subjectHash": os.environ["CANARY_SUBJECT_HASH"],
+                  "grantExpiresAtEpoch": int(os.environ["CANARY_GRANT_EXPIRES_AT"]),
+              })
+          print(json.dumps(fields, sort_keys=True, separators=(",", ":")))
+          PY
+          }
+
+          make_request() {
+            CANARY_KIND="$1" CANARY_GRANT_ID="$2" CANARY_ACTION_ID="$3" CANARY_PAYLOAD="$4" CANARY_LEASE_ID="$5" CANARY_LEASE_READBACK_HASH="$6" python3 - <<'PY'
+          import hashlib, json, os, time
+          def stable_hash(value):
+              return hashlib.sha256(json.dumps(value, allow_nan=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+          kind = os.environ["CANARY_KIND"]
+          payload = json.loads(os.environ["CANARY_PAYLOAD"])
+          lease_id = os.environ["CANARY_LEASE_ID"] or None
+          lease_hash = os.environ["CANARY_LEASE_READBACK_HASH"] or None
+          requested = int(time.time())
+          fields = {
+              "schemaVersion": "sovereign.computer-use-request.v2",
+              "sessionId": os.environ["DESKTOP_SESSION_ID"],
+              "sessionBindingHash": os.environ["DESKTOP_SESSION_BINDING_HASH"],
+              "admissionId": os.environ["CANARY_ADMISSION_ID"],
+              "grantId": os.environ["CANARY_GRANT_ID"],
+              "subjectHash": os.environ["CANARY_SUBJECT_HASH"],
+              "scopeHash": os.environ["DESKTOP_VIEW_SCOPE_HASH"] if kind in {"SCREENSHOT", "WINDOW_LIST", "VIEWPORT_READBACK"} else os.environ["DESKTOP_INPUT_SCOPE_HASH"],
+              "runtimeIdentityHash": os.environ["DESKTOP_RUNTIME_IDENTITY_HASH"],
+              "containerIdentityHash": os.environ["DESKTOP_CONTAINER_IDENTITY_HASH"],
+              "imageDigest": os.environ["DESKTOP_IMAGE_DIGEST"],
+              "attemptId": os.environ["DESKTOP_ATTEMPT_ID"],
+              "attemptHash": os.environ["DESKTOP_ATTEMPT_HASH"],
+              "worktreeIdentityHash": os.environ["DESKTOP_WORKTREE_IDENTITY_HASH"],
+              "observedHeadRevision": os.environ["DESKTOP_HEAD_REVISION"],
+              "controlLeaseId": lease_id,
+              "controlLeaseReadbackHash": lease_hash,
+              "grantExpiresAtEpoch": int(os.environ["CANARY_GRANT_EXPIRES_AT"]),
+              "actionId": os.environ["CANARY_ACTION_ID"],
+              "inputKind": kind,
+              "payloadHash": stable_hash({"inputKind": kind, "payload": payload}),
+              "requestedAtEpoch": requested,
+          }
+          fields["requestHash"] = stable_hash(fields)
+          fields["payload"] = payload
+          print(json.dumps(fields, sort_keys=True, separators=(",", ":")))
+          PY
+          }
+
+          assert_status() {
+            python3 - "$1" "$2" <<'PY'
+          import json, sys
+          response = json.loads(sys.argv[1])
+          assert response["status"] == sys.argv[2], response
+          PY
+          }
+
+          export CANARY_ADMISSION_ID="$admission_id"
+          export CANARY_SUBJECT_HASH="$subject_hash"
+          export CANARY_GRANT_EXPIRES_AT="$(( $(date +%s) + 120 ))"
+          export CANARY_INPUT_GRANT_ID="$input_grant_id"
+          export CANARY_LEASE_ID="$lease_id"
+          export CANARY_LEASE_READBACK_HASH="$lease_readback_hash"
+          export CANARY_LEASE_STATE=USER_CONTROLLED
+          pre_admission_lease="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$(make_lease_update)")"
+          assert_status "$pre_admission_lease" BLOCKED
+          pre_admission_view="$(make_request VIEWPORT_READBACK "$grant_id" pre-admission-view '{}' '' '')"
+          pre_admission_view_response="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$pre_admission_view")"
+          assert_status "$pre_admission_view_response" BLOCKED
+          unauthorized_bind="$(docker exec --user 10001 "$worker" /usr/local/bin/desktop-control-client --request "$(make_admission_bind)")"
+          assert_status "$unauthorized_bind" BLOCKED
+          bound="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$(make_admission_bind)")"
+          assert_status "$bound" OBSERVED
+
+          view_request="$(make_request VIEWPORT_READBACK "$grant_id" view-canary '{}' '' '')"
+          unauthorized_view="$(docker exec --user 10001 "$worker" /usr/local/bin/desktop-control-client --request "$view_request")"
+          assert_status "$unauthorized_view" BLOCKED
+          view_response="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$view_request")"
+          assert_status "$view_response" OBSERVED
+
+          export CANARY_INPUT_GRANT_ID="$input_grant_id"
+          export CANARY_LEASE_ID="$lease_id"
+          export CANARY_LEASE_READBACK_HASH="$lease_readback_hash"
+          export CANARY_LEASE_STATE=USER_CONTROLLED
+          lease_bound="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$(make_lease_update)")"
+          assert_status "$lease_bound" OBSERVED
+          input_request="$(make_request POINTER_MOVE "$input_grant_id" input-canary '{"x":0.5,"y":0.5}' "$lease_id" "$lease_readback_hash")"
+          input_response="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$input_request")"
+          assert_status "$input_response" SENT
+          replay_response="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$input_request")"
+          assert_status "$replay_response" BLOCKED
+          export CANARY_LEASE_STATE=AGENT_CONTROLLED_REBOUND
+          lease_revoked="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$(make_lease_update)")"
+          assert_status "$lease_revoked" OBSERVED
+          revoked_request="$(make_request POINTER_MOVE "$input_grant_id" input-after-give-back '{"x":0.6,"y":0.5}' "$lease_id" "$lease_readback_hash")"
+          revoked_response="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$revoked_request")"
+          assert_status "$revoked_response" BLOCKED
+          export CANARY_LEASE_STATE=USER_CONTROLLED
+          replayed_lease_update="$(docker exec --user 10002 "$worker" /usr/local/bin/desktop-control-client --request "$(make_lease_update)")"
+          assert_status "$replayed_lease_update" BLOCKED
+
+          gateway="desktop-view-gateway-canary-$GITHUB_RUN_ID"
+          docker run --detach             --name "$gateway"             --user 10002:10002             --read-only             --cap-drop ALL             --security-opt no-new-privileges             --pids-limit 128             --memory 256m             --cpus 0.5             --restart no             --network "$backplane"             --mount "type=bind,src=$key_file,dst=/run/desktop-view-gateway/hmac,readonly"             --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m,uid=10002,gid=10002,mode=0700             --env PYTHONDONTWRITEBYTECODE=1             --env DESKTOP_VIEW_GATEWAY_BIND_HOST=0.0.0.0             --env DESKTOP_VIEW_GATEWAY_PORT=8080             --env DESKTOP_VIEW_UPSTREAM_HOST=desktop-worker             --env DESKTOP_VIEW_UPSTREAM_PORT=6080             --env DESKTOP_VIEW_GATEWAY_KEY_FILE=/run/desktop-view-gateway/hmac             --env DESKTOP_SESSION_ID="$session_id"             --env DESKTOP_SESSION_BINDING_HASH="$session_binding"             --env DESKTOP_RUNTIME_IDENTITY_HASH="$runtime_identity"             --env DESKTOP_CONTAINER_IDENTITY_HASH="$container_identity"             --env DESKTOP_VIEW_GATEWAY_RUNTIME_IDENTITY_HASH="$gateway_runtime_identity"             --env DESKTOP_VIEW_GATEWAY_CONTAINER_IDENTITY_HASH="$gateway_container_identity"             --env DESKTOP_VIEW_SCOPE_HASH="$view_scope"             --env DESKTOP_ADMISSION_ID="$admission_id"             --env DESKTOP_GATEWAY_IMAGE_DIGEST="$image_digest"             --env DESKTOP_WORKER_BACKPLANE_NETWORK_IDENTITY_HASH="$worker_backplane_network_identity"             --env DESKTOP_VIEW_CLIENT_NETWORK_IDENTITY_HASH="$view_client_network_identity"             --env DESKTOP_ATTEMPT_ID="$attempt_id"             --env DESKTOP_ATTEMPT_HASH="$attempt_hash"             --env DESKTOP_WORKTREE_IDENTITY_HASH="$worktree_hash"             --env DESKTOP_HEAD_REVISION="$revision"             --entrypoint python3             "$image" /usr/local/lib/desktop-view-gateway.py
+          docker network connect --alias desktop-view-gateway "$client_network" "$gateway"
+
+          gateway_ready=0
+          for _ in $(seq 1 30); do
+            if docker exec --user 10002 "$gateway" python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=2).read()'; then
+              gateway_ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$gateway_ready" = 1
+
+          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' http://desktop-view-gateway:8080/vnc.html)" = 401
+          if docker run --rm --network "$client_network" --entrypoint python3 "$image" -c 'import socket; socket.gethostbyname("desktop-worker")'; then
+            echo "view client reached the worker backplane name" >&2
+            exit 1
+          fi
+
+          headers="$attempt_parent/view-headers"
+          docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -D "$headers" -o /dev/null "http://desktop-view-gateway:8080/?view_token=$view_token"
+          grep -q '^HTTP/1.1 303' "$headers"
+          grep -qi '^Set-Cookie: desktop_view_session=.*HttpOnly.*SameSite=Strict' "$headers"
+          cookie="$(awk -F ': ' '/^Set-Cookie:/ {sub(/\r$/, "", $2); print $2}' "$headers")"
+          test -n "$cookie"
+          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' "http://desktop-view-gateway:8080/?view_token=$view_token")" = 401
+          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -H "Cookie: $cookie" http://desktop-view-gateway:8080/vnc.html)" = 200
+          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -X POST -H "Cookie: $cookie" http://desktop-view-gateway:8080/)" = 405
+          test "$(docker run --rm --network "$client_network" --entrypoint curl "$image" -sS -o /dev/null -w '%{http_code}' -X CONNECT -H "Cookie: $cookie" http://desktop-view-gateway:8080/)" = 405
+
+          for sequence in 1 2; do
+            websocket_headers="$attempt_parent/websocket-$sequence-headers"
+            docker run --rm --network "$client_network" --entrypoint curl "$image" --http1.1 --max-time 3 -sS -D "$websocket_headers" -o /dev/null               -H "Cookie: $cookie"               -H "Connection: Upgrade"               -H "Upgrade: websocket"               -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="               -H "Sec-WebSocket-Version: 13"               http://desktop-view-gateway:8080/websockify || true
+            grep -q ' 101 ' "$websocket_headers"
+          done
+
+          docker inspect "$worker" > "$worker_inspect"
+          docker inspect "$gateway" > "$gateway_inspect"
+          docker network inspect "$backplane" > "$backplane_inspect"
+          docker network inspect "$client_network" > "$client_network_inspect"
+          python3 - "$worker_inspect" "$gateway_inspect" "$backplane_inspect" "$client_network_inspect" "$attempt_worktree" "$backplane" "$client_network" <<'PY'
+          import json, sys
+          worker = json.load(open(sys.argv[1], encoding="utf-8"))[0]
+          gateway = json.load(open(sys.argv[2], encoding="utf-8"))[0]
+          backplane = json.load(open(sys.argv[3], encoding="utf-8"))[0]
+          client_network = json.load(open(sys.argv[4], encoding="utf-8"))[0]
+          workspace, backplane_name, client_network_name = sys.argv[5:]
+          for container in (worker, gateway):
+              host = container["HostConfig"]
+              assert host["ReadonlyRootfs"] is True
+              assert host["Privileged"] is False
+              assert host["CapDrop"] == ["ALL"]
+              assert "no-new-privileges" in (host["SecurityOpt"] or [])
+              assert not container["NetworkSettings"]["Ports"]
+              assert host["RestartPolicy"]["Name"] == "no"
+          assert set(worker["NetworkSettings"]["Networks"]) == {backplane_name}
+          assert set(gateway["NetworkSettings"]["Networks"]) == {backplane_name, client_network_name}
+          assert backplane["Internal"] is True
+          assert client_network["Internal"] is True
+          assert len(worker["Mounts"]) == 1
+          assert worker["Mounts"][0]["Destination"] == "/workspace"
+          assert worker["Mounts"][0]["RW"] is True
+          assert worker["Mounts"][0]["Source"] == workspace
+          assert all(mount["Destination"] not in {"/workspace", "/run/desktop-control"} for mount in gateway["Mounts"])
+          assert worker["RestartCount"] == 0 and gateway["RestartCount"] == 0
+          PY
+
+          docker rm --force "$gateway" >/dev/null
+          if docker inspect "$gateway" >/dev/null 2>&1; then exit 1; fi
+          gateway=""
+          docker rm --force "$worker" >/dev/null
+          if docker inspect "$worker" >/dev/null 2>&1; then exit 1; fi
+          worker=""
+
+      - name: Contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest backend/tests/test_desktop_worker.py -q
